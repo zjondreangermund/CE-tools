@@ -29,6 +29,10 @@
       <HintPath>$(AutoCADRoot)\AcMgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="AcWindows">
+      <HintPath>$(AutoCADRoot)\AcWindows.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="AdWindows">
       <HintPath>$(AutoCADRoot)\AdWindows.dll</HintPath>
       <Private>false</Private>
@@ -42,6 +46,8 @@
   <Target Name="ValidateAutoCADReferences" BeforeTargets="ResolveReferences">
     <Error Condition="!Exists('$(AutoCADRoot)\AcMgd.dll')"
            Text="AutoCAD managed assemblies were not found at '$(AutoCADRoot)'. Pass /p:AutoCADRoot=&quot;your install folder&quot;." />
+    <Error Condition="!Exists('$(AutoCADRoot)\AdWindows.dll')"
+           Text="The AutoCAD ribbon assembly AdWindows.dll was not found at '$(AutoCADRoot)'." />
     <Error Condition="'$(AutoCADVersion)' != '2023' and '$(AutoCADVersion)' != '2024'"
            Text="This alpha build supports AutoCADVersion 2023 or 2024." />
   </Target>
