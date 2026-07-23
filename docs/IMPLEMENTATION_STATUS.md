@@ -6,6 +6,7 @@
 - `CE_COORDINATE`: installed alpha works; redesign pending the user's reference coordinate LSP.
 - `CE_COORDPOLY`: polyline-direction vertex extraction, sequential Civil 3D COGO-point creation, sequential raw descriptions and XYZ table generation are source-complete; Civil 3D 2023 compile, old/new polyline, point-number and table validation required.
 - `CE_SEWSEQ`: extended without a duplicate command; default `EntireNetwork` mode expands selected parts to complete networks, decomposes tree-shaped networks into highest-to-lowest branches, orders remaining branches longest-to-shortest, and applies dotted `MHn.x` / `Pn.x` names. Existing `SelectedPath` mode remains available. Civil 3D 2023 compile and live topology validation required.
+- `CE_SEWALIGN`: creates or refreshes one siteless Civil 3D alignment per CE-sequenced sewer branch, follows straight and sampled curved pipe geometry from high rim to low rim, places a visible `Branch-n` plan label and replaces only CE-generated alignment/label objects on rerun. Civil 3D 2023 compile, style, XData, naming-conflict and refresh validation required.
 - `CE_COLOR250` / `COLOR250`: alpha source complete; Civil 3D validation required.
 - `CE_PLDIR`: ordinary 2D/3D polyline direction arrows with linked replacement and selected/all clearing are source-complete; AutoCAD/Civil 3D 2023 compile, curve direction, XData and locked-layer validation required.
 - `CE_FLTOOLS`: first alpha source complete with `Report`, `RaiseLower` and `SetElevation`; Civil 3D 2023 compile and feature-line validation required.
