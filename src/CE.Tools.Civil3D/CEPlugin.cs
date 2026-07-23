@@ -58,6 +58,7 @@ namespace CETools.Civil3D
         private const string AlignmentsPanelId = "CE_TOOLS_ALIGNMENTS_PANEL";
         private const string ProfilesPanelId = "CE_TOOLS_PROFILES_PANEL";
         private const string SurfacesPanelId = "CE_TOOLS_SURFACES_PANEL";
+        private const string CorridorsPanelId = "CE_TOOLS_CORRIDORS_PANEL";
         private const string FeatureLinesPanelId = "CE_TOOLS_FEATURE_LINES_PANEL";
         private const string QuantitiesPanelId = "CE_TOOLS_QUANTITIES_PANEL";
         private const string SurveyPanelId = "CE_TOOLS_SURVEY_PANEL";
@@ -87,6 +88,7 @@ namespace CETools.Civil3D
             EnsureAlignmentsPanel(tab);
             EnsureProfilesPanel(tab);
             EnsureSurfacesPanel(tab);
+            EnsureCorridorsPanel(tab);
             EnsureFeatureLinesPanel(tab);
             EnsureQuantitiesPanel(tab);
             EnsureSurveyPanel(tab);
@@ -97,240 +99,200 @@ namespace CETools.Civil3D
 
         private static void EnsureRoadsPanel(RibbonTab tab)
         {
-            if (PanelExists(tab, RoadsPanelId))
-            {
-                return;
-            }
-
-            var panelSource = new RibbonPanelSource
-            {
-                Id = RoadsPanelId,
-                Title = "Roads"
-            };
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_BMVERT_BUTTON",
-                "Bellmouth\nDensifier",
-                "CE_BMVERT ",
-                "Insert equal-chainage vertices into multiple line-and-arc polylines."));
-
-            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+            AddPanel(
+                tab,
+                RoadsPanelId,
+                "Roads",
+                CreateButton(
+                    "CE_TOOLS_BMVERT_BUTTON",
+                    "Bellmouth\nDensifier",
+                    "CE_BMVERT ",
+                    "Insert equal-chainage vertices into multiple line-and-arc polylines."));
         }
 
         private static void EnsureAlignmentsPanel(RibbonTab tab)
         {
-            if (PanelExists(tab, AlignmentsPanelId))
-            {
-                return;
-            }
-
-            var panelSource = new RibbonPanelSource
-            {
-                Id = AlignmentsPanelId,
-                Title = "Alignments"
-            };
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_ALTOOLS_BUTTON",
-                "Alignment\nTools",
-                "CE_ALTOOLS ",
-                "Report alignments, calculate station/offset and place quick station-offset labels."));
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_ALSTOFF_BUTTON",
-                "Station &&\nOffset",
-                "CE_ALSTOFF ",
-                "Select an alignment and pick a point to report station and signed offset."));
-
-            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+            AddPanel(
+                tab,
+                AlignmentsPanelId,
+                "Alignments",
+                CreateButton(
+                    "CE_TOOLS_ALTOOLS_BUTTON",
+                    "Alignment\nTools",
+                    "CE_ALTOOLS ",
+                    "Report alignments, calculate station/offset and place quick station-offset labels."),
+                CreateButton(
+                    "CE_TOOLS_ALSTOFF_BUTTON",
+                    "Station &&\nOffset",
+                    "CE_ALSTOFF ",
+                    "Select an alignment and pick a point to report station and signed offset."));
         }
 
         private static void EnsureProfilesPanel(RibbonTab tab)
         {
-            if (PanelExists(tab, ProfilesPanelId))
-            {
-                return;
-            }
-
-            var panelSource = new RibbonPanelSource
-            {
-                Id = ProfilesPanelId,
-                Title = "Profiles"
-            };
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_PRTOOLS_BUTTON",
-                "Profile\nTools",
-                "CE_PRTOOLS ",
-                "Report profiles, query station elevations and place quick profile labels."));
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_PRELEV_BUTTON",
-                "Station &&\nElevation",
-                "CE_PRELEV ",
-                "Select a profile and enter a station to report elevation and instantaneous grade."));
-
-            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+            AddPanel(
+                tab,
+                ProfilesPanelId,
+                "Profiles",
+                CreateButton(
+                    "CE_TOOLS_PRTOOLS_BUTTON",
+                    "Profile\nTools",
+                    "CE_PRTOOLS ",
+                    "Report profiles, query station elevations and place quick profile labels."),
+                CreateButton(
+                    "CE_TOOLS_PRELEV_BUTTON",
+                    "Station &&\nElevation",
+                    "CE_PRELEV ",
+                    "Select a profile and enter a station to report elevation and instantaneous grade."));
         }
 
         private static void EnsureSurfacesPanel(RibbonTab tab)
         {
-            if (PanelExists(tab, SurfacesPanelId))
-            {
-                return;
-            }
+            AddPanel(
+                tab,
+                SurfacesPanelId,
+                "Surfaces",
+                CreateButton(
+                    "CE_TOOLS_SFTOOLS_BUTTON",
+                    "Surface\nTools",
+                    "CE_SFTOOLS ",
+                    "Report surfaces, query elevations, place elevation labels and compare two surfaces."),
+                CreateButton(
+                    "CE_TOOLS_SFELEV_BUTTON",
+                    "Surface\nElevation",
+                    "CE_SFELEV ",
+                    "Select a surface and pick a point to report its elevation."),
+                CreateButton(
+                    "CE_TOOLS_SFCOMPARE_BUTTON",
+                    "Compare\nSurfaces",
+                    "CE_SFCOMPARE ",
+                    "Compare existing and proposed surface elevations at a picked point."));
+        }
 
-            var panelSource = new RibbonPanelSource
-            {
-                Id = SurfacesPanelId,
-                Title = "Surfaces"
-            };
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_SFTOOLS_BUTTON",
-                "Surface\nTools",
-                "CE_SFTOOLS ",
-                "Report surfaces, query elevations, place elevation labels and compare two surfaces."));
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_SFELEV_BUTTON",
-                "Surface\nElevation",
-                "CE_SFELEV ",
-                "Select a surface and pick a point to report its elevation."));
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_SFCOMPARE_BUTTON",
-                "Compare\nSurfaces",
-                "CE_SFCOMPARE ",
-                "Compare existing and proposed surface elevations at a picked point."));
-
-            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+        private static void EnsureCorridorsPanel(RibbonTab tab)
+        {
+            AddPanel(
+                tab,
+                CorridorsPanelId,
+                "Corridors",
+                CreateButton(
+                    "CE_TOOLS_CORTOOLS_BUTTON",
+                    "Corridor\nTools",
+                    "CE_CORTOOLS ",
+                    "Report corridors, inspect baselines and regions, or rebuild out-of-date corridors."),
+                CreateButton(
+                    "CE_TOOLS_CORBASE_BUTTON",
+                    "Baseline &&\nRegions",
+                    "CE_CORBASE ",
+                    "Report corridor baseline, region, source and assembly information."),
+                CreateButton(
+                    "CE_TOOLS_CORREBUILD_BUTTON",
+                    "Rebuild\nCorridors",
+                    "CE_CORREBUILD ",
+                    "Preview and rebuild selected editable out-of-date corridors."));
         }
 
         private static void EnsureFeatureLinesPanel(RibbonTab tab)
         {
-            if (PanelExists(tab, FeatureLinesPanelId))
-            {
-                return;
-            }
-
-            var panelSource = new RibbonPanelSource
-            {
-                Id = FeatureLinesPanelId,
-                Title = "Feature Lines"
-            };
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_FLTOOLS_BUTTON",
-                "Feature Line\nTools",
-                "CE_FLTOOLS ",
-                "Report feature-line data, raise/lower elevations or set all points to one elevation."));
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_FLEDIT_BUTTON",
-                "Create &&\nPoint Edit",
-                "CE_FLEDIT ",
-                "Create feature lines, assign surface elevations, and insert or delete elevation points."));
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_FLWEED_BUTTON",
-                "Weed\nPoints",
-                "CE_FLWEED ",
-                "Preview and remove redundant feature-line elevation points using vertical and spacing tolerances."));
-
-            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+            AddPanel(
+                tab,
+                FeatureLinesPanelId,
+                "Feature Lines",
+                CreateButton(
+                    "CE_TOOLS_FLTOOLS_BUTTON",
+                    "Feature Line\nTools",
+                    "CE_FLTOOLS ",
+                    "Report feature-line data, raise/lower elevations or set all points to one elevation."),
+                CreateButton(
+                    "CE_TOOLS_FLEDIT_BUTTON",
+                    "Create &&\nPoint Edit",
+                    "CE_FLEDIT ",
+                    "Create feature lines, assign surface elevations, and insert or delete elevation points."),
+                CreateButton(
+                    "CE_TOOLS_FLWEED_BUTTON",
+                    "Weed\nPoints",
+                    "CE_FLWEED ",
+                    "Preview and remove redundant feature-line elevation points using vertical and spacing tolerances."));
         }
 
         private static void EnsureQuantitiesPanel(RibbonTab tab)
         {
-            if (PanelExists(tab, QuantitiesPanelId))
-            {
-                return;
-            }
-
-            var panelSource = new RibbonPanelSource
-            {
-                Id = QuantitiesPanelId,
-                Title = "Quantities"
-            };
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_TLENGTH_BUTTON",
-                "Total\nLength",
-                "CE_TLENGTH ",
-                "Total selected curve lengths and show a layer-by-layer breakdown."));
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_TAREA_BUTTON",
-                "Total\nArea",
-                "CE_TAREA ",
-                "Total selected closed boundaries, hatches and regions by layer."));
-
-            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+            AddPanel(
+                tab,
+                QuantitiesPanelId,
+                "Quantities",
+                CreateButton(
+                    "CE_TOOLS_TLENGTH_BUTTON",
+                    "Total\nLength",
+                    "CE_TLENGTH ",
+                    "Total selected curve lengths and show a layer-by-layer breakdown."),
+                CreateButton(
+                    "CE_TOOLS_TAREA_BUTTON",
+                    "Total\nArea",
+                    "CE_TAREA ",
+                    "Total selected closed boundaries, hatches and regions by layer."));
         }
 
         private static void EnsureSurveyPanel(RibbonTab tab)
         {
-            if (PanelExists(tab, SurveyPanelId))
-            {
-                return;
-            }
-
-            var panelSource = new RibbonPanelSource
-            {
-                Id = SurveyPanelId,
-                Title = "Survey"
-            };
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_COORDINATE_BUTTON",
-                "Coordinate\nTools",
-                "CE_COORDINATE ",
-                "XYZ MLeaders, COGO point labels, coordinate crosses and setting-out tables."));
-
-            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+            AddPanel(
+                tab,
+                SurveyPanelId,
+                "Survey",
+                CreateButton(
+                    "CE_TOOLS_COORDINATE_BUTTON",
+                    "Coordinate\nTools",
+                    "CE_COORDINATE ",
+                    "XYZ MLeaders, COGO point labels, coordinate crosses and setting-out tables."));
         }
 
         private static void EnsureUtilitiesPanel(RibbonTab tab)
         {
-            if (PanelExists(tab, UtilitiesPanelId))
-            {
-                return;
-            }
-
-            var panelSource = new RibbonPanelSource
-            {
-                Id = UtilitiesPanelId,
-                Title = "Utilities"
-            };
-
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_SEWSEQ_BUTTON",
-                "Sewer\nSequence",
-                "CE_SEWSEQ ",
-                "Select only start and end manholes, then rename the connected path Branch/P/MH."));
-
-            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+            AddPanel(
+                tab,
+                UtilitiesPanelId,
+                "Utilities",
+                CreateButton(
+                    "CE_TOOLS_SEWSEQ_BUTTON",
+                    "Sewer\nSequence",
+                    "CE_SEWSEQ ",
+                    "Select only start and end manholes, then rename the connected path Branch/P/MH."));
         }
 
         private static void EnsureDrawingPanel(RibbonTab tab)
         {
-            if (PanelExists(tab, DrawingPanelId))
+            AddPanel(
+                tab,
+                DrawingPanelId,
+                "Drawing",
+                CreateButton(
+                    "CE_TOOLS_COLOR250_BUTTON",
+                    "Color\n250",
+                    "CE_COLOR250 ",
+                    "Change preselected or selected drawing objects to AutoCAD colour index 250."));
+        }
+
+        private static void AddPanel(
+            RibbonTab tab,
+            string panelId,
+            string title,
+            params RibbonButton[] buttons)
+        {
+            if (PanelExists(tab, panelId))
             {
                 return;
             }
 
             var panelSource = new RibbonPanelSource
             {
-                Id = DrawingPanelId,
-                Title = "Drawing"
+                Id = panelId,
+                Title = title
             };
 
-            panelSource.Items.Add(CreateButton(
-                "CE_TOOLS_COLOR250_BUTTON",
-                "Color\n250",
-                "CE_COLOR250 ",
-                "Change preselected or selected drawing objects to AutoCAD colour index 250."));
+            foreach (RibbonButton button in buttons)
+            {
+                panelSource.Items.Add(button);
+            }
 
             tab.Panels.Add(new RibbonPanel { Source = panelSource });
         }
