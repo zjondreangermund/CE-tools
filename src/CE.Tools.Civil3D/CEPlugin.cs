@@ -130,6 +130,12 @@ namespace CETools.Civil3D
                 "CE_FLTOOLS ",
                 "Report feature-line data, raise/lower elevations or set all points to one elevation."));
 
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_FLEDIT_BUTTON",
+                "Create &&\nPoint Edit",
+                "CE_FLEDIT ",
+                "Create feature lines, assign surface elevations, and insert or delete elevation points."));
+
             tab.Panels.Add(new RibbonPanel { Source = panelSource });
         }
 
