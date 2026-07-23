@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -30,24 +29,16 @@ namespace CETools.Civil3D
 
             Editor editor = document.Editor;
             Database database = document.Database;
-
-            PromptSelectionResult selection = editor.GetSelection(
-                new PromptSelectionOptions
-                {
-                    MessageForAdding = "\nSelect linework to total: ",
-                    AllowDuplicates = false,
-                    RejectObjectsFromNonCurrentSpace = true
-                });
+            PromptSelectionResult selection = GetSelection(
+                editor,
+                "\nSelect linework to total: ");
 
             if (selection.Status != PromptStatus.OK)
             {
                 return;
             }
 
-            double total = 0.0;
-            int counted = 0;
-            int skipped = 0;
-            var byLayer = new SortedDictionary<string, LayerQuantity>(StringComparer.OrdinalIgnoreCase);
+            var report = new QuantityReport();
 
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
@@ -66,17 +57,15 @@ namespace CETools.Civil3D
                     double length;
                     if (curve == null || !TryGetFiniteLength(curve, out length))
                     {
-                        skipped++;
+                        report.Skipped++;
                         continue;
                     }
 
-                    total += length;
-                    counted++;
-                    AddLayerQuantity(byLayer, curve.Layer, length);
+                    report.Add(curve.Layer, length);
                 }
             }
 
-            WriteLengthReport(editor, counted, skipped, total, byLayer);
+            WriteReport(editor, "CE_TLENGTH", "LENGTH", "drawing units", report);
         }
 
         [CommandMethod(
@@ -93,24 +82,16 @@ namespace CETools.Civil3D
 
             Editor editor = document.Editor;
             Database database = document.Database;
-
-            PromptSelectionResult selection = editor.GetSelection(
-                new PromptSelectionOptions
-                {
-                    MessageForAdding = "\nSelect closed boundaries, hatches or regions to total: ",
-                    AllowDuplicates = false,
-                    RejectObjectsFromNonCurrentSpace = true
-                });
+            PromptSelectionResult selection = GetSelection(
+                editor,
+                "\nSelect closed boundaries, hatches or regions to total: ");
 
             if (selection.Status != PromptStatus.OK)
             {
                 return;
             }
 
-            double total = 0.0;
-            int counted = 0;
-            int skipped = 0;
-            var byLayer = new SortedDictionary<string, LayerQuantity>(StringComparer.OrdinalIgnoreCase);
+            var report = new QuantityReport();
 
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
@@ -129,17 +110,26 @@ namespace CETools.Civil3D
                     double area;
                     if (entity == null || !TryGetFiniteArea(entity, out area))
                     {
-                        skipped++;
+                        report.Skipped++;
                         continue;
                     }
 
-                    total += area;
-                    counted++;
-                    AddLayerQuantity(byLayer, entity.Layer, area);
+                    report.Add(entity.Layer, area);
                 }
             }
 
-            WriteAreaReport(editor, counted, skipped, total, byLayer);
+            WriteReport(editor, "CE_TAREA", "AREA", "square drawing units", report);
+        }
+
+        private static PromptSelectionResult GetSelection(Editor editor, string message)
+        {
+            return editor.GetSelection(
+                new PromptSelectionOptions
+                {
+                    MessageForAdding = message,
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
         }
 
         private static bool TryGetFiniteLength(Curve curve, out double length)
@@ -172,10 +162,10 @@ namespace CETools.Civil3D
                     return IsFinitePositive(area);
                 }
 
-                var existingRegion = entity as Region;
-                if (existingRegion != null)
+                var region = entity as Region;
+                if (region != null)
                 {
-                    area = Math.Abs(existingRegion.Area);
+                    area = Math.Abs(region.Area);
                     return IsFinitePositive(area);
                 }
 
@@ -185,46 +175,8 @@ namespace CETools.Civil3D
                     return false;
                 }
 
-                var sourceCurves = new DBObjectCollection();
-                Curve curveClone = null;
-                DBObjectCollection generatedRegions = null;
-
-                try
-                {
-                    curveClone = curve.Clone() as Curve;
-                    if (curveClone == null)
-                    {
-                        return false;
-                    }
-
-                    sourceCurves.Add(curveClone);
-                    generatedRegions = Region.CreateFromCurves(sourceCurves);
-
-                    double sum = 0.0;
-                    foreach (DBObject databaseObject in generatedRegions)
-                    {
-                        var region = databaseObject as Region;
-                        if (region != null)
-                        {
-                            sum += Math.Abs(region.Area);
-                        }
-                    }
-
-                    area = sum;
-                    return IsFinitePositive(area);
-                }
-                finally
-                {
-                    if (generatedRegions != null)
-                    {
-                        foreach (DBObject databaseObject in generatedRegions)
-                        {
-                            databaseObject.Dispose();
-                        }
-                    }
-
-                    curveClone?.Dispose();
-                }
+                area = Math.Abs(curve.Area);
+                return IsFinitePositive(area);
             }
             catch (Autodesk.AutoCAD.Runtime.Exception)
             {
@@ -239,34 +191,19 @@ namespace CETools.Civil3D
                    value > 0.0;
         }
 
-        private static void AddLayerQuantity(
-            IDictionary<string, LayerQuantity> quantities,
-            string layer,
-            double value)
-        {
-            LayerQuantity existing;
-            if (!quantities.TryGetValue(layer, out existing))
-            {
-                existing = new LayerQuantity();
-                quantities[layer] = existing;
-            }
-
-            existing.Count++;
-            existing.Value += value;
-        }
-
-        private static void WriteLengthReport(
+        private static void WriteReport(
             Editor editor,
-            int counted,
-            int skipped,
-            double total,
-            IEnumerable<KeyValuePair<string, LayerQuantity>> byLayer)
+            string commandName,
+            string quantityName,
+            string unitText,
+            QuantityReport report)
         {
             editor.WriteMessage(
-                $"\nCE_TLENGTH complete. Counted: {counted}; skipped: {skipped}; " +
-                $"TOTAL LENGTH = {total:N3} drawing units.");
+                $"\n{commandName} complete. Counted: {report.Counted}; " +
+                $"skipped: {report.Skipped}; TOTAL {quantityName} = " +
+                $"{report.Total:N3} {unitText}.");
 
-            foreach (KeyValuePair<string, LayerQuantity> item in byLayer)
+            foreach (KeyValuePair<string, LayerQuantity> item in report.ByLayer)
             {
                 editor.WriteMessage(
                     $"\n  Layer {item.Key}: {item.Value.Value:N3} " +
@@ -274,22 +211,35 @@ namespace CETools.Civil3D
             }
         }
 
-        private static void WriteAreaReport(
-            Editor editor,
-            int counted,
-            int skipped,
-            double total,
-            IEnumerable<KeyValuePair<string, LayerQuantity>> byLayer)
+        private sealed class QuantityReport
         {
-            editor.WriteMessage(
-                $"\nCE_TAREA complete. Counted: {counted}; skipped: {skipped}; " +
-                $"TOTAL AREA = {total:N3} square drawing units.");
-
-            foreach (KeyValuePair<string, LayerQuantity> item in byLayer)
+            public QuantityReport()
             {
-                editor.WriteMessage(
-                    $"\n  Layer {item.Key}: {item.Value.Value:N3} " +
-                    $"({item.Value.Count} object{(item.Value.Count == 1 ? string.Empty : "s")})");
+                ByLayer = new SortedDictionary<string, LayerQuantity>(
+                    StringComparer.OrdinalIgnoreCase);
+            }
+
+            public int Counted { get; private set; }
+
+            public int Skipped { get; set; }
+
+            public double Total { get; private set; }
+
+            public SortedDictionary<string, LayerQuantity> ByLayer { get; }
+
+            public void Add(string layer, double value)
+            {
+                LayerQuantity layerQuantity;
+                if (!ByLayer.TryGetValue(layer, out layerQuantity))
+                {
+                    layerQuantity = new LayerQuantity();
+                    ByLayer[layer] = layerQuantity;
+                }
+
+                Counted++;
+                Total += value;
+                layerQuantity.Count++;
+                layerQuantity.Value += value;
             }
         }
 
