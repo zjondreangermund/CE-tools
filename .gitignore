@@ -1,0 +1,16 @@
+.vs/
+.idea/
+*.user
+*.suo
+*.cache
+*.log
+bin/
+obj/
+artifacts/
+TestResults/
+
+# Compiled application bundle outputs
+bundle/CE Tools.bundle/Contents/Windows/2023/*.dll
+bundle/CE Tools.bundle/Contents/Windows/2023/*.pdb
+bundle/CE Tools.bundle/Contents/Windows/2024/*.dll
+bundle/CE Tools.bundle/Contents/Windows/2024/*.pdb
