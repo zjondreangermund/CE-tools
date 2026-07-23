@@ -7,6 +7,10 @@
     <Prefer32Bit>false</Prefer32Bit>
     <AutoCADVersion Condition="'$(AutoCADVersion)' == ''">2024</AutoCADVersion>
     <AutoCADRoot Condition="'$(AutoCADRoot)' == ''">C:\Program Files\Autodesk\AutoCAD $(AutoCADVersion)</AutoCADRoot>
+    <Civil3DRoot Condition="'$(Civil3DRoot)' == '' and Exists('$(AutoCADRoot)\AeccDbMgd.dll')">$(AutoCADRoot)</Civil3DRoot>
+    <Civil3DRoot Condition="'$(Civil3DRoot)' == '' and Exists('$(AutoCADRoot)\C3D\AeccDbMgd.dll')">$(AutoCADRoot)\C3D</Civil3DRoot>
+    <AecRoot Condition="'$(AecRoot)' == '' and Exists('$(Civil3DRoot)\AecBaseMgd.dll')">$(Civil3DRoot)</AecRoot>
+    <AecRoot Condition="'$(AecRoot)' == '' and Exists('$(AutoCADRoot)\AecBaseMgd.dll')">$(AutoCADRoot)</AecRoot>
     <OutputPath>..\..\artifacts\bin\$(Configuration)\$(AutoCADVersion)\</OutputPath>
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
@@ -37,8 +41,12 @@
       <HintPath>$(AutoCADRoot)\AdWindows.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="AecBaseMgd">
+      <HintPath>$(AecRoot)\AecBaseMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="AeccDbMgd">
-      <HintPath>$(AutoCADRoot)\AeccDbMgd.dll</HintPath>
+      <HintPath>$(Civil3DRoot)\AeccDbMgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
     <Reference Include="PresentationCore" />
@@ -52,8 +60,10 @@
            Text="AutoCAD managed assemblies were not found at '$(AutoCADRoot)'. Pass /p:AutoCADRoot=&quot;your install folder&quot;." />
     <Error Condition="!Exists('$(AutoCADRoot)\AdWindows.dll')"
            Text="The AutoCAD ribbon assembly AdWindows.dll was not found at '$(AutoCADRoot)'." />
-    <Error Condition="!Exists('$(AutoCADRoot)\AeccDbMgd.dll')"
-           Text="The Civil 3D managed assembly AeccDbMgd.dll was not found at '$(AutoCADRoot)'. Build CE Tools against a Civil 3D installation." />
+    <Error Condition="'$(Civil3DRoot)' == '' or !Exists('$(Civil3DRoot)\AeccDbMgd.dll')"
+           Text="The Civil 3D managed assembly AeccDbMgd.dll was not found. Pass /p:Civil3DRoot=&quot;the folder containing AeccDbMgd.dll&quot;." />
+    <Error Condition="'$(AecRoot)' == '' or !Exists('$(AecRoot)\AecBaseMgd.dll')"
+           Text="The AEC managed assembly AecBaseMgd.dll was not found. Pass /p:AecRoot=&quot;the folder containing AecBaseMgd.dll&quot;." />
     <Error Condition="'$(AutoCADVersion)' != '2023' and '$(AutoCADVersion)' != '2024'"
            Text="This alpha build supports AutoCADVersion 2023 or 2024." />
   </Target>
