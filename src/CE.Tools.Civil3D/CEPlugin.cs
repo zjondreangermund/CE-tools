@@ -56,6 +56,8 @@ namespace CETools.Civil3D
         private const string TabId = "CE_TOOLS_RIBBON_TAB";
         private const string RoadsPanelId = "CE_TOOLS_ROADS_PANEL";
         private const string QuantitiesPanelId = "CE_TOOLS_QUANTITIES_PANEL";
+        private const string SurveyPanelId = "CE_TOOLS_SURVEY_PANEL";
+        private const string UtilitiesPanelId = "CE_TOOLS_UTILITIES_PANEL";
 
         public static bool EnsureCreated()
         {
@@ -78,6 +80,8 @@ namespace CETools.Civil3D
 
             EnsureRoadsPanel(tab);
             EnsureQuantitiesPanel(tab);
+            EnsureSurveyPanel(tab);
+            EnsureUtilitiesPanel(tab);
             return true;
         }
 
@@ -127,6 +131,50 @@ namespace CETools.Civil3D
                 "Total\nArea",
                 "CE_TAREA ",
                 "Total selected closed boundaries, hatches and regions by layer."));
+
+            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+        }
+
+        private static void EnsureSurveyPanel(RibbonTab tab)
+        {
+            if (PanelExists(tab, SurveyPanelId))
+            {
+                return;
+            }
+
+            var panelSource = new RibbonPanelSource
+            {
+                Id = SurveyPanelId,
+                Title = "Survey"
+            };
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_COORDINATE_BUTTON",
+                "Coordinate\nTools",
+                "CE_COORDINATE ",
+                "XYZ MLeaders, COGO point labels, coordinate crosses and setting-out tables."));
+
+            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+        }
+
+        private static void EnsureUtilitiesPanel(RibbonTab tab)
+        {
+            if (PanelExists(tab, UtilitiesPanelId))
+            {
+                return;
+            }
+
+            var panelSource = new RibbonPanelSource
+            {
+                Id = UtilitiesPanelId,
+                Title = "Utilities"
+            };
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_SEWSEQ_BUTTON",
+                "Sewer\nSequence",
+                "CE_SEWSEQ ",
+                "Select only start and end manholes, then rename the connected path Branch/P/MH."));
 
             tab.Panels.Add(new RibbonPanel { Source = panelSource });
         }
