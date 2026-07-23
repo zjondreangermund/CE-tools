@@ -71,8 +71,7 @@ namespace CETools.Civil3D
                 tab = new RibbonTab
                 {
                     Id = TabId,
-                    Title = "CE Tools",
-                    Name = "CE Tools"
+                    Title = "CE Tools"
                 };
                 ribbon.Tabs.Add(tab);
             }
