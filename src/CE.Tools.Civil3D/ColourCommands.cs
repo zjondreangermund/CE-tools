@@ -57,11 +57,6 @@ namespace CETools.Civil3D
 
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
-                LayerTable layerTable = (LayerTable)transaction.GetObject(
-                    database.LayerTableId,
-                    OpenMode.ForRead,
-                    false);
-
                 foreach (SelectedObject selectedObject in selection.Value)
                 {
                     if (selectedObject == null || selectedObject.ObjectId.IsNull)
