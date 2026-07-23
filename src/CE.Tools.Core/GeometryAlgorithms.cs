@@ -21,9 +21,7 @@ namespace CETools.Core
         }
 
         public double TotalLength { get; }
-
         public int SegmentCount { get; }
-
         public double EqualSpacing { get; }
 
         /// <summary>
@@ -39,17 +37,23 @@ namespace CETools.Core
     {
         private const double RatioTolerance = 1e-10;
 
+        /// <summary>
+        /// Safety limit that prevents accidental creation of an excessive number
+        /// of vertices on one object.
+        /// </summary>
+        public const int MaximumSupportedSegments = 100000;
+
         public static DensifyPlan ByMaximumSpacing(double totalLength, double maximumSpacing)
         {
             ValidatePositiveFinite(totalLength, nameof(totalLength));
             ValidatePositiveFinite(maximumSpacing, nameof(maximumSpacing));
 
             double ratio = totalLength / maximumSpacing;
-            if (ratio > int.MaxValue)
+            if (double.IsInfinity(ratio) || ratio > MaximumSupportedSegments)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(maximumSpacing),
-                    "The requested spacing would create more segments than this version supports.");
+                    $"The requested spacing would create more than {MaximumSupportedSegments:N0} intervals.");
             }
 
             int segmentCount = Math.Max(1, (int)Math.Ceiling(ratio - RatioTolerance));
@@ -60,11 +64,11 @@ namespace CETools.Core
         {
             ValidatePositiveFinite(totalLength, nameof(totalLength));
 
-            if (segmentCount < 1)
+            if (segmentCount < 1 || segmentCount > MaximumSupportedSegments)
             {
                 throw new ArgumentOutOfRangeException(
                     nameof(segmentCount),
-                    "Segment count must be at least one.");
+                    $"Segment count must be between 1 and {MaximumSupportedSegments:N0}.");
             }
 
             return Build(totalLength, segmentCount);
@@ -145,7 +149,6 @@ namespace CETools.Core
         }
 
         public double FirstBulge { get; }
-
         public double SecondBulge { get; }
     }
 }
