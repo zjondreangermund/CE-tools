@@ -56,6 +56,7 @@ namespace CETools.Civil3D
         private const string TabId = "CE_TOOLS_RIBBON_TAB";
         private const string RoadsPanelId = "CE_TOOLS_ROADS_PANEL";
         private const string AlignmentsPanelId = "CE_TOOLS_ALIGNMENTS_PANEL";
+        private const string ProfilesPanelId = "CE_TOOLS_PROFILES_PANEL";
         private const string FeatureLinesPanelId = "CE_TOOLS_FEATURE_LINES_PANEL";
         private const string QuantitiesPanelId = "CE_TOOLS_QUANTITIES_PANEL";
         private const string SurveyPanelId = "CE_TOOLS_SURVEY_PANEL";
@@ -83,6 +84,7 @@ namespace CETools.Civil3D
 
             EnsureRoadsPanel(tab);
             EnsureAlignmentsPanel(tab);
+            EnsureProfilesPanel(tab);
             EnsureFeatureLinesPanel(tab);
             EnsureQuantitiesPanel(tab);
             EnsureSurveyPanel(tab);
@@ -137,6 +139,34 @@ namespace CETools.Civil3D
                 "Station &&\nOffset",
                 "CE_ALSTOFF ",
                 "Select an alignment and pick a point to report station and signed offset."));
+
+            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+        }
+
+        private static void EnsureProfilesPanel(RibbonTab tab)
+        {
+            if (PanelExists(tab, ProfilesPanelId))
+            {
+                return;
+            }
+
+            var panelSource = new RibbonPanelSource
+            {
+                Id = ProfilesPanelId,
+                Title = "Profiles"
+            };
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_PRTOOLS_BUTTON",
+                "Profile\nTools",
+                "CE_PRTOOLS ",
+                "Report profiles, query station elevations and place quick profile labels."));
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_PRELEV_BUTTON",
+                "Station &&\nElevation",
+                "CE_PRELEV ",
+                "Select a profile and enter a station to report elevation and instantaneous grade."));
 
             tab.Panels.Add(new RibbonPanel { Source = panelSource });
         }
