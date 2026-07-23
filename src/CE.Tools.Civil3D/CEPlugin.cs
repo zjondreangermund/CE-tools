@@ -55,7 +55,7 @@ namespace CETools.Civil3D
     {
         private const string TabId = "CE_TOOLS_RIBBON_TAB";
         private const string RoadsPanelId = "CE_TOOLS_ROADS_PANEL";
-        private const string BellmouthButtonId = "CE_TOOLS_BMVERT_BUTTON";
+        private const string QuantitiesPanelId = "CE_TOOLS_QUANTITIES_PANEL";
 
         public static bool EnsureCreated()
         {
@@ -76,34 +76,84 @@ namespace CETools.Civil3D
                 ribbon.Tabs.Add(tab);
             }
 
-            bool panelExists = tab.Panels.Any(
-                item => item.Source != null && item.Source.Id == RoadsPanelId);
+            EnsureRoadsPanel(tab);
+            EnsureQuantitiesPanel(tab);
+            return true;
+        }
 
-            if (!panelExists)
+        private static void EnsureRoadsPanel(RibbonTab tab)
+        {
+            if (PanelExists(tab, RoadsPanelId))
             {
-                var panelSource = new RibbonPanelSource
-                {
-                    Id = RoadsPanelId,
-                    Title = "Roads"
-                };
-
-                var button = new RibbonButton
-                {
-                    Id = BellmouthButtonId,
-                    Text = "Bellmouth\nDensifier",
-                    ShowText = true,
-                    ShowImage = false,
-                    Size = RibbonItemSize.Large,
-                    CommandParameter = "CE_BMVERT ",
-                    CommandHandler = new RibbonCommandHandler(),
-                    ToolTip = "Insert equal-chainage vertices into multiple line-and-arc polylines."
-                };
-
-                panelSource.Items.Add(button);
-                tab.Panels.Add(new RibbonPanel { Source = panelSource });
+                return;
             }
 
-            return true;
+            var panelSource = new RibbonPanelSource
+            {
+                Id = RoadsPanelId,
+                Title = "Roads"
+            };
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_BMVERT_BUTTON",
+                "Bellmouth\nDensifier",
+                "CE_BMVERT ",
+                "Insert equal-chainage vertices into multiple line-and-arc polylines."));
+
+            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+        }
+
+        private static void EnsureQuantitiesPanel(RibbonTab tab)
+        {
+            if (PanelExists(tab, QuantitiesPanelId))
+            {
+                return;
+            }
+
+            var panelSource = new RibbonPanelSource
+            {
+                Id = QuantitiesPanelId,
+                Title = "Quantities"
+            };
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_TLENGTH_BUTTON",
+                "Total\nLength",
+                "CE_TLENGTH ",
+                "Total selected curve lengths and show a layer-by-layer breakdown."));
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_TAREA_BUTTON",
+                "Total\nArea",
+                "CE_TAREA ",
+                "Total selected closed boundaries, hatches and regions by layer."));
+
+            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+        }
+
+        private static bool PanelExists(RibbonTab tab, string panelId)
+        {
+            return tab.Panels.Any(
+                item => item.Source != null && item.Source.Id == panelId);
+        }
+
+        private static RibbonButton CreateButton(
+            string id,
+            string text,
+            string command,
+            string toolTip)
+        {
+            return new RibbonButton
+            {
+                Id = id,
+                Text = text,
+                ShowText = true,
+                ShowImage = false,
+                Size = RibbonItemSize.Large,
+                CommandParameter = command,
+                CommandHandler = new RibbonCommandHandler(),
+                ToolTip = toolTip
+            };
         }
     }
 
@@ -125,7 +175,7 @@ namespace CETools.Civil3D
 
             if (string.IsNullOrWhiteSpace(command))
             {
-                command = "CE_BMVERT ";
+                return;
             }
 
             AcApplication.DocumentManager.MdiActiveDocument?.SendStringToExecute(
