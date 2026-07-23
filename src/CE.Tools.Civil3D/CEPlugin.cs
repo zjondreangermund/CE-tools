@@ -55,6 +55,7 @@ namespace CETools.Civil3D
     {
         private const string TabId = "CE_TOOLS_RIBBON_TAB";
         private const string RoadsPanelId = "CE_TOOLS_ROADS_PANEL";
+        private const string FeatureLinesPanelId = "CE_TOOLS_FEATURE_LINES_PANEL";
         private const string QuantitiesPanelId = "CE_TOOLS_QUANTITIES_PANEL";
         private const string SurveyPanelId = "CE_TOOLS_SURVEY_PANEL";
         private const string UtilitiesPanelId = "CE_TOOLS_UTILITIES_PANEL";
@@ -80,6 +81,7 @@ namespace CETools.Civil3D
             }
 
             EnsureRoadsPanel(tab);
+            EnsureFeatureLinesPanel(tab);
             EnsureQuantitiesPanel(tab);
             EnsureSurveyPanel(tab);
             EnsureUtilitiesPanel(tab);
@@ -105,6 +107,28 @@ namespace CETools.Civil3D
                 "Bellmouth\nDensifier",
                 "CE_BMVERT ",
                 "Insert equal-chainage vertices into multiple line-and-arc polylines."));
+
+            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+        }
+
+        private static void EnsureFeatureLinesPanel(RibbonTab tab)
+        {
+            if (PanelExists(tab, FeatureLinesPanelId))
+            {
+                return;
+            }
+
+            var panelSource = new RibbonPanelSource
+            {
+                Id = FeatureLinesPanelId,
+                Title = "Feature Lines"
+            };
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_FLTOOLS_BUTTON",
+                "Feature Line\nTools",
+                "CE_FLTOOLS ",
+                "Report feature-line data, raise/lower elevations or set all points to one elevation."));
 
             tab.Panels.Add(new RibbonPanel { Source = panelSource });
         }
