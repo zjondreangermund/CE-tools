@@ -98,26 +98,28 @@ namespace CETools.Civil3D
                 Row(Menu(
                     "CE_TOOLS_PROJECT_MENU",
                     "Project Setup",
-                    "Create, review and clear portable project information.",
-                    Cmd("Project Setup", "CE_PROJECTSETUP ", "Create or update project metadata."),
-                    Cmd("Project Information", "CE_PROJECTINFO ", "Report project metadata."),
-                    Cmd("Clear Project Information", "CE_PROJECTCLEAR ", "Clear project metadata after confirmation."))),
+                    "Create, review, clear and restore portable project information.",
+                    Cmd("Project Setup", "CE_PROJECTSETUP ", "Create or update project metadata and review it in a pop-up."),
+                    Cmd("Project Information", "CE_PROJECTINFO ", "Review project metadata and optionally place a drawing table."),
+                    Cmd("Clear Project Information", "CE_PROJECTCLEAR ", "Clear project metadata after confirmation and keep a recoverable backup."),
+                    Cmd("Restore Cleared Information", "CE_PROJECTRESTORE ", "Restore the values saved before the last project clear."))),
                 Row(Menu(
                     "CE_TOOLS_COORDSYS_MENU",
                     "Coordinate Systems",
                     "Report, search, assign and clear the drawing coordinate system.",
                     Cmd("Coordinate System Tools", "CE_COORDSYS ", "Open the coordinate-system menu."),
                     Cmd("Information", "CE_COORDSYSINFO ", "Report the current coordinate system."),
-                    Cmd("Assign", "CE_COORDSYSASSIGN ", "Assign a validated coordinate-system code."),
+                    Cmd("Assign", "CE_COORDSYSASSIGN ", "Open Autodesk's native coordinate-system selection window."),
+                    Cmd("Assign by Code", "CE_COORDSYSCODE ", "Advanced direct assignment using a validated Autodesk code."),
                     Cmd("Search Library", "CE_COORDSYSSEARCH ", "Search the installed coordinate-system library."),
                     Cmd("Clear", "CE_COORDSYSCLEAR ", "Clear the assignment after confirmation."))),
                 Row(Menu(
                     "CE_TOOLS_STANDARDS_MENU",
                     "Standards Selection",
-                    "Record and review the selected project standards.",
+                    "Select a standards source file and record its project information.",
                     Cmd("Standards Tools", "CE_STANDARDS ", "Open the standards menu."),
-                    Cmd("Select Standards", "CE_STANDARDSELECT ", "Record project standards."),
-                    Cmd("Standards Information", "CE_STANDARDINFO ", "Report stored standards."),
+                    Cmd("Select Standards", "CE_STANDARDSELECT ", "Browse for a standards file, review it and save its traceable details."),
+                    Cmd("Standards Information", "CE_STANDARDINFO ", "Review stored standards and optionally place a drawing table."),
                     Cmd("Clear Standards", "CE_STANDARDCLEAR ", "Clear the standards record."))));
         }
 
