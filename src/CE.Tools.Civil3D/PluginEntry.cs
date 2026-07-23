@@ -116,12 +116,17 @@ namespace CETools.Civil3D
                     "CE_TOOLS_PROJECTINFO_BUTTON",
                     "Project\nInfo",
                     "CE_PROJECTINFO ",
-                    "Report the CE Tools project name, client, location, coordinate system, standards, template and units."),
+                    "Report project name, client, location, coordinate system, standards, template and units."),
                 CreateButton(
                     "CE_TOOLS_COORDSYS_BUTTON",
                     "Coordinate\nSystems",
                     "CE_COORDSYS ",
-                    "Report, search, assign or clear the Civil 3D drawing coordinate-system zone."));
+                    "Report, search, assign or clear the Civil 3D drawing coordinate-system zone."),
+                CreateButton(
+                    "CE_TOOLS_STANDARDS_BUTTON",
+                    "Standards\nSelection",
+                    "CE_STANDARDS ",
+                    "Select, review or clear the project standards recorded inside the DWG."));
         }
 
         private static void EnsureRoadsPanel(RibbonTab tab)
@@ -262,7 +267,7 @@ namespace CETools.Civil3D
                     "CE_TOOLS_FLWEED_BUTTON",
                     "Weed\nPoints",
                     "CE_FLWEED ",
-                    "Preview and remove redundant feature-line elevation points using vertical and spacing tolerances."));
+                    "Preview and remove redundant feature-line elevation points using tolerances."));
         }
 
         private static void EnsureQuantitiesPanel(RibbonTab tab)
@@ -306,7 +311,7 @@ namespace CETools.Civil3D
                     "CE_TOOLS_SEWSEQ_BUTTON",
                     "Sewer\nSequence",
                     "CE_SEWSEQ ",
-                    "Select only start and end manholes, then rename the connected path Branch/P/MH."));
+                    "Select start and end manholes, then rename the connected path Branch/P/MH."));
         }
 
         private static void EnsureDrawingPanel(RibbonTab tab)
