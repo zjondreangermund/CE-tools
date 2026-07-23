@@ -13,23 +13,31 @@ Processes one or many 2D lightweight polylines and inserts vertices at equal cha
 
 Existing geometry vertices are retained. New vertices are inserted into the existing `LWPOLYLINE`; the object is not exploded or replaced.
 
+### `CE_FLTOOLS` — Feature Line Tools
+
+The first feature-line alpha provides:
+
+- **Report** — report 2D/3D length, minimum/maximum elevation, minimum/maximum grade, PI count, elevation-point count and total point count.
+- **RaiseLower** — raise or lower all points on multiple selected feature lines by one entered value.
+- **SetElevation** — set every point on multiple selected feature lines to one absolute elevation.
+
+Direct commands are also available:
+
+```text
+CE_FLREPORT
+CE_FLRAISE
+CE_FLSETELEV
+```
+
+Relative-to-surface points retain their relationship when using **RaiseLower**. **SetElevation** converts relative points to the entered absolute elevation. Referenced feature lines and feature lines on locked layers are skipped.
+
 ### `CE_TLENGTH` — Total Length
 
-Select any supported AutoCAD curve objects. CE Tools reports:
-
-- total selected length;
-- number of objects counted and skipped;
-- a length subtotal for every selected layer.
-
-Results are shown in current drawing units.
+Select supported AutoCAD curve objects. CE Tools reports the total selected length, counted/skipped objects and a length subtotal for every selected layer.
 
 ### `CE_TAREA` — Total Area
 
-Select closed boundaries, hatches and regions. CE Tools reports:
-
-- total selected area;
-- number of objects counted and skipped;
-- an area subtotal for every selected layer.
+Select closed boundaries, hatches and regions. CE Tools reports the total selected area, counted/skipped objects and an area subtotal for every selected layer.
 
 Open, non-planar or invalid boundaries are skipped without stopping the complete selection. Results are shown in square drawing units.
 
@@ -41,6 +49,8 @@ One command provides four survey and setting-out workflows:
 - **Cogo** — batch-label selected Civil 3D COGO points with point identification, description and XYZ data.
 - **Cross** — place a coordinate cross with an XYZ MLeader.
 - **Table** — create a coordinate setting-out table from selected AutoCAD DBPoints and/or Civil 3D COGO points.
+
+A revised coordinate workflow based on the user's reference LSP is planned for a later update.
 
 ### `CE_SEWSEQ` — Sewer Network Sequence
 
@@ -54,12 +64,16 @@ Select only the start manhole/structure and the end manhole/structure. CE Tools:
 
 No intermediate pipe or manhole selection is required.
 
+### `CE_COLOR250` / `COLOR250` — Color 250
+
+Changes preselected or selected drawing objects to AutoCAD colour index 250. Objects on locked layers are skipped and the command reports changed/skipped totals.
+
 ## Supported host versions in this alpha
 
 - Civil 3D 2023 (`R24.2`, .NET Framework 4.8)
 - Civil 3D 2024 (`R24.3`, .NET Framework 4.8)
 
-The project now references both the AutoCAD managed API and `AeccDbMgd.dll` for Civil 3D COGO-point and gravity pipe-network access.
+The project references the AutoCAD managed API, AEC managed API and `AeccDbMgd.dll` for Civil 3D objects.
 
 ## Repository structure
 
@@ -133,18 +147,26 @@ Close Civil 3D before installing an updated build.
 Restart Civil 3D. The **CE Tools** ribbon contains:
 
 - **Roads** — Bellmouth Densifier
+- **Feature Lines** — Feature Line Tools
 - **Quantities** — Total Length and Total Area
 - **Survey** — Coordinate Tools
 - **Utilities** — Sewer Sequence
+- **Drawing** — Color 250
 
 Commands can also be started directly:
 
 ```text
 CE_BMVERT
+CE_FLTOOLS
+CE_FLREPORT
+CE_FLRAISE
+CE_FLSETELEV
 CE_TLENGTH
 CE_TAREA
 CE_COORDINATE
 CE_SEWSEQ
+CE_COLOR250
+COLOR250
 ```
 
 To uninstall:
@@ -158,6 +180,7 @@ To uninstall:
 - `CE_BMVERT` supports AutoCAD `Polyline` / DXF `LWPOLYLINE` objects only.
 - Feature Lines, legacy 2D polylines, 3D polylines, alignments and survey figures are not yet supported by `CE_BMVERT`.
 - Existing geometry vertices remain in place. Inserted stations are equally spaced by chainage, but original geometry vertices can create shorter vertex-to-vertex portions between those stations.
+- `CE_FLTOOLS` currently edits ordinary grading feature lines only. Create, surface elevation, insert/delete point and weeding tools are planned next.
 - `CE_TAREA` requires valid closed planar boundaries, evaluated hatches or regions.
 - `CE_COORDINATE` uses drawing defaults in this first release; intelligent overlap cleanup and company label-style mapping are later stages.
 - `CE_SEWSEQ` currently supports Civil 3D gravity pipe networks, not pressure networks. It uses the shortest connected path when loops provide multiple possible routes.
