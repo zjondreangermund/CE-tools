@@ -54,6 +54,7 @@ namespace CETools.Civil3D
     internal static class RibbonBuilder
     {
         private const string TabId = "CE_TOOLS_RIBBON_TAB";
+        private const string ProjectPanelId = "CE_TOOLS_PROJECT_PANEL";
         private const string RoadsPanelId = "CE_TOOLS_ROADS_PANEL";
         private const string AlignmentsPanelId = "CE_TOOLS_ALIGNMENTS_PANEL";
         private const string ProfilesPanelId = "CE_TOOLS_PROFILES_PANEL";
@@ -85,6 +86,7 @@ namespace CETools.Civil3D
                 ribbon.Tabs.Add(tab);
             }
 
+            EnsureProjectPanel(tab);
             EnsureRoadsPanel(tab);
             EnsureAlignmentsPanel(tab);
             EnsureProfilesPanel(tab);
@@ -97,6 +99,24 @@ namespace CETools.Civil3D
             EnsureUtilitiesPanel(tab);
             EnsureDrawingPanel(tab);
             return true;
+        }
+
+        private static void EnsureProjectPanel(RibbonTab tab)
+        {
+            AddPanel(
+                tab,
+                ProjectPanelId,
+                "Project",
+                CreateButton(
+                    "CE_TOOLS_PROJECT_BUTTON",
+                    "Project\nSetup",
+                    "CE_PROJECT ",
+                    "Create, review or clear portable CE Tools project metadata stored inside the DWG."),
+                CreateButton(
+                    "CE_TOOLS_PROJECTINFO_BUTTON",
+                    "Project\nInfo",
+                    "CE_PROJECTINFO ",
+                    "Report the CE Tools project name, client, location, coordinate system, standards, template and units."));
         }
 
         private static void EnsureRoadsPanel(RibbonTab tab)
