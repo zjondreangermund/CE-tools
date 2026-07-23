@@ -136,6 +136,12 @@ namespace CETools.Civil3D
                 "CE_FLEDIT ",
                 "Create feature lines, assign surface elevations, and insert or delete elevation points."));
 
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_FLWEED_BUTTON",
+                "Weed\nPoints",
+                "CE_FLWEED ",
+                "Preview and remove redundant feature-line elevation points using vertical and spacing tolerances."));
+
             tab.Panels.Add(new RibbonPanel { Source = panelSource });
         }
 
