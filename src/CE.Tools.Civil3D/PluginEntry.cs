@@ -81,9 +81,8 @@ namespace CETools.Civil3D
                 ribbon.Tabs.Add(tab);
             }
 
-            // The complete tab belongs to CE Tools, so rebuild it from the current
-            // definition. This removes legacy panels and prevents duplicated tools
-            // after an upgrade or ribbon reload.
+            // CE Tools owns this tab. Rebuilding it removes old layouts and prevents
+            // duplicated panels or buttons after an upgrade or ribbon reload.
             tab.Panels.Clear();
 
             AddProjectPanel(tab);
@@ -102,18 +101,45 @@ namespace CETools.Civil3D
                 tab,
                 ProjectPanelId,
                 "Project",
-                CreateMenu(
-                    "CE_TOOLS_PROJECT_MENU",
-                    "Project\nTools",
-                    "Project setup, coordinate systems and project standards.",
-                    Command("Project Setup", "CE_PROJECTSETUP ",
-                        "Create or update portable CE Tools project metadata."),
-                    Command("Project Information", "CE_PROJECTINFO ",
-                        "Report project metadata stored inside the DWG."),
-                    Command("Coordinate Systems", "CE_COORDSYS ",
-                        "Report, search, assign or clear the Civil 3D coordinate system."),
-                    Command("Standards Selection", "CE_STANDARDS ",
-                        "Select, review or clear the project standards recorded in the DWG.")));
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_PROJECT_MENU",
+                        "Project Setup",
+                        "Create, review and clear portable project information stored in the DWG.",
+                        Command("Project Setup", "CE_PROJECTSETUP ",
+                            "Create or update the project name, client, location, template and units."),
+                        Command("Project Information", "CE_PROJECTINFO ",
+                            "Report the CE Tools project information stored in the drawing."),
+                        Command("Clear Project Information", "CE_PROJECTCLEAR ",
+                            "Remove CE Tools project metadata after confirmation."))),
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_COORDSYS_MENU",
+                        "Coordinate Systems",
+                        "Report, search, assign and clear the drawing coordinate system.",
+                        Command("Coordinate System Tools", "CE_COORDSYS ",
+                            "Open the coordinate-system command menu."),
+                        Command("Information", "CE_COORDSYSINFO ",
+                            "Report the active drawing coordinate system."),
+                        Command("Assign", "CE_COORDSYSASSIGN ",
+                            "Validate and assign a coordinate-system code."),
+                        Command("Search Library", "CE_COORDSYSSEARCH ",
+                            "Search the installed Civil 3D coordinate-system library."),
+                        Command("Clear", "CE_COORDSYSCLEAR ",
+                            "Clear the drawing coordinate-system assignment after confirmation."))),
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_STANDARDS_MENU",
+                        "Standards Selection",
+                        "Record and review the standards selected for the project.",
+                        Command("Standards Tools", "CE_STANDARDS ",
+                            "Open the project standards menu."),
+                        Command("Select Standards", "CE_STANDARDSELECT ",
+                            "Record the primary and additional project standards."),
+                        Command("Standards Information", "CE_STANDARDINFO ",
+                            "Report the standards stored in the drawing."),
+                        Command("Clear Standards", "CE_STANDARDCLEAR ",
+                            "Clear the standards record after confirmation."))));
         }
 
         private static void AddSurveyPanel(RibbonTab tab)
@@ -122,14 +148,15 @@ namespace CETools.Civil3D
                 tab,
                 SurveyPanelId,
                 "Survey",
-                CreateMenu(
-                    "CE_TOOLS_SURVEY_MENU",
-                    "Survey\nTools",
-                    "Coordinate labels, crosses, tables and polyline vertex points.",
-                    Command("Coordinate Tools", "CE_COORDINATE ",
-                        "XYZ labels, COGO labels, coordinate crosses and setting-out tables."),
-                    Command("Polyline Vertex COGO Points", "CE_COORDPOLY ",
-                        "Create sequential COGO points and an XYZ table from polyline vertices.")));
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_SURVEY_MENU",
+                        "Coordinate Tools",
+                        "Coordinate labels, COGO-point labels, crosses, tables and polyline vertices.",
+                        Command("Coordinate Tools", "CE_COORDINATE ",
+                            "Open the coordinate tools menu."),
+                        Command("Polyline Vertex COGO Points", "CE_COORDPOLY ",
+                            "Create sequential COGO points and an XYZ table from polyline vertices."))));
         }
 
         private static void AddDrawingsPanel(RibbonTab tab)
@@ -138,14 +165,28 @@ namespace CETools.Civil3D
                 tab,
                 DrawingsPanelId,
                 "Drawings",
-                CreateMenu(
-                    "CE_TOOLS_DRAWINGS_MENU",
-                    "Drawing\nTools",
-                    "Drawing cleanup and ordinary AutoCAD geometry annotations.",
-                    Command("Change Objects to Colour 250", "CE_COLOR250 ",
-                        "Change selected drawing objects to AutoCAD colour index 250."),
-                    Command("Polyline Direction Arrows", "CE_PLDIR ",
-                        "Add, replace or clear direction arrows linked to ordinary polylines.")));
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_DRAWING_MENU",
+                        "Drawing Tools",
+                        "Ordinary AutoCAD drawing and annotation utilities.",
+                        Command("Change Objects to Colour 250", "CE_COLOR250 ",
+                            "Change selected objects to AutoCAD colour index 250."),
+                        Command("Polyline Direction Arrows", "CE_PLDIR ",
+                            "Add, replace or clear direction arrows linked to ordinary polylines."))),
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_CLEANUP_MENU",
+                        "Drawing Cleanup",
+                        "Run OVERKILL, AUDIT and PURGE together or one stage at a time.",
+                        Command("Full Cleanup", "CE_DRAWCLEAN All ",
+                            "Run OVERKILL, AUDIT with fixes and three PURGE passes."),
+                        Command("OVERKILL Only", "CE_DRAWCLEAN Overkill ",
+                            "Remove duplicate and overlapping supported geometry."),
+                        Command("AUDIT Only", "CE_DRAWCLEAN Audit ",
+                            "Audit the current drawing and fix detected errors."),
+                        Command("PURGE Only", "CE_DRAWCLEAN Purge ",
+                            "Run three purge passes for unused named objects."))));
         }
 
         private static void AddGeometryPanel(RibbonTab tab)
@@ -154,86 +195,89 @@ namespace CETools.Civil3D
                 tab,
                 GeometryPanelId,
                 "Geometry",
-                CreateMenu(
-                    "CE_TOOLS_ROADS_MENU",
-                    "Road\nTools",
-                    "Road geometry utilities.",
-                    Command("Bellmouth Densifier", "CE_BMVERT ",
-                        "Insert equal-chainage vertices into line-and-arc polylines.")),
-                CreateMenu(
-                    "CE_TOOLS_FEATURE_LINE_MENU",
-                    "Feature Line\nTools",
-                    "Feature-line reporting, elevation editing and point management.",
-                    Command("Feature Line Tools", "CE_FLTOOLS ",
-                        "Open the feature-line report and elevation tools menu."),
-                    Command("Report", "CE_FLREPORT ",
-                        "Report feature-line lengths, grades, elevations and point counts."),
-                    Command("Raise / Lower", "CE_FLRAISE ",
-                        "Raise or lower selected feature lines by an entered offset."),
-                    Command("Set Elevation", "CE_FLSETELEV ",
-                        "Set every selected feature-line point to one elevation."),
-                    Command("Create and Point Edit", "CE_FLEDIT ",
-                        "Open feature-line creation, surface and point-edit tools."),
-                    Command("Create from Object", "CE_FLCREATE ",
-                        "Create ordinary feature lines from supported AutoCAD curves."),
-                    Command("Elevations from Surface", "CE_FLSURFACE ",
-                        "Assign selected feature-line elevations from a Civil 3D surface."),
-                    Command("Insert Elevation Point", "CE_FLINSERT ",
-                        "Insert an elevation point at a picked feature-line location."),
-                    Command("Delete Elevation Point", "CE_FLDELETE ",
-                        "Delete a confirmed feature-line elevation point without deleting a PI."),
-                    Command("Weed Elevation Points", "CE_FLWEED ",
-                        "Preview and remove redundant feature-line elevation points.")),
-                CreateMenu(
-                    "CE_TOOLS_ALIGNMENT_MENU",
-                    "Alignment\nTools",
-                    "Alignment reporting, station-offset queries and labels.",
-                    Command("Alignment Tools", "CE_ALTOOLS ",
-                        "Open the alignment tools menu."),
-                    Command("Alignment Report", "CE_ALREPORT ",
-                        "Report selected alignment properties and combined length."),
-                    Command("Station and Offset", "CE_ALSTOFF ",
-                        "Report equation-aware station and signed offset for a picked point."),
-                    Command("Station-Offset Label", "CE_ALLABEL ",
-                        "Place a quick alignment station-offset MLeader.")),
-                CreateMenu(
-                    "CE_TOOLS_PROFILE_MENU",
-                    "Profile\nTools",
-                    "Profile reporting, station elevations and plan labels.",
-                    Command("Profile Tools", "CE_PRTOOLS ",
-                        "Open the profile tools menu."),
-                    Command("Profile Report", "CE_PRREPORT ",
-                        "Report profile, alignment, station and PVI information."),
-                    Command("Station Elevation", "CE_PRELEV ",
-                        "Report profile elevation and instantaneous grade at a station."),
-                    Command("Profile Label", "CE_PRLABEL ",
-                        "Place a plan MLeader with profile station, elevation and grade.")),
-                CreateMenu(
-                    "CE_TOOLS_SURFACE_MENU",
-                    "Surface\nTools",
-                    "Surface reporting, elevation queries, labels and comparisons.",
-                    Command("Surface Tools", "CE_SFTOOLS ",
-                        "Open the surface tools menu."),
-                    Command("Surface Report", "CE_SFREPORT ",
-                        "Report selected Civil 3D surface properties and extents."),
-                    Command("Surface Elevation", "CE_SFELEV ",
-                        "Report a selected surface elevation at a picked point."),
-                    Command("Surface Label", "CE_SFLABEL ",
-                        "Place a surface coordinate and elevation MLeader."),
-                    Command("Compare Surfaces", "CE_SFCOMPARE ",
-                        "Compare existing and proposed surface elevations at a point.")),
-                CreateMenu(
-                    "CE_TOOLS_CORRIDOR_MENU",
-                    "Corridor\nTools",
-                    "Corridor reporting, baseline inspection and controlled rebuilding.",
-                    Command("Corridor Tools", "CE_CORTOOLS ",
-                        "Open the corridor tools menu."),
-                    Command("Corridor Report", "CE_CORREPORT ",
-                        "Report corridor styles, baselines, regions, surfaces and state."),
-                    Command("Baselines and Regions", "CE_CORBASE ",
-                        "Report corridor baseline, region, source and assembly details."),
-                    Command("Rebuild Corridors", "CE_CORREBUILD ",
-                        "Preview and rebuild selected editable out-of-date corridors.")));
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_ROADS_MENU",
+                        "Road Tools",
+                        "Road geometry utilities.",
+                        Command("Bellmouth Densifier", "CE_BMVERT ",
+                            "Insert equal-chainage vertices into line-and-arc polylines.")),
+                    CreateMenu(
+                        "CE_TOOLS_FEATURE_LINE_MENU",
+                        "Feature Line Tools",
+                        "Feature-line reporting, elevation editing and point management.",
+                        Command("Feature Line Tools", "CE_FLTOOLS ",
+                            "Open the feature-line report and elevation menu."),
+                        Command("Report", "CE_FLREPORT ",
+                            "Report lengths, grades, elevations and point counts."),
+                        Command("Raise / Lower", "CE_FLRAISE ",
+                            "Raise or lower selected feature lines by an entered offset."),
+                        Command("Set Elevation", "CE_FLSETELEV ",
+                            "Set all selected feature-line points to one elevation."),
+                        Command("Create and Point Edit", "CE_FLEDIT ",
+                            "Open creation, surface and point-edit tools."),
+                        Command("Create from Object", "CE_FLCREATE ",
+                            "Create feature lines from supported AutoCAD curves."),
+                        Command("Elevations from Surface", "CE_FLSURFACE ",
+                            "Assign feature-line elevations from a Civil 3D surface."),
+                        Command("Insert Elevation Point", "CE_FLINSERT ",
+                            "Insert an elevation point at a picked location."),
+                        Command("Delete Elevation Point", "CE_FLDELETE ",
+                            "Delete a confirmed elevation point without deleting a PI."),
+                        Command("Weed Elevation Points", "CE_FLWEED ",
+                            "Preview and remove redundant elevation points."))),
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_ALIGNMENT_MENU",
+                        "Alignment Tools",
+                        "Alignment reporting, station-offset queries and labels.",
+                        Command("Alignment Tools", "CE_ALTOOLS ",
+                            "Open the alignment tools menu."),
+                        Command("Alignment Report", "CE_ALREPORT ",
+                            "Report selected alignment properties and combined length."),
+                        Command("Station and Offset", "CE_ALSTOFF ",
+                            "Report station and signed offset for a picked point."),
+                        Command("Station-Offset Label", "CE_ALLABEL ",
+                            "Place a quick station-offset MLeader.")),
+                    CreateMenu(
+                        "CE_TOOLS_PROFILE_MENU",
+                        "Profile Tools",
+                        "Profile reporting, station elevations and plan labels.",
+                        Command("Profile Tools", "CE_PRTOOLS ",
+                            "Open the profile tools menu."),
+                        Command("Profile Report", "CE_PRREPORT ",
+                            "Report profile, alignment, station and PVI information."),
+                        Command("Station Elevation", "CE_PRELEV ",
+                            "Report profile elevation and grade at a station."),
+                        Command("Profile Label", "CE_PRLABEL ",
+                            "Place a plan MLeader with station, elevation and grade."))),
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_SURFACE_MENU",
+                        "Surface Tools",
+                        "Surface reporting, elevations, labels and comparisons.",
+                        Command("Surface Tools", "CE_SFTOOLS ",
+                            "Open the surface tools menu."),
+                        Command("Surface Report", "CE_SFREPORT ",
+                            "Report surface properties and extents."),
+                        Command("Surface Elevation", "CE_SFELEV ",
+                            "Report a surface elevation at a picked point."),
+                        Command("Surface Label", "CE_SFLABEL ",
+                            "Place a coordinate and elevation MLeader."),
+                        Command("Compare Surfaces", "CE_SFCOMPARE ",
+                            "Compare existing and proposed elevations at a point.")),
+                    CreateMenu(
+                        "CE_TOOLS_CORRIDOR_MENU",
+                        "Corridor Tools",
+                        "Corridor reporting, baseline inspection and controlled rebuilding.",
+                        Command("Corridor Tools", "CE_CORTOOLS ",
+                            "Open the corridor tools menu."),
+                        Command("Corridor Report", "CE_CORREPORT ",
+                            "Report corridor styles, baselines, regions, surfaces and state."),
+                        Command("Baselines and Regions", "CE_CORBASE ",
+                            "Report baseline, region, source and assembly details."),
+                        Command("Rebuild Corridors", "CE_CORREBUILD ",
+                            "Preview and rebuild editable out-of-date corridors."))));
         }
 
         private static void AddSiteDesignPanel(RibbonTab tab)
@@ -242,20 +286,21 @@ namespace CETools.Civil3D
                 tab,
                 SiteDesignPanelId,
                 "Site Design",
-                CreateMenu(
-                    "CE_TOOLS_PARKING_MENU",
-                    "Parking\nTools",
-                    "Straight parking layout, counting and numbering tools.",
-                    Command("Parking Tools", "CE_PKTOOLS ",
-                        "Open the parking tools menu."),
-                    Command("Single Row", "CE_PKROW ",
-                        "Create a previewed straight parking row."),
-                    Command("Double Row", "CE_PKDOUBLE ",
-                        "Create opposing parking rows around an aisle."),
-                    Command("Count Bays", "CE_PKCOUNT ",
-                        "Count selected parking blocks and closed parking polylines."),
-                    Command("Number Bays", "CE_PKNUMBER ",
-                        "Place sequential parking-bay numbers.")));
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_PARKING_MENU",
+                        "Parking Tools",
+                        "Straight parking rows, counting and sequential numbering.",
+                        Command("Parking Tools", "CE_PKTOOLS ",
+                            "Open the parking tools menu."),
+                        Command("Single Row", "CE_PKROW ",
+                            "Create a previewed straight parking row."),
+                        Command("Double Row", "CE_PKDOUBLE ",
+                            "Create opposing parking rows around an aisle."),
+                        Command("Count Bays", "CE_PKCOUNT ",
+                            "Count selected parking blocks and closed polylines."),
+                        Command("Number Bays", "CE_PKNUMBER ",
+                            "Place sequential parking-bay numbers."))));
         }
 
         private static void AddUtilitiesPanel(RibbonTab tab)
@@ -264,14 +309,15 @@ namespace CETools.Civil3D
                 tab,
                 UtilitiesPanelId,
                 "Utilities",
-                CreateMenu(
-                    "CE_TOOLS_PIPE_NETWORK_MENU",
-                    "Pipe Network\nTools",
-                    "Gravity-network sequencing, branch naming and branch alignments.",
-                    Command("Sewer Network Sequencing", "CE_SEWSEQ ",
-                        "Rename an entire gravity network or one selected path by branch."),
-                    Command("Create / Refresh Branch Alignments", "CE_SEWALIGN ",
-                        "Create one siteless alignment and visible plan label for every CE-sequenced sewer branch.")));
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_PIPE_NETWORK_MENU",
+                        "Pipe Network Tools",
+                        "Gravity-network sequencing, branch naming and branch alignments.",
+                        Command("Sewer Network Sequencing", "CE_SEWSEQ ",
+                            "Rename an entire gravity network or one selected path by branch."),
+                        Command("Create / Refresh Branch Alignments", "CE_SEWALIGN ",
+                            "Create one alignment and visible plan label for every sequenced branch."))));
         }
 
         private static void AddAnalysisPanel(RibbonTab tab)
@@ -280,21 +326,33 @@ namespace CETools.Civil3D
                 tab,
                 AnalysisPanelId,
                 "Analysis",
-                CreateMenu(
-                    "CE_TOOLS_QUANTITY_MENU",
-                    "Quantity\nTools",
-                    "Quick selected-object length and area totals.",
-                    Command("Total Length", "CE_TLENGTH ",
-                        "Total selected curve lengths with a layer breakdown."),
-                    Command("Total Area", "CE_TAREA ",
-                        "Total selected closed boundaries, hatches and regions by layer.")));
+                Row(
+                    CreateMenu(
+                        "CE_TOOLS_QUANTITY_MENU",
+                        "Quantity Tools",
+                        "Quick selected-object length and area totals.",
+                        Command("Total Length", "CE_TLENGTH ",
+                            "Total selected curve lengths with a layer breakdown."),
+                        Command("Total Area", "CE_TAREA ",
+                            "Total selected closed boundaries, hatches and regions by layer."))));
+        }
+
+        private static RibbonRow Row(params RibbonItem[] items)
+        {
+            var row = new RibbonRow();
+            foreach (RibbonItem item in items)
+            {
+                row.RowItems.Add(item);
+            }
+
+            return row;
         }
 
         private static void AddPanel(
             RibbonTab tab,
             string panelId,
             string title,
-            params RibbonItem[] items)
+            params RibbonRow[] rows)
         {
             var panelSource = new RibbonPanelSource
             {
@@ -302,9 +360,9 @@ namespace CETools.Civil3D
                 Title = title
             };
 
-            foreach (RibbonItem item in items)
+            foreach (RibbonRow row in rows)
             {
-                panelSource.Items.Add(item);
+                panelSource.Rows.Add(row);
             }
 
             tab.Panels.Add(new RibbonPanel { Source = panelSource });
@@ -322,7 +380,7 @@ namespace CETools.Civil3D
                 Text = text,
                 ShowText = true,
                 ShowImage = false,
-                Size = RibbonItemSize.Large,
+                Size = RibbonItemSize.Standard,
                 ToolTip = toolTip
             };
 
