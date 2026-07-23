@@ -4,8 +4,10 @@
 - `CE_TLENGTH`: alpha source complete; Civil 3D validation required.
 - `CE_TAREA`: alpha source complete; Civil 3D validation required.
 - `CE_COORDINATE`: installed alpha works; redesign pending the user's reference coordinate LSP.
+- `CE_COORDPOLY`: polyline-direction vertex extraction, sequential Civil 3D COGO-point creation, sequential raw descriptions and XYZ table generation are source-complete; Civil 3D 2023 compile, old/new polyline, point-number and table validation required.
 - `CE_SEWSEQ`: extended without a duplicate command; default `EntireNetwork` mode expands selected parts to complete networks, decomposes tree-shaped networks into highest-to-lowest branches, orders remaining branches longest-to-shortest, and applies dotted `MHn.x` / `Pn.x` names. Existing `SelectedPath` mode remains available. Civil 3D 2023 compile and live topology validation required.
 - `CE_COLOR250` / `COLOR250`: alpha source complete; Civil 3D validation required.
+- `CE_PLDIR`: ordinary 2D/3D polyline direction arrows with linked replacement and selected/all clearing are source-complete; AutoCAD/Civil 3D 2023 compile, curve direction, XData and locked-layer validation required.
 - `CE_FLTOOLS`: first alpha source complete with `Report`, `RaiseLower` and `SetElevation`; Civil 3D 2023 compile and feature-line validation required.
 - `CE_FLEDIT`: second feature-line alpha batch complete with `Create`, `Surface`, `Insert` and `Delete`; Civil 3D 2023 compile and drawing validation required.
 - `CE_FLWEED`: conservative elevation-point weeding with preview, vertical tolerance and spacing tolerance is source-complete; Civil 3D 2023 compile and drawing validation required.
@@ -17,4 +19,4 @@
 - `CE_PROJECT`: first project metadata alpha batch complete with `Setup`, `Info` and confirmed `Clear`; Civil 3D 2023 compile, Named Objects Dictionary, save/reopen and Save As validation required.
 - `CE_COORDSYS`: first coordinate-system alpha batch complete with `Info`, validated `Assign`, library `Search` and confirmed `Clear`; Civil 3D 2023 compile, Autodesk code-library, persistence and geometry-nontransformation validation required.
 - `CE_STANDARDS`: first standards-selection alpha batch complete with `Select`, `Info`, confirmed `Clear` and CE Project metadata synchronisation; Civil 3D 2023 compile, persistence, cancellation and metadata-sync validation required.
-- Ribbon architecture: full Project/Survey/Drawings/Geometry/Site Design/Utilities/Standards/Analysis/Production/BIM/Management/Help category and flyout conversion is specified and remains a release-gate task before the next combined public test build.
+- Ribbon architecture: the installed-command set is now grouped into Project, Survey, Drawings, Geometry, Site Design, Utilities and Analysis category panels with AutoCAD-style drop-down module buttons. The CE Tools tab is rebuilt from the current definition on startup to remove legacy panels and prevent duplicate ribbon commands. Remaining future categories will be added only when their first real commands exist.
