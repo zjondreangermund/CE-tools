@@ -18,6 +18,7 @@ namespace CETools.Core.Tests
                 NegativeBulgeKeepsDirection();
                 WidthInterpolationWorks();
                 InvalidInputThrows();
+                ExcessivePlansAreRejectedBeforeAllocation();
 
                 Console.WriteLine($"CE Tools core tests passed: {_tests}");
                 return 0;
@@ -88,6 +89,21 @@ namespace CETools.Core.Tests
             Throws<ArgumentOutOfRangeException>(() => DensifyPlanner.ByMaximumSpacing(10.0, 0.0));
             Throws<ArgumentOutOfRangeException>(() => DensifyPlanner.BySegmentCount(10.0, 0));
             Throws<ArgumentOutOfRangeException>(() => BulgeMath.Split(1.0, 1.0));
+            Pass();
+        }
+
+        private static void ExcessivePlansAreRejectedBeforeAllocation()
+        {
+            Throws<ArgumentOutOfRangeException>(
+                () => DensifyPlanner.BySegmentCount(
+                    10.0,
+                    DensifyPlanner.MaximumSupportedSegments + 1));
+
+            Throws<ArgumentOutOfRangeException>(
+                () => DensifyPlanner.ByMaximumSpacing(
+                    10.0,
+                    10.0 / (DensifyPlanner.MaximumSupportedSegments + 1.0)));
+
             Pass();
         }
 
