@@ -154,7 +154,16 @@ namespace CETools.Civil3D
                     Cmd("Full Cleanup", "CE_DRAWCLEAN All ", "Run all drawing-cleanup stages."),
                     Cmd("OVERKILL Only", "CE_DRAWCLEAN Overkill ", "Remove duplicate and overlapping geometry."),
                     Cmd("AUDIT Only", "CE_DRAWCLEAN Audit ", "Audit and fix drawing errors."),
-                    Cmd("PURGE Only", "CE_DRAWCLEAN Purge ", "Purge unused named objects."))));
+                    Cmd("PURGE Only", "CE_DRAWCLEAN Purge ", "Purge unused named objects."))),
+                Row(Menu(
+                    "CE_TOOLS_HATCH_MENU",
+                    "Hatch Tools",
+                    "Create and edit transparent civil hatches while keeping grids, labels and linework visible.",
+                    Cmd("Hatch Tools", "CE_HATCHTOOLS ", "Open the CE hatch tools menu."),
+                    Cmd("Create Transparent Hatches", "CE_HATCHCREATE ", "Create associative hatches from selected closed boundaries."),
+                    Cmd("Edit Hatch Settings", "CE_HATCHEDIT ", "Edit selected hatch pattern, scale, angle, colour and transparency."),
+                    Cmd("Match Hatch Settings", "CE_HATCHMATCH ", "Copy hatch display settings from one source hatch."),
+                    Cmd("Send Hatches Behind Linework", "CE_HATCHBACK ", "Move selected hatches to the back of draw order."))));
         }
 
         private static void AddGeometryPanel(RibbonTab tab)
