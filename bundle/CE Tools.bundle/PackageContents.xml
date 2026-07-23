@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ApplicationPackage
+  SchemaVersion="1.0"
+  AutodeskProduct="AutoCAD"
+  ProductType="Application"
+  Name="CE Tools"
+  AppVersion="0.1.0.0"
+  Description="Civil engineering productivity tools for Autodesk Civil 3D."
+  Author="Zjondre Angermund"
+  ProductCode="{D08277E7-BED7-4B39-A9F9-1EF84D240925}"
+  UpgradeCode="{3D301E70-B9D1-4D32-A999-F7DD198E8BB8}">
+
+  <CompanyDetails Name="CE Tools" />
+
+  <Components Description="CE Tools for Civil 3D 2023">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.2" SeriesMax="R24.2" />
+    <ComponentEntry
+      AppName="CE Tools 2023"
+      AppDescription="CE Tools Civil 3D productivity commands"
+      ModuleName="./Contents/Windows/2023/CE.Tools.Civil3D.dll"
+      LoadReasons="LoadOnAutoCADStartup" />
+  </Components>
+
+  <Components Description="CE Tools for Civil 3D 2024">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R24.3" SeriesMax="R24.3" />
+    <ComponentEntry
+      AppName="CE Tools 2024"
+      AppDescription="CE Tools Civil 3D productivity commands"
+      ModuleName="./Contents/Windows/2024/CE.Tools.Civil3D.dll"
+      LoadReasons="LoadOnAutoCADStartup" />
+  </Components>
+</ApplicationPackage>
