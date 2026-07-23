@@ -14,6 +14,51 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repositoryRoot "src\CE.Tools.Civil3D\CE.Tools.Civil3D.csproj"
 $tests = Join-Path $repositoryRoot "tests\CE.Tools.Core.Tests\CE.Tools.Core.Tests.csproj"
 
+function Assert-DotNetSdk {
+    $dotnetCommand = Get-Command dotnet -ErrorAction SilentlyContinue
+    if ($null -eq $dotnetCommand) {
+        throw @"
+The .NET SDK is not installed or is not available in PATH.
+
+Install the .NET 8 SDK, close PowerShell, open a new PowerShell window,
+and run this build command again.
+
+Automatic prerequisite installer:
+  .\scripts\Install-Prerequisites.ps1
+
+Direct Windows Package Manager command:
+  winget install --id Microsoft.DotNet.SDK.8 --exact --source winget
+"@
+    }
+
+    $sdkList = & dotnet --list-sdks 2>$null
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace(($sdkList -join "`n"))) {
+        throw @"
+The dotnet command exists, but no .NET SDK is installed.
+
+Run:
+  .\scripts\Install-Prerequisites.ps1
+
+Then close PowerShell, open a new PowerShell window, return to the CE-tools
+folder, and run this build command again.
+"@
+    }
+
+    $hasNet8Sdk = $sdkList | Where-Object { $_ -match '^8\.' }
+    if (-not $hasNet8Sdk) {
+        throw @"
+CE Tools requires the .NET 8 SDK for its build and automated tests.
+Installed SDKs:
+$($sdkList -join "`n")
+
+Run:
+  .\scripts\Install-Prerequisites.ps1
+"@
+    }
+}
+
+Assert-DotNetSdk
+
 Write-Host "Running CE Tools host-independent tests..." -ForegroundColor Cyan
 & dotnet run --project $tests -c Release
 if ($LASTEXITCODE -ne 0) {
