@@ -1,0 +1,25 @@
+name: CE Tools Core Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test-core:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run geometry tests
+        run: dotnet run --project tests/CE.Tools.Core.Tests/CE.Tools.Core.Tests.csproj -c Release
