@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Security.Cryptography;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
+using Microsoft.Win32;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.StandardsSelectionCommands))]
@@ -11,16 +14,16 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 namespace CETools.Civil3D
 {
     /// <summary>
-    /// Records the project standards selected by the user inside the current DWG.
-    /// This first version stores project intent only; it does not claim compliance
-    /// or automatically change Civil 3D styles and design criteria.
+    /// Records project standards and the selected standards source file inside the
+    /// current DWG. The selected file path, type, modified date and checksum make
+    /// the project selection traceable and portable with the drawing metadata.
     /// </summary>
     public sealed class StandardsSelectionCommands
     {
         private const string RootDictionaryName = "CE_TOOLS";
         private const string StandardsRecordName = "STANDARDS_SELECTION";
         private const string ProjectRecordName = "PROJECT_METADATA";
-        private const string SchemaVersion = "1";
+        private const string SchemaVersion = "2";
 
         private static readonly string[] FieldOrder =
         {
@@ -30,6 +33,10 @@ namespace CETools.Civil3D
             "Additional Standards",
             "Edition / Revision",
             "Approval Authority",
+            "Standards File",
+            "File Type",
+            "File Modified",
+            "File SHA-256",
             "Notes",
             "Selection Date"
         };
@@ -110,6 +117,15 @@ namespace CETools.Civil3D
         {
             Editor editor = document.Editor;
             StandardsMetadata existing = ReadStandards(document.Database);
+
+            string standardsFile = BrowseForStandardsFile(existing.Get("Standards File"));
+            if (standardsFile == null)
+            {
+                editor.WriteMessage(
+                    "\nCE_STANDARDSELECT cancelled. No standards source file was selected.");
+                return;
+            }
+
             string region = PromptForRegion(editor, existing.Get("Region / Framework"));
             if (region == null)
             {
@@ -129,9 +145,10 @@ namespace CETools.Civil3D
             }
             proposed.Set("Design Discipline", discipline);
 
+            string fileStandardName = Path.GetFileNameWithoutExtension(standardsFile);
             string primaryDefault = FirstNonBlank(
                 existing.Get("Primary Standard"),
-                SuggestedPrimaryStandard(region));
+                FirstNonBlank(fileStandardName, SuggestedPrimaryStandard(region)));
             string primary = PromptForText(editor, "Primary Standard", primaryDefault);
             if (primary == null)
             {
@@ -177,18 +194,40 @@ namespace CETools.Civil3D
             {
                 return;
             }
+
+            FileInfo fileInfo;
+            try
+            {
+                fileInfo = new FileInfo(standardsFile);
+                proposed.Set("Standards File", fileInfo.FullName);
+                proposed.Set("File Type", fileInfo.Extension.TrimStart('.').ToUpperInvariant());
+                proposed.Set(
+                    "File Modified",
+                    fileInfo.LastWriteTimeUtc.ToString("yyyy-MM-dd HH:mm:ss 'UTC'"));
+                proposed.Set("File SHA-256", ComputeSha256(fileInfo.FullName));
+            }
+            catch (System.Exception exception)
+            {
+                editor.WriteMessage(
+                    "\nCE_STANDARDSELECT cancelled. The selected file could not be inspected. {0}",
+                    exception.Message);
+                return;
+            }
+
             proposed.Set("Notes", ClearMarker(notes));
             proposed.Set("Selection Date", DateTime.UtcNow.ToString("yyyy-MM-dd"));
 
-            editor.WriteMessage("\nCE Standards Selection preview");
-            WriteStandards(editor, proposed);
-            editor.WriteMessage(
-                "\n  IMPORTANT: This records the selected standards only. " +
-                "The project contract, authority requirements and current editions must still be verified.");
-
-            if (!Confirm(editor, "Save this standards selection"))
+            string reviewNote =
+                "Review the selected standards source and project information before saving. " +
+                "CE Tools records the source file and its checksum in the DWG; automatic Civil 3D style import is handled separately.";
+            if (!PopupTablePresenter.ShowReview(
+                "CE Tools - Standards Selection",
+                reviewNote,
+                BuildRows(proposed),
+                "Save"))
             {
-                editor.WriteMessage("\nCE_STANDARDSELECT cancelled. Existing standards metadata was not changed.");
+                editor.WriteMessage(
+                    "\nCE_STANDARDSELECT cancelled. Existing standards metadata was not changed.");
                 return;
             }
 
@@ -197,10 +236,17 @@ namespace CETools.Civil3D
                 bool projectMetadataUpdated;
                 WriteStandards(document.Database, proposed, out projectMetadataUpdated);
                 editor.WriteMessage(
-                    "\nCE_STANDARDSELECT complete. Standards metadata saved inside this DWG.{0}",
+                    "\nCE_STANDARDSELECT complete. Standards metadata and source-file details saved inside this DWG.{0}",
                     projectMetadataUpdated
                         ? " The CE Project Standards field was synchronised."
                         : string.Empty);
+
+                PopupTablePresenter.ShowReportAndOfferTable(
+                    document,
+                    "CE Tools - Standards Selection",
+                    "The standards selection is stored inside the current drawing. Choose Place Table to insert a project standards register.",
+                    BuildRows(proposed),
+                    "CE Tools Standards Selection");
             }
             catch (System.Exception exception)
             {
@@ -223,7 +269,14 @@ namespace CETools.Civil3D
             document.Editor.WriteMessage("\nCE Tools Standards Selection");
             WriteStandards(document.Editor, metadata);
             document.Editor.WriteMessage(
-                "\n  Status: recorded project selection only; compliance has not been automatically verified.");
+                "\n  Status: recorded project selection and source-file reference; compliance has not been automatically verified.");
+
+            PopupTablePresenter.ShowReportAndOfferTable(
+                document,
+                "CE Tools - Standards Selection",
+                "This register records the selected standards and the exact source-file checksum stored in the current DWG.",
+                BuildRows(metadata),
+                "CE Tools Standards Selection");
         }
 
         private static void ClearStandards(Document document)
@@ -237,8 +290,11 @@ namespace CETools.Civil3D
                 return;
             }
 
-            WriteStandards(editor, existing);
-            if (!Confirm(editor, "Remove this CE Tools standards selection"))
+            if (!PopupTablePresenter.ShowReview(
+                "CE Tools - Clear Standards Selection",
+                "Remove this standards selection and its source-file reference from the current drawing?",
+                BuildRows(existing),
+                "Clear"))
             {
                 editor.WriteMessage("\nCE_STANDARDCLEAR cancelled. Metadata was not changed.");
                 return;
@@ -259,6 +315,48 @@ namespace CETools.Civil3D
                 editor.WriteMessage(
                     "\nCE_STANDARDCLEAR cancelled. Metadata was not removed. {0}",
                     exception.Message);
+            }
+        }
+
+        private static string BrowseForStandardsFile(string existingPath)
+        {
+            var dialog = new OpenFileDialog
+            {
+                Title = "Select the project standards source file",
+                CheckFileExists = true,
+                CheckPathExists = true,
+                Multiselect = false,
+                Filter =
+                    "Civil 3D / AutoCAD standards (*.dwt;*.dwg;*.dws)|*.dwt;*.dwg;*.dws|" +
+                    "Standards documents (*.pdf;*.docx;*.xlsx;*.xls;*.csv;*.xml)|*.pdf;*.docx;*.xlsx;*.xls;*.csv;*.xml|" +
+                    "All files (*.*)|*.*"
+            };
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(existingPath))
+                {
+                    string fullPath = Path.GetFullPath(existingPath);
+                    dialog.InitialDirectory = Path.GetDirectoryName(fullPath);
+                    dialog.FileName = Path.GetFileName(fullPath);
+                }
+            }
+            catch
+            {
+                // An invalid previous path must not prevent a new selection.
+            }
+
+            bool? result = dialog.ShowDialog();
+            return result == true ? dialog.FileName : null;
+        }
+
+        private static string ComputeSha256(string path)
+        {
+            using (FileStream stream = File.OpenRead(path))
+            using (SHA256 sha256 = SHA256.Create())
+            {
+                byte[] hash = sha256.ComputeHash(stream);
+                return BitConverter.ToString(hash).Replace("-", string.Empty);
             }
         }
 
@@ -313,21 +411,6 @@ namespace CETools.Civil3D
             }
 
             return (result.StringResult ?? string.Empty).Trim();
-        }
-
-        private static bool Confirm(Editor editor, string message)
-        {
-            var options = new PromptKeywordOptions(
-                "\n" + message + "? [Yes/No] <No>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Yes");
-            options.Keywords.Add("No");
-
-            PromptResult result = editor.GetKeywords(options);
-            return result.Status == PromptStatus.OK &&
-                   string.Equals(result.StringResult, "Yes", StringComparison.OrdinalIgnoreCase);
         }
 
         private static StandardsMetadata ReadStandards(Database database)
@@ -579,6 +662,12 @@ namespace CETools.Civil3D
             }
         }
 
+        private static IList<KeyValuePair<string, string>> BuildRows(
+            StandardsMetadata metadata)
+        {
+            return PopupTablePresenter.BuildRows(FieldOrder, metadata.Get);
+        }
+
         private static void WriteStandards(Editor editor, StandardsMetadata metadata)
         {
             for (int index = 0; index < FieldOrder.Length; index++)
@@ -598,6 +687,13 @@ namespace CETools.Civil3D
             AddIfPresent(parts, metadata.Get("Primary Standard"));
             AddIfPresent(parts, metadata.Get("Additional Standards"));
             AddIfPresent(parts, metadata.Get("Edition / Revision"));
+
+            string standardsFile = metadata.Get("Standards File");
+            if (!string.IsNullOrWhiteSpace(standardsFile))
+            {
+                AddIfPresent(parts, Path.GetFileName(standardsFile));
+            }
+
             return string.Join(" | ", parts.ToArray());
         }
 
