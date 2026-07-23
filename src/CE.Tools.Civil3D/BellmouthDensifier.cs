@@ -17,7 +17,6 @@ namespace CETools.Civil3D
     {
         private const string MaximumKeyword = "Maximum";
         private const string NumberKeyword = "Number";
-        private const int MaximumRequestedSegments = 100000;
 
         private static double _lastMaximumSpacing = 0.50;
         private static int _lastSegmentCount = 10;
@@ -73,7 +72,7 @@ namespace CETools.Civil3D
                     AllowZero = false,
                     DefaultValue = _lastSegmentCount,
                     LowerLimit = 2,
-                    UpperLimit = MaximumRequestedSegments,
+                    UpperLimit = DensifyPlanner.MaximumSupportedSegments,
                     UseDefaultValue = true
                 };
 
@@ -184,7 +183,8 @@ namespace CETools.Civil3D
             {
                 MessageForAdding = "\nSelect bellmouth/kerb-return 2D polylines: ",
                 AllowDuplicates = false,
-                RejectObjectsFromNonCurrentSpace = true
+                RejectObjectsFromNonCurrentSpace = true,
+                RejectObjectsOnLockedLayers = true
             };
 
             var filter = new SelectionFilter(
@@ -229,7 +229,6 @@ namespace CETools.Civil3D
     {
         private const double AbsoluteLengthTolerance = 1e-8;
         private const double RelativeLengthTolerance = 1e-10;
-        private const int MaximumGeneratedSegments = 100000;
 
         public DensifyResult DensifyByMaximumSpacing(Polyline polyline, double maximumSpacing)
         {
@@ -239,7 +238,6 @@ namespace CETools.Civil3D
             }
 
             DensifyPlan plan = DensifyPlanner.ByMaximumSpacing(polyline.Length, maximumSpacing);
-            ValidatePlanSize(plan);
             return ApplyPlan(polyline, plan);
         }
 
@@ -251,18 +249,7 @@ namespace CETools.Civil3D
             }
 
             DensifyPlan plan = DensifyPlanner.BySegmentCount(polyline.Length, segmentCount);
-            ValidatePlanSize(plan);
             return ApplyPlan(polyline, plan);
-        }
-
-        private static void ValidatePlanSize(DensifyPlan plan)
-        {
-            if (plan.SegmentCount > MaximumGeneratedSegments)
-            {
-                throw new InvalidOperationException(
-                    $"The requested settings create {plan.SegmentCount:N0} intervals. " +
-                    $"The current safety limit is {MaximumGeneratedSegments:N0} per polyline.");
-            }
         }
 
         private static DensifyResult ApplyPlan(Polyline polyline, DensifyPlan plan)
