@@ -58,6 +58,7 @@ namespace CETools.Civil3D
         private const string QuantitiesPanelId = "CE_TOOLS_QUANTITIES_PANEL";
         private const string SurveyPanelId = "CE_TOOLS_SURVEY_PANEL";
         private const string UtilitiesPanelId = "CE_TOOLS_UTILITIES_PANEL";
+        private const string DrawingPanelId = "CE_TOOLS_DRAWING_PANEL";
 
         public static bool EnsureCreated()
         {
@@ -82,6 +83,7 @@ namespace CETools.Civil3D
             EnsureQuantitiesPanel(tab);
             EnsureSurveyPanel(tab);
             EnsureUtilitiesPanel(tab);
+            EnsureDrawingPanel(tab);
             return true;
         }
 
@@ -175,6 +177,28 @@ namespace CETools.Civil3D
                 "Sewer\nSequence",
                 "CE_SEWSEQ ",
                 "Select only start and end manholes, then rename the connected path Branch/P/MH."));
+
+            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+        }
+
+        private static void EnsureDrawingPanel(RibbonTab tab)
+        {
+            if (PanelExists(tab, DrawingPanelId))
+            {
+                return;
+            }
+
+            var panelSource = new RibbonPanelSource
+            {
+                Id = DrawingPanelId,
+                Title = "Drawing"
+            };
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_COLOR250_BUTTON",
+                "Color\n250",
+                "CE_COLOR250 ",
+                "Change preselected or selected drawing objects to AutoCAD colour index 250."));
 
             tab.Panels.Add(new RibbonPanel { Source = panelSource });
         }
