@@ -57,6 +57,7 @@ namespace CETools.Civil3D
         private const string RoadsPanelId = "CE_TOOLS_ROADS_PANEL";
         private const string AlignmentsPanelId = "CE_TOOLS_ALIGNMENTS_PANEL";
         private const string ProfilesPanelId = "CE_TOOLS_PROFILES_PANEL";
+        private const string SurfacesPanelId = "CE_TOOLS_SURFACES_PANEL";
         private const string FeatureLinesPanelId = "CE_TOOLS_FEATURE_LINES_PANEL";
         private const string QuantitiesPanelId = "CE_TOOLS_QUANTITIES_PANEL";
         private const string SurveyPanelId = "CE_TOOLS_SURVEY_PANEL";
@@ -85,6 +86,7 @@ namespace CETools.Civil3D
             EnsureRoadsPanel(tab);
             EnsureAlignmentsPanel(tab);
             EnsureProfilesPanel(tab);
+            EnsureSurfacesPanel(tab);
             EnsureFeatureLinesPanel(tab);
             EnsureQuantitiesPanel(tab);
             EnsureSurveyPanel(tab);
@@ -167,6 +169,40 @@ namespace CETools.Civil3D
                 "Station &&\nElevation",
                 "CE_PRELEV ",
                 "Select a profile and enter a station to report elevation and instantaneous grade."));
+
+            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+        }
+
+        private static void EnsureSurfacesPanel(RibbonTab tab)
+        {
+            if (PanelExists(tab, SurfacesPanelId))
+            {
+                return;
+            }
+
+            var panelSource = new RibbonPanelSource
+            {
+                Id = SurfacesPanelId,
+                Title = "Surfaces"
+            };
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_SFTOOLS_BUTTON",
+                "Surface\nTools",
+                "CE_SFTOOLS ",
+                "Report surfaces, query elevations, place elevation labels and compare two surfaces."));
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_SFELEV_BUTTON",
+                "Surface\nElevation",
+                "CE_SFELEV ",
+                "Select a surface and pick a point to report its elevation."));
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_SFCOMPARE_BUTTON",
+                "Compare\nSurfaces",
+                "CE_SFCOMPARE ",
+                "Compare existing and proposed surface elevations at a picked point."));
 
             tab.Panels.Add(new RibbonPanel { Source = panelSource });
         }
