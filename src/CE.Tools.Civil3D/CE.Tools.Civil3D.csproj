@@ -37,6 +37,10 @@
       <HintPath>$(AutoCADRoot)\AdWindows.dll</HintPath>
       <Private>false</Private>
     </Reference>
+    <Reference Include="AeccDbMgd">
+      <HintPath>$(AutoCADRoot)\AeccDbMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
     <Reference Include="System.Xaml" />
@@ -48,6 +52,8 @@
            Text="AutoCAD managed assemblies were not found at '$(AutoCADRoot)'. Pass /p:AutoCADRoot=&quot;your install folder&quot;." />
     <Error Condition="!Exists('$(AutoCADRoot)\AdWindows.dll')"
            Text="The AutoCAD ribbon assembly AdWindows.dll was not found at '$(AutoCADRoot)'." />
+    <Error Condition="!Exists('$(AutoCADRoot)\AeccDbMgd.dll')"
+           Text="The Civil 3D managed assembly AeccDbMgd.dll was not found at '$(AutoCADRoot)'. Build CE Tools against a Civil 3D installation." />
     <Error Condition="'$(AutoCADVersion)' != '2023' and '$(AutoCADVersion)' != '2024'"
            Text="This alpha build supports AutoCADVersion 2023 or 2024." />
   </Target>
