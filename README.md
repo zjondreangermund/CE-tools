@@ -33,12 +33,33 @@ Select closed boundaries, hatches and regions. CE Tools reports:
 
 Open, non-planar or invalid boundaries are skipped without stopping the complete selection. Results are shown in square drawing units.
 
+### `CE_COORDINATE` — Coordinate Tools
+
+One command provides four survey and setting-out workflows:
+
+- **Pick** — pick one point and place an XYZ MLeader.
+- **Cogo** — batch-label selected Civil 3D COGO points with point identification, description and XYZ data.
+- **Cross** — place a coordinate cross with an XYZ MLeader.
+- **Table** — create a coordinate setting-out table from selected AutoCAD DBPoints and/or Civil 3D COGO points.
+
+### `CE_SEWSEQ` — Sewer Network Sequence
+
+Select only the start manhole/structure and the end manhole/structure. CE Tools:
+
+1. traces the connected shortest path automatically;
+2. assigns the pipe network the next available name, such as `Branch-1`;
+3. renames structures `MH1`, `MH2`, ... in start-to-end order;
+4. renames pipes `P1`, `P2`, ... in the same direction;
+5. adds the branch name to the selected network parts' descriptions.
+
+No intermediate pipe or manhole selection is required.
+
 ## Supported host versions in this alpha
 
 - Civil 3D 2023 (`R24.2`, .NET Framework 4.8)
 - Civil 3D 2024 (`R24.3`, .NET Framework 4.8)
 
-The current commands use the AutoCAD managed geometry API, while the application bundle is restricted to Civil 3D because CE Tools is being developed as a Civil 3D suite.
+The project now references both the AutoCAD managed API and `AeccDbMgd.dll` for Civil 3D COGO-point and gravity pipe-network access.
 
 ## Repository structure
 
@@ -113,6 +134,8 @@ Restart Civil 3D. The **CE Tools** ribbon contains:
 
 - **Roads** — Bellmouth Densifier
 - **Quantities** — Total Length and Total Area
+- **Survey** — Coordinate Tools
+- **Utilities** — Sewer Sequence
 
 Commands can also be started directly:
 
@@ -120,6 +143,8 @@ Commands can also be started directly:
 CE_BMVERT
 CE_TLENGTH
 CE_TAREA
+CE_COORDINATE
+CE_SEWSEQ
 ```
 
 To uninstall:
@@ -134,7 +159,9 @@ To uninstall:
 - Feature Lines, legacy 2D polylines, 3D polylines, alignments and survey figures are not yet supported by `CE_BMVERT`.
 - Existing geometry vertices remain in place. Inserted stations are equally spaced by chainage, but original geometry vertices can create shorter vertex-to-vertex portions between those stations.
 - `CE_TAREA` requires valid closed planar boundaries, evaluated hatches or regions.
+- `CE_COORDINATE` uses drawing defaults in this first release; intelligent overlap cleanup and company label-style mapping are later stages.
+- `CE_SEWSEQ` currently supports Civil 3D gravity pipe networks, not pressure networks. It uses the shortest connected path when loops provide multiple possible routes.
 - Autodesk-dependent assemblies must be compiled and validated inside Civil 3D before production use.
 - Test new alpha builds on a copy of a drawing.
 
-See [`docs/CE_BMVERT_TEST_PLAN.md`](docs/CE_BMVERT_TEST_PLAN.md) before using the bellmouth command on a live project.
+See the command-specific test plans in [`docs`](docs) before using a new alpha build on a live project.
