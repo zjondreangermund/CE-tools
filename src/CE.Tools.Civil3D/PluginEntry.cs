@@ -267,9 +267,11 @@ namespace CETools.Civil3D
                 CreateMenu(
                     "CE_TOOLS_PIPE_NETWORK_MENU",
                     "Pipe Network\nTools",
-                    "Gravity-network sequencing and branch naming.",
+                    "Gravity-network sequencing, branch naming and branch alignments.",
                     Command("Sewer Network Sequencing", "CE_SEWSEQ ",
-                        "Rename an entire gravity network or one selected path by branch.")));
+                        "Rename an entire gravity network or one selected path by branch."),
+                    Command("Create / Refresh Branch Alignments", "CE_SEWALIGN ",
+                        "Create one siteless alignment and visible plan label for every CE-sequenced sewer branch.")));
         }
 
         private static void AddAnalysisPanel(RibbonTab tab)
