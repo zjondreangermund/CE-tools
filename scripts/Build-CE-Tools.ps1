@@ -57,6 +57,30 @@ Run:
     }
 }
 
+function Find-ManagedAssembly {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$SearchRoot,
+
+        [Parameter(Mandatory = $true)]
+        [string]$FileName
+    )
+
+    $directPath = Join-Path $SearchRoot $FileName
+    if (Test-Path $directPath) {
+        return Get-Item $directPath
+    }
+
+    return Get-ChildItem `
+        -Path $SearchRoot `
+        -Filter $FileName `
+        -File `
+        -Recurse `
+        -ErrorAction SilentlyContinue |
+        Sort-Object { $_.FullName.Length } |
+        Select-Object -First 1
+}
+
 Assert-DotNetSdk
 
 Write-Host "Running CE Tools host-independent tests..." -ForegroundColor Cyan
@@ -80,11 +104,34 @@ function Build-Version {
         throw "AcMgd.dll was not found in '$root'. Use -AutoCADRoot to specify the Civil 3D/AutoCAD installation folder."
     }
 
+    $civilDbAssembly = Find-ManagedAssembly -SearchRoot $root -FileName "AeccDbMgd.dll"
+    if ($null -eq $civilDbAssembly) {
+        throw @"
+AeccDbMgd.dll was not found below '$root'.
+This assembly is installed with Civil 3D and is required by CE_COORDINATE and CE_SEWSEQ.
+Confirm that Civil 3D $Year, rather than plain AutoCAD, is installed.
+"@
+    }
+
+    $aecBaseAssembly = Find-ManagedAssembly -SearchRoot $root -FileName "AecBaseMgd.dll"
+    if ($null -eq $aecBaseAssembly) {
+        throw "AecBaseMgd.dll was not found below '$root'. Repair or update the Civil 3D $Year installation."
+    }
+
+    $civilRoot = $civilDbAssembly.DirectoryName
+    $aecRoot = $aecBaseAssembly.DirectoryName
+
     Write-Host "Building CE Tools for Civil 3D $Year..." -ForegroundColor Cyan
+    Write-Host "  AutoCAD API: $root"
+    Write-Host "  Civil 3D API: $civilRoot"
+    Write-Host "  AEC Base API: $aecRoot"
+
     & dotnet build $project `
         -c $Configuration `
         "-p:AutoCADVersion=$Year" `
-        "-p:AutoCADRoot=$root"
+        "-p:AutoCADRoot=$root" `
+        "-p:Civil3DRoot=$civilRoot" `
+        "-p:AecRoot=$aecRoot"
 
     if ($LASTEXITCODE -ne 0) {
         throw "Civil 3D $Year build failed."
