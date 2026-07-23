@@ -16,4 +16,5 @@
 - `CE_PKTOOLS`: first parking alpha batch complete with straight `Row`, aisle-centred `DoubleRow`, bay `Count` and sequential `Number`; Civil 3D 2023 compile, geometry-direction, layer, count and numbering validation required.
 - `CE_PROJECT`: first project metadata alpha batch complete with `Setup`, `Info` and confirmed `Clear`; Civil 3D 2023 compile, Named Objects Dictionary, save/reopen and Save As validation required.
 - `CE_COORDSYS`: first coordinate-system alpha batch complete with `Info`, validated `Assign`, library `Search` and confirmed `Clear`; Civil 3D 2023 compile, Autodesk code-library, persistence and geometry-nontransformation validation required.
+- `CE_STANDARDS`: first standards-selection alpha batch complete with `Select`, `Info`, confirmed `Clear` and CE Project metadata synchronisation; Civil 3D 2023 compile, persistence, cancellation and metadata-sync validation required.
 - Ribbon architecture: full Project/Survey/Drawings/Geometry/Site Design/Utilities/Standards/Analysis/Production/BIM/Management/Help category and flyout conversion is specified and remains a release-gate task before the next combined public test build.
