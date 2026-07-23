@@ -55,6 +55,7 @@ namespace CETools.Civil3D
     {
         private const string TabId = "CE_TOOLS_RIBBON_TAB";
         private const string RoadsPanelId = "CE_TOOLS_ROADS_PANEL";
+        private const string AlignmentsPanelId = "CE_TOOLS_ALIGNMENTS_PANEL";
         private const string FeatureLinesPanelId = "CE_TOOLS_FEATURE_LINES_PANEL";
         private const string QuantitiesPanelId = "CE_TOOLS_QUANTITIES_PANEL";
         private const string SurveyPanelId = "CE_TOOLS_SURVEY_PANEL";
@@ -81,6 +82,7 @@ namespace CETools.Civil3D
             }
 
             EnsureRoadsPanel(tab);
+            EnsureAlignmentsPanel(tab);
             EnsureFeatureLinesPanel(tab);
             EnsureQuantitiesPanel(tab);
             EnsureSurveyPanel(tab);
@@ -107,6 +109,34 @@ namespace CETools.Civil3D
                 "Bellmouth\nDensifier",
                 "CE_BMVERT ",
                 "Insert equal-chainage vertices into multiple line-and-arc polylines."));
+
+            tab.Panels.Add(new RibbonPanel { Source = panelSource });
+        }
+
+        private static void EnsureAlignmentsPanel(RibbonTab tab)
+        {
+            if (PanelExists(tab, AlignmentsPanelId))
+            {
+                return;
+            }
+
+            var panelSource = new RibbonPanelSource
+            {
+                Id = AlignmentsPanelId,
+                Title = "Alignments"
+            };
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_ALTOOLS_BUTTON",
+                "Alignment\nTools",
+                "CE_ALTOOLS ",
+                "Report alignments, calculate station/offset and place quick station-offset labels."));
+
+            panelSource.Items.Add(CreateButton(
+                "CE_TOOLS_ALSTOFF_BUTTON",
+                "Station &&\nOffset",
+                "CE_ALSTOFF ",
+                "Select an alignment and pick a point to report station and signed offset."));
 
             tab.Panels.Add(new RibbonPanel { Source = panelSource });
         }
