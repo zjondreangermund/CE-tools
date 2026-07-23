@@ -1,6 +1,4 @@
 using System;
-using System.Collections.Generic;
-using System.Globalization;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -138,8 +136,7 @@ namespace CETools.Civil3D
                 {
                     CivilFeatureLine featureLine = TryOpenFeatureLine(
                         transaction,
-                        selectedObject,
-                        OpenMode.ForRead);
+                        selectedObject);
                     if (featureLine == null)
                     {
                         skipped++;
@@ -174,7 +171,7 @@ namespace CETools.Civil3D
             if (counted == 0)
             {
                 editor.WriteMessage(
-                    "\nCE_FLREPORT complete. No editable Civil 3D feature lines were selected; skipped: {0}.",
+                    "\nCE_FLREPORT complete. No ordinary Civil 3D feature lines were selected; skipped: {0}.",
                     skipped);
                 return;
             }
@@ -304,8 +301,7 @@ namespace CETools.Civil3D
                     {
                         CivilFeatureLine featureLine = TryOpenFeatureLine(
                             transaction,
-                            selectedObject,
-                            OpenMode.ForWrite);
+                            selectedObject);
                         if (featureLine == null ||
                             featureLine.IsReferenceObject ||
                             IsLayerLocked(transaction, featureLine.LayerId))
@@ -320,6 +316,8 @@ namespace CETools.Civil3D
                             skipped++;
                             continue;
                         }
+
+                        featureLine.UpgradeOpen();
 
                         for (int index = 0; index < points.Count; index++)
                         {
@@ -371,8 +369,7 @@ namespace CETools.Civil3D
 
         private static CivilFeatureLine TryOpenFeatureLine(
             Transaction transaction,
-            SelectedObject selectedObject,
-            OpenMode openMode)
+            SelectedObject selectedObject)
         {
             if (selectedObject == null || selectedObject.ObjectId.IsNull)
             {
@@ -381,7 +378,7 @@ namespace CETools.Civil3D
 
             var featureLine = transaction.GetObject(
                 selectedObject.ObjectId,
-                openMode,
+                OpenMode.ForRead,
                 false) as CivilFeatureLine;
 
             // Keep the first MVP limited to ordinary grading feature lines.
