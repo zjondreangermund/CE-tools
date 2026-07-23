@@ -59,6 +59,7 @@ namespace CETools.Civil3D
         private const string ProfilesPanelId = "CE_TOOLS_PROFILES_PANEL";
         private const string SurfacesPanelId = "CE_TOOLS_SURFACES_PANEL";
         private const string CorridorsPanelId = "CE_TOOLS_CORRIDORS_PANEL";
+        private const string ParkingPanelId = "CE_TOOLS_PARKING_PANEL";
         private const string FeatureLinesPanelId = "CE_TOOLS_FEATURE_LINES_PANEL";
         private const string QuantitiesPanelId = "CE_TOOLS_QUANTITIES_PANEL";
         private const string SurveyPanelId = "CE_TOOLS_SURVEY_PANEL";
@@ -89,6 +90,7 @@ namespace CETools.Civil3D
             EnsureProfilesPanel(tab);
             EnsureSurfacesPanel(tab);
             EnsureCorridorsPanel(tab);
+            EnsureParkingPanel(tab);
             EnsureFeatureLinesPanel(tab);
             EnsureQuantitiesPanel(tab);
             EnsureSurveyPanel(tab);
@@ -190,6 +192,29 @@ namespace CETools.Civil3D
                     "Rebuild\nCorridors",
                     "CE_CORREBUILD ",
                     "Preview and rebuild selected editable out-of-date corridors."));
+        }
+
+        private static void EnsureParkingPanel(RibbonTab tab)
+        {
+            AddPanel(
+                tab,
+                ParkingPanelId,
+                "Parking",
+                CreateButton(
+                    "CE_TOOLS_PKTOOLS_BUTTON",
+                    "Parking\nTools",
+                    "CE_PKTOOLS ",
+                    "Create straight parking rows, count bays and place sequential bay numbers."),
+                CreateButton(
+                    "CE_TOOLS_PKROW_BUTTON",
+                    "Single\nRow",
+                    "CE_PKROW ",
+                    "Create a previewed single parking row from a straight baseline."),
+                CreateButton(
+                    "CE_TOOLS_PKDOUBLE_BUTTON",
+                    "Double\nRow",
+                    "CE_PKDOUBLE ",
+                    "Create opposing parking rows around an entered aisle width."));
         }
 
         private static void EnsureFeatureLinesPanel(RibbonTab tab)
