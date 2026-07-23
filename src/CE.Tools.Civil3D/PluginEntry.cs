@@ -56,6 +56,7 @@ namespace CETools.Civil3D
         private const string GeometryPanelId = "CE_TOOLS_CATEGORY_GEOMETRY";
         private const string SiteDesignPanelId = "CE_TOOLS_CATEGORY_SITE_DESIGN";
         private const string UtilitiesPanelId = "CE_TOOLS_CATEGORY_UTILITIES";
+        private const string StandardsPanelId = "CE_TOOLS_CATEGORY_STANDARDS";
         private const string AnalysisPanelId = "CE_TOOLS_CATEGORY_ANALYSIS";
 
         public static bool EnsureCreated()
@@ -83,6 +84,7 @@ namespace CETools.Civil3D
             AddGeometryPanel(tab);
             AddSiteDesignPanel(tab);
             AddUtilitiesPanel(tab);
+            AddStandardsPanel(tab);
             AddAnalysisPanel(tab);
             return true;
         }
@@ -252,6 +254,23 @@ namespace CETools.Civil3D
                     "Gravity-network sequencing, branch naming and branch alignments.",
                     Cmd("Sewer Network Sequencing", "CE_SEWSEQ ", "Sequence a complete network or selected path."),
                     Cmd("Create / Refresh Branch Alignments", "CE_SEWALIGN ", "Create branch alignments and visible branch labels."))));
+        }
+
+        private static void AddStandardsPanel(RibbonTab tab)
+        {
+            AddPanel(
+                tab,
+                StandardsPanelId,
+                "Standards",
+                Row(Menu(
+                    "CE_TOOLS_DESIGN_STANDARDS_MENU",
+                    "Design Standards",
+                    "Browse, search and apply the built-in design-standards reference library.",
+                    Cmd("Design Standards Tools", "CE_DESIGNSTANDARDS ", "Open the design-standards library menu."),
+                    Cmd("Browse Standards Library", "CE_STDBROWSE ", "Browse standards by engineering category."),
+                    Cmd("Search Standards Library", "CE_STDSEARCH ", "Search by code, title, authority or keyword."),
+                    Cmd("Apply Standard to Project", "CE_STDAPPLY ", "Record a catalogue item in the existing project standards metadata."),
+                    Cmd("Current Project Standards", "CE_STANDARDINFO ", "Report the standards currently stored in the DWG."))));
         }
 
         private static void AddAnalysisPanel(RibbonTab tab)
