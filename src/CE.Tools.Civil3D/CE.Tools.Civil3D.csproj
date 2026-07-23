@@ -1,0 +1,62 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <AssemblyName>CE.Tools.Civil3D</AssemblyName>
+    <RootNamespace>CETools.Civil3D</RootNamespace>
+    <PlatformTarget>x64</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <AutoCADVersion Condition="'$(AutoCADVersion)' == ''">2024</AutoCADVersion>
+    <AutoCADRoot Condition="'$(AutoCADRoot)' == ''">C:\Program Files\Autodesk\AutoCAD $(AutoCADVersion)</AutoCADRoot>
+    <OutputPath>..\..\artifacts\bin\$(Configuration)\$(AutoCADVersion)\</OutputPath>
+    <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\CE.Tools.Core\CE.Tools.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Reference Include="AcCoreMgd">
+      <HintPath>$(AutoCADRoot)\AcCoreMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AcDbMgd">
+      <HintPath>$(AutoCADRoot)\AcDbMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AcMgd">
+      <HintPath>$(AutoCADRoot)\AcMgd.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="AdWindows">
+      <HintPath>$(AutoCADRoot)\AdWindows.dll</HintPath>
+      <Private>false</Private>
+    </Reference>
+    <Reference Include="PresentationCore" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="WindowsBase" />
+  </ItemGroup>
+
+  <Target Name="ValidateAutoCADReferences" BeforeTargets="ResolveReferences">
+    <Error Condition="!Exists('$(AutoCADRoot)\AcMgd.dll')"
+           Text="AutoCAD managed assemblies were not found at '$(AutoCADRoot)'. Pass /p:AutoCADRoot=&quot;your install folder&quot;." />
+    <Error Condition="'$(AutoCADVersion)' != '2023' and '$(AutoCADVersion)' != '2024'"
+           Text="This alpha build supports AutoCADVersion 2023 or 2024." />
+  </Target>
+
+  <Target Name="CopyToApplicationBundle" AfterTargets="Build">
+    <PropertyGroup>
+      <BundleOutput>$(MSBuildProjectDirectory)\..\..\bundle\CE Tools.bundle\Contents\Windows\$(AutoCADVersion)</BundleOutput>
+    </PropertyGroup>
+    <MakeDir Directories="$(BundleOutput)" />
+    <ItemGroup>
+      <BundleFiles Include="$(TargetPath)" />
+      <BundleFiles Include="$(TargetDir)CE.Tools.Core.dll" />
+      <BundleFiles Include="$(TargetDir)CE.Tools.Civil3D.pdb" Condition="Exists('$(TargetDir)CE.Tools.Civil3D.pdb')" />
+      <BundleFiles Include="$(TargetDir)CE.Tools.Core.pdb" Condition="Exists('$(TargetDir)CE.Tools.Core.pdb')" />
+    </ItemGroup>
+    <Copy SourceFiles="@(BundleFiles)" DestinationFolder="$(BundleOutput)" SkipUnchangedFiles="true" />
+  </Target>
+</Project>
