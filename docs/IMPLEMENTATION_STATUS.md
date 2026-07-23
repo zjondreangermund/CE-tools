@@ -13,3 +13,4 @@
 - `CE_PRTOOLS`: first profile alpha batch complete with `Report`, `Elevation` and plan `Label`; Civil 3D 2023 compile, profile-selection, station-equation and label validation required.
 - `CE_SFTOOLS`: first surface alpha batch complete with `Report`, `Elevation`, `Label` and point `Compare`; Civil 3D 2023 compile, boundary, UCS and cut/fill-sign validation required.
 - `CE_CORTOOLS`: first corridor alpha batch complete with `Report`, detailed `Baselines`/regions and controlled `Rebuild`; Civil 3D 2023 compile, source-resolution, reference and rebuild-transaction validation required.
+- `CE_PKTOOLS`: first parking alpha batch complete with straight `Row`, aisle-centred `DoubleRow`, bay `Count` and sequential `Number`; Civil 3D 2023 compile, geometry-direction, layer, count and numbering validation required.
