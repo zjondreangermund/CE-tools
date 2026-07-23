@@ -4,7 +4,7 @@
 - `CE_TLENGTH`: alpha source complete; Civil 3D validation required.
 - `CE_TAREA`: alpha source complete; Civil 3D validation required.
 - `CE_COORDINATE`: installed alpha works; redesign pending the user's reference coordinate LSP.
-- `CE_SEWSEQ`: alpha source complete with start/end-only workflow; Civil 3D network validation required.
+- `CE_SEWSEQ`: extended without a duplicate command; default `EntireNetwork` mode expands selected parts to complete networks, decomposes tree-shaped networks into highest-to-lowest branches, orders remaining branches longest-to-shortest, and applies dotted `MHn.x` / `Pn.x` names. Existing `SelectedPath` mode remains available. Civil 3D 2023 compile and live topology validation required.
 - `CE_COLOR250` / `COLOR250`: alpha source complete; Civil 3D validation required.
 - `CE_FLTOOLS`: first alpha source complete with `Report`, `RaiseLower` and `SetElevation`; Civil 3D 2023 compile and feature-line validation required.
 - `CE_FLEDIT`: second feature-line alpha batch complete with `Create`, `Surface`, `Insert` and `Delete`; Civil 3D 2023 compile and drawing validation required.
