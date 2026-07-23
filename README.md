@@ -13,15 +13,33 @@ Processes one or many 2D lightweight polylines and inserts vertices at equal cha
 
 Existing geometry vertices are retained. New vertices are inserted into the existing `LWPOLYLINE`; the object is not exploded or replaced.
 
+### `CE_ALTOOLS` — Alignment Tools
+
+One command provides three alignment workflows:
+
+- **Report** — report alignment name, type, equation-aware start/end stations, length, site, style, profile count and reference state.
+- **StationOffset** — select an alignment and pick a point to report equation-aware station, raw station, signed offset and left/right side.
+- **Label** — place an MLeader containing alignment name, station and offset.
+
+Direct commands:
+
+```text
+CE_ALREPORT
+CE_ALSTOFF
+CE_ALLABEL
+```
+
+Alignment inquiry is read-only. `CE_ALLABEL` creates only the MLeader annotation and cancels safely when the picked point is beyond the alignment limits.
+
 ### `CE_FLTOOLS` — Feature Line Tools
 
-The first feature-line alpha provides:
+The first feature-line menu provides:
 
 - **Report** — report 2D/3D length, minimum/maximum elevation, minimum/maximum grade, PI count, elevation-point count and total point count.
 - **RaiseLower** — raise or lower all points on multiple selected feature lines by one entered value.
 - **SetElevation** — set every point on multiple selected feature lines to one absolute elevation.
 
-Direct commands are also available:
+Direct commands:
 
 ```text
 CE_FLREPORT
@@ -30,6 +48,30 @@ CE_FLSETELEV
 ```
 
 Relative-to-surface points retain their relationship when using **RaiseLower**. **SetElevation** converts relative points to the entered absolute elevation. Referenced feature lines and feature lines on locked layers are skipped.
+
+### `CE_FLEDIT` — Feature Line Creation and Point Editing
+
+The second feature-line menu provides:
+
+- **Create** — convert supported lines, arcs and polylines to siteless Civil 3D feature lines.
+- **Surface** — assign feature-line elevations from a selected surface, with optional intermediate grade-break points.
+- **Insert** — insert an elevation point using interpolation or an entered elevation.
+- **Delete** — find the nearest removable elevation point and require confirmation before deletion.
+
+Direct commands:
+
+```text
+CE_FLCREATE
+CE_FLSURFACE
+CE_FLINSERT
+CE_FLDELETE
+```
+
+### `CE_FLWEED` — Weed Feature-Line Points
+
+Performs a conservative one-pass cleanup of redundant feature-line elevation points using vertical-deviation and minimum-spacing tolerances. It previews the number of points to be removed and defaults to **No** before changing the drawing.
+
+PI points are preserved. Referenced, locked-layer and closed feature lines are skipped in the first alpha.
 
 ### `CE_TLENGTH` — Total Length
 
@@ -147,7 +189,8 @@ Close Civil 3D before installing an updated build.
 Restart Civil 3D. The **CE Tools** ribbon contains:
 
 - **Roads** — Bellmouth Densifier
-- **Feature Lines** — Feature Line Tools
+- **Alignments** — Alignment Tools and Station & Offset
+- **Feature Lines** — Feature Line Tools, Create & Point Edit and Weed Points
 - **Quantities** — Total Length and Total Area
 - **Survey** — Coordinate Tools
 - **Utilities** — Sewer Sequence
@@ -157,10 +200,20 @@ Commands can also be started directly:
 
 ```text
 CE_BMVERT
+CE_ALTOOLS
+CE_ALREPORT
+CE_ALSTOFF
+CE_ALLABEL
 CE_FLTOOLS
 CE_FLREPORT
 CE_FLRAISE
 CE_FLSETELEV
+CE_FLEDIT
+CE_FLCREATE
+CE_FLSURFACE
+CE_FLINSERT
+CE_FLDELETE
+CE_FLWEED
 CE_TLENGTH
 CE_TAREA
 CE_COORDINATE
@@ -180,7 +233,9 @@ To uninstall:
 - `CE_BMVERT` supports AutoCAD `Polyline` / DXF `LWPOLYLINE` objects only.
 - Feature Lines, legacy 2D polylines, 3D polylines, alignments and survey figures are not yet supported by `CE_BMVERT`.
 - Existing geometry vertices remain in place. Inserted stations are equally spaced by chainage, but original geometry vertices can create shorter vertex-to-vertex portions between those stations.
-- `CE_FLTOOLS` currently edits ordinary grading feature lines only. Create, surface elevation, insert/delete point and weeding tools are planned next.
+- Feature-line tools currently target ordinary grading feature lines. Corridor, survey and automatic feature-line derivatives are excluded from editing.
+- `CE_FLWEED` skips closed feature lines and performs only one conservative pass per run.
+- `CE_ALSTOFF` and `CE_ALLABEL` currently require the picked point to project within the alignment's start/end range.
 - `CE_TAREA` requires valid closed planar boundaries, evaluated hatches or regions.
 - `CE_COORDINATE` uses drawing defaults in this first release; intelligent overlap cleanup and company label-style mapping are later stages.
 - `CE_SEWSEQ` currently supports Civil 3D gravity pipe networks, not pressure networks. It uses the shortest connected path when loops provide multiple possible routes.
