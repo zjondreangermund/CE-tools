@@ -22,11 +22,6 @@ COMMAND_PATTERN = re.compile(
 )
 STRING_PATTERN = re.compile(r'"((?:[^"\\]|\\.)*)"')
 
-# CommandMethod overloads in this repository use either:
-#   [CommandMethod("COMMAND", flags)]
-# or
-#   [CommandMethod("GROUP", "COMMAND", flags)]
-# The last quoted argument is therefore the global command name.
 commands: dict[str, list[tuple[Path, int, str]]] = defaultdict(list)
 errors: list[str] = []
 
@@ -89,12 +84,21 @@ required_commands = {
     "CE_SWREFRESH",
     "CE_SWPROFILE",
     "CE_SWINFO",
+    "CE_SEWTOOLS",
+    "CE_SEWSEQ",
+    "CE_SEWSEQMAIN",
+    "CE_SEWALIGN",
+    "CE_SEWREFRESH",
+    "CE_SEWFORMAT",
+    "CE_SEWPROFILE",
+    "CE_SEWSETTINGS",
+    "CE_SEWINFO",
 }
 missing = sorted(required_commands - set(commands))
 for command in missing:
     errors.append(f"Required command is missing from the registry: {command}")
 
-if len(commands) < 57:
+if len(commands) < 63:
     errors.append(
         f"Only {len(commands)} command names were discovered; source parsing may have regressed"
     )

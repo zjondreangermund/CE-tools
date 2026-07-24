@@ -321,11 +321,18 @@ namespace CETools.Civil3D
                         Cmd("Stormwater Settings", "CE_SWSETTINGS ", "Store project style names, layers and plan-label height."),
                         Cmd("Stormwater Information", "CE_SWINFO ", "Report stormwater links, generated objects and current production settings.")),
                     Menu(
-                        "CE_TOOLS_PIPE_NETWORK_MENU",
-                        "Sewer Network\nTools",
-                        "Gravity-network sewer sequencing, branch naming and branch alignments.",
-                        Cmd("Sewer Network Sequencing", "CE_SEWSEQ ", "Sequence a complete network or selected path."),
-                        Cmd("Create / Refresh Branch Alignments", "CE_SEWALIGN ", "Create sewer branch alignments and visible branch labels."))));
+                        "CE_TOOLS_SEWER_PRODUCTION_MENU",
+                        "Sewer Network\nProduction",
+                        "Sequence complete sewer networks, select a main route, format alignments and create profiles.",
+                        Cmd("Sewer Production Tools", "CE_SEWTOOLS ", "Open the complete sewer production menu."),
+                        Cmd("Sequence Network Automatically", "CE_SEWSEQ ", "Sequence a complete network automatically or one selected path."),
+                        Cmd("Sequence Network with Selected Main", "CE_SEWSEQMAIN ", "Select the intended Branch-1 route and sequence all remaining branches."),
+                        Cmd("Create / Refresh Branch Alignments", "CE_SEWALIGN ", "Create sewer branch alignments and visible branch labels."),
+                        Cmd("Refresh Linked Alignments", "CE_SEWREFRESH ", "Resolve linked source networks and run the alignment refresh preview."),
+                        Cmd("Apply Styles and Fix Label Spacing", "CE_SEWFORMAT ", "Apply the selected alignment style and reposition CE branch labels."),
+                        Cmd("Create / Refresh Sewer Profiles", "CE_SEWPROFILE ", "Create EG profiles, profile views and network-part displays."),
+                        Cmd("Sewer Production Settings", "CE_SEWSETTINGS ", "Store sewer styles, profile layer and label height."),
+                        Cmd("Sewer Production Information", "CE_SEWINFO ", "Report sewer links, generated output and current settings."))));
         }
 
         private static void AddStandardsPanel(RibbonTab tab)
