@@ -5,7 +5,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 permissions:
   contents: read
@@ -16,6 +15,9 @@ jobs:
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+
+      - name: Validate report presentation source
+        run: python3 scripts/Validate-ReportPresentation.py
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4

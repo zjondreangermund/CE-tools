@@ -185,7 +185,7 @@ namespace CETools.Civil3D
                         "Feature Line Tools",
                         "Feature-line creation, reporting, editing and linked stepped offsets.",
                         Cmd("Feature Line Tools", "CE_FLTOOLS ", "Open the feature-line report and elevation menu."),
-                        Cmd("Report", "CE_FLREPORT ", "Report lengths, grades, elevations and point counts."),
+                        Cmd("Report", "CE_FLREPORTUI ", "Show feature-line details in a pop-up and optionally place a table."),
                         Cmd("Raise / Lower", "CE_FLRAISE ", "Raise or lower selected feature lines."),
                         Cmd("Set Elevation", "CE_FLSETELEV ", "Set selected feature lines to one elevation."),
                         Cmd("Create and Point Edit", "CE_FLEDIT ", "Open creation, surface and point-edit tools."),
@@ -205,7 +205,7 @@ namespace CETools.Civil3D
                         "Alignment Tools",
                         "Alignment reporting, station-offset queries and labels.",
                         Cmd("Alignment Tools", "CE_ALTOOLS ", "Open alignment tools."),
-                        Cmd("Alignment Report", "CE_ALREPORT ", "Report alignment properties."),
+                        Cmd("Alignment Report", "CE_ALREPORTUI ", "Show alignment details in a pop-up and optionally place a table."),
                         Cmd("Station and Offset", "CE_ALSTOFF ", "Report station and signed offset."),
                         Cmd("Station-Offset Label", "CE_ALLABEL ", "Place a station-offset MLeader.")),
                     Menu(
@@ -213,7 +213,7 @@ namespace CETools.Civil3D
                         "Profile Tools",
                         "Profile reporting, station elevations and plan labels.",
                         Cmd("Profile Tools", "CE_PRTOOLS ", "Open profile tools."),
-                        Cmd("Profile Report", "CE_PRREPORT ", "Report profile information."),
+                        Cmd("Profile Report", "CE_PRREPORTUI ", "Show profile details in a pop-up and optionally place a table."),
                         Cmd("Station Elevation", "CE_PRELEV ", "Report elevation and grade at a station."),
                         Cmd("Profile Label", "CE_PRLABEL ", "Place a plan profile label."))),
                 Row(
@@ -222,7 +222,7 @@ namespace CETools.Civil3D
                         "Surface Tools",
                         "Surface reporting, elevation labels and comparisons.",
                         Cmd("Surface Tools", "CE_SFTOOLS ", "Open surface tools."),
-                        Cmd("Surface Report", "CE_SFREPORT ", "Report surface properties."),
+                        Cmd("Surface Report", "CE_SFREPORTUI ", "Show surface details in a pop-up and optionally place a table."),
                         Cmd("Surface Elevation", "CE_SFELEV ", "Report an elevation at a point."),
                         Cmd("Surface Label", "CE_SFLABEL ", "Place a surface MLeader."),
                         Cmd("Compare Surfaces", "CE_SFCOMPARE ", "Compare two surface elevations.")),
@@ -231,8 +231,8 @@ namespace CETools.Civil3D
                         "Corridor Tools",
                         "Corridor reporting, baseline inspection and rebuilding.",
                         Cmd("Corridor Tools", "CE_CORTOOLS ", "Open corridor tools."),
-                        Cmd("Corridor Report", "CE_CORREPORT ", "Report corridor information."),
-                        Cmd("Baselines and Regions", "CE_CORBASE ", "Report baselines and regions."),
+                        Cmd("Corridor Report", "CE_CORREPORTUI ", "Show corridor details in a pop-up and optionally place a table."),
+                        Cmd("Baselines and Regions", "CE_CORBASEUI ", "Show baseline and region details in a pop-up and optionally place a table."),
                         Cmd("Rebuild Corridors", "CE_CORREBUILD ", "Rebuild editable out-of-date corridors."))));
         }
 
@@ -245,10 +245,11 @@ namespace CETools.Civil3D
                 Row(Menu(
                     "CE_TOOLS_PARKING_MENU",
                     "Parking Tools",
-                    "Straight parking rows, counting and numbering.",
+                    "Straight parking rows, reporting, counting and numbering.",
                     Cmd("Parking Tools", "CE_PKTOOLS ", "Open parking tools."),
                     Cmd("Single Row", "CE_PKROW ", "Create a straight single row."),
                     Cmd("Double Row", "CE_PKDOUBLE ", "Create opposing rows around an aisle."),
+                    Cmd("Parking Report", "CE_PKREPORTUI ", "Show parking bay groups in a pop-up and optionally place a table."),
                     Cmd("Count Bays", "CE_PKCOUNT ", "Count selected parking bays."),
                     Cmd("Number Bays", "CE_PKNUMBER ", "Place sequential bay numbers."))));
         }
