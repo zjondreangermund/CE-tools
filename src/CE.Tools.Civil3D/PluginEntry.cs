@@ -13,6 +13,7 @@ namespace CETools.Civil3D
     public sealed class PluginEntry : IExtensionApplication
     {
         private static bool _ribbonCreated;
+        private static bool _ribbonErrorReported;
 
         public void Initialize()
         {
@@ -37,19 +38,29 @@ namespace CETools.Civil3D
             try
             {
                 _ribbonCreated = RibbonBuilder.EnsureCreated();
-                if (_ribbonCreated) AcApplication.Idle -= OnApplicationIdle;
+                if (_ribbonCreated)
+                    AcApplication.Idle -= OnApplicationIdle;
             }
-            catch
+            catch (System.Exception exception)
             {
-                // Civil 3D can raise Idle before its ribbon is fully initialized.
+                if (_ribbonErrorReported)
+                    return;
+
+                _ribbonErrorReported = true;
+                var document = AcApplication.DocumentManager.MdiActiveDocument;
+                document?.Editor.WriteMessage(
+                    "\nCE Tools ribbon error: " +
+                    exception.GetType().Name +
+                    " - " +
+                    exception.Message);
             }
         }
     }
 
     /// <summary>
-    /// Builds a compact, presentation-ready CE Tools ribbon. Each engineering area
-    /// receives a clearly named panel with large branded flyout buttons. Detailed
-    /// commands stay inside the flyouts so the tab remains usable on smaller screens.
+    /// Builds the CE Tools ribbon with Civil 3D 2023/2024-compatible Autodesk
+    /// ribbon types. Panel items are flattened directly into RibbonPanelSource
+    /// and flyout commands are RibbonMenuItem objects.
     /// </summary>
     internal static class RibbonBuilder
     {
@@ -68,7 +79,8 @@ namespace CETools.Civil3D
         public static bool EnsureCreated()
         {
             RibbonControl ribbon = ComponentManager.Ribbon;
-            if (ribbon == null) return false;
+            if (ribbon == null)
+                return false;
 
             RibbonTab tab = ribbon.Tabs.FirstOrDefault(item => item.Id == TabId);
             if (tab == null)
@@ -81,8 +93,6 @@ namespace CETools.Civil3D
                 tab.Title = "CE TOOLS";
             }
 
-            // CE Tools owns this tab. Rebuild it so stale panels and duplicate
-            // buttons cannot remain after an upgrade or ribbon reload.
             tab.Panels.Clear();
             AddProjectPanel(tab);
             AddSurveyPanel(tab);
@@ -154,8 +164,8 @@ namespace CETools.Civil3D
                         "Direction arrows and preserved coordinate workflows.",
                         Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked arrows showing stored polyline direction."),
                         Cmd("Coordinate Tools (Legacy)", "CE_COORDINATE ", "Open the legacy coordinate tools menu."),
-                        Cmd("Picked Coordinate Annotation (Legacy)", "CE_COORDPICKX ", "Create the Batch 3 coordinate annotation workflow."),
-                        Cmd("Coordinate Cross + Annotation (Legacy)", "CE_COORDCROSSX ", "Create the Batch 3 cross and annotation workflow."),
+                        Cmd("Picked Coordinate Annotation (Legacy)", "CE_COORDPICKX ", "Create the shared annotation workflow."),
+                        Cmd("Coordinate Cross + Annotation (Legacy)", "CE_COORDCROSSX ", "Create the shared cross and annotation workflow."),
                         Cmd("Polyline Vertex COGO Points (Legacy)", "CE_COORDPOLY ", "Run the original sequential COGO point and XYZ table workflow."))));
         }
 
@@ -171,7 +181,7 @@ namespace CETools.Civil3D
                         "Drawing\nTools",
                         "AutoCAD drawing and annotation utilities.",
                         Cmd("Annotation Settings", "CE_ANNOTSETTINGS ", "Select 1.8, 2.0 or 5.0 height, marker circles and MLeader/MText/COGO output."),
-                        Cmd("Change Objects to Colour 250", "CE_COLOR250 ", "Change selected objects to colour 250."),
+                        Cmd("Colour 250 - Geometry or Annotation", "CE_COLOR250 ", "Choose geometry only or geometry plus annotation and change accepted objects to colour 250."),
                         Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked direction arrows.")),
                     Menu(
                         "CE_TOOLS_CLEANUP_MENU",
@@ -211,10 +221,10 @@ namespace CETools.Civil3D
                         Cmd("Feature Line Tools", "CE_FLTOOLS ", "Open the legacy feature-line report and elevation menu."),
                         Cmd("Report", "CE_FLREPORTUI ", "Show feature-line details in a pop-up and optionally place a table."),
                         Cmd("Feature Line Annotation", "CE_FLLABELX ", "Create a feature-line MLeader, MText or COGO point using shared settings."),
-                        Cmd("Raise / Lower", "CE_FLRAISEX ", "Explicitly edit selected feature-line elevations after a before/after review."),
+                        Cmd("Raise / Lower", "CE_FLRAISEX ", "Review and edit selected feature-line elevations."),
                         Cmd("Raise / Lower (Legacy)", "CE_FLRAISE ", "Run the original feature-line elevation editing command."),
                         Cmd("Set Elevation", "CE_FLSETELEV ", "Set selected feature lines to one elevation."),
-                        Cmd("Constant Grade Between Endpoints", "CE_FLCONSTGRADE ", "Set all existing points to a constant grade between each feature line's endpoint elevations."),
+                        Cmd("Constant Grade Between Endpoints", "CE_FLCONSTGRADE ", "Set all existing points to a constant grade between each feature line's endpoints."),
                         Cmd("Create and Point Edit", "CE_FLEDIT ", "Open creation, surface and point-edit tools."),
                         Cmd("Create from Object", "CE_FLCREATE ", "Create feature lines from supported curves."),
                         Cmd("Elevations from Surface", "CE_FLSURFACEUI ", "Select a Civil 3D surface from a pop-up and assign feature-line elevations."),
@@ -288,8 +298,8 @@ namespace CETools.Civil3D
                     Cmd("Parking Report", "CE_PKREPORTUI ", "Show parking bay groups in a pop-up and optionally place a table."),
                     Cmd("Validate and Count Bays", "CE_PKCOUNTX ", "Validate blocks and closed polylines, explain rejected objects and optionally place a table."),
                     Cmd("Count Bays (Legacy)", "CE_PKCOUNT ", "Run the original parking count command."),
-                    Cmd("Validate and Number Bays", "CE_PKNUMBER2 ", "Validate objects and number accepted bays using the shared 1.8, 2.0 or 5.0 text height."),
-                    Cmd("Number Bays (Legacy Shared)", "CE_PKNUMBERX ", "Run the Batch 3 shared-height parking numbering command."))));
+                    Cmd("Validate and Number Bays", "CE_PKNUMBER2 ", "Validate objects and number accepted bays using the shared annotation height."),
+                    Cmd("Number Bays (Legacy Shared)", "CE_PKNUMBERX ", "Run the shared-height parking numbering command."))));
         }
 
         private static void AddUtilitiesPanel(RibbonTab tab)
@@ -312,15 +322,25 @@ namespace CETools.Civil3D
                 tab,
                 StandardsPanelId,
                 "Standards & Details",
-                Row(Menu(
-                    "CE_TOOLS_DESIGN_STANDARDS_MENU",
-                    "Design\nStandards",
-                    "Browse, search and apply the built-in design-standards reference library.",
-                    Cmd("Design Standards Tools", "CE_DESIGNSTANDARDS ", "Open the design-standards library menu."),
-                    Cmd("Browse Standards Library", "CE_STDBROWSE ", "Browse standards by engineering category."),
-                    Cmd("Search Standards Library", "CE_STDSEARCH ", "Search by code, title, authority or keyword."),
-                    Cmd("Apply Standard to Project", "CE_STDAPPLY ", "Record a catalogue item in the existing project standards metadata."),
-                    Cmd("Current Project Standards", "CE_STANDARDINFO ", "Report the standards currently stored in the DWG."))));
+                Row(
+                    Menu(
+                        "CE_TOOLS_DESIGN_STANDARDS_MENU",
+                        "Design\nStandards",
+                        "Browse, search and apply the built-in design-standards reference library.",
+                        Cmd("Design Standards Tools", "CE_DESIGNSTANDARDS ", "Open the design-standards library menu."),
+                        Cmd("Browse Standards Library", "CE_STDBROWSE ", "Browse standards by engineering category."),
+                        Cmd("Search Standards Library", "CE_STDSEARCH ", "Search by code, title, authority or keyword."),
+                        Cmd("Apply Standard to Project", "CE_STDAPPLY ", "Record a catalogue item in the existing project standards metadata."),
+                        Cmd("Current Project Standards", "CE_STANDARDINFO ", "Report the standards currently stored in the DWG.")),
+                    Menu(
+                        "CE_TOOLS_TYPICAL_DETAILS_MENU",
+                        "Typical\nDetails",
+                        "Configure, search and insert office-approved typical details.",
+                        Cmd("Typical Details Tools", "CE_DETAILTOOLS ", "Open the Typical Details command menu."),
+                        Cmd("Set Master Library Folder", "CE_DETAILSETROOT ", "Store the project master-detail folder."),
+                        Cmd("Search Detail Library", "CE_DETAILSEARCH ", "Search DWG, DXF and PDF assets by category or keyword."),
+                        Cmd("Insert Approved DWG Detail", "CE_DETAILINSERT ", "Search and insert an approved DWG detail as a block."),
+                        Cmd("Typical Details Information", "CE_DETAILINFO ", "Report the stored library root, categories and supported Phase 1 formats."))));
         }
 
         private static void AddAnalysisPanel(RibbonTab tab)
@@ -338,7 +358,7 @@ namespace CETools.Civil3D
                         Cmd("Build Linked BOQ", "CE_BOQBUILD ", "Create a linked drawing BOQ with quantity, rate and amount columns."),
                         Cmd("Refresh Linked BOQ", "CE_BOQREFRESH ", "Recalculate quantities from current linked source geometry while preserving matching rates."),
                         Cmd("Linked BOQ Information", "CE_BOQINFO ", "Review link schema, discipline, unit scale and stale source handles."),
-                        Cmd("Export Linked BOQ to Excel", "CE_BOQEXPORT ", "Refresh and export a linked BOQ as a dependency-free .xlsx workbook."),
+                        Cmd("Export Linked BOQ to Excel", "CE_BOQEXPORT ", "Refresh and export a linked BOQ as an .xlsx workbook."),
                         Cmd("Road BOQ Excel", "CE_BOQROAD ", "Export road surfacing, layerworks, kerbs, drainage, markings and signs."),
                         Cmd("Platform BOQ Excel", "CE_BOQPLATFORM ", "Export platform, grading, layerworks and earthwork quantities."),
                         Cmd("Stormwater BOQ Excel", "CE_BOQSTORM ", "Export stormwater pipes, culverts, structures and open drainage."),
@@ -353,7 +373,7 @@ namespace CETools.Civil3D
                         "Generate current project inventory reports, optional drawing tables and Excel exports.",
                         Cmd("Report & Production Tools", "CE_REPORTTOOLS ", "Open full, discipline, export, summary and drawing-book workflows."),
                         Cmd("Full Design Report", "CE_REPORTFULL ", "Generate a full model-space design report with CE link and layout status."),
-                        Cmd("Choose Discipline Report", "CE_REPORTDISC ", "Generate General, Road, Platform, Stormwater, Sewer, Water or Bulk-water report."),
+                        Cmd("Choose Discipline Report", "CE_REPORTDISC ", "Generate a discipline report."),
                         Cmd("Road Report", "CE_REPORTROAD ", "Generate the road-design inventory report."),
                         Cmd("Platform Report", "CE_REPORTPLATFORM ", "Generate the platform/grading design report."),
                         Cmd("Stormwater Report", "CE_REPORTSTORM ", "Generate the stormwater design report."),
@@ -364,7 +384,7 @@ namespace CETools.Civil3D
                     Menu(
                         "CE_TOOLS_DYNAMIC_SECTION_MENU",
                         "Dynamic Cross\nSections",
-                        "Create a linked cross section from a user-drawn line and keep it synchronised with monitored drawing changes.",
+                        "Create a linked cross section and keep it synchronised with monitored drawing changes.",
                         Cmd("Cross-section Tools", "CE_XSTOOLS ", "Open create, refresh, information, detach and monitor workflows."),
                         Cmd("Create Dynamic Cross Section", "CE_XSCREATE ", "Sample intersected surfaces and design objects and create a linked section view."),
                         Cmd("Refresh Dynamic Cross Section", "CE_XSREFRESH ", "Explicitly rebuild a linked section from current source geometry."),
@@ -401,25 +421,29 @@ namespace CETools.Civil3D
                         Cmd("Export Drawing Book Index", "CE_BOOKINDEX ", "Export the standard and existing layout register to Excel."))));
         }
 
-        private static RibbonRow Row(params RibbonItem[] items)
+        private static RibbonItem[] Row(params RibbonItem[] items)
         {
-            var row = new RibbonRow();
-            foreach (RibbonItem item in items) row.RowItems.Add(item);
-            return row;
+            return items;
         }
 
         private static void AddPanel(
             RibbonTab tab,
             string panelId,
             string title,
-            params RibbonRow[] rows)
+            params RibbonItem[][] rows)
         {
             var source = new RibbonPanelSource
             {
                 Id = panelId,
                 Title = title.ToUpperInvariant()
             };
-            foreach (RibbonRow row in rows) source.Rows.Add(row);
+
+            foreach (RibbonItem[] row in rows)
+            {
+                foreach (RibbonItem item in row)
+                    source.Items.Add(item);
+            }
+
             tab.Panels.Add(new RibbonPanel { Source = source });
         }
 
@@ -434,14 +458,25 @@ namespace CETools.Civil3D
                 Id = id,
                 Text = text,
                 ShowText = true,
-                ShowImage = true,
+                ShowImage = false,
                 Size = RibbonItemSize.Large,
-                Image = RibbonVisuals.Small(id),
-                LargeImage = RibbonVisuals.Large(id),
                 ToolTip = toolTip
             };
+
+            try
+            {
+                menu.Image = RibbonVisuals.Small(id);
+                menu.LargeImage = RibbonVisuals.Large(id);
+                menu.ShowImage = true;
+            }
+            catch
+            {
+                // Text remains available when a host/theme rejects runtime icons.
+            }
+
             foreach (RibbonCommandDefinition command in commands)
-                menu.Items.Add(CreateCommandButton(command));
+                menu.Items.Add(CreateCommandMenuItem(command));
+
             return menu;
         }
 
@@ -453,21 +488,31 @@ namespace CETools.Civil3D
             return new RibbonCommandDefinition(text, command, toolTip);
         }
 
-        private static RibbonButton CreateCommandButton(
+        private static RibbonMenuItem CreateCommandMenuItem(
             RibbonCommandDefinition definition)
         {
-            return new RibbonButton
+            var menuItem = new RibbonMenuItem
             {
                 Id = "CE_TOOLS_COMMAND_" + definition.Command.Trim().Replace(' ', '_'),
                 Text = definition.Text,
                 ShowText = true,
-                ShowImage = true,
-                Image = RibbonVisuals.Small(definition.Command),
-                Size = RibbonItemSize.Standard,
+                ShowImage = false,
                 CommandParameter = definition.Command,
                 CommandHandler = new RibbonCommandHandler(),
                 ToolTip = definition.ToolTip
             };
+
+            try
+            {
+                menuItem.Image = RibbonVisuals.Small(definition.Command);
+                menuItem.ShowImage = true;
+            }
+            catch
+            {
+                // Text remains available when a host/theme rejects runtime icons.
+            }
+
+            return menuItem;
         }
 
         private sealed class RibbonCommandDefinition
@@ -498,9 +543,10 @@ namespace CETools.Civil3D
 
         public void Execute(object parameter)
         {
-            var button = parameter as RibbonButton;
-            string command = button == null ? null : button.CommandParameter as string;
-            if (string.IsNullOrWhiteSpace(command)) return;
+            var menuItem = parameter as RibbonMenuItem;
+            string command = menuItem == null ? null : menuItem.CommandParameter as string;
+            if (string.IsNullOrWhiteSpace(command))
+                return;
 
             AcApplication.DocumentManager.MdiActiveDocument?.SendStringToExecute(
                 command,
