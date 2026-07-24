@@ -16,12 +16,14 @@ namespace CETools.Civil3D
 
         public void Initialize()
         {
+            DynamicSectionUpdateManager.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
 
         public void Terminate()
         {
             AcApplication.Idle -= OnApplicationIdle;
+            DynamicSectionUpdateManager.Terminate();
         }
 
         private static void OnApplicationIdle(object sender, EventArgs e)
@@ -151,6 +153,26 @@ namespace CETools.Civil3D
                     Cmd("Annotation Settings", "CE_ANNOTSETTINGS ", "Select 1.8, 2.0 or 5.0 height, marker circles and MLeader/MText/COGO output."),
                     Cmd("Change Objects to Colour 250", "CE_COLOR250 ", "Change selected objects to colour 250."),
                     Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked direction arrows."))),
+                Row(Menu(
+                    "CE_TOOLS_DYNAMIC_SECTION_MENU",
+                    "Dynamic Cross Sections",
+                    "Create a linked cross section from a user-drawn line and keep it synchronised with monitored drawing changes.",
+                    Cmd("Cross-section Tools", "CE_XSTOOLS ", "Open create, refresh, information, detach and monitor workflows."),
+                    Cmd("Create Dynamic Cross Section", "CE_XSCREATE ", "Sample intersected surfaces and design objects and create a linked section view."),
+                    Cmd("Refresh Dynamic Cross Section", "CE_XSREFRESH ", "Explicitly rebuild a linked section from current source geometry."),
+                    Cmd("Cross-section Information", "CE_XSINFO ", "Review source, scales, samples, capture width and generated link status."),
+                    Cmd("Detach Dynamic Cross Section", "CE_XSDETACH ", "Remove the link and keep or delete generated section geometry."),
+                    Cmd("Dynamic-section Monitor", "CE_XSMONITOR ", "Report automatic update-manager and pending-refresh status."))),
+                Row(Menu(
+                    "CE_TOOLS_PRODUCTION_MENU",
+                    "Summary & Drawing Books",
+                    "Generate project summary sheets and A-series client/construction drawing-book layouts.",
+                    Cmd("Production Tools", "CE_REPORTTOOLS ", "Open reports, summaries and drawing-book workflows."),
+                    Cmd("Create Project Summary Sheet", "CE_SUMMARYSHEET ", "Create a linked project metadata, discipline and production-readiness summary."),
+                    Cmd("Refresh Project Summary", "CE_SUMMARYREFRESH ", "Refresh the summary from current model, links and layouts."),
+                    Cmd("Summary Link Information", "CE_SUMMARYINFO ", "Review summary anchor and generated-object link status."),
+                    Cmd("Create A-Series Drawing Books", "CE_DRAWINGBOOK ", "Create or refresh A4/A3 client and A1/A0 construction layouts."),
+                    Cmd("Export Drawing Book Index", "CE_BOOKINDEX ", "Export the standard and existing layout register to Excel."))),
                 Row(Menu(
                     "CE_TOOLS_CLEANUP_MENU",
                     "Drawing Cleanup",
@@ -317,7 +339,21 @@ namespace CETools.Civil3D
                     Cmd("Water BOQ Excel", "CE_BOQWATER ", "Export water pipe, valve, fitting and hydrant quantities."),
                     Cmd("Bulk-water BOQ Excel", "CE_BOQBULKWATER ", "Export bulk pipeline, storage, pump and fitting quantities."),
                     Cmd("Total Length", "CE_TLENGTH ", "Preserved quick total of selected curve lengths by layer."),
-                    Cmd("Total Area", "CE_TAREA ", "Preserved quick total of selected areas by layer."))));
+                    Cmd("Total Area", "CE_TAREA ", "Preserved quick total of selected areas by layer."))),
+                Row(Menu(
+                    "CE_TOOLS_DESIGN_REPORT_MENU",
+                    "Design & Discipline Reports",
+                    "Generate current project inventory reports, optional drawing tables and Excel exports.",
+                    Cmd("Report & Production Tools", "CE_REPORTTOOLS ", "Open full, discipline, export, summary and drawing-book workflows."),
+                    Cmd("Full Design Report", "CE_REPORTFULL ", "Generate a full model-space design report with CE link and layout status."),
+                    Cmd("Choose Discipline Report", "CE_REPORTDISC ", "Generate General, Road, Platform, Stormwater, Sewer, Water or Bulk-water report."),
+                    Cmd("Road Report", "CE_REPORTROAD ", "Generate the road-design inventory report."),
+                    Cmd("Platform Report", "CE_REPORTPLATFORM ", "Generate the platform/grading design report."),
+                    Cmd("Stormwater Report", "CE_REPORTSTORM ", "Generate the stormwater design report."),
+                    Cmd("Sewer Report", "CE_REPORTSEWER ", "Generate the sewer design report."),
+                    Cmd("Water Report", "CE_REPORTWATER ", "Generate the water design report."),
+                    Cmd("Bulk-water Report", "CE_REPORTBULKWATER ", "Generate the bulk-water design report."),
+                    Cmd("Export Design Report", "CE_REPORTEXPORT ", "Export a full or discipline design inventory as an .xlsx workbook."))));
         }
 
         private static RibbonRow Row(params RibbonItem[] items)
