@@ -34,6 +34,9 @@ jobs:
       - name: Validate dynamic sections and drawing production source
         run: python3 scripts/Validate-DynamicProduction.py
 
+      - name: Validate unique AutoCAD command registry
+        run: python3 scripts/Validate-CommandRegistry.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
