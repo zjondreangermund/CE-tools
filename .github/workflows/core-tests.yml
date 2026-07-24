@@ -22,6 +22,9 @@ jobs:
       - name: Validate shared annotation source
         run: python3 scripts/Validate-AnnotationCommands.py
 
+      - name: Validate workflow repairs
+        run: python3 scripts/Validate-WorkflowRepairs.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
