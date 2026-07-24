@@ -362,6 +362,11 @@ namespace CETools.Civil3D
                         Cmd("Bulk-water Report", "CE_REPORTBULKWATER ", "Generate the bulk-water design report."),
                         Cmd("Export Design Report", "CE_REPORTEXPORT ", "Export a full or discipline design inventory as an .xlsx workbook.")),
                     Menu(
+                        "CE_TOOLS_FLOOD_MENU",
+                        "Flood\\nAnalysis",
+                        "Preliminary catchment flow comparison and culvert screening for standard return periods.",
+                        Cmd("Quick Flood Analysis", "CE_FLOODQUICK ", "Calculate 2, 5, 10, 20, 25, 50 and 100-year pre/post-development flows and preliminary culvert size.")),
+                    Menu(
                         "CE_TOOLS_DYNAMIC_SECTION_MENU",
                         "Dynamic Cross\nSections",
                         "Create a linked cross section from a user-drawn line and keep it synchronised with monitored drawing changes.",
