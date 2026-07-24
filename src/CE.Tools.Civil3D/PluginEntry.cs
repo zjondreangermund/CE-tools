@@ -187,14 +187,15 @@ namespace CETools.Civil3D
                         "CE_TOOLS_FEATURE_LINE_MENU",
                         "Feature Line Tools",
                         "Feature-line creation, reporting, editing, annotation and linked stepped offsets.",
-                        Cmd("Feature Line Tools", "CE_FLTOOLS ", "Open the feature-line report and elevation menu."),
+                        Cmd("Feature Line Tools", "CE_FLTOOLS ", "Open the legacy feature-line report and elevation menu."),
                         Cmd("Report", "CE_FLREPORTUI ", "Show feature-line details in a pop-up and optionally place a table."),
                         Cmd("Feature Line Annotation", "CE_FLLABELX ", "Create a feature-line MLeader, MText or COGO point using shared settings."),
-                        Cmd("Raise / Lower", "CE_FLRAISE ", "Raise or lower selected feature lines."),
+                        Cmd("Raise / Lower", "CE_FLRAISEX ", "Explicitly edit selected feature-line elevations after a before/after review."),
                         Cmd("Set Elevation", "CE_FLSETELEV ", "Set selected feature lines to one elevation."),
+                        Cmd("Constant Grade Between Endpoints", "CE_FLCONSTGRADE ", "Set all existing points to a constant grade between each feature line's endpoint elevations."),
                         Cmd("Create and Point Edit", "CE_FLEDIT ", "Open creation, surface and point-edit tools."),
                         Cmd("Create from Object", "CE_FLCREATE ", "Create feature lines from supported curves."),
-                        Cmd("Elevations from Surface", "CE_FLSURFACE ", "Assign elevations from a surface."),
+                        Cmd("Elevations from Surface", "CE_FLSURFACEUI ", "Select a Civil 3D surface from a pop-up and assign feature-line elevations."),
                         Cmd("Insert Elevation Point", "CE_FLINSERT ", "Insert an elevation point."),
                         Cmd("Delete Elevation Point", "CE_FLDELETE ", "Delete a confirmed elevation point."),
                         Cmd("Weed Elevation Points", "CE_FLWEED ", "Remove redundant elevation points."),
@@ -234,11 +235,11 @@ namespace CETools.Civil3D
                         "CE_TOOLS_CORRIDOR_MENU",
                         "Corridor Tools",
                         "Corridor reporting, annotation, baseline inspection and rebuilding.",
-                        Cmd("Corridor Tools", "CE_CORTOOLS ", "Open corridor tools."),
+                        Cmd("Corridor Tools", "CE_CORTOOLS ", "Open the legacy corridor tools menu."),
                         Cmd("Corridor Report", "CE_CORREPORTUI ", "Show corridor details in a pop-up and optionally place a table."),
                         Cmd("Baselines and Regions", "CE_CORBASEUI ", "Show baseline and region details in a pop-up and optionally place a table."),
                         Cmd("Corridor Annotation", "CE_CORLABELX ", "Create a corridor MLeader or MText using shared annotation settings."),
-                        Cmd("Rebuild Corridors", "CE_CORREBUILD ", "Rebuild editable out-of-date corridors."))));
+                        Cmd("Rebuild Corridors", "CE_CORREBUILDX ", "Explicitly call Corridor.Rebuild() for every editable selected corridor after review."))));
         }
 
         private static void AddSiteDesignPanel(RibbonTab tab)
@@ -250,13 +251,13 @@ namespace CETools.Civil3D
                 Row(Menu(
                     "CE_TOOLS_PARKING_MENU",
                     "Parking Tools",
-                    "Straight parking rows, reporting, counting and numbering.",
-                    Cmd("Parking Tools", "CE_PKTOOLS ", "Open parking tools."),
+                    "Straight parking rows, validation, reporting, counting and numbering.",
+                    Cmd("Parking Tools", "CE_PKTOOLS ", "Open legacy parking tools."),
                     Cmd("Single Row", "CE_PKROW ", "Create a straight single row."),
                     Cmd("Double Row", "CE_PKDOUBLE ", "Create opposing rows around an aisle."),
                     Cmd("Parking Report", "CE_PKREPORTUI ", "Show parking bay groups in a pop-up and optionally place a table."),
-                    Cmd("Count Bays", "CE_PKCOUNT ", "Count selected parking bays."),
-                    Cmd("Number Bays", "CE_PKNUMBERX ", "Number bays using the shared 1.8, 2.0 or 5.0 height and marker setting."))));
+                    Cmd("Validate and Count Bays", "CE_PKCOUNTX ", "Validate blocks and closed polylines, explain rejected objects and optionally place a table."),
+                    Cmd("Validate and Number Bays", "CE_PKNUMBER2 ", "Validate objects and number accepted bays using the shared 1.8, 2.0 or 5.0 text height."))));
         }
 
         private static void AddUtilitiesPanel(RibbonTab tab)
