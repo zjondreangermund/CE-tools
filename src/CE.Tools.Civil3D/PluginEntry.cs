@@ -133,7 +133,9 @@ namespace CETools.Civil3D
                     "CE_TOOLS_SURVEY_MENU",
                     "Coordinate Tools",
                     "Coordinate labels, COGO points, crosses, tables and polyline vertices.",
-                    Cmd("Coordinate Tools", "CE_COORDINATE ", "Open coordinate tools."),
+                    Cmd("Coordinate Tools", "CE_COORDINATE ", "Open the legacy coordinate tools menu."),
+                    Cmd("Picked Coordinate Annotation", "CE_COORDPICKX ", "Create a coordinate MLeader, MText or COGO point with shared settings."),
+                    Cmd("Coordinate Cross + Annotation", "CE_COORDCROSSX ", "Create a coordinate cross and the selected annotation output."),
                     Cmd("Polyline Vertex COGO Points", "CE_COORDPOLY ", "Create sequential COGO points and an XYZ table."))));
         }
 
@@ -147,6 +149,7 @@ namespace CETools.Civil3D
                     "CE_TOOLS_DRAWING_MENU",
                     "Drawing Tools",
                     "Ordinary AutoCAD drawing and annotation utilities.",
+                    Cmd("Annotation Settings", "CE_ANNOTSETTINGS ", "Select 1.8, 2.0 or 5.0 height, marker circles and MLeader/MText/COGO output."),
                     Cmd("Change Objects to Colour 250", "CE_COLOR250 ", "Change selected objects to colour 250."),
                     Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked direction arrows."))),
                 Row(Menu(
@@ -183,9 +186,10 @@ namespace CETools.Civil3D
                     Menu(
                         "CE_TOOLS_FEATURE_LINE_MENU",
                         "Feature Line Tools",
-                        "Feature-line creation, reporting, editing and linked stepped offsets.",
+                        "Feature-line creation, reporting, editing, annotation and linked stepped offsets.",
                         Cmd("Feature Line Tools", "CE_FLTOOLS ", "Open the feature-line report and elevation menu."),
                         Cmd("Report", "CE_FLREPORTUI ", "Show feature-line details in a pop-up and optionally place a table."),
+                        Cmd("Feature Line Annotation", "CE_FLLABELX ", "Create a feature-line MLeader, MText or COGO point using shared settings."),
                         Cmd("Raise / Lower", "CE_FLRAISE ", "Raise or lower selected feature lines."),
                         Cmd("Set Elevation", "CE_FLSETELEV ", "Set selected feature lines to one elevation."),
                         Cmd("Create and Point Edit", "CE_FLEDIT ", "Open creation, surface and point-edit tools."),
@@ -207,7 +211,7 @@ namespace CETools.Civil3D
                         Cmd("Alignment Tools", "CE_ALTOOLS ", "Open alignment tools."),
                         Cmd("Alignment Report", "CE_ALREPORTUI ", "Show alignment details in a pop-up and optionally place a table."),
                         Cmd("Station and Offset", "CE_ALSTOFF ", "Report station and signed offset."),
-                        Cmd("Station-Offset Label", "CE_ALLABEL ", "Place a station-offset MLeader.")),
+                        Cmd("Station-Offset Annotation", "CE_ALLABELX ", "Create an MLeader, MText or COGO point using shared annotation settings.")),
                     Menu(
                         "CE_TOOLS_PROFILE_MENU",
                         "Profile Tools",
@@ -215,7 +219,7 @@ namespace CETools.Civil3D
                         Cmd("Profile Tools", "CE_PRTOOLS ", "Open profile tools."),
                         Cmd("Profile Report", "CE_PRREPORTUI ", "Show profile details in a pop-up and optionally place a table."),
                         Cmd("Station Elevation", "CE_PRELEV ", "Report elevation and grade at a station."),
-                        Cmd("Profile Label", "CE_PRLABEL ", "Place a plan profile label."))),
+                        Cmd("Profile Annotation", "CE_PRLABELX ", "Create an MLeader, MText or COGO point using shared annotation settings."))),
                 Row(
                     Menu(
                         "CE_TOOLS_SURFACE_MENU",
@@ -224,15 +228,16 @@ namespace CETools.Civil3D
                         Cmd("Surface Tools", "CE_SFTOOLS ", "Open surface tools."),
                         Cmd("Surface Report", "CE_SFREPORTUI ", "Show surface details in a pop-up and optionally place a table."),
                         Cmd("Surface Elevation", "CE_SFELEV ", "Report an elevation at a point."),
-                        Cmd("Surface Label", "CE_SFLABEL ", "Place a surface MLeader."),
+                        Cmd("Surface Annotation", "CE_SFLABELX ", "Create an MLeader, MText or COGO point using shared annotation settings."),
                         Cmd("Compare Surfaces", "CE_SFCOMPARE ", "Compare two surface elevations.")),
                     Menu(
                         "CE_TOOLS_CORRIDOR_MENU",
                         "Corridor Tools",
-                        "Corridor reporting, baseline inspection and rebuilding.",
+                        "Corridor reporting, annotation, baseline inspection and rebuilding.",
                         Cmd("Corridor Tools", "CE_CORTOOLS ", "Open corridor tools."),
                         Cmd("Corridor Report", "CE_CORREPORTUI ", "Show corridor details in a pop-up and optionally place a table."),
                         Cmd("Baselines and Regions", "CE_CORBASEUI ", "Show baseline and region details in a pop-up and optionally place a table."),
+                        Cmd("Corridor Annotation", "CE_CORLABELX ", "Create a corridor MLeader or MText using shared annotation settings."),
                         Cmd("Rebuild Corridors", "CE_CORREBUILD ", "Rebuild editable out-of-date corridors."))));
         }
 
@@ -251,7 +256,7 @@ namespace CETools.Civil3D
                     Cmd("Double Row", "CE_PKDOUBLE ", "Create opposing rows around an aisle."),
                     Cmd("Parking Report", "CE_PKREPORTUI ", "Show parking bay groups in a pop-up and optionally place a table."),
                     Cmd("Count Bays", "CE_PKCOUNT ", "Count selected parking bays."),
-                    Cmd("Number Bays", "CE_PKNUMBER ", "Place sequential bay numbers."))));
+                    Cmd("Number Bays", "CE_PKNUMBERX ", "Number bays using the shared 1.8, 2.0 or 5.0 height and marker setting."))));
         }
 
         private static void AddUtilitiesPanel(RibbonTab tab)
