@@ -43,6 +43,9 @@ jobs:
       - name: Validate ribbon compatibility and typical-details source
         run: python3 scripts/Validate-FollowupRibbonDetails.py
 
+      - name: Validate stormwater network production source
+        run: python3 scripts/Validate-StormwaterProduction.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
