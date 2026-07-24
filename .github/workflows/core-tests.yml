@@ -49,6 +49,9 @@ jobs:
       - name: Validate sewer network production source
         run: python3 scripts/Validate-SewerProduction.py
 
+      - name: Validate water network production source
+        run: python3 scripts/Validate-WaterProduction.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:

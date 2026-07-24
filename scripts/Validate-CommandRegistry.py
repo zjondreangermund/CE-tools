@@ -93,12 +93,21 @@ required_commands = {
     "CE_SEWPROFILE",
     "CE_SEWSETTINGS",
     "CE_SEWINFO",
+    "CE_WATERTOOLS",
+    "CE_WATERSETTINGS",
+    "CE_WATERSEQ",
+    "CE_WATERALIGN",
+    "CE_WATERREFRESH",
+    "CE_WATERPROFILE",
+    "CE_WATERPLACE",
+    "CE_WATERPLACEREFRESH",
+    "CE_WATERINFO",
 }
 missing = sorted(required_commands - set(commands))
 for command in missing:
     errors.append(f"Required command is missing from the registry: {command}")
 
-if len(commands) < 63:
+if len(commands) < 72:
     errors.append(
         f"Only {len(commands)} command names were discovered; source parsing may have regressed"
     )
