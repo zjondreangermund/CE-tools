@@ -308,12 +308,24 @@ namespace CETools.Civil3D
                 tab,
                 UtilitiesPanelId,
                 "Utilities",
-                Row(Menu(
-                    "CE_TOOLS_PIPE_NETWORK_MENU",
-                    "Pipe Network\nTools",
-                    "Gravity-network sequencing, branch naming and branch alignments.",
-                    Cmd("Sewer Network Sequencing", "CE_SEWSEQ ", "Sequence a complete network or selected path."),
-                    Cmd("Create / Refresh Branch Alignments", "CE_SEWALIGN ", "Create branch alignments and visible branch labels."))));
+                Row(
+                    Menu(
+                        "CE_TOOLS_STORMWATER_MENU",
+                        "Stormwater\nProduction",
+                        "Sequence stormwater networks and create linked alignments, profiles and profile views.",
+                        Cmd("Stormwater Tools", "CE_SWTOOLS ", "Open the stormwater production menu."),
+                        Cmd("Sequence Main and Branches", "CE_SWSEQ ", "Select or calculate the main branch and sequence the complete gravity network."),
+                        Cmd("Create / Refresh Alignments", "CE_SWALIGN ", "Create branch alignments from a sequenced network or selected polylines."),
+                        Cmd("Refresh Alignments", "CE_SWREFRESH ", "Rebuild selected stormwater alignments from their current source geometry."),
+                        Cmd("Create / Refresh Profiles", "CE_SWPROFILE ", "Create existing-ground profiles, profile views and network-part displays."),
+                        Cmd("Stormwater Settings", "CE_SWSETTINGS ", "Store project style names, layers and plan-label height."),
+                        Cmd("Stormwater Information", "CE_SWINFO ", "Report stormwater links, generated objects and current production settings.")),
+                    Menu(
+                        "CE_TOOLS_PIPE_NETWORK_MENU",
+                        "Sewer Network\nTools",
+                        "Gravity-network sewer sequencing, branch naming and branch alignments.",
+                        Cmd("Sewer Network Sequencing", "CE_SEWSEQ ", "Sequence a complete network or selected path."),
+                        Cmd("Create / Refresh Branch Alignments", "CE_SEWALIGN ", "Create sewer branch alignments and visible branch labels."))));
         }
 
         private static void AddStandardsPanel(RibbonTab tab)
@@ -358,7 +370,7 @@ namespace CETools.Civil3D
                         Cmd("Build Linked BOQ", "CE_BOQBUILD ", "Create a linked drawing BOQ with quantity, rate and amount columns."),
                         Cmd("Refresh Linked BOQ", "CE_BOQREFRESH ", "Recalculate quantities from current linked source geometry while preserving matching rates."),
                         Cmd("Linked BOQ Information", "CE_BOQINFO ", "Review link schema, discipline, unit scale and stale source handles."),
-                        Cmd("Export Linked BOQ to Excel", "CE_BOQEXPORT ", "Refresh and export a linked BOQ as an .xlsx workbook."),
+                        Cmd("Export Linked BOQ to Excel", "CE_BOQEXPORT ", "Refresh and export a linked BOQ as a dependency-free .xlsx workbook."),
                         Cmd("Road BOQ Excel", "CE_BOQROAD ", "Export road surfacing, layerworks, kerbs, drainage, markings and signs."),
                         Cmd("Platform BOQ Excel", "CE_BOQPLATFORM ", "Export platform, grading, layerworks and earthwork quantities."),
                         Cmd("Stormwater BOQ Excel", "CE_BOQSTORM ", "Export stormwater pipes, culverts, structures and open drainage."),
