@@ -245,7 +245,18 @@ namespace CETools.Civil3D
                     Cmd("Surface Report", "CE_SFREPORTUI ", "Show surface details in a pop-up and optionally place a table."),
                     Cmd("Surface Elevation", "CE_SFELEV ", "Report an elevation at a point."),
                     Cmd("Surface Annotation", "CE_SFLABELX ", "Create an MLeader, MText or COGO point using shared annotation settings."),
-                    Cmd("Compare Surfaces", "CE_SFCOMPARE ", "Compare two surface elevations."))));
+                    Cmd("Compare Surfaces", "CE_SFCOMPARE ", "Compare two surface elevations.")),
+                Menu(
+                    "CE_TOOLS_SURFACE_CORRECTION_MENU",
+                    "Surface Correction",
+                    "Audit surface quality, create reversible corrected copies and simplify performance copies.",
+                    Cmd("Surface Correction Tools", "CE_SURFCTOOLS ", "Open audit, correction, simplification, restore, settings and information workflows."),
+                    Cmd("Audit Surface Quality", "CE_SURFAUDIT ", "Screen for zero elevations, spikes, lows, extremes, holes and likely object contamination."),
+                    Cmd("Create Reversible Corrected Surface", "CE_SURFCORRECT ", "Create a separate corrected surface copy without modifying the original."),
+                    Cmd("Create Reversible Simplified Surface", "CE_SURFSIMPLIFY ", "Create a separate grid-decimated performance copy without modifying the original."),
+                    Cmd("Restore Original / Remove Generated Copy", "CE_SURFCRESTORE ", "Erase only a selected CE generated correction/simplification surface."),
+                    Cmd("Surface Correction Settings", "CE_SURFCSETTINGS ", "Store zero, spike, neighbour, contamination, audit and simplification thresholds."),
+                    Cmd("Surface Correction Information", "CE_SURFCINFO ", "Review generated surface links and current correction settings."))));
         }
 
         private static void AddCorridorPanel(RibbonTab tab)

@@ -52,6 +52,9 @@ jobs:
       - name: Validate water network production source
         run: python3 scripts/Validate-WaterProduction.py
 
+      - name: Validate surface correction and performance source
+        run: python3 scripts/Validate-SurfaceCorrection.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:

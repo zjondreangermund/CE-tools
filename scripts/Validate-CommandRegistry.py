@@ -102,12 +102,19 @@ required_commands = {
     "CE_WATERPLACE",
     "CE_WATERPLACEREFRESH",
     "CE_WATERINFO",
+    "CE_SURFCTOOLS",
+    "CE_SURFCSETTINGS",
+    "CE_SURFAUDIT",
+    "CE_SURFCORRECT",
+    "CE_SURFSIMPLIFY",
+    "CE_SURFCRESTORE",
+    "CE_SURFCINFO",
 }
 missing = sorted(required_commands - set(commands))
 for command in missing:
     errors.append(f"Required command is missing from the registry: {command}")
 
-if len(commands) < 72:
+if len(commands) < 79:
     errors.append(
         f"Only {len(commands)} command names were discovered; source parsing may have regressed"
     )
