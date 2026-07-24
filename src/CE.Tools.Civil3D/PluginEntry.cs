@@ -132,11 +132,17 @@ namespace CETools.Civil3D
                 Row(Menu(
                     "CE_TOOLS_SURVEY_MENU",
                     "Coordinate Tools",
-                    "Coordinate labels, COGO points, crosses, tables and polyline vertices.",
-                    Cmd("Coordinate Tools", "CE_COORDINATE ", "Open the legacy coordinate tools menu."),
-                    Cmd("Picked Coordinate Annotation", "CE_COORDPICKX ", "Create a coordinate MLeader, MText or COGO point with shared settings."),
-                    Cmd("Coordinate Cross + Annotation", "CE_COORDCROSSX ", "Create a coordinate cross and the selected annotation output."),
-                    Cmd("Polyline Vertex COGO Points", "CE_COORDPOLY ", "Create sequential COGO points and an XYZ table."))));
+                    "Linked coordinate labels, COGO points, crosses, compact tables and polyline vertices.",
+                    Cmd("Linked Picked Coordinate", "CE_COORDPICK2 ", "Create a coordinate annotation and optionally add its source point to a linked register."),
+                    Cmd("Linked Coordinate Cross", "CE_COORDCROSS2 ", "Choose COGO point, cross, annotation and linked register output."),
+                    Cmd("Create Linked Coordinate Table", "CE_COORDTABLE2 ", "Create a compact linked Y-X-Z table from selected COGO or AutoCAD points."),
+                    Cmd("Refresh Linked Coordinate Table", "CE_COORDREFRESH ", "Refresh table rows from the current linked source-point coordinates."),
+                    Cmd("Polyline Vertex Linked Points", "CE_COORDPOLY2 ", "Create sequential COGO points in polyline direction and a linked Point Name, Y, X, Z table."),
+                    Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked arrows showing stored polyline direction."),
+                    Cmd("Coordinate Tools (Legacy)", "CE_COORDINATE ", "Open the legacy coordinate tools menu."),
+                    Cmd("Picked Coordinate Annotation (Legacy)", "CE_COORDPICKX ", "Create the Batch 3 coordinate annotation workflow."),
+                    Cmd("Coordinate Cross + Annotation (Legacy)", "CE_COORDCROSSX ", "Create the Batch 3 cross and annotation workflow."),
+                    Cmd("Polyline Vertex COGO Points (Legacy)", "CE_COORDPOLY ", "Run the original sequential COGO point and XYZ table workflow."))));
         }
 
         private static void AddDrawingsPanel(RibbonTab tab)

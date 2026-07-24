@@ -25,6 +25,9 @@ jobs:
       - name: Validate workflow repairs
         run: python3 scripts/Validate-WorkflowRepairs.py
 
+      - name: Validate linked survey coordinate workflows
+        run: python3 scripts/Validate-SurveyCoordinateWorkflows.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
