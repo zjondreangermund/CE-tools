@@ -2,8 +2,8 @@
 """Source-shape checks for review-comments Batch 5.
 
 Autodesk/Civil 3D assemblies are unavailable in GitHub Actions, so this
-validator checks command declarations, link persistence, compact table rules,
-polyline direction handling and preservation of existing utilities.
+validator checks command declarations, ribbon links, link persistence, compact
+table rules, polyline direction handling and preserved utilities.
 """
 
 from pathlib import Path
@@ -40,6 +40,8 @@ commands = [
 for command in commands:
     if f'"{command}"' not in source:
         errors.append(f"Survey coordinate command is not declared: {command}")
+    if f'"{command} "' not in ribbon:
+        errors.append(f"Survey ribbon is not linked to command: {command}")
 
 required_markers = [
     'LinkRecordName = "CE_COORDINATE_LINKS"',
@@ -48,6 +50,7 @@ required_markers = [
     "Handle=",
     "database.GetObjectId",
     "A coordinate table cannot be populated with zero rows.",
+    '"POINT NAME"',
     '"Y / NORTHING"',
     '"X / EASTING"',
     '"Z / ELEVATION"',
@@ -66,10 +69,14 @@ if "Math.Max(height * 5.5, 12.0)" not in source:
 if re.search(r"SetColumnWidth\([^\n]*(?:2500|5000)", source):
     errors.append("Oversized coordinate-table width was introduced")
 
-# Existing direction-arrow and legacy vertex-point utilities remain available.
+# Existing direction-arrow and legacy survey workflows remain available.
 for marker, text, description in (
     ('"CE_PLDIR"', direction, "polyline direction-arrow command"),
+    ('"CE_PLDIR ', ribbon, "polyline direction-arrow ribbon command"),
     ('"CE_COORDPOLY"', legacy_poly, "legacy polyline vertex command"),
+    ('"CE_COORDPOLY ', ribbon, "legacy polyline vertex ribbon command"),
+    ('"CE_COORDPICKX ', ribbon, "legacy picked-coordinate ribbon command"),
+    ('"CE_COORDCROSSX ', ribbon, "legacy coordinate-cross ribbon command"),
     ('"CE_BMVERT ', ribbon, "Bellmouth ribbon command"),
     ('"CE_TLENGTH ', ribbon, "Total Length ribbon command"),
     ('"CE_TAREA ', ribbon, "Total Area ribbon command"),
