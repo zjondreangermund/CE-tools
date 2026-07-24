@@ -109,12 +109,19 @@ required_commands = {
     "CE_SURFSIMPLIFY",
     "CE_SURFCRESTORE",
     "CE_SURFCINFO",
+    "CE_INTTOOLS",
+    "CE_INTSETTINGS",
+    "CE_INTCREATE",
+    "CE_INTREFRESH",
+    "CE_INTINFO",
+    "CE_INTDETACH",
+    "CE_INTMONITOR",
 }
 missing = sorted(required_commands - set(commands))
 for command in missing:
     errors.append(f"Required command is missing from the registry: {command}")
 
-if len(commands) < 79:
+if len(commands) < 86:
     errors.append(
         f"Only {len(commands)} command names were discovered; source parsing may have regressed"
     )

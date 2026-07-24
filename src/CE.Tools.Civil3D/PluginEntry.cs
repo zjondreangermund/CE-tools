@@ -18,12 +18,14 @@ namespace CETools.Civil3D
         public void Initialize()
         {
             DynamicSectionUpdateManager.Initialize();
+            DynamicIntersectionUpdateManager.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
 
         public void Terminate()
         {
             AcApplication.Idle -= OnApplicationIdle;
+            DynamicIntersectionUpdateManager.Terminate();
             DynamicSectionUpdateManager.Terminate();
         }
 
@@ -256,7 +258,18 @@ namespace CETools.Civil3D
                     Cmd("Create Reversible Simplified Surface", "CE_SURFSIMPLIFY ", "Create a separate grid-decimated performance copy without modifying the original."),
                     Cmd("Restore Original / Remove Generated Copy", "CE_SURFCRESTORE ", "Erase only a selected CE generated correction/simplification surface."),
                     Cmd("Surface Correction Settings", "CE_SURFCSETTINGS ", "Store zero, spike, neighbour, contamination, audit and simplification thresholds."),
-                    Cmd("Surface Correction Information", "CE_SURFCINFO ", "Review generated surface links and current correction settings."))));
+                    Cmd("Surface Correction Information", "CE_SURFCINFO ", "Review generated surface links and current correction settings.")),
+                Menu(
+                    "CE_TOOLS_DYNAMIC_INTERSECTION_MENU",
+                    "Dynamic\nIntersections",
+                    "Create linked plan intersections from feature lines, corridors and curves and keep them synchronised.",
+                    Cmd("Dynamic Intersection Tools", "CE_INTTOOLS ", "Open create, refresh, information, detach, settings and monitor workflows."),
+                    Cmd("Create Linked Intersection Set", "CE_INTCREATE ", "Create markers, elevation comparisons and a linked register from selected design sources."),
+                    Cmd("Refresh Linked Intersection Set", "CE_INTREFRESH ", "Recalculate one linked set from the current feature-line, corridor or curve geometry."),
+                    Cmd("Intersection Set Information", "CE_INTINFO ", "Review source handles, live/missing states, generated handles and monitor status."),
+                    Cmd("Detach Intersection Set", "CE_INTDETACH ", "Remove the link and keep or delete the generated intersection geometry."),
+                    Cmd("Dynamic Intersection Settings", "CE_INTSETTINGS ", "Store marker, label, tolerance, elevation warning, sampling and corridor-code settings."),
+                    Cmd("Dynamic Intersection Monitor", "CE_INTMONITOR ", "Report linked sets, pending refresh and deferred update-manager status."))));
         }
 
         private static void AddCorridorPanel(RibbonTab tab)
