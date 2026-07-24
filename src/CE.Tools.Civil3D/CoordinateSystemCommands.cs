@@ -12,8 +12,9 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 namespace CETools.Civil3D
 {
     /// <summary>
-    /// Civil 3D drawing coordinate-system reporting, search, assignment and clearing tools.
-    /// These commands never transform existing drawing geometry.
+    /// Civil 3D drawing coordinate-system reporting, native selection, direct-code
+    /// assignment, search and clearing tools. These commands never transform
+    /// existing drawing geometry.
     /// </summary>
     public sealed class CoordinateSystemCommands
     {
@@ -33,12 +34,13 @@ namespace CETools.Civil3D
             }
 
             var options = new PromptKeywordOptions(
-                "\nCoordinate Systems [Info/Assign/Search/Clear] <Info>: ")
+                "\nCoordinate Systems [Info/Assign/Code/Search/Clear] <Info>: ")
             {
                 AllowNone = true
             };
             options.Keywords.Add("Info");
             options.Keywords.Add("Assign");
+            options.Keywords.Add("Code");
             options.Keywords.Add("Search");
             options.Keywords.Add("Clear");
 
@@ -54,7 +56,11 @@ namespace CETools.Civil3D
 
             if (string.Equals(mode, "Assign", StringComparison.OrdinalIgnoreCase))
             {
-                AssignCoordinateSystem(document);
+                OpenNativeCoordinateSystemDialog(document);
+            }
+            else if (string.Equals(mode, "Code", StringComparison.OrdinalIgnoreCase))
+            {
+                AssignCoordinateSystemByCode(document);
             }
             else if (string.Equals(mode, "Search", StringComparison.OrdinalIgnoreCase))
             {
@@ -86,7 +92,17 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document != null)
             {
-                AssignCoordinateSystem(document);
+                OpenNativeCoordinateSystemDialog(document);
+            }
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_COORDSYSCODE", CommandFlags.Modal | CommandFlags.Redraw)]
+        public void CoordinateSystemAssignByCode()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document != null)
+            {
+                AssignCoordinateSystemByCode(document);
             }
         }
 
@@ -108,6 +124,22 @@ namespace CETools.Civil3D
             {
                 ClearCoordinateSystem(document);
             }
+        }
+
+        private static void OpenNativeCoordinateSystemDialog(Document document)
+        {
+            if (document == null)
+            {
+                return;
+            }
+
+            document.Editor.WriteMessage(
+                "\nCE_COORDSYSASSIGN: opening the Civil 3D / Map 3D coordinate-system selection dialog. " +
+                "Select the required coordinate code and confirm it in the Autodesk window.");
+
+            // Queue the native command so the CE Tools command can finish before the
+            // Autodesk modal coordinate-system dialog is opened.
+            document.SendStringToExecute("_.MAPCSASSIGN ", true, false, true);
         }
 
         private static void ReportCoordinateSystem(Document document)
@@ -145,19 +177,19 @@ namespace CETools.Civil3D
             }
         }
 
-        private static void AssignCoordinateSystem(Document document)
+        private static void AssignCoordinateSystemByCode(Document document)
         {
             Editor editor = document.Editor;
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (civilDocument == null)
             {
-                editor.WriteMessage("\nCE_COORDSYSASSIGN cancelled. No active Civil 3D document is available.");
+                editor.WriteMessage("\nCE_COORDSYSCODE cancelled. No active Civil 3D document is available.");
                 return;
             }
 
             PromptResult codeResult = editor.GetString(
                 new PromptStringOptions(
-                    "\nEnter Autodesk coordinate-system code, or run CE_COORDSYSSEARCH first: ")
+                    "\nEnter Autodesk coordinate-system code, or use CE_COORDSYSASSIGN for the native selection window: ")
                 {
                     AllowSpaces = false
                 });
@@ -171,8 +203,8 @@ namespace CETools.Civil3D
                 IsNoCoordinateSystem(requestedCode))
             {
                 editor.WriteMessage(
-                    "\nCE_COORDSYSASSIGN cancelled. The entered coordinate-system code is not valid. " +
-                    "Use CE_COORDSYSSEARCH to find an available code.");
+                    "\nCE_COORDSYSCODE cancelled. The entered coordinate-system code is not valid. " +
+                    "Use CE_COORDSYSSEARCH or CE_COORDSYSASSIGN to select an available code.");
                 return;
             }
 
@@ -181,7 +213,7 @@ namespace CETools.Civil3D
 
             if (string.Equals(originalCode, requestedCode, StringComparison.OrdinalIgnoreCase))
             {
-                editor.WriteMessage("\nCE_COORDSYSASSIGN: {0} is already assigned.", requestedCode);
+                editor.WriteMessage("\nCE_COORDSYSCODE: {0} is already assigned.", requestedCode);
                 WriteCoordinateSystemDetails(editor, requestedCode, "Current system");
                 return;
             }
@@ -194,7 +226,7 @@ namespace CETools.Civil3D
 
             if (!Confirm(editor, "Assign the proposed coordinate system"))
             {
-                editor.WriteMessage("\nCE_COORDSYSASSIGN cancelled. The drawing coordinate system was not changed.");
+                editor.WriteMessage("\nCE_COORDSYSCODE cancelled. The drawing coordinate system was not changed.");
                 return;
             }
 
@@ -202,14 +234,14 @@ namespace CETools.Civil3D
             {
                 unitZone.CoordinateSystemCode = requestedCode;
                 editor.WriteMessage(
-                    "\nCE_COORDSYSASSIGN complete. Drawing coordinate system assigned: {0}.",
+                    "\nCE_COORDSYSCODE complete. Drawing coordinate system assigned: {0}.",
                     requestedCode);
             }
             catch (System.Exception exception)
             {
                 TryRestoreCode(unitZone, originalCode);
                 editor.WriteMessage(
-                    "\nCE_COORDSYSASSIGN cancelled. The original coordinate system was retained where possible. {0}",
+                    "\nCE_COORDSYSCODE cancelled. The original coordinate system was retained where possible. {0}",
                     exception.Message);
             }
         }
@@ -307,8 +339,7 @@ namespace CETools.Civil3D
 
             if (totalMatches > matches.Count)
             {
-                editor.WriteMessage(
-                    "\n  Refine the search text to reduce the result list.");
+                editor.WriteMessage("\n  Refine the search text to reduce the result list.");
             }
         }
 
