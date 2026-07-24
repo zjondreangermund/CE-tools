@@ -225,7 +225,6 @@ namespace CETools.Civil3D
                     HeadersVisibility = DataGridHeadersVisibility.Column,
                     GridLinesVisibility = DataGridGridLinesVisibility.All,
                     SelectionMode = DataGridSelectionMode.Single,
-                    FrozenColumnCount = columns == null || columns.Count == 0 ? 0 : 1,
                     ItemsSource = BuildItems(rows)
                 };
 
@@ -241,6 +240,11 @@ namespace CETools.Civil3D
                             MinWidth = 90
                         });
                     }
+                }
+
+                if (dataGrid.Columns.Count > 0)
+                {
+                    dataGrid.FrozenColumnCount = 1;
                 }
 
                 Grid.SetRow(dataGrid, 2);
