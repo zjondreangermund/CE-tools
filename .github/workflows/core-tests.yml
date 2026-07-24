@@ -37,6 +37,9 @@ jobs:
       - name: Validate unique AutoCAD command registry
         run: python3 scripts/Validate-CommandRegistry.py
 
+      - name: Validate polished ribbon and client-book source
+        run: python3 scripts/Validate-PresentationClientBook.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
