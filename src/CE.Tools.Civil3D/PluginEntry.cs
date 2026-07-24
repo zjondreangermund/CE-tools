@@ -362,6 +362,11 @@ namespace CETools.Civil3D
                         Cmd("Bulk-water Report", "CE_REPORTBULKWATER ", "Generate the bulk-water design report."),
                         Cmd("Export Design Report", "CE_REPORTEXPORT ", "Export a full or discipline design inventory as an .xlsx workbook.")),
                     Menu(
+                        "CE_TOOLS_FLOOD_MENU",
+                        "Flood\\nAnalysis",
+                        "Preliminary catchment flow comparison and culvert screening for standard return periods.",
+                        Cmd("Quick Flood Analysis", "CE_FLOODQUICK ", "Calculate 2, 5, 10, 20, 25, 50 and 100-year pre/post-development flows and preliminary culvert size.")),
+                    Menu(
                         "CE_TOOLS_DYNAMIC_SECTION_MENU",
                         "Dynamic Cross\nSections",
                         "Create a linked cross section from a user-drawn line and keep it synchronised with monitored drawing changes.",
@@ -401,10 +406,10 @@ namespace CETools.Civil3D
                         Cmd("Export Drawing Book Index", "CE_BOOKINDEX ", "Export the standard and existing layout register to Excel."))));
         }
 
-        private static RibbonRow Row(params RibbonItem[] items)
+        private static RibbonRowPanel Row(params RibbonItem[] items)
         {
-            var row = new RibbonRow();
-            foreach (RibbonItem item in items) row.RowItems.Add(item);
+            var row = new RibbonRowPanel();
+            foreach (RibbonItem item in items) row.Items.Add(item);
             return row;
         }
 
@@ -412,14 +417,21 @@ namespace CETools.Civil3D
             RibbonTab tab,
             string panelId,
             string title,
-            params RibbonRow[] rows)
+            params RibbonRowPanel[] rows)
         {
             var source = new RibbonPanelSource
             {
                 Id = panelId,
                 Title = title.ToUpperInvariant()
             };
-            foreach (RibbonRow row in rows) source.Rows.Add(row);
+            // Civil 3D 2023 can compile RibbonRowPanel but may reject it while
+            // materialising a panel. Flatten the prepared rows into the panel source;
+            // the visible order and flyout grouping remain unchanged.
+            foreach (RibbonRowPanel row in rows)
+            {
+                foreach (RibbonItem item in row.Items)
+                    source.Items.Add(item);
+            }
             tab.Panels.Add(new RibbonPanel { Source = source });
         }
 
@@ -434,12 +446,20 @@ namespace CETools.Civil3D
                 Id = id,
                 Text = text,
                 ShowText = true,
-                ShowImage = true,
+                ShowImage = false,
                 Size = RibbonItemSize.Large,
-                Image = RibbonVisuals.Small(id),
-                LargeImage = RibbonVisuals.Large(id),
                 ToolTip = toolTip
             };
+            try
+            {
+                menu.Image = RibbonVisuals.Small(id);
+                menu.LargeImage = RibbonVisuals.Large(id);
+                menu.ShowImage = true;
+            }
+            catch
+            {
+                // Text remains usable when a host/theme cannot render runtime icons.
+            }
             foreach (RibbonCommandDefinition command in commands)
                 menu.Items.Add(CreateCommandButton(command));
             return menu;
@@ -456,18 +476,27 @@ namespace CETools.Civil3D
         private static RibbonButton CreateCommandButton(
             RibbonCommandDefinition definition)
         {
-            return new RibbonButton
+            var button = new RibbonButton
             {
                 Id = "CE_TOOLS_COMMAND_" + definition.Command.Trim().Replace(' ', '_'),
                 Text = definition.Text,
                 ShowText = true,
-                ShowImage = true,
-                Image = RibbonVisuals.Small(definition.Command),
+                ShowImage = false,
                 Size = RibbonItemSize.Standard,
                 CommandParameter = definition.Command,
                 CommandHandler = new RibbonCommandHandler(),
                 ToolTip = definition.ToolTip
             };
+            try
+            {
+                button.Image = RibbonVisuals.Small(definition.Command);
+                button.ShowImage = true;
+            }
+            catch
+            {
+                // Keep the text command available if icon generation is unsupported.
+            }
+            return button;
         }
 
         private sealed class RibbonCommandDefinition
