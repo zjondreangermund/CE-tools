@@ -70,12 +70,17 @@ required_commands = {
     "CE_REPORTFULL",
     "CE_SUMMARYSHEET",
     "CE_DRAWINGBOOK",
+    "CE_PROJECTCLOSEOUT",
+    "CE_CLIENTBOOK",
+    "CE_CLIENTBOOKREFRESH",
+    "CE_CLIENTBOOKINFO",
+    "CE_CLIENTBOOKINDEX",
 }
 missing = sorted(required_commands - set(commands))
 for command in missing:
     errors.append(f"Required command is missing from the registry: {command}")
 
-if len(commands) < 40:
+if len(commands) < 45:
     errors.append(
         f"Only {len(commands)} command names were discovered; source parsing may have regressed"
     )
