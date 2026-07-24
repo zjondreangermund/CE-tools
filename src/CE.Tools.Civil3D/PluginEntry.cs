@@ -424,7 +424,14 @@ namespace CETools.Civil3D
                 Id = panelId,
                 Title = title.ToUpperInvariant()
             };
-            foreach (RibbonRowPanel row in rows) source.Items.Add(row);
+            // Civil 3D 2023 can compile RibbonRowPanel but may reject it while
+            // materialising a panel. Flatten the prepared rows into the panel source;
+            // the visible order and flyout grouping remain unchanged.
+            foreach (RibbonRowPanel row in rows)
+            {
+                foreach (RibbonItem item in row.Items)
+                    source.Items.Add(item);
+            }
             tab.Panels.Add(new RibbonPanel { Source = source });
         }
 
@@ -439,12 +446,20 @@ namespace CETools.Civil3D
                 Id = id,
                 Text = text,
                 ShowText = true,
-                ShowImage = true,
+                ShowImage = false,
                 Size = RibbonItemSize.Large,
-                Image = RibbonVisuals.Small(id),
-                LargeImage = RibbonVisuals.Large(id),
                 ToolTip = toolTip
             };
+            try
+            {
+                menu.Image = RibbonVisuals.Small(id);
+                menu.LargeImage = RibbonVisuals.Large(id);
+                menu.ShowImage = true;
+            }
+            catch
+            {
+                // Text remains usable when a host/theme cannot render runtime icons.
+            }
             foreach (RibbonCommandDefinition command in commands)
                 menu.Items.Add(CreateCommandButton(command));
             return menu;
@@ -461,18 +476,27 @@ namespace CETools.Civil3D
         private static RibbonButton CreateCommandButton(
             RibbonCommandDefinition definition)
         {
-            return new RibbonButton
+            var button = new RibbonButton
             {
                 Id = "CE_TOOLS_COMMAND_" + definition.Command.Trim().Replace(' ', '_'),
                 Text = definition.Text,
                 ShowText = true,
-                ShowImage = true,
-                Image = RibbonVisuals.Small(definition.Command),
+                ShowImage = false,
                 Size = RibbonItemSize.Standard,
                 CommandParameter = definition.Command,
                 CommandHandler = new RibbonCommandHandler(),
                 ToolTip = definition.ToolTip
             };
+            try
+            {
+                button.Image = RibbonVisuals.Small(definition.Command);
+                button.ShowImage = true;
+            }
+            catch
+            {
+                // Keep the text command available if icon generation is unsupported.
+            }
+            return button;
         }
 
         private sealed class RibbonCommandDefinition
