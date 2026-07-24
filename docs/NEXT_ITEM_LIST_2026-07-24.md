@@ -12,35 +12,30 @@ This list records the additional requirements supplied after the first live Civi
 - [x] Add Stormwater Network Production source: main/branch sequencing, network/polyline alignments, style settings, profile generation, profile views, source traceability and explicit refresh.
 - [x] Add Sewer Network Production source: automatic and selected-main whole-network sequence, branch alignments, explicit source refresh, alignment formatting, EG profiles, profile views and network-part displays.
 - [x] Add Water Network Production source: polyline/pressure-pipe route sequencing, linked alignments, EG profiles/profile views, explicit refresh, and controlled isolating-valve, hydrant, air-valve and scour-valve review markers.
+- [x] Add Surface Correction and Performance source: zero/spike/low/extreme screening, hole/open-edge review, likely object-contamination screening, reversible corrected surfaces, reversible grid-simplified surfaces, generated-surface register and restore/removal workflow.
 
-The stormwater, sewer and water implementations remain **draft and unvalidated in Autodesk Civil 3D** until their exact pull-request heads compile and pass the Civil 3D 2023/2024 manual test plans.
+The stormwater, sewer, water and surface implementations remain **draft and unvalidated in Autodesk Civil 3D** until their exact pull-request heads compile and pass the Civil 3D 2023/2024 manual test plans.
 
 ## Next implementation order
 
-1. **Surface Correction and Performance**
-   - detect zero elevations, spikes, holes and extreme high/low points;
-   - report likely buildings, trees, poles, signs, overhead lines and structure-invert contamination;
-   - preview corrections before modification;
-   - simplify surfaces using controlled performance targets;
-   - preserve the original surface or provide a reversible correction workflow.
-
-2. **Dynamic Intersections**
+1. **Dynamic Intersections**
    - create multiple intersections from feature lines and/or corridors;
    - keep intersection geometry relative to the selected design objects;
-   - provide explicit refresh, information and detach workflows.
+   - provide explicit refresh, information and detach workflows;
+   - preserve source design objects and make generated relationships traceable.
 
-3. **Parking Skew Validation**
+2. **Parking Skew Validation**
    - check perpendicular bay width rather than only skewed edge length;
    - compare against project standards such as a 2500 mm minimum;
    - display compliant dimensions in green and failures in red;
    - provide a correction workflow without changing valid geometry.
 
-4. **Typical Details Phase 2 — Standards Review**
+3. **Typical Details Phase 2 — Standards Review**
    - review title format, revision table, notes, legends, north arrow, fonts, dimensions, logo, sheet numbering, layers, lineweights, scales and symbols;
    - identify missing dimensions, notes, callouts and labels;
    - produce a consistency and improvement report.
 
-5. **Typical Details Phase 3 — Dynamic Details**
+4. **Typical Details Phase 3 — Dynamic Details**
    - parameter-driven detail variants such as trench width/depth, concrete strength, reinforcement and grating type;
    - linked refresh when parameters change;
    - quantity and BOQ linkage where geometry is measurable.
