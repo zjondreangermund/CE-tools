@@ -116,12 +116,18 @@ required_commands = {
     "CE_INTINFO",
     "CE_INTDETACH",
     "CE_INTMONITOR",
+    "CE_PKSKTOOLS",
+    "CE_PKSKSETTINGS",
+    "CE_PKSKVALIDATE",
+    "CE_PKSKCORRECT",
+    "CE_PKSKCLEAR",
+    "CE_PKSKINFO",
 }
 missing = sorted(required_commands - set(commands))
 for command in missing:
     errors.append(f"Required command is missing from the registry: {command}")
 
-if len(commands) < 86:
+if len(commands) < 92:
     errors.append(
         f"Only {len(commands)} command names were discovered; source parsing may have regressed"
     )
