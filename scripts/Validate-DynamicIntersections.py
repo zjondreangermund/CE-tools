@@ -79,7 +79,7 @@ if not errors:
             errors.append(f"PluginEntry.cs missing monitor lifecycle marker: {marker}")
 
     unsafe_claims = (
-        "native autodesk intersection object",
+        "creates a native autodesk intersection object",
         "automatically approved",
         "no engineering review required",
         "guaranteed collision free",
