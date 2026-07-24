@@ -124,6 +124,15 @@ namespace CETools.Civil3D
                         entity.ColorIndex = TargetColourIndex;
                     }
 
+                    if (includeAnnotation && entity is BlockReference attributedBlock)
+                    {
+                        changedNestedAttributes += ChangeBlockAttributes(
+                            attributedBlock,
+                            transaction,
+                            ref alreadyColour250,
+                            ref skippedLockedLayer);
+                    }
+
                     if (annotation && includeAnnotation)
                     {
                         if (!entity.IsWriteEnabled)
@@ -131,15 +140,6 @@ namespace CETools.Civil3D
 
                         int entityOverrides = ApplyAnnotationColourOverrides(entity);
                         annotationOverrides += entityOverrides;
-
-                        if (entity is BlockReference blockReference)
-                        {
-                            changedNestedAttributes += ChangeBlockAttributes(
-                                blockReference,
-                                transaction,
-                                ref alreadyColour250,
-                                ref skippedLockedLayer);
-                        }
 
                         if (entityChanged || entityOverrides > 0)
                             changedAnnotation++;
@@ -183,10 +183,6 @@ namespace CETools.Civil3D
                 entity is MLeader ||
                 entity is Table ||
                 entity is AttributeReference)
-                return true;
-
-            if (entity is BlockReference blockReference &&
-                blockReference.AttributeCollection.Count > 0)
                 return true;
 
             string typeName = entity.GetType().FullName ?? entity.GetType().Name;
