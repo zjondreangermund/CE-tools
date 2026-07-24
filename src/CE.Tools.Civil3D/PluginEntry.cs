@@ -35,10 +35,7 @@ namespace CETools.Civil3D
             try
             {
                 _ribbonCreated = RibbonBuilder.EnsureCreated();
-                if (_ribbonCreated)
-                {
-                    AcApplication.Idle -= OnApplicationIdle;
-                }
+                if (_ribbonCreated) AcApplication.Idle -= OnApplicationIdle;
             }
             catch
             {
@@ -67,11 +64,7 @@ namespace CETools.Civil3D
             RibbonTab tab = ribbon.Tabs.FirstOrDefault(item => item.Id == TabId);
             if (tab == null)
             {
-                tab = new RibbonTab
-                {
-                    Id = TabId,
-                    Title = "CE Tools"
-                };
+                tab = new RibbonTab { Id = TabId, Title = "CE Tools" };
                 ribbon.Tabs.Add(tab);
             }
 
@@ -310,10 +303,21 @@ namespace CETools.Civil3D
                 "Analysis",
                 Row(Menu(
                     "CE_TOOLS_QUANTITY_MENU",
-                    "Quantity Tools",
-                    "Quick length and area totals.",
-                    Cmd("Total Length", "CE_TLENGTH ", "Total selected curve lengths by layer."),
-                    Cmd("Total Area", "CE_TAREA ", "Total selected areas by layer."))));
+                    "Quantity & BOQ Tools",
+                    "Linked bills of quantities, explicit refresh and Excel exports by discipline.",
+                    Cmd("BOQ Tools", "CE_BOQTOOLS ", "Open linked BOQ build, refresh, information and export workflows."),
+                    Cmd("Build Linked BOQ", "CE_BOQBUILD ", "Create a linked drawing BOQ with quantity, rate and amount columns."),
+                    Cmd("Refresh Linked BOQ", "CE_BOQREFRESH ", "Recalculate quantities from current linked source geometry while preserving matching rates."),
+                    Cmd("Linked BOQ Information", "CE_BOQINFO ", "Review link schema, discipline, unit scale and stale source handles."),
+                    Cmd("Export Linked BOQ to Excel", "CE_BOQEXPORT ", "Refresh and export a linked BOQ as a dependency-free .xlsx workbook."),
+                    Cmd("Road BOQ Excel", "CE_BOQROAD ", "Export road surfacing, layerworks, kerbs, drainage, markings and signs."),
+                    Cmd("Platform BOQ Excel", "CE_BOQPLATFORM ", "Export platform, grading, layerworks and earthwork quantities."),
+                    Cmd("Stormwater BOQ Excel", "CE_BOQSTORM ", "Export stormwater pipes, culverts, structures and open drainage."),
+                    Cmd("Sewer BOQ Excel", "CE_BOQSEWER ", "Export sewer pipe and structure quantities."),
+                    Cmd("Water BOQ Excel", "CE_BOQWATER ", "Export water pipe, valve, fitting and hydrant quantities."),
+                    Cmd("Bulk-water BOQ Excel", "CE_BOQBULKWATER ", "Export bulk pipeline, storage, pump and fitting quantities."),
+                    Cmd("Total Length", "CE_TLENGTH ", "Preserved quick total of selected curve lengths by layer."),
+                    Cmd("Total Area", "CE_TAREA ", "Preserved quick total of selected areas by layer."))));
         }
 
         private static RibbonRow Row(params RibbonItem[] items)
@@ -329,11 +333,7 @@ namespace CETools.Civil3D
             string title,
             params RibbonRow[] rows)
         {
-            var source = new RibbonPanelSource
-            {
-                Id = panelId,
-                Title = title
-            };
+            var source = new RibbonPanelSource { Id = panelId, Title = title };
             foreach (RibbonRow row in rows) source.Rows.Add(row);
             tab.Panels.Add(new RibbonPanel { Source = source });
         }
@@ -354,9 +354,7 @@ namespace CETools.Civil3D
                 ToolTip = toolTip
             };
             foreach (RibbonCommandDefinition command in commands)
-            {
                 menu.Items.Add(CreateCommandButton(command));
-            }
             return menu;
         }
 
