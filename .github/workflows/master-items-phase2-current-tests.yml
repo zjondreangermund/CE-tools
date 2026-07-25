@@ -30,6 +30,7 @@ jobs:
           ./scripts/Apply-Master-Items-Phase2-Quantities.ps1
           ./scripts/Apply-Master-Items-Phase2-ProfileViews.ps1
           ./scripts/Apply-Master-Items-Phase2-DetailedSections.ps1
+          ./scripts/Apply-Master-Items-Phase2-ModelReport.ps1
 
       - name: Normalize Civil 3D compatibility
         shell: pwsh
@@ -46,6 +47,9 @@ jobs:
 
       - name: Validate detailed-section annotations
         run: python3 scripts/Validate-DetailedSectionAnnotations.py
+
+      - name: Validate comprehensive model audit
+        run: python3 scripts/Validate-ModelDesignAudit.py
 
       - name: Validate Phase 1 and inherited source
         run: |
