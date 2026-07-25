@@ -21,36 +21,57 @@ Source: `CE Tools - Items.docx` supplied by the project owner.
 
 ## Phase 1 — native Civil 3D productivity
 
+Source implementation is recorded below. Every checked item still requires exact-head Civil 3D 2023 and 2024 compilation/runtime validation.
+
 ### Parking planning
 
-- [ ] Analyse a selected closed boundary.
-- [ ] Present 90°, 60° and 45° parking alternatives.
-- [ ] Show capacity and target-bay compliance.
-- [ ] Create each accepted bay as a closed polyline.
-- [ ] Store a source-boundary link and refresh after boundary grip edits.
-- [ ] Add slope-master alternatives and low-slope highlighting.
+- [x] Analyse a selected closed boundary — `CE_PARKOPTIONS`.
+- [x] Present 90°, 60° and 45° parking alternatives.
+- [x] Show capacity and target-bay compliance.
+- [x] Create each accepted bay as a closed polyline.
+- [x] Store a source-boundary link and refresh after boundary grip edits — `CE_PARKOPTIONSREFRESH`.
+- [ ] Add slope-master alternatives and dynamic grip-driven parking optimisation.
+
+Additional commands: `CE_PARKOPTIONSINFO`, `CE_PARKOPTIONSCLEAR`.
 
 ### Grading and drainage diagnostics
 
-- [ ] Highlight selected segments/areas below the configured minimum grade, default 0.5%.
-- [ ] Identify candidate low points and drainage directions.
-- [ ] Create a quick rational-method flow calculator and culvert review schedule.
-- [ ] Add a surface/catchment analysis foundation for later full flood simulation.
+- [x] Highlight selected segments below the configured minimum grade, default 0.5% — `CE_LOWSLOPE`.
+- [x] Identify candidate local/global low points — `CE_LOWPOINTS`.
+- [ ] Derive full drainage directions and catchment flow paths across a surface.
+- [x] Create a quick rational-method flow calculator and preliminary culvert review — `CE_RATIONALFLOW`, `CE_CULVERTREVIEW`.
+- [x] Add a surface/catchment analysis foundation for later full flood simulation — `CE_CATCHMENTQUICK`.
+- [x] Add a preliminary pump duty-point screen — `CE_PUMPREVIEW`.
+
+Review graphics remain separate from source design geometry and can be removed with `CE_GRADINGREVIEWCLEAR` or `CE_HYDRAULICCLEAR`.
 
 ### Background and XREF management
 
-- [ ] Audit architectural/survey backgrounds.
-- [ ] Classify layers and presentation problems.
-- [ ] Create controlled light-background copies without losing selection/property behaviour.
-- [ ] Export selected discipline groups to separate DWGs and attach them as XREFs.
-- [ ] Record revision backups and refresh links.
+- [x] Audit architectural/survey backgrounds — `CE_BACKGROUNDREVIEW`.
+- [x] Classify selected layer, object-type, colour and locked-layer concentration.
+- [x] Create controlled light-background copies or move selected objects while keeping the result selected — `CE_BACKGROUNDLIGHT`.
+- [x] Export selected discipline groups to separate DWGs and attach them as XREFs — `CE_XREFSPLIT`.
+- [x] Report attached XREF paths and states — `CE_XREFINFO`.
+- [x] Create timestamped revision backups — `CE_XREFBACKUP`.
+- [ ] Add a project-wide XREF discipline splitter and revision comparison/rollback dashboard.
 
 ### Setting-out schedules
 
-- [ ] Platform point schedule: description, X, Y, ground, design and difference.
-- [ ] Road horizontal/vertical/junction schedules.
+- [x] Platform point schedule: description, X, Y, ground, design and difference — `CE_SETTINGOUTPOINTS`.
+- [x] Road horizontal/vertical/junction point schedules through the schedule-type selector.
+- [x] Linked refresh after COGO point or selected surface changes — `CE_SETTINGOUTREFRESH` and `CE_REFRESHALL`.
+- [x] Excel export — `CE_SETTINGOUTEXPORT`.
 - [ ] Cross-section schedules at configurable 5 m/10 m/20 m intervals.
-- [ ] Network asset schedules linked to BOQ data.
+- [ ] Network asset schedules linked directly to BOQ data.
+
+### Phase 1 hydraulic boundaries
+
+The Phase 1 hydraulic commands are preliminary engineering-review tools, not final certified hydraulic models:
+
+- Rational Method scenarios use user-entered, project-specific rainfall intensities for return periods 1:2, 1:5, 1:10, 1:20, 1:25, 1:50 and 1:100.
+- Culvert capacity is a full-flow Manning screen and does not replace inlet/outlet-control analysis.
+- Pump screening uses a simplified Hazen-Williams duty point and does not replace manufacturer curve, NPSH, surge or system-curve assessment.
+- Quick catchment review samples a selected surface on a grid; it is not automatic hydrological delineation or a flood simulation.
 
 ## Phase 2 — design automation
 
@@ -64,11 +85,13 @@ Source: `CE Tools - Items.docx` supplied by the project owner.
 ## Phase 3 — hydraulic and simulation systems
 
 - [ ] 2D/3D flood simulation and animated flow visualisation.
-- [ ] Pre/post-development hydrographs and return periods 1:2 through 1:100.
+- [ ] Pre/post-development hydrographs and calibrated return-period modelling.
 - [ ] Affected-area maps, flood tables and mitigation guidance.
-- [ ] Automatic catchment extraction, low-point flow and culvert sizing.
-- [ ] Water/sewer pump suitability and rising-main calculations.
+- [ ] Automatic catchment delineation, flow routing and culvert positioning/sizing.
+- [ ] Full water/sewer pump selection with manufacturer curves and rising-main hydraulics.
 - [ ] Road-drive simulation and design-error highlighting.
+
+Phase 1 foundations completed for rational flow, culvert capacity, pump duty-point and sampled catchment/low-point review. These do not close the Phase 3 requirements.
 
 ## Phase 4 — external-product integration
 
@@ -88,6 +111,8 @@ Direct access to another vendor's software cannot be embedded without its instal
 - [ ] Automatic A0/A1 site drawings plus A3/A4 client book.
 - [ ] Project-specific summary slides.
 - [ ] Revision snapshots, rollback and project closeout packages.
+
+Existing drawing/client-book and revision foundations remain available, but the complete library and automatic project-specific slide workflow are still outstanding.
 
 ## Development boundary
 
