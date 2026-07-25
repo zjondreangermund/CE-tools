@@ -28,7 +28,7 @@ require(
     '"CE_SEWEREXCAVATIONINFO"',
     '"CE_SEWEREXCAVATIONEXPORT"',
     'private const string LinkRecordName = "CE_SEWER_EXCAVATION_LINKS"',
-    "public static int RefreshAll(Document document)",
+    "internal static int RefreshAll(Document document)",
     "CE_SEWEREXCAVATIONREFRESH stopped",
     "SideAllowance",
     "MinimumWidth",
