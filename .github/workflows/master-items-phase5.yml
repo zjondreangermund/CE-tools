@@ -83,5 +83,17 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Test parking alternatives
+        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- alternatives
+
+      - name: Test parking obstacles
+        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- obstacles
+
+      - name: Test parking accessibility
+        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- accessible
+
+      - name: Test parking islands and entrance
+        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- islands
+
       - name: Run host-independent core tests
         run: dotnet run --project tests/CE.Tools.Core.Tests/CE.Tools.Core.Tests.csproj -c Release
