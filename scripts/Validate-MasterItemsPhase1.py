@@ -6,6 +6,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 PARKING = ROOT / "src" / "CE.Tools.Civil3D" / "AdvancedParkingPlanningCommands.cs"
 GRADING = ROOT / "src" / "CE.Tools.Civil3D" / "GradingDrainageDiagnosticCommands.cs"
+BACKGROUND = ROOT / "src" / "CE.Tools.Civil3D" / "BackgroundXrefManagementCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Master-Items-Phase1.ps1"
 WRAPPER = ROOT / "scripts" / "Invoke-Comments-Normalizer.ps1"
@@ -54,6 +55,23 @@ require(
     'Source geometry changed',
 )
 require(
+    BACKGROUND,
+    '"CE_BACKGROUNDTOOLS"',
+    '"CE_BACKGROUNDREVIEW"',
+    '"CE_BACKGROUNDLIGHT"',
+    '"CE_XREFSPLIT"',
+    '"CE_XREFINFO"',
+    '"CE_XREFBACKUP"',
+    'database.Wblock(ids, basePoint)',
+    'database.AttachXref(path, xrefName)',
+    'BackgroundPrefix = "CE-BG-"',
+    'BackgroundColour = 253',
+    'editor.SetImpliedSelection(resultIds)',
+    'Path.Combine(',
+    '"Revisions"',
+    'File.Copy(resolvedPath, backupPath, false)',
+)
+require(
     NORMALIZER,
     'Cmd("Boundary Parking Alternatives", "CE_PARKOPTIONS "',
     'Cmd("Refresh Boundary Parking Option", "CE_PARKOPTIONSREFRESH "',
@@ -63,6 +81,12 @@ require(
     'Cmd("Highlight Grades Below Limit", "CE_LOWSLOPE "',
     'Cmd("Identify Candidate Low Points", "CE_LOWPOINTS "',
     'Cmd("Clear Grading Review Graphics", "CE_GRADINGREVIEWCLEAR "',
+    'Cmd("Background and XREF Tools", "CE_BACKGROUNDTOOLS "',
+    'Cmd("Audit Background Drawing", "CE_BACKGROUNDREVIEW "',
+    'Cmd("Create Controlled Light Background", "CE_BACKGROUNDLIGHT "',
+    'Cmd("Split Selection to XREF", "CE_XREFSPLIT "',
+    'Cmd("XREF Information", "CE_XREFINFO "',
+    'Cmd("Create XREF Revision Backup", "CE_XREFBACKUP "',
     'avoid version-specific FeatureLine closed property',
 )
 require(
@@ -75,6 +99,7 @@ require(
     '## Phase 1 — native Civil 3D productivity',
     'Present 90°, 60° and 45° parking alternatives.',
     'Highlight selected segments/areas below the configured minimum grade, default 0.5%.',
+    'Export selected discipline groups to separate DWGs and attach them as XREFs.',
     'External dependency',
 )
 
@@ -89,11 +114,17 @@ require(
     'CE_LOWSLOPE ',
     'CE_LOWPOINTS ',
     'CE_GRADINGREVIEWCLEAR ',
+    'CE_BACKGROUNDTOOLS ',
+    'CE_BACKGROUNDREVIEW ',
+    'CE_BACKGROUNDLIGHT ',
+    'CE_XREFSPLIT ',
+    'CE_XREFINFO ',
+    'CE_XREFBACKUP ',
 )
 
-for path in (PARKING, GRADING):
+for path in (PARKING, GRADING, BACKGROUND):
     text = path.read_text(encoding="utf-8")
     if text.count("{") != text.count("}"):
         raise SystemExit(f"Unbalanced braces in {path.name}")
 
-print("Master Items Phase 1 parking and grading validation passed.")
+print("Master Items Phase 1 parking, grading and background/XREF validation passed.")
