@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Validate feature-line, profile and surface active-comment source."""
+"""Validate feature-line, profile, surface and network active-comment source."""
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src" / "CE.Tools.Civil3D" / "FeatureProfileSurfaceCommentCommands.cs"
+NETWORK = ROOT / "src" / "CE.Tools.Civil3D" / "NetworkCommentCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Comments-Discipline.ps1"
 BUILD = ROOT / "scripts" / "Build-CE-Tools.ps1"
@@ -37,6 +38,20 @@ require(
     "MoveToNoneSite",
 )
 require(
+    NETWORK,
+    '"CE_NETWORKREPORT2"',
+    '"CE_NETWORKPARTREPORT2"',
+    '"CE_SERVICEPROFILES"',
+    '"CE_NETWORKDATA"',
+    '"GetPipeNetworkIds"',
+    '"GetPressurePipeNetworkIds"',
+    '"CE_SWPROFILE "',
+    '"CE_SEWPROFILE "',
+    '"CE_WATERPROFILE "',
+    '"CE_WATERPLACE "',
+    "GridReportPresenter.ShowReportAndOfferTable(",
+)
+require(
     NORMALIZER,
     'Cmd("Detailed Feature Line Popup Report", "CE_FLREPORT2 "',
     'Cmd("Feature Line Colour and Site", "CE_FLAPPEARANCE "',
@@ -46,6 +61,10 @@ require(
     'Cmd("All Surfaces Popup Report", "CE_SURFACEREPORT2 "',
     'Cmd("Surface Elevation Popup and Annotation", "CE_SURFACEELEVATION2 "',
     'Cmd("Surface Comparison Popup and Annotation", "CE_SURFACECOMPARE2 "',
+    'Cmd("All Network Summary Popup", "CE_NETWORKREPORT2 "',
+    'Cmd("Selected Network Part Data", "CE_NETWORKPARTREPORT2 "',
+    'Cmd("Service Alignment and Profile Production Window", "CE_SERVICEPROFILES "',
+    'Cmd("Network Data and Refresh Window", "CE_NETWORKDATA "',
 )
 require(
     BUILD,
@@ -65,6 +84,10 @@ require(
     'CE_SURFACEREPORT2',
     'CE_SURFACEELEVATION2',
     'CE_SURFACECOMPARE2',
+    'CE_NETWORKREPORT2',
+    'CE_NETWORKPARTREPORT2',
+    'CE_SERVICEPROFILES',
+    'CE_NETWORKDATA',
 )
 
-print("Feature-line, profile and surface active-comment validation passed.")
+print("Feature-line, profile, surface and network active-comment validation passed.")
