@@ -91,4 +91,24 @@ Replace-ExactText `
     -NewText $newSurfaceTail `
     -Description "add surface inventory, elevation, comparison and rebuild commands"
 
-Write-Host "Feature-line, profile and surface active comments are wired." -ForegroundColor Green
+$oldWaterTail = @'
+                    Cmd("Refresh Asset Review Markers", "CE_WATERPLACEREFRESH ", "Recalculate linked water-asset review locations from current alignment geometry."),
+                    Cmd("Water Production Settings", "CE_WATERSETTINGS ", "Store styles, layers, valve spacing, hydrant spacing and marker size."),
+                    Cmd("Water Production Information", "CE_WATERINFO ", "Report water links, generated output, settings and refresh status."))))
+'@
+$newWaterTail = @'
+                    Cmd("Refresh Asset Review Markers", "CE_WATERPLACEREFRESH ", "Recalculate linked water-asset review locations from current alignment geometry."),
+                    Cmd("Water Production Settings", "CE_WATERSETTINGS ", "Store styles, layers, valve spacing, hydrant spacing and marker size."),
+                    Cmd("Water Production Information", "CE_WATERINFO ", "Report water links, generated output, settings and refresh status."),
+                    Cmd("All Network Summary Popup", "CE_NETWORKREPORT2 ", "Show gravity and pressure network pipe/run, structure, fitting, appurtenance and length totals and optionally place a table."),
+                    Cmd("Selected Network Part Data", "CE_NETWORKPARTREPORT2 ", "Show selected pipe, structure, fitting and appurtenance details and optionally place a table."),
+                    Cmd("Service Alignment and Profile Production Window", "CE_SERVICEPROFILES ", "Open one window for stormwater, sewer and water sequencing, alignments, profiles and water asset markers."),
+                    Cmd("Network Data and Refresh Window", "CE_NETWORKDATA ", "Open network reports, production information and shared refresh workflows."))))
+'@
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldWaterTail `
+    -NewText $newWaterTail `
+    -Description "add shared network reports and service production launchers"
+
+Write-Host "Feature-line, profile, surface and network active comments are wired." -ForegroundColor Green
