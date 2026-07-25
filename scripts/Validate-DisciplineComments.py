@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Validate feature-line, profile, surface and network active-comment source."""
+"""Validate discipline and production active-comment source."""
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src" / "CE.Tools.Civil3D" / "FeatureProfileSurfaceCommentCommands.cs"
 NETWORK = ROOT / "src" / "CE.Tools.Civil3D" / "NetworkCommentCommands.cs"
+PRODUCTION = ROOT / "src" / "CE.Tools.Civil3D" / "ProductionCommentCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Comments-Discipline.ps1"
 BUILD = ROOT / "scripts" / "Build-CE-Tools.ps1"
@@ -52,6 +53,21 @@ require(
     "GridReportPresenter.ShowReportAndOfferTable(",
 )
 require(
+    PRODUCTION,
+    '"CE_BOQCENTER"',
+    '"CE_REPORTCENTER"',
+    '"CE_PRODUCTIONCENTER"',
+    '"CE_PRINTCENTER"',
+    '"CE_BATCHPUBLISH"',
+    '"CE_OUTPUTLOCATION"',
+    '"CE_BOQSEWER "',
+    '"CE_REPORTSEWER "',
+    '"CE_DRAWINGBOOK "',
+    '"CE_CLIENTBOOKREFRESH "',
+    '"_.PUBLISH "',
+    "GridReportPresenter.ShowReportAndOfferTable(",
+)
+require(
     NORMALIZER,
     'Cmd("Detailed Feature Line Popup Report", "CE_FLREPORT2 "',
     'Cmd("Feature Line Colour and Site", "CE_FLAPPEARANCE "',
@@ -65,6 +81,11 @@ require(
     'Cmd("Selected Network Part Data", "CE_NETWORKPARTREPORT2 "',
     'Cmd("Service Alignment and Profile Production Window", "CE_SERVICEPROFILES "',
     'Cmd("Network Data and Refresh Window", "CE_NETWORKDATA "',
+    'Cmd("Dynamic BOQ and Quantity Centre", "CE_BOQCENTER "',
+    'Cmd("Design Report Centre", "CE_REPORTCENTER "',
+    'Cmd("Plan Production and Project Books", "CE_PRODUCTIONCENTER "',
+    'Cmd("Print and Publish Centre", "CE_PRINTCENTER "',
+    'Cmd("Output Locations", "CE_OUTPUTLOCATION "',
 )
 require(
     BUILD,
@@ -88,6 +109,12 @@ require(
     'CE_NETWORKPARTREPORT2',
     'CE_SERVICEPROFILES',
     'CE_NETWORKDATA',
+    'CE_BOQCENTER',
+    'CE_REPORTCENTER',
+    'CE_PRODUCTIONCENTER',
+    'CE_PRINTCENTER',
+    'CE_BATCHPUBLISH',
+    'CE_OUTPUTLOCATION',
 )
 
-print("Feature-line, profile, surface and network active-comment validation passed.")
+print("Discipline, network, BOQ, report and production active-comment validation passed.")
