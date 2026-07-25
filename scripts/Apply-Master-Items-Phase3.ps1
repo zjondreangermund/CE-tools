@@ -40,6 +40,7 @@ $newHydraulicTail = @'
                     Cmd("Trace Surface Flow Route", "CE_SURFACEFLOW ", "Sample a selected TIN surface inside a closed boundary and create a preliminary priority-filled D8 flow route."),
                     Cmd("Delineate Outlet Catchment", "CE_CATCHMENTDELINEATE ", "Extract the grid cells contributing to a selected outlet and create removable catchment-perimeter and route graphics."),
                     Cmd("Compare Pre/Post Hydrographs", "CE_HYDROGRAPHCOMPARE ", "Create preliminary modified-rational pre/post development hydrographs with optional Excel export."),
+                    Cmd("Return-Period Pre/Post Hydrographs", "CE_HYDROGRAPHPERIODS ", "Create modified-rational pre/post hydrographs for 1:2, 1:5, 1:10, 1:20, 1:25, 1:50 and 1:100 return periods."),
                     Cmd("Depression Storage and Affected Area", "CE_PONDINGREVIEW ", "Map connected priority-filled depression zones and report affected area, maximum depth and estimated terrain-storage volume."),
                     Cmd("Clear Surface Hydrology Review", "CE_HYDROLOGYCLEAR ", "Erase only CE-generated surface-flow, catchment, ponding, outlet and label graphics.")),
 '@
@@ -47,7 +48,7 @@ Replace-ExactText `
     -RelativePath $ribbonFile `
     -OldText $oldHydraulicTail `
     -NewText $newHydraulicTail `
-    -Description "add tested surface-flow catchment hydrograph and ponding commands"
+    -Description "add tested surface-flow catchment hydrograph return-period and ponding commands"
 
 $surfaceFile = "src\CE.Tools.Civil3D\SurfaceHydrologyCommands.cs"
 $oldEdge = @'
