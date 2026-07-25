@@ -60,7 +60,7 @@ require(
     '"Regular-grid D8 screening — not a calibrated 1D/2D flood model"',
     'Only CE-generated route, catchment-perimeter, marker and label graphics will be erased.',
     'MaximumCells',
-    'drawing units per metre',
+    'Drawing units per metre',
     'CE-HYDROLOGY-REVIEW',
 )
 require(
