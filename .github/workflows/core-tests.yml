@@ -32,6 +32,10 @@ jobs:
         shell: pwsh
         run: ./scripts/Apply-Comments-Road.ps1
 
+      - name: Apply Master Items Phase 1 corrections
+        shell: pwsh
+        run: ./scripts/Invoke-Master-Items-Phase1.ps1
+
       - name: Normalize Civil 3D 2023 and 2024 source compatibility
         shell: pwsh
         run: ./scripts/Apply-Civil3D-Compatibility.ps1
@@ -47,6 +51,15 @@ jobs:
 
       - name: Validate batch road-production comments
         run: python3 scripts/Validate-RoadProduction.py
+
+      - name: Validate Master Items Phase 1
+        run: python3 scripts/Validate-MasterItemsPhase1.py
+
+      - name: Validate road cross-section setting-out schedules
+        run: python3 scripts/Validate-RoadSectionSchedule.py
+
+      - name: Validate network asset schedules and BOQ handoff
+        run: python3 scripts/Validate-NetworkAssetSchedule.py
 
       - name: Validate report presentation source
         run: python3 scripts/Validate-ReportPresentation.py
