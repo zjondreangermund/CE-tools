@@ -67,7 +67,7 @@ require(
     '"Review Close-Out"',
     'GridReportPresenter.ShowReportAndOfferTable(',
     'Existing presentation files are not overwritten.',
-    'automated drawing/model observations',
+    'Automated drawing/model observations',
     'does not replace drawing, design or engineering approval',
     'OpenMode.ForRead',
 )
