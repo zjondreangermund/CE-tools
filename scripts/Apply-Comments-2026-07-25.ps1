@@ -130,6 +130,63 @@ Replace-ExactText `
     -NewText 'ClosedParkingBayWorkflow.CreateDoubleRow(document);' `
     -Description "route double parking rows to closed bay polyline generation"
 
+$ribbonFile = "src\CE.Tools.Civil3D\PluginEntry.cs"
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText '                Title = title.ToUpperInvariant()' `
+    -NewText '                Title = PrefixRibbonText(title).ToUpperInvariant()' `
+    -Description "prefix CE Tools ribbon panel names"
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText '                Text = text,' `
+    -NewText '                Text = PrefixRibbonText(text),' `
+    -Description "prefix CE Tools ribbon menu names"
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText '                Text = definition.Text,' `
+    -NewText '                Text = PrefixRibbonText(definition.Text),' `
+    -Description "prefix CE Tools ribbon command names"
+
+$oldPrefixInsertion = @'
+        private static RibbonCommandDefinition Cmd(string text, string command, string toolTip)
+'@
+$newPrefixInsertion = @'
+        private static string PrefixRibbonText(string text)
+        {
+            if (string.IsNullOrWhiteSpace(text))
+                return "CE";
+
+            string trimmed = text.TrimStart();
+            if (trimmed.StartsWith("CE -", StringComparison.OrdinalIgnoreCase) ||
+                trimmed.StartsWith("CE TOOLS", StringComparison.OrdinalIgnoreCase))
+            {
+                return text;
+            }
+
+            return "CE - " + text;
+        }
+
+        private static RibbonCommandDefinition Cmd(string text, string command, string toolTip)
+'@
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldPrefixInsertion `
+    -NewText $newPrefixInsertion `
+    -Description "add shared CE ribbon-name prefixing"
+
+$oldFloatingEntry = @'
+                    Cmd("Restore Cleared Information", "CE_PROJECTRESTORE ", "Restore the values saved before the last project clear.")),
+'@
+$newFloatingEntry = @'
+                    Cmd("Restore Cleared Information", "CE_PROJECTRESTORE ", "Restore the values saved before the last project clear."),
+                    Cmd("Floating Tools Window", "CE_TOOLSPALETTE ", "Open all current CE Tools ribbon commands as individual buttons in a draggable modeless window.")),
+'@
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldFloatingEntry `
+    -NewText $newFloatingEntry `
+    -Description "add the floating CE Tools launcher to Project Setup"
+
 if ($changedFiles.Count -eq 0) {
     Write-Host "25 July 2026 comment corrections are already applied." -ForegroundColor DarkGray
 }
