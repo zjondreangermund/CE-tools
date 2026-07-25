@@ -83,6 +83,13 @@ function Find-ManagedAssembly {
 
 Assert-DotNetSdk
 
+$commentsScript = Join-Path $PSScriptRoot "Apply-Comments-2026-07-25.ps1"
+if (-not (Test-Path $commentsScript)) {
+    throw "The 25 July 2026 comments normalizer is missing: $commentsScript"
+}
+Write-Host "Applying active 25 July 2026 comment corrections..." -ForegroundColor Cyan
+& $commentsScript
+
 $compatibilityScript = Join-Path $PSScriptRoot "Apply-Civil3D-Compatibility.ps1"
 if (-not (Test-Path $compatibilityScript)) {
     throw "The Civil 3D compatibility normalizer is missing: $compatibilityScript"
