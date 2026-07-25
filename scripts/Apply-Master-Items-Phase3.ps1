@@ -40,13 +40,14 @@ $newHydraulicTail = @'
                     Cmd("Trace Surface Flow Route", "CE_SURFACEFLOW ", "Sample a selected TIN surface inside a closed boundary and create a preliminary priority-filled D8 flow route."),
                     Cmd("Delineate Outlet Catchment", "CE_CATCHMENTDELINEATE ", "Extract the grid cells contributing to a selected outlet and create removable catchment-perimeter and route graphics."),
                     Cmd("Compare Pre/Post Hydrographs", "CE_HYDROGRAPHCOMPARE ", "Create preliminary modified-rational pre/post development hydrographs with optional Excel export."),
-                    Cmd("Clear Surface Hydrology Review", "CE_HYDROLOGYCLEAR ", "Erase only CE-generated surface-flow, catchment, outlet and label graphics.")),
+                    Cmd("Depression Storage and Affected Area", "CE_PONDINGREVIEW ", "Map connected priority-filled depression zones and report affected area, maximum depth and estimated terrain-storage volume."),
+                    Cmd("Clear Surface Hydrology Review", "CE_HYDROLOGYCLEAR ", "Erase only CE-generated surface-flow, catchment, ponding, outlet and label graphics.")),
 '@
 Replace-ExactText `
     -RelativePath $ribbonFile `
     -OldText $oldHydraulicTail `
     -NewText $newHydraulicTail `
-    -Description "add tested surface-flow catchment and hydrograph commands"
+    -Description "add tested surface-flow catchment hydrograph and ponding commands"
 
 $surfaceFile = "src\CE.Tools.Civil3D\SurfaceHydrologyCommands.cs"
 $oldEdge = @'
@@ -80,5 +81,23 @@ Replace-ExactText `
     -OldText $oldEdge `
     -NewText $newEdge `
     -Description "use a net48-compatible catchment-edge reference type"
+
+Replace-ExactText `
+    -RelativePath $surfaceFile `
+    -OldText "        private static bool PromptAnalysisInput(" `
+    -NewText "        internal static bool PromptAnalysisInput(" `
+    -Description "share bounded Civil 3D hydrology input with ponding review"
+
+Replace-ExactText `
+    -RelativePath $surfaceFile `
+    -OldText "        private static HydrologySample SampleAndAnalyse(" `
+    -NewText "        internal static HydrologySample SampleAndAnalyse(" `
+    -Description "share tested surface sampling and grid analysis"
+
+Replace-ExactText `
+    -RelativePath $surfaceFile `
+    -OldText "        private static Point3d CellPoint(" `
+    -NewText "        internal static Point3d CellPoint(" `
+    -Description "share sampled-cell coordinates with affected-area mapping"
 
 Write-Host "Master Items Phase 3 surface hydrology source is wired." -ForegroundColor Green
