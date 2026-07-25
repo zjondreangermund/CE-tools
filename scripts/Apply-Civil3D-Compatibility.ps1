@@ -170,12 +170,12 @@ Replace-ExactText -RelativePath $waterFile -OldText 'ReadCivilNames(civilDocumen
 $surfaceFile = "src\CE.Tools.Civil3D\SurfaceCorrectionCommands.cs"
 $oldSurfaceLinq = @'
                     civilDocument.GetSurfaceIds()
-                        .Select
+                        .Select(id => transaction.GetObject(id, OpenMode.ForRead, false))
 '@
 $newSurfaceLinq = @'
                     civilDocument.GetSurfaceIds()
                         .Cast<ObjectId>()
-                        .Select
+                        .Select(id => transaction.GetObject(id, OpenMode.ForRead, false))
 '@
 Replace-ExactText -RelativePath $surfaceFile -OldText $oldSurfaceLinq -NewText $newSurfaceLinq -Description "adapt the surface ObjectIdCollection for LINQ"
 
