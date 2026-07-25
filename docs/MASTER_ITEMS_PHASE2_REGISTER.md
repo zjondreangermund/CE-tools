@@ -18,11 +18,7 @@ Base checkpoint: Phase 1 branch `followup/master-items-phase-1`.
 - [ ] Runtime: verify grip-edit refresh for rectangular, irregular, concave and arc-segment boundaries in Civil 3D 2023/2024.
 - [ ] Outstanding: full combinatorial parking optimiser with islands, circulation, accessible bays, entrances, obstacles and standards conflict resolution.
 
-Commands:
-
-- `CE_PARKAUTOMONITOR`
-- `CE_PARKAUTOREFRESHALL`
-- `CE_PARKAUTOSTATUS`
+Commands: `CE_PARKAUTOMONITOR`, `CE_PARKAUTOREFRESHALL`, `CE_PARKAUTOSTATUS`.
 
 ## Parking grading guides
 
@@ -37,13 +33,7 @@ Commands:
 - [ ] Foundation boundary: guides do not create a finished Civil 3D grading surface, calculate earthworks or certify drainage performance.
 - [ ] Outstanding: create/update Civil 3D feature lines and grading surfaces directly after runtime API validation.
 
-Commands:
-
-- `CE_PARKGRADETOOLS`
-- `CE_PARKGRADECREATE`
-- `CE_PARKGRADEREFRESH`
-- `CE_PARKGRADEINFO`
-- `CE_PARKGRADECLEAR`
+Commands: `CE_PARKGRADETOOLS`, `CE_PARKGRADECREATE`, `CE_PARKGRADEREFRESH`, `CE_PARKGRADEINFO`, `CE_PARKGRADECLEAR`.
 
 ## Standards-based quantity templates
 
@@ -75,20 +65,42 @@ Commands:
 - [ ] Runtime: verify AutoCAD dimension styles, table layout, missing-source handling and save/reopen persistence.
 - [ ] Foundation boundary: generated drafting must be checked against engineer-approved typical details and project standards.
 
-Commands:
+Commands: `CE_SECTIONDETAILTOOLS`, `CE_SECTIONDETAILCREATE`, `CE_SECTIONDETAILREFRESH`, `CE_SECTIONDETAILINFO`, `CE_SECTIONDETAILCLEAR`.
 
-- `CE_SECTIONDETAILTOOLS`
-- `CE_SECTIONDETAILCREATE`
-- `CE_SECTIONDETAILREFRESH`
-- `CE_SECTIONDETAILINFO`
-- `CE_SECTIONDETAILCLEAR`
+## Comprehensive Civil 3D design-model audit
 
-## Next Phase 2 groups
+- [x] Source implemented: drawing-wide AutoCAD and Civil 3D object inventory.
+- [x] Source implemented: surfaces, alignments, profiles, profile views, corridors, feature lines, COGO points and network asset counts.
+- [x] Source implemented: coordinate-system, layers, XREFs, layouts, proxy objects and plot-setup checks.
+- [x] Source implemented: CE XData/Xrecord inventory and stale linked-handle detection.
+- [x] Source implemented: stale Civil reference, zero-triangle surface, zero-length alignment and out-of-date corridor checks.
+- [x] Source implemented: prioritised OK, Review, Warning and Error findings with corrective actions.
+- [x] Source implemented: popup/drawing-table presentation and dependency-free Excel export.
+- [ ] Runtime: verify reflection-based Civil properties and report performance on small and large Civil 3D 2023/2024 drawings.
+- [ ] Engineering boundary: automated findings do not replace engineering, CAD-management or issue-readiness review.
 
-- [ ] Comprehensive Civil 3D design-model report generator.
-- [ ] Project-wide XREF discipline splitter and revision comparison dashboard.
+Commands: `CE_MODELREPORTTOOLS`, `CE_MODELREPORT`, `CE_MODELREPORTINFO`, `CE_MODELREPORTEXPORT`.
+
+## Project-wide XREF discipline and revision management
+
+- [x] Source implemented: classify editable model-space objects into Survey, Architecture, Road, Stormwater, Sewer, Water, Landscape and Other groups.
+- [x] Source implemented: write one new DWG per non-empty discipline and attach it as an XREF.
+- [x] Source implemented: never overwrite an existing discipline DWG.
+- [x] Source implemented: optional source-object replacement only after output files and attachments succeed.
+- [x] Source implemented: revision dashboard comparing file size, modified time and SHA-256 hash.
+- [x] Source implemented: backup every resolved unique XREF source once.
+- [x] Source implemented: controlled restore limited to the source `Revisions` folder, with a mandatory pre-restore backup and reload attempt.
+- [ ] Runtime: verify WBLOCK dependencies, relative paths, shared-source deduplication, unload/reload API support and rollback while XREF files are open or locked.
+- [ ] Safety boundary: discipline inference is layer-keyword based and must be reviewed before confirming project splitting.
+
+Commands: `CE_XREFPROJECTTOOLS`, `CE_XREFDISCIPLINESPLIT`, `CE_XREFREVISIONDASH`, `CE_XREFBACKUPALL`, `CE_XREFRESTORE`.
+
+## Remaining design-automation boundaries
+
 - [ ] Finished Civil 3D grading surfaces/feature lines from parking grading guides after runtime API validation.
 - [ ] Full parking optimiser with obstacles, islands, circulation and accessible-bay standards.
+- [ ] Exact-head Civil 3D 2023 compilation/runtime validation for every Phase 2 command.
+- [ ] Exact-head Civil 3D 2024 compilation/runtime validation for every Phase 2 command.
 
 ## Engineering boundary
 
@@ -100,4 +112,5 @@ All Phase 2 outputs remain design/drafting assistance. Final issue requires revi
 - surface triangulation and contour behaviour;
 - cut/fill and layerworks quantities;
 - stormwater capture and overflow routes;
-- every generated section dimension, component description and construction note.
+- every generated section dimension, component description and construction note;
+- model-audit findings, XREF discipline classification and external-file rollback consequences.
