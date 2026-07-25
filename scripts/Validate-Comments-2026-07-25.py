@@ -18,6 +18,7 @@ SURVEY = ROOT / "src" / "CE.Tools.Civil3D" / "SurveyCoordinateWorkflowCommands.c
 BOQ = ROOT / "src" / "CE.Tools.Civil3D" / "BillOfQuantitiesCommands.cs"
 BUILD = ROOT / "scripts" / "Build-CE-Tools.ps1"
 NORMALIZER = ROOT / "scripts" / "Apply-Comments-2026-07-25.ps1"
+WRAPPER = ROOT / "scripts" / "Invoke-Comments-Normalizer.ps1"
 
 
 def require(path: Path, *needles: str) -> None:
@@ -143,8 +144,17 @@ require(
 )
 require(
     BUILD,
-    'Apply-Comments-2026-07-25.ps1',
+    'Invoke-Comments-Normalizer.ps1',
+    'Apply-Comments-Discipline.ps1',
     "Applying active 25 July 2026 comment corrections",
+)
+require(
+    WRAPPER,
+    'Apply-Comments-2026-07-25.ps1',
+    ".Apply-Comments-2026-07-25.tolerant.ps1",
+    "Skipped comment change",
+    "$literalCleanup",
+    "$literalHatch",
 )
 require(
     NORMALIZER,
