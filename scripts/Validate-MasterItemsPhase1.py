@@ -8,6 +8,7 @@ PARKING = ROOT / "src" / "CE.Tools.Civil3D" / "AdvancedParkingPlanningCommands.c
 GRADING = ROOT / "src" / "CE.Tools.Civil3D" / "GradingDrainageDiagnosticCommands.cs"
 BACKGROUND = ROOT / "src" / "CE.Tools.Civil3D" / "BackgroundXrefManagementCommands.cs"
 SETTING = ROOT / "src" / "CE.Tools.Civil3D" / "SettingOutScheduleCommands.cs"
+HYDRAULIC = ROOT / "src" / "CE.Tools.Civil3D" / "HydraulicReviewCommands.cs"
 PRESENTATION = ROOT / "src" / "CE.Tools.Civil3D" / "CommentPresentationCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Master-Items-Phase1.ps1"
@@ -93,6 +94,25 @@ require(
     'internal sealed class SettingOutConfigurationWindow',
 )
 require(
+    HYDRAULIC,
+    '"CE_HYDRAULICTOOLS"',
+    '"CE_RATIONALFLOW"',
+    '"CE_CULVERTREVIEW"',
+    '"CE_PUMPREVIEW"',
+    '"CE_CATCHMENTQUICK"',
+    '"CE_HYDRAULICCLEAR"',
+    'int[] periods = { 2, 5, 10, 20, 25, 50, 100 };',
+    'coefficient * intensity * areaHa / 360.0',
+    'Math.Pow(hydraulicRadius, 2.0 / 3.0)',
+    'Math.Pow(flow, 1.852)',
+    'surface.FindElevationAtXY(x, y)',
+    'SimpleXlsxWriter.Write(path, "Rational Flow", cells)',
+    'full-flow Manning screen, not a final culvert design',
+    'Final selection requires the manufacturer curve',
+    'Quick catchment/surface screen — not a hydrological delineation or flood model',
+    'private const string ReviewRegApp = "CE_HYDRAULIC_REVIEW"',
+)
+require(
     NORMALIZER,
     'Cmd("Boundary Parking Alternatives", "CE_PARKOPTIONS "',
     'Cmd("Refresh Boundary Parking Option", "CE_PARKOPTIONSREFRESH "',
@@ -113,6 +133,12 @@ require(
     'Cmd("Refresh Setting-Out Schedule", "CE_SETTINGOUTREFRESH "',
     'Cmd("Export Setting-Out Schedule", "CE_SETTINGOUTEXPORT "',
     'Cmd("Setting-Out Schedule Information", "CE_SETTINGOUTINFO "',
+    'Cmd("Hydraulic Review Tools", "CE_HYDRAULICTOOLS "',
+    'Cmd("Quick Catchment and Low-Point Review", "CE_CATCHMENTQUICK "',
+    'Cmd("Rational-Method Return-Period Flows", "CE_RATIONALFLOW "',
+    'Cmd("Culvert Full-Flow Capacity Review", "CE_CULVERTREVIEW "',
+    'Cmd("Pump Duty-Point Review", "CE_PUMPREVIEW "',
+    'Cmd("Clear Hydraulic Review Graphics", "CE_HYDRAULICCLEAR "',
     'include linked setting-out schedules in CE_REFRESHALL',
     'avoid version-specific FeatureLine closed property',
 )
@@ -132,6 +158,7 @@ require(
     'Highlight selected segments/areas below the configured minimum grade, default 0.5%.',
     'Export selected discipline groups to separate DWGs and attach them as XREFs.',
     'Platform point schedule: description, X, Y, ground, design and difference.',
+    'Create a quick rational-method flow calculator and culvert review schedule.',
     'External dependency',
 )
 
@@ -157,11 +184,17 @@ require(
     'CE_SETTINGOUTREFRESH ',
     'CE_SETTINGOUTEXPORT ',
     'CE_SETTINGOUTINFO ',
+    'CE_HYDRAULICTOOLS ',
+    'CE_CATCHMENTQUICK ',
+    'CE_RATIONALFLOW ',
+    'CE_CULVERTREVIEW ',
+    'CE_PUMPREVIEW ',
+    'CE_HYDRAULICCLEAR ',
 )
 
-for path in (PARKING, GRADING, BACKGROUND, SETTING):
+for path in (PARKING, GRADING, BACKGROUND, SETTING, HYDRAULIC):
     text = path.read_text(encoding="utf-8")
     if text.count("{") != text.count("}"):
         raise SystemExit(f"Unbalanced braces in {path.name}")
 
-print("Master Items Phase 1 parking, grading, background/XREF and setting-out validation passed.")
+print("Master Items Phase 1 parking, grading, background/XREF, setting-out and hydraulic validation passed.")
