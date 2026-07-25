@@ -44,7 +44,7 @@ Close Civil 3D, then run PowerShell as a user permitted to write to the target f
 $SourceBundle = Resolve-Path '.\bundle\CE Tools.bundle'
 $TargetBundle = Join-Path $env:ProgramData 'Autodesk\ApplicationPlugins\CE Tools.bundle'
 $BackupBundle = $TargetBundle + '.backup-' + (Get-Date -Format 'yyyyMMdd-HHmmss')
-if (Test-Path $TargetBundle) { Rename-Item $TargetBundle $BackupBundle }
+if (Test-Path $TargetBundle) { Move-Item $TargetBundle $BackupBundle }
 Copy-Item $SourceBundle $TargetBundle -Recurse -Force
 Get-FileHash (Join-Path $TargetBundle 'Contents\Windows\2023\CE.Tools.Civil3D.dll') -Algorithm SHA256
 ```
