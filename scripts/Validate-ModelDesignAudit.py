@@ -48,7 +48,7 @@ require(
     '"No Civil 3D coordinate-system code was detected."',
     '"No controlled plotter configuration was detected."',
     '"No active paper-space viewport was detected."',
-    '"Automated checks do not replace engineering or drawing-office review."',
+    'Automated checks do not replace engineering or drawing-office review.',
     'ModelAuditFinding.Error(',
     'ModelAuditFinding.Warning(',
     'ModelAuditFinding.Review(',
