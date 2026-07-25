@@ -30,14 +30,18 @@ function Replace-ExactText {
 
 $ribbonFile = "src\CE.Tools.Civil3D\PluginEntry.cs"
 $oldTail = @'
-                    Cmd("Cross-section Information", "CE_XSINFO ", "Review source, scales, samples, capture width and generated link status."),
-                    Cmd("Detach Dynamic Cross Section", "CE_XSDETACH ", "Remove the link and keep or delete generated section geometry."),
-                    Cmd("Dynamic-section Monitor", "CE_XSMONITOR ", "Report automatic update-manager and pending-refresh status."))));
+                    Cmd("Dynamic-section Monitor", "CE_XSMONITOR ", "Report automatic update-manager and pending-refresh status."),
+                    Cmd("Refresh All Dynamic Data", "CE_REFRESHALL ", "Refresh linked coordinate followers, coordinate tables and BOQs and rebuild Civil surfaces and corridors."),
+                    Cmd("Rebuild All Civil Objects", "CE_REBUILDALL ", "Rebuild all accessible surfaces and corridors in the current Civil 3D drawing."),
+                    Cmd("Automatic Linked Refresh", "CE_AUTOREFRESH ", "Turn automatic linked coordinate and BOQ refresh on or off and show its status."),
+                    Cmd("Dynamic Refresh Status", "CE_REFRESHSTATUS ", "Show linked table, follower, pending and last-refresh information."))));
 '@
 $newTail = @'
-                    Cmd("Cross-section Information", "CE_XSINFO ", "Review source, scales, samples, capture width and generated link status."),
-                    Cmd("Detach Dynamic Cross Section", "CE_XSDETACH ", "Remove the link and keep or delete generated section geometry."),
                     Cmd("Dynamic-section Monitor", "CE_XSMONITOR ", "Report automatic update-manager and pending-refresh status."),
+                    Cmd("Refresh All Dynamic Data", "CE_REFRESHALL ", "Refresh linked coordinate followers, coordinate tables and BOQs and rebuild Civil surfaces and corridors."),
+                    Cmd("Rebuild All Civil Objects", "CE_REBUILDALL ", "Rebuild all accessible surfaces and corridors in the current Civil 3D drawing."),
+                    Cmd("Automatic Linked Refresh", "CE_AUTOREFRESH ", "Turn automatic linked coordinate and BOQ refresh on or off and show its status."),
+                    Cmd("Dynamic Refresh Status", "CE_REFRESHSTATUS ", "Show linked table, follower, pending and last-refresh information."),
                     Cmd("Detailed Section Tools", "CE_SECTIONDETAILTOOLS ", "Open linked detailed-section creation, refresh, information and clear workflows."),
                     Cmd("Create Detailed Section Annotation", "CE_SECTIONDETAILCREATE ", "Create overall dimensions, component labels, discipline notes and a linked component register from selected section geometry."),
                     Cmd("Refresh Detailed Section Annotation", "CE_SECTIONDETAILREFRESH ", "Rebuild a linked detailed-section annotation set from current source geometry."),
