@@ -157,12 +157,12 @@ Replace-ExactText `
 
 $ribbonFile = "src\CE.Tools.Civil3D\PluginEntry.cs"
 $oldParkingTail = @'
-                    Cmd("Parking Standards Check", "CE_PKSTANDARDS ", "Validate bay dimensions and report non-compliant bays."),
-                    Cmd("Clear Parking Review Graphics", "CE_PKCLEARREVIEW ", "Erase only CE-generated parking review graphics.")),
+                    Cmd("Refresh All Linked Parking", "CE_PARKAUTOREFRESHALL ", "Immediately refresh all linked boundary parking options and parking grading guides."),
+                    Cmd("Dynamic Parking Status", "CE_PARKAUTOSTATUS ", "Show linked boundaries, pending updates, last refresh and last failure.")),
 '@
 $newParkingTail = @'
-                    Cmd("Parking Standards Check", "CE_PKSTANDARDS ", "Validate bay dimensions and report non-compliant bays."),
-                    Cmd("Clear Parking Review Graphics", "CE_PKCLEARREVIEW ", "Erase only CE-generated parking review graphics."),
+                    Cmd("Refresh All Linked Parking", "CE_PARKAUTOREFRESHALL ", "Immediately refresh all linked boundary parking options and parking grading guides."),
+                    Cmd("Dynamic Parking Status", "CE_PARKAUTOSTATUS ", "Show linked boundaries, pending updates, last refresh and last failure."),
                     Cmd("Full Parking Optimiser Tools", "CE_PARKOPTIMIZERTOOLS ", "Open create, refresh, information, export and safe-clear workflows for obstacle-aware scored parking alternatives."),
                     Cmd("Optimise Parking with Obstacles", "CE_PARKOPTIMIZE ", "Score 90, 60 and 45 degree alternatives with obstacles, traffic aisles, accessible bays, islands and an entrance connection."),
                     Cmd("Refresh Optimised Parking", "CE_PARKOPTREFRESH ", "Regenerate the selected linked parking option from the current boundary, obstacles and stored criteria."),
