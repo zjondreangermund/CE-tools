@@ -111,9 +111,9 @@ if (-not (Test-Path $roadCommentsScript)) {
 Write-Host "Applying batch road-production corrections..." -ForegroundColor Cyan
 & $roadCommentsScript
 
-$masterItemsScript = Join-Path $PSScriptRoot "Apply-Master-Items-Phase1.ps1"
+$masterItemsScript = Join-Path $PSScriptRoot "Invoke-Master-Items-Phase1.ps1"
 if (-not (Test-Path $masterItemsScript)) {
-    throw "The Master Items Phase 1 normalizer is missing: $masterItemsScript"
+    throw "The ordered Master Items Phase 1 normalizer wrapper is missing: $masterItemsScript"
 }
 Write-Host "Applying Master Items Phase 1 corrections..." -ForegroundColor Cyan
 & $masterItemsScript
