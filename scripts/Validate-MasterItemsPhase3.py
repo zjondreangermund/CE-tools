@@ -7,6 +7,7 @@ ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "src" / "CE.Tools.Core" / "HydrologyGrid.cs"
 CIVIL = ROOT / "src" / "CE.Tools.Civil3D" / "SurfaceHydrologyCommands.cs"
 PONDING = ROOT / "src" / "CE.Tools.Civil3D" / "SurfacePondingCommands.cs"
+PERIODS = ROOT / "src" / "CE.Tools.Civil3D" / "ReturnPeriodHydrographCommands.cs"
 TESTS = ROOT / "tests" / "CE.Tools.Core.Tests" / "Program.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Master-Items-Phase3.ps1"
@@ -90,6 +91,25 @@ require(
     '"PondingLabel"',
 )
 require(
+    PERIODS,
+    '"CE_HYDROGRAPHPERIODS"',
+    '2, 5, 10, 20, 25, 50, 100',
+    '"1:" + ReturnPeriods[index] + " rainfall intensity (mm/h)"',
+    'ModifiedRationalHydrograph.Create(',
+    'IntegrateVolume(',
+    'volume += (first.FlowCubicMetresPerSecond +',
+    '"RETURN PERIOD"',
+    '"PRE PEAK (m3/s)"',
+    '"POST PEAK (m3/s)"',
+    '"PRE VOLUME (m3)"',
+    '"POST VOLUME (m3)"',
+    '"P2/P5/P10/P20/P25/P50/P100/None"',
+    'CombinedTimes(',
+    'Interpolate(',
+    'SimpleXlsxWriter.Write(',
+    'Intensities are user-entered project inputs; results are not calibrated hydrographs.',
+)
+require(
     TESTS,
     "PriorityFloodFillsEnclosedPit();",
     "FlowRouteTerminatesWithoutCycle();",
@@ -105,6 +125,7 @@ require(
     'Cmd("Trace Surface Flow Route", "CE_SURFACEFLOW "',
     'Cmd("Delineate Outlet Catchment", "CE_CATCHMENTDELINEATE "',
     'Cmd("Compare Pre/Post Hydrographs", "CE_HYDROGRAPHCOMPARE "',
+    'Cmd("Return-Period Pre/Post Hydrographs", "CE_HYDROGRAPHPERIODS "',
     'Cmd("Depression Storage and Affected Area", "CE_PONDINGREVIEW "',
     'Cmd("Clear Surface Hydrology Review", "CE_HYDROLOGYCLEAR "',
     "use a net48-compatible catchment-edge reference type",
@@ -118,19 +139,20 @@ require(
     "CE_SURFACEFLOW ",
     "CE_CATCHMENTDELINEATE ",
     "CE_HYDROGRAPHCOMPARE ",
+    "CE_HYDROGRAPHPERIODS ",
     "CE_PONDINGREVIEW ",
     "CE_HYDROLOGYCLEAR ",
 )
 
-for path in (CORE, CIVIL, PONDING):
+for path in (CORE, CIVIL, PONDING, PERIODS):
     text = path.read_text(encoding="utf-8")
     if text.count("{") != text.count("}"):
         raise SystemExit(f"Unbalanced braces in {path.name}")
 
-combined = CIVIL.read_text(encoding="utf-8") + PONDING.read_text(encoding="utf-8")
+combined = "\n".join(path.read_text(encoding="utf-8") for path in (CIVIL, PONDING, PERIODS))
 if "Microsoft.Office.Interop" in combined:
     raise SystemExit("Surface hydrology must not introduce Office COM automation")
 if "surface.UpgradeOpen" in combined or "boundary.UpgradeOpen" in combined:
     raise SystemExit("Surface hydrology must not open source surface or boundary for write")
 
-print("Master Items Phase 3 grid hydrology and ponding validation passed.")
+print("Master Items Phase 3 grid hydrology, ponding and return-period validation passed.")
