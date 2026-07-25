@@ -152,7 +152,8 @@ require(
     'if (ReadTag(entity) == null) continue;',
     'Alignments, profiles, corridors and unrelated objects were unchanged.',
     'terrain/obstruction visibility not modelled',
-    'does not replace formal geometric design, sight-distance, superelevation, collision',
+    'does not',
+    'replace formal geometric design, sight-distance, superelevation, collision',
 )
 
 require(
