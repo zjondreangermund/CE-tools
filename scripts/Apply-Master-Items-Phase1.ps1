@@ -73,6 +73,27 @@ Replace-ExactText `
     -NewText $newSkewTail `
     -Description "add low-slope and low-point grading diagnostics"
 
+$oldHatchTail = @'
+                    Cmd("Send Hatches Behind Linework", "CE_HATCHBACK ", "Move selected hatches to the back of draw order."),
+                    Cmd("Hatch Settings Window", "CE_HATCHUI ", "Choose hatch creation and editing actions in a CE Tools popup window."))));
+'@
+$newHatchTail = @'
+                    Cmd("Send Hatches Behind Linework", "CE_HATCHBACK ", "Move selected hatches to the back of draw order."),
+                    Cmd("Hatch Settings Window", "CE_HATCHUI ", "Choose hatch creation and editing actions in a CE Tools popup window.")),
+                Menu("CE_TOOLS_BACKGROUND_XREF_MENU", "Background &\nXREF Tools", "Audit messy architectural/survey backgrounds, create controlled light copies, split selections into XREF files and create revision backups.",
+                    Cmd("Background and XREF Tools", "CE_BACKGROUNDTOOLS ", "Open background audit, light-copy, XREF split, information and backup workflows."),
+                    Cmd("Audit Background Drawing", "CE_BACKGROUNDREVIEW ", "Report selected background layer, type, colour, locked-layer and XREF concentration without modifying objects."),
+                    Cmd("Create Controlled Light Background", "CE_BACKGROUNDLIGHT ", "Copy or move selected objects to CE light-background layers and keep the result selected for Properties inspection."),
+                    Cmd("Split Selection to XREF", "CE_XREFSPLIT ", "Write selected objects to a separate DWG, attach it as an XREF and optionally replace the source objects."),
+                    Cmd("XREF Information", "CE_XREFINFO ", "Report attached XREF names, paths and AutoCAD states."),
+                    Cmd("Create XREF Revision Backup", "CE_XREFBACKUP ", "Create a timestamped Revisions-folder copy of the selected XREF source drawing."))));
+'@
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldHatchTail `
+    -NewText $newHatchTail `
+    -Description "add background cleanup and XREF project management commands"
+
 # FeatureLine closure differs between Civil 3D API versions. The point sequence
 # is sufficient for diagnostics and avoids depending on a version-specific
 # Closed/IsClosed property.
