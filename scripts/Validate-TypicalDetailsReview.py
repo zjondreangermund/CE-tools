@@ -7,15 +7,17 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE = ROOT / "src" / "CE.Tools.Civil3D" / "TypicalDetailsReviewCommands.cs"
 PLUGIN = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
+RIBBON_EXTENSION = ROOT / "src" / "CE.Tools.Civil3D" / "TypicalDetailsRibbonExtension.cs"
 
 errors: list[str] = []
-for path in (SOURCE, PLUGIN):
+for path in (SOURCE, PLUGIN, RIBBON_EXTENSION):
     if not path.exists():
         errors.append(f"Missing required source: {path.relative_to(ROOT)}")
 
 if not errors:
     source = SOURCE.read_text(encoding="utf-8")
     plugin = PLUGIN.read_text(encoding="utf-8")
+    ribbon = RIBBON_EXTENSION.read_text(encoding="utf-8")
 
     commands = (
         "CE_DETAILREVIEWTOOLS",
@@ -28,8 +30,8 @@ if not errors:
     for command in commands:
         if f'"{command}"' not in source:
             errors.append(f"TypicalDetailsReviewCommands.cs missing command: {command}")
-        if f'"{command} "' not in plugin:
-            errors.append(f"PluginEntry.cs missing ribbon command: {command}")
+        if f'"{command} "' not in ribbon:
+            errors.append(f"TypicalDetailsRibbonExtension.cs missing ribbon command: {command}")
 
     review_areas = (
         "Title format",
@@ -79,10 +81,17 @@ if not errors:
         "Review One Detail",
         "Review Complete Detail Library",
         "Show Stored Standards Review",
+        "RibbonMenuButton",
+        "RibbonMenuItem",
+        "RibbonCommandHandler",
     )
     for marker in ribbon_markers:
-        if marker not in plugin:
-            errors.append(f"PluginEntry.cs missing details-review ribbon marker: {marker}")
+        if marker not in ribbon:
+            errors.append(f"TypicalDetailsRibbonExtension.cs missing details-review ribbon marker: {marker}")
+
+    for incompatible in ("RibbonRow", "new RibbonButton"):
+        if incompatible in ribbon:
+            errors.append(f"Typical-details ribbon reintroduced incompatible type: {incompatible}")
 
     for preserved in (
         '"CE_DETAILTOOLS "',
@@ -105,7 +114,7 @@ if not errors:
         if claim in lower_source:
             errors.append(f"Typical-details review contains unsafe claim: {claim}")
 
-    for path, text in ((SOURCE, source), (PLUGIN, plugin)):
+    for path, text in ((SOURCE, source), (PLUGIN, plugin), (RIBBON_EXTENSION, ribbon)):
         if text.count("{") != text.count("}"):
             errors.append(f"Unbalanced braces in {path.name}")
         if text.count("(") != text.count(")"):

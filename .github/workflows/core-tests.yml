@@ -16,6 +16,10 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Normalize Civil 3D 2023 and 2024 source compatibility
+        shell: pwsh
+        run: ./scripts/Apply-Civil3D-Compatibility.ps1
+
       - name: Validate report presentation source
         run: python3 scripts/Validate-ReportPresentation.py
 
@@ -60,6 +64,12 @@ jobs:
 
       - name: Validate parking skew source
         run: python3 scripts/Validate-ParkingSkew.py
+
+      - name: Validate Typical Details Phase 2 source
+        run: python3 scripts/Validate-TypicalDetailsReview.py
+
+      - name: Validate Typical Details Phase 3 and ribbon icon source
+        run: python3 scripts/Validate-DynamicTypicalDetails.py
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
