@@ -114,6 +114,25 @@ Replace-ExactText `
     -NewText $newSurveyTail `
     -Description "add linked platform road and junction setting-out schedules"
 
+$oldDynamicSectionStart = @'
+                Menu("CE_TOOLS_DYNAMIC_SECTION_MENU", "Dynamic Cross\nSections", "Create a linked cross section and keep it synchronised with monitored drawing changes.",
+'@
+$newDynamicSectionStart = @'
+                Menu("CE_TOOLS_HYDRAULIC_REVIEW_MENU", "Hydraulic &\nCatchment Review", "Run preliminary catchment, rational-flow, culvert and pump duty-point screening with explicit engineering-review warnings.",
+                    Cmd("Hydraulic Review Tools", "CE_HYDRAULICTOOLS ", "Open catchment, rational-flow, culvert, pump and clear-review workflows."),
+                    Cmd("Quick Catchment and Low-Point Review", "CE_CATCHMENTQUICK ", "Calculate boundary area/perimeter and optionally sample a Civil 3D surface for a candidate low point."),
+                    Cmd("Rational-Method Return-Period Flows", "CE_RATIONALFLOW ", "Calculate preliminary 1:2, 1:5, 1:10, 1:20, 1:25, 1:50 and 1:100 peak-flow scenarios and optionally export Excel."),
+                    Cmd("Culvert Full-Flow Capacity Review", "CE_CULVERTREVIEW ", "Screen circular or box culvert full-flow Manning capacity against an entered design flow."),
+                    Cmd("Pump Duty-Point Review", "CE_PUMPREVIEW ", "Screen a candidate pump rating against a simplified Hazen-Williams system duty point."),
+                    Cmd("Clear Hydraulic Review Graphics", "CE_HYDRAULICCLEAR ", "Erase only CE-generated catchment and hydraulic review graphics.")),
+                Menu("CE_TOOLS_DYNAMIC_SECTION_MENU", "Dynamic Cross\nSections", "Create a linked cross section and keep it synchronised with monitored drawing changes.",
+'@
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldDynamicSectionStart `
+    -NewText $newDynamicSectionStart `
+    -Description "add preliminary hydraulic catchment culvert and pump review tools"
+
 $presentationFile = "src\CE.Tools.Civil3D\CommentPresentationCommands.cs"
 Replace-ExactText `
     -RelativePath $presentationFile `
