@@ -97,6 +97,13 @@ if (-not (Test-Path $disciplineCommentsScript)) {
 Write-Host "Applying feature-line, profile, surface and network comment corrections..." -ForegroundColor Cyan
 & $disciplineCommentsScript
 
+$quantityCommentsScript = Join-Path $PSScriptRoot "Apply-Comments-Quantities.ps1"
+if (-not (Test-Path $quantityCommentsScript)) {
+    throw "The linked quantity comments normalizer is missing: $quantityCommentsScript"
+}
+Write-Host "Applying linked sewer excavation quantity corrections..." -ForegroundColor Cyan
+& $quantityCommentsScript
+
 $compatibilityScript = Join-Path $PSScriptRoot "Apply-Civil3D-Compatibility.ps1"
 if (-not (Test-Path $compatibilityScript)) {
     throw "The Civil 3D compatibility normalizer is missing: $compatibilityScript"
