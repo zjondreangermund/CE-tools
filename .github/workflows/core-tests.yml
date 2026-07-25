@@ -32,6 +32,10 @@ jobs:
         shell: pwsh
         run: ./scripts/Apply-Comments-Road.ps1
 
+      - name: Apply Master Items Phase 1 corrections
+        shell: pwsh
+        run: ./scripts/Apply-Master-Items-Phase1.ps1
+
       - name: Normalize Civil 3D 2023 and 2024 source compatibility
         shell: pwsh
         run: ./scripts/Apply-Civil3D-Compatibility.ps1
