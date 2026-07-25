@@ -93,7 +93,7 @@ namespace CETools.Civil3D
             if (!PromptText(editor, "Generated BOQ layer", settings.BoqLayer, out settings.BoqLayer)) return;
 
             settings.Write(document.Database);
-            editor.WriteMessage("\nCE_DETAILPARAMSETTINGS saved. Approved source templates remain external and read-only.");
+            editor.WriteMessage("\nCE_DETAILPARAMSETTINGS saved. Source detail files will remain read-only during review.");
         }
 
         [CommandMethod("CE_DETAILPARAMCREATE", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -239,7 +239,7 @@ namespace CETools.Civil3D
 
             try
             {
-                var rows = new List<IReadOnlyList<string>>
+                var rows = new List<IList<string>>
                 {
                     new List<string>
                     {
@@ -264,7 +264,7 @@ namespace CETools.Civil3D
                         link.SourceHash
                     });
                 }
-                SimpleXlsxWriter.WriteWorkbook(dialog.Filename, "Dynamic Detail BOQ", rows);
+                SimpleXlsxWriter.Write(dialog.Filename, "Dynamic Detail BOQ", rows);
                 document.Editor.WriteMessage("\nCE_DETAILPARAMBOQEXPORT complete: " + dialog.Filename);
             }
             catch (System.Exception exception)
