@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Phase 4 exchange, result-import and pump-system source."""
+"""Validate Phase 4 exchange, pump-system and road-drive source."""
 
 from pathlib import Path
 
@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 EXCHANGE = ROOT / "src" / "CE.Tools.Civil3D" / "SpecialistModelExchangeCommands.cs"
 PUMP_CORE = ROOT / "src" / "CE.Tools.Core" / "PumpSystemCurve.cs"
 PUMP_CIVIL = ROOT / "src" / "CE.Tools.Civil3D" / "PumpSystemReviewCommands.cs"
+ROAD_CORE = ROOT / "src" / "CE.Tools.Core" / "RoadDriveReview.cs"
+ROAD_CIVIL = ROOT / "src" / "CE.Tools.Civil3D" / "RoadDriveReviewCommands.cs"
 TESTS = ROOT / "tests" / "CE.Tools.Core.Tests" / "Program.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Master-Items-Phase4.ps1"
@@ -110,6 +112,50 @@ require(
 )
 
 require(
+    ROAD_CORE,
+    'public static class RoadDriveReviewer',
+    'public static RoadDriveAnalysis Analyse(',
+    'speedMetresPerSecond * speedMetresPerSecond /',
+    'StoppingSightDistanceMetres',
+    'Circumradius(previous, current, next)',
+    'RoadDriveIssueType.Grade',
+    'RoadDriveIssueType.GradeChange',
+    'RoadDriveIssueType.HorizontalRadius',
+    'RoadDriveIssueType.LateralAcceleration',
+    'BuildCameraFrames(ordered)',
+    'At least three road-drive samples are required.',
+    'Road-drive sample stations must be strictly increasing.',
+    'does not replace formal road',
+)
+
+require(
+    ROAD_CIVIL,
+    '"CE_ROADDRIVETOOLS"',
+    '"CE_ROADDRIVEREVIEW"',
+    '"CE_ROADDRIVEEXPORT"',
+    '"CE_ROADDRIVEINFO"',
+    '"CE_ROADDRIVECLEAR"',
+    'private const string RegAppName = "CE_ROAD_DRIVE_REVIEW"',
+    'private const string ReviewLayer = "CE-ROAD-DRIVE-REVIEW"',
+    'private const int MaximumSamples = 100000',
+    'private const int MaximumIssueLabels = 500',
+    'typeof(CivilAlignment)',
+    'alignment.GetProfileIds()',
+    'alignment.PointLocation(station, 0.0, ref easting, ref northing)',
+    'profile.ElevationAt(station)',
+    'RoadDriveReviewer.Analyse(',
+    'new Polyline3d(Poly3dType.SimplePoly, points, false)',
+    '"Station,X,Y,Z,HeadingDegrees,PitchDegrees,Alignment,Profile"',
+    'GridReportPresenter.ShowReportAndOfferTable(',
+    'SimpleXlsxWriter.Write(',
+    'GetXDataForApplication(RegAppName)',
+    'if (ReadTag(entity) == null) continue;',
+    'Alignments, profiles, corridors and unrelated objects were unchanged.',
+    'terrain/obstruction visibility not modelled',
+    'does not replace formal geometric design, sight-distance, superelevation, collision',
+)
+
+require(
     TESTS,
     'SystemCurveIncreasesWithFlow();',
     'PumpDutyPointFindsIntersection();',
@@ -119,6 +165,13 @@ require(
     'Near(74.0, duty.EfficiencyPercent.Value);',
     'Near(1.2, pass.NpshMarginMetres.Value);',
     'True(!fail.NpshPass);',
+    'StraightRoadPassesScreening();',
+    'SteepRoadFlagsGrade();',
+    'TightCurveFlagsRadius();',
+    'CameraPathHasHeadingAndPitch();',
+    'Near(20.0, analysis.MaximumAbsoluteGradePercent);',
+    'Near(Math.Sqrt(50.0), analysis.MinimumHorizontalRadiusMetres.Value);',
+    'Near(45.0, analysis.CameraFrames[0].HeadingDegrees);',
 )
 
 require(
@@ -136,6 +189,13 @@ require(
     'Cmd("Create Pump Curve CSV Template", "CE_PUMPCURVETEMPLATE "',
     'Cmd("Review One Pump and System Curve", "CE_PUMPSYSTEMREVIEW "',
     'Cmd("Rank Pump Curves in a Folder", "CE_PUMPFOLDERREVIEW "',
+    'Cmd("Road Drive Review Tools", "CE_ROADDRIVETOOLS "',
+    'Cmd("Review Road Drive and Design", "CE_ROADDRIVEREVIEW "',
+    'Cmd("Export Road Drive Camera Path", "CE_ROADDRIVEEXPORT "',
+    'Cmd("Road Drive Review Information", "CE_ROADDRIVEINFO "',
+    'Cmd("Clear Road Drive Review", "CE_ROADDRIVECLEAR "',
+    'run road-drive core tests',
+    'add deterministic road-drive geometry tests',
 )
 
 require(
@@ -150,21 +210,30 @@ require(
     'CE_PUMPCURVETEMPLATE ',
     'CE_PUMPSYSTEMREVIEW ',
     'CE_PUMPFOLDERREVIEW ',
+    'CE_ROADDRIVETOOLS ',
+    'CE_ROADDRIVEREVIEW ',
+    'CE_ROADDRIVEEXPORT ',
+    'CE_ROADDRIVEINFO ',
+    'CE_ROADDRIVECLEAR ',
 )
 
-for path in (EXCHANGE, PUMP_CORE, PUMP_CIVIL):
+for path in (EXCHANGE, PUMP_CORE, PUMP_CIVIL, ROAD_CORE, ROAD_CIVIL):
     text = path.read_text(encoding="utf-8")
     if text.count("{") != text.count("}"):
         raise SystemExit(f"Unbalanced braces in {path.name}")
 
-combined = "\n".join(path.read_text(encoding="utf-8") for path in (EXCHANGE, PUMP_CIVIL))
+combined = "\n".join(path.read_text(encoding="utf-8") for path in (EXCHANGE, PUMP_CIVIL, ROAD_CIVIL))
 if "Microsoft.Office.Interop" in combined:
     raise SystemExit("Phase 4 must not introduce Office COM automation")
 if "ref MinimumDepth" in combined or "ref MaximumDepth" in combined:
     raise SystemExit("Result summary properties must not be passed by ref")
 if "File.Copy(" in EXCHANGE.read_text(encoding="utf-8") or "File.Move(" in EXCHANGE.read_text(encoding="utf-8"):
     raise SystemExit("Specialist exchange must not silently copy or move source model files")
-if "entity.Erase();" not in combined or "HasResultRecord(entity)" not in combined:
-    raise SystemExit("Clear workflow must erase only tagged imported result graphics")
+if "entity.Erase();" not in EXCHANGE.read_text(encoding="utf-8") or "HasResultRecord(entity)" not in EXCHANGE.read_text(encoding="utf-8"):
+    raise SystemExit("Specialist result clear workflow must erase only tagged imported graphics")
+if "entity.Erase();" not in ROAD_CIVIL.read_text(encoding="utf-8") or "ReadTag(entity) == null" not in ROAD_CIVIL.read_text(encoding="utf-8"):
+    raise SystemExit("Road-drive clear workflow must erase only tagged review graphics")
+if "alignment.UpgradeOpen" in ROAD_CIVIL.read_text(encoding="utf-8") or "profile.UpgradeOpen" in ROAD_CIVIL.read_text(encoding="utf-8"):
+    raise SystemExit("Road-drive review must keep source alignment and profile read-only")
 
-print("Master Items Phase 4 exchange and pump-system validation passed.")
+print("Master Items Phase 4 exchange, pump-system and road-drive validation passed.")
