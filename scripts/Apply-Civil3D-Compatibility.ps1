@@ -162,10 +162,12 @@ $newWaterProfileName = @'
 
                         string profileName = UniqueName(
                             record.RouteName + " - EG",
-                            ReadCivilNames(alignment.GetProfileIds(), transaction));
+                            ReadCivilNames(
+                                alignment.GetProfileIds().Cast<ObjectId>(),
+                                transaction));
 '@
 Replace-ExactText -RelativePath $waterFile -OldText $oldWaterProfileName -NewText $newWaterProfileName -Description "read water profile IDs from the owning alignment"
-Replace-ExactText -RelativePath $waterFile -OldText 'ReadCivilNames(civilDocument.GetProfileViewIds(), transaction)' -NewText 'ReadCivilNames(alignment.GetProfileViewIds(), transaction)' -Description "read water profile-view IDs from the owning alignment"
+Replace-ExactText -RelativePath $waterFile -OldText 'ReadCivilNames(civilDocument.GetProfileViewIds(), transaction)' -NewText 'ReadCivilNames(alignment.GetProfileViewIds().Cast<ObjectId>(), transaction)' -Description "read water profile-view IDs from the owning alignment"
 
 $surfaceFile = "src\CE.Tools.Civil3D\SurfaceCorrectionCommands.cs"
 $oldSurfaceLinq = @'
