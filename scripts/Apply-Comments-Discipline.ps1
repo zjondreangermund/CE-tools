@@ -111,4 +111,56 @@ Replace-ExactText `
     -NewText $newWaterTail `
     -Description "add shared network reports and service production launchers"
 
-Write-Host "Feature-line, profile, surface and network active comments are wired." -ForegroundColor Green
+$oldBoqTail = @'
+                    Cmd("Bulk-water BOQ Excel", "CE_BOQBULKWATER ", "Export bulk pipeline, storage, pump and fitting quantities."),
+                    Cmd("Total Length", "CE_TLENGTH ", "Preserved quick total of selected curve lengths by layer."),
+                    Cmd("Total Area", "CE_TAREA ", "Preserved quick total of selected areas by layer.")),
+'@
+$newBoqTail = @'
+                    Cmd("Bulk-water BOQ Excel", "CE_BOQBULKWATER ", "Export bulk pipeline, storage, pump and fitting quantities."),
+                    Cmd("Total Length", "CE_TLENGTH ", "Preserved quick total of selected curve lengths by layer."),
+                    Cmd("Total Area", "CE_TAREA ", "Preserved quick total of selected areas by layer."),
+                    Cmd("Dynamic BOQ and Quantity Centre", "CE_BOQCENTER ", "Open all linked BOQ build, refresh, discipline export, total and refresh workflows in one window.")),
+'@
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldBoqTail `
+    -NewText $newBoqTail `
+    -Description "add the dynamic BOQ and quantity centre"
+
+$oldReportTail = @'
+                    Cmd("Water Report", "CE_REPORTWATER ", "Generate the water design report."),
+                    Cmd("Bulk-water Report", "CE_REPORTBULKWATER ", "Generate the bulk-water design report."),
+                    Cmd("Export Design Report", "CE_REPORTEXPORT ", "Export a full or discipline design inventory as an .xlsx workbook.")),
+'@
+$newReportTail = @'
+                    Cmd("Water Report", "CE_REPORTWATER ", "Generate the water design report."),
+                    Cmd("Bulk-water Report", "CE_REPORTBULKWATER ", "Generate the bulk-water design report."),
+                    Cmd("Export Design Report", "CE_REPORTEXPORT ", "Export a full or discipline design inventory as an .xlsx workbook."),
+                    Cmd("Design Report Centre", "CE_REPORTCENTER ", "Open all full, discipline, network and shared refresh reports in one window.")),
+'@
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldReportTail `
+    -NewText $newReportTail `
+    -Description "add the consolidated design report centre"
+
+$oldProductionTail = @'
+                    Cmd("Create A-Series Drawing Books", "CE_DRAWINGBOOK ", "Create or refresh A4/A3 client and A1/A0 construction layouts."),
+                    Cmd("Export Drawing Book Index", "CE_BOOKINDEX ", "Export the standard and existing layout register to Excel."))))
+'@
+$newProductionTail = @'
+                    Cmd("Create A-Series Drawing Books", "CE_DRAWINGBOOK ", "Create or refresh A4/A3 client and A1/A0 construction layouts."),
+                    Cmd("Export Drawing Book Index", "CE_BOOKINDEX ", "Export the standard and existing layout register to Excel."),
+                    Cmd("Plan Production and Project Books", "CE_PRODUCTIONCENTER ", "Open summary, client-book, drawing-book, index, publish and output-location workflows in one window."),
+                    Cmd("Print and Publish Centre", "CE_PRINTCENTER ", "Prepare A-series/client layouts and open native AutoCAD Plot or Publish."),
+                    Cmd("Batch Publish to PDF", "CE_BATCHPUBLISH ", "Open AutoCAD Publish for generated A1/A0 and A4/A3 layouts."),
+                    Cmd("Output Locations", "CE_OUTPUTLOCATION ", "Show where linked books, Excel exports and published PDFs are stored."))))
+'@
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldProductionTail `
+    -NewText $newProductionTail `
+    -Description "add plan production, print and output-location centres"
+
+Write-Host "Feature-line, profile, surface, network, BOQ, report and production active comments are wired." -ForegroundColor Green
