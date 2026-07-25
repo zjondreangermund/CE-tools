@@ -69,7 +69,7 @@ require(
 require(
     BUILD,
     'Apply-Comments-Discipline.ps1',
-    'Applying feature-line, profile and surface comment corrections',
+    'Applying feature-line, profile, surface and network comment corrections',
 )
 
 # The normalizer runs before validation, therefore the generated ribbon source
