@@ -94,6 +94,44 @@ Replace-ExactText `
     -NewText $newHatchTail `
     -Description "add background cleanup and XREF project management commands"
 
+$oldSurveyTail = @'
+                    Cmd("Coordinate Cross + Annotation (Legacy)", "CE_COORDCROSSX ", "Create the shared cross and annotation workflow."),
+                    Cmd("Polyline Vertex COGO Points (Legacy)", "CE_COORDPOLY ", "Run the original sequential COGO point and XYZ table workflow."))));
+'@
+$newSurveyTail = @'
+                    Cmd("Coordinate Cross + Annotation (Legacy)", "CE_COORDCROSSX ", "Create the shared cross and annotation workflow."),
+                    Cmd("Polyline Vertex COGO Points (Legacy)", "CE_COORDPOLY ", "Run the original sequential COGO point and XYZ table workflow.")),
+                Menu("CE_TOOLS_SETTING_OUT_MENU", "Setting-Out\nSchedules", "Create linked platform, road and junction coordinate/elevation schedules with drawing-table and Excel outputs.",
+                    Cmd("Setting-Out Schedule Tools", "CE_SETTINGOUTTOOLS ", "Open create, refresh, export and information workflows."),
+                    Cmd("Create Linked Setting-Out Schedule", "CE_SETTINGOUTPOINTS ", "Create a linked point schedule with description, X, Y, ground, design and difference columns."),
+                    Cmd("Refresh Setting-Out Schedule", "CE_SETTINGOUTREFRESH ", "Refresh linked point and surface values in a selected setting-out table."),
+                    Cmd("Export Setting-Out Schedule", "CE_SETTINGOUTEXPORT ", "Refresh and export a linked setting-out table to Excel."),
+                    Cmd("Setting-Out Schedule Information", "CE_SETTINGOUTINFO ", "Review schedule type, source handles, surface links and missing values."))));
+'@
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldSurveyTail `
+    -NewText $newSurveyTail `
+    -Description "add linked platform road and junction setting-out schedules"
+
+$presentationFile = "src\CE.Tools.Civil3D\CommentPresentationCommands.cs"
+Replace-ExactText `
+    -RelativePath $presentationFile `
+    -OldText @'
+            var summary = new RefreshSummary();
+            summary.CoordinateFollowers += DynamicCoordinateLinkStore.Refresh(document);
+
+            List<LinkedTableItem> tables = ReadLinkedTables(document.Database);
+'@ `
+    -NewText @'
+            var summary = new RefreshSummary();
+            summary.CoordinateFollowers += DynamicCoordinateLinkStore.Refresh(document);
+            summary.CoordinateTables += SettingOutScheduleCommands.RefreshAll(document);
+
+            List<LinkedTableItem> tables = ReadLinkedTables(document.Database);
+'@ `
+    -Description "include linked setting-out schedules in CE_REFRESHALL"
+
 # FeatureLine closure differs between Civil 3D API versions. The point sequence
 # is sufficient for diagnostics and avoids depending on a version-specific
 # Closed/IsClosed property.
