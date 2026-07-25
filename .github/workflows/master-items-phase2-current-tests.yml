@@ -34,11 +34,14 @@ jobs:
         shell: pwsh
         run: ./scripts/Apply-Civil3D-Compatibility.ps1
 
-      - name: Validate current Phase 2 source
-        run: |
-          python3 scripts/Validate-MasterItemsPhase2.py
-          python3 scripts/Validate-StandardQuantityTemplates.py
-          python3 scripts/Validate-ProfileViewBatch.py
+      - name: Validate dynamic parking and grading
+        run: python3 scripts/Validate-MasterItemsPhase2.py
+
+      - name: Validate standard quantity templates
+        run: python3 scripts/Validate-StandardQuantityTemplates.py
+
+      - name: Validate profile-view batch cleanup
+        run: python3 scripts/Validate-ProfileViewBatch.py
 
       - name: Validate Phase 1 and inherited source
         run: |
