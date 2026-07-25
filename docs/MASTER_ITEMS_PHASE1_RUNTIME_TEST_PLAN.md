@@ -17,6 +17,8 @@ Confirm the following menus and commands appear and execute without duplicate-co
 - Grading review: `CE_GRADINGDIAGNOSTICS`, `CE_LOWSLOPE`, `CE_LOWPOINTS`, `CE_GRADINGREVIEWCLEAR`.
 - Background/XREF: `CE_BACKGROUNDTOOLS`, `CE_BACKGROUNDREVIEW`, `CE_BACKGROUNDLIGHT`, `CE_XREFSPLIT`, `CE_XREFINFO`, `CE_XREFBACKUP`.
 - Setting out: `CE_SETTINGOUTTOOLS`, `CE_SETTINGOUTPOINTS`, `CE_SETTINGOUTREFRESH`, `CE_SETTINGOUTEXPORT`, `CE_SETTINGOUTINFO`.
+- Road section data: `CE_ROADSECTIONDATATOOLS`, `CE_ROADSECTIONDATA`, `CE_ROADSECTIONDATAREFRESH`, `CE_ROADSECTIONDATAEXPORT`, `CE_ROADSECTIONDATAINFO`.
+- Network assets: `CE_NETWORKSCHEDULETOOLS`, `CE_NETWORKSCHEDULE`, `CE_NETWORKSCHEDULEREFRESH`, `CE_NETWORKSCHEDULEEXPORT`, `CE_NETWORKSCHEDULEINFO`, `CE_NETWORKSCHEDULEBOQ`.
 - Hydraulic review: `CE_HYDRAULICTOOLS`, `CE_CATCHMENTQUICK`, `CE_RATIONALFLOW`, `CE_CULVERTREVIEW`, `CE_PUMPREVIEW`, `CE_HYDRAULICCLEAR`.
 
 ## 2. Boundary parking alternatives
@@ -68,7 +70,7 @@ Use selected disposable geometry and a new output folder.
 6. Run `CE_XREFBACKUP`; confirm a timestamped copy appears under `Revisions` and the source hash remains unchanged.
 7. Test relative and absolute XREF paths.
 
-## 6. Linked setting-out schedules
+## 6. Linked point setting-out schedules
 
 Create COGO points and DBPoints over two known Civil 3D surfaces.
 
@@ -82,7 +84,38 @@ Create COGO points and DBPoints over two known Civil 3D surfaces.
 8. Run `CE_SETTINGOUTEXPORT`; open the XLSX without an Excel repair warning and compare values.
 9. Run `CE_SETTINGOUTINFO` and verify source/surface handles and row state.
 
-## 7. Rational-method flow review
+## 7. Road cross-section setting-out data
+
+Create a known alignment and ground/design surfaces covering the full road corridor.
+
+1. Run `CE_ROADSECTIONDATA` at 5 m, 10 m and 20 m intervals in separate disposable drawings.
+2. Verify first station, regular interval stations and final alignment station are included.
+3. Confirm every station contains Left Edge, Road Centerline and Right Edge rows.
+4. Independently verify X/Y coordinates at the entered offsets using Civil 3D inquiry tools.
+5. Verify ground/design elevations and `Difference = Design - Ground`.
+6. Confirm samples outside a surface are marked unavailable rather than assigned invented values.
+7. Change alignment geometry or a surface, run `CE_ROADSECTIONDATAREFRESH`, and confirm values update without duplicate tables.
+8. Run `CE_REFRESHALL` and confirm the road-section schedule refreshes.
+9. Export with `CE_ROADSECTIONDATAEXPORT` and compare the XLSX with the drawing table.
+10. Run `CE_ROADSECTIONDATAINFO` and confirm linked alignment/surface handles, offsets and interval.
+
+## 8. Network asset schedules and BOQ handoff
+
+Use a disposable drawing containing stormwater, sewer and pressure-network parts with known properties.
+
+1. Run `CE_NETWORKSCHEDULE` for All and then for each discipline scope.
+2. Test Entire Drawing and Select modes.
+3. Confirm supported rows include pipes, structures, fittings and appurtenances.
+4. Compare network, part name, description, family, size, length, slope, bend angle and start/end levels against Civil 3D Properties.
+5. Confirm unavailable API values remain blank rather than showing fabricated defaults.
+6. Modify a part and run `CE_NETWORKSCHEDULEREFRESH`; verify the same table updates.
+7. Delete one part and confirm the missing/rejected count increases while valid rows remain.
+8. Export with `CE_NETWORKSCHEDULEEXPORT` and open the XLSX without a repair warning.
+9. Run `CE_NETWORKSCHEDULEBOQ`; confirm live schedule sources become the implied selection and `CE_BOQBUILD` opens.
+10. Complete the BOQ preview and confirm network source handles/lengths remain linked.
+11. Run `CE_REFRESHALL` and confirm the network schedule refreshes.
+
+## 9. Rational-method flow review
 
 Use independently calculated test values.
 
@@ -92,7 +125,7 @@ Use independently calculated test values.
 4. Export XLSX and compare every value.
 5. Confirm the popup/table states that this is preliminary screening.
 
-## 8. Culvert review
+## 10. Culvert review
 
 Test one circular and one box culvert with hand-calculated Manning full-flow capacities.
 
@@ -101,7 +134,7 @@ Test one circular and one box culvert with hand-calculated Manning full-flow cap
 3. Confirm the screen clearly states that inlet/outlet control and flood-level analysis remain required.
 4. Test invalid zero/negative input rejection and command cancellation.
 
-## 9. Pump duty-point review
+## 11. Pump duty-point review
 
 Use a known Hazen-Williams test case.
 
@@ -109,7 +142,7 @@ Use a known Hazen-Williams test case.
 2. Test one pump rating that passes and one that fails.
 3. Confirm the output requires manufacturer curve, NPSH, surge and complete system verification.
 
-## 10. Quick catchment review
+## 12. Quick catchment review
 
 Create a closed boundary over a Civil 3D surface with a known low region.
 
@@ -120,14 +153,14 @@ Create a closed boundary over a Civil 3D surface with a known low region.
 5. Create the candidate low-point marker and clear it with `CE_HYDRAULICCLEAR`.
 6. Confirm the output does not claim hydrological delineation or flood simulation.
 
-## 11. Undo, save and reopen
+## 13. Undo, save and reopen
 
 For each geometry-producing workflow:
 
 - test UNDO/REDO;
 - save, close and reopen;
 - verify XData/Xrecord links survive;
-- refresh linked parking and setting-out outputs;
+- refresh linked parking and all schedule outputs;
 - verify clear commands do not remove source design objects.
 
 ## Failure evidence
