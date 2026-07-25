@@ -52,4 +52,10 @@ if (-not $presentationText.Contains($settingLine)) {
     Write-Host "  include linked setting-out schedules in CE_REFRESHALL" -ForegroundColor Green
 }
 
+$roadSections = Join-Path $PSScriptRoot "Apply-Master-Items-Phase1-RoadSections.ps1"
+if (-not (Test-Path $roadSections)) {
+    throw "The Phase 1 road cross-section normalizer is missing: $roadSections"
+}
+& $roadSections
+
 Write-Host "Master Items Phase 1 normalization completed; validators will confirm every required result." -ForegroundColor Green
