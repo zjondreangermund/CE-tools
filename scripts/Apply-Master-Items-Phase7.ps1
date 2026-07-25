@@ -36,7 +36,7 @@ $newIntegrationTail = @'
                     Cmd("Road Drive Review Information", "CE_ROADDRIVEINFO ", "Review stored alignment, profile, criteria, issue and source-handle metadata."),
                     Cmd("Clear Road Drive Review", "CE_ROADDRIVECLEAR ", "Erase only tagged CE Tools road-drive paths, issue markers and labels.")),
                 Menu("CE_TOOLS_PRESENTATION_MENU", "Project\nPresentation", "Generate a dependency-free 16:9 PowerPoint project-review deck from current drawing metadata, Civil inventory, production status and model-health findings.",
-                    Cmd("Project Presentation Tools", "CE_PRESENTATIONTOOLS ", "Open preview and create workflows for the automatic project presentation."),
+                    Cmd("Project Presentation Tools", "CE_PROJECTPRESENTATIONTOOLS ", "Open preview and create workflows for the automatic project presentation."),
                     Cmd("Preview Project Presentation", "CE_PRESENTATIONPREVIEW ", "Review the planned slide titles, metrics and bullet counts before creating the PowerPoint file."),
                     Cmd("Create Project Presentation", "CE_PRESENTATIONCREATE ", "Create a non-overwriting PowerPoint presentation without PowerPoint/Office automation."))));
 '@
