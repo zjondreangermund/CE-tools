@@ -15,21 +15,31 @@ This list records the additional requirements supplied after the first live Civi
 - [x] Add Surface Correction and Performance source: zero/spike/low/extreme screening, hole/open-edge review, likely object-contamination screening, reversible corrected surfaces, reversible grid-simplified surfaces, generated-surface register and restore/removal workflow.
 - [x] Add Dynamic Intersections source: feature-line/corridor/curve path extraction, plan intersection and elevation comparison, linked markers/register, explicit refresh/info/detach and deferred idle refresh with source preservation.
 - [x] Add Parking Skew Validation source: minimum-area oriented bay measurement, true perpendicular width in millimetres, green pass/red fail dimensions, source-linked reports, failed-bay correction outlines and clear/information workflows while preserving existing parking commands.
+- [x] Add Typical Details Phase 2 Standards Review source: read-only DWG/DXF inventory and heuristic standards checks, explicit manual PDF review boundary, stored traceable findings, settings, reports and library review.
+- [x] Add Typical Details Phase 3 Dynamic Details source: trench drain, pipe trench, valve chamber, kerb and headwall variants; linked parameters and regeneration; source hash traceability; review status; preliminary quantity schedules; BOQ-ready Xrecord linkage; Excel export; information, detach and clear workflows.
+- [x] Add ribbon icon performance source: per-session `ImageSource` cache, one generic cached command icon, unique top-level icons, `TextOnly/Cached/Full` modes and safe fallback. Cached is the default.
 
-The stormwater, sewer, water, surface, dynamic-intersection and parking-skew implementations remain **draft and unvalidated in Autodesk Civil 3D** until their exact pull-request heads compile and pass the Civil 3D 2023/2024 manual test plans.
+All follow-up implementations remain **draft and unvalidated in Autodesk Civil 3D** until their exact pull-request heads compile and pass the Civil 3D 2023/2024 manual test plans.
 
-## Next implementation order
+## Next implementation and validation order
 
-1. **Typical Details Phase 2 — Standards Review**
-   - review title format, revision table, notes, legends, north arrow, fonts, dimensions, logo, sheet numbering, layers, lineweights, scales and symbols;
-   - identify missing dimensions, notes, callouts and labels;
-   - produce a consistency and improvement report;
-   - keep findings traceable to each reviewed DWG/DXF/PDF and avoid silently changing approved details.
+1. **Exact-head stacked Autodesk validation**
+   - compile PRs #28–#36 against Civil 3D 2023 and 2024 assemblies;
+   - execute each supplied manual validation plan against the exact tested commit;
+   - record host build, commit SHA, DLL SHA-256, tester, date and defects;
+   - fix defects on the owning stacked branch and retest from that exact new head.
 
-2. **Typical Details Phase 3 — Dynamic Details**
-   - parameter-driven detail variants such as trench width/depth, concrete strength, reinforcement and grating type;
-   - linked refresh when parameters change;
-   - quantity and BOQ linkage where geometry is measurable.
+2. **Stack consolidation and release planning**
+   - only after every required host test passes, agree a safe rebase/merge order;
+   - preserve the confirmed Civil 3D 2023 ribbon implementation and command registry;
+   - create one release candidate bundle and repeat smoke/regression testing before any production issue.
+
+3. **Future Typical Details Phase 4 candidates**
+   - office-approved template mapping and controlled parameter-schema catalogues;
+   - engineer-approved reinforcement/bar schedule logic where reliable data exists;
+   - controlled authority/standard rule packs;
+   - expanded measurable detail families and project BOQ aggregation;
+   - no automatic approval or source-template overwrite.
 
 ## Commercial reference
 
