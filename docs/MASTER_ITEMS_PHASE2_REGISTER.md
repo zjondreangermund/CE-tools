@@ -45,21 +45,59 @@ Commands:
 - `CE_PARKGRADEINFO`
 - `CE_PARKGRADECLEAR`
 
+## Standards-based quantity templates
+
+- [x] Source implemented: linked parking/driveway layerworks schedule.
+- [x] Source implemented: linked sidewalk layerworks schedule.
+- [x] Source implemented: refresh from current source areas and lengths.
+- [x] Source implemented: drawing tables and dependency-free Excel export.
+- [x] Source implemented: separate quantities for paving, bedding, G5, G6, roadbed, kerbs/channels, markings, signs and allowances where applicable.
+- [ ] Runtime: verify every quantity against hand calculations and confirm XLSX files open without repair warnings.
+- [ ] Engineering boundary: office templates require project specification, thickness, waste, compaction and measurement-rule review before issue.
+
+## Batch profile-view cleanup
+
+- [x] Source implemented: select and process multiple Civil 3D profile views.
+- [x] Source implemented: profile-view style and band-set assignment where supported by the installed Civil 3D API.
+- [x] Source implemented: automatic station/elevation fitting and rebuild/update attempts.
+- [x] Source implemented: batch report and optional overlap-cleanup handoff.
+- [x] Source implemented: explicit unsupported-operation reporting rather than silent success.
+- [ ] Runtime: validate Civil 3D 2023 and 2024 style, band-set and elevation-range API behaviour.
+
+## Linked detailed-section annotations
+
+- [x] Source implemented: road, parking, stormwater, sewer and water discipline selection.
+- [x] Source implemented: overall width and height dimensions from selected section geometry.
+- [x] Source implemented: circular-element diameter labels and discipline notes.
+- [x] Source implemented: linked component register with object type, layer, measure and source handle.
+- [x] Source implemented: source-handle persistence, information, refresh and clear workflows.
+- [x] Source implemented: source section geometry remains unchanged.
+- [ ] Runtime: verify AutoCAD dimension styles, table layout, missing-source handling and save/reopen persistence.
+- [ ] Foundation boundary: generated drafting must be checked against engineer-approved typical details and project standards.
+
+Commands:
+
+- `CE_SECTIONDETAILTOOLS`
+- `CE_SECTIONDETAILCREATE`
+- `CE_SECTIONDETAILREFRESH`
+- `CE_SECTIONDETAILINFO`
+- `CE_SECTIONDETAILCLEAR`
+
 ## Next Phase 2 groups
 
-- [ ] Standards-based road, parking, sidewalk and drainage quantity templates.
-- [ ] Batch profile-view cleanup, fit, band-set and label-placement controls.
-- [ ] Detailed section annotation/dimensioning for selected services.
-- [ ] Civil 3D design-model report generator.
+- [ ] Comprehensive Civil 3D design-model report generator.
 - [ ] Project-wide XREF discipline splitter and revision comparison dashboard.
+- [ ] Finished Civil 3D grading surfaces/feature lines from parking grading guides after runtime API validation.
+- [ ] Full parking optimiser with obstacles, islands, circulation and accessible-bay standards.
 
 ## Engineering boundary
 
-The parking grading guide is design-assistance geometry. Final issue requires review of:
+All Phase 2 outputs remain design/drafting assistance. Final issue requires review of:
 
 - drainage paths and low points;
 - tie-ins to roads, kerbs, channels, structures and entrances;
 - maximum/minimum grades and accessibility requirements;
 - surface triangulation and contour behaviour;
 - cut/fill and layerworks quantities;
-- stormwater capture and overflow routes.
+- stormwater capture and overflow routes;
+- every generated section dimension, component description and construction note.
