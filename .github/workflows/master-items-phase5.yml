@@ -39,6 +39,7 @@ jobs:
           ./scripts/Apply-Master-Items-Phase3.ps1
           ./scripts/Apply-Master-Items-Phase4.ps1
           ./scripts/Apply-Master-Items-Phase5.ps1
+          ./scripts/Apply-Master-Items-Phase5-Accessible.ps1
 
       - name: Normalize Civil 3D compatibility
         shell: pwsh
