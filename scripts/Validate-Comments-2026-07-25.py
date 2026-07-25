@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the first active batch from the 25 July 2026 comments register."""
+"""Validate active batches from the 25 July 2026 comments register."""
 
 from pathlib import Path
 
@@ -8,6 +8,8 @@ PROJECT = ROOT / "src" / "CE.Tools.Civil3D" / "ProjectSetupCommands.cs"
 PROJECT_WINDOW = ROOT / "src" / "CE.Tools.Civil3D" / "ProjectSetupPopupWindow.cs"
 PARKING = ROOT / "src" / "CE.Tools.Civil3D" / "ParkingCommands.cs"
 PARKING_WORKFLOW = ROOT / "src" / "CE.Tools.Civil3D" / "ClosedParkingBayWorkflow.cs"
+RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
+FLOATING = ROOT / "src" / "CE.Tools.Civil3D" / "FloatingToolsWindow.cs"
 BUILD = ROOT / "scripts" / "Build-CE-Tools.ps1"
 NORMALIZER = ROOT / "scripts" / "Apply-Comments-2026-07-25.ps1"
 
@@ -51,6 +53,22 @@ require(
     "CE_PKREPORTUI",
 )
 require(
+    RIBBON,
+    "Title = PrefixRibbonText(title).ToUpperInvariant()",
+    "Text = PrefixRibbonText(text)",
+    "Text = PrefixRibbonText(definition.Text)",
+    "private static string PrefixRibbonText(string text)",
+    'Cmd("Floating Tools Window", "CE_TOOLSPALETTE "',
+)
+require(
+    FLOATING,
+    '"CE_TOOLSPALETTE"',
+    "AcApplication.ShowModelessWindow(_window);",
+    'item.Id == "CE_TOOLS_RIBBON_TAB"',
+    "document.SendStringToExecute(",
+    "RibbonVisuals.Small(definition.Command)",
+)
+require(
     BUILD,
     'Apply-Comments-2026-07-25.ps1',
     "Applying active 25 July 2026 comment corrections",
@@ -60,6 +78,10 @@ require(
     "replace separate project prompts with one project setup popup",
     "route single parking rows to closed bay polyline generation",
     "route double parking rows to closed bay polyline generation",
+    "prefix CE Tools ribbon panel names",
+    "prefix CE Tools ribbon menu names",
+    "prefix CE Tools ribbon command names",
+    "add the floating CE Tools launcher to Project Setup",
 )
 
 print("25 July 2026 active-comment batch validation passed.")
