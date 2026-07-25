@@ -83,6 +83,13 @@ function Find-ManagedAssembly {
 
 Assert-DotNetSdk
 
+$compatibilityScript = Join-Path $PSScriptRoot "Apply-Civil3D-Compatibility.ps1"
+if (-not (Test-Path $compatibilityScript)) {
+    throw "The Civil 3D compatibility normalizer is missing: $compatibilityScript"
+}
+Write-Host "Normalising Civil 3D 2023/2024 source compatibility..." -ForegroundColor Cyan
+& $compatibilityScript
+
 Write-Host "Running CE Tools host-independent tests..." -ForegroundColor Cyan
 & dotnet run --project $tests -c Release
 if ($LASTEXITCODE -ne 0) {
