@@ -7,32 +7,83 @@ using System.Windows.Media.Imaging;
 
 namespace CETools.Civil3D
 {
+    internal enum RibbonIconMode
+    {
+        TextOnly,
+        Cached,
+        Full
+    }
+
     /// <summary>
-    /// Creates lightweight vector-style ribbon icons at runtime. Keeping the artwork
-    /// inside the managed assembly avoids missing PNG resources after bundle updates
-    /// and gives CE Tools a consistent blue/green engineering identity in both dark
-    /// and light AutoCAD themes.
+    /// Creates lightweight vector-style ribbon icons at runtime. ImageSource objects
+    /// are cached by icon ID and pixel size for the Civil 3D session. Cached mode
+    /// keeps unique large top-level icons but reuses one generic small command icon.
     /// </summary>
     internal static class RibbonVisuals
     {
+        static RibbonVisuals()
+        {
+            TypicalDetailsRibbonExtension.Schedule();
+        }
+
+        private static readonly object CacheSync = new object();
         private static readonly Dictionary<string, ImageSource> Cache =
             new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
 
+        private static RibbonIconMode _mode = RibbonIconMode.Cached;
+
+        public static RibbonIconMode Mode
+        {
+            get { return _mode; }
+        }
+
+        public static void SetMode(RibbonIconMode mode)
+        {
+            _mode = mode;
+        }
+
         public static ImageSource Small(string id)
         {
+            if (_mode == RibbonIconMode.TextOnly)
+                return null;
+            if (!IsTopLevelIcon(id))
+                return CommandSmall(id);
             return Create(id, 16);
         }
 
         public static ImageSource Large(string id)
         {
+            if (_mode == RibbonIconMode.TextOnly)
+                return null;
             return Create(id, 32);
+        }
+
+        public static ImageSource CommandSmall(string command)
+        {
+            if (_mode == RibbonIconMode.TextOnly)
+                return null;
+            if (_mode == RibbonIconMode.Cached)
+                return Create("CE_TOOLS_GENERIC_COMMAND", 16);
+            if (_mode == RibbonIconMode.Full)
+                return Create(command, 16);
+            return null;
+        }
+
+        private static bool IsTopLevelIcon(string id)
+        {
+            return !string.IsNullOrWhiteSpace(id) &&
+                   id.Trim().StartsWith("CE_TOOLS_", StringComparison.OrdinalIgnoreCase);
         }
 
         private static ImageSource Create(string id, int pixels)
         {
-            string key = (id ?? string.Empty) + "|" + pixels;
-            ImageSource cached;
-            if (Cache.TryGetValue(key, out cached)) return cached;
+            string key = (id ?? string.Empty) + "|" + pixels.ToString(CultureInfo.InvariantCulture);
+            lock (CacheSync)
+            {
+                ImageSource cached;
+                if (Cache.TryGetValue(key, out cached))
+                    return cached;
+            }
 
             IconStyle style = ResolveStyle(id);
             var visual = new DrawingVisual();
@@ -65,9 +116,7 @@ namespace CETools.Civil3D
                     pixels * 0.04,
                     pixels * 0.04);
 
-                double fontSize = style.Glyph.Length > 1
-                    ? pixels * 0.34
-                    : pixels * 0.48;
+                double fontSize = style.Glyph.Length > 1 ? pixels * 0.34 : pixels * 0.48;
                 var text = new FormattedText(
                     style.Glyph,
                     CultureInfo.InvariantCulture,
@@ -89,21 +138,23 @@ namespace CETools.Civil3D
                 context.DrawEllipse(accent, null, new Point(pixels * 0.76, y), pixels * 0.045, pixels * 0.045);
             }
 
-            var bitmap = new RenderTargetBitmap(
-                pixels,
-                pixels,
-                96.0,
-                96.0,
-                PixelFormats.Pbgra32);
+            var bitmap = new RenderTargetBitmap(pixels, pixels, 96.0, 96.0, PixelFormats.Pbgra32);
             bitmap.Render(visual);
             bitmap.Freeze();
-            Cache[key] = bitmap;
+            lock (CacheSync)
+            {
+                ImageSource existing;
+                if (Cache.TryGetValue(key, out existing))
+                    return existing;
+                Cache[key] = bitmap;
+            }
             return bitmap;
         }
 
         private static IconStyle ResolveStyle(string id)
         {
             string value = (id ?? string.Empty).ToUpperInvariant();
+            if (value.Contains("GENERIC_COMMAND")) return Style("•", 55, 75, 96, 111, 190, 68);
             if (value.Contains("PROJECT")) return Style("P", 18, 69, 122, 113, 190, 68);
             if (value.Contains("COORDSYS")) return Style("CS", 20, 91, 146, 68, 192, 208);
             if (value.Contains("SURVEY")) return Style("XY", 21, 96, 143, 72, 198, 219);
@@ -118,6 +169,7 @@ namespace CETools.Civil3D
             if (value.Contains("CORRIDOR")) return Style("CO", 45, 87, 102, 47, 181, 170);
             if (value.Contains("PARKING")) return Style("PK", 57, 91, 76, 139, 195, 74);
             if (value.Contains("PIPE")) return Style("UT", 38, 85, 112, 75, 179, 208);
+            if (value.Contains("DYNAMIC_TYPICAL")) return Style("DT", 70, 70, 112, 140, 198, 90);
             if (value.Contains("DESIGN_STANDARDS")) return Style("DS", 91, 82, 63, 223, 184, 63);
             if (value.Contains("QUANTITY")) return Style("Q", 43, 87, 105, 114, 190, 82);
             if (value.Contains("REPORT")) return Style("R", 62, 81, 111, 235, 159, 52);
@@ -158,10 +210,10 @@ namespace CETools.Civil3D
                 Border = border;
             }
 
-            public string Glyph { get; }
-            public Color Background { get; }
-            public Color Accent { get; }
-            public Color Border { get; }
+            public string Glyph { get; private set; }
+            public Color Background { get; private set; }
+            public Color Accent { get; private set; }
+            public Color Border { get; private set; }
         }
     }
 }
