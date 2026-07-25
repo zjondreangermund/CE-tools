@@ -61,8 +61,10 @@ Review graphics remain separate from source design geometry and can be removed w
 - [x] Road horizontal/vertical/junction point schedules through the schedule-type selector.
 - [x] Linked refresh after COGO point or selected surface changes — `CE_SETTINGOUTREFRESH` and `CE_REFRESHALL`.
 - [x] Excel export — `CE_SETTINGOUTEXPORT`.
-- [ ] Cross-section schedules at configurable 5 m/10 m/20 m intervals.
-- [ ] Network asset schedules linked directly to BOQ data.
+- [x] Cross-section schedules at configurable 5 m/10 m/20 m intervals — `CE_ROADSECTIONDATA`.
+- [x] Left-edge, centreline and right-edge X/Y/ground/design/difference rows with refresh and Excel export.
+- [x] Network asset schedules with pipes, structures, fittings, appurtenances, sizes, slopes, lengths, bend angles and levels — `CE_NETWORKSCHEDULE`.
+- [x] Network schedule handoff to the linked BOQ builder — `CE_NETWORKSCHEDULEBOQ`.
 
 ### Phase 1 hydraulic boundaries
 
