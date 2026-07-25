@@ -54,4 +54,42 @@ Replace-ExactText `
     -NewText $newParking `
     -Description "add boundary-driven parking alternatives and refresh commands"
 
+$oldSkewTail = @'
+                    Cmd("Parking Skew Settings", "CE_PKSKSETTINGS ", "Store the 2500 mm standard, units conversion, tolerance, layers and annotation sizes."),
+                    Cmd("Parking Skew Information", "CE_PKSKINFO ", "Review generated objects, live source handles and current width settings."))));
+'@
+$newSkewTail = @'
+                    Cmd("Parking Skew Settings", "CE_PKSKSETTINGS ", "Store the 2500 mm standard, units conversion, tolerance, layers and annotation sizes."),
+                    Cmd("Parking Skew Information", "CE_PKSKINFO ", "Review generated objects, live source handles and current width settings.")),
+                Menu("CE_TOOLS_GRADING_DIAGNOSTICS_MENU", "Grading &\nDrainage Review", "Highlight low grades and candidate low points without changing source design geometry.",
+                    Cmd("Grading Diagnostic Tools", "CE_GRADINGDIAGNOSTICS ", "Open low-slope, low-point and clear-review workflows."),
+                    Cmd("Highlight Grades Below Limit", "CE_LOWSLOPE ", "Create removable review lines and labels where the absolute grade is below the selected threshold, default 0.5 percent."),
+                    Cmd("Identify Candidate Low Points", "CE_LOWPOINTS ", "Mark local and global low points on selected feature lines and polylines."),
+                    Cmd("Clear Grading Review Graphics", "CE_GRADINGREVIEWCLEAR ", "Erase only CE-generated low-slope and low-point review graphics."))));
+'@
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldSkewTail `
+    -NewText $newSkewTail `
+    -Description "add low-slope and low-point grading diagnostics"
+
+# FeatureLine closure differs between Civil 3D API versions. The point sequence
+# is sufficient for diagnostics and avoids depending on a version-specific
+# Closed/IsClosed property.
+$gradingFile = "src\CE.Tools.Civil3D\GradingDrainageDiagnosticCommands.cs"
+Replace-ExactText `
+    -RelativePath $gradingFile `
+    -OldText @'
+                if (featureLine.Closed && points.Count > 1)
+                    points.Add(points[0]);
+'@ `
+    -NewText @'
+                if (points.Count > 2 &&
+                    PlanDistance(points[0], points[points.Count - 1]) <= GeometryTolerance)
+                {
+                    points[points.Count - 1] = points[0];
+                }
+'@ `
+    -Description "avoid version-specific FeatureLine closed property"
+
 Write-Host "Master Items Phase 1 source normalisation completed." -ForegroundColor Green
