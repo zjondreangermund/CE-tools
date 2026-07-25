@@ -28,6 +28,7 @@ Invoke-RequiredScript "Apply-Master-Items-Phase2.ps1"
 Invoke-RequiredScript "Apply-Master-Items-Phase2-Quantities.ps1"
 Invoke-RequiredScript "Apply-Master-Items-Phase2-ProfileViews.ps1"
 Invoke-RequiredScript "Apply-Master-Items-Phase2-DetailedSections.ps1"
+Invoke-RequiredScript "Apply-Master-Items-Phase2-ModelReport.ps1"
 
 $baseBuild = Join-Path $PSScriptRoot "Build-CE-Tools-Master-Items.ps1"
 if (-not (Test-Path $baseBuild)) {
