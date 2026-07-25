@@ -86,7 +86,7 @@ require(
     'TextValue("Source", Path.GetFullPath(sourcePath))',
     'TextValue("Sha256", sourceHash)',
     "Checks source/catalog identity and recorded revision/status",
-    "without automatic replacement",
+    "does not update or replace inserted geometry automatically",
     "Source files are opened read-only and are never saved or overwritten",
     "SimpleXlsxWriter.Write(",
     "GridReportPresenter.ShowReportAndOfferTable(",
