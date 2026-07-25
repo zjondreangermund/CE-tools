@@ -1,0 +1,121 @@
+name: CE Tools Master Items Phase 8
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-phase8:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Apply inherited comment and Phase 1 normalizers
+        shell: pwsh
+        run: |
+          ./scripts/Invoke-Comments-Normalizer.ps1
+          ./scripts/Apply-Comments-Discipline.ps1
+          ./scripts/Apply-Comments-Quantities.ps1
+          ./scripts/Apply-Comments-Road.ps1
+          ./scripts/Invoke-Master-Items-Phase1.ps1
+
+      - name: Apply Phase 2 normalizers
+        shell: pwsh
+        run: |
+          ./scripts/Apply-Master-Items-Phase2.ps1
+          ./scripts/Apply-Master-Items-Phase2-Quantities.ps1
+          ./scripts/Apply-Master-Items-Phase2-ProfileViews.ps1
+          ./scripts/Apply-Master-Items-Phase2-DetailedSections.ps1
+          ./scripts/Apply-Master-Items-Phase2-ModelReport.ps1
+          ./scripts/Apply-Master-Items-Phase2-XrefProject.ps1
+
+      - name: Apply Phase 3 through Phase 8 normalizers
+        shell: pwsh
+        run: |
+          ./scripts/Apply-Master-Items-Phase3.ps1
+          ./scripts/Apply-Master-Items-Phase4.ps1
+          ./scripts/Apply-Master-Items-Phase5.ps1
+          ./scripts/Apply-Master-Items-Phase5-Accessible.ps1
+          ./scripts/Apply-Master-Items-Phase6.ps1
+          ./scripts/Invoke-Master-Items-Phase7.ps1
+          ./scripts/Apply-Master-Items-Phase8.ps1
+
+      - name: Normalize Civil 3D compatibility
+        shell: pwsh
+        run: ./scripts/Apply-Civil3D-Compatibility.ps1
+
+      - name: Validate Phase 8 engineering asset library
+        run: python3 scripts/Validate-MasterItemsPhase8.py
+
+      - name: Validate Phase 7 presentation source
+        run: python3 scripts/Validate-MasterItemsPhase7.py
+
+      - name: Validate Phase 6 flood result workflows
+        run: python3 scripts/Validate-MasterItemsPhase6.py
+
+      - name: Validate Phase 5 parking optimiser
+        run: python3 scripts/Validate-MasterItemsPhase5.py
+
+      - name: Validate Phase 4 source
+        run: python3 scripts/Validate-MasterItemsPhase4.py
+
+      - name: Validate Phase 3 source
+        run: python3 scripts/Validate-MasterItemsPhase3.py
+
+      - name: Validate Phase 2 source
+        run: |
+          python3 scripts/Validate-MasterItemsPhase2.py
+          python3 scripts/Validate-StandardQuantityTemplates.py
+          python3 scripts/Validate-ProfileViewBatch.py
+          python3 scripts/Validate-DetailedSectionAnnotations.py
+          python3 scripts/Validate-ModelDesignAudit.py
+          python3 scripts/Validate-XrefProjectManagement.py
+
+      - name: Validate Phase 1 and inherited source
+        run: |
+          python3 scripts/Validate-MasterItemsPhase1.py
+          python3 scripts/Validate-RoadSectionSchedule.py
+          python3 scripts/Validate-NetworkAssetSchedule.py
+          python3 scripts/Validate-Comments-2026-07-25.py
+          python3 scripts/Validate-DisciplineComments.py
+          python3 scripts/Validate-SewerExcavation.py
+          python3 scripts/Validate-RoadProduction.py
+          python3 scripts/Validate-BillOfQuantities.py
+          python3 scripts/Validate-WorkflowRepairs.py
+          python3 scripts/Validate-DynamicTypicalDetails.py
+
+      - name: Validate unique command registry
+        run: python3 scripts/Validate-CommandRegistry.py
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Test engineering asset catalog
+        run: dotnet run --project tests/CE.Tools.AssetCatalog.Tests/CE.Tools.AssetCatalog.Tests.csproj -c Release
+
+      - name: Test PowerPoint package generation
+        run: dotnet run --project tests/CE.Tools.Presentation.Tests/CE.Tools.Presentation.Tests.csproj -c Release
+
+      - name: Test affected properties and flood frames
+        run: dotnet run --project tests/CE.Tools.Flood.Tests/CE.Tools.Flood.Tests.csproj -c Release
+
+      - name: Test parking alternatives
+        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- alternatives
+
+      - name: Test parking obstacles
+        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- obstacles
+
+      - name: Test parking accessibility
+        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- accessible
+
+      - name: Test parking islands and entrance
+        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- islands
+
+      - name: Run host-independent core tests
+        run: dotnet run --project tests/CE.Tools.Core.Tests/CE.Tools.Core.Tests.csproj -c Release
