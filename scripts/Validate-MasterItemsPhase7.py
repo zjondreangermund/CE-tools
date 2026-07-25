@@ -46,7 +46,7 @@ require(
 
 require(
     CIVIL,
-    '"CE_PRESENTATIONTOOLS"',
+    '"CE_PROJECTPRESENTATIONTOOLS"',
     '"CE_PRESENTATIONPREVIEW"',
     '"CE_PRESENTATIONCREATE"',
     'SimplePresentationPackage.Write(path, deck)',
@@ -93,7 +93,7 @@ require(
 
 require(
     NORMALIZER,
-    'Cmd("Project Presentation Tools", "CE_PRESENTATIONTOOLS "',
+    'Cmd("Project Presentation Tools", "CE_PROJECTPRESENTATIONTOOLS "',
     'Cmd("Preview Project Presentation", "CE_PRESENTATIONPREVIEW "',
     'Cmd("Create Project Presentation", "CE_PRESENTATIONCREATE "',
 )
@@ -104,7 +104,7 @@ require(
 )
 require(
     RIBBON,
-    'CE_PRESENTATIONTOOLS ',
+    'CE_PROJECTPRESENTATIONTOOLS ',
     'CE_PRESENTATIONPREVIEW ',
     'CE_PRESENTATIONCREATE ',
 )
