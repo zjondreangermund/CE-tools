@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Validate the Phase 3 grid-hydrology core and Civil 3D bridge."""
+"""Validate the Phase 3 grid-hydrology core and Civil 3D bridges."""
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CORE = ROOT / "src" / "CE.Tools.Core" / "HydrologyGrid.cs"
 CIVIL = ROOT / "src" / "CE.Tools.Civil3D" / "SurfaceHydrologyCommands.cs"
+PONDING = ROOT / "src" / "CE.Tools.Civil3D" / "SurfacePondingCommands.cs"
 TESTS = ROOT / "tests" / "CE.Tools.Core.Tests" / "Program.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Master-Items-Phase3.ps1"
@@ -64,6 +65,31 @@ require(
     'CE-HYDROLOGY-REVIEW',
 )
 require(
+    PONDING,
+    '"CE_PONDINGREVIEW"',
+    'private const int MaximumGeneratedEdges = 20000',
+    'SurfaceHydrologyCommands.PromptAnalysisInput(',
+    'SurfaceHydrologyCommands.SampleAndAnalyse(',
+    'sample.Analysis.FillDepth(index) / unitsPerMetre',
+    'cellAreaSquareMetres = sample.CellArea /',
+    'volume += depthMetres * cellAreaSquareMetres',
+    'cells.Count * cellAreaSquareMetres / 10000.0',
+    'BuildZones(',
+    'Queue<int>()',
+    'CountExposedEdges(',
+    'MaximumGeneratedEdges',
+    'SimpleXlsxWriter.Write(',
+    '"AREA (ha)"',
+    '"MAX DEPTH (m)"',
+    '"STORAGE (m3)"',
+    '"Depression-to-spill storage screen — not flood depth, duration or hazard"',
+    'This is not a dynamic flood model.',
+    'Source surface/boundary changed", "No"',
+    '"PondingPerimeter"',
+    '"PondingDeepestPoint"',
+    '"PondingLabel"',
+)
+require(
     TESTS,
     "PriorityFloodFillsEnclosedPit();",
     "FlowRouteTerminatesWithoutCycle();",
@@ -79,8 +105,12 @@ require(
     'Cmd("Trace Surface Flow Route", "CE_SURFACEFLOW "',
     'Cmd("Delineate Outlet Catchment", "CE_CATCHMENTDELINEATE "',
     'Cmd("Compare Pre/Post Hydrographs", "CE_HYDROGRAPHCOMPARE "',
+    'Cmd("Depression Storage and Affected Area", "CE_PONDINGREVIEW "',
     'Cmd("Clear Surface Hydrology Review", "CE_HYDROLOGYCLEAR "',
     "use a net48-compatible catchment-edge reference type",
+    "share bounded Civil 3D hydrology input with ponding review",
+    "share tested surface sampling and grid analysis",
+    "share sampled-cell coordinates with affected-area mapping",
 )
 require(
     RIBBON,
@@ -88,18 +118,19 @@ require(
     "CE_SURFACEFLOW ",
     "CE_CATCHMENTDELINEATE ",
     "CE_HYDROGRAPHCOMPARE ",
+    "CE_PONDINGREVIEW ",
     "CE_HYDROLOGYCLEAR ",
 )
 
-for path in (CORE, CIVIL):
+for path in (CORE, CIVIL, PONDING):
     text = path.read_text(encoding="utf-8")
     if text.count("{") != text.count("}"):
         raise SystemExit(f"Unbalanced braces in {path.name}")
 
-civil_text = CIVIL.read_text(encoding="utf-8")
-if "Microsoft.Office.Interop" in civil_text:
+combined = CIVIL.read_text(encoding="utf-8") + PONDING.read_text(encoding="utf-8")
+if "Microsoft.Office.Interop" in combined:
     raise SystemExit("Surface hydrology must not introduce Office COM automation")
-if "surface.UpgradeOpen" in civil_text or "boundary.UpgradeOpen" in civil_text:
+if "surface.UpgradeOpen" in combined or "boundary.UpgradeOpen" in combined:
     raise SystemExit("Surface hydrology must not open source surface or boundary for write")
 
-print("Master Items Phase 3 grid hydrology validation passed.")
+print("Master Items Phase 3 grid hydrology and ponding validation passed.")
