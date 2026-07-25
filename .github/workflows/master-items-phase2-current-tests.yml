@@ -1,0 +1,65 @@
+name: CE Tools Master Items Phase 2 Current
+
+on:
+  workflow_dispatch:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  validate-current-phase2:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Apply inherited and Phase 1 normalizers
+        shell: pwsh
+        run: |
+          ./scripts/Invoke-Comments-Normalizer.ps1
+          ./scripts/Apply-Comments-Discipline.ps1
+          ./scripts/Apply-Comments-Quantities.ps1
+          ./scripts/Apply-Comments-Road.ps1
+          ./scripts/Invoke-Master-Items-Phase1.ps1
+
+      - name: Apply current Phase 2 normalizers
+        shell: pwsh
+        run: |
+          ./scripts/Apply-Master-Items-Phase2.ps1
+          ./scripts/Apply-Master-Items-Phase2-Quantities.ps1
+          ./scripts/Apply-Master-Items-Phase2-ProfileViews.ps1
+
+      - name: Normalize Civil 3D compatibility
+        shell: pwsh
+        run: ./scripts/Apply-Civil3D-Compatibility.ps1
+
+      - name: Validate current Phase 2 source
+        run: |
+          python3 scripts/Validate-MasterItemsPhase2.py
+          python3 scripts/Validate-StandardQuantityTemplates.py
+          python3 scripts/Validate-ProfileViewBatch.py
+
+      - name: Validate Phase 1 and inherited source
+        run: |
+          python3 scripts/Validate-MasterItemsPhase1.py
+          python3 scripts/Validate-RoadSectionSchedule.py
+          python3 scripts/Validate-NetworkAssetSchedule.py
+          python3 scripts/Validate-Comments-2026-07-25.py
+          python3 scripts/Validate-DisciplineComments.py
+          python3 scripts/Validate-SewerExcavation.py
+          python3 scripts/Validate-RoadProduction.py
+          python3 scripts/Validate-BillOfQuantities.py
+          python3 scripts/Validate-WorkflowRepairs.py
+          python3 scripts/Validate-DynamicTypicalDetails.py
+
+      - name: Validate unique command registry
+        run: python3 scripts/Validate-CommandRegistry.py
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run host-independent geometry tests
+        run: dotnet run --project tests/CE.Tools.Core.Tests/CE.Tools.Core.Tests.csproj -c Release
