@@ -29,7 +29,7 @@ require(
     '"SEWER", "WATER", "LANDSCAPE", "OTHER"',
     'BuildSplitPlan(',
     'ClassifyDiscipline(',
-    'database.Wblock(',
+    '.Wblock(',
     'database.AttachXref(',
     'Existing discipline files will not be overwritten',
     'Overwrite existing files", "Never"',
