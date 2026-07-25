@@ -33,6 +33,7 @@ Invoke-RequiredScript "Apply-Master-Items-Phase2-XrefProject.ps1"
 Invoke-RequiredScript "Apply-Master-Items-Phase3.ps1"
 Invoke-RequiredScript "Apply-Master-Items-Phase4.ps1"
 Invoke-RequiredScript "Apply-Master-Items-Phase5.ps1"
+Invoke-RequiredScript "Apply-Master-Items-Phase5-Accessible.ps1"
 
 $baseBuild = Join-Path $PSScriptRoot "Build-CE-Tools-Master-Items.ps1"
 if (-not (Test-Path $baseBuild)) { throw "The Master Items build script is missing: $baseBuild" }
