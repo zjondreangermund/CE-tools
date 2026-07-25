@@ -52,7 +52,21 @@ jobs:
         run: python3 scripts/Validate-MasterItemsPhase8.py
 
       - name: Validate Phase 7 presentation source
-        run: python3 scripts/Validate-MasterItemsPhase7.py
+        shell: bash
+        run: |
+          set +e
+          python3 scripts/Validate-MasterItemsPhase7.py > phase7-validation.log 2>&1
+          code=$?
+          cat phase7-validation.log
+          exit $code
+
+      - name: Upload Phase 7 validator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase8-phase7-validator
+          path: phase7-validation.log
+          if-no-files-found: ignore
 
       - name: Validate Phase 6 flood result workflows
         run: python3 scripts/Validate-MasterItemsPhase6.py
