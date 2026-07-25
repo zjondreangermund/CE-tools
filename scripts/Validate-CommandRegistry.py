@@ -5,7 +5,6 @@ This validator deliberately parses source text instead of loading Autodesk
 assemblies, which are unavailable in GitHub Actions. It catches accidental
 command-name collisions before the plugin is loaded into Civil 3D.
 """
-
 from __future__ import annotations
 
 from collections import defaultdict
@@ -75,6 +74,9 @@ required_commands = {
     "CE_DETAILPARAMEDIT", "CE_DETAILPARAMREFRESH", "CE_DETAILPARAMBOQ",
     "CE_DETAILPARAMBOQEXPORT", "CE_DETAILPARAMREVIEW", "CE_DETAILPARAMINFO",
     "CE_DETAILPARAMDETACH", "CE_DETAILPARAMCLEAR", "CE_RIBBONICONS",
+    "CE_ASSETLIBTOOLS", "CE_ASSETLIBSETTINGS", "CE_ASSETCATALOGTEMPLATE",
+    "CE_ASSETCATALOGAUDIT", "CE_ASSETSEARCH", "CE_ASSETINSERT",
+    "CE_ASSETINFO", "CE_ASSETREVISIONCHECK",
 }
 missing = sorted(required_commands - set(commands))
 for command in missing:
