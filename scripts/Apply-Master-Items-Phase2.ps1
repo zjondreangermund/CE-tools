@@ -100,4 +100,31 @@ Replace-ExactText `
     -NewText $newTerminate `
     -Description "terminate dynamic parking boundary monitor cleanly"
 
+$parkingSource = "src\CE.Tools.Civil3D\ParkingDynamicGradingCommands.cs"
+$oldValleyBranch = @'
+                    else
+                    {
+                        centreElevation = settings.ReferenceElevation;
+                        edgeElevation = settings.ReferenceElevation +
+                            halfWidth * settings.SlopeRatio;
+                    }
+'@
+$newValleyBranch = @'
+                    else if (settings.Mode == ParkingGradeMode.Valley)
+                    {
+                        centreElevation = settings.ReferenceElevation;
+                        edgeElevation = settings.ReferenceElevation +
+                            halfWidth * settings.SlopeRatio;
+                    }
+                    else
+                    {
+                        continue;
+                    }
+'@
+Replace-ExactText `
+    -RelativePath $parkingSource `
+    -OldText $oldValleyBranch `
+    -NewText $newValleyBranch `
+    -Description "make centre-valley grading mode explicit"
+
 Write-Host "Master Items Phase 2 dynamic parking and grading source is wired." -ForegroundColor Green
