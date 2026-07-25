@@ -24,6 +24,10 @@ jobs:
         shell: pwsh
         run: ./scripts/Apply-Comments-Discipline.ps1
 
+      - name: Apply linked sewer excavation quantity corrections
+        shell: pwsh
+        run: ./scripts/Apply-Comments-Quantities.ps1
+
       - name: Normalize Civil 3D 2023 and 2024 source compatibility
         shell: pwsh
         run: ./scripts/Apply-Civil3D-Compatibility.ps1
@@ -31,8 +35,11 @@ jobs:
       - name: Validate first active comment batch
         run: python3 scripts/Validate-Comments-2026-07-25.py
 
-      - name: Validate feature-line, profile, surface and network comments
+      - name: Validate feature-line, profile, surface, network and production comments
         run: python3 scripts/Validate-DisciplineComments.py
+
+      - name: Validate linked sewer excavation comments
+        run: python3 scripts/Validate-SewerExcavation.py
 
       - name: Validate report presentation source
         run: python3 scripts/Validate-ReportPresentation.py
