@@ -70,6 +70,7 @@ for marker in (
     "BuildParameterTable",
     "BuildBoqTable",
     "WriteBoqLink",
+    "SimpleXlsxWriter.Write(",
     "SourceHash",
     "SourceModifiedUtc",
     "ComputeSha256",
@@ -85,9 +86,15 @@ for marker in (
     if marker not in dynamic:
         errors.append(f"Dynamic source missing safety/linkage marker: {marker}")
 
-for unsafe in ("ReadDwgFile", "DxfIn", ".SaveAs(", "FileMode.CreateNew"):
+for unsafe in (
+    "ReadDwgFile",
+    "DxfIn",
+    ".SaveAs(",
+    "FileMode.CreateNew",
+    "SimpleXlsxWriter.WriteWorkbook",
+):
     if unsafe in dynamic:
-        errors.append(f"Dynamic source may write/open source templates unsafely: {unsafe}")
+        errors.append(f"Dynamic source may contain an unsafe or unsupported API: {unsafe}")
 
 for marker in (
     "CE_TOOLS_TYPICAL_DETAILS_REVIEW_MENU",
