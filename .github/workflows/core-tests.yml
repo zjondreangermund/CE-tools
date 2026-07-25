@@ -34,7 +34,7 @@ jobs:
 
       - name: Apply Master Items Phase 1 corrections
         shell: pwsh
-        run: ./scripts/Apply-Master-Items-Phase1.ps1
+        run: ./scripts/Invoke-Master-Items-Phase1.ps1
 
       - name: Normalize Civil 3D 2023 and 2024 source compatibility
         shell: pwsh
