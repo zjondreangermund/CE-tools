@@ -125,11 +125,16 @@ Replace-ExactText `
                     Cmd("Create Result CSV Template", "CE_MODELRESULTTEMPLATE ", "Create the documented X/Y/Z/depth/velocity/water-level/scenario/time CSV template."),
                     Cmd("Import Specialist Model Results", "CE_MODELRESULTIMPORT ", "Import a bounded CSV result set as categorised removable review markers with traceable XData."),
                     Cmd("Imported Result Information", "CE_MODELRESULTINFO ", "Review source, scenario, time, coordinates, depth, velocity, water level and screening hazard index."),
-                    Cmd("Clear Imported Model Results", "CE_MODELRESULTCLEAR ", "Erase only CE Tools imported specialist-result graphics after confirmation."))));
+                    Cmd("Clear Imported Model Results", "CE_MODELRESULTCLEAR ", "Erase only CE Tools imported specialist-result graphics after confirmation.")),
+                Menu("CE_TOOLS_PUMP_SYSTEM_MENU", "Pump & System\nCurves", "Screen manufacturer pump curves against Hazen-Williams and minor-loss system curves, including duty-point, NPSH and folder ranking.",
+                    Cmd("Pump and System Curve Tools", "CE_PUMPSYSTEMTOOLS ", "Open template, single-pump review and folder-ranking workflows."),
+                    Cmd("Create Pump Curve CSV Template", "CE_PUMPCURVETEMPLATE ", "Create the documented FlowLps/HeadM/efficiency/power/NPSHr manufacturer-curve template."),
+                    Cmd("Review One Pump and System Curve", "CE_PUMPSYSTEMREVIEW ", "Calculate the system curve, find the duty point, interpolate manufacturer values and review NPSH margin."),
+                    Cmd("Rank Pump Curves in a Folder", "CE_PUMPFOLDERREVIEW ", "Screen and rank up to 100 manufacturer CSV curves against one system definition and optional target flow."))));
         }
 
         private static RibbonItem[] Row(params RibbonItem[] items)
 '@ `
-    -Description "add specialist model exchange ribbon commands"
+    -Description "add specialist exchange and pump system ribbon commands"
 
-Write-Host "Master Items Phase 4 specialist-model exchange source is wired." -ForegroundColor Green
+Write-Host "Master Items Phase 4 exchange and pump-system source is wired." -ForegroundColor Green
