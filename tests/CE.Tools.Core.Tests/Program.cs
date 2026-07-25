@@ -26,6 +26,9 @@ namespace CETools.Core.Tests
                 AccumulationReachesSingleOutlet();
                 CatchmentContainsUpstreamCells();
                 ModifiedRationalHydrographMatchesPeak();
+                SystemCurveIncreasesWithFlow();
+                PumpDutyPointFindsIntersection();
+                PumpReviewChecksNpshMargin();
 
                 Console.WriteLine($"CE Tools core tests passed: {_tests}");
                 return 0;
@@ -98,6 +101,10 @@ namespace CETools.Core.Tests
             Throws<ArgumentOutOfRangeException>(() => BulgeMath.Split(1.0, 1.0));
             Throws<ArgumentOutOfRangeException>(
                 () => ModifiedRationalHydrograph.Create(1.0, 1.2, 50.0, 20.0, 30.0, 5.0));
+            Throws<ArgumentOutOfRangeException>(
+                () => PumpSystemCurve.SystemHeadMetres(
+                    10.0,
+                    new SystemCurveDefinition(5.0, 100.0, 0.0, 120.0, 1.0)));
             Pass();
         }
 
@@ -192,6 +199,73 @@ namespace CETools.Core.Tests
             Near(0.0, series.Points[0].FlowCubicMetresPerSecond);
             Near(0.0, series.Points[series.Points.Count - 1].FlowCubicMetresPerSecond);
             Near(50.0, series.Points[series.Points.Count - 1].TimeMinutes);
+            Pass();
+        }
+
+        private static void SystemCurveIncreasesWithFlow()
+        {
+            var definition = new SystemCurveDefinition(
+                8.0,
+                1200.0,
+                0.25,
+                130.0,
+                3.5);
+            double zero = PumpSystemCurve.SystemHeadMetres(0.0, definition);
+            double ten = PumpSystemCurve.SystemHeadMetres(10.0, definition);
+            double twenty = PumpSystemCurve.SystemHeadMetres(20.0, definition);
+
+            Near(8.0, zero);
+            True(ten > zero);
+            True(twenty > ten);
+            Pass();
+        }
+
+        private static void PumpDutyPointFindsIntersection()
+        {
+            var pump = new[]
+            {
+                new PumpCurvePoint(0.0, 20.0, 70.0, 5.0, 2.0),
+                new PumpCurvePoint(20.0, 0.0, 80.0, 9.0, 4.0)
+            };
+            var system = new SystemCurveDefinition(
+                12.0,
+                0.0,
+                0.2,
+                130.0,
+                0.0);
+            PumpDutyPoint duty = PumpSystemCurve.FindDutyPoint(pump, system);
+
+            True(duty != null);
+            Near(8.0, duty.FlowLitresPerSecond);
+            Near(12.0, duty.PumpHeadMetres);
+            Near(12.0, duty.SystemHeadMetres);
+            Near(74.0, duty.EfficiencyPercent.Value);
+            Near(6.6, duty.PowerKilowatts.Value);
+            Near(2.8, duty.NpshRequiredMetres.Value);
+            Pass();
+        }
+
+        private static void PumpReviewChecksNpshMargin()
+        {
+            var pump = new[]
+            {
+                new PumpCurvePoint(0.0, 20.0, 70.0, 5.0, 2.0),
+                new PumpCurvePoint(20.0, 0.0, 80.0, 9.0, 4.0)
+            };
+            var system = new SystemCurveDefinition(
+                12.0,
+                0.0,
+                0.2,
+                130.0,
+                0.0);
+            PumpSuitabilityReview pass = PumpSystemCurve.Review(pump, system, 4.0, 1.0);
+            PumpSuitabilityReview fail = PumpSystemCurve.Review(pump, system, 3.2, 1.0);
+
+            True(pass.DutyPoint != null);
+            True(pass.NpshPass);
+            Near(1.2, pass.NpshMarginMetres.Value);
+            True(!fail.NpshPass);
+            Near(0.4, fail.NpshMarginMetres.Value);
             Pass();
         }
 
