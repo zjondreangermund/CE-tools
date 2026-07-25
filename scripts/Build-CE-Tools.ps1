@@ -90,6 +90,13 @@ if (-not (Test-Path $commentsScript)) {
 Write-Host "Applying active 25 July 2026 comment corrections..." -ForegroundColor Cyan
 & $commentsScript
 
+$disciplineCommentsScript = Join-Path $PSScriptRoot "Apply-Comments-Discipline.ps1"
+if (-not (Test-Path $disciplineCommentsScript)) {
+    throw "The discipline comments normalizer is missing: $disciplineCommentsScript"
+}
+Write-Host "Applying feature-line, profile and surface comment corrections..." -ForegroundColor Cyan
+& $disciplineCommentsScript
+
 $compatibilityScript = Join-Path $PSScriptRoot "Apply-Civil3D-Compatibility.ps1"
 if (-not (Test-Path $compatibilityScript)) {
     throw "The Civil 3D compatibility normalizer is missing: $compatibilityScript"
