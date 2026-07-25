@@ -103,7 +103,7 @@ require(
     '"POST PEAK (m3/s)"',
     '"PRE VOLUME (m3)"',
     '"POST VOLUME (m3)"',
-    '"P2/P5/P10/P20/P25/P50/P100/None"',
+    'P2/P5/P10/P20/P25/P50/P100/None',
     'CombinedTimes(',
     'Interpolate(',
     'SimpleXlsxWriter.Write(',
