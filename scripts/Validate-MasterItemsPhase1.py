@@ -5,6 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 PARKING = ROOT / "src" / "CE.Tools.Civil3D" / "AdvancedParkingPlanningCommands.cs"
+GRADING = ROOT / "src" / "CE.Tools.Civil3D" / "GradingDrainageDiagnosticCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Master-Items-Phase1.ps1"
 WRAPPER = ROOT / "scripts" / "Invoke-Comments-Normalizer.ps1"
@@ -38,11 +39,31 @@ require(
     'internal sealed class ParkingOptionsWindow',
 )
 require(
+    GRADING,
+    '"CE_GRADINGDIAGNOSTICS"',
+    '"CE_LOWSLOPE"',
+    '"CE_LOWPOINTS"',
+    '"CE_GRADINGREVIEWCLEAR"',
+    'private const string RegAppName = "CE_GRADING_REVIEW"',
+    '"Minimum acceptable absolute grade (%)"',
+    'Math.Abs(item.GradePercent) < threshold',
+    'FeatureLinePointType.AllPoints',
+    'Color.FromColorIndex(ColorMethod.ByAci, 1)',
+    '"Global minimum"',
+    '"Local minimum"',
+    'Source geometry changed',
+)
+require(
     NORMALIZER,
     'Cmd("Boundary Parking Alternatives", "CE_PARKOPTIONS "',
     'Cmd("Refresh Boundary Parking Option", "CE_PARKOPTIONSREFRESH "',
     'Cmd("Boundary Parking Information", "CE_PARKOPTIONSINFO "',
     'Cmd("Clear Boundary Parking Option", "CE_PARKOPTIONSCLEAR "',
+    'Cmd("Grading Diagnostic Tools", "CE_GRADINGDIAGNOSTICS "',
+    'Cmd("Highlight Grades Below Limit", "CE_LOWSLOPE "',
+    'Cmd("Identify Candidate Low Points", "CE_LOWPOINTS "',
+    'Cmd("Clear Grading Review Graphics", "CE_GRADINGREVIEWCLEAR "',
+    'avoid version-specific FeatureLine closed property',
 )
 require(
     WRAPPER,
@@ -53,6 +74,7 @@ require(
     REGISTER,
     '## Phase 1 — native Civil 3D productivity',
     'Present 90°, 60° and 45° parking alternatives.',
+    'Highlight selected segments/areas below the configured minimum grade, default 0.5%.',
     'External dependency',
 )
 
@@ -63,10 +85,15 @@ require(
     'CE_PARKOPTIONSREFRESH ',
     'CE_PARKOPTIONSINFO ',
     'CE_PARKOPTIONSCLEAR ',
+    'CE_GRADINGDIAGNOSTICS ',
+    'CE_LOWSLOPE ',
+    'CE_LOWPOINTS ',
+    'CE_GRADINGREVIEWCLEAR ',
 )
 
-text = PARKING.read_text(encoding="utf-8")
-if text.count("{") != text.count("}"):
-    raise SystemExit("Unbalanced braces in AdvancedParkingPlanningCommands.cs")
+for path in (PARKING, GRADING):
+    text = path.read_text(encoding="utf-8")
+    if text.count("{") != text.count("}"):
+        raise SystemExit(f"Unbalanced braces in {path.name}")
 
-print("Master Items Phase 1 boundary-parking validation passed.")
+print("Master Items Phase 1 parking and grading validation passed.")
