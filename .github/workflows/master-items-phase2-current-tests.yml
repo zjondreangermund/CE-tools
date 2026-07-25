@@ -23,13 +23,37 @@ jobs:
           ./scripts/Apply-Comments-Road.ps1
           ./scripts/Invoke-Master-Items-Phase1.ps1
 
-      - name: Apply current Phase 2 normalizers
+      - name: Apply dynamic parking and grading normalizer
         shell: pwsh
-        run: |
-          ./scripts/Apply-Master-Items-Phase2.ps1
-          ./scripts/Apply-Master-Items-Phase2-Quantities.ps1
-          ./scripts/Apply-Master-Items-Phase2-ProfileViews.ps1
-          ./scripts/Apply-Master-Items-Phase2-DetailedSections.ps1
+        run: ./scripts/Apply-Master-Items-Phase2.ps1
+
+      - name: Apply standard quantity normalizer
+        shell: pwsh
+        run: ./scripts/Apply-Master-Items-Phase2-Quantities.ps1
+
+      - name: Apply profile-view normalizer
+        shell: pwsh
+        run: ./scripts/Apply-Master-Items-Phase2-ProfileViews.ps1
+
+      - name: Apply detailed-section normalizer
+        id: normalize_sections
+        continue-on-error: true
+        shell: pwsh
+        run: ./scripts/Apply-Master-Items-Phase2-DetailedSections.ps1 2>&1 | Tee-Object -FilePath phase2-section-normalizer.txt
+
+      - name: Upload detailed-section normalizer diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: detailed-section-normalizer-diagnostics
+          path: |
+            phase2-section-normalizer.txt
+            src/CE.Tools.Civil3D/PluginEntry.cs
+          if-no-files-found: error
+
+      - name: Stop when detailed-section normalizer failed
+        if: always()
+        run: test "${{ steps.normalize_sections.outcome }}" = "success"
 
       - name: Normalize Civil 3D compatibility
         shell: pwsh
@@ -61,7 +85,7 @@ jobs:
         with:
           name: phase2-validator-diagnostics
           path: phase2-*-validation.txt
-          if-no-files-found: error
+          if-no-files-found: warn
 
       - name: Fail when a Phase 2 validator failed
         if: always()
