@@ -30,12 +30,12 @@ function Replace-ExactText {
 
 $ribbonFile = "src\CE.Tools.Civil3D\PluginEntry.cs"
 $oldIntegrationTail = @'
-                    Cmd("Project Presentation Tools", "CE_PRESENTATIONTOOLS ", "Open preview and create workflows for the automatic project presentation."),
+                    Cmd("Project Presentation Tools", "CE_PROJECTPRESENTATIONTOOLS ", "Open preview and create workflows for the automatic project presentation."),
                     Cmd("Preview Project Presentation", "CE_PRESENTATIONPREVIEW ", "Review the planned slide titles, metrics and bullet counts before creating the PowerPoint file."),
                     Cmd("Create Project Presentation", "CE_PRESENTATIONCREATE ", "Create a non-overwriting PowerPoint presentation without PowerPoint/Office automation."))));
 '@
 $newIntegrationTail = @'
-                    Cmd("Project Presentation Tools", "CE_PRESENTATIONTOOLS ", "Open preview and create workflows for the automatic project presentation."),
+                    Cmd("Project Presentation Tools", "CE_PROJECTPRESENTATIONTOOLS ", "Open preview and create workflows for the automatic project presentation."),
                     Cmd("Preview Project Presentation", "CE_PRESENTATIONPREVIEW ", "Review the planned slide titles, metrics and bullet counts before creating the PowerPoint file."),
                     Cmd("Create Project Presentation", "CE_PRESENTATIONCREATE ", "Create a non-overwriting PowerPoint presentation without PowerPoint/Office automation.")),
                 Menu("CE_TOOLS_ENGINEERING_ASSET_MENU", "Engineering Asset\nLibrary", "Manage standards, typical details, symbols and civil/furniture assets through approval metadata, SHA-256 integrity, search and controlled DWG insertion.",
