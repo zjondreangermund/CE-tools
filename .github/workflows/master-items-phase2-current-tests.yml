@@ -23,77 +23,29 @@ jobs:
           ./scripts/Apply-Comments-Road.ps1
           ./scripts/Invoke-Master-Items-Phase1.ps1
 
-      - name: Apply dynamic parking and grading normalizer
+      - name: Apply current Phase 2 normalizers
         shell: pwsh
-        run: ./scripts/Apply-Master-Items-Phase2.ps1
-
-      - name: Apply standard quantity normalizer
-        shell: pwsh
-        run: ./scripts/Apply-Master-Items-Phase2-Quantities.ps1
-
-      - name: Apply profile-view normalizer
-        shell: pwsh
-        run: ./scripts/Apply-Master-Items-Phase2-ProfileViews.ps1
-
-      - name: Apply detailed-section normalizer
-        id: normalize_sections
-        continue-on-error: true
-        shell: pwsh
-        run: ./scripts/Apply-Master-Items-Phase2-DetailedSections.ps1 2>&1 | Tee-Object -FilePath phase2-section-normalizer.txt
-
-      - name: Upload detailed-section normalizer diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: detailed-section-normalizer-diagnostics
-          path: |
-            phase2-section-normalizer.txt
-            src/CE.Tools.Civil3D/PluginEntry.cs
-          if-no-files-found: error
-
-      - name: Stop when detailed-section normalizer failed
-        if: always()
-        run: test "${{ steps.normalize_sections.outcome }}" = "success"
+        run: |
+          ./scripts/Apply-Master-Items-Phase2.ps1
+          ./scripts/Apply-Master-Items-Phase2-Quantities.ps1
+          ./scripts/Apply-Master-Items-Phase2-ProfileViews.ps1
+          ./scripts/Apply-Master-Items-Phase2-DetailedSections.ps1
 
       - name: Normalize Civil 3D compatibility
         shell: pwsh
         run: ./scripts/Apply-Civil3D-Compatibility.ps1
 
       - name: Validate dynamic parking and grading
-        id: validate_parking
-        continue-on-error: true
-        run: python3 scripts/Validate-MasterItemsPhase2.py 2>&1 | tee phase2-parking-validation.txt
+        run: python3 scripts/Validate-MasterItemsPhase2.py
 
       - name: Validate standard quantity templates
-        id: validate_quantities
-        continue-on-error: true
-        run: python3 scripts/Validate-StandardQuantityTemplates.py 2>&1 | tee phase2-quantity-validation.txt
+        run: python3 scripts/Validate-StandardQuantityTemplates.py
 
       - name: Validate profile-view batch cleanup
-        id: validate_profiles
-        continue-on-error: true
-        run: python3 scripts/Validate-ProfileViewBatch.py 2>&1 | tee phase2-profile-validation.txt
+        run: python3 scripts/Validate-ProfileViewBatch.py
 
       - name: Validate detailed-section annotations
-        id: validate_sections
-        continue-on-error: true
-        run: python3 scripts/Validate-DetailedSectionAnnotations.py 2>&1 | tee phase2-section-validation.txt
-
-      - name: Upload Phase 2 validator diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: phase2-validator-diagnostics
-          path: phase2-*-validation.txt
-          if-no-files-found: warn
-
-      - name: Fail when a Phase 2 validator failed
-        if: always()
-        run: |
-          test "${{ steps.validate_parking.outcome }}" = "success"
-          test "${{ steps.validate_quantities.outcome }}" = "success"
-          test "${{ steps.validate_profiles.outcome }}" = "success"
-          test "${{ steps.validate_sections.outcome }}" = "success"
+        run: python3 scripts/Validate-DetailedSectionAnnotations.py
 
       - name: Validate Phase 1 and inherited source
         run: |
