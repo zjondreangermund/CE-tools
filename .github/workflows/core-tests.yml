@@ -18,9 +18,9 @@ jobs:
 
       - name: Apply active 25 July 2026 comment corrections
         shell: pwsh
-        run: ./scripts/Apply-Comments-2026-07-25.ps1
+        run: ./scripts/Invoke-Comments-Normalizer.ps1
 
-      - name: Apply feature-line, profile and surface comment corrections
+      - name: Apply feature-line, profile, surface and network comment corrections
         shell: pwsh
         run: ./scripts/Apply-Comments-Discipline.ps1
 
@@ -31,7 +31,7 @@ jobs:
       - name: Validate first active comment batch
         run: python3 scripts/Validate-Comments-2026-07-25.py
 
-      - name: Validate feature-line, profile and surface comments
+      - name: Validate feature-line, profile, surface and network comments
         run: python3 scripts/Validate-DisciplineComments.py
 
       - name: Validate report presentation source
