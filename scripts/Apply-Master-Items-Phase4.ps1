@@ -130,11 +130,115 @@ Replace-ExactText `
                     Cmd("Pump and System Curve Tools", "CE_PUMPSYSTEMTOOLS ", "Open template, single-pump review and folder-ranking workflows."),
                     Cmd("Create Pump Curve CSV Template", "CE_PUMPCURVETEMPLATE ", "Create the documented FlowLps/HeadM/efficiency/power/NPSHr manufacturer-curve template."),
                     Cmd("Review One Pump and System Curve", "CE_PUMPSYSTEMREVIEW ", "Calculate the system curve, find the duty point, interpolate manufacturer values and review NPSH margin."),
-                    Cmd("Rank Pump Curves in a Folder", "CE_PUMPFOLDERREVIEW ", "Screen and rank up to 100 manufacturer CSV curves against one system definition and optional target flow."))));
+                    Cmd("Rank Pump Curves in a Folder", "CE_PUMPFOLDERREVIEW ", "Screen and rank up to 100 manufacturer CSV curves against one system definition and optional target flow.")),
+                Menu("CE_TOOLS_ROAD_DRIVE_MENU", "Road Drive &\nDesign Review", "Sample a Civil 3D alignment/profile path, screen grades/curvature and export an external-visualisation camera path.",
+                    Cmd("Road Drive Review Tools", "CE_ROADDRIVETOOLS ", "Open road-drive review, camera export, information and clear workflows."),
+                    Cmd("Review Road Drive and Design", "CE_ROADDRIVEREVIEW ", "Screen sampled grade, grade-change, horizontal radius and speed-based lateral acceleration and create removable issue graphics."),
+                    Cmd("Export Road Drive Camera Path", "CE_ROADDRIVEEXPORT ", "Export station/X/Y/Z/heading/pitch frames for external visualisation after verifying coordinate and camera conventions."),
+                    Cmd("Road Drive Review Information", "CE_ROADDRIVEINFO ", "Review stored alignment, profile, criteria, issue and source-handle metadata."),
+                    Cmd("Clear Road Drive Review", "CE_ROADDRIVECLEAR ", "Erase only tagged CE Tools road-drive paths, issue markers and labels."))));
         }
 
         private static RibbonItem[] Row(params RibbonItem[] items)
 '@ `
-    -Description "add specialist exchange and pump system ribbon commands"
+    -Description "add exchange pump-system and road-drive ribbon commands"
 
-Write-Host "Master Items Phase 4 exchange and pump-system source is wired." -ForegroundColor Green
+$testsFile = "tests\CE.Tools.Core.Tests\Program.cs"
+Replace-ExactText `
+    -RelativePath $testsFile `
+    -OldText @'
+                PumpReviewChecksNpshMargin();
+'@ `
+    -NewText @'
+                PumpReviewChecksNpshMargin();
+                StraightRoadPassesScreening();
+                SteepRoadFlagsGrade();
+                TightCurveFlagsRadius();
+                CameraPathHasHeadingAndPitch();
+'@ `
+    -Description "run road-drive core tests"
+
+Replace-ExactText `
+    -RelativePath $testsFile `
+    -OldText @'
+        private static HydrologyGridAnalysis CreateSingleOutletAnalysis()
+'@ `
+    -NewText @'
+        private static void StraightRoadPassesScreening()
+        {
+            var samples = new[]
+            {
+                new RoadDriveSample(0.0, 0.0, 0.0, 0.0),
+                new RoadDriveSample(10.0, 10.0, 0.0, 0.0),
+                new RoadDriveSample(20.0, 20.0, 0.0, 0.0)
+            };
+            RoadDriveAnalysis analysis = RoadDriveReviewer.Analyse(
+                samples,
+                new RoadDriveCriteria(60.0, 8.0, 6.0, 0.0, 0.25, 2.5, 3.4));
+
+            Equal(0, analysis.Issues.Count);
+            Equal(3, analysis.CameraFrames.Count);
+            Near(0.0, analysis.CameraFrames[0].HeadingDegrees);
+            Near(0.0, analysis.CameraFrames[0].PitchDegrees);
+            Pass();
+        }
+
+        private static void SteepRoadFlagsGrade()
+        {
+            var samples = new[]
+            {
+                new RoadDriveSample(0.0, 0.0, 0.0, 0.0),
+                new RoadDriveSample(10.0, 10.0, 0.0, 2.0),
+                new RoadDriveSample(20.0, 20.0, 0.0, 4.0)
+            };
+            RoadDriveAnalysis analysis = RoadDriveReviewer.Analyse(
+                samples,
+                new RoadDriveCriteria(40.0, 8.0, 100.0, 0.0, 1.0, 2.5, 3.4));
+
+            True(analysis.Issues.Any(issue => issue.Type == RoadDriveIssueType.Grade));
+            Near(20.0, analysis.MaximumAbsoluteGradePercent);
+            Pass();
+        }
+
+        private static void TightCurveFlagsRadius()
+        {
+            var samples = new[]
+            {
+                new RoadDriveSample(0.0, 0.0, 0.0, 0.0),
+                new RoadDriveSample(10.0, 10.0, 0.0, 0.0),
+                new RoadDriveSample(20.0, 10.0, 10.0, 0.0)
+            };
+            RoadDriveAnalysis analysis = RoadDriveReviewer.Analyse(
+                samples,
+                new RoadDriveCriteria(60.0, 20.0, 100.0, 50.0, 0.25, 2.5, 3.4));
+
+            True(analysis.MinimumHorizontalRadiusMetres.HasValue);
+            Near(Math.Sqrt(50.0), analysis.MinimumHorizontalRadiusMetres.Value);
+            True(analysis.Issues.Any(issue => issue.Type == RoadDriveIssueType.HorizontalRadius));
+            True(analysis.Issues.Any(issue => issue.Type == RoadDriveIssueType.LateralAcceleration));
+            Pass();
+        }
+
+        private static void CameraPathHasHeadingAndPitch()
+        {
+            var samples = new[]
+            {
+                new RoadDriveSample(0.0, 0.0, 0.0, 0.0),
+                new RoadDriveSample(10.0, 10.0, 10.0, 1.0),
+                new RoadDriveSample(20.0, 20.0, 20.0, 2.0)
+            };
+            RoadDriveAnalysis analysis = RoadDriveReviewer.Analyse(
+                samples,
+                new RoadDriveCriteria(30.0, 20.0, 100.0, 0.0, 1.0, 2.5, 3.4));
+
+            Near(45.0, analysis.CameraFrames[0].HeadingDegrees);
+            True(analysis.CameraFrames[0].PitchDegrees > 0.0);
+            Equal(analysis.Samples.Count, analysis.CameraFrames.Count);
+            Pass();
+        }
+
+        private static HydrologyGridAnalysis CreateSingleOutletAnalysis()
+'@ `
+    -Description "add deterministic road-drive geometry tests"
+
+Write-Host "Master Items Phase 4 exchange pump-system and road-drive source is wired." -ForegroundColor Green
