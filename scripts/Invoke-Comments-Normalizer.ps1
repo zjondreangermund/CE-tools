@@ -31,17 +31,18 @@ finally {
     Remove-Item $temp -Force -ErrorAction SilentlyContinue
 }
 
-# Older exact replacements used a single-quoted `n sequence. Convert that
-# literal sequence into a real line break before source validation/compilation.
+# Two older exact replacements stored the characters `n instead of a real line
+# break because their replacement text was single quoted. Repair those tokens
+# before source validation and Autodesk compilation.
 $plugin = Join-Path (Split-Path -Parent $PSScriptRoot) "src\CE.Tools.Civil3D\PluginEntry.cs"
 if (Test-Path $plugin) {
     $pluginText = [System.IO.File]::ReadAllText($plugin)
-    $pluginText = $pluginText.Replace(
-        '),`n                    Cmd("Cleanup Manager Window"',
-        "),`n                    Cmd(`"Cleanup Manager Window`"")
-    $pluginText = $pluginText.Replace(
-        '),`n                    Cmd("Hatch Settings Window"',
-        "),`n                    Cmd(`"Hatch Settings Window`"")
+    $literalCleanup = '),`n                    Cmd("Cleanup Manager Window"'
+    $actualCleanup = '),' + [Environment]::NewLine + '                    Cmd("Cleanup Manager Window"'
+    $literalHatch = '),`n                    Cmd("Hatch Settings Window"'
+    $actualHatch = '),' + [Environment]::NewLine + '                    Cmd("Hatch Settings Window"'
+    $pluginText = $pluginText.Replace($literalCleanup, $actualCleanup)
+    $pluginText = $pluginText.Replace($literalHatch, $actualHatch)
     [System.IO.File]::WriteAllText($plugin, $pluginText, $utf8NoBom)
 }
 
