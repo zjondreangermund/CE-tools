@@ -12,6 +12,7 @@ HYDRAULIC = ROOT / "src" / "CE.Tools.Civil3D" / "HydraulicReviewCommands.cs"
 PRESENTATION = ROOT / "src" / "CE.Tools.Civil3D" / "CommentPresentationCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Master-Items-Phase1.ps1"
+MASTER_WRAPPER = ROOT / "scripts" / "Invoke-Master-Items-Phase1.ps1"
 BUILD = ROOT / "scripts" / "Build-CE-Tools.ps1"
 WORKFLOW = ROOT / ".github" / "workflows" / "core-tests.yml"
 REGISTER = ROOT / "docs" / "MASTER_ITEMS_REGISTER.md"
@@ -144,12 +145,19 @@ require(
     'avoid version-specific FeatureLine closed property',
 )
 require(
+    MASTER_WRAPPER,
+    'Apply-Master-Items-Phase1.ps1',
+    'summary.BoqTables += SewerExcavationCommentCommands.RefreshAll(document);',
+    'summary.CoordinateTables += SettingOutScheduleCommands.RefreshAll(document);',
+    'Master Items Phase 1 normalization completed',
+)
+require(
     PRESENTATION,
     'summary.CoordinateTables += SettingOutScheduleCommands.RefreshAll(document);',
 )
 require(
     BUILD,
-    '$masterItemsScript = Join-Path $PSScriptRoot "Apply-Master-Items-Phase1.ps1"',
+    '$masterItemsScript = Join-Path $PSScriptRoot "Invoke-Master-Items-Phase1.ps1"',
     'Applying Master Items Phase 1 corrections',
     '& $roadCommentsScript',
     '& $masterItemsScript',
@@ -158,17 +166,17 @@ require(
     WORKFLOW,
     'Apply batch road-production corrections',
     'Apply Master Items Phase 1 corrections',
-    'run: ./scripts/Apply-Master-Items-Phase1.ps1',
+    'run: ./scripts/Invoke-Master-Items-Phase1.ps1',
     'Validate Master Items Phase 1',
 )
 require(
     REGISTER,
     '## Phase 1 — native Civil 3D productivity',
     'Present 90°, 60° and 45° parking alternatives.',
-    'Highlight selected segments/areas below the configured minimum grade, default 0.5%.',
-    'Export selected discipline groups to separate DWGs and attach them as XREFs.',
-    'Platform point schedule: description, X, Y, ground, design and difference.',
-    'Create a quick rational-method flow calculator and culvert review schedule.',
+    'Highlight selected segments below the configured minimum grade, default 0.5%',
+    'Export selected discipline groups to separate DWGs and attach them as XREFs',
+    'Platform point schedule: description, X, Y, ground, design and difference',
+    'quick rational-method flow calculator and preliminary culvert review',
     'External dependency',
 )
 
