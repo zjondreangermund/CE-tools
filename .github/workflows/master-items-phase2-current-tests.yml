@@ -31,6 +31,7 @@ jobs:
           ./scripts/Apply-Master-Items-Phase2-ProfileViews.ps1
           ./scripts/Apply-Master-Items-Phase2-DetailedSections.ps1
           ./scripts/Apply-Master-Items-Phase2-ModelReport.ps1
+          ./scripts/Apply-Master-Items-Phase2-XrefProject.ps1
 
       - name: Normalize Civil 3D compatibility
         shell: pwsh
@@ -50,6 +51,9 @@ jobs:
 
       - name: Validate comprehensive model audit
         run: python3 scripts/Validate-ModelDesignAudit.py
+
+      - name: Validate project XREF management
+        run: python3 scripts/Validate-XrefProjectManagement.py
 
       - name: Validate Phase 1 and inherited source
         run: |
