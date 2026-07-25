@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PARKING = ROOT / "src" / "CE.Tools.Civil3D" / "AdvancedParkingPlanningCommands.cs"
 GRADING = ROOT / "src" / "CE.Tools.Civil3D" / "GradingDrainageDiagnosticCommands.cs"
 BACKGROUND = ROOT / "src" / "CE.Tools.Civil3D" / "BackgroundXrefManagementCommands.cs"
+SETTING = ROOT / "src" / "CE.Tools.Civil3D" / "SettingOutScheduleCommands.cs"
+PRESENTATION = ROOT / "src" / "CE.Tools.Civil3D" / "CommentPresentationCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Master-Items-Phase1.ps1"
 WRAPPER = ROOT / "scripts" / "Invoke-Comments-Normalizer.ps1"
@@ -72,6 +74,25 @@ require(
     'File.Copy(resolvedPath, backupPath, false)',
 )
 require(
+    SETTING,
+    '"CE_SETTINGOUTTOOLS"',
+    '"CE_SETTINGOUTPOINTS"',
+    '"CE_SETTINGOUTREFRESH"',
+    '"CE_SETTINGOUTEXPORT"',
+    '"CE_SETTINGOUTINFO"',
+    'private const string LinkRecordName = "CE_SETTING_OUT_LINKS"',
+    '"POINT DESCRIPTION"',
+    '"X COORDINATE"',
+    '"Y COORDINATE"',
+    '"GROUND ELEVATION"',
+    '"DESIGN ELEVATION"',
+    '"DIFFERENCE"',
+    'surface.FindElevationAtXY(point.X, point.Y)',
+    'SimpleXlsxWriter.Write(path, "Setting Out", cells)',
+    'internal static int RefreshAll(Document document)',
+    'internal sealed class SettingOutConfigurationWindow',
+)
+require(
     NORMALIZER,
     'Cmd("Boundary Parking Alternatives", "CE_PARKOPTIONS "',
     'Cmd("Refresh Boundary Parking Option", "CE_PARKOPTIONSREFRESH "',
@@ -87,7 +108,17 @@ require(
     'Cmd("Split Selection to XREF", "CE_XREFSPLIT "',
     'Cmd("XREF Information", "CE_XREFINFO "',
     'Cmd("Create XREF Revision Backup", "CE_XREFBACKUP "',
+    'Cmd("Setting-Out Schedule Tools", "CE_SETTINGOUTTOOLS "',
+    'Cmd("Create Linked Setting-Out Schedule", "CE_SETTINGOUTPOINTS "',
+    'Cmd("Refresh Setting-Out Schedule", "CE_SETTINGOUTREFRESH "',
+    'Cmd("Export Setting-Out Schedule", "CE_SETTINGOUTEXPORT "',
+    'Cmd("Setting-Out Schedule Information", "CE_SETTINGOUTINFO "',
+    'include linked setting-out schedules in CE_REFRESHALL',
     'avoid version-specific FeatureLine closed property',
+)
+require(
+    PRESENTATION,
+    'summary.CoordinateTables += SettingOutScheduleCommands.RefreshAll(document);',
 )
 require(
     WRAPPER,
@@ -100,6 +131,7 @@ require(
     'Present 90°, 60° and 45° parking alternatives.',
     'Highlight selected segments/areas below the configured minimum grade, default 0.5%.',
     'Export selected discipline groups to separate DWGs and attach them as XREFs.',
+    'Platform point schedule: description, X, Y, ground, design and difference.',
     'External dependency',
 )
 
@@ -120,11 +152,16 @@ require(
     'CE_XREFSPLIT ',
     'CE_XREFINFO ',
     'CE_XREFBACKUP ',
+    'CE_SETTINGOUTTOOLS ',
+    'CE_SETTINGOUTPOINTS ',
+    'CE_SETTINGOUTREFRESH ',
+    'CE_SETTINGOUTEXPORT ',
+    'CE_SETTINGOUTINFO ',
 )
 
-for path in (PARKING, GRADING, BACKGROUND):
+for path in (PARKING, GRADING, BACKGROUND, SETTING):
     text = path.read_text(encoding="utf-8")
     if text.count("{") != text.count("}"):
         raise SystemExit(f"Unbalanced braces in {path.name}")
 
-print("Master Items Phase 1 parking, grading and background/XREF validation passed.")
+print("Master Items Phase 1 parking, grading, background/XREF and setting-out validation passed.")
