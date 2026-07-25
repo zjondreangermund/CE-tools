@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using CETools.Core;
 
 namespace CETools.Core.Tests
@@ -19,6 +21,11 @@ namespace CETools.Core.Tests
                 WidthInterpolationWorks();
                 InvalidInputThrows();
                 ExcessivePlansAreRejectedBeforeAllocation();
+                PriorityFloodFillsEnclosedPit();
+                FlowRouteTerminatesWithoutCycle();
+                AccumulationReachesSingleOutlet();
+                CatchmentContainsUpstreamCells();
+                ModifiedRationalHydrographMatchesPeak();
 
                 Console.WriteLine($"CE Tools core tests passed: {_tests}");
                 return 0;
@@ -89,6 +96,8 @@ namespace CETools.Core.Tests
             Throws<ArgumentOutOfRangeException>(() => DensifyPlanner.ByMaximumSpacing(10.0, 0.0));
             Throws<ArgumentOutOfRangeException>(() => DensifyPlanner.BySegmentCount(10.0, 0));
             Throws<ArgumentOutOfRangeException>(() => BulgeMath.Split(1.0, 1.0));
+            Throws<ArgumentOutOfRangeException>(
+                () => ModifiedRationalHydrograph.Create(1.0, 1.2, 50.0, 20.0, 30.0, 5.0));
             Pass();
         }
 
@@ -105,6 +114,96 @@ namespace CETools.Core.Tests
                     10.0 / (DensifyPlanner.MaximumSupportedSegments + 1.0)));
 
             Pass();
+        }
+
+        private static void PriorityFloodFillsEnclosedPit()
+        {
+            double[] elevations =
+            {
+                10.0, 10.0, 10.0,
+                10.0,  1.0, 10.0,
+                10.0, 10.0, 10.0
+            };
+            HydrologyGridAnalysis analysis = new HydrologyGrid(
+                3,
+                3,
+                1.0,
+                elevations).Analyse();
+
+            int centre = analysis.IndexOf(1, 1);
+            Near(10.0, analysis.FilledElevations[centre]);
+            Near(9.0, analysis.FillDepth(centre));
+            True(analysis.FlowTo[centre] >= 0);
+            Pass();
+        }
+
+        private static void FlowRouteTerminatesWithoutCycle()
+        {
+            HydrologyGridAnalysis analysis = CreateSingleOutletAnalysis();
+            int start = analysis.IndexOf(0, 0);
+            int outlet = analysis.IndexOf(2, 2);
+            IReadOnlyList<GridCell> route = analysis.TraceRoute(start);
+
+            True(route.Count >= 2);
+            Equal(start, route[0].Index);
+            Equal(outlet, route[route.Count - 1].Index);
+            Equal(route.Count, route.Select(cell => cell.Index).Distinct().Count());
+            Pass();
+        }
+
+        private static void AccumulationReachesSingleOutlet()
+        {
+            HydrologyGridAnalysis analysis = CreateSingleOutletAnalysis();
+            int outlet = analysis.IndexOf(2, 2);
+
+            Equal(outlet, analysis.FindMaximumAccumulationCell());
+            Near(9.0, analysis.AccumulationArea[outlet]);
+            Equal(-1, analysis.FlowTo[outlet]);
+            Pass();
+        }
+
+        private static void CatchmentContainsUpstreamCells()
+        {
+            HydrologyGridAnalysis analysis = CreateSingleOutletAnalysis();
+            int outlet = analysis.IndexOf(2, 2);
+            IReadOnlyList<GridCell> catchment = analysis.DelineateCatchment(outlet);
+
+            Equal(9, catchment.Count);
+            True(catchment.Any(cell => cell.Index == analysis.IndexOf(0, 0)));
+            True(catchment.Any(cell => cell.Index == analysis.IndexOf(1, 1)));
+            True(catchment.Any(cell => cell.Index == outlet));
+            Pass();
+        }
+
+        private static void ModifiedRationalHydrographMatchesPeak()
+        {
+            HydrographSeries series = ModifiedRationalHydrograph.Create(
+                10.0,
+                0.7,
+                50.0,
+                20.0,
+                30.0,
+                5.0);
+            double expectedPeak = 0.7 * 50.0 * 10.0 / 360.0;
+            double maximum = series.Points.Max(point => point.FlowCubicMetresPerSecond);
+
+            Near(expectedPeak, series.PeakFlowCubicMetresPerSecond);
+            Near(expectedPeak, maximum);
+            Near(0.0, series.Points[0].FlowCubicMetresPerSecond);
+            Near(0.0, series.Points[series.Points.Count - 1].FlowCubicMetresPerSecond);
+            Near(50.0, series.Points[series.Points.Count - 1].TimeMinutes);
+            Pass();
+        }
+
+        private static HydrologyGridAnalysis CreateSingleOutletAnalysis()
+        {
+            double[] elevations =
+            {
+                9.0, 8.0, 7.0,
+                8.0, 7.0, 6.0,
+                7.0, 6.0, 5.0
+            };
+            return new HydrologyGrid(3, 3, 1.0, elevations).Analyse();
         }
 
         private static void Pass()
