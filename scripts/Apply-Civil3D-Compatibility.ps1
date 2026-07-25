@@ -26,16 +26,19 @@ function Replace-ExactText {
         throw "Compatibility source file was not found: $RelativePath"
     }
 
-    $text = [System.IO.File]::ReadAllText($path)
-    if ($text.Contains($NewText)) {
+    $text = [System.IO.File]::ReadAllText($path).Replace("`r`n", "`n")
+    $oldNormalised = $OldText.Replace("`r`n", "`n")
+    $newNormalised = $NewText.Replace("`r`n", "`n")
+
+    if ($text.Contains($newNormalised)) {
         return
     }
 
-    if (-not $text.Contains($OldText)) {
+    if (-not $text.Contains($oldNormalised)) {
         throw "Could not apply compatibility change '$Description' in '$RelativePath'. The expected source text was not found."
     }
 
-    $updated = $text.Replace($OldText, $NewText)
+    $updated = $text.Replace($oldNormalised, $newNormalised)
     [System.IO.File]::WriteAllText($path, $updated, $utf8NoBom)
     if (-not $changedFiles.Contains($RelativePath)) {
         $changedFiles.Add($RelativePath)
@@ -46,7 +49,7 @@ $projectFile = "src\CE.Tools.Civil3D\CE.Tools.Civil3D.csproj"
 Replace-ExactText `
     -RelativePath $projectFile `
     -OldText '    <Reference Include="System.IO.Compression" />' `
-    -NewText "    <Reference Include=`"System.Windows.Forms`" />`r`n    <Reference Include=`"System.IO.Compression`" />" `
+    -NewText "    <Reference Include=`"System.Windows.Forms`" />`n    <Reference Include=`"System.IO.Compression`" />" `
     -Description "add the System.Windows.Forms framework reference"
 
 $sewerFile = "src\CE.Tools.Civil3D\SewerProductionCommands.cs"
@@ -165,10 +168,16 @@ Replace-ExactText -RelativePath $waterFile -OldText $oldWaterProfileName -NewTex
 Replace-ExactText -RelativePath $waterFile -OldText 'ReadCivilNames(civilDocument.GetProfileViewIds(), transaction)' -NewText 'ReadCivilNames(alignment.GetProfileViewIds(), transaction)' -Description "read water profile-view IDs from the owning alignment"
 
 $surfaceFile = "src\CE.Tools.Civil3D\SurfaceCorrectionCommands.cs"
-Replace-ExactText -RelativePath $surfaceFile -OldText 'civilDocument.GetSurfaceIds()
-                        .Select' -NewText 'civilDocument.GetSurfaceIds()
+$oldSurfaceLinq = @'
+                    civilDocument.GetSurfaceIds()
+                        .Select
+'@
+$newSurfaceLinq = @'
+                    civilDocument.GetSurfaceIds()
                         .Cast<ObjectId>()
-                        .Select' -Description "adapt the surface ObjectIdCollection for LINQ"
+                        .Select
+'@
+Replace-ExactText -RelativePath $surfaceFile -OldText $oldSurfaceLinq -NewText $newSurfaceLinq -Description "adapt the surface ObjectIdCollection for LINQ"
 
 if ($changedFiles.Count -eq 0) {
     Write-Host "Civil 3D compatibility source is already normalised." -ForegroundColor DarkGray
