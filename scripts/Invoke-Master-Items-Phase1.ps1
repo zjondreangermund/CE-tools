@@ -58,4 +58,10 @@ if (-not (Test-Path $roadSections)) {
 }
 & $roadSections
 
+$networkSchedule = Join-Path $PSScriptRoot "Apply-Master-Items-Phase1-NetworkSchedule.ps1"
+if (-not (Test-Path $networkSchedule)) {
+    throw "The Phase 1 network asset schedule normalizer is missing: $networkSchedule"
+}
+& $networkSchedule
+
 Write-Host "Master Items Phase 1 normalization completed; validators will confirm every required result." -ForegroundColor Green
