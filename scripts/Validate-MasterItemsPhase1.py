@@ -12,7 +12,8 @@ HYDRAULIC = ROOT / "src" / "CE.Tools.Civil3D" / "HydraulicReviewCommands.cs"
 PRESENTATION = ROOT / "src" / "CE.Tools.Civil3D" / "CommentPresentationCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 NORMALIZER = ROOT / "scripts" / "Apply-Master-Items-Phase1.ps1"
-WRAPPER = ROOT / "scripts" / "Invoke-Comments-Normalizer.ps1"
+BUILD = ROOT / "scripts" / "Build-CE-Tools.ps1"
+WORKFLOW = ROOT / ".github" / "workflows" / "core-tests.yml"
 REGISTER = ROOT / "docs" / "MASTER_ITEMS_REGISTER.md"
 
 
@@ -147,9 +148,18 @@ require(
     'summary.CoordinateTables += SettingOutScheduleCommands.RefreshAll(document);',
 )
 require(
-    WRAPPER,
-    'Apply-Master-Items-Phase1.ps1',
+    BUILD,
+    '$masterItemsScript = Join-Path $PSScriptRoot "Apply-Master-Items-Phase1.ps1"',
     'Applying Master Items Phase 1 corrections',
+    '& $roadCommentsScript',
+    '& $masterItemsScript',
+)
+require(
+    WORKFLOW,
+    'Apply batch road-production corrections',
+    'Apply Master Items Phase 1 corrections',
+    'run: ./scripts/Apply-Master-Items-Phase1.ps1',
+    'Validate Master Items Phase 1',
 )
 require(
     REGISTER,
