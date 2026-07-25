@@ -46,4 +46,11 @@ if (Test-Path $plugin) {
     [System.IO.File]::WriteAllText($plugin, $pluginText, $utf8NoBom)
 }
 
-Write-Host "Active-comments normalization completed; validators will confirm every required result." -ForegroundColor Green
+$masterItems = Join-Path $PSScriptRoot "Apply-Master-Items-Phase1.ps1"
+if (-not (Test-Path $masterItems)) {
+    throw "The Master Items Phase 1 normalizer is missing: $masterItems"
+}
+Write-Host "Applying Master Items Phase 1 corrections..." -ForegroundColor Cyan
+& $masterItems
+
+Write-Host "Active-comments and Master Items Phase 1 normalization completed; validators will confirm every required result." -ForegroundColor Green
