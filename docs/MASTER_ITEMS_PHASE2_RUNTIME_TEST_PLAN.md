@@ -6,8 +6,9 @@ Run only after the exact Phase 2 branch head compiles in Civil 3D 2023. Repeat i
 
 - Use disposable DWG copies.
 - Keep a backup of the installed CE Tools bundle.
-- Do not use grading guides, quantity templates or generated section notes as final issue information without engineer review.
+- Do not use grading guides, quantity templates, model-audit findings or generated section notes as final issue information without engineer review.
 - Keep `CE_PARKAUTOMONITOR` off during bulk test-data setup when automatic refresh is not desired.
+- Use disposable XREF source files for discipline splitting and rollback tests; never start with live production XREFs.
 
 ## 1. Ribbon and startup
 
@@ -17,6 +18,8 @@ Confirm these command groups appear and execute:
 - Standard quantities: parking/driveway and sidewalk create, refresh, information and export commands shown in Quantity & BOQ Tools.
 - Profile views: batch tools, apply, report and cleanup commands shown in Profile Tools.
 - Detailed sections: `CE_SECTIONDETAILTOOLS`, `CE_SECTIONDETAILCREATE`, `CE_SECTIONDETAILREFRESH`, `CE_SECTIONDETAILINFO`, `CE_SECTIONDETAILCLEAR`.
+- Model audit: `CE_MODELREPORTTOOLS`, `CE_MODELREPORT`, `CE_MODELREPORTINFO`, `CE_MODELREPORTEXPORT`.
+- Project XREF management: `CE_XREFPROJECTTOOLS`, `CE_XREFDISCIPLINESPLIT`, `CE_XREFREVISIONDASH`, `CE_XREFBACKUPALL`, `CE_XREFRESTORE`.
 
 Close and reopen Civil 3D and confirm the parking monitor starts cleanly without duplicate Idle or database-event subscriptions.
 
@@ -122,7 +125,48 @@ Create stormwater, sewer and water trench sections containing circular pipe geom
 7. Run `CE_SECTIONDETAILCLEAR` and confirm only generated dimensions, labels, notes and the register are erased.
 8. Test UNDO/REDO around create, refresh and clear.
 
-## 11. Save, reopen and manual rebuild
+## 11. Civil 3D design-model audit
+
+Prepare one small controlled drawing and one representative large project drawing.
+
+1. Run `CE_MODELREPORTINFO` and compare the summary object counts with Toolspace and manual selection counts.
+2. Run `CE_MODELREPORT` and verify surface, alignment, profile, profile-view, corridor, feature-line, COGO point and network counts.
+3. Confirm coordinate-system, locked/frozen/off layer, XREF, layout, viewport and plot-configuration findings against known drawing state.
+4. Create a stale CE linked handle by deleting a disposable linked source; confirm it is reported without changing the drawing.
+5. Test a zero-triangle disposable surface, zero-length/invalid alignment where Civil 3D permits one, stale data shortcut and out-of-date corridor.
+6. Confirm findings are prioritised as OK, Review, Warning or Error and include an actionable recommendation.
+7. Confirm the command remains read-only: entity handles, modified times and object counts must not change merely by running the report.
+8. Export XLSX and compare every summary/finding/inventory row; open without a repair warning.
+9. Record execution time on the large drawing and report any unacceptable delay or memory growth.
+
+## 12. Project-wide XREF discipline splitting
+
+Use a disposable project drawing with clearly named Survey, Architecture, Road, Stormwater, Sewer, Water and Landscape layers plus locked and dependent layers.
+
+1. Run `CE_XREFDISCIPLINESPLIT` in Keep mode.
+2. Review inferred groups before confirming and verify the object count assigned to each discipline.
+3. Confirm one new DWG is written for every non-empty group and no existing file is overwritten.
+4. Open each output DWG and verify required blocks, layers, styles and referenced dependencies travelled with WBLOCK.
+5. Confirm every XREF attaches at 0,0,0 and remains aligned with the host model.
+6. Repeat in Replace mode and confirm originals are erased only after every output and attachment succeeds.
+7. Confirm locked, dependent and existing XREF reference objects are skipped and reported.
+8. Repeat using a path containing spaces and a relative project folder.
+
+## 13. XREF revision dashboard, backup and restore
+
+Use two disposable XREFs, including two host definitions that point to the same source file.
+
+1. Run `CE_XREFREVISIONDASH`; independently verify source path, status, file size, modified time, SHA-256 prefix and revision count.
+2. Run `CE_XREFBACKUPALL`; confirm each unique source path is copied once into its own `Revisions` folder.
+3. Modify one source and rerun the dashboard; confirm the latest revision shows a different hash.
+4. Run `CE_XREFRESTORE`, select a revision outside the Revisions folder and confirm it is rejected.
+5. Restore a valid revision and confirm a `pre-restore` backup is created before source overwrite.
+6. Confirm the XREF unload/reload attempt succeeds and displayed geometry reflects the selected revision.
+7. Test the source file open read-only, open for editing by another process and missing; failures must preserve clear evidence and attempt reload after unload.
+8. Compare the restored source SHA-256 with the selected revision and the pre-restore backup with the prior current source.
+9. Confirm the host DWG is not silently modified beyond expected XREF reload state.
+
+## 14. Save, reopen and manual rebuild
 
 1. Create linked parking bays, grading guides, quantity schedules and detailed-section annotations.
 2. Save, close and reopen the DWG.
@@ -140,4 +184,5 @@ For each failure record:
 4. screenshot of the drawing and command line;
 5. source object types, layers, locked/reference state and missing-handle state;
 6. whether automatic monitoring was On or Off where relevant;
-7. whether failure occurred during preview, confirmation, transaction commit, idle refresh or manual refresh.
+7. file paths, hashes and file-lock state for XREF failures;
+8. whether failure occurred during preview, confirmation, transaction commit, file write, XREF unload/reload, idle refresh or manual refresh.
