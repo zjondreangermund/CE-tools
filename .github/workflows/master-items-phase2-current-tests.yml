@@ -29,6 +29,7 @@ jobs:
           ./scripts/Apply-Master-Items-Phase2.ps1
           ./scripts/Apply-Master-Items-Phase2-Quantities.ps1
           ./scripts/Apply-Master-Items-Phase2-ProfileViews.ps1
+          ./scripts/Apply-Master-Items-Phase2-DetailedSections.ps1
 
       - name: Normalize Civil 3D compatibility
         shell: pwsh
@@ -49,6 +50,11 @@ jobs:
         continue-on-error: true
         run: python3 scripts/Validate-ProfileViewBatch.py 2>&1 | tee phase2-profile-validation.txt
 
+      - name: Validate detailed-section annotations
+        id: validate_sections
+        continue-on-error: true
+        run: python3 scripts/Validate-DetailedSectionAnnotations.py 2>&1 | tee phase2-section-validation.txt
+
       - name: Upload Phase 2 validator diagnostics
         if: always()
         uses: actions/upload-artifact@v4
@@ -63,6 +69,7 @@ jobs:
           test "${{ steps.validate_parking.outcome }}" = "success"
           test "${{ steps.validate_quantities.outcome }}" = "success"
           test "${{ steps.validate_profiles.outcome }}" = "success"
+          test "${{ steps.validate_sections.outcome }}" = "success"
 
       - name: Validate Phase 1 and inherited source
         run: |
