@@ -35,13 +35,34 @@ jobs:
         run: ./scripts/Apply-Civil3D-Compatibility.ps1
 
       - name: Validate dynamic parking and grading
-        run: python3 scripts/Validate-MasterItemsPhase2.py
+        id: validate_parking
+        continue-on-error: true
+        run: python3 scripts/Validate-MasterItemsPhase2.py 2>&1 | tee phase2-parking-validation.txt
 
       - name: Validate standard quantity templates
-        run: python3 scripts/Validate-StandardQuantityTemplates.py
+        id: validate_quantities
+        continue-on-error: true
+        run: python3 scripts/Validate-StandardQuantityTemplates.py 2>&1 | tee phase2-quantity-validation.txt
 
       - name: Validate profile-view batch cleanup
-        run: python3 scripts/Validate-ProfileViewBatch.py
+        id: validate_profiles
+        continue-on-error: true
+        run: python3 scripts/Validate-ProfileViewBatch.py 2>&1 | tee phase2-profile-validation.txt
+
+      - name: Upload Phase 2 validator diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: phase2-validator-diagnostics
+          path: phase2-*-validation.txt
+          if-no-files-found: error
+
+      - name: Fail when a Phase 2 validator failed
+        if: always()
+        run: |
+          test "${{ steps.validate_parking.outcome }}" = "success"
+          test "${{ steps.validate_quantities.outcome }}" = "success"
+          test "${{ steps.validate_profiles.outcome }}" = "success"
 
       - name: Validate Phase 1 and inherited source
         run: |
