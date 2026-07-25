@@ -8,6 +8,7 @@ PROJECT = ROOT / "src" / "CE.Tools.Civil3D" / "ProjectSetupCommands.cs"
 PROJECT_WINDOW = ROOT / "src" / "CE.Tools.Civil3D" / "ProjectSetupPopupWindow.cs"
 PARKING = ROOT / "src" / "CE.Tools.Civil3D" / "ParkingCommands.cs"
 PARKING_WORKFLOW = ROOT / "src" / "CE.Tools.Civil3D" / "ClosedParkingBayWorkflow.cs"
+ALIGNMENT = ROOT / "src" / "CE.Tools.Civil3D" / "AlignmentCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 FLOATING = ROOT / "src" / "CE.Tools.Civil3D" / "FloatingToolsWindow.cs"
 BUILD = ROOT / "scripts" / "Build-CE-Tools.ps1"
@@ -53,6 +54,10 @@ require(
     "CE_PKREPORTUI",
 )
 require(
+    ALIGNMENT,
+    'document.SendStringToExecute("CE_ALLABELX ", true, false, true);',
+)
+require(
     RIBBON,
     "Title = PrefixRibbonText(title).ToUpperInvariant()",
     "Text = PrefixRibbonText(text)",
@@ -78,6 +83,7 @@ require(
     "replace separate project prompts with one project setup popup",
     "route single parking rows to closed bay polyline generation",
     "route double parking rows to closed bay polyline generation",
+    "route alignment labels to shared 1.8, 2.0 and 5.0 annotation settings",
     "prefix CE Tools ribbon panel names",
     "prefix CE Tools ribbon menu names",
     "prefix CE Tools ribbon command names",
