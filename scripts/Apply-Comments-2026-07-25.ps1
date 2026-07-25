@@ -130,6 +130,13 @@ Replace-ExactText `
     -NewText 'ClosedParkingBayWorkflow.CreateDoubleRow(document);' `
     -Description "route double parking rows to closed bay polyline generation"
 
+$alignmentFile = "src\CE.Tools.Civil3D\AlignmentCommands.cs"
+Replace-ExactText `
+    -RelativePath $alignmentFile `
+    -OldText 'PlaceStationOffsetLabel(document);' `
+    -NewText 'document.SendStringToExecute("CE_ALLABELX ", true, false, true);' `
+    -Description "route alignment labels to shared 1.8, 2.0 and 5.0 annotation settings"
+
 $ribbonFile = "src\CE.Tools.Civil3D\PluginEntry.cs"
 Replace-ExactText `
     -RelativePath $ribbonFile `
