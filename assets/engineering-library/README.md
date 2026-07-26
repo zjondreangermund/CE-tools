@@ -4,10 +4,12 @@ This folder contains the controlled Phase 8 asset-management register and the ge
 
 ## Populated uploaded records
 
-The catalog contains 20 uploaded source records:
+The catalog contains 25 uploaded source records:
 
 - 16 PDF drawing, notes, layout, longitudinal-section and typical-detail records;
-- 4 XLSX setting-out and quantity template records.
+- 9 XLSX setting-out, quantity, alignment and network-data records.
+
+The five latest workbooks add sewer structure data, sewer pipe data, road horizontal alignment data, road vertical alignment data and water structure data.
 
 All uploaded records are initially classified as `ForReview` with revision `UPLOAD-01`. Presence in the catalog does not mean that an asset is engineer-approved, authority-approved or current for another project.
 
