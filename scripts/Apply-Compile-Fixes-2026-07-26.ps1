@@ -36,11 +36,11 @@ function Replace-Required {
     $source = Read-Source $RelativePath
     $oldValue = Normalize-Newlines $OldText
     $newValue = Normalize-Newlines $NewText
-    if ($source.Text.Contains($newValue)) {
-        Write-Host "  already fixed: $Description" -ForegroundColor DarkGray
-        return
-    }
     if (-not $source.Text.Contains($oldValue)) {
+        if ($source.Text.Contains($newValue)) {
+            Write-Host "  already fixed: $Description" -ForegroundColor DarkGray
+            return
+        }
         throw "Could not apply compile fix '$Description' in '$RelativePath'."
     }
     $source.Text = $source.Text.Replace($oldValue, $newValue)
