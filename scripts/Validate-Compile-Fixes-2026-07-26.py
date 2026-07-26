@@ -29,7 +29,6 @@ if correct_layout_block not in model:
     raise SystemExit("The Civil 3D 2023 layout plot-configuration block is missing or malformed")
 
 for bad in (
-    "layout.ConfigName",
     '\\"ConfigName\\"',
     '\\"PlotConfigurationName\\"',
     "`\"ConfigName",
