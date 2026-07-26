@@ -7,7 +7,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG = ROOT / "assets" / "engineering-library" / "engineering-assets.csv"
-EXPECTED_COUNT = 20
+EXPECTED_COUNT = 25
 HASH = re.compile(r"^[0-9a-f]{64}$")
 
 if not CATALOG.exists():
