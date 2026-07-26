@@ -16,6 +16,15 @@ REQUIRED = [
     '"CE_REDO "',
     '"CE_CLEANUPUI "',
     '"CE_HATCHUI "',
+    '"CE_PRESENTATIONTOOLS "',
+    '"CE_MAKEANNOTATIVE "',
+    '"CE_TABLESCALE "',
+    '"CE_OVERLAPFIX "',
+    '"CE_REFRESHALL "',
+    '"CE_AUTOREFRESH "',
+    '"CE_REFRESHSTATUS "',
+    'Point Name, X, Y, Z table',
+    'sequential dynamic COGO points',
     'Title = PrefixRibbonText(title).ToUpperInvariant()',
     'Text = PrefixRibbonText(text)',
     'Text = PrefixRibbonText(definition.Text)',
@@ -31,5 +40,6 @@ if missing:
 
 print(
     "Remaining-comment ribbon validation passed: CE naming, project styles, "
-    "undo/redo, cleanup popup and hatch popup."
+    "undo/redo, cleanup/hatch popups, coordinate wording, annotation scaling, "
+    "overlap correction and dynamic refresh."
 )
