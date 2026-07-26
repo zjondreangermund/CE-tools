@@ -161,6 +161,7 @@ namespace CETools.Civil3D
         {
             AddPanel(tab, DrawingsPanelId, "Drawings", Row(
                 Menu("CE_TOOLS_DRAWING_MENU", "Drawing\nTools", "AutoCAD drawing and annotation utilities.",
+                    Cmd("Open Floating Command Window", "CE_TOOLSPALETTE ", "Open every CE Tools ribbon command in a searchable modeless window that can be moved to a second monitor."),
                     Cmd("Annotation Settings", "CE_ANNOTSETTINGS ", "Select 1.8, 2.0 or 5.0 height, marker circles and MLeader/MText/COGO output."),
                     Cmd("Make Selected Objects Annotative", "CE_MAKEANNOTATIVE ", "Apply CE text height and annotative settings to selected text, dimensions, leaders and tables."),
                     Cmd("Scale Selected Tables", "CE_TABLESCALE ", "Resize selected tables relative to the current CE annotation height."),
