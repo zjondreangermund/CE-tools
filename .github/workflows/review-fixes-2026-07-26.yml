@@ -141,7 +141,7 @@ jobs:
         run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- obstacles
 
       - name: Test parking accessibility
-        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- accessibility
+        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- accessible
 
       - name: Test parking islands and entrance
         run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- islands
