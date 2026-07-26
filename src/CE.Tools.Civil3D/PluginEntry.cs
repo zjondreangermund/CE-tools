@@ -128,7 +128,15 @@ namespace CETools.Civil3D
                     Cmd("Standards Tools", "CE_STANDARDS ", "Open the standards menu."),
                     Cmd("Select Standards", "CE_STANDARDSELECT ", "Browse for a standards file, review it and save its traceable details."),
                     Cmd("Standards Information", "CE_STANDARDINFO ", "Review stored standards and optionally place a drawing table."),
-                    Cmd("Clear Standards", "CE_STANDARDCLEAR ", "Clear the standards record."))));
+                    Cmd("Clear Standards", "CE_STANDARDCLEAR ", "Clear the standards record.")),
+                Menu("CE_TOOLS_PROJECT_STYLES_MENU", "Project\nStyles", "Select project styles for roads, stormwater, sewer, water and platforms.",
+                    Cmd("Project Style Centre", "CE_PROJECTSTYLES ", "Select alignment, profile, point, corridor, pipe, structure and related Civil 3D styles."),
+                    Cmd("Project Style Information", "CE_PROJECTSTYLEINFO ", "Review the project style selections and optionally place a schedule."),
+                    Cmd("Clear Project Styles", "CE_PROJECTSTYLECLEAR ", "Clear only the stored project style selections.")),
+                Menu("CE_TOOLS_UNDO_MENU", "Undo &\nRedo", "Enable full native undo recording and run one-step undo or redo.",
+                    Cmd("Enable Full Undo Recording", "CE_UNDOSETTINGS ", "Enable AutoCAD full undo recording for the current session."),
+                    Cmd("Undo One Step", "CE_UNDO ", "Run one native AutoCAD undo step."),
+                    Cmd("Redo One Step", "CE_REDO ", "Run one native AutoCAD redo step."))));
         }
 
         private static void AddSurveyPanel(RibbonTab tab)
@@ -156,12 +164,13 @@ namespace CETools.Civil3D
                     Cmd("Colour 250 - Geometry or Annotation", "CE_COLOR250 ", "Choose geometry only or geometry plus annotation and change accepted objects to colour 250."),
                     Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked direction arrows.")),
                 Menu("CE_TOOLS_CLEANUP_MENU", "Cleanup\nManager", "Run OVERKILL, AUDIT and PURGE together or separately.",
+                    Cmd("Open Cleanup Manager", "CE_CLEANUPUI ", "Open the cleanup selection window."),
                     Cmd("Full Cleanup", "CE_DRAWCLEAN All ", "Run all drawing-cleanup stages."),
                     Cmd("OVERKILL Only", "CE_DRAWCLEAN Overkill ", "Remove duplicate and overlapping geometry."),
                     Cmd("AUDIT Only", "CE_DRAWCLEAN Audit ", "Audit and fix drawing errors."),
                     Cmd("PURGE Only", "CE_DRAWCLEAN Purge ", "Purge unused named objects.")),
                 Menu("CE_TOOLS_HATCH_MENU", "Hatch\nTools", "Create and edit transparent civil hatches while keeping grids, labels and linework visible.",
-                    Cmd("Hatch Tools", "CE_HATCHTOOLS ", "Open the CE hatch tools menu."),
+                    Cmd("Open Hatch Settings", "CE_HATCHUI ", "Open the hatch settings and action window."),
                     Cmd("Create Transparent Hatches", "CE_HATCHCREATE ", "Create associative hatches from selected closed boundaries."),
                     Cmd("Edit Hatch Settings", "CE_HATCHEDIT ", "Edit selected hatch pattern, scale, angle, colour and transparency."),
                     Cmd("Match Hatch Settings", "CE_HATCHMATCH ", "Copy hatch display settings from one source hatch."),
@@ -379,7 +388,7 @@ namespace CETools.Civil3D
             var source = new RibbonPanelSource
             {
                 Id = panelId,
-                Title = title.ToUpperInvariant()
+                Title = RibbonLabel(title).ToUpperInvariant()
             };
 
             foreach (RibbonItem[] row in rows)
@@ -400,7 +409,7 @@ namespace CETools.Civil3D
             var menu = new RibbonMenuButton
             {
                 Id = id,
-                Text = text,
+                Text = RibbonLabel(text),
                 ShowText = true,
                 ShowImage = false,
                 Size = RibbonItemSize.Large,
@@ -429,13 +438,21 @@ namespace CETools.Civil3D
             return new RibbonCommandDefinition(text, command, toolTip);
         }
 
+        private static string RibbonLabel(string text)
+        {
+            string value = text ?? string.Empty;
+            return value.StartsWith("CE \u2013 ", StringComparison.Ordinal)
+                ? value
+                : "CE \u2013 " + value;
+        }
+
         private static RibbonMenuItem CreateCommandMenuItem(
             RibbonCommandDefinition definition)
         {
             var menuItem = new RibbonMenuItem
             {
                 Id = "CE_TOOLS_COMMAND_" + definition.Command.Trim().Replace(' ', '_'),
-                Text = definition.Text,
+                Text = RibbonLabel(definition.Text),
                 ShowText = true,
                 ShowImage = false,
                 CommandParameter = definition.Command,
