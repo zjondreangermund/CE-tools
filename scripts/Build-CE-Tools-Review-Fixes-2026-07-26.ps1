@@ -39,17 +39,18 @@ Invoke-RequiredScript "Invoke-Master-Items-Phase7.ps1"
 Invoke-RequiredScript "Apply-Master-Items-Phase8.ps1"
 Invoke-RequiredScript "Apply-Review-Fixes-2026-07-26.ps1"
 Invoke-RequiredScript "Apply-Review-Fixes-2026-07-26-Extension.ps1"
+Invoke-RequiredScript "Apply-Civil3D-Compatibility.ps1"
 
-$baseBuild = Join-Path $PSScriptRoot "Build-CE-Tools-Master-Items.ps1"
-if (-not (Test-Path $baseBuild)) {
-    throw "The Master Items build script is missing: $baseBuild"
+$compileOnlyBuild = Join-Path $PSScriptRoot "Build-CE-Tools-Compile-Only.ps1"
+if (-not (Test-Path $compileOnlyBuild)) {
+    throw "The compile-only build script is missing: $compileOnlyBuild"
 }
 
 if ([string]::IsNullOrWhiteSpace($AutoCADRoot)) {
-    & $baseBuild -Version $Version -Configuration $Configuration
+    & $compileOnlyBuild -Version $Version -Configuration $Configuration
 }
 else {
-    & $baseBuild `
+    & $compileOnlyBuild `
         -Version $Version `
         -Configuration $Configuration `
         -AutoCADRoot $AutoCADRoot
