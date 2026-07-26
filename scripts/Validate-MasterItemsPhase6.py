@@ -59,10 +59,6 @@ require(
     'FloodResultAnalyzer.Analyse(',
     'GridReportPresenter.ShowReportAndOfferTable(',
     'SimpleXlsxWriter.Write(',
-    'SetEntityVisibility(entity, show);',
-    'private static void SetEntityVisibility(Entity entity, bool visible)',
-    'type.GetProperty(\n                "Visible"',
-    'type.GetProperty(\n                "Visibility"',
     'Only CE Tools imported result markers are hidden/shown.',
     'All imported specialist-result markers restored',
     '<canvas id=\'map\'></canvas>',
@@ -114,6 +110,19 @@ for path in (CORE, CIVIL, TESTS):
         raise SystemExit(f"Unbalanced braces in {path.name}")
 
 civil_text = CIVIL.read_text(encoding="utf-8")
+visibility_direct = (
+    "entity.Visibility = show ? Visibility.Visible : Visibility.Invisible"
+    in civil_text
+)
+visibility_compatible = (
+    "SetEntityVisibility(entity, show);" in civil_text
+    and "private static void SetEntityVisibility(Entity entity, bool visible)"
+    in civil_text
+)
+if not visibility_direct and not visibility_compatible:
+    raise SystemExit(
+        "Flood result review must provide a direct or version-tolerant visibility implementation"
+    )
 if "Microsoft.Office.Interop" in civil_text:
     raise SystemExit("Flood result review must not introduce Office COM automation")
 if "polyline.UpgradeOpen" in civil_text:
