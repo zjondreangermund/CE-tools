@@ -25,7 +25,7 @@ namespace CETools.Civil3D
         private const int MaximumInventoryTypes = 15;
         private const int MaximumFindingsPerSlide = 9;
 
-        [CommandMethod("CE_TOOLS", "CE_PRESENTATIONTOOLS", CommandFlags.Modal)]
+        [CommandMethod("CE_TOOLS", "CE_PROJECTPRESENTATIONTOOLS", CommandFlags.Modal)]
         public void PresentationTools()
         {
             Document document = ActiveDocument();
@@ -97,20 +97,19 @@ namespace CETools.Civil3D
                 DrawingPresentationSnapshot snapshot = ReadSnapshot(document.Database);
                 PresentationDeck deck = BuildDeck(input, snapshot);
                 ShowPreview(document, deck, snapshot);
-                if (!PromptYesNo(document.Editor, "Create this PowerPoint presentation", true))
+                if (!PromptYesNo(
+                        document.Editor,
+                        "Create the PowerPoint presentation after reviewing the slide plan",
+                        true))
                 {
-                    document.Editor.WriteMessage("\nCE_PRESENTATIONCREATE cancelled.");
+                    document.Editor.WriteMessage("\nCE_PRESENTATIONCREATE cancelled. No file was created.");
                     return;
                 }
-
                 SimplePresentationPackage.Write(path, deck);
                 document.Editor.WriteMessage(
-                    "\nCE_PRESENTATIONCREATE complete. Slides={0}; findings={1}; path={2}.",
+                    "\nCE_PRESENTATIONCREATE complete. Slides={0}; file={1}",
                     deck.Slides.Count,
-                    snapshot.Findings.Count,
                     path);
-                document.Editor.WriteMessage(
-                    "\nThe presentation contains automated drawing/model observations. Verify every statement and add approved drawings, images and engineering conclusions before external issue.");
             }
             catch (System.Exception exception)
             {
@@ -126,182 +125,136 @@ namespace CETools.Civil3D
             {
                 new PresentationSlide(
                     input.ProjectTitle,
-                    input.Client + " | " + input.Stage + " | " + DateTime.Now.ToString("dd MMMM yyyy", CultureInfo.CurrentCulture),
+                    input.Stage + " | " + input.Client,
                     new[]
                     {
-                        input.Purpose,
-                        "Source drawing: " + snapshot.DrawingName,
-                        "Automatically generated from the current CE Tools drawing snapshot.",
-                        "All content requires project-team and professional review before external issue."
+                        new PresentationMetric("Purpose", input.Purpose),
+                        new PresentationMetric("Drawing", snapshot.DrawingName),
+                        new PresentationMetric("Prepared by", input.Author),
+                        new PresentationMetric("Company", input.Company)
                     },
                     new[]
                     {
-                        Metric("Civil objects", snapshot.TotalCivilObjects),
-                        Metric("Layouts", snapshot.LayoutCount),
-                        Metric("XREFs", snapshot.XrefCount),
-                        Metric("Findings", snapshot.Findings.Count)
+                        "Generated from the current Civil 3D drawing on " +
+                            DateTime.Now.ToString("dd MMMM yyyy HH:mm", CultureInfo.CurrentCulture) + ".",
+                        "This presentation is a project-review starting point and requires approved project conclusions, assumptions, exclusions, reviewers and revision history before external issue."
                     }),
                 new PresentationSlide(
-                    "Project Overview",
-                    "Drawing identity, units and production status",
+                    "Project and Drawing Overview",
+                    "Current drawing identity, units and spatial context",
                     new[]
                     {
-                        "Client: " + input.Client,
-                        "Project stage: " + input.Stage,
-                        "Purpose: " + input.Purpose,
-                        "Drawing: " + snapshot.DrawingName,
-                        "Drawing units: " + snapshot.DrawingUnits,
-                        "Coordinate system: " + ValueOr(snapshot.CoordinateSystemCode, "Not detected"),
-                        "Model-space extents: " + snapshot.ExtentsSummary,
-                        "Snapshot generated: " + DateTime.Now.ToString("dd MMM yyyy HH:mm", CultureInfo.CurrentCulture)
+                        new PresentationMetric("File", snapshot.DrawingName),
+                        new PresentationMetric("Drawing units", snapshot.InsertionUnits),
+                        new PresentationMetric("Coordinate system", Empty(snapshot.CoordinateSystemCode, "Not assigned")),
+                        new PresentationMetric("Model entities", snapshot.ModelSpaceEntityCount.ToString("N0", CultureInfo.CurrentCulture))
                     },
                     new[]
                     {
-                        Metric("Entities", snapshot.TotalModelEntities),
-                        Metric("Layers", snapshot.LayerCount),
-                        Metric("Layouts", snapshot.LayoutCount),
-                        Metric("Viewports", snapshot.ViewportCount)
+                        "Drawing path: " + snapshot.DrawingPath,
+                        "Model extents: " + snapshot.ModelExtents,
+                        "Database version: " + snapshot.DatabaseVersion,
+                        "Verify coordinate reference system, datum, units and project origin before issue or specialist-model exchange."
                     }),
+                BuildInventorySlide(snapshot),
                 new PresentationSlide(
                     "Civil 3D Design Inventory",
-                    "Live object counts detected in the current drawing",
-                    CivilInventoryBullets(snapshot),
+                    "Current Civil object counts; presence does not prove design completeness",
+                    snapshot.CivilMetrics,
                     new[]
                     {
-                        Metric("Alignments", snapshot.CivilCount("Alignment")),
-                        Metric("Surfaces", snapshot.CivilCount("Surface")),
-                        Metric("Corridors", snapshot.CivilCount("Corridor")),
-                        Metric("Networks", snapshot.CivilCount("Network"))
+                        "Review object names, styles, data shortcuts/references, rebuild state and design criteria.",
+                        "Confirm alignments, profiles, profile views, surfaces, corridors and networks are coordinated with the latest project inputs.",
+                        "Run the CE Tools model audit and discipline reports before drawing issue."
                     }),
                 new PresentationSlide(
                     "Drawing Production",
-                    "Layouts, references, annotation and delivery readiness",
+                    "Layouts, viewports, references and sheet-production readiness",
                     new[]
                     {
-                        "Paper-space layouts: " + snapshot.LayoutCount.ToString(CultureInfo.InvariantCulture),
-                        "Layouts without active viewports: " + snapshot.LayoutsWithoutViewport.ToString(CultureInfo.InvariantCulture),
-                        "Attached XREF definitions: " + snapshot.XrefCount.ToString(CultureInfo.InvariantCulture),
-                        "Unresolved or unloaded XREFs: " + snapshot.UnresolvedXrefCount.ToString(CultureInfo.InvariantCulture),
-                        "AutoCAD tables: " + snapshot.TableCount.ToString(CultureInfo.InvariantCulture),
-                        "Dimensions: " + snapshot.DimensionCount.ToString(CultureInfo.InvariantCulture),
-                        "Text and MText objects: " + snapshot.TextCount.ToString(CultureInfo.InvariantCulture),
-                        "Locked/off/frozen layers: " + snapshot.RestrictedLayerCount.ToString(CultureInfo.InvariantCulture)
+                        new PresentationMetric("Layouts", snapshot.LayoutCount.ToString("N0", CultureInfo.CurrentCulture)),
+                        new PresentationMetric("Viewports", snapshot.ViewportCount.ToString("N0", CultureInfo.CurrentCulture)),
+                        new PresentationMetric("XREFs", snapshot.XrefCount.ToString("N0", CultureInfo.CurrentCulture)),
+                        new PresentationMetric("Tables", snapshot.TableCount.ToString("N0", CultureInfo.CurrentCulture))
                     },
                     new[]
                     {
-                        Metric("Layouts", snapshot.LayoutCount),
-                        Metric("XREF issues", snapshot.UnresolvedXrefCount),
-                        Metric("Tables", snapshot.TableCount),
-                        Metric("Dimensions", snapshot.DimensionCount)
-                    }),
-                new PresentationSlide(
-                    "Model Content by Object Type",
-                    "Highest-count model-space entity types",
-                    snapshot.TopEntityTypes
-                        .Take(MaximumInventoryTypes)
-                        .Select(item => item.Key + ": " + item.Value.ToString(CultureInfo.InvariantCulture)),
-                    new[]
-                    {
-                        Metric("Entity types", snapshot.EntityTypeCounts.Count),
-                        Metric("Model entities", snapshot.TotalModelEntities),
-                        Metric("Proxy objects", snapshot.ProxyCount),
-                        Metric("Empty drawing", snapshot.TotalModelEntities == 0 ? "Yes" : "No")
+                        "Layers: " + snapshot.LayerCount.ToString("N0", CultureInfo.CurrentCulture) +
+                            "; dimensions: " + snapshot.DimensionCount.ToString("N0", CultureInfo.CurrentCulture) +
+                            "; text objects: " + snapshot.TextCount.ToString("N0", CultureInfo.CurrentCulture) + ".",
+                        "Confirm title blocks, revision records, notes, legends, north arrows, fonts, dimensions, logos, sheet numbering, plot configuration and issue status.",
+                        "Use the CE Tools client-book, drawing-book and publish workflows only after layout and plot review."
                     }),
                 new PresentationSlide(
                     "Automated Model Health Review",
-                    "Prioritised observations—not professional approval",
-                    snapshot.Findings.Count == 0
-                        ? new[] { "No automated review findings were raised by this drawing snapshot." }
-                        : snapshot.Findings.Take(MaximumFindingsPerSlide).Select(item => item.Severity + " — " + item.Message),
-                    new[]
-                    {
-                        Metric("Errors", snapshot.Findings.Count(item => item.Severity == "Error")),
-                        Metric("Warnings", snapshot.Findings.Count(item => item.Severity == "Warning")),
-                        Metric("Review", snapshot.Findings.Count(item => item.Severity == "Review")),
-                        Metric("Checks", snapshot.AutomatedCheckCount)
-                    }),
+                    "Automated drawing/model observations; verify every finding",
+                    snapshot.HealthMetrics,
+                    snapshot.Findings.Take(MaximumFindingsPerSlide).ToList()),
                 new PresentationSlide(
                     "Recommended Next Actions",
-                    "Resolve drawing and design review items before issue",
-                    BuildNextActions(snapshot),
-                    new[]
-                    {
-                        Metric("Open findings", snapshot.Findings.Count),
-                        Metric("Unresolved XREFs", snapshot.UnresolvedXrefCount),
-                        Metric("Layout gaps", snapshot.LayoutsWithoutViewport),
-                        Metric("Proxy objects", snapshot.ProxyCount)
-                    }),
+                    "Prioritised coordination, design and production checks",
+                    new PresentationMetric[0],
+                    snapshot.Actions.Take(MaximumFindingsPerSlide).ToList()),
                 new PresentationSlide(
                     "Review Close-Out",
-                    input.ProjectTitle + " | " + input.Stage,
+                    "Complete these controls before external distribution",
                     new[]
                     {
-                        "Confirm that the presentation reflects the latest approved drawing revision.",
-                        "Replace automated observations with verified engineering conclusions where required.",
-                        "Add approved plan, profile, section, visualisation and construction-detail images.",
-                        "Record reviewers, approvals, assumptions, exclusions and revision history.",
-                        "Do not issue this automatically generated deck without project-team review."
+                        new PresentationMetric("Automated findings", snapshot.Findings.Count.ToString("N0", CultureInfo.CurrentCulture)),
+                        new PresentationMetric("Civil objects", snapshot.TotalCivilObjects.ToString("N0", CultureInfo.CurrentCulture)),
+                        new PresentationMetric("Layouts", snapshot.LayoutCount.ToString("N0", CultureInfo.CurrentCulture)),
+                        new PresentationMetric("XREFs", snapshot.XrefCount.ToString("N0", CultureInfo.CurrentCulture))
                     },
                     new[]
                     {
-                        new PresentationMetric("Prepared by", input.Author),
-                        new PresentationMetric("Company", input.Company),
-                        new PresentationMetric("Stage", input.Stage),
-                        new PresentationMetric("Slides", "8")
+                        "Add approved drawings, screenshots, visualisations, design conclusions and decision records.",
+                        "Record assumptions, exclusions, design standards, review comments, responses, approvers and revision history.",
+                        "Confirm model, drawing and BOQ outputs against current contracts, specifications and authority requirements.",
+                        "The generated presentation does not replace drawing, design or engineering approval."
                     })
             };
 
             return new PresentationDeck(
                 input.ProjectTitle,
-                input.Purpose,
                 input.Author,
                 input.Company,
-                DateTime.UtcNow,
+                input.Purpose,
                 slides);
         }
 
-        private static IEnumerable<string> CivilInventoryBullets(DrawingPresentationSnapshot snapshot)
+        private static PresentationSlide BuildInventorySlide(DrawingPresentationSnapshot snapshot)
         {
-            string[] preferred =
-            {
-                "Alignment", "Profile", "ProfileView", "FeatureLine", "Surface",
-                "Corridor", "Network", "Pipe", "Structure", "CogoPoint"
-            };
-            var bullets = new List<string>();
-            foreach (string key in preferred)
-                bullets.Add(Readable(key) + ": " + snapshot.CivilCount(key).ToString(CultureInfo.InvariantCulture));
-            if (snapshot.TotalCivilObjects == 0)
-                bullets.Add("No recognised Civil 3D design objects were detected in model space.");
-            return bullets;
-        }
-
-        private static IEnumerable<string> BuildNextActions(DrawingPresentationSnapshot snapshot)
-        {
-            var actions = new List<string>();
-            foreach (PresentationFinding finding in snapshot.Findings.Take(7))
-                actions.Add(finding.Action);
-            if (!actions.Any()) actions.Add("Complete discipline design checks and drawing-office review before issue.");
-            actions.Add("Run the full CE Tools model audit and discipline reports on the final drawing revision.");
-            actions.Add("Add approved screenshots, drawings and verified performance results to this presentation.");
-            actions.Add("Record revision, reviewer, checker and approver information before external distribution.");
-            return actions.Distinct(StringComparer.CurrentCultureIgnoreCase).Take(10);
-        }
-
-        private static PresentationMetric Metric(string label, int value)
-        {
-            return new PresentationMetric(label, value.ToString("N0", CultureInfo.CurrentCulture));
+            var metrics = snapshot.TopEntityTypes
+                .Take(8)
+                .Select(item => new PresentationMetric(item.Key, item.Value.ToString("N0", CultureInfo.CurrentCulture)))
+                .ToList();
+            return new PresentationSlide(
+                "AutoCAD Drawing Inventory",
+                "Most common model-space object types",
+                metrics,
+                new[]
+                {
+                    "Objects outside the top " + MaximumInventoryTypes.ToString(CultureInfo.InvariantCulture) +
+                        " inventory groups are summarised in the total model-space count.",
+                    "Use object count, layer and standards audits to identify duplicate, proxy, unexploded, unreferenced or legacy content.",
+                    "Inventory is descriptive only and does not prove drawing correctness."
+                });
         }
 
         private static DrawingPresentationSnapshot ReadSnapshot(Database database)
         {
             var snapshot = new DrawingPresentationSnapshot
             {
-                DrawingName = string.IsNullOrWhiteSpace(database.Filename)
-                    ? "<Unsaved drawing>"
-                    : Path.GetFileName(database.Filename),
-                DrawingUnits = database.Insunits.ToString(),
+                DrawingName = Path.GetFileName(database.Filename),
+                DrawingPath = string.IsNullOrWhiteSpace(database.Filename) ? "Unsaved drawing" : database.Filename,
+                InsertionUnits = database.Insunits.ToString(),
+                DatabaseVersion = database.OriginalFileVersion.ToString(),
+                ModelExtents = FormatExtents(database.Extmin, database.Extmax),
                 CoordinateSystemCode = ReadCoordinateSystemCode(),
-                ExtentsSummary = ReadExtents(database)
+                TopEntityTypes = new List<KeyValuePair<string, int>>(),
+                CivilMetrics = new List<PresentationMetric>(),
+                Findings = new List<string>(),
+                Actions = new List<string>()
             };
 
             using (Transaction transaction = database.TransactionManager.StartTransaction())
@@ -311,6 +264,7 @@ namespace CETools.Civil3D
                 ReadBlocksAndXrefs(database, transaction, snapshot);
                 ReadModelSpace(database, transaction, snapshot);
             }
+            ReadCivil(snapshot);
             BuildFindings(database, snapshot);
             return snapshot;
         }
@@ -320,14 +274,16 @@ namespace CETools.Civil3D
             Transaction transaction,
             DrawingPresentationSnapshot snapshot)
         {
-            LayerTable table = transaction.GetObject(database.LayerTableId, OpenMode.ForRead, false) as LayerTable;
-            if (table == null) return;
-            foreach (ObjectId id in table)
+            LayerTable layers = transaction.GetObject(database.LayerTableId, OpenMode.ForRead) as LayerTable;
+            if (layers == null) return;
+            snapshot.LayerCount = layers.Count;
+            foreach (ObjectId layerId in layers)
             {
-                LayerTableRecord layer = transaction.GetObject(id, OpenMode.ForRead, false) as LayerTableRecord;
+                LayerTableRecord layer = transaction.GetObject(layerId, OpenMode.ForRead, false) as LayerTableRecord;
                 if (layer == null) continue;
-                snapshot.LayerCount++;
-                if (layer.IsLocked || layer.IsOff || layer.IsFrozen) snapshot.RestrictedLayerCount++;
+                if (layer.IsOff) snapshot.OffLayerCount++;
+                if (layer.IsFrozen) snapshot.FrozenLayerCount++;
+                if (layer.IsLocked) snapshot.LockedLayerCount++;
             }
         }
 
@@ -336,28 +292,20 @@ namespace CETools.Civil3D
             Transaction transaction,
             DrawingPresentationSnapshot snapshot)
         {
-            DBDictionary dictionary = transaction.GetObject(database.LayoutDictionaryId, OpenMode.ForRead, false) as DBDictionary;
-            if (dictionary == null) return;
-            foreach (DBDictionaryEntry entry in dictionary)
+            DBDictionary layouts = transaction.GetObject(database.LayoutDictionaryId, OpenMode.ForRead, false) as DBDictionary;
+            if (layouts == null) return;
+            foreach (DBDictionaryEntry entry in layouts)
             {
                 Layout layout = transaction.GetObject(entry.Value, OpenMode.ForRead, false) as Layout;
                 if (layout == null || layout.ModelType) continue;
                 snapshot.LayoutCount++;
-                BlockTableRecord paper = transaction.GetObject(layout.BlockTableRecordId, OpenMode.ForRead, false) as BlockTableRecord;
-                int viewports = 0;
-                if (paper != null)
+                BlockTableRecord record = transaction.GetObject(layout.BlockTableRecordId, OpenMode.ForRead, false) as BlockTableRecord;
+                if (record == null) continue;
+                foreach (ObjectId objectId in record)
                 {
-                    foreach (ObjectId id in paper)
-                    {
-                        Viewport viewport = transaction.GetObject(id, OpenMode.ForRead, false) as Viewport;
-                        if (viewport != null && viewport.Number > 1)
-                        {
-                            viewports++;
-                            snapshot.ViewportCount++;
-                        }
-                    }
+                    if (transaction.GetObject(objectId, OpenMode.ForRead, false) is Viewport)
+                        snapshot.ViewportCount++;
                 }
-                if (viewports == 0) snapshot.LayoutsWithoutViewport++;
             }
         }
 
@@ -366,19 +314,13 @@ namespace CETools.Civil3D
             Transaction transaction,
             DrawingPresentationSnapshot snapshot)
         {
-            BlockTable table = transaction.GetObject(database.BlockTableId, OpenMode.ForRead, false) as BlockTable;
-            if (table == null) return;
-            foreach (ObjectId id in table)
+            BlockTable blocks = transaction.GetObject(database.BlockTableId, OpenMode.ForRead, false) as BlockTable;
+            if (blocks == null) return;
+            snapshot.BlockDefinitionCount = blocks.Count;
+            foreach (ObjectId blockId in blocks)
             {
-                BlockTableRecord record = transaction.GetObject(id, OpenMode.ForRead, false) as BlockTableRecord;
-                if (record == null) continue;
-                if (!record.IsAnonymous && !record.IsLayout) snapshot.BlockDefinitionCount++;
-                if (!record.IsFromExternalReference) continue;
-                snapshot.XrefCount++;
-                string status = record.XrefStatus.ToString();
-                if (!string.Equals(status, "Resolved", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(status, "Loaded", StringComparison.OrdinalIgnoreCase))
-                    snapshot.UnresolvedXrefCount++;
+                BlockTableRecord record = transaction.GetObject(blockId, OpenMode.ForRead, false) as BlockTableRecord;
+                if (record != null && record.IsFromExternalReference) snapshot.XrefCount++;
             }
         }
 
@@ -387,75 +329,125 @@ namespace CETools.Civil3D
             Transaction transaction,
             DrawingPresentationSnapshot snapshot)
         {
-            BlockTable table = transaction.GetObject(database.BlockTableId, OpenMode.ForRead, false) as BlockTable;
-            if (table == null) return;
-            BlockTableRecord model = transaction.GetObject(table[BlockTableRecord.ModelSpace], OpenMode.ForRead, false) as BlockTableRecord;
+            BlockTable blocks = transaction.GetObject(database.BlockTableId, OpenMode.ForRead, false) as BlockTable;
+            if (blocks == null) return;
+            BlockTableRecord model = transaction.GetObject(blocks[BlockTableRecord.ModelSpace], OpenMode.ForRead, false) as BlockTableRecord;
             if (model == null) return;
-            foreach (ObjectId id in model)
+            var counts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            foreach (ObjectId objectId in model)
             {
-                Entity entity;
-                try { entity = transaction.GetObject(id, OpenMode.ForRead, false) as Entity; }
-                catch { snapshot.UnreadableEntityCount++; continue; }
-                if (entity == null || entity.IsErased) continue;
-                snapshot.TotalModelEntities++;
-                string type = entity.GetType().Name;
-                Increment(snapshot.EntityTypeCounts, type);
-                if (entity is Table) snapshot.TableCount++;
-                if (entity is Dimension) snapshot.DimensionCount++;
-                if (entity is DBText || entity is MText) snapshot.TextCount++;
-                string dxf = string.Empty;
-                try { dxf = entity.GetRXClass().DxfName ?? string.Empty; }
-                catch { }
-                if (type.IndexOf("Proxy", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                    dxf.IndexOf("PROXY", StringComparison.OrdinalIgnoreCase) >= 0)
-                    snapshot.ProxyCount++;
-                CountCivil(type, snapshot);
+                DBObject value = transaction.GetObject(objectId, OpenMode.ForRead, false);
+                if (value == null) continue;
+                snapshot.ModelSpaceEntityCount++;
+                string type = FriendlyType(value.GetType().Name);
+                int count;
+                counts[type] = counts.TryGetValue(type, out count) ? count + 1 : 1;
+                if (value is Table) snapshot.TableCount++;
+                if (value is Dimension) snapshot.DimensionCount++;
+                if (value is DBText || value is MText || value is MLeader) snapshot.TextCount++;
+                if (value is BlockReference) snapshot.BlockReferenceCount++;
             }
-            snapshot.TopEntityTypes = snapshot.EntityTypeCounts
+            snapshot.TopEntityTypes = counts
                 .OrderByDescending(item => item.Value)
                 .ThenBy(item => item.Key, StringComparer.CurrentCultureIgnoreCase)
+                .Take(MaximumInventoryTypes)
                 .ToList();
         }
 
-        private static void CountCivil(string type, DrawingPresentationSnapshot snapshot)
+        private static void ReadCivil(DrawingPresentationSnapshot snapshot)
         {
-            string key = null;
-            if (Contains(type, "ProfileView")) key = "ProfileView";
-            else if (Contains(type, "Alignment")) key = "Alignment";
-            else if (Contains(type, "FeatureLine")) key = "FeatureLine";
-            else if (Contains(type, "Profile")) key = "Profile";
-            else if (Contains(type, "TinSurface") || Contains(type, "Surface")) key = "Surface";
-            else if (Contains(type, "Corridor")) key = "Corridor";
-            else if (Contains(type, "PipeNetwork") || Contains(type, "Network")) key = "Network";
-            else if (Contains(type, "Structure")) key = "Structure";
-            else if (Contains(type, "Pipe")) key = "Pipe";
-            else if (Contains(type, "CogoPoint")) key = "CogoPoint";
-            if (key == null) return;
-            Increment(snapshot.CivilCounts, key);
-            snapshot.TotalCivilObjects++;
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (civil == null) return;
+            AddCivilMetric(snapshot, "Alignments", CountCivil(civil, "GetAlignmentIds"));
+            AddCivilMetric(snapshot, "Surfaces", CountCivil(civil, "GetSurfaceIds"));
+            AddCivilMetric(snapshot, "Corridors", CountCivil(civil, "GetCorridorIds"));
+            AddCivilMetric(snapshot, "Pipe networks", CountCivil(civil, "GetPipeNetworkIds"));
+            AddCivilMetric(snapshot, "Pressure networks", CountCivil(civil, "GetPressureNetworkIds"));
+            AddCivilMetric(snapshot, "Sites", CountCivil(civil, "GetSiteIds"));
+            AddCivilMetric(snapshot, "Point groups", CountCivil(civil, "PointGroups"));
+            snapshot.TotalCivilObjects = snapshot.CivilMetrics.Sum(metric => ParseInt(metric.Value));
         }
 
-        private static void BuildFindings(Database database, DrawingPresentationSnapshot snapshot)
+        private static int CountCivil(object source, string memberName)
         {
-            snapshot.AutomatedCheckCount = 9;
-            if (string.IsNullOrWhiteSpace(database.Filename))
-                snapshot.Findings.Add(Finding("Warning", "The source drawing is unsaved.", "Save the drawing to a controlled project path before issue."));
+            try
+            {
+                object value = ReflectionValue(source, memberName);
+                if (value == null) return 0;
+                var collection = value as System.Collections.IEnumerable;
+                return collection == null ? 0 : collection.Cast<object>().Count();
+            }
+            catch { return 0; }
+        }
+
+        private static void AddCivilMetric(
+            DrawingPresentationSnapshot snapshot,
+            string label,
+            int count)
+        {
+            snapshot.CivilMetrics.Add(new PresentationMetric(
+                label,
+                count.ToString("N0", CultureInfo.CurrentCulture)));
+        }
+
+        private static object ReflectionValue(object source, string memberName)
+        {
+            if (source == null) return null;
+            System.Reflection.MethodInfo method = source.GetType().GetMethod(
+                memberName,
+                Type.EmptyTypes);
+            if (method != null) return method.Invoke(source, null);
+            System.Reflection.PropertyInfo property = source.GetType().GetProperty(memberName);
+            return property == null ? null : property.GetValue(source, null);
+        }
+
+        private static void BuildFindings(
+            Database database,
+            DrawingPresentationSnapshot snapshot)
+        {
             if (string.IsNullOrWhiteSpace(snapshot.CoordinateSystemCode))
-                snapshot.Findings.Add(Finding("Warning", "No Civil 3D coordinate-system code was detected.", "Assign and verify the approved project coordinate reference system."));
-            if (snapshot.TotalModelEntities == 0)
-                snapshot.Findings.Add(Finding("Error", "Model space contains no readable entities.", "Confirm that the correct design drawing is open and model content is loaded."));
-            if (snapshot.TotalCivilObjects == 0)
-                snapshot.Findings.Add(Finding("Review", "No recognised Civil 3D design objects were detected.", "Confirm whether this drawing is a background/drafting file or whether Civil objects are missing."));
+                AddFinding(snapshot, "Coordinate system is not assigned or could not be read.", "Assign and verify the project coordinate reference system and datum.");
             if (snapshot.LayoutCount == 0)
-                snapshot.Findings.Add(Finding("Warning", "No paper-space layouts were detected.", "Create and review the required drawing layouts and title blocks."));
-            if (snapshot.LayoutsWithoutViewport > 0)
-                snapshot.Findings.Add(Finding("Review", snapshot.LayoutsWithoutViewport + " layout(s) have no active viewport.", "Review layout completeness and create correctly scaled viewports where required."));
-            if (snapshot.UnresolvedXrefCount > 0)
-                snapshot.Findings.Add(Finding("Error", snapshot.UnresolvedXrefCount + " XREF definition(s) are unresolved, unloaded or otherwise not ready.", "Resolve and reload every required external reference before issue."));
-            if (snapshot.ProxyCount > 0)
-                snapshot.Findings.Add(Finding("Warning", snapshot.ProxyCount + " proxy object(s) were detected.", "Open with the correct object enabler/product and verify all proxy content."));
-            if (snapshot.UnreadableEntityCount > 0)
-                snapshot.Findings.Add(Finding("Warning", snapshot.UnreadableEntityCount + " entity record(s) could not be read.", "Run AUDIT/RECOVER and inspect the affected drawing objects."));
+                AddFinding(snapshot, "No paper-space layouts were found.", "Create and review issue layouts, title blocks and plot configuration.");
+            if (snapshot.ViewportCount == 0 && snapshot.LayoutCount > 0)
+                AddFinding(snapshot, "Layouts contain no detected viewports.", "Create and lock coordinated viewports at approved scales.");
+            if (snapshot.XrefCount == 0)
+                AddFinding(snapshot, "No XREF definitions were found.", "Confirm whether project backgrounds/design disciplines should be separated into controlled XREFs.");
+            if (snapshot.TableCount == 0)
+                AddFinding(snapshot, "No model-space tables were found.", "Confirm whether BOQ, coordinates, schedules, reports or indexes are required.");
+            if (snapshot.DimensionCount == 0)
+                AddFinding(snapshot, "No model-space dimensions were found.", "Review dimension requirements for design and detail drawings.");
+            if (snapshot.TextCount == 0)
+                AddFinding(snapshot, "No model-space text/MLeader objects were found.", "Review notes, labels, callouts, legends and drawing standards.");
+            if (snapshot.OffLayerCount + snapshot.FrozenLayerCount > Math.Max(10, snapshot.LayerCount / 2))
+                AddFinding(snapshot, "A high proportion of layers are off or frozen.", "Review background, legacy and discipline-layer visibility before issue.");
+            if (snapshot.TotalCivilObjects == 0)
+                AddFinding(snapshot, "No Civil 3D objects were counted through the available API members.", "Confirm the drawing type and Civil object inventory manually.");
+            if (snapshot.ModelSpaceEntityCount > 250000)
+                AddFinding(snapshot, "Model space contains more than 250,000 entities.", "Review XREF separation, duplicate content, surface display and performance controls.");
+
+            if (snapshot.Findings.Count == 0)
+            {
+                snapshot.Findings.Add("No high-level automated model-health warnings were generated. Complete detailed discipline, standards, geometry and engineering checks.");
+                snapshot.Actions.Add("Proceed with detailed CE Tools reports, model audit, drawing review and professional design verification.");
+            }
+
+            snapshot.HealthMetrics = new List<PresentationMetric>
+            {
+                new PresentationMetric("Findings", snapshot.Findings.Count.ToString("N0", CultureInfo.CurrentCulture)),
+                new PresentationMetric("Off/frozen layers", (snapshot.OffLayerCount + snapshot.FrozenLayerCount).ToString("N0", CultureInfo.CurrentCulture)),
+                new PresentationMetric("Locked layers", snapshot.LockedLayerCount.ToString("N0", CultureInfo.CurrentCulture)),
+                new PresentationMetric("Civil objects", snapshot.TotalCivilObjects.ToString("N0", CultureInfo.CurrentCulture))
+            };
+        }
+
+        private static void AddFinding(
+            DrawingPresentationSnapshot snapshot,
+            string finding,
+            string action)
+        {
+            snapshot.Findings.Add(finding);
+            snapshot.Actions.Add(action);
         }
 
         private static void ShowPreview(
@@ -463,21 +455,31 @@ namespace CETools.Civil3D
             PresentationDeck deck,
             DrawingPresentationSnapshot snapshot)
         {
-            var rows = deck.Slides.Select((slide, index) => (IList<string>)new List<string>
+            var rows = new List<IList<string>>
             {
-                (index + 1).ToString(CultureInfo.InvariantCulture),
-                slide.Title,
-                slide.Subtitle,
-                slide.Metrics.Count.ToString(CultureInfo.InvariantCulture),
-                slide.Bullets.Count.ToString(CultureInfo.InvariantCulture)
-            }).ToList();
+                new List<string> { "SLIDE", "TITLE", "METRICS", "BULLETS" }
+            };
+            for (int index = 0; index < deck.Slides.Count; index++)
+            {
+                PresentationSlide slide = deck.Slides[index];
+                rows.Add(new List<string>
+                {
+                    (index + 1).ToString(CultureInfo.InvariantCulture),
+                    slide.Title,
+                    slide.Metrics.Count.ToString(CultureInfo.InvariantCulture),
+                    slide.Bullets.Count.ToString(CultureInfo.InvariantCulture)
+                });
+            }
             GridReportPresenter.ShowReportAndOfferTable(
                 document,
-                "CE Tools - Automatic Project Presentation Preview",
-                "Slides=" + deck.Slides.Count + "; model entities=" + snapshot.TotalModelEntities +
-                    "; Civil objects=" + snapshot.TotalCivilObjects + "; findings=" + snapshot.Findings.Count +
-                    ". Presentation statements require verification before issue.",
-                new List<string> { "NO.", "SLIDE", "SUBTITLE", "METRICS", "BULLETS" },
+                "CE Tools - Project Presentation Preview",
+                string.Format(
+                    CultureInfo.CurrentCulture,
+                    "Slides={0}; model entities={1:N0}; Civil objects={2:N0}; automated findings={3:N0}. Add approved project visuals and conclusions before external issue.",
+                    deck.Slides.Count,
+                    snapshot.ModelSpaceEntityCount,
+                    snapshot.TotalCivilObjects,
+                    snapshot.Findings.Count),
                 rows,
                 "CE TOOLS PROJECT PRESENTATION PREVIEW");
         }
@@ -487,23 +489,34 @@ namespace CETools.Civil3D
             Database database,
             out PresentationProjectInput input)
         {
-            input = null;
-            string drawingBase = string.IsNullOrWhiteSpace(database.Filename)
+            string defaultTitle = string.IsNullOrWhiteSpace(database.Filename)
                 ? "Civil Engineering Project"
                 : Path.GetFileNameWithoutExtension(database.Filename);
-            string title, client, stage, purpose, author, company;
-            if (!PromptString(editor, "Project title", drawingBase, out title) ||
-                !PromptString(editor, "Client", "Client", out client) ||
-                !PromptString(editor, "Project stage", "Design Review", out stage) ||
-                !PromptString(editor, "Presentation purpose", "Civil engineering project and model review", out purpose) ||
-                !PromptString(editor, "Prepared by", Environment.UserName, out author) ||
-                !PromptString(editor, "Company", "CE Tools", out company))
+            string title;
+            string client;
+            string stage;
+            string purpose;
+            string author;
+            string company;
+            if (!PromptText(editor, "Project title", defaultTitle, out title) ||
+                !PromptText(editor, "Client", "Client", out client) ||
+                !PromptText(editor, "Project stage", "Design Review", out stage) ||
+                !PromptText(editor, "Presentation purpose", "Civil 3D project review", out purpose) ||
+                !PromptText(editor, "Prepared by", Environment.UserName, out author) ||
+                !PromptText(editor, "Company", "CE Tools", out company))
+            {
+                input = null;
                 return false;
+            }
             input = new PresentationProjectInput(title, client, stage, purpose, author, company);
             return true;
         }
 
-        private static bool PromptString(Editor editor, string label, string defaultValue, out string value)
+        private static bool PromptText(
+            Editor editor,
+            string label,
+            string defaultValue,
+            out string value)
         {
             var options = new PromptStringOptions("\n" + label + " <" + defaultValue + ">: ")
             {
@@ -512,15 +525,8 @@ namespace CETools.Civil3D
                 DefaultValue = defaultValue
             };
             PromptResult result = editor.GetString(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                value = string.Empty;
-                return false;
-            }
-            value = result.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(result.StringResult)
-                ? result.StringResult.Trim()
-                : defaultValue;
-            return true;
+            value = result.Status == PromptStatus.OK ? result.StringResult : defaultValue;
+            return result.Status != PromptStatus.Cancel && !string.IsNullOrWhiteSpace(value);
         }
 
         private static bool PromptYesNo(Editor editor, string label, bool defaultValue)
@@ -533,82 +539,68 @@ namespace CETools.Civil3D
             options.Keywords.Add("Yes");
             options.Keywords.Add("No");
             PromptResult result = editor.GetKeywords(options);
-            return result.Status != PromptStatus.Cancel &&
-                (result.Status == PromptStatus.None
-                    ? defaultValue
-                    : string.Equals(result.StringResult, "Yes", StringComparison.OrdinalIgnoreCase));
+            if (result.Status == PromptStatus.Cancel) return false;
+            return result.Status == PromptStatus.None
+                ? defaultValue
+                : string.Equals(result.StringResult, "Yes", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string ReadCoordinateSystemCode()
         {
             try
             {
-                object civilDocument = CivilApplication.ActiveDocument;
-                object settings = GetProperty(civilDocument, "Settings");
-                object drawingSettings = GetProperty(settings, "DrawingSettings");
-                object unitZone = GetProperty(drawingSettings, "UnitZoneSettings");
-                object value = GetProperty(unitZone, "CoordinateSystemCode");
-                return value == null ? string.Empty : Convert.ToString(value, CultureInfo.InvariantCulture);
+                CivilDocument civil = CivilApplication.ActiveDocument;
+                if (civil == null) return string.Empty;
+                object settings = ReflectionValue(civil, "Settings");
+                object ambient = ReflectionValue(settings, "DrawingSettings");
+                object code = ReflectionValue(ambient, "CoordinateSystemCode");
+                return Convert.ToString(code, CultureInfo.CurrentCulture);
             }
             catch { return string.Empty; }
         }
 
-        private static object GetProperty(object source, string name)
+        private static int ParseInt(string value)
         {
-            if (source == null) return null;
-            var property = source.GetType().GetProperty(name);
-            return property == null ? null : property.GetValue(source, null);
+            int result;
+            return int.TryParse(
+                (value ?? string.Empty).Replace(",", string.Empty).Replace(" ", string.Empty),
+                NumberStyles.Integer,
+                CultureInfo.CurrentCulture,
+                out result)
+                ? result
+                : 0;
         }
 
-        private static string ReadExtents(Database database)
+        private static string FormatExtents(Point3d minimum, Point3d maximum)
         {
-            try
-            {
-                return string.Format(
-                    CultureInfo.CurrentCulture,
-                    "X {0:N3}–{1:N3}; Y {2:N3}–{3:N3}; Z {4:N3}–{5:N3}",
-                    database.Extmin.X, database.Extmax.X,
-                    database.Extmin.Y, database.Extmax.Y,
-                    database.Extmin.Z, database.Extmax.Z);
-            }
-            catch { return "Unavailable"; }
+            return string.Format(
+                CultureInfo.CurrentCulture,
+                "X {0:N3} to {1:N3}; Y {2:N3} to {3:N3}; Z {4:N3} to {5:N3}",
+                minimum.X, maximum.X, minimum.Y, maximum.Y, minimum.Z, maximum.Z);
         }
 
-        private static void Increment(IDictionary<string, int> counts, string key)
+        private static string FriendlyType(string type)
         {
-            int value;
-            counts.TryGetValue(key, out value);
-            counts[key] = value + 1;
-        }
-
-        private static PresentationFinding Finding(string severity, string message, string action)
-        {
-            return new PresentationFinding(severity, message, action);
-        }
-
-        private static bool Contains(string source, string value)
-        {
-            return source.IndexOf(value, StringComparison.OrdinalIgnoreCase) >= 0;
-        }
-
-        private static string Readable(string value)
-        {
-            return value == "ProfileView" ? "Profile views" :
-                value == "FeatureLine" ? "Feature lines" :
-                value == "CogoPoint" ? "COGO points" : value + "s";
-        }
-
-        private static string ValueOr(string value, string fallback)
-        {
-            return string.IsNullOrWhiteSpace(value) ? fallback : value;
+            return (type ?? string.Empty)
+                .Replace("Polyline", "Polyline")
+                .Replace("BlockReference", "Block references")
+                .Replace("DBText", "Text")
+                .Replace("MText", "MText")
+                .Replace("MLeader", "MLeaders");
         }
 
         private static string SafeFileName(string value)
         {
-            string result = new string((value ?? "Project")
-                .Select(character => Path.GetInvalidFileNameChars().Contains(character) ? '-' : character)
-                .ToArray()).Trim();
+            string result = value ?? "CE-Tools-Project";
+            foreach (char invalid in Path.GetInvalidFileNameChars())
+                result = result.Replace(invalid, '-');
+            result = result.Trim();
             return string.IsNullOrWhiteSpace(result) ? "CE-Tools-Project" : result;
+        }
+
+        private static string Empty(string value, string fallback)
+        {
+            return string.IsNullOrWhiteSpace(value) ? fallback : value;
         }
 
         private static Document ActiveDocument()
@@ -619,11 +611,22 @@ namespace CETools.Civil3D
 
     internal sealed class PresentationProjectInput
     {
-        public PresentationProjectInput(string projectTitle, string client, string stage, string purpose, string author, string company)
+        public PresentationProjectInput(
+            string projectTitle,
+            string client,
+            string stage,
+            string purpose,
+            string author,
+            string company)
         {
-            ProjectTitle = projectTitle; Client = client; Stage = stage;
-            Purpose = purpose; Author = author; Company = company;
+            ProjectTitle = projectTitle;
+            Client = client;
+            Stage = stage;
+            Purpose = purpose;
+            Author = author;
+            Company = company;
         }
+
         public string ProjectTitle { get; private set; }
         public string Client { get; private set; }
         public string Stage { get; private set; }
@@ -634,49 +637,30 @@ namespace CETools.Civil3D
 
     internal sealed class DrawingPresentationSnapshot
     {
-        public DrawingPresentationSnapshot()
-        {
-            EntityTypeCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            CivilCounts = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-            TopEntityTypes = new List<KeyValuePair<string, int>>();
-            Findings = new List<PresentationFinding>();
-        }
         public string DrawingName { get; set; }
-        public string DrawingUnits { get; set; }
+        public string DrawingPath { get; set; }
+        public string InsertionUnits { get; set; }
         public string CoordinateSystemCode { get; set; }
-        public string ExtentsSummary { get; set; }
-        public int TotalModelEntities { get; set; }
-        public int TotalCivilObjects { get; set; }
+        public string DatabaseVersion { get; set; }
+        public string ModelExtents { get; set; }
+        public int ModelSpaceEntityCount { get; set; }
         public int LayerCount { get; set; }
-        public int RestrictedLayerCount { get; set; }
+        public int OffLayerCount { get; set; }
+        public int FrozenLayerCount { get; set; }
+        public int LockedLayerCount { get; set; }
         public int LayoutCount { get; set; }
-        public int LayoutsWithoutViewport { get; set; }
         public int ViewportCount { get; set; }
         public int XrefCount { get; set; }
-        public int UnresolvedXrefCount { get; set; }
         public int BlockDefinitionCount { get; set; }
+        public int BlockReferenceCount { get; set; }
         public int TableCount { get; set; }
         public int DimensionCount { get; set; }
         public int TextCount { get; set; }
-        public int ProxyCount { get; set; }
-        public int UnreadableEntityCount { get; set; }
-        public int AutomatedCheckCount { get; set; }
-        public Dictionary<string, int> EntityTypeCounts { get; private set; }
-        public Dictionary<string, int> CivilCounts { get; private set; }
+        public int TotalCivilObjects { get; set; }
         public List<KeyValuePair<string, int>> TopEntityTypes { get; set; }
-        public List<PresentationFinding> Findings { get; private set; }
-        public int CivilCount(string key)
-        {
-            int value; return CivilCounts.TryGetValue(key, out value) ? value : 0;
-        }
-    }
-
-    internal sealed class PresentationFinding
-    {
-        public PresentationFinding(string severity, string message, string action)
-        { Severity = severity; Message = message; Action = action; }
-        public string Severity { get; private set; }
-        public string Message { get; private set; }
-        public string Action { get; private set; }
+        public List<PresentationMetric> CivilMetrics { get; set; }
+        public List<PresentationMetric> HealthMetrics { get; set; }
+        public List<string> Findings { get; set; }
+        public List<string> Actions { get; set; }
     }
 }
