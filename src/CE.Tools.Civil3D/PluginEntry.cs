@@ -388,7 +388,7 @@ namespace CETools.Civil3D
             var source = new RibbonPanelSource
             {
                 Id = panelId,
-                Title = RibbonLabel(title).ToUpperInvariant()
+                Title = PrefixRibbonText(title).ToUpperInvariant()
             };
 
             foreach (RibbonItem[] row in rows)
@@ -409,7 +409,7 @@ namespace CETools.Civil3D
             var menu = new RibbonMenuButton
             {
                 Id = id,
-                Text = RibbonLabel(text),
+                Text = PrefixRibbonText(text),
                 ShowText = true,
                 ShowImage = false,
                 Size = RibbonItemSize.Large,
@@ -438,7 +438,7 @@ namespace CETools.Civil3D
             return new RibbonCommandDefinition(text, command, toolTip);
         }
 
-        private static string RibbonLabel(string text)
+        private static string PrefixRibbonText(string text)
         {
             string value = text ?? string.Empty;
             return value.StartsWith("CE \u2013 ", StringComparison.Ordinal)
@@ -452,7 +452,7 @@ namespace CETools.Civil3D
             var menuItem = new RibbonMenuItem
             {
                 Id = "CE_TOOLS_COMMAND_" + definition.Command.Trim().Replace(' ', '_'),
-                Text = RibbonLabel(definition.Text),
+                Text = PrefixRibbonText(definition.Text),
                 ShowText = true,
                 ShowImage = false,
                 CommandParameter = definition.Command,
