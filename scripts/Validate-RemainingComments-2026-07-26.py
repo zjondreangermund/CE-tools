@@ -16,9 +16,9 @@ REQUIRED = [
     '"CE_REDO "',
     '"CE_CLEANUPUI "',
     '"CE_HATCHUI "',
-    'Title = RibbonLabel(title).ToUpperInvariant()',
-    'Text = RibbonLabel(text)',
-    'Text = RibbonLabel(definition.Text)',
+    'Title = PrefixRibbonText(title).ToUpperInvariant()',
+    'Text = PrefixRibbonText(text)',
+    'Text = PrefixRibbonText(definition.Text)',
     'return value.StartsWith("CE \\u2013 ", StringComparison.Ordinal)',
 ]
 
