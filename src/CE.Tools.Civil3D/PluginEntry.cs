@@ -148,7 +148,7 @@ namespace CETools.Civil3D
                     Cmd("Create Linked Coordinate Table", "CE_COORDTABLE2 ", "Create a compact linked Point Name, X, Y, Z table from selected COGO or AutoCAD points."),
                     Cmd("Refresh Linked Coordinate Table", "CE_COORDREFRESH ", "Refresh table rows from the current linked source-point coordinates."),
                     Cmd("Polyline Vertex Linked Points", "CE_COORDPOLY2 ", "Create sequential dynamic COGO points in polyline direction and a linked Point Name, X, Y, Z table."),
-                    Cmd("Presentation and Dynamic Refresh", "CE_PRESENTATIONTOOLS ", "Open annotation scaling, overlap correction and automatic linked-refresh workflows.")),
+                    Cmd("Presentation and Dynamic Tools", "CE_PRESENTATIONTOOLS ", "Open annotation scaling, overlap correction and automatic linked-refresh workflows.")),
                 Menu("CE_TOOLS_SURVEY_UTILITIES_MENU", "Survey\nUtilities", "Direction arrows and preserved coordinate workflows.",
                     Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked arrows showing stored polyline direction."),
                     Cmd("Coordinate Tools (Legacy)", "CE_COORDINATE ", "Open the legacy coordinate tools menu."),
