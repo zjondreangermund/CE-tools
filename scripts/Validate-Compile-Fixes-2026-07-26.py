@@ -20,14 +20,15 @@ def require(path: str, *needles: str) -> str:
 grid = require(
     "src/CE.Tools.Civil3D/GridReportPresenter.cs",
     "IList<IList<string>> rowsWithHeader",
-    "IList<string> header = rowsWithHeader[0]",
-    "ShowReportAndOfferTable(\n                document,\n                title,\n                note,\n                columns,\n                rows,\n                tableTitle);",
+    "rowsWithHeader[0]",
+    "columns.Add(value ?? string.Empty);",
+    "rows.Add(rowsWithHeader[index] ?? new List<string>());",
 )
 
 presentation_core = require(
     "src/CE.Tools.Core/SimplePresentationPackage.cs",
-    "IEnumerable<PresentationSlide> slides)\n            : this(title, subject, author, company, DateTime.UtcNow, slides)",
-    "IEnumerable<PresentationMetric> metrics,\n            IEnumerable<string> bullets)\n            : this(title, subtitle, bullets, metrics)",
+    ": this(title, subject, author, company, DateTime.UtcNow, slides)",
+    ": this(title, subtitle, bullets, metrics)",
 )
 
 presentation = require(
@@ -44,7 +45,7 @@ assets = require(
 
 model_audit = require(
     "src/CE.Tools.Civil3D/ModelDesignAuditCommands.cs",
-    'ReadProperty(layout, "ConfigName") ??',
+    'ReadProperty(layout, "ConfigName")',
     'ReadProperty(layout, "PlotConfigurationName")',
 )
 
@@ -52,8 +53,8 @@ flood = require(
     "src/CE.Tools.Civil3D/FloodResultReviewCommands.cs",
     "SetEntityVisibility(entity, show);",
     "private static void SetEntityVisibility(Entity entity, bool visible)",
-    'type.GetProperty(\n                "Visible"',
-    'type.GetProperty(\n                "Visibility"',
+    '"Visible"',
+    '"Visibility"',
 )
 
 sewer = require(
@@ -87,26 +88,14 @@ surface = require(
 )
 
 for path, text, forbidden in (
-    (
-        "EngineeringAssetLibraryCommands.cs",
-        assets,
-        "catch (Exception exception)",
-    ),
-    (
-        "ModelDesignAuditCommands.cs",
-        model_audit,
-        "layout.ConfigName",
-    ),
+    ("EngineeringAssetLibraryCommands.cs", assets, "catch (Exception exception)"),
+    ("ModelDesignAuditCommands.cs", model_audit, "layout.ConfigName"),
     (
         "FloodResultReviewCommands.cs",
         flood,
         "entity.Visibility = show ? Visibility.Visible : Visibility.Invisible",
     ),
-    (
-        "RoadProductionCommentCommands.cs",
-        road,
-        "out result.AlignmentStyleName",
-    ),
+    ("RoadProductionCommentCommands.cs", road, "out result.AlignmentStyleName"),
     (
         "SurfaceSpikeHoleRepairCommands.cs",
         surface,
@@ -114,7 +103,9 @@ for path, text, forbidden in (
     ),
 ):
     if forbidden in text:
-        raise SystemExit(f"Obsolete compiler-incompatible source remains in {path}: {forbidden}")
+        raise SystemExit(
+            f"Obsolete compiler-incompatible source remains in {path}: {forbidden}"
+        )
 
 if grid.count("public static void ShowReportAndOfferTable(") < 2:
     raise SystemExit("GridReportPresenter must retain both report call shapes")
