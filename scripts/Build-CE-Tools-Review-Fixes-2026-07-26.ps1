@@ -41,6 +41,7 @@ Invoke-RequiredScript "Apply-Review-Fixes-2026-07-26.ps1"
 Invoke-RequiredScript "Apply-Review-Fixes-2026-07-26-Extension.ps1"
 Invoke-RequiredScript "Apply-Civil3D-Compatibility.ps1"
 Invoke-RequiredScript "Apply-CSharp-MText-Escape-Fixes.ps1"
+Invoke-RequiredScript "Apply-Compile-Fixes-2026-07-26.ps1"
 
 $compileOnlyBuild = Join-Path $PSScriptRoot "Build-CE-Tools-Compile-Only.ps1"
 if (-not (Test-Path $compileOnlyBuild)) {
