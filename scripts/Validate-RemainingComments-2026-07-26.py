@@ -17,6 +17,7 @@ REQUIRED = [
     '"CE_CLEANUPUI "',
     '"CE_HATCHUI "',
     '"CE_PRESENTATIONTOOLS "',
+    '"CE_TOOLSPALETTE "',
     '"CE_MAKEANNOTATIVE "',
     '"CE_TABLESCALE "',
     '"CE_OVERLAPFIX "',
