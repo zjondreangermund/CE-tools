@@ -50,9 +50,12 @@ jobs:
           ./scripts/Apply-Review-Fixes-2026-07-26.ps1
           ./scripts/Apply-Review-Fixes-2026-07-26-Extension.ps1
 
-      - name: Normalize Civil 3D compatibility
+      - name: Normalize Civil 3D and compiler compatibility
         shell: pwsh
-        run: ./scripts/Apply-Civil3D-Compatibility.ps1
+        run: |
+          ./scripts/Apply-Civil3D-Compatibility.ps1
+          ./scripts/Apply-CSharp-MText-Escape-Fixes.ps1
+          ./scripts/Apply-Compile-Fixes-2026-07-26.ps1
 
       - name: Validate 26 July runtime review fixes
         run: python3 scripts/Validate-Review-Fixes-2026-07-26.py
@@ -124,7 +127,7 @@ jobs:
         run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- obstacles
 
       - name: Test parking accessibility
-        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- accessible
+        run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- accessibility
 
       - name: Test parking islands and entrance
         run: dotnet run --project tests/CE.Tools.Parking.Tests/CE.Tools.Parking.Tests.csproj -c Release -- islands
