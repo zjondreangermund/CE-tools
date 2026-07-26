@@ -74,6 +74,9 @@ jobs:
       - name: Validate 26 July runtime review fixes
         run: python3 scripts/Validate-Review-Fixes-2026-07-26.py
 
+      - name: Validate remaining 26 July ribbon comments
+        run: python3 scripts/Validate-RemainingComments-2026-07-26.py
+
       - name: Validate Phase 8 engineering asset library
         run: python3 scripts/Validate-MasterItemsPhase8.py
 
