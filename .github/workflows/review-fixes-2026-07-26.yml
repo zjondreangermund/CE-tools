@@ -57,6 +57,9 @@ jobs:
           ./scripts/Apply-CSharp-MText-Escape-Fixes.ps1
           ./scripts/Apply-Compile-Fixes-2026-07-26.ps1
 
+      - name: Validate Civil 3D 2023 compiler fixes
+        run: python3 scripts/Validate-Compile-Fixes-2026-07-26.py
+
       - name: Validate 26 July runtime review fixes
         run: python3 scripts/Validate-Review-Fixes-2026-07-26.py
 
