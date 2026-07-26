@@ -51,6 +51,9 @@ jobs:
       - name: Validate Phase 8 engineering asset library
         run: python3 scripts/Validate-MasterItemsPhase8.py
 
+      - name: Validate uploaded Phase 8 asset catalog
+        run: python3 scripts/Validate-UploadedAssetCatalog.py
+
       - name: Validate Phase 7 presentation source
         shell: bash
         run: |
