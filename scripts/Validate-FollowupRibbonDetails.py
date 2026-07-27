@@ -51,6 +51,8 @@ if not errors:
         '"Dimclrd"',
         '"Dimclre"',
         '"Dimclrt"',
+        "<IncludeAnnotation>",
+        "modeResult.Status == PromptStatus.None",
         "LeaderLineColor",
         "Civil 3D label components",
     ):
