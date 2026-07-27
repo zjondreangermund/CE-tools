@@ -848,6 +848,8 @@ namespace CETools.Civil3D
         {
             var summary = new RefreshSummary();
             summary.CoordinateFollowers += DynamicCoordinateLinkStore.Refresh(document);
+            summary.CoordinateFollowers +=
+                PolylineDirectionCommands.RefreshLinkedArrows(document);
 
             List<LinkedTableItem> tables = ReadLinkedTables(document.Database);
             MethodInfo coordinateRefresh = typeof(SurveyCoordinateWorkflowCommands).GetMethod(
