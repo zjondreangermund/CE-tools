@@ -39,6 +39,15 @@ if missing:
         + "\n- ".join(missing)
     )
 
+prefix_helper_count = SOURCE.count(
+    "private static string PrefixRibbonText(string text)"
+)
+if prefix_helper_count != 1:
+    raise SystemExit(
+        "Remaining-comment ribbon validation failed: expected exactly one "
+        f"PrefixRibbonText helper, found {prefix_helper_count}."
+    )
+
 print(
     "Remaining-comment ribbon validation passed: CE naming, project styles, "
     "undo/redo, cleanup/hatch popups, coordinate wording, annotation scaling, "
