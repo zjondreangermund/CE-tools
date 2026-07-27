@@ -126,14 +126,14 @@ if (-not $parkingSource.Contains("ClosedParkingBayWorkflow.CreateSingleRow(docum
         -RelativePath $parkingFile `
         -OldText 'CreateSingleRow(document);' `
         -NewText 'ClosedParkingBayWorkflow.CreateSingleRow(document);' `
-        -Description "route single parking rows to parking bay blocks"
+        -Description "route single parking rows to closed bay polyline generation"
 }
 if (-not $parkingSource.Contains("ClosedParkingBayWorkflow.CreateDoubleRow(document);")) {
     Replace-ExactText `
         -RelativePath $parkingFile `
         -OldText 'CreateDoubleRow(document);' `
         -NewText 'ClosedParkingBayWorkflow.CreateDoubleRow(document);' `
-        -Description "route double parking rows to parking bay blocks"
+        -Description "route double parking rows to closed bay polyline generation"
 }
 
 $alignmentFile = "src\CE.Tools.Civil3D\AlignmentCommands.cs"
