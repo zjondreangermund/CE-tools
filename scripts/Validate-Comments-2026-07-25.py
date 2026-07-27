@@ -64,7 +64,9 @@ require(
 require(
     PARKING_WORKFLOW,
     "internal static class ClosedParkingBayWorkflow",
-    "private static void AppendClosedBay(",
+    "private static ObjectId CreateBayBlockDefinition(",
+    "private static void AppendBayBlock(",
+    "new BlockReference(insertionPoint, definitionId)",
     "bay.Closed = true;",
     "CE_PKCOUNTX",
     "CE_PKNUMBER2",
