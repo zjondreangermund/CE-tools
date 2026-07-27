@@ -4,12 +4,14 @@ This folder contains the controlled Phase 8 asset-management register and the ge
 
 ## Populated uploaded records
 
-The catalog contains 25 uploaded source records:
+The catalog contains **33 uploaded source records**:
 
-- 16 PDF drawing, notes, layout, longitudinal-section and typical-detail records;
-- 9 XLSX setting-out, quantity, alignment and network-data records.
+- **24 PDF** drawing, notes, layout, longitudinal-section and typical-detail records;
+- **9 XLSX** setting-out, quantity, alignment and network-data records.
 
-The five latest workbooks add sewer structure data, sewer pipe data, road horizontal alignment data, road vertical alignment data and water structure data.
+The latest additions include the roads general layout, road plan/longitudinal-section sheets 1 and 2, sewer general layout and sewer layout sheets 1 and 2, plus the water general layout and water layout sheet 2.
+
+The model-data workbooks cover sewer structure data, sewer pipe data, road horizontal alignment data, road vertical alignment data and water structure data.
 
 All uploaded records are initially classified as `ForReview` with revision `UPLOAD-01`. Presence in the catalog does not mean that an asset is engineer-approved, authority-approved or current for another project.
 
@@ -18,6 +20,8 @@ All uploaded records are initially classified as `ForReview` with revision `UPLO
 ## Source pack
 
 The original PDF and XLSX bytes are distributed as a separate controlled source pack using the same relative `Source/` folder structure as the catalog. This keeps large project reference files outside source-code normalisation while allowing `CE_ASSETCATALOGAUDIT` to verify the package after it is extracted to a controlled office location.
+
+Duplicate `(1)` files from the latest upload were byte-identical and are intentionally not registered or distributed twice.
 
 ## Commands
 

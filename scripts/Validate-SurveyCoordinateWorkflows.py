@@ -16,9 +16,10 @@ RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 DIRECTION = ROOT / "src" / "CE.Tools.Civil3D" / "PolylineDirectionCommands.cs"
 LEGACY_POLY = ROOT / "src" / "CE.Tools.Civil3D" / "CoordinatePolylineCommands.cs"
 DYNAMIC = ROOT / "src" / "CE.Tools.Civil3D" / "DynamicCoordinateLinkStore.cs"
+PRESENTATION = ROOT / "src" / "CE.Tools.Civil3D" / "CommentPresentationCommands.cs"
 
 errors: list[str] = []
-for path in (SOURCE, RIBBON, DIRECTION, LEGACY_POLY, DYNAMIC):
+for path in (SOURCE, RIBBON, DIRECTION, LEGACY_POLY, DYNAMIC, PRESENTATION):
     if not path.exists():
         errors.append(f"Missing required file: {path.relative_to(ROOT)}")
 
@@ -31,6 +32,7 @@ ribbon = RIBBON.read_text(encoding="utf-8")
 direction = DIRECTION.read_text(encoding="utf-8")
 legacy_poly = LEGACY_POLY.read_text(encoding="utf-8")
 dynamic = DYNAMIC.read_text(encoding="utf-8")
+presentation = PRESENTATION.read_text(encoding="utf-8")
 
 commands = [
     "CE_COORDPICK2",
@@ -53,9 +55,9 @@ required_markers = [
     "database.GetObjectId",
     "A coordinate table cannot be populated with zero rows.",
     '"POINT NAME"',
-    '"X-COORDINATE"',
-    '"Y-COORDINATE"',
-    '"Z-COORDINATE"',
+    '"X"',
+    '"Y"',
+    '"Z"',
     "const int columns = 4;",
     "ReadPolylineVertices",
     "CivilApplication.ActiveDocument",
@@ -64,6 +66,11 @@ required_markers = [
     "CreateCrossLinework",
     "DynamicCoordinateLinkStore.LinkGeneratedObjects(",
     "DynamicCoordinateLinkStore.LinkPolylineVertices(",
+    "ApplyPointNames(",
+    'return "P";',
+    '"{0}{1}"',
+    "ResolveScaleAwareTableHeight(",
+    'GetSystemVariable("CANNOSCALEVALUE")',
 ]
 for marker in required_markers:
     if marker not in source:
@@ -80,13 +87,34 @@ for marker in (
     'private const string FollowerRecordName = "CE_DYNAMIC_COORDINATE_FOLLOWER"',
     'private const string PolylineVertexRecordName = "CE_DYNAMIC_POLYLINE_VERTEX"',
     "public static int Refresh(Document document)",
-    "POINT NAME:",
-    "X-COORDINATE:",
-    "Y-COORDINATE:",
-    "Z-COORDINATE:",
+    '"X: "',
+    '"Y: "',
+    '"Z: "',
 ):
     if marker not in dynamic:
         errors.append(f"Dynamic coordinate implementation is missing: {marker}")
+
+for marker in (
+    "internal static int RefreshLinkedArrows(Document document)",
+    "TryReadArrowLink(",
+    "(int)DxfCode.ExtendedDataReal",
+):
+    if marker not in direction:
+        errors.append(f"Dynamic direction-arrow implementation is missing: {marker}")
+if "PolylineDirectionCommands.RefreshLinkedArrows(document)" not in presentation:
+    errors.append("Shared automatic refresh does not update polyline direction arrows")
+
+for forbidden in (
+    "X-COORDINATE:",
+    "Y-COORDINATE:",
+    "Z-COORDINATE:",
+    "Y / NORTHING",
+    "X / EASTING",
+):
+    if forbidden in dynamic:
+        errors.append(f"Dynamic coordinate text still contains superseded wording: {forbidden}")
+    if forbidden in source:
+        errors.append(f"Survey coordinate output still contains superseded wording: {forbidden}")
 
 # Existing direction-arrow and legacy survey workflows remain available.
 for marker, text, description in (

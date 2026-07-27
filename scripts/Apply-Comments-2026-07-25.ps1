@@ -119,16 +119,22 @@ Replace-ExactText `
     -Description "replace separate project prompts with one project setup popup"
 
 $parkingFile = "src\CE.Tools.Civil3D\ParkingCommands.cs"
-Replace-ExactText `
-    -RelativePath $parkingFile `
-    -OldText 'CreateSingleRow(document);' `
-    -NewText 'ClosedParkingBayWorkflow.CreateSingleRow(document);' `
-    -Description "route single parking rows to closed bay polyline generation"
-Replace-ExactText `
-    -RelativePath $parkingFile `
-    -OldText 'CreateDoubleRow(document);' `
-    -NewText 'ClosedParkingBayWorkflow.CreateDoubleRow(document);' `
-    -Description "route double parking rows to closed bay polyline generation"
+$parkingPath = Join-Path $repositoryRoot $parkingFile
+$parkingSource = [System.IO.File]::ReadAllText($parkingPath)
+if (-not $parkingSource.Contains("ClosedParkingBayWorkflow.CreateSingleRow(document);")) {
+    Replace-ExactText `
+        -RelativePath $parkingFile `
+        -OldText 'CreateSingleRow(document);' `
+        -NewText 'ClosedParkingBayWorkflow.CreateSingleRow(document);' `
+        -Description "route single parking rows to closed bay polyline generation"
+}
+if (-not $parkingSource.Contains("ClosedParkingBayWorkflow.CreateDoubleRow(document);")) {
+    Replace-ExactText `
+        -RelativePath $parkingFile `
+        -OldText 'CreateDoubleRow(document);' `
+        -NewText 'ClosedParkingBayWorkflow.CreateDoubleRow(document);' `
+        -Description "route double parking rows to closed bay polyline generation"
+}
 
 $alignmentFile = "src\CE.Tools.Civil3D\AlignmentCommands.cs"
 Replace-ExactText `
@@ -175,11 +181,15 @@ $newPrefixInsertion = @'
 
         private static RibbonCommandDefinition Cmd(string text, string command, string toolTip)
 '@
-Replace-ExactText `
-    -RelativePath $ribbonFile `
-    -OldText $oldPrefixInsertion `
-    -NewText $newPrefixInsertion `
-    -Description "add shared CE ribbon-name prefixing"
+$ribbonPath = Join-Path $repositoryRoot $ribbonFile
+$ribbonSource = [System.IO.File]::ReadAllText($ribbonPath)
+if (-not $ribbonSource.Contains("private static string PrefixRibbonText(string text)")) {
+    Replace-ExactText `
+        -RelativePath $ribbonFile `
+        -OldText $oldPrefixInsertion `
+        -NewText $newPrefixInsertion `
+        -Description "add shared CE ribbon-name prefixing"
+}
 
 $oldFloatingEntry = @'
                     Cmd("Restore Cleared Information", "CE_PROJECTRESTORE ", "Restore the values saved before the last project clear.")),
@@ -324,10 +334,9 @@ $newCoordinateText = @'
         {
             return string.Join(
                 "\P",
-                "POINT NAME: <LINKED>",
-                "X-COORDINATE: " + point.X.ToString("N3", CultureInfo.CurrentCulture),
-                "Y-COORDINATE: " + point.Y.ToString("N3", CultureInfo.CurrentCulture),
-                "Z-COORDINATE: " + point.Z.ToString("N3", CultureInfo.CurrentCulture));
+                "X: " + point.X.ToString("N3", CultureInfo.CurrentCulture),
+                "Y: " + point.Y.ToString("N3", CultureInfo.CurrentCulture),
+                "Z: " + point.Z.ToString("N3", CultureInfo.CurrentCulture));
         }
 
         private static string BuildPlainCoordinate(Point3d point)
@@ -484,9 +493,9 @@ $newCoordinateTable = @'
             string[] headings =
             {
                 "POINT NAME",
-                "X-COORDINATE",
-                "Y-COORDINATE",
-                "Z-COORDINATE"
+                "X",
+                "Y",
+                "Z"
             };
             for (int column = 0; column < headings.Length; column++)
             {

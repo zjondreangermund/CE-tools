@@ -654,17 +654,17 @@ namespace CETools.Civil3D
         {
             return string.Join(
                 "\\P",
-                "POINT NAME: " + SafePointName(pointName),
-                "X-COORDINATE: " + point.X.ToString("N3", CultureInfo.CurrentCulture),
-                "Y-COORDINATE: " + point.Y.ToString("N3", CultureInfo.CurrentCulture),
-                "Z-COORDINATE: " + point.Z.ToString("N3", CultureInfo.CurrentCulture));
+                SafePointName(pointName),
+                "X: " + point.X.ToString("N3", CultureInfo.CurrentCulture),
+                "Y: " + point.Y.ToString("N3", CultureInfo.CurrentCulture),
+                "Z: " + point.Z.ToString("N3", CultureInfo.CurrentCulture));
         }
 
         private static string BuildPlainCoordinate(string pointName, Point3d point)
         {
             return string.Format(
                 CultureInfo.CurrentCulture,
-                "POINT NAME: {0}; X-COORDINATE: {1:N3}; Y-COORDINATE: {2:N3}; Z-COORDINATE: {3:N3}",
+                "{0}; X: {1:N3}; Y: {2:N3}; Z: {3:N3}",
                 SafePointName(pointName),
                 point.X,
                 point.Y,

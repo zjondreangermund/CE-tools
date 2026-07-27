@@ -722,7 +722,7 @@ namespace CETools.Civil3D
                     }
                 }
             }
-            catch (Exception exception)
+            catch (System.Exception exception)
             {
                 catalogState = "Catalog read failed";
                 action = exception.Message;

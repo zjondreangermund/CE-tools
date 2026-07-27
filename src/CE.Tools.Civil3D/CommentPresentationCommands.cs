@@ -346,12 +346,22 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
 
-            CommentAutoRefreshManager.MarkPending();
+            int refreshedArrows = 0;
+            try
+            {
+                refreshedArrows =
+                    PolylineDirectionCommands.RefreshLinkedArrows(document);
+            }
+            catch
+            {
+                CommentAutoRefreshManager.MarkPending();
+            }
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_PLREVERSE complete. Reversed={0}; skipped={1}. Linked direction arrows and coordinate followers are queued for refresh.",
+                "\nCE_PLREVERSE complete. Reversed={0}; skipped={1}; direction arrows refreshed={2}.",
                 reversed,
-                skipped);
+                skipped,
+                refreshedArrows);
         }
 
         [CommandMethod("CE_TOOLS", "CE_REFRESHALL", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -847,7 +857,24 @@ namespace CETools.Civil3D
         public static RefreshSummary Refresh(Document document, bool rebuildCivil)
         {
             var summary = new RefreshSummary();
-            summary.CoordinateFollowers += DynamicCoordinateLinkStore.Refresh(document);
+            try
+            {
+                summary.CoordinateFollowers +=
+                    DynamicCoordinateLinkStore.Refresh(document);
+            }
+            catch
+            {
+                summary.Failed++;
+            }
+            try
+            {
+                summary.CoordinateFollowers +=
+                    PolylineDirectionCommands.RefreshLinkedArrows(document);
+            }
+            catch
+            {
+                summary.Failed++;
+            }
 
             List<LinkedTableItem> tables = ReadLinkedTables(document.Database);
             MethodInfo coordinateRefresh = typeof(SurveyCoordinateWorkflowCommands).GetMethod(

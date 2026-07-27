@@ -128,7 +128,15 @@ namespace CETools.Civil3D
                     Cmd("Standards Tools", "CE_STANDARDS ", "Open the standards menu."),
                     Cmd("Select Standards", "CE_STANDARDSELECT ", "Browse for a standards file, review it and save its traceable details."),
                     Cmd("Standards Information", "CE_STANDARDINFO ", "Review stored standards and optionally place a drawing table."),
-                    Cmd("Clear Standards", "CE_STANDARDCLEAR ", "Clear the standards record."))));
+                    Cmd("Clear Standards", "CE_STANDARDCLEAR ", "Clear the standards record.")),
+                Menu("CE_TOOLS_PROJECT_STYLES_MENU", "Project\nStyles", "Select project styles for roads, stormwater, sewer, water and platforms.",
+                    Cmd("Project Style Centre", "CE_PROJECTSTYLES ", "Select alignment, profile, point, corridor, pipe, structure and related Civil 3D styles."),
+                    Cmd("Project Style Information", "CE_PROJECTSTYLEINFO ", "Review the project style selections and optionally place a schedule."),
+                    Cmd("Clear Project Styles", "CE_PROJECTSTYLECLEAR ", "Clear only the stored project style selections.")),
+                Menu("CE_TOOLS_UNDO_MENU", "Undo &\nRedo", "Enable full native undo recording and run one-step undo or redo.",
+                    Cmd("Enable Full Undo Recording", "CE_UNDOSETTINGS ", "Enable AutoCAD full undo recording for the current session."),
+                    Cmd("Undo One Step", "CE_UNDO ", "Run one native AutoCAD undo step."),
+                    Cmd("Redo One Step", "CE_REDO ", "Run one native AutoCAD redo step."))));
         }
 
         private static void AddSurveyPanel(RibbonTab tab)
@@ -137,9 +145,10 @@ namespace CETools.Civil3D
                 Menu("CE_TOOLS_SURVEY_MENU", "Coordinate\nTools", "Linked coordinate labels, COGO points, crosses, compact tables and polyline vertices.",
                     Cmd("Linked Picked Coordinate", "CE_COORDPICK2 ", "Create a coordinate annotation and optionally add its source point to a linked register."),
                     Cmd("Linked Coordinate Cross", "CE_COORDCROSS2 ", "Choose COGO point, cross, annotation and linked register output."),
-                    Cmd("Create Linked Coordinate Table", "CE_COORDTABLE2 ", "Create a compact linked Y-X-Z table from selected COGO or AutoCAD points."),
+                    Cmd("Create Linked Coordinate Table", "CE_COORDTABLE2 ", "Create a compact linked Point Name, X, Y, Z table from selected COGO or AutoCAD points."),
                     Cmd("Refresh Linked Coordinate Table", "CE_COORDREFRESH ", "Refresh table rows from the current linked source-point coordinates."),
-                    Cmd("Polyline Vertex Linked Points", "CE_COORDPOLY2 ", "Create sequential COGO points in polyline direction and a linked Point Name, Y, X, Z table.")),
+                    Cmd("Polyline Vertex Linked Points", "CE_COORDPOLY2 ", "Create sequential dynamic COGO points in polyline direction and a linked Point Name, X, Y, Z table."),
+                    Cmd("Presentation and Dynamic Tools", "CE_PRESENTATIONTOOLS ", "Open annotation scaling, overlap correction and automatic linked-refresh workflows.")),
                 Menu("CE_TOOLS_SURVEY_UTILITIES_MENU", "Survey\nUtilities", "Direction arrows and preserved coordinate workflows.",
                     Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked arrows showing stored polyline direction."),
                     Cmd("Coordinate Tools (Legacy)", "CE_COORDINATE ", "Open the legacy coordinate tools menu."),
@@ -152,16 +161,24 @@ namespace CETools.Civil3D
         {
             AddPanel(tab, DrawingsPanelId, "Drawings", Row(
                 Menu("CE_TOOLS_DRAWING_MENU", "Drawing\nTools", "AutoCAD drawing and annotation utilities.",
+                    Cmd("Open Floating Command Window", "CE_TOOLSPALETTE ", "Open every CE Tools ribbon command in a searchable modeless window that can be moved to a second monitor."),
                     Cmd("Annotation Settings", "CE_ANNOTSETTINGS ", "Select 1.8, 2.0 or 5.0 height, marker circles and MLeader/MText/COGO output."),
+                    Cmd("Make Selected Objects Annotative", "CE_MAKEANNOTATIVE ", "Apply CE text height and annotative settings to selected text, dimensions, leaders and tables."),
+                    Cmd("Scale Selected Tables", "CE_TABLESCALE ", "Resize selected tables relative to the current CE annotation height."),
+                    Cmd("Resolve Annotation Overlaps", "CE_OVERLAPFIX ", "Reposition selected labels, leaders, dimensions and tables to reduce overlap."),
+                    Cmd("Refresh All Linked Data", "CE_REFRESHALL ", "Refresh linked coordinates and BOQs, then rebuild supported Civil 3D objects."),
+                    Cmd("Automatic Refresh Settings", "CE_AUTOREFRESH ", "Turn automatic linked coordinate and BOQ refresh on or off."),
+                    Cmd("Refresh Status", "CE_REFRESHSTATUS ", "Show linked-data inventory and pending automatic-refresh status."),
                     Cmd("Colour 250 - Geometry or Annotation", "CE_COLOR250 ", "Choose geometry only or geometry plus annotation and change accepted objects to colour 250."),
                     Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked direction arrows.")),
                 Menu("CE_TOOLS_CLEANUP_MENU", "Cleanup\nManager", "Run OVERKILL, AUDIT and PURGE together or separately.",
+                    Cmd("Open Cleanup Manager", "CE_CLEANUPUI ", "Open the cleanup selection window."),
                     Cmd("Full Cleanup", "CE_DRAWCLEAN All ", "Run all drawing-cleanup stages."),
                     Cmd("OVERKILL Only", "CE_DRAWCLEAN Overkill ", "Remove duplicate and overlapping geometry."),
                     Cmd("AUDIT Only", "CE_DRAWCLEAN Audit ", "Audit and fix drawing errors."),
                     Cmd("PURGE Only", "CE_DRAWCLEAN Purge ", "Purge unused named objects.")),
                 Menu("CE_TOOLS_HATCH_MENU", "Hatch\nTools", "Create and edit transparent civil hatches while keeping grids, labels and linework visible.",
-                    Cmd("Hatch Tools", "CE_HATCHTOOLS ", "Open the CE hatch tools menu."),
+                    Cmd("Open Hatch Settings", "CE_HATCHUI ", "Open the hatch settings and action window."),
                     Cmd("Create Transparent Hatches", "CE_HATCHCREATE ", "Create associative hatches from selected closed boundaries."),
                     Cmd("Edit Hatch Settings", "CE_HATCHEDIT ", "Edit selected hatch pattern, scale, angle, colour and transparency."),
                     Cmd("Match Hatch Settings", "CE_HATCHMATCH ", "Copy hatch display settings from one source hatch."),
@@ -379,7 +396,7 @@ namespace CETools.Civil3D
             var source = new RibbonPanelSource
             {
                 Id = panelId,
-                Title = title.ToUpperInvariant()
+                Title = PrefixRibbonText(title).ToUpperInvariant()
             };
 
             foreach (RibbonItem[] row in rows)
@@ -400,7 +417,7 @@ namespace CETools.Civil3D
             var menu = new RibbonMenuButton
             {
                 Id = id,
-                Text = text,
+                Text = PrefixRibbonText(text),
                 ShowText = true,
                 ShowImage = false,
                 Size = RibbonItemSize.Large,
@@ -429,13 +446,21 @@ namespace CETools.Civil3D
             return new RibbonCommandDefinition(text, command, toolTip);
         }
 
+        private static string PrefixRibbonText(string text)
+        {
+            string value = text ?? string.Empty;
+            return value.StartsWith("CE \u2013 ", StringComparison.Ordinal)
+                ? value
+                : "CE \u2013 " + value;
+        }
+
         private static RibbonMenuItem CreateCommandMenuItem(
             RibbonCommandDefinition definition)
         {
             var menuItem = new RibbonMenuItem
             {
                 Id = "CE_TOOLS_COMMAND_" + definition.Command.Trim().Replace(' ', '_'),
-                Text = definition.Text,
+                Text = PrefixRibbonText(definition.Text),
                 ShowText = true,
                 ShowImage = false,
                 CommandParameter = definition.Command,

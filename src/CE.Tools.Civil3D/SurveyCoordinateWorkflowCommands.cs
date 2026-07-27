@@ -413,6 +413,10 @@ namespace CETools.Civil3D
                     throw new InvalidOperationException(
                         "Civil 3D could not apply every sequential point name/description.");
                 }
+                ApplyPointNames(
+                    document.Database,
+                    createdIds,
+                    pointNames);
 
                 ObjectId tableId = CreateLinkedTable(
                     document.Database,
@@ -713,7 +717,11 @@ namespace CETools.Civil3D
                 WriteLinkRecord(table, transaction, sourceIds);
                 int missing;
                 List<CoordinateRow> rows = ReadRows(transaction, sourceIds, out missing);
-                PopulateTable(table, rows, NormalizeHeight(textHeight), title);
+                PopulateTable(
+                    table,
+                    rows,
+                    ResolveScaleAwareTableHeight(database, textHeight),
+                    title);
                 transaction.Commit();
                 return tableId;
             }
@@ -753,7 +761,7 @@ namespace CETools.Civil3D
                 PopulateTable(
                     table,
                     rows,
-                    NormalizeHeight(textHeight),
+                    ResolveScaleAwareTableHeight(database, textHeight),
                     "LINKED COORDINATE REGISTER");
                 transaction.Commit();
             }
@@ -794,7 +802,7 @@ namespace CETools.Civil3D
                 PopulateTable(
                     table,
                     rows,
-                    NormalizeHeight(database.Textsize),
+                    ResolveScaleAwareTableHeight(database, database.Textsize),
                     "LINKED COORDINATE REGISTER");
                 transaction.Commit();
             }
@@ -1078,19 +1086,73 @@ namespace CETools.Civil3D
 
         private static string BuildPrefix(string layer)
         {
-            string value = string.IsNullOrWhiteSpace(layer) ? "VTX" : layer.Trim();
-            value = value.Replace(' ', '-');
-            return value.Length > 18 ? value.Substring(0, 18) : value;
+            return "P";
         }
 
         private static string FormatPointName(string prefix, int sequence)
         {
-            string safe = string.IsNullOrWhiteSpace(prefix) ? "VTX" : prefix.Trim();
+            string safe = string.IsNullOrWhiteSpace(prefix) ? "P" : prefix.Trim();
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "{0}-{1:D3}",
+                "{0}{1}",
                 safe,
                 sequence);
+        }
+
+        private static void ApplyPointNames(
+            Database database,
+            IList<ObjectId> pointIds,
+            IList<string> pointNames)
+        {
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                int count = Math.Min(pointIds.Count, pointNames.Count);
+                for (int index = 0; index < count; index++)
+                {
+                    CivilCogoPoint point = transaction.GetObject(
+                        pointIds[index],
+                        OpenMode.ForWrite,
+                        false) as CivilCogoPoint;
+                    if (point != null)
+                    {
+                        point.PointName = pointNames[index];
+                    }
+                }
+                transaction.Commit();
+            }
+        }
+
+        private static double ResolveScaleAwareTableHeight(
+            Database database,
+            double paperHeightMillimetres)
+        {
+            double paperHeight = NormalizeHeight(paperHeightMillimetres);
+            double annotationScale = 1.0;
+            try
+            {
+                annotationScale = Convert.ToDouble(
+                    AcApplication.GetSystemVariable("CANNOSCALEVALUE"),
+                    CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                annotationScale = Math.Max(database.Dimscale, 1.0);
+            }
+            if (!(annotationScale > 0.0)) annotationScale = 1.0;
+
+            string units = database.Insunits.ToString();
+            double millimetresToDrawingUnits =
+                string.Equals(units, "Millimeters", StringComparison.OrdinalIgnoreCase) ? 1.0 :
+                string.Equals(units, "Centimeters", StringComparison.OrdinalIgnoreCase) ? 0.1 :
+                string.Equals(units, "Meters", StringComparison.OrdinalIgnoreCase) ? 0.001 :
+                string.Equals(units, "Inches", StringComparison.OrdinalIgnoreCase) ? 0.0393700787 :
+                string.Equals(units, "Feet", StringComparison.OrdinalIgnoreCase) ? 0.0032808399 :
+                0.001;
+
+            return Math.Max(
+                paperHeight * annotationScale * millimetresToDrawingUnits,
+                0.001);
         }
 
         private static string BuildMTextCoordinate(Point3d point)

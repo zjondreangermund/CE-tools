@@ -42,7 +42,7 @@ namespace CETools.Civil3D
             double usedLength = bayCount * layout.BayWidth;
             var rows = new List<KeyValuePair<string, string>>
             {
-                Pair("Output", "One closed polyline per parking bay"),
+                Pair("Output", "One selectable block per parking bay"),
                 Pair("Bays", bayCount.ToString(CultureInfo.InvariantCulture)),
                 Pair("Bay width", Format(layout.BayWidth)),
                 Pair("Bay depth", Format(layout.BayDepth)),
@@ -55,7 +55,7 @@ namespace CETools.Civil3D
 
             if (!PopupTablePresenter.ShowReview(
                     "CE Tools - Closed Parking Bay Row",
-                    "Each bay will be a separate closed four-sided polyline that can be counted, reported and numbered immediately.",
+                    "Each bay will be a separate selectable block that can be counted, reported and numbered immediately.",
                     rows,
                     "Create Bays"))
             {
@@ -78,30 +78,26 @@ namespace CETools.Civil3D
                         StringComparison.OrdinalIgnoreCase)
                         ? 1.0
                         : -1.0;
-                    Vector3d dividerDirection = direction.RotateBy(
-                        sideSign * DegreesToRadians(layout.AngleDegrees),
-                        Vector3d.ZAxis);
+                    ObjectId bayDefinitionId = CreateBayBlockDefinition(
+                        document.Database,
+                        transaction,
+                        layout.BayWidth,
+                        layout.BayDepth,
+                        sideSign * layout.AngleDegrees);
+                    double rotation = Math.Atan2(direction.Y, direction.X);
 
                     for (int index = 0; index < bayCount; index++)
                     {
                         Point3d frontStart = baseline.Start +
                             (direction * (index * layout.BayWidth));
-                        Point3d frontEnd = baseline.Start +
-                            (direction * ((index + 1) * layout.BayWidth));
-                        Point3d backStart = frontStart +
-                            (dividerDirection * layout.BayDepth);
-                        Point3d backEnd = frontEnd +
-                            (dividerDirection * layout.BayDepth);
-
-                        AppendClosedBay(
+                        AppendBayBlock(
                             document.Database,
                             currentSpace,
                             transaction,
                             baseline.LayerId,
+                            bayDefinitionId,
                             frontStart,
-                            frontEnd,
-                            backEnd,
-                            backStart);
+                            rotation);
                     }
 
                     transaction.Commit();
@@ -109,7 +105,7 @@ namespace CETools.Civil3D
 
                 editor.Regen();
                 editor.WriteMessage(
-                    "\nCE_PKROW complete. Closed parking bay polylines created={0}. " +
+                    "\nCE_PKROW complete. Parking bay blocks created={0}. " +
                     "Use CE_PKCOUNTX, CE_PKREPORTUI or CE_PKNUMBER2 on the new bays.",
                     bayCount);
             }
@@ -147,7 +143,7 @@ namespace CETools.Civil3D
             double usedLength = baysPerRow * layout.BayWidth;
             var rows = new List<KeyValuePair<string, string>>
             {
-                Pair("Output", "One closed polyline per parking bay"),
+                Pair("Output", "One selectable block per parking bay"),
                 Pair("Bays per row", baysPerRow.ToString(CultureInfo.InvariantCulture)),
                 Pair("Total bays", totalBays.ToString(CultureInfo.InvariantCulture)),
                 Pair("Bay width", Format(layout.BayWidth)),
@@ -159,7 +155,7 @@ namespace CETools.Civil3D
 
             if (!PopupTablePresenter.ShowReview(
                     "CE Tools - Closed Double Parking Row",
-                    "Each bay on both sides of the aisle will be a separate closed polyline suitable for immediate reporting, counting and numbering.",
+                    "Each bay on both sides of the aisle will be a separate selectable block suitable for immediate reporting, counting and numbering.",
                     rows,
                     "Create Bays"))
             {
@@ -177,56 +173,47 @@ namespace CETools.Civil3D
                         transaction);
                     Vector3d direction = baseline.Direction;
                     Vector3d leftNormal = Vector3d.ZAxis.CrossProduct(direction).GetNormal();
-                    Vector3d leftDivider = direction.RotateBy(
-                        DegreesToRadians(layout.AngleDegrees),
-                        Vector3d.ZAxis);
-                    Vector3d rightDivider = direction.RotateBy(
-                        -DegreesToRadians(layout.AngleDegrees),
-                        Vector3d.ZAxis);
                     Vector3d halfAisleOffset = leftNormal * (layout.AisleWidth / 2.0);
                     Point3d leftInnerStart = baseline.Start + halfAisleOffset;
                     Point3d rightInnerStart = baseline.Start - halfAisleOffset;
+                    ObjectId leftDefinitionId = CreateBayBlockDefinition(
+                        document.Database,
+                        transaction,
+                        layout.BayWidth,
+                        layout.BayDepth,
+                        layout.AngleDegrees);
+                    ObjectId rightDefinitionId = CreateBayBlockDefinition(
+                        document.Database,
+                        transaction,
+                        layout.BayWidth,
+                        layout.BayDepth,
+                        -layout.AngleDegrees);
+                    double rotation = Math.Atan2(direction.Y, direction.X);
 
                     for (int index = 0; index < baysPerRow; index++)
                     {
                         double startStation = index * layout.BayWidth;
-                        double endStation = (index + 1) * layout.BayWidth;
-
                         Point3d leftFrontStart = leftInnerStart +
                             (direction * startStation);
-                        Point3d leftFrontEnd = leftInnerStart +
-                            (direction * endStation);
-                        Point3d leftBackStart = leftFrontStart +
-                            (leftDivider * layout.BayDepth);
-                        Point3d leftBackEnd = leftFrontEnd +
-                            (leftDivider * layout.BayDepth);
-                        AppendClosedBay(
+                        AppendBayBlock(
                             document.Database,
                             currentSpace,
                             transaction,
                             baseline.LayerId,
+                            leftDefinitionId,
                             leftFrontStart,
-                            leftFrontEnd,
-                            leftBackEnd,
-                            leftBackStart);
+                            rotation);
 
                         Point3d rightFrontStart = rightInnerStart +
                             (direction * startStation);
-                        Point3d rightFrontEnd = rightInnerStart +
-                            (direction * endStation);
-                        Point3d rightBackStart = rightFrontStart +
-                            (rightDivider * layout.BayDepth);
-                        Point3d rightBackEnd = rightFrontEnd +
-                            (rightDivider * layout.BayDepth);
-                        AppendClosedBay(
+                        AppendBayBlock(
                             document.Database,
                             currentSpace,
                             transaction,
                             baseline.LayerId,
+                            rightDefinitionId,
                             rightFrontStart,
-                            rightFrontEnd,
-                            rightBackEnd,
-                            rightBackStart);
+                            rotation);
                     }
 
                     transaction.Commit();
@@ -234,7 +221,7 @@ namespace CETools.Civil3D
 
                 editor.Regen();
                 editor.WriteMessage(
-                    "\nCE_PKDOUBLE complete. Closed parking bay polylines created={0}. " +
+                    "\nCE_PKDOUBLE complete. Parking bay blocks created={0}. " +
                     "Use CE_PKCOUNTX, CE_PKREPORTUI or CE_PKNUMBER2 on the new bays.",
                     totalBays);
             }
@@ -432,27 +419,61 @@ namespace CETools.Civil3D
                 });
         }
 
-        private static void AppendClosedBay(
+        private static ObjectId CreateBayBlockDefinition(
+            Database database,
+            Transaction transaction,
+            double width,
+            double depth,
+            double angleDegrees)
+        {
+            BlockTable blockTable = (BlockTable)transaction.GetObject(
+                database.BlockTableId,
+                OpenMode.ForWrite,
+                false);
+            var definition = new BlockTableRecord
+            {
+                Name = "CE_PARKING_BAY_" + Guid.NewGuid().ToString("N")
+            };
+            ObjectId definitionId = blockTable.Add(definition);
+            transaction.AddNewlyCreatedDBObject(definition, true);
+
+            double angle = DegreesToRadians(angleDegrees);
+            Vector2d depthVector = new Vector2d(
+                Math.Cos(angle) * depth,
+                Math.Sin(angle) * depth);
+            var bay = new Polyline(4);
+            bay.SetDatabaseDefaults(database);
+            bay.Layer = "0";
+            bay.AddVertexAt(0, Point2d.Origin, 0.0, 0.0, 0.0);
+            bay.AddVertexAt(1, new Point2d(width, 0.0), 0.0, 0.0, 0.0);
+            bay.AddVertexAt(
+                2,
+                new Point2d(width + depthVector.X, depthVector.Y),
+                0.0,
+                0.0,
+                0.0);
+            bay.AddVertexAt(3, new Point2d(depthVector.X, depthVector.Y), 0.0, 0.0, 0.0);
+            bay.Closed = true;
+            definition.AppendEntity(bay);
+            transaction.AddNewlyCreatedDBObject(bay, true);
+            return definitionId;
+        }
+
+        private static void AppendBayBlock(
             Database database,
             BlockTableRecord currentSpace,
             Transaction transaction,
             ObjectId layerId,
-            Point3d first,
-            Point3d second,
-            Point3d third,
-            Point3d fourth)
+            ObjectId definitionId,
+            Point3d insertionPoint,
+            double rotation)
         {
-            var bay = new Polyline(4);
-            bay.SetDatabaseDefaults(database);
-            bay.LayerId = layerId;
-            bay.Elevation = first.Z;
-            bay.AddVertexAt(0, new Point2d(first.X, first.Y), 0.0, 0.0, 0.0);
-            bay.AddVertexAt(1, new Point2d(second.X, second.Y), 0.0, 0.0, 0.0);
-            bay.AddVertexAt(2, new Point2d(third.X, third.Y), 0.0, 0.0, 0.0);
-            bay.AddVertexAt(3, new Point2d(fourth.X, fourth.Y), 0.0, 0.0, 0.0);
-            bay.Closed = true;
-            currentSpace.AppendEntity(bay);
-            transaction.AddNewlyCreatedDBObject(bay, true);
+            var reference = new BlockReference(insertionPoint, definitionId);
+            reference.SetDatabaseDefaults(database);
+            reference.LayerId = layerId;
+            reference.Rotation = rotation;
+            currentSpace.AppendEntity(reference);
+            transaction.AddNewlyCreatedDBObject(reference, true);
         }
 
         private static BlockTableRecord OpenCurrentSpace(
