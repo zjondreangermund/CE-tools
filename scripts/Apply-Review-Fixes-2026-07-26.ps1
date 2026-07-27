@@ -24,6 +24,10 @@ function Replace-ExactText {
     if ($text.Contains($newNormalised)) {
         return
     }
+    if ($Description -eq "replace single midpoint labels with interval-based aligned placements" -and
+        $text.Contains("private static IReadOnlyList<BranchLabelPlacement> BuildLabelPlacements(")) {
+        return
+    }
     if (-not $text.Contains($oldNormalised)) {
         throw "Could not apply review fix '$Description' in '$RelativePath'."
     }
