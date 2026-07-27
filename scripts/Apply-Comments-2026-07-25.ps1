@@ -175,11 +175,15 @@ $newPrefixInsertion = @'
 
         private static RibbonCommandDefinition Cmd(string text, string command, string toolTip)
 '@
-Replace-ExactText `
-    -RelativePath $ribbonFile `
-    -OldText $oldPrefixInsertion `
-    -NewText $newPrefixInsertion `
-    -Description "add shared CE ribbon-name prefixing"
+$ribbonPath = Join-Path $repositoryRoot $ribbonFile
+$ribbonSource = [System.IO.File]::ReadAllText($ribbonPath)
+if (-not $ribbonSource.Contains("private static string PrefixRibbonText(string text)")) {
+    Replace-ExactText `
+        -RelativePath $ribbonFile `
+        -OldText $oldPrefixInsertion `
+        -NewText $newPrefixInsertion `
+        -Description "add shared CE ribbon-name prefixing"
+}
 
 $oldFloatingEntry = @'
                     Cmd("Restore Cleared Information", "CE_PROJECTRESTORE ", "Restore the values saved before the last project clear.")),
