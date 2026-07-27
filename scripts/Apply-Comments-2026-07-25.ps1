@@ -175,15 +175,11 @@ $newPrefixInsertion = @'
 
         private static RibbonCommandDefinition Cmd(string text, string command, string toolTip)
 '@
-$ribbonPath = Join-Path $repositoryRoot $ribbonFile
-$ribbonSource = [System.IO.File]::ReadAllText($ribbonPath)
-if (-not $ribbonSource.Contains("private static string PrefixRibbonText(string text)")) {
-    Replace-ExactText `
-        -RelativePath $ribbonFile `
-        -OldText $oldPrefixInsertion `
-        -NewText $newPrefixInsertion `
-        -Description "add shared CE ribbon-name prefixing"
-}
+Replace-ExactText `
+    -RelativePath $ribbonFile `
+    -OldText $oldPrefixInsertion `
+    -NewText $newPrefixInsertion `
+    -Description "add shared CE ribbon-name prefixing"
 
 $oldFloatingEntry = @'
                     Cmd("Restore Cleared Information", "CE_PROJECTRESTORE ", "Restore the values saved before the last project clear.")),
@@ -328,10 +324,9 @@ $newCoordinateText = @'
         {
             return string.Join(
                 "\P",
-                "POINT NAME: <LINKED>",
-                "X-COORDINATE: " + point.X.ToString("N3", CultureInfo.CurrentCulture),
-                "Y-COORDINATE: " + point.Y.ToString("N3", CultureInfo.CurrentCulture),
-                "Z-COORDINATE: " + point.Z.ToString("N3", CultureInfo.CurrentCulture));
+                "X: " + point.X.ToString("N3", CultureInfo.CurrentCulture),
+                "Y: " + point.Y.ToString("N3", CultureInfo.CurrentCulture),
+                "Z: " + point.Z.ToString("N3", CultureInfo.CurrentCulture));
         }
 
         private static string BuildPlainCoordinate(Point3d point)
@@ -488,9 +483,9 @@ $newCoordinateTable = @'
             string[] headings =
             {
                 "POINT NAME",
-                "X-COORDINATE",
-                "Y-COORDINATE",
-                "Z-COORDINATE"
+                "X",
+                "Y",
+                "Z"
             };
             for (int column = 0; column < headings.Length; column++)
             {
