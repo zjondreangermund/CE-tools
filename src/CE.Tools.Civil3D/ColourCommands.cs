@@ -202,6 +202,9 @@ namespace CETools.Civil3D
                 "TextColor",
                 "DimensionLineColor",
                 "ExtensionLineColor",
+                "Dimclrd",
+                "Dimclre",
+                "Dimclrt",
                 "LeaderLineColor",
                 "ContentColor"
             })
