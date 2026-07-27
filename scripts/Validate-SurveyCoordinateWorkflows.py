@@ -55,9 +55,9 @@ required_markers = [
     "database.GetObjectId",
     "A coordinate table cannot be populated with zero rows.",
     '"POINT NAME"',
-    '"X-COORDINATE"',
-    '"Y-COORDINATE"',
-    '"Z-COORDINATE"',
+    '"X"',
+    '"Y"',
+    '"Z"',
     "const int columns = 4;",
     "ReadPolylineVertices",
     "CivilApplication.ActiveDocument",
@@ -87,10 +87,9 @@ for marker in (
     'private const string FollowerRecordName = "CE_DYNAMIC_COORDINATE_FOLLOWER"',
     'private const string PolylineVertexRecordName = "CE_DYNAMIC_POLYLINE_VERTEX"',
     "public static int Refresh(Document document)",
-    "POINT NAME:",
-    "X-COORDINATE:",
-    "Y-COORDINATE:",
-    "Z-COORDINATE:",
+    '"X: "',
+    '"Y: "',
+    '"Z: "',
 ):
     if marker not in dynamic:
         errors.append(f"Dynamic coordinate implementation is missing: {marker}")
@@ -104,6 +103,18 @@ for marker in (
         errors.append(f"Dynamic direction-arrow implementation is missing: {marker}")
 if "PolylineDirectionCommands.RefreshLinkedArrows(document)" not in presentation:
     errors.append("Shared automatic refresh does not update polyline direction arrows")
+
+for forbidden in (
+    "X-COORDINATE:",
+    "Y-COORDINATE:",
+    "Z-COORDINATE:",
+    "Y / NORTHING",
+    "X / EASTING",
+):
+    if forbidden in dynamic:
+        errors.append(f"Dynamic coordinate text still contains superseded wording: {forbidden}")
+    if forbidden in source:
+        errors.append(f"Survey coordinate output still contains superseded wording: {forbidden}")
 
 # Existing direction-arrow and legacy survey workflows remain available.
 for marker, text, description in (
