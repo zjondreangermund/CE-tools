@@ -35,7 +35,7 @@ namespace CETools.Civil3D
             Database database = document.Database;
 
             PromptKeywordOptions modeOptions = new PromptKeywordOptions(
-                "\nColour 250 scope [GeometryOnly/IncludeAnnotation] <GeometryOnly>: ")
+                "\nColour 250 scope [GeometryOnly/IncludeAnnotation] <IncludeAnnotation>: ")
             {
                 AllowNone = true
             };
@@ -47,10 +47,11 @@ namespace CETools.Civil3D
                 return;
 
             bool includeAnnotation =
-                modeResult.Status == PromptStatus.OK &&
-                modeResult.StringResult.Equals(
-                    "IncludeAnnotation",
-                    StringComparison.OrdinalIgnoreCase);
+                modeResult.Status == PromptStatus.None ||
+                (modeResult.Status == PromptStatus.OK &&
+                 modeResult.StringResult.Equals(
+                     "IncludeAnnotation",
+                     StringComparison.OrdinalIgnoreCase));
 
             PromptSelectionResult selection = editor.SelectImplied();
             if (selection.Status != PromptStatus.OK || selection.Value.Count == 0)
