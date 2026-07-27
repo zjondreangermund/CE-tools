@@ -29,12 +29,16 @@ $presentationFile = "src\CE.Tools.Civil3D\CommentPresentationCommands.cs"
 $oldRefreshStart = @'
             var summary = new RefreshSummary();
             summary.CoordinateFollowers += DynamicCoordinateLinkStore.Refresh(document);
+            summary.CoordinateFollowers +=
+                PolylineDirectionCommands.RefreshLinkedArrows(document);
 
             List<LinkedTableItem> tables = ReadLinkedTables(document.Database);
 '@
 $newRefreshStart = @'
             var summary = new RefreshSummary();
             summary.CoordinateFollowers += DynamicCoordinateLinkStore.Refresh(document);
+            summary.CoordinateFollowers +=
+                PolylineDirectionCommands.RefreshLinkedArrows(document);
             summary.BoqTables += SewerExcavationCommentCommands.RefreshAll(document);
 
             List<LinkedTableItem> tables = ReadLinkedTables(document.Database);
