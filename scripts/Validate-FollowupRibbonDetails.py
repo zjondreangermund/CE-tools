@@ -48,6 +48,9 @@ if not errors:
         "ChangeBlockAttributes",
         "DimensionLineColor",
         "ExtensionLineColor",
+        '"Dimclrd"',
+        '"Dimclre"',
+        '"Dimclrt"',
         "LeaderLineColor",
         "Civil 3D label components",
     ):
