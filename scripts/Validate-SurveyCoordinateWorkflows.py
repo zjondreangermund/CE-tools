@@ -16,9 +16,10 @@ RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 DIRECTION = ROOT / "src" / "CE.Tools.Civil3D" / "PolylineDirectionCommands.cs"
 LEGACY_POLY = ROOT / "src" / "CE.Tools.Civil3D" / "CoordinatePolylineCommands.cs"
 DYNAMIC = ROOT / "src" / "CE.Tools.Civil3D" / "DynamicCoordinateLinkStore.cs"
+PRESENTATION = ROOT / "src" / "CE.Tools.Civil3D" / "CommentPresentationCommands.cs"
 
 errors: list[str] = []
-for path in (SOURCE, RIBBON, DIRECTION, LEGACY_POLY, DYNAMIC):
+for path in (SOURCE, RIBBON, DIRECTION, LEGACY_POLY, DYNAMIC, PRESENTATION):
     if not path.exists():
         errors.append(f"Missing required file: {path.relative_to(ROOT)}")
 
@@ -31,6 +32,7 @@ ribbon = RIBBON.read_text(encoding="utf-8")
 direction = DIRECTION.read_text(encoding="utf-8")
 legacy_poly = LEGACY_POLY.read_text(encoding="utf-8")
 dynamic = DYNAMIC.read_text(encoding="utf-8")
+presentation = PRESENTATION.read_text(encoding="utf-8")
 
 commands = [
     "CE_COORDPICK2",
@@ -64,6 +66,11 @@ required_markers = [
     "CreateCrossLinework",
     "DynamicCoordinateLinkStore.LinkGeneratedObjects(",
     "DynamicCoordinateLinkStore.LinkPolylineVertices(",
+    "ApplyPointNames(",
+    'return "P";',
+    '"{0}{1}"',
+    "ResolveScaleAwareTableHeight(",
+    'GetSystemVariable("CANNOSCALEVALUE")',
 ]
 for marker in required_markers:
     if marker not in source:
@@ -87,6 +94,16 @@ for marker in (
 ):
     if marker not in dynamic:
         errors.append(f"Dynamic coordinate implementation is missing: {marker}")
+
+for marker in (
+    "internal static int RefreshLinkedArrows(Document document)",
+    "TryReadArrowLink(",
+    "(int)DxfCode.ExtendedDataReal",
+):
+    if marker not in direction:
+        errors.append(f"Dynamic direction-arrow implementation is missing: {marker}")
+if "PolylineDirectionCommands.RefreshLinkedArrows(document)" not in presentation:
+    errors.append("Shared automatic refresh does not update polyline direction arrows")
 
 # Existing direction-arrow and legacy survey workflows remain available.
 for marker, text, description in (
