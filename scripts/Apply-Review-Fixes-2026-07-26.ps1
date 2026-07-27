@@ -21,7 +21,7 @@ function Replace-ExactText {
     $text = [System.IO.File]::ReadAllText($path).Replace("`r`n", "`n")
     $oldNormalised = $OldText.Replace("`r`n", "`n")
     $newNormalised = $NewText.Replace("`r`n", "`n")
-    if ($text.Contains($newNormalised) -and -not $text.Contains($oldNormalised)) {
+    if ($text.Contains($newNormalised)) {
         return
     }
     if (-not $text.Contains($oldNormalised)) {
