@@ -27,18 +27,28 @@ function Replace-ExactText {
 
 $presentationFile = "src\CE.Tools.Civil3D\CommentPresentationCommands.cs"
 $oldRefreshStart = @'
-            var summary = new RefreshSummary();
-            summary.CoordinateFollowers += DynamicCoordinateLinkStore.Refresh(document);
-            summary.CoordinateFollowers +=
-                PolylineDirectionCommands.RefreshLinkedArrows(document);
+            try
+            {
+                summary.CoordinateFollowers +=
+                    PolylineDirectionCommands.RefreshLinkedArrows(document);
+            }
+            catch
+            {
+                summary.Failed++;
+            }
 
             List<LinkedTableItem> tables = ReadLinkedTables(document.Database);
 '@
 $newRefreshStart = @'
-            var summary = new RefreshSummary();
-            summary.CoordinateFollowers += DynamicCoordinateLinkStore.Refresh(document);
-            summary.CoordinateFollowers +=
-                PolylineDirectionCommands.RefreshLinkedArrows(document);
+            try
+            {
+                summary.CoordinateFollowers +=
+                    PolylineDirectionCommands.RefreshLinkedArrows(document);
+            }
+            catch
+            {
+                summary.Failed++;
+            }
             summary.BoqTables += SewerExcavationCommentCommands.RefreshAll(document);
 
             List<LinkedTableItem> tables = ReadLinkedTables(document.Database);
