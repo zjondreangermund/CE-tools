@@ -119,16 +119,22 @@ Replace-ExactText `
     -Description "replace separate project prompts with one project setup popup"
 
 $parkingFile = "src\CE.Tools.Civil3D\ParkingCommands.cs"
-Replace-ExactText `
-    -RelativePath $parkingFile `
-    -OldText 'CreateSingleRow(document);' `
-    -NewText 'ClosedParkingBayWorkflow.CreateSingleRow(document);' `
-    -Description "route single parking rows to closed bay polyline generation"
-Replace-ExactText `
-    -RelativePath $parkingFile `
-    -OldText 'CreateDoubleRow(document);' `
-    -NewText 'ClosedParkingBayWorkflow.CreateDoubleRow(document);' `
-    -Description "route double parking rows to closed bay polyline generation"
+$parkingPath = Join-Path $repositoryRoot $parkingFile
+$parkingSource = [System.IO.File]::ReadAllText($parkingPath)
+if (-not $parkingSource.Contains("ClosedParkingBayWorkflow.CreateSingleRow(document);")) {
+    Replace-ExactText `
+        -RelativePath $parkingFile `
+        -OldText 'CreateSingleRow(document);' `
+        -NewText 'ClosedParkingBayWorkflow.CreateSingleRow(document);' `
+        -Description "route single parking rows to parking bay blocks"
+}
+if (-not $parkingSource.Contains("ClosedParkingBayWorkflow.CreateDoubleRow(document);")) {
+    Replace-ExactText `
+        -RelativePath $parkingFile `
+        -OldText 'CreateDoubleRow(document);' `
+        -NewText 'ClosedParkingBayWorkflow.CreateDoubleRow(document);' `
+        -Description "route double parking rows to parking bay blocks"
+}
 
 $alignmentFile = "src\CE.Tools.Civil3D\AlignmentCommands.cs"
 Replace-ExactText `
