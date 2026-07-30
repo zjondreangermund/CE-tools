@@ -10,13 +10,16 @@ function Replace-ExactText {
         [Parameter(Mandatory = $true)][string]$RelativePath,
         [Parameter(Mandatory = $true)][string]$OldText,
         [Parameter(Mandatory = $true)][string]$NewText,
-        [Parameter(Mandatory = $true)][string]$Description
+        [Parameter(Mandatory = $true)][string]$Description,
+        [string]$AlreadyPresentText = ""
     )
     $path = Join-Path $repositoryRoot $RelativePath
     if (-not (Test-Path $path)) { throw "Road-section source was not found: $RelativePath" }
     $text = [System.IO.File]::ReadAllText($path).Replace("`r`n", "`n")
     $oldNormalised = $OldText.Replace("`r`n", "`n")
     $newNormalised = $NewText.Replace("`r`n", "`n")
+    $alreadyPresentNormalised = $AlreadyPresentText.Replace("`r`n", "`n")
+    if ($alreadyPresentNormalised -and $text.Contains($alreadyPresentNormalised)) { return }
     if ($text.Contains($newNormalised) -and -not $text.Contains($oldNormalised)) { return }
     if (-not $text.Contains($oldNormalised)) {
         throw "Could not apply road-section change '$Description' in '$RelativePath'."
@@ -59,6 +62,7 @@ Replace-ExactText `
 
             List<LinkedTableItem> tables = ReadLinkedTables(document.Database);
 '@ `
-    -Description "include linked road cross-section schedules in CE_REFRESHALL"
+    -Description "include linked road cross-section schedules in CE_REFRESHALL" `
+    -AlreadyPresentText "summary.CoordinateTables += RoadCrossSectionScheduleCommands.RefreshAll(document);"
 
 Write-Host "Road cross-section setting-out schedules are wired." -ForegroundColor Green
