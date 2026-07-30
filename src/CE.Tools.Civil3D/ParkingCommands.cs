@@ -57,7 +57,7 @@ namespace CETools.Civil3D
 
             if (string.Equals(mode, DoubleRowKeyword, StringComparison.OrdinalIgnoreCase))
             {
-                CreateDoubleRow(document);
+                ClosedParkingBayWorkflow.CreateDoubleRow(document);
             }
             else if (string.Equals(mode, CountKeyword, StringComparison.OrdinalIgnoreCase))
             {
@@ -69,7 +69,7 @@ namespace CETools.Civil3D
             }
             else
             {
-                CreateSingleRow(document);
+                ClosedParkingBayWorkflow.CreateSingleRow(document);
             }
         }
 
@@ -79,7 +79,7 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document != null)
             {
-                CreateSingleRow(document);
+                ClosedParkingBayWorkflow.CreateSingleRow(document);
             }
         }
 
@@ -89,7 +89,7 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document != null)
             {
-                CreateDoubleRow(document);
+                ClosedParkingBayWorkflow.CreateDoubleRow(document);
             }
         }
 

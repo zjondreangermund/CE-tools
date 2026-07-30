@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -55,6 +56,12 @@ namespace CETools.Civil3D
 
             AnnotationOptions settings;
             if (!AnnotationSettingsStore.Prepare(document, true, out settings)) return;
+            // Alignment station/offset annotations always need a visible,
+            // scale-aware reference marker.
+            settings = new AnnotationOptions(
+                settings.TextHeight,
+                true,
+                settings.Output);
 
             Editor editor = document.Editor;
             PromptEntityResult entityResult = PromptForEntity<CivilAlignment>(
@@ -63,12 +70,77 @@ namespace CETools.Civil3D
                 "\nSelect a Civil 3D alignment.");
             if (entityResult.Status != PromptStatus.OK) return;
 
+            var prefixOptions = new PromptStringOptions(
+                "\nEnter alignment point-name prefix <P>: ")
+            {
+                AllowSpaces = false
+            };
+            PromptResult prefixResult = editor.GetString(prefixOptions);
+            if (prefixResult.Status == PromptStatus.Cancel) return;
+            string prefix = prefixResult.Status == PromptStatus.None ||
+                string.IsNullOrWhiteSpace(prefixResult.StringResult)
+                ? "P"
+                : prefixResult.StringResult.Trim();
+            var numberOptions = new PromptIntegerOptions(
+                "\nEnter alignment point start number <1>: ")
+            {
+                AllowNegative = false,
+                AllowZero = false,
+                AllowNone = true,
+                DefaultValue = 1
+            };
+            PromptIntegerResult numberResult = editor.GetInteger(numberOptions);
+            if (numberResult.Status == PromptStatus.Cancel) return;
+            int pointNumber = numberResult.Status == PromptStatus.OK
+                ? numberResult.Value
+                : 1;
+            string pointName = prefix +
+                pointNumber.ToString(CultureInfo.InvariantCulture);
+
+            CivilObjectChoice surfaceChoice = null;
+            if (Confirm(editor, "Use a Civil 3D surface for the point Z value"))
+            {
+                surfaceChoice = FeatureProfileSurfaceCommentCommands.PickObject(
+                    "CE Tools - Alignment Point Surface",
+                    "Select the surface used to keep the alignment point elevation dynamic.",
+                    FeatureProfileSurfaceCommentCommands.ReadSurfaces(document));
+                if (surfaceChoice == null) return;
+            }
+
             PromptPointResult targetResult = editor.GetPoint(
                 "\nPick point for station/offset annotation: ");
             if (targetResult.Status != PromptStatus.OK) return;
 
             Point3d pickedPoint = ToWorld(editor, targetResult.Value);
-            Point3d target = new Point3d(pickedPoint.X, pickedPoint.Y, 0.0);
+            double targetElevation = pickedPoint.Z;
+            if (surfaceChoice != null)
+            {
+                try
+                {
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
+                    {
+                        CivilSurface surface = Open<CivilSurface>(
+                            transaction,
+                            surfaceChoice.ObjectId);
+                        if (surface == null) return;
+                        targetElevation = surface.FindElevationAtXY(
+                            pickedPoint.X,
+                            pickedPoint.Y);
+                    }
+                }
+                catch (System.Exception exception)
+                {
+                    editor.WriteMessage(
+                        "\nCE_ALLABELX cancelled. Surface elevation could not be read. {0}",
+                        exception.Message);
+                    return;
+                }
+            }
+            Point3d target = new Point3d(
+                pickedPoint.X,
+                pickedPoint.Y,
+                targetElevation);
             string contents;
             string plainDescription;
 
@@ -92,17 +164,25 @@ namespace CETools.Civil3D
                     string stationText = FormatStation(alignment, station);
                     contents = string.Join(
                         "\\P",
+                        "Point Name: " + pointName,
                         alignment.Name,
                         "STA: " + stationText,
                         "OFF: " + Math.Abs(offset).ToString("N3", CultureInfo.CurrentCulture) +
-                            " " + side);
+                            " " + side,
+                        "X: " + target.X.ToString("N3", CultureInfo.CurrentCulture),
+                        "Y: " + target.Y.ToString("N3", CultureInfo.CurrentCulture),
+                        "Z: " + target.Z.ToString("N3", CultureInfo.CurrentCulture));
                     plainDescription = string.Format(
                         CultureInfo.CurrentCulture,
-                        "{0}; STA {1}; OFF {2:N3} {3}",
+                        "{0}; {1}; STA {2}; OFF {3:N3} {4}; X {5:N3}; Y {6:N3}; Z {7:N3}",
+                        pointName,
                         alignment.Name,
                         stationText,
                         Math.Abs(offset),
-                        side);
+                        side,
+                        target.X,
+                        target.Y,
+                        target.Z);
                 }
             }
             catch (Autodesk.Civil.PointNotOnEntityException)
@@ -123,17 +203,86 @@ namespace CETools.Civil3D
                 return;
             }
 
-            if (AnnotationWriter.Create(
-                document,
-                target,
-                labelPoint,
-                contents,
-                plainDescription,
-                settings,
-                true))
+            var generatedIds = new List<ObjectId>();
+            ObjectId sourcePointId;
+            if (settings.Output == AnnotationOutput.Cogo)
             {
-                editor.WriteMessage("\nCE_ALLABELX complete. Annotation created using {0}.", settings.Output);
+                if (!AnnotationWriter.Create(
+                    document,
+                    target,
+                    labelPoint,
+                    contents,
+                    plainDescription,
+                    settings,
+                    true,
+                    generatedIds) ||
+                    generatedIds.Count == 0)
+                {
+                    return;
+                }
+                sourcePointId = generatedIds[0];
             }
+            else
+            {
+                sourcePointId =
+                    FeatureProfileSurfaceCommentCommands.CreateCoordinateAnchor(
+                        document.Database,
+                        target);
+                if (sourcePointId.IsNull) return;
+                if (!AnnotationWriter.Create(
+                    document,
+                    target,
+                    labelPoint,
+                    contents,
+                    plainDescription,
+                    settings,
+                    false,
+                    generatedIds))
+                {
+                    return;
+                }
+            }
+
+            DynamicCoordinateLinkStore.SetPointName(
+                document.Database,
+                sourcePointId,
+                pointName);
+            if (surfaceChoice != null)
+            {
+                DynamicCoordinateLinkStore.LinkSurfaceElevation(
+                    document.Database,
+                    surfaceChoice.ObjectId,
+                    new[] { sourcePointId });
+            }
+            AlignmentAnnotationLinkStore.Link(
+                document.Database,
+                entityResult.ObjectId,
+                sourcePointId,
+                pointName,
+                target,
+                generatedIds);
+
+            if (Confirm(editor, "Place a linked dynamic alignment point table"))
+            {
+                PromptPointResult insertion = editor.GetPoint(
+                    "\nPick the linked alignment table insertion point: ");
+                if (insertion.Status == PromptStatus.OK)
+                {
+                    AlignmentAnnotationLinkStore.CreateLinkedTable(
+                        document.Database,
+                        ToWorld(editor, insertion.Value),
+                        entityResult.ObjectId,
+                        sourcePointId,
+                        pointName,
+                        target,
+                        settings.TextHeight);
+                }
+            }
+            CommentAutoRefreshManager.MarkPending();
+            editor.WriteMessage(
+                "\nCE_ALLABELX complete. Dynamic point {0} created using {1}.",
+                pointName,
+                settings.Output);
         }
 
         [CommandMethod("CE_TOOLS", "CE_PRLABELX", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -152,14 +301,10 @@ namespace CETools.Civil3D
                 "\nSelect a Civil 3D profile.");
             if (profileResult.Status != PromptStatus.OK) return;
 
-            PromptDoubleResult stationResult = editor.GetDouble(
-                new PromptDoubleOptions("\nEnter raw profile station: ")
-                {
-                    AllowNegative = true,
-                    AllowZero = true,
-                    AllowNone = false
-                });
-            if (stationResult.Status != PromptStatus.OK) return;
+            var stationWindow = new ProfileStationInputWindow();
+            AcApplication.ShowModalWindow(stationWindow);
+            if (!stationWindow.Accepted) return;
+            double selectedStation = stationWindow.Station;
 
             Point3d target;
             string contents;
@@ -176,7 +321,7 @@ namespace CETools.Civil3D
                         return;
                     }
 
-                    ValidateProfileStation(profile, stationResult.Value);
+                    ValidateProfileStation(profile, selectedStation);
                     CivilAlignment alignment = Open<CivilAlignment>(transaction, profile.AlignmentId);
                     if (alignment == null)
                     {
@@ -188,13 +333,13 @@ namespace CETools.Civil3D
                     double easting = 0.0;
                     double northing = 0.0;
                     alignment.PointLocation(
-                        stationResult.Value,
+                        selectedStation,
                         0.0,
                         ref easting,
                         ref northing);
-                    double elevation = profile.ElevationAt(stationResult.Value);
-                    double grade = profile.GradeAt(stationResult.Value) * 100.0;
-                    string stationText = FormatStation(alignment, stationResult.Value);
+                    double elevation = profile.ElevationAt(selectedStation);
+                    double grade = profile.GradeAt(selectedStation) * 100.0;
+                    string stationText = FormatStation(alignment, selectedStation);
                     target = new Point3d(easting, northing, elevation);
                     contents = string.Join(
                         "\\P",
@@ -224,16 +369,76 @@ namespace CETools.Civil3D
                 return;
             }
 
+            // Preserve native COGO creation. The draggable linked-point workflow
+            // applies to MText/MLeader, whose anchor can be moved freely and
+            // refreshed against the profile station.
+            if (settings.Output == AnnotationOutput.Cogo)
+            {
+                if (AnnotationWriter.Create(
+                    document,
+                    target,
+                    labelPoint,
+                    contents,
+                    plainDescription,
+                    settings,
+                    true))
+                {
+                    editor.WriteMessage(
+                        "\nCE_PRLABELX complete. COGO annotation created.");
+                }
+                return;
+            }
+
+            ObjectId sourcePointId;
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord currentSpace = (BlockTableRecord)transaction.GetObject(
+                    document.Database.CurrentSpaceId,
+                    OpenMode.ForWrite,
+                    false);
+                var sourcePoint = new DBPoint(target);
+                sourcePoint.SetDatabaseDefaults();
+                sourcePointId = currentSpace.AppendEntity(sourcePoint);
+                transaction.AddNewlyCreatedDBObject(sourcePoint, true);
+                transaction.Commit();
+            }
+
+            var createdIds = new List<ObjectId>();
+            AnnotationOptions linkedSettings = new AnnotationOptions(
+                settings.TextHeight,
+                false,
+                settings.Output);
             if (AnnotationWriter.Create(
                 document,
                 target,
                 labelPoint,
                 contents,
                 plainDescription,
-                settings,
-                true))
+                linkedSettings,
+                false,
+                createdIds))
             {
+                ProfileAnnotationLinkStore.Link(
+                    document.Database,
+                    profileResult.ObjectId,
+                    sourcePointId,
+                    target,
+                    createdIds);
                 editor.WriteMessage("\nCE_PRLABELX complete. Annotation created using {0}.", settings.Output);
+            }
+            else
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    DBObject source = transaction.GetObject(
+                        sourcePointId,
+                        OpenMode.ForWrite,
+                        false);
+                    source.Erase();
+                    transaction.Commit();
+                }
             }
         }
 
@@ -499,7 +704,8 @@ namespace CETools.Civil3D
             if (document == null) return;
 
             AnnotationOptions settings;
-            if (!AnnotationSettingsStore.Prepare(document, false, out settings)) return;
+            if (!AnnotationSettingsStore.Prepare(document, true, out settings)) return;
+            settings = new AnnotationOptions(settings.TextHeight, true, settings.Output);
 
             Editor editor = document.Editor;
             PromptEntityResult corridorResult = PromptForEntity<CivilCorridor>(
@@ -508,11 +714,69 @@ namespace CETools.Civil3D
                 "\nSelect a Civil 3D corridor.");
             if (corridorResult.Status != PromptStatus.OK) return;
 
+            PromptResult prefixResult = editor.GetString(
+                new PromptStringOptions("\nEnter corridor point-name prefix <P>: ")
+                {
+                    AllowSpaces = false
+                });
+            if (prefixResult.Status == PromptStatus.Cancel) return;
+            string prefix = prefixResult.Status == PromptStatus.None ||
+                string.IsNullOrWhiteSpace(prefixResult.StringResult)
+                ? "P"
+                : prefixResult.StringResult.Trim();
+            PromptIntegerResult numberResult = editor.GetInteger(
+                new PromptIntegerOptions("\nEnter corridor point start number <1>: ")
+                {
+                    AllowNegative = false,
+                    AllowZero = false,
+                    AllowNone = true,
+                    DefaultValue = 1
+                });
+            if (numberResult.Status == PromptStatus.Cancel) return;
+            string pointName = prefix +
+                (numberResult.Status == PromptStatus.OK
+                    ? numberResult.Value
+                    : 1).ToString(CultureInfo.InvariantCulture);
+
+            CivilObjectChoice surfaceChoice = null;
+            if (Confirm(editor, "Use a Civil 3D surface for the corridor point Z value"))
+            {
+                surfaceChoice = FeatureProfileSurfaceCommentCommands.PickObject(
+                    "CE Tools - Corridor Point Surface",
+                    "Select the surface used to keep the corridor point elevation dynamic.",
+                    FeatureProfileSurfaceCommentCommands.ReadSurfaces(document));
+                if (surfaceChoice == null) return;
+            }
+
             PromptPointResult targetResult = editor.GetPoint(
                 "\nPick corridor annotation reference point: ");
             if (targetResult.Status != PromptStatus.OK) return;
 
-            Point3d target = ToWorld(editor, targetResult.Value);
+            Point3d picked = ToWorld(editor, targetResult.Value);
+            double elevation = picked.Z;
+            if (surfaceChoice != null)
+            {
+                try
+                {
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
+                    {
+                        CivilSurface surface = Open<CivilSurface>(
+                            transaction,
+                            surfaceChoice.ObjectId);
+                        if (surface == null) return;
+                        elevation = surface.FindElevationAtXY(picked.X, picked.Y);
+                    }
+                }
+                catch (System.Exception exception)
+                {
+                    editor.WriteMessage(
+                        "\nCE_CORLABELX cancelled. Surface elevation could not be read. {0}",
+                        exception.Message);
+                    return;
+                }
+            }
+            Point3d target = new Point3d(picked.X, picked.Y, elevation);
             string contents;
 
             try
@@ -534,10 +798,14 @@ namespace CETools.Civil3D
 
                     contents = string.Join(
                         "\\P",
-                        corridor.Name,
+                        "Point Name: " + pointName,
+                        "Corridor: " + corridor.Name,
                         "BASELINES: " + corridor.Baselines.Count.ToString(CultureInfo.InvariantCulture),
                         "REGIONS: " + regions.ToString(CultureInfo.InvariantCulture),
                         "SURFACES: " + corridor.CorridorSurfaces.Count.ToString(CultureInfo.InvariantCulture),
+                        "X: " + target.X.ToString("N3", CultureInfo.CurrentCulture),
+                        "Y: " + target.Y.ToString("N3", CultureInfo.CurrentCulture),
+                        "Z: " + target.Z.ToString("N3", CultureInfo.CurrentCulture),
                         "OUT OF DATE: " + (corridor.IsOutOfDate ? "Yes" : "No"));
                 }
             }
@@ -553,17 +821,82 @@ namespace CETools.Civil3D
                 return;
             }
 
-            if (AnnotationWriter.Create(
-                document,
-                target,
-                labelPoint,
-                contents,
-                "Corridor annotation",
-                settings,
-                false))
+            var generatedIds = new List<ObjectId>();
+            ObjectId sourcePointId;
+            if (settings.Output == AnnotationOutput.Cogo)
             {
-                editor.WriteMessage("\nCE_CORLABELX complete. Annotation created using {0}.", settings.Output);
+                if (!AnnotationWriter.Create(
+                    document,
+                    target,
+                    labelPoint,
+                    contents,
+                    contents.Replace("\\P", "; "),
+                    settings,
+                    true,
+                    generatedIds) ||
+                    generatedIds.Count == 0)
+                    return;
+                sourcePointId = generatedIds[0];
             }
+            else
+            {
+                sourcePointId =
+                    FeatureProfileSurfaceCommentCommands.CreateCoordinateAnchor(
+                        document.Database,
+                        target);
+                if (sourcePointId.IsNull ||
+                    !AnnotationWriter.Create(
+                        document,
+                        target,
+                        labelPoint,
+                        contents,
+                        contents.Replace("\\P", "; "),
+                        settings,
+                        false,
+                        generatedIds))
+                    return;
+            }
+
+            DynamicCoordinateLinkStore.SetPointName(
+                document.Database,
+                sourcePointId,
+                pointName);
+            if (surfaceChoice != null)
+            {
+                DynamicCoordinateLinkStore.LinkSurfaceElevation(
+                    document.Database,
+                    surfaceChoice.ObjectId,
+                    new[] { sourcePointId });
+            }
+            CorridorAnnotationLinkStore.Link(
+                document.Database,
+                corridorResult.ObjectId,
+                sourcePointId,
+                pointName,
+                target,
+                generatedIds);
+
+            if (Confirm(editor, "Place a linked dynamic corridor point table"))
+            {
+                PromptPointResult insertion = editor.GetPoint(
+                    "\nPick the linked corridor table insertion point: ");
+                if (insertion.Status == PromptStatus.OK)
+                {
+                    CorridorAnnotationLinkStore.CreateLinkedTable(
+                        document.Database,
+                        ToWorld(editor, insertion.Value),
+                        corridorResult.ObjectId,
+                        sourcePointId,
+                        pointName,
+                        target,
+                        settings.TextHeight);
+                }
+            }
+            CommentAutoRefreshManager.MarkPending();
+            editor.WriteMessage(
+                "\nCE_CORLABELX complete. Dynamic point {0} created using {1}.",
+                pointName,
+                settings.Output);
         }
 
         [CommandMethod(
@@ -687,6 +1020,12 @@ namespace CETools.Civil3D
                             number.ToString(CultureInfo.InvariantCulture);
                         currentSpace.AppendEntity(text);
                         transaction.AddNewlyCreatedDBObject(text, true);
+                        text.Annotative = AnnotativeStates.True;
+                        ParkingNumberLinkStore.Link(
+                            document.Database,
+                            transaction,
+                            text,
+                            entity.ObjectId);
 
                         if (settings.DrawMarker)
                         {
@@ -1000,14 +1339,16 @@ namespace CETools.Civil3D
             Editor editor = document.Editor;
 
             var heightPrompt = new PromptKeywordOptions(
-                "\nAnnotation text height [Small1.8/Standard2.0/Large5.0] <" +
+                "\nAnnotation text height [Small1.8/Standard2.0/Medium2.5/Large3.5/ExtraLarge5.0] <" +
                 HeightKeyword(existing.TextHeight) + ">: ")
             {
                 AllowNone = true
             };
             heightPrompt.Keywords.Add("Small");
             heightPrompt.Keywords.Add("Standard");
+            heightPrompt.Keywords.Add("Medium");
             heightPrompt.Keywords.Add("Large");
+            heightPrompt.Keywords.Add("ExtraLarge");
             PromptResult heightResult = editor.GetKeywords(heightPrompt);
             if (heightResult.Status == PromptStatus.Cancel)
             {
@@ -1216,6 +1557,8 @@ namespace CETools.Civil3D
         private static double NormalizeHeight(double height)
         {
             if (Math.Abs(height - 1.8) < 0.05) return 1.8;
+            if (Math.Abs(height - 2.5) < 0.05) return 2.5;
+            if (Math.Abs(height - 3.5) < 0.05) return 3.5;
             if (Math.Abs(height - 5.0) < 0.05) return 5.0;
             return 2.0;
         }
@@ -1224,14 +1567,18 @@ namespace CETools.Civil3D
         {
             double normalized = NormalizeHeight(height);
             if (Math.Abs(normalized - 1.8) < 0.01) return "Small";
-            if (Math.Abs(normalized - 5.0) < 0.01) return "Large";
+            if (Math.Abs(normalized - 2.5) < 0.01) return "Medium";
+            if (Math.Abs(normalized - 3.5) < 0.01) return "Large";
+            if (Math.Abs(normalized - 5.0) < 0.01) return "ExtraLarge";
             return "Standard";
         }
 
         private static double HeightFromKeyword(string keyword)
         {
             if (string.Equals(keyword, "Small", StringComparison.OrdinalIgnoreCase)) return 1.8;
-            if (string.Equals(keyword, "Large", StringComparison.OrdinalIgnoreCase)) return 5.0;
+            if (string.Equals(keyword, "Medium", StringComparison.OrdinalIgnoreCase)) return 2.5;
+            if (string.Equals(keyword, "Large", StringComparison.OrdinalIgnoreCase)) return 3.5;
+            if (string.Equals(keyword, "ExtraLarge", StringComparison.OrdinalIgnoreCase)) return 5.0;
             return 2.0;
         }
 
@@ -1289,13 +1636,35 @@ namespace CETools.Civil3D
             AnnotationOptions options,
             bool allowCogo)
         {
+            return Create(
+                document,
+                target,
+                labelPoint,
+                contents,
+                plainDescription,
+                options,
+                allowCogo,
+                null);
+        }
+
+        public static bool Create(
+            Document document,
+            Point3d target,
+            Point3d labelPoint,
+            string contents,
+            string plainDescription,
+            AnnotationOptions options,
+            bool allowCogo,
+            IList<ObjectId> createdIds)
+        {
             if (options.Output == AnnotationOutput.Cogo && allowCogo)
             {
                 return CreateCogoPoint(
                     document,
                     target,
                     plainDescription,
-                    options);
+                    options,
+                    createdIds);
             }
 
             try
@@ -1310,27 +1679,29 @@ namespace CETools.Civil3D
 
                     if (options.DrawMarker)
                     {
-                        AddMarker(
+                        ObjectId markerId = AddMarker(
                             currentSpace,
                             transaction,
                             target,
                             options.TextHeight,
                             ObjectId.Null);
+                        if (createdIds != null) createdIds.Add(markerId);
                     }
 
                     if (options.Output == AnnotationOutput.MText)
                     {
-                        AddMText(
+                        ObjectId textId = AddMText(
                             document.Database,
                             currentSpace,
                             transaction,
                             labelPoint,
                             contents,
                             options.TextHeight);
+                        if (createdIds != null) createdIds.Add(textId);
                     }
                     else
                     {
-                        AddMLeader(
+                        ObjectId leaderId = AddMLeader(
                             document.Database,
                             currentSpace,
                             transaction,
@@ -1338,6 +1709,7 @@ namespace CETools.Civil3D
                             labelPoint,
                             contents,
                             options.TextHeight);
+                        if (createdIds != null) createdIds.Add(leaderId);
                     }
 
                     transaction.Commit();
@@ -1354,7 +1726,7 @@ namespace CETools.Civil3D
             }
         }
 
-        public static void AddMarker(
+        public static ObjectId AddMarker(
             BlockTableRecord currentSpace,
             Transaction transaction,
             Point3d target,
@@ -1369,9 +1741,10 @@ namespace CETools.Civil3D
             if (!layerId.IsNull) marker.LayerId = layerId;
             currentSpace.AppendEntity(marker);
             transaction.AddNewlyCreatedDBObject(marker, true);
+            return marker.ObjectId;
         }
 
-        private static void AddMText(
+        private static ObjectId AddMText(
             Database database,
             BlockTableRecord currentSpace,
             Transaction transaction,
@@ -1385,11 +1758,13 @@ namespace CETools.Civil3D
             text.Attachment = AttachmentPoint.MiddleLeft;
             text.TextHeight = textHeight;
             text.Contents = contents ?? string.Empty;
+            SetAnnotative(text);
             currentSpace.AppendEntity(text);
             transaction.AddNewlyCreatedDBObject(text, true);
+            return text.ObjectId;
         }
 
-        private static void AddMLeader(
+        private static ObjectId AddMLeader(
             Database database,
             BlockTableRecord currentSpace,
             Transaction transaction,
@@ -1408,19 +1783,39 @@ namespace CETools.Civil3D
             leader.SetDatabaseDefaults(database);
             leader.ContentType = ContentType.MTextContent;
             leader.MText = text;
+            SetAnnotative(leader);
             int leaderIndex = leader.AddLeader();
             int leaderLineIndex = leader.AddLeaderLine(leaderIndex);
             leader.AddFirstVertex(leaderLineIndex, target);
             leader.AddLastVertex(leaderLineIndex, labelPoint);
             currentSpace.AppendEntity(leader);
             transaction.AddNewlyCreatedDBObject(leader, true);
+            return leader.ObjectId;
+        }
+
+        private static void SetAnnotative(object value)
+        {
+            if (value == null) return;
+            try
+            {
+                PropertyInfo property = value.GetType().GetProperty(
+                    "Annotative",
+                    BindingFlags.Instance | BindingFlags.Public);
+                if (property != null && property.CanWrite)
+                    property.SetValue(value, AnnotativeStates.True, null);
+            }
+            catch
+            {
+                // Older object implementations may not expose annotative state.
+            }
         }
 
         private static bool CreateCogoPoint(
             Document document,
             Point3d target,
             string description,
-            AnnotationOptions options)
+            AnnotationOptions options,
+            IList<ObjectId> outputIds)
         {
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (civilDocument == null)
@@ -1460,15 +1855,18 @@ namespace CETools.Civil3D
                             document.Database.CurrentSpaceId,
                             OpenMode.ForWrite,
                             false);
-                        AddMarker(
+                        ObjectId markerId = AddMarker(
                             currentSpace,
                             transaction,
                             target,
                             options.TextHeight,
                             ObjectId.Null);
+                        if (outputIds != null) outputIds.Add(markerId);
                         transaction.Commit();
                     }
                 }
+
+                if (outputIds != null) outputIds.Insert(0, createdIds[0]);
 
                 document.Editor.WriteMessage(
                     "\nCOGO point created. Its visible label follows the drawing's current point label style.");

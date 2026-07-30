@@ -31,6 +31,14 @@ namespace CETools.Civil3D
         private const string AlignmentLayerName = "CE-SEWER-ALIGNMENT";
         private const double GeometryTolerance = 1e-8;
         private const int CurvedPipeSegments = 12;
+        private const double DefaultBranchLabelPaperHeight = 3.5;
+        private const double BranchLabelRepeatSpacing = 50.0;
+        // Keep branch names clear of the pipe/alignment labels. The earlier
+        // 1.35-paper-height offset still allowed the backgrounds to cover the
+        // alignment at common 1:500/1:1000 annotation scales.
+        private const double BranchLabelOffsetFactor = 2.75;
+        private const int MaximumLabelsPerBranch = 200;
+        private static bool _automaticRequestPending;
 
         private static readonly Regex PipeNamePattern = new Regex(
             @"^P(?<branch>\d+)\.(?<sequence>\d+)$",
@@ -39,6 +47,36 @@ namespace CETools.Civil3D
         private static readonly Regex BranchNamePattern = new Regex(
             @"^Branch\s*-\s*(?<branch>\d+)$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
+        internal static void RequestAutomaticRun(
+            Document document,
+            IEnumerable<ObjectId> sourceIds)
+        {
+            if (document == null || sourceIds == null)
+            {
+                return;
+            }
+
+            ObjectId[] ids = sourceIds
+                .Where(id => !id.IsNull && !id.IsErased)
+                .Distinct()
+                .ToArray();
+            if (ids.Length == 0)
+            {
+                return;
+            }
+
+            _automaticRequestPending = true;
+            document.Editor.SetImpliedSelection(ids);
+            document.SendStringToExecute("CE_SEWALIGN ", true, false, true);
+        }
+
+        private static bool ConsumeAutomaticRequest()
+        {
+            bool pending = _automaticRequestPending;
+            _automaticRequestPending = false;
+            return pending;
+        }
 
         [CommandMethod(
             "CE_TOOLS",
@@ -52,6 +90,7 @@ namespace CETools.Civil3D
                 return;
             }
 
+            bool automaticRequest = ConsumeAutomaticRequest();
             Editor editor = document.Editor;
             Database database = document.Database;
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
@@ -140,7 +179,7 @@ namespace CETools.Civil3D
                 foreach (BranchAlignmentPlan branch in plan.Branches)
                 {
                     editor.WriteMessage(
-                        "\n    {0}: pipes={1}; structures={2}; sampled vertices={3}; alignment direction=high cover to low cover",
+                        "\n    {0}: pipes={1}; structures={2}; sampled vertices={3}; alignment direction=first manhole to connection point",
                         branch.BranchName,
                         branch.PipeIds.Count,
                         branch.StructureIds.Count,
@@ -148,7 +187,23 @@ namespace CETools.Civil3D
                 }
             }
 
-            if (!Confirm(
+            double branchLabelPaperHeight;
+            if (!PromptBranchLabelHeight(
+                    editor,
+                    DefaultBranchLabelPaperHeight,
+                    out branchLabelPaperHeight))
+            {
+                return;
+            }
+
+            bool placeLabelsAbove;
+            if (!PromptBranchLabelSide(editor, out placeLabelsAbove))
+            {
+                return;
+            }
+
+            if (!automaticRequest &&
+                !Confirm(
                     editor,
                     "Create or refresh the sewer branch alignments and plan labels"))
             {
@@ -165,6 +220,8 @@ namespace CETools.Civil3D
                     database,
                     civilDocument,
                     plans,
+                    branchLabelPaperHeight,
+                    placeLabelsAbove,
                     out alignmentsCreated,
                     out labelsCreated);
 
@@ -533,6 +590,8 @@ namespace CETools.Civil3D
             Database database,
             CivilDocument civilDocument,
             IReadOnlyList<NetworkAlignmentPlan> plans,
+            double branchLabelPaperHeight,
+            bool placeLabelsAbove,
             out int alignmentsCreated,
             out int labelsCreated)
         {
@@ -623,20 +682,34 @@ namespace CETools.Civil3D
                         alignment.XData = BuildTag(branchKey, "Alignment");
                         alignmentsCreated++;
 
-                        Point3d labelPoint = GetMidpoint(branch.PlanPoints);
-                        var label = new MText();
-                        label.SetDatabaseDefaults(database);
-                        label.LayerId = layerId;
-                        label.Location = labelPoint;
-                        label.Attachment = AttachmentPoint.MiddleCenter;
-                        label.TextHeight = GetTextHeight(database);
-                        label.Contents = branch.BranchName;
-                        label.BackgroundFill = true;
-                        label.UseBackgroundColor = true;
-                        label.XData = BuildTag(branchKey, "Label");
-                        modelSpace.AppendEntity(label);
-                        transaction.AddNewlyCreatedDBObject(label, true);
-                        labelsCreated++;
+                        foreach (BranchLabelPlacement placement in
+                            BuildLabelPlacements(branch.PlanPoints))
+                        {
+                            var label = new MText();
+                            label.SetDatabaseDefaults(database);
+                            label.LayerId = layerId;
+                            double offsetDistance = ResolveScaleAwarePaperDistance(
+                                database,
+                                branchLabelPaperHeight * BranchLabelOffsetFactor);
+                            double side = placeLabelsAbove ? 1.0 : -1.0;
+                            Vector3d labelNormal = new Vector3d(
+                                -Math.Sin(placement.Rotation),
+                                Math.Cos(placement.Rotation),
+                                0.0);
+                            label.Location = placement.Point +
+                                (labelNormal * offsetDistance * side);
+                            label.Attachment = AttachmentPoint.MiddleCenter;
+                            label.Annotative = AnnotativeStates.True;
+                            label.TextHeight = branchLabelPaperHeight;
+                            label.Rotation = placement.Rotation;
+                            label.Contents = branch.BranchName;
+                            label.BackgroundFill = true;
+                            label.UseBackgroundColor = true;
+                            label.XData = BuildTag(branchKey, "Label");
+                            modelSpace.AppendEntity(label);
+                            transaction.AddNewlyCreatedDBObject(label, true);
+                            labelsCreated++;
+                        }
                     }
                 }
 
@@ -875,42 +948,85 @@ namespace CETools.Civil3D
             transaction.AddNewlyCreatedDBObject(record, true);
         }
 
-        private static Point3d GetMidpoint(IReadOnlyList<Point3d> points)
+        private static IReadOnlyList<BranchLabelPlacement> BuildLabelPlacements(
+            IReadOnlyList<Point3d> points)
         {
+            var result = new List<BranchLabelPlacement>();
+            if (points == null || points.Count < 2)
+            {
+                return result;
+            }
+
             double totalLength = 0.0;
             for (int index = 1; index < points.Count; index++)
             {
                 totalLength += points[index - 1].DistanceTo(points[index]);
             }
+            if (totalLength <= GeometryTolerance)
+            {
+                return result;
+            }
 
-            double target = totalLength * 0.5;
+            int labelCount = Math.Max(
+                1,
+                Math.Min(
+                    MaximumLabelsPerBranch,
+                    (int)Math.Ceiling(totalLength / BranchLabelRepeatSpacing)));
+            double interval = totalLength / labelCount;
+            for (int labelIndex = 0; labelIndex < labelCount; labelIndex++)
+            {
+                double target = Math.Min(
+                    totalLength,
+                    (labelIndex + 0.5) * interval);
+                result.Add(PlacementAtDistance(points, target));
+            }
+
+            return result;
+        }
+
+        private static BranchLabelPlacement PlacementAtDistance(
+            IReadOnlyList<Point3d> points,
+            double target)
+        {
             double travelled = 0.0;
             for (int index = 1; index < points.Count; index++)
             {
                 Point3d start = points[index - 1];
                 Point3d end = points[index];
-                double segmentLength = start.DistanceTo(end);
-                if (travelled + segmentLength >= target &&
-                    segmentLength > GeometryTolerance)
+                Vector3d direction = end - start;
+                double segmentLength = direction.Length;
+                if (segmentLength <= GeometryTolerance)
                 {
-                    double fraction = (target - travelled) / segmentLength;
-                    return start + ((end - start) * fraction);
+                    continue;
                 }
 
+                if (travelled + segmentLength >= target)
+                {
+                    double fraction = Math.Max(
+                        0.0,
+                        Math.Min(1.0, (target - travelled) / segmentLength));
+                    double rotation = Math.Atan2(direction.Y, direction.X);
+                    if (rotation > Math.PI * 0.5)
+                    {
+                        rotation -= Math.PI;
+                    }
+                    else if (rotation < -Math.PI * 0.5)
+                    {
+                        rotation += Math.PI;
+                    }
+
+                    return new BranchLabelPlacement(
+                        start + (direction * fraction),
+                        rotation);
+                }
                 travelled += segmentLength;
             }
 
-            return points[points.Count / 2];
-        }
-
-        private static double GetTextHeight(Database database)
-        {
-            double value = database.Textsize;
-            return value > 0.0 &&
-                   !double.IsNaN(value) &&
-                   !double.IsInfinity(value)
-                ? value
-                : 2.5;
+            Point3d last = points[points.Count - 1];
+            Vector3d fallback = last - points[points.Count - 2];
+            return new BranchLabelPlacement(
+                last,
+                Math.Atan2(fallback.Y, fallback.X));
         }
 
         private static bool Confirm(Editor editor, string message)
@@ -929,6 +1045,122 @@ namespace CETools.Civil3D
                        result.StringResult,
                        "Yes",
                        StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool PromptBranchLabelHeight(
+            Editor editor,
+            double defaultHeight,
+            out double height)
+        {
+            height = defaultHeight;
+            while (true)
+            {
+                var options = new PromptDoubleOptions(
+                    "\nBranch-name paper text height [2.5/3.5/5] <" +
+                    defaultHeight.ToString("0.0", CultureInfo.InvariantCulture) +
+                    ">: ")
+                {
+                    AllowNone = true,
+                    AllowNegative = false,
+                    AllowZero = false,
+                    UseDefaultValue = true,
+                    DefaultValue = defaultHeight
+                };
+                PromptDoubleResult result = editor.GetDouble(options);
+                if (result.Status == PromptStatus.Cancel)
+                {
+                    return false;
+                }
+                if (result.Status != PromptStatus.OK)
+                {
+                    return false;
+                }
+                if (Math.Abs(result.Value - 2.5) <= GeometryTolerance ||
+                    Math.Abs(result.Value - 3.5) <= GeometryTolerance ||
+                    Math.Abs(result.Value - 5.0) <= GeometryTolerance)
+                {
+                    height = result.Value;
+                    return true;
+                }
+
+                editor.WriteMessage(
+                    "\nEnter 2.5, 3.5 or 5 for the branch-name paper height.");
+            }
+        }
+
+        private static bool PromptBranchLabelSide(
+            Editor editor,
+            out bool above)
+        {
+            above = true;
+            var options = new PromptKeywordOptions(
+                "\nPlace branch names on which side of the alignment? [Above/Below] <Above>: ")
+            {
+                AllowNone = true
+            };
+            options.Keywords.Add("Above");
+            options.Keywords.Add("Below");
+            PromptResult result = editor.GetKeywords(options);
+            if (result.Status == PromptStatus.None)
+            {
+                return true;
+            }
+            if (result.Status != PromptStatus.OK)
+            {
+                return false;
+            }
+
+            above = !string.Equals(
+                result.StringResult,
+                "Below",
+                StringComparison.OrdinalIgnoreCase);
+            return true;
+        }
+
+        private static double ResolveScaleAwarePaperDistance(
+            Database database,
+            double paperMillimetres)
+        {
+            double annotationScale = 1.0;
+            try
+            {
+                annotationScale = Convert.ToDouble(
+                    AcApplication.GetSystemVariable("CANNOSCALEVALUE"),
+                    CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                annotationScale = Math.Max(database.Dimscale, 1.0);
+            }
+            if (!(annotationScale > 0.0))
+            {
+                annotationScale = 1.0;
+            }
+
+            string units = database.Insunits.ToString();
+            double millimetresToDrawingUnits =
+                string.Equals(units, "Millimeters", StringComparison.OrdinalIgnoreCase) ? 1.0 :
+                string.Equals(units, "Centimeters", StringComparison.OrdinalIgnoreCase) ? 0.1 :
+                string.Equals(units, "Meters", StringComparison.OrdinalIgnoreCase) ? 0.001 :
+                string.Equals(units, "Inches", StringComparison.OrdinalIgnoreCase) ? 0.0393700787 :
+                string.Equals(units, "Feet", StringComparison.OrdinalIgnoreCase) ? 0.0032808399 :
+                0.001;
+
+            return Math.Max(
+                paperMillimetres * annotationScale * millimetresToDrawingUnits,
+                GeometryTolerance);
+        }
+
+        private sealed class BranchLabelPlacement
+        {
+            public BranchLabelPlacement(Point3d point, double rotation)
+            {
+                Point = point;
+                Rotation = rotation;
+            }
+
+            public Point3d Point { get; }
+            public double Rotation { get; }
         }
 
         private sealed class NetworkAlignmentPlan

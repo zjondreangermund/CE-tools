@@ -386,6 +386,114 @@ namespace CETools.Civil3D
             }
         }
 
+        internal static int RefreshAll(Document document)
+        {
+            if (document == null) return 0;
+            int rebuilt = 0;
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord modelSpace = GetModelSpace(
+                    document.Database,
+                    transaction,
+                    OpenMode.ForWrite);
+                var linkedChildren = new List<ChildRecord>();
+                foreach (ObjectId objectId in modelSpace)
+                {
+                    CivilFeatureLine child = transaction.GetObject(
+                        objectId,
+                        OpenMode.ForRead,
+                        false) as CivilFeatureLine;
+                    if (child == null) continue;
+                    Relation relation;
+                    if (TryReadRelation(child, transaction, out relation))
+                        linkedChildren.Add(
+                            new ChildRecord(objectId, child.Name, relation));
+                }
+
+                foreach (IGrouping<string, ChildRecord> group in linkedChildren
+                    .GroupBy(
+                        item => item.Relation.SourceHandle,
+                        StringComparer.OrdinalIgnoreCase))
+                {
+                    ObjectId sourceId;
+                    try
+                    {
+                        sourceId = ResolveHandle(document.Database, group.Key);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    CivilFeatureLine source = OpenFeatureLine(
+                        transaction,
+                        sourceId,
+                        OpenMode.ForRead);
+                    if (source == null || source.IsReferenceObject ||
+                        IsLayerLocked(transaction, source.LayerId))
+                    {
+                        continue;
+                    }
+
+                    using (Polyline plan = BuildPlanPolyline(source))
+                    {
+                        modelSpace.AppendEntity(plan);
+                        transaction.AddNewlyCreatedDBObject(plan, true);
+                        foreach (ChildRecord record in group
+                            .OrderBy(item => item.Relation.Sequence))
+                        {
+                            CivilFeatureLine oldChild = OpenFeatureLine(
+                                transaction,
+                                record.ObjectId,
+                                OpenMode.ForWrite);
+                            if (oldChild == null || oldChild.IsReferenceObject ||
+                                IsLayerLocked(transaction, oldChild.LayerId))
+                            {
+                                continue;
+                            }
+
+                            string name = oldChild.Name;
+                            ObjectId layerId = oldChild.LayerId;
+                            string styleName = oldChild.StyleName;
+                            ObjectId siteId = oldChild.SiteId;
+                            oldChild.Name = "CE_TMP_FLREL_" +
+                                Guid.NewGuid().ToString("N");
+                            oldChild.Erase();
+
+                            ObjectId childId = CreateChild(
+                                source,
+                                plan,
+                                record.Relation.HorizontalOffset,
+                                record.Relation.VerticalOffset,
+                                name,
+                                layerId,
+                                styleName,
+                                siteId,
+                                modelSpace,
+                                transaction);
+                            CivilFeatureLine newChild = OpenFeatureLine(
+                                transaction,
+                                childId,
+                                OpenMode.ForWrite);
+                            WriteRelation(
+                                newChild,
+                                source.Handle.ToString(),
+                                record.Relation.HorizontalOffset,
+                                record.Relation.VerticalOffset,
+                                record.Relation.Sequence,
+                                transaction);
+                            rebuilt++;
+                        }
+                        if (!plan.IsErased) plan.Erase();
+                    }
+                }
+
+                transaction.Commit();
+            }
+            return rebuilt;
+        }
+
         private static void Info(Document document)
         {
             PromptEntityResult result = PromptFeatureLine(

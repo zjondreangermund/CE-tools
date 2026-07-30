@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <AssemblyName>CE.Tools.Flood.Tests</AssemblyName>
+    <RootNamespace>CETools.Flood.Tests</RootNamespace>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\CE.Tools.Core\CE.Tools.Core.csproj" />
+  </ItemGroup>
+</Project>

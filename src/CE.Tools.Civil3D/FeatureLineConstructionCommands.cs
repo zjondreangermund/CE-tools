@@ -130,9 +130,16 @@ namespace CETools.Civil3D
         private static void CreateFromObjects(Document document)
         {
             Editor editor = document.Editor;
+            var appearance = new FeatureLineAppearanceWindow(
+                FeatureProfileSurfaceCommentCommands.ReadSites(document));
+            AcApplication.ShowModalWindow(appearance);
+            if (!appearance.Accepted) return;
+
             PromptSelectionResult selection = GetSelection(
                 editor,
-                "\nSelect lines, arcs or polylines to convert to siteless feature lines: ");
+                appearance.SelectedSiteId.IsNull
+                    ? "\nSelect lines, arcs or polylines to convert to siteless feature lines: "
+                    : "\nSelect lines, arcs or polylines to convert to feature lines in the chosen site: ");
             if (selection.Status != PromptStatus.OK)
             {
                 return;
@@ -168,7 +175,19 @@ namespace CETools.Civil3D
                             continue;
                         }
 
-                        CivilFeatureLine.Create(string.Empty, selectedObject.ObjectId);
+                        ObjectId featureLineId = appearance.SelectedSiteId.IsNull
+                            ? CivilFeatureLine.Create(string.Empty, selectedObject.ObjectId)
+                            : CivilFeatureLine.Create(
+                                string.Empty,
+                                selectedObject.ObjectId,
+                                appearance.SelectedSiteId);
+                        CivilFeatureLine createdFeatureLine =
+                            transaction.GetObject(
+                                featureLineId,
+                                OpenMode.ForWrite,
+                                false) as CivilFeatureLine;
+                        if (createdFeatureLine != null)
+                            createdFeatureLine.ColorIndex = appearance.ColourIndex;
                         created++;
                     }
 
@@ -176,9 +195,13 @@ namespace CETools.Civil3D
                 }
 
                 editor.WriteMessage(
-                    "\nCE_FLCREATE complete. Feature lines created: {0}; skipped: {1}.",
+                    "\nCE_FLCREATE complete. Feature lines created: {0}; skipped: {1}; colour={2}; site={3}.",
                     created,
-                    skipped);
+                    skipped,
+                    appearance.ColourIndex,
+                    appearance.SelectedSiteId.IsNull
+                        ? "<Siteless>"
+                        : appearance.SelectedSiteId.Handle.ToString());
             }
             catch (System.Exception exception)
             {

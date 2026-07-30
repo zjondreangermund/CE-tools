@@ -118,9 +118,9 @@ namespace CETools.Civil3D
                     };
 
                     table.SetSize(dataCount + 2, 2);
-                    table.SetRowHeight(textHeight * 2.4);
-                    table.Columns[0].Width = textHeight * 20.0;
-                    table.Columns[1].Width = textHeight * 45.0;
+                    table.SetRowHeight(textHeight * 2.8);
+                    table.Columns[0].Width = textHeight * 24.0;
+                    table.Columns[1].Width = textHeight * 52.0;
 
                     table.MergeCells(CellRange.Create(table, 0, 0, 0, 1));
                     table.Cells[0, 0].TextString = string.IsNullOrWhiteSpace(tableTitle)
