@@ -1,0 +1,30 @@
+name: CE Tools preservation regression
+
+on:
+  push:
+    branches:
+      - preserve/all-ce-tools-work-2026-07-30
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  preservation-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Validate preserved CE Tools features
+        run: python scripts/Validate-PreservedRegressionGate.py
+
+      - name: Validate command registry
+        run: python scripts/Validate-CommandRegistry.py
+
+      - name: Validate polished ribbon and client books
+        run: python scripts/Validate-PresentationClientBook.py
