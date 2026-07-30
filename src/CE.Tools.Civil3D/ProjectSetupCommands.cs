@@ -181,6 +181,7 @@ namespace CETools.Civil3D
             try
             {
                 WriteProjectMetadata(document.Database, proposed, clearBackup: true);
+                SynchronizePlacedProjectTables(document.Database, proposed, false);
                 editor.WriteMessage(
                     "\nCE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
                 WriteMetadata(editor, proposed);
@@ -249,6 +250,10 @@ namespace CETools.Civil3D
             try
             {
                 BackupAndRemoveProjectMetadata(document.Database);
+                SynchronizePlacedProjectTables(
+                    document.Database,
+                    new ProjectMetadata(),
+                    true);
                 editor.WriteMessage(
                     "\nCE_PROJECTCLEAR complete. Project metadata removed. " +
                     "Run CE_PROJECTRESTORE to recover the cleared values.");
@@ -287,6 +292,7 @@ namespace CETools.Civil3D
             try
             {
                 RestoreProjectMetadata(document.Database);
+                SynchronizePlacedProjectTables(document.Database, backup, false);
                 editor.WriteMessage(
                     "\nCE_PROJECTRESTORE complete. Cleared project metadata restored.");
                 PopupTablePresenter.ShowReportAndOfferTable(
@@ -321,6 +327,73 @@ namespace CETools.Civil3D
             };
 
             return editor.GetString(options);
+        }
+
+        private static void SynchronizePlacedProjectTables(
+            Database database,
+            ProjectMetadata metadata,
+            bool erase)
+        {
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord space = transaction.GetObject(
+                    database.CurrentSpaceId,
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (space == null) return;
+
+                foreach (ObjectId id in space)
+                {
+                    Table table = transaction.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as Table;
+                    if (table == null || table.Rows.Count == 0 ||
+                        table.Columns.Count < 2)
+                    {
+                        continue;
+                    }
+
+                    string title;
+                    try
+                    {
+                        title = table.Cells[0, 0].TextString;
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (!string.Equals(
+                        title,
+                        "CE Tools Project Information",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    table.UpgradeOpen();
+                    if (erase)
+                    {
+                        table.Erase();
+                        continue;
+                    }
+
+                    IList<KeyValuePair<string, string>> rows = BuildRows(metadata);
+                    table.SetSize(rows.Count + 1, 2);
+                    table.Cells[0, 0].TextString = "CE Tools Project Information";
+                    table.MergeCells(CellRange.Create(table, 0, 0, 0, 1));
+                    for (int index = 0; index < rows.Count; index++)
+                    {
+                        table.Cells[index + 1, 0].TextString = rows[index].Key;
+                        table.Cells[index + 1, 1].TextString = rows[index].Value;
+                    }
+                    table.GenerateLayout();
+                }
+
+                transaction.Commit();
+            }
         }
 
         private static ProjectMetadata ReadProjectMetadata(

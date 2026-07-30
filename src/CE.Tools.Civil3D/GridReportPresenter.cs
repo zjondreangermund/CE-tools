@@ -20,9 +20,51 @@ namespace CETools.Civil3D
             Document document,
             string title,
             string note,
+            IList<IList<string>> rowsWithHeader,
+            string tableTitle)
+        {
+            var columns = new List<string>();
+            var rows = new List<IList<string>>();
+            if (rowsWithHeader != null && rowsWithHeader.Count > 0)
+            {
+                IList<string> header = rowsWithHeader[0];
+                if (header != null)
+                {
+                    foreach (string value in header)
+                        columns.Add(value ?? string.Empty);
+                }
+                for (int index = 1; index < rowsWithHeader.Count; index++)
+                    rows.Add(rowsWithHeader[index] ?? new List<string>());
+            }
+            ShowReportAndOfferTable(
+                document,
+                title,
+                note,
+                columns,
+                rows,
+                tableTitle);
+        }
+
+        public static void ShowReportAndOfferTable(
+            Document document,
+            string title,
+            string note,
             IList<string> columns,
             IList<IList<string>> rows,
             string tableTitle)
+        {
+            ShowReportAndOfferTable(
+                document, title, note, columns, rows, tableTitle, null);
+        }
+
+        public static void ShowReportAndOfferTable(
+            Document document,
+            string title,
+            string note,
+            IList<string> columns,
+            IList<IList<string>> rows,
+            string tableTitle,
+            Action<ObjectId> tableCreated)
         {
             if (document == null)
             {
@@ -33,11 +75,13 @@ namespace CETools.Civil3D
             AcApplication.ShowModalWindow(window);
             if (window.PlaceTableRequested)
             {
-                PlaceTable(document, tableTitle, columns, rows);
+                ObjectId tableId = PlaceTable(document, tableTitle, columns, rows);
+                if (!tableId.IsNull && tableCreated != null)
+                    tableCreated(tableId);
             }
         }
 
-        private static void PlaceTable(
+        private static ObjectId PlaceTable(
             Document document,
             string tableTitle,
             IList<string> columns,
@@ -47,7 +91,7 @@ namespace CETools.Civil3D
             if (columns == null || columns.Count == 0)
             {
                 editor.WriteMessage("\nCE Tools table creation cancelled. The report has no columns.");
-                return;
+                return ObjectId.Null;
             }
 
             PromptPointResult pointResult = editor.GetPoint(
@@ -55,7 +99,7 @@ namespace CETools.Civil3D
             if (pointResult.Status != PromptStatus.OK)
             {
                 editor.WriteMessage("\nCE Tools report table placement cancelled.");
-                return;
+                return ObjectId.Null;
             }
 
             int dataCount = rows == null ? 0 : rows.Count;
@@ -131,18 +175,19 @@ namespace CETools.Civil3D
                     }
 
                     table.GenerateLayout();
-                    currentSpace.AppendEntity(table);
+                    ObjectId tableId = currentSpace.AppendEntity(table);
                     transaction.AddNewlyCreatedDBObject(table, true);
                     transaction.Commit();
+                    editor.WriteMessage("\nCE Tools report table created.");
+                    return tableId;
                 }
-
-                editor.WriteMessage("\nCE Tools report table created.");
             }
             catch (System.Exception exception)
             {
                 editor.WriteMessage(
                     "\nCE Tools report table creation failed. No table was committed. {0}",
                     exception.Message);
+                return ObjectId.Null;
             }
         }
 

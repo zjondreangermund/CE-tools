@@ -653,7 +653,18 @@ namespace CETools.Civil3D
             string typeName = databaseObject.GetType().Name;
             string objectName = GetObjectName(databaseObject, transaction);
             string layer = string.IsNullOrWhiteSpace(entity.Layer) ? "0" : entity.Layer;
-            string search = (layer + " " + objectName + " " + typeName).ToUpperInvariant();
+            string search = (
+                layer + " " + objectName + " " + typeName + " " +
+                ReadTextProperty(databaseObject, "Description") + " " +
+                ReadTextProperty(databaseObject, "NetworkName") + " " +
+                ReadTextProperty(databaseObject, "PartFamilyName"))
+                .ToUpperInvariant();
+            if (!MatchesDiscipline(discipline, search, typeName))
+            {
+                reason = "Object does not match the selected " +
+                    DisciplineTitle(discipline) + " discipline.";
+                return false;
+            }
 
             QuantityKind preferred = ClassifyKind(databaseObject, search, typeName);
             double raw;
@@ -727,6 +738,72 @@ namespace CETools.Civil3D
                 quantity,
                 sourceSummary);
             return true;
+        }
+
+        private static bool MatchesDiscipline(
+            BoqDiscipline discipline,
+            string search,
+            string typeName)
+        {
+            if (discipline == BoqDiscipline.General)
+                return true;
+            if (discipline == BoqDiscipline.Road)
+            {
+                return ContainsAny(
+                    search, "ROAD", "PARKING", "DRIVEWAY", "KERB", "CURB",
+                    "SIDEWALK", "FOOTWAY", "PAVEMENT", "ASPHALT", "MARKING",
+                    "CORRIDOR", "ASSEMBLY");
+            }
+            if (discipline == BoqDiscipline.Platform)
+            {
+                return ContainsAny(
+                    search, "PLATFORM", "GRADING", "PAD", "EARTHWORK",
+                    "CUT", "FILL");
+            }
+            if (discipline == BoqDiscipline.Stormwater)
+            {
+                return !ContainsAny(search, "SEWER", "FOUL", "WATER MAIN") &&
+                    ContainsAny(
+                        search, "STORM", "DRAIN", "CULVERT", "CATCHPIT",
+                        "INLET", "OUTLET", "SW-");
+            }
+            if (discipline == BoqDiscipline.Sewer)
+            {
+                return !ContainsAny(search, "STORM", "WATER MAIN", "BULK WATER") &&
+                    ContainsAny(
+                        search, "SEWER", "FOUL", "WASTEWATER", "CE-SEWER",
+                        "MANHOLE", "BRANCH-");
+            }
+            if (discipline == BoqDiscipline.Water)
+            {
+                return !ContainsAny(search, "SEWER", "STORM", "BULK WATER") &&
+                    ContainsAny(
+                        search, "WATER", "PRESSURE", "HYDRANT", "VALVE",
+                        "METER", "W-");
+            }
+            if (discipline == BoqDiscipline.BulkWater)
+            {
+                return ContainsAny(
+                    search, "BULK WATER", "BULK-WATER", "RESERVOIR",
+                    "PUMP STATION", "TRANSMISSION");
+            }
+            return false;
+        }
+
+        private static string ReadTextProperty(DBObject value, string propertyName)
+        {
+            try
+            {
+                PropertyInfo property = value.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                object raw = property == null ? null : property.GetValue(value, null);
+                return Convert.ToString(raw, CultureInfo.InvariantCulture) ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
         }
 
         private static QuantityKind ClassifyKind(
@@ -916,14 +993,54 @@ namespace CETools.Civil3D
                 }
             }
 
-            return TryReadDoubleProperty(
+            if (TryReadDoubleProperty(
                 databaseObject,
                 out length,
                 "Length3DCenterToCenter",
                 "Length2DCenterToCenter",
                 "Length3D",
                 "Length2D",
-                "Length");
+                "Length"))
+            {
+                return true;
+            }
+            return TryGetEndpointDistance(databaseObject, out length);
+        }
+
+        private static bool TryGetEndpointDistance(
+            DBObject databaseObject,
+            out double length)
+        {
+            length = 0.0;
+            try
+            {
+                PropertyInfo startProperty =
+                    databaseObject.GetType().GetProperty(
+                        "StartPointLocation", BindingFlags.Public | BindingFlags.Instance) ??
+                    databaseObject.GetType().GetProperty(
+                        "StartPoint", BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo endProperty =
+                    databaseObject.GetType().GetProperty(
+                        "EndPointLocation", BindingFlags.Public | BindingFlags.Instance) ??
+                    databaseObject.GetType().GetProperty(
+                        "EndPoint", BindingFlags.Public | BindingFlags.Instance);
+                object startValue = startProperty == null
+                    ? null
+                    : startProperty.GetValue(databaseObject, null);
+                object endValue = endProperty == null
+                    ? null
+                    : endProperty.GetValue(databaseObject, null);
+                if (startValue is Point3d && endValue is Point3d)
+                {
+                    length = ((Point3d)startValue).DistanceTo((Point3d)endValue);
+                    return IsFinitePositive(length);
+                }
+            }
+            catch
+            {
+                // Unsupported endpoint API; caller will reject the quantity.
+            }
+            return false;
         }
 
         private static bool TryGetArea(Entity entity, out double area)

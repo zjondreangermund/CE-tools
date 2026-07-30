@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Source-shape checks for review-comments Batch 5.
+"""Source-shape checks for linked survey-coordinate workflows.
 
 Autodesk/Civil 3D assemblies are unavailable in GitHub Actions, so this
 validator checks command declarations, ribbon links, link persistence, compact
-table rules, polyline direction handling and preserved utilities.
+Point Name/X/Y/Z table rules, dynamic polyline following and preserved utilities.
 """
 
 from pathlib import Path
@@ -15,9 +15,11 @@ SOURCE = ROOT / "src" / "CE.Tools.Civil3D" / "SurveyCoordinateWorkflowCommands.c
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 DIRECTION = ROOT / "src" / "CE.Tools.Civil3D" / "PolylineDirectionCommands.cs"
 LEGACY_POLY = ROOT / "src" / "CE.Tools.Civil3D" / "CoordinatePolylineCommands.cs"
+DYNAMIC = ROOT / "src" / "CE.Tools.Civil3D" / "DynamicCoordinateLinkStore.cs"
+PRESENTATION = ROOT / "src" / "CE.Tools.Civil3D" / "CommentPresentationCommands.cs"
 
 errors: list[str] = []
-for path in (SOURCE, RIBBON, DIRECTION, LEGACY_POLY):
+for path in (SOURCE, RIBBON, DIRECTION, LEGACY_POLY, DYNAMIC, PRESENTATION):
     if not path.exists():
         errors.append(f"Missing required file: {path.relative_to(ROOT)}")
 
@@ -29,6 +31,8 @@ source = SOURCE.read_text(encoding="utf-8")
 ribbon = RIBBON.read_text(encoding="utf-8")
 direction = DIRECTION.read_text(encoding="utf-8")
 legacy_poly = LEGACY_POLY.read_text(encoding="utf-8")
+dynamic = DYNAMIC.read_text(encoding="utf-8")
+presentation = PRESENTATION.read_text(encoding="utf-8")
 
 commands = [
     "CE_COORDPICK2",
@@ -51,23 +55,66 @@ required_markers = [
     "database.GetObjectId",
     "A coordinate table cannot be populated with zero rows.",
     '"POINT NAME"',
-    '"Y / NORTHING"',
-    '"X / EASTING"',
-    '"Z / ELEVATION"',
+    '"X"',
+    '"Y"',
+    '"Z"',
+    "const int columns = 4;",
     "ReadPolylineVertices",
     "CivilApplication.ActiveDocument",
     "CogoPoints.Add",
     "SetRawDescription",
     "CreateCrossLinework",
+    "DynamicCoordinateLinkStore.LinkGeneratedObjects(",
+    "DynamicCoordinateLinkStore.LinkPolylineVertices(",
+    "ApplyPointNames(",
+    'return "P";',
+    '"{0}{1}"',
+    "ResolveScaleAwareTableHeight(",
+    "return NormalizeHeight(paperHeightMillimetres);",
 ]
 for marker in required_markers:
     if marker not in source:
         errors.append(f"Linked coordinate implementation is missing: {marker}")
 
-if "Math.Max(height * 5.5, 12.0)" not in source:
-    errors.append("Compact coordinate-table width rule is missing")
+if "table.SetColumnWidth(Math.Max(height * 15.0, 0.001))" not in source:
+    errors.append("Readable Point Name/X/Y/Z coordinate-table width rule is missing")
 if re.search(r"SetColumnWidth\([^\n]*(?:2500|5000)", source):
     errors.append("Oversized coordinate-table width was introduced")
+if '"POINT",\n                "POINT NAME"' in source:
+    errors.append("Superseded point-number column was reintroduced")
+
+for marker in (
+    'private const string FollowerRecordName = "CE_DYNAMIC_COORDINATE_FOLLOWER"',
+    'private const string PolylineVertexRecordName = "CE_DYNAMIC_POLYLINE_VERTEX"',
+    "public static int Refresh(Document document)",
+    '"X: "',
+    '"Y: "',
+    '"Z: "',
+):
+    if marker not in dynamic:
+        errors.append(f"Dynamic coordinate implementation is missing: {marker}")
+
+for marker in (
+    "internal static int RefreshLinkedArrows(Document document)",
+    "TryReadArrowLink(",
+    "(int)DxfCode.ExtendedDataReal",
+):
+    if marker not in direction:
+        errors.append(f"Dynamic direction-arrow implementation is missing: {marker}")
+if "PolylineDirectionCommands.RefreshLinkedArrows(document)" not in presentation:
+    errors.append("Shared automatic refresh does not update polyline direction arrows")
+
+for forbidden in (
+    "X-COORDINATE:",
+    "Y-COORDINATE:",
+    "Z-COORDINATE:",
+    "Y / NORTHING",
+    "X / EASTING",
+):
+    if forbidden in dynamic:
+        errors.append(f"Dynamic coordinate text still contains superseded wording: {forbidden}")
+    if forbidden in source:
+        errors.append(f"Survey coordinate output still contains superseded wording: {forbidden}")
 
 # Existing direction-arrow and legacy survey workflows remain available.
 for marker, text, description in (
@@ -87,6 +134,7 @@ for marker, text, description in (
 for name, text in (
     (SOURCE.name, source),
     (RIBBON.name, ribbon),
+    (DYNAMIC.name, dynamic),
 ):
     if text.count("{") != text.count("}"):
         errors.append(f"Unbalanced braces detected in {name}")

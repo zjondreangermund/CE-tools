@@ -203,6 +203,11 @@ namespace CETools.Civil3D
                     transaction.Commit();
                 }
 
+                SewerBranchAlignmentCommands.RequestAutomaticRun(
+                    document,
+                    plans.SelectMany(plan =>
+                        plan.StructureIds.Concat(plan.PipeIds)));
+
                 int totalNetworks = plans.Count;
                 int totalBranches = plans.Sum(plan => plan.Branches.Count);
                 int totalStructures = plans.Sum(plan => plan.StructureIds.Count);
@@ -520,7 +525,7 @@ namespace CETools.Civil3D
                         .ToList();
 
                     double length = candidateEdges.Sum(pipeId => edges[pipeId].Length);
-                    OrientHighestEndpointFirst(candidateNodes, candidateEdges, nodes);
+                    OrientBranchStartTowardConnection(candidateNodes, candidateEdges);
 
                     double highRim = candidateNodes.Max(id => nodes[id].RimElevation);
                     double lowRim = candidateNodes.Min(id => nodes[id].RimElevation);
@@ -609,23 +614,18 @@ namespace CETools.Civil3D
             return new RootPath(reverseNodes, reverseEdges);
         }
 
-        private static void OrientHighestEndpointFirst(
+        private static void OrientBranchStartTowardConnection(
             IList<ObjectId> nodeIds,
-            IList<ObjectId> edgeIds,
-            IDictionary<ObjectId, GraphNode> nodes)
+            IList<ObjectId> edgeIds)
         {
             if (nodeIds.Count < 2)
             {
                 return;
             }
 
-            double firstElevation = nodes[nodeIds[0]].RimElevation;
-            double lastElevation = nodes[nodeIds[nodeIds.Count - 1]].RimElevation;
-            if (lastElevation <= firstElevation + ElevationTolerance)
-            {
-                return;
-            }
-
+            // Root paths are assembled from the shared connection toward the
+            // terminal manhole. Numbering must start at the terminal/first
+            // manhole and progress toward the connection point.
             ReverseInPlace(nodeIds);
             ReverseInPlace(edgeIds);
         }
@@ -958,6 +958,10 @@ namespace CETools.Civil3D
                     }
 
                     transaction.Commit();
+
+                    SewerBranchAlignmentCommands.RequestAutomaticRun(
+                        document,
+                        path.StructureIds.Concat(path.PipeIds));
 
                     editor.WriteMessage(
                         "\nCE_SEWSEQ selected-path mode complete. Network: {0}; structures renamed: {1}; pipes renamed: {2}.",

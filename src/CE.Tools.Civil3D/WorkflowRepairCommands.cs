@@ -673,6 +673,39 @@ namespace CETools.Civil3D
                 return;
             }
 
+            var orderOptions = new PromptKeywordOptions(
+                "\nNumbering order [Selection/LeftToRight/TopToBottom] <Selection>: ");
+            orderOptions.Keywords.Add("Selection");
+            orderOptions.Keywords.Add("LeftToRight");
+            orderOptions.Keywords.Add("TopToBottom");
+            orderOptions.Keywords.Default = "Selection";
+            orderOptions.AllowNone = true;
+            PromptResult orderResult = editor.GetKeywords(orderOptions);
+            if (orderResult.Status != PromptStatus.OK &&
+                orderResult.Status != PromptStatus.None)
+            {
+                return;
+            }
+            string numberingOrder = string.IsNullOrWhiteSpace(orderResult.StringResult)
+                ? "Selection"
+                : orderResult.StringResult;
+            if (string.Equals(numberingOrder, "LeftToRight", StringComparison.OrdinalIgnoreCase))
+            {
+                validation.Candidates.Sort(delegate(ParkingCandidate first, ParkingCandidate second)
+                {
+                    int x = first.Center.X.CompareTo(second.Center.X);
+                    return x != 0 ? x : second.Center.Y.CompareTo(first.Center.Y);
+                });
+            }
+            else if (string.Equals(numberingOrder, "TopToBottom", StringComparison.OrdinalIgnoreCase))
+            {
+                validation.Candidates.Sort(delegate(ParkingCandidate first, ParkingCandidate second)
+                {
+                    int y = second.Center.Y.CompareTo(first.Center.Y);
+                    return y != 0 ? y : first.Center.X.CompareTo(second.Center.X);
+                });
+            }
+
             var rows = new List<KeyValuePair<string, string>>
             {
                 new KeyValuePair<string, string>(
@@ -696,7 +729,9 @@ namespace CETools.Civil3D
                     annotationOptions.DrawMarker ? "Yes" : "No"),
                 new KeyValuePair<string, string>(
                     "Order",
-                    "Selection-set order")
+                    string.Equals(numberingOrder, "Selection", StringComparison.OrdinalIgnoreCase)
+                        ? "Selection/window order"
+                        : numberingOrder)
             };
             AppendRejectedRows(rows, validation.RejectedReasons);
 
@@ -754,8 +789,14 @@ namespace CETools.Civil3D
                         text.TextHeight = annotationOptions.TextHeight;
                         text.Contents = prefixResult.StringResult +
                             number.ToString(CultureInfo.InvariantCulture);
+                        text.Annotative = AnnotativeStates.True;
                         currentSpace.AppendEntity(text);
                         transaction.AddNewlyCreatedDBObject(text, true);
+                        ParkingNumberLinkStore.Link(
+                            document.Database,
+                            transaction,
+                            text,
+                            candidate.ObjectId);
 
                         number += incrementResult.Value;
                         placed++;
@@ -964,7 +1005,7 @@ namespace CETools.Civil3D
             return preview;
         }
 
-        private static List<SurfaceChoice> ReadSurfaceChoices(Document document)
+        internal static List<SurfaceChoice> ReadSurfaceChoices(Document document)
         {
             var choices = new List<SurfaceChoice>();
             CivilDocument civilDocument = CivilApplication.ActiveDocument;

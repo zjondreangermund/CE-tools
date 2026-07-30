@@ -506,6 +506,7 @@ namespace CETools.Civil3D
             if (selection.Status != PromptStatus.OK) return;
 
             var groups = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            var linkedSourceIds = new List<ObjectId>();
             int total = 0;
             int skipped = 0;
 
@@ -537,6 +538,7 @@ namespace CETools.Civil3D
                     }
 
                     total++;
+                    linkedSourceIds.Add(selectedObject.ObjectId);
                     int current;
                     groups.TryGetValue(groupName, out current);
                     groups[groupName] = current + 1;
@@ -567,7 +569,11 @@ namespace CETools.Civil3D
                 note,
                 columns,
                 rows,
-                "Parking Bay Report");
+                "Parking Bay Report",
+                delegate(ObjectId tableId)
+                {
+                    ParkingReportLinkStore.Link(document, tableId, linkedSourceIds);
+                });
         }
 
         private static Document ActiveDocument()

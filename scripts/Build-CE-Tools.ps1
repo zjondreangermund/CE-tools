@@ -83,6 +83,48 @@ function Find-ManagedAssembly {
 
 Assert-DotNetSdk
 
+$commentsScript = Join-Path $PSScriptRoot "Invoke-Comments-Normalizer.ps1"
+if (-not (Test-Path $commentsScript)) {
+    throw "The active-comments normalizer wrapper is missing: $commentsScript"
+}
+Write-Host "Applying active 25 July 2026 comment corrections..." -ForegroundColor Cyan
+& $commentsScript
+
+$disciplineCommentsScript = Join-Path $PSScriptRoot "Apply-Comments-Discipline.ps1"
+if (-not (Test-Path $disciplineCommentsScript)) {
+    throw "The discipline comments normalizer is missing: $disciplineCommentsScript"
+}
+Write-Host "Applying feature-line, profile, surface and network comment corrections..." -ForegroundColor Cyan
+& $disciplineCommentsScript
+
+$quantityCommentsScript = Join-Path $PSScriptRoot "Apply-Comments-Quantities.ps1"
+if (-not (Test-Path $quantityCommentsScript)) {
+    throw "The linked quantity comments normalizer is missing: $quantityCommentsScript"
+}
+Write-Host "Applying linked sewer excavation quantity corrections..." -ForegroundColor Cyan
+& $quantityCommentsScript
+
+$roadCommentsScript = Join-Path $PSScriptRoot "Apply-Comments-Road.ps1"
+if (-not (Test-Path $roadCommentsScript)) {
+    throw "The batch road-production comments normalizer is missing: $roadCommentsScript"
+}
+Write-Host "Applying batch road-production corrections..." -ForegroundColor Cyan
+& $roadCommentsScript
+
+$masterItemsScript = Join-Path $PSScriptRoot "Invoke-Master-Items-Phase1.ps1"
+if (-not (Test-Path $masterItemsScript)) {
+    throw "The ordered Master Items Phase 1 normalizer wrapper is missing: $masterItemsScript"
+}
+Write-Host "Applying Master Items Phase 1 corrections..." -ForegroundColor Cyan
+& $masterItemsScript
+
+$compatibilityScript = Join-Path $PSScriptRoot "Apply-Civil3D-Compatibility.ps1"
+if (-not (Test-Path $compatibilityScript)) {
+    throw "The Civil 3D compatibility normalizer is missing: $compatibilityScript"
+}
+Write-Host "Normalising Civil 3D 2023/2024 source compatibility..." -ForegroundColor Cyan
+& $compatibilityScript
+
 Write-Host "Running CE Tools host-independent tests..." -ForegroundColor Cyan
 & dotnet run --project $tests -c Release
 if ($LASTEXITCODE -ne 0) {

@@ -952,11 +952,36 @@ namespace CETools.Civil3D
             string sourceHandle,
             ICollection<string> generatedHandles)
         {
+            MakeAnnotationAnnotative(entity);
             currentSpace.AppendEntity(entity);
             transaction.AddNewlyCreatedDBObject(entity, true);
             entity.CreateExtensionDictionary();
             WriteGeneratedOwner(entity, transaction, sourceHandle);
             generatedHandles.Add(entity.Handle.ToString());
+        }
+
+        private static void MakeAnnotationAnnotative(Entity entity)
+        {
+            if (!(entity is DBText) &&
+                !(entity is MText) &&
+                !(entity is Dimension) &&
+                !(entity is Table))
+            {
+                return;
+            }
+            try
+            {
+                PropertyInfo property = entity.GetType().GetProperty(
+                    "Annotative",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property != null && property.CanWrite)
+                    property.SetValue(entity, AnnotativeStates.True, null);
+            }
+            catch
+            {
+                // Some Civil 3D 2023 entity wrappers do not expose annotative
+                // state. Their geometry still follows the linked section scale.
+            }
         }
 
         private static SectionExtraction ExtractSection(
