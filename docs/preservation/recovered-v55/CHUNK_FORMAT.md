@@ -1,0 +1,1 @@
+The verified V55 recovery archive is stored as ordered base64 chunks named `archive2.b64part-00` through `archive2.b64part-33`. The restoration workflow concatenates, decodes and verifies the archive before copying any source file.
