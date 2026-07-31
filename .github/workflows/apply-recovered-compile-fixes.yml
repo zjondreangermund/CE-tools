@@ -1,0 +1,49 @@
+name: Apply recovered Civil 3D compile fixes
+
+on:
+  push:
+    branches:
+      - preserve/all-ce-tools-work-2026-07-30
+    paths:
+      - scripts/Apply-RecoveredCompileFixes.py
+      - src/CE.Tools.Civil3D/CivilObjectBatchStyleCommands.cs
+      - .github/workflows/apply-recovered-compile-fixes.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[skip recovered compile fixes]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out preservation branch
+        uses: actions/checkout@v4
+        with:
+          ref: preserve/all-ce-tools-work-2026-07-30
+          fetch-depth: 0
+
+      - name: Apply deterministic compile repairs
+        run: python3 scripts/Apply-RecoveredCompileFixes.py
+
+      - name: Verify known CS0176 regression is absent
+        shell: bash
+        run: |
+          ! grep -q '? Visibility.Visible' src/CE.Tools.Civil3D/CivilObjectBatchStyleCommands.cs
+          ! grep -q ': Visibility.Collapsed' src/CE.Tools.Civil3D/CivilObjectBatchStyleCommands.cs
+          grep -q 'System.Windows.Visibility.Visible' src/CE.Tools.Civil3D/CivilObjectBatchStyleCommands.cs
+          grep -q 'System.Windows.Visibility.Collapsed' src/CE.Tools.Civil3D/CivilObjectBatchStyleCommands.cs
+
+      - name: Commit compile repairs
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'Recovered source already contains the compile repairs.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/CE.Tools.Civil3D/CivilObjectBatchStyleCommands.cs
+          git commit -m 'fix: qualify WPF visibility in recovered batch styles [skip recovered compile fixes]'
+          git push origin HEAD:preserve/all-ce-tools-work-2026-07-30
