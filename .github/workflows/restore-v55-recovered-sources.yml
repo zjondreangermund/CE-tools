@@ -1,0 +1,71 @@
+name: Restore verified V55 recovered sources
+
+on:
+  push:
+    branches:
+      - preserve/all-ce-tools-work-2026-07-30
+    paths:
+      - docs/preservation/recovered-v55/**
+      - .github/workflows/restore-v55-recovered-sources.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    if: ${{ !contains(github.event.head_commit.message, '[skip v55 restore]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out preservation branch
+        uses: actions/checkout@v4
+        with:
+          ref: preserve/all-ce-tools-work-2026-07-30
+          fetch-depth: 0
+
+      - name: Reconstruct and verify recovered archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v55-recovered
+          cat docs/preservation/recovered-v55/archive.b64part-* | base64 --decode > /tmp/v55-recovered.zip
+          unzip -q /tmp/v55-recovered.zip -d /tmp/v55-recovered
+          (cd /tmp/v55-recovered && sha256sum -c "$GITHUB_WORKSPACE/docs/preservation/V55_RECOVERED_SOURCE_CHECKSUMS.sha256")
+
+      - name: Restore approved source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          approved=(
+            CivilObjectBatchStyleCommands.cs
+            FeatureProfileSurfaceCommentCommands.cs
+            FloatingToolsWindow.cs
+            ParkingSkewValidationCommands.cs
+            RoadDriveReviewCommands.cs
+            RoadProductionCommentCommands.cs
+            DynamicTypicalDetailCommands.cs
+            DynamicTypicalDetailStorage.cs
+            WaterSewerCostEstimateCommands.cs
+            TypicalDetailsReviewCommands.cs
+            SettingOutScheduleCommands.cs
+          )
+          for name in "${approved[@]}"; do
+            test -f "/tmp/v55-recovered/$name"
+            cp "/tmp/v55-recovered/$name" "src/CE.Tools.Civil3D/$name"
+          done
+
+      - name: Validate preservation gate
+        run: python3 scripts/Validate-PreservedRegressionGate.py
+
+      - name: Commit restored sources
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Recovered sources are already present."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/CE.Tools.Civil3D/*.cs
+          git commit -m "restore: verified V55 Civil 3D sources [skip v55 restore]"
+          git push origin HEAD:preserve/all-ce-tools-work-2026-07-30
