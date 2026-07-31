@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Wire preserved repeated/offset branch labels into CE_SEWALIGN source.
 
-This is intentionally deterministic and fails if the expected legacy midpoint
-block is absent, so it cannot silently overwrite a newer implementation.
+This deterministic integration is intentionally narrow: it replaces only the
+known legacy single-midpoint label block and refuses to modify any unexpected
+newer implementation.
 """
 
 from pathlib import Path
