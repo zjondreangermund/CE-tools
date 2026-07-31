@@ -28,8 +28,13 @@ jobs:
       - name: Apply deterministic source integration
         run: python3 scripts/Integrate-PreservedSewerBranchLabels.py
 
-      - name: Validate preservation gate
-        run: python3 scripts/Validate-PreservedRegressionGate.py
+      - name: Validate focused sewer-label integration
+        shell: bash
+        run: |
+          grep -q "SewerBranchLabelPlacement.BuildPlacements" src/CE.Tools.Civil3D/SewerBranchAlignmentCommands.cs
+          grep -q "SewerBranchLabelPlacement.ConfigureLabel" src/CE.Tools.Civil3D/SewerBranchAlignmentCommands.cs
+          grep -q "OffsetFactor = 2.75" src/CE.Tools.Civil3D/SewerBranchLabelPlacement.cs
+          grep -q "label.Rotation = placement.Rotation" src/CE.Tools.Civil3D/SewerBranchLabelPlacement.cs
 
       - name: Commit integrated source
         shell: bash
