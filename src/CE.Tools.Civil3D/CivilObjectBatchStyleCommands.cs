@@ -428,8 +428,8 @@ namespace CETools.Civil3D
                 Content = "Apply corridor code-set style",
                 IsChecked = kind == BatchObjectKind.Corridor && secondary.Count > 0,
                 Visibility = kind == BatchObjectKind.Corridor
-                    ? Visibility.Visible
-                    : Visibility.Collapsed
+                    ? System.Windows.Visibility.Visible
+                    : System.Windows.Visibility.Collapsed
             };
             _secondary = new ComboBox
             {
@@ -438,16 +438,16 @@ namespace CETools.Civil3D
                 Margin = new Thickness(20, 3, 0, 8),
                 MinWidth = 360,
                 Visibility = kind == BatchObjectKind.Corridor
-                    ? Visibility.Visible
-                    : Visibility.Collapsed
+                    ? System.Windows.Visibility.Visible
+                    : System.Windows.Visibility.Collapsed
             };
             _rebuild = new CheckBox
             {
                 Content = "Rebuild selected corridors after applying styles",
                 IsChecked = true,
                 Visibility = kind == BatchObjectKind.Corridor
-                    ? Visibility.Visible
-                    : Visibility.Collapsed
+                    ? System.Windows.Visibility.Visible
+                    : System.Windows.Visibility.Collapsed
             };
             settings.Children.Add(_applySecondary);
             settings.Children.Add(_secondary);
