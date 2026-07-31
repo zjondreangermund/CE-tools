@@ -5,8 +5,7 @@ on:
     branches:
       - preserve/all-ce-tools-work-2026-07-30
     paths:
-      - docs/preservation/recovered-v55/**
-      - .github/workflows/restore-v55-recovered-sources.yml
+      - docs/preservation/recovered-v55/RESTORE_READY
   workflow_dispatch:
 
 permissions:
