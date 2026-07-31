@@ -8,12 +8,58 @@ on:
     branches:
       - main
 
+permissions:
+  contents: write
+
 jobs:
   preservation-regression:
     runs-on: ubuntu-latest
     steps:
       - name: Check out source
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore verified V55 sources on preservation pushes
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/v55-recovered
+          cat docs/preservation/recovered-v55/archive.b64part-0?? | base64 --decode > /tmp/v55-recovered.zip
+          unzip -q /tmp/v55-recovered.zip -d /tmp/v55-recovered
+          (cd /tmp/v55-recovered && sha256sum -c "$GITHUB_WORKSPACE/docs/preservation/V55_RECOVERED_SOURCE_CHECKSUMS.sha256")
+
+          approved=(
+            CivilObjectBatchStyleCommands.cs
+            FeatureProfileSurfaceCommentCommands.cs
+            FloatingToolsWindow.cs
+            ParkingSkewValidationCommands.cs
+            RoadDriveReviewCommands.cs
+            RoadProductionCommentCommands.cs
+            DynamicTypicalDetailCommands.cs
+            DynamicTypicalDetailStorage.cs
+            WaterSewerCostEstimateCommands.cs
+            TypicalDetailsReviewCommands.cs
+            SettingOutScheduleCommands.cs
+          )
+          for name in "${approved[@]}"; do
+            cp "/tmp/v55-recovered/$name" "src/CE.Tools.Civil3D/$name"
+          done
+
+      - name: Commit verified V55 recovery
+        if: github.event_name == 'push'
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "Verified V55 sources are already restored."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/CE.Tools.Civil3D/*.cs
+          git commit -m "restore: verified V55 Civil 3D sources"
+          git push origin HEAD:preserve/all-ce-tools-work-2026-07-30
 
       - name: Set up Python
         uses: actions/setup-python@v5
