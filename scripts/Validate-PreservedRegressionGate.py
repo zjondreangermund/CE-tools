@@ -21,6 +21,7 @@ def read(relative: str) -> str:
 
 project = read("src/CE.Tools.Civil3D/CE.Tools.Civil3D.csproj")
 sewer_alignment = read("src/CE.Tools.Civil3D/SewerBranchAlignmentCommands.cs")
+sewer_placement = read("src/CE.Tools.Civil3D/SewerBranchLabelPlacement.cs")
 
 # Civil 3D 2023 is the user's installed and tested production host.
 for fragment in (
@@ -32,27 +33,39 @@ for fragment in (
     if fragment not in project:
         errors.append(f"Civil 3D project lost required build configuration: {fragment}")
 
-# Branch labels must remain visibly offset from the generated alignment.
+# The active sewer command must use the preserved repeated-label helper.
+for fragment in (
+    "SewerBranchLabelPlacement.BuildPlacements",
+    "SewerBranchLabelPlacement.ConfigureLabel",
+    "RemoveExistingGeneratedObjects",
+    'BuildTag(branchKey, "Label")',
+):
+    if fragment not in sewer_alignment:
+        errors.append(f"Active sewer branch command lost preserved integration: {fragment}")
+
+# Branch labels must remain visibly offset, repeated, rotated and annotative.
 offset_match = re.search(
-    r"BranchLabelOffsetFactor\s*=\s*([0-9]+(?:\.[0-9]+)?)",
-    sewer_alignment,
+    r"OffsetFactor\s*=\s*([0-9]+(?:\.[0-9]+)?)",
+    sewer_placement,
 )
 if not offset_match:
-    errors.append("Sewer branch alignment source has no BranchLabelOffsetFactor")
+    errors.append("Sewer branch label helper has no OffsetFactor")
 elif float(offset_match.group(1)) < 2.75:
     errors.append(
         "Sewer branch label offset regressed below the approved 2.75 paper-height factor"
     )
 
 for fragment in (
-    "BuildLabelPlacements",
+    "BuildPlacements",
     "ResolveScaleAwarePaperDistance",
-    "labelNormal",
+    "var normal = new Vector3d",
     "label.Rotation = placement.Rotation",
+    "label.Annotative = AnnotativeStates.True",
     "label.BackgroundFill = true",
+    "MaximumLabelsPerBranch = 200",
 ):
-    if fragment not in sewer_alignment:
-        errors.append(f"Sewer branch label placement lost required behaviour: {fragment}")
+    if fragment not in sewer_placement:
+        errors.append(f"Sewer branch label helper lost required behaviour: {fragment}")
 
 # Files recovered in V54/V55 must not silently disappear during reconciliation.
 required_sources = (
