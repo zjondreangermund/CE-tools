@@ -14,6 +14,7 @@ namespace CETools.Civil3D
     /// </summary>
     internal static class SewerBranchLabelPlacement
     {
+        // Integration trigger: keep this helper wired into the active sewer alignment command.
         internal const double DefaultPaperHeight = 3.5;
         internal const double RepeatSpacing = 50.0;
         internal const double OffsetFactor = 2.75;
