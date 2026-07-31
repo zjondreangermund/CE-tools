@@ -623,20 +623,28 @@ namespace CETools.Civil3D
                         alignment.XData = BuildTag(branchKey, "Alignment");
                         alignmentsCreated++;
 
-                        Point3d labelPoint = GetMidpoint(branch.PlanPoints);
-                        var label = new MText();
-                        label.SetDatabaseDefaults(database);
-                        label.LayerId = layerId;
-                        label.Location = labelPoint;
-                        label.Attachment = AttachmentPoint.MiddleCenter;
-                        label.TextHeight = GetTextHeight(database);
-                        label.Contents = branch.BranchName;
-                        label.BackgroundFill = true;
-                        label.UseBackgroundColor = true;
-                        label.XData = BuildTag(branchKey, "Label");
-                        modelSpace.AppendEntity(label);
-                        transaction.AddNewlyCreatedDBObject(label, true);
-                        labelsCreated++;
+                        IReadOnlyList<SewerBranchLabelPlacement.Placement> placements =
+                            SewerBranchLabelPlacement.BuildPlacements(branch.PlanPoints);
+                        double paperHeight = SewerBranchLabelPlacement.DefaultPaperHeight;
+                        bool placeAbove = (branch.BranchNumber % 2) != 0;
+
+                        foreach (SewerBranchLabelPlacement.Placement placement in placements)
+                        {
+                            var label = new MText();
+                            label.SetDatabaseDefaults(database);
+                            label.LayerId = layerId;
+                            SewerBranchLabelPlacement.ConfigureLabel(
+                                label,
+                                database,
+                                placement,
+                                branch.BranchName,
+                                paperHeight,
+                                placeAbove);
+                            label.XData = BuildTag(branchKey, "Label");
+                            modelSpace.AppendEntity(label);
+                            transaction.AddNewlyCreatedDBObject(label, true);
+                            labelsCreated++;
+                        }
                     }
                 }
 
