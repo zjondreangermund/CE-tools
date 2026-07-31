@@ -1,0 +1,48 @@
+name: Integrate preserved sewer branch labels v2
+
+on:
+  push:
+    branches:
+      - preserve/all-ce-tools-work-2026-07-30
+    paths:
+      - scripts/Integrate-PreservedSewerBranchLabels.py
+      - src/CE.Tools.Civil3D/SewerBranchAlignmentCommands.cs
+      - src/CE.Tools.Civil3D/SewerBranchLabelPlacement.cs
+      - .github/workflows/integrate-preserved-sewer-labels-v2.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    if: ${{ !contains(github.event.head_commit.message, '[skip sewer-label integration]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out preservation branch
+        uses: actions/checkout@v4
+        with:
+          ref: preserve/all-ce-tools-work-2026-07-30
+          fetch-depth: 0
+
+      - name: Apply deterministic source integration
+        run: python3 scripts/Integrate-PreservedSewerBranchLabels.py
+
+      - name: Verify integration markers
+        shell: bash
+        run: |
+          grep -q "SewerBranchLabelPlacement.BuildPlacements" src/CE.Tools.Civil3D/SewerBranchAlignmentCommands.cs
+          grep -q "SewerBranchLabelPlacement.ConfigureLabel" src/CE.Tools.Civil3D/SewerBranchAlignmentCommands.cs
+
+      - name: Commit integrated source
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No source change required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/CE.Tools.Civil3D/SewerBranchAlignmentCommands.cs
+          git commit -m "feat: wire preserved repeated sewer labels [skip sewer-label integration]"
+          git push origin HEAD:preserve/all-ce-tools-work-2026-07-30
