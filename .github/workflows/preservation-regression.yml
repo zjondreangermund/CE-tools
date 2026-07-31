@@ -27,6 +27,8 @@ jobs:
           set -euo pipefail
           mkdir -p /tmp/v55-recovered
           cat docs/preservation/recovered-v55/archive.b64part-0?? | base64 --decode > /tmp/v55-recovered.zip
+          echo "Reconstructed archive bytes: $(wc -c < /tmp/v55-recovered.zip)"
+          echo "Reconstructed archive SHA256: $(sha256sum /tmp/v55-recovered.zip | cut -d' ' -f1)"
           unzip -q /tmp/v55-recovered.zip -d /tmp/v55-recovered
           (cd /tmp/v55-recovered && sha256sum -c "$GITHUB_WORKSPACE/docs/preservation/V55_RECOVERED_SOURCE_CHECKSUMS.sha256")
 
