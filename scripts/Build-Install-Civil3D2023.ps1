@@ -31,6 +31,41 @@ function Find-MSBuild {
     throw 'MSBuild was not found. Install Visual Studio 2022 Build Tools with .NET Framework 4.8 development tools.'
 }
 
+function Restore-V60SupportSources {
+    param([Parameter(Mandatory=$true)][string]$RepoRoot)
+    $archive = Join-Path $RepoRoot 'recovery\v60\missing-v60-sources.b64'
+    if (-not (Test-Path $archive)) { return }
+    $targets = @(
+        'CommentPresentationCommands.cs',
+        'DynamicTypicalDetailEngine.cs',
+        'ProductionCommentCommands.cs'
+    )
+    $sourceRoot = Join-Path $RepoRoot 'src\CE.Tools.Civil3D'
+    $needsRestore = $false
+    foreach ($name in $targets) {
+        if (-not (Test-Path (Join-Path $sourceRoot $name))) { $needsRestore = $true }
+    }
+    if (-not $needsRestore) { return }
+
+    $temp = Join-Path $env:TEMP ('CE-Tools-V60-Restore-' + [Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Force -Path $temp | Out-Null
+    try {
+        $zip = Join-Path $temp 'sources.zip'
+        $bytes = [Convert]::FromBase64String((Get-Content $archive -Raw).Trim())
+        [IO.File]::WriteAllBytes($zip, $bytes)
+        Expand-Archive -Path $zip -DestinationPath $temp -Force
+        foreach ($name in $targets) {
+            $from = Join-Path $temp $name
+            if (-not (Test-Path $from)) { throw "V60 recovery source missing from archive: $name" }
+            Copy-Item $from (Join-Path $sourceRoot $name) -Force
+        }
+        Write-Host 'Restored remaining V60 support sources.' -ForegroundColor Green
+    }
+    finally {
+        Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Repair-Civil3D2023RibbonSource {
     param([Parameter(Mandatory=$true)][string]$RepoRoot)
     $plugin = Join-Path $RepoRoot 'src\CE.Tools.Civil3D\PluginEntry.cs'
@@ -113,6 +148,7 @@ if ($missing) {
 }
 if (-not (Test-Path $project)) { throw "Project not found: $project" }
 
+Restore-V60SupportSources -RepoRoot $repo
 Repair-Civil3D2023RibbonSource -RepoRoot $repo
 
 $msbuild = Find-MSBuild
