@@ -31,6 +31,68 @@ function Find-MSBuild {
     throw 'MSBuild was not found. Install Visual Studio 2022 Build Tools with .NET Framework 4.8 development tools.'
 }
 
+function Repair-Civil3D2023RibbonSource {
+    param([Parameter(Mandatory=$true)][string]$RepoRoot)
+    $plugin = Join-Path $RepoRoot 'src\CE.Tools.Civil3D\PluginEntry.cs'
+    if (-not (Test-Path $plugin)) { throw "Plugin source not found: $plugin" }
+    $text = Get-Content $plugin -Raw
+    if ($text -notmatch 'RibbonRow') { return }
+
+    $old = @'
+        private static RibbonRow Row(params RibbonItem[] items)
+        {
+            var row = new RibbonRow();
+            foreach (RibbonItem item in items) row.RowItems.Add(item);
+            return row;
+        }
+
+        private static void AddPanel(
+            RibbonTab tab,
+            string panelId,
+            string title,
+            params RibbonRow[] rows)
+        {
+            var source = new RibbonPanelSource
+            {
+                Id = panelId,
+                Title = title.ToUpperInvariant()
+            };
+            foreach (RibbonRow row in rows) source.Rows.Add(row);
+            tab.Panels.Add(new RibbonPanel { Source = source });
+        }
+'@
+    $new = @'
+        private static RibbonItem[] Row(params RibbonItem[] items)
+        {
+            return items;
+        }
+
+        private static void AddPanel(
+            RibbonTab tab,
+            string panelId,
+            string title,
+            params RibbonItem[][] rows)
+        {
+            var source = new RibbonPanelSource
+            {
+                Id = panelId,
+                Title = title.ToUpperInvariant()
+            };
+            foreach (RibbonItem[] row in rows)
+            {
+                foreach (RibbonItem item in row)
+                    source.Items.Add(item);
+            }
+            tab.Panels.Add(new RibbonPanel { Source = source });
+        }
+'@
+    if (-not $text.Contains($old)) {
+        throw 'The expected Civil 3D 2023 RibbonRow block was not found in PluginEntry.cs.'
+    }
+    Set-Content -Path $plugin -Value $text.Replace($old, $new) -Encoding UTF8
+    Write-Host 'Applied Civil 3D 2023 ribbon compatibility repair.' -ForegroundColor Green
+}
+
 $repo = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repo 'src\CE.Tools.Civil3D\CE.Tools.Civil3D.csproj'
 $autoCadRoot = 'C:\Program Files\Autodesk\AutoCAD 2023'
@@ -50,6 +112,8 @@ if ($missing) {
     throw "Civil 3D 2023 SDK files are missing:`n$($missing -join "`n")"
 }
 if (-not (Test-Path $project)) { throw "Project not found: $project" }
+
+Repair-Civil3D2023RibbonSource -RepoRoot $repo
 
 $msbuild = Find-MSBuild
 Write-Host "Using MSBuild: $msbuild" -ForegroundColor Cyan
