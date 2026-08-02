@@ -1,0 +1,59 @@
+name: Restore remaining V60 sources
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - recovery/v60/missing-v60-sources.b64
+      - .github/workflows/restore-remaining-v60-sources.yml
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  restore:
+    if: ${{ !contains(github.event.head_commit.message, '[skip v60 source restore]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Decode verified V60 archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/ce-v60
+          base64 --decode recovery/v60/missing-v60-sources.b64 > /tmp/ce-v60.zip
+          unzip -q /tmp/ce-v60.zip -d /tmp/ce-v60
+          echo '6e00a24255f0c3b0d6d1246ef238c98b1b5bb55f4223b4756ea60677ff2cc990  /tmp/ce-v60/CommentPresentationCommands.cs' | sha256sum -c -
+          echo '9374c714174468c857c800a79884119229491fbd7c502ab29481e684d970d77c  /tmp/ce-v60/DynamicTypicalDetailEngine.cs' | sha256sum -c -
+          echo '006831693d570565a897395995113e36333950234176d3a4718cffe21ac715ec  /tmp/ce-v60/ProductionCommentCommands.cs' | sha256sum -c -
+
+      - name: Restore source files
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp /tmp/ce-v60/CommentPresentationCommands.cs src/CE.Tools.Civil3D/
+          cp /tmp/ce-v60/DynamicTypicalDetailEngine.cs src/CE.Tools.Civil3D/
+          cp /tmp/ce-v60/ProductionCommentCommands.cs src/CE.Tools.Civil3D/
+          grep -q 'class CommentAutoRefreshManager' src/CE.Tools.Civil3D/CommentPresentationCommands.cs
+          grep -q 'CreateLinkedDetail' src/CE.Tools.Civil3D/DynamicTypicalDetailEngine.cs
+          grep -q 'class ProductionChoiceWindow' src/CE.Tools.Civil3D/ProductionCommentCommands.cs
+
+      - name: Commit restored sources
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo 'Remaining V60 source files are already restored.'
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/CE.Tools.Civil3D/CommentPresentationCommands.cs \
+                  src/CE.Tools.Civil3D/DynamicTypicalDetailEngine.cs \
+                  src/CE.Tools.Civil3D/ProductionCommentCommands.cs
+          git commit -m 'restore: add remaining V60 support sources [skip v60 source restore]'
+          git push origin HEAD:main
