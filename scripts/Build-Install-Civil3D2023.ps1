@@ -9,14 +9,22 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 function Find-MSBuild {
+    $programFilesX86 = ${env:ProgramFiles(x86)}
     $candidates = @(
-        "$env:ProgramFiles\Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe",
-        "$env:ProgramFiles\Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe",
-        "$env:ProgramFiles\Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe",
-        "$env:ProgramFiles(x86)\Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe"
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\2022\Community\MSBuild\Current\Bin\MSBuild.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\2022\Professional\MSBuild\Current\Bin\MSBuild.exe'),
+        (Join-Path $env:ProgramFiles 'Microsoft Visual Studio\2022\Enterprise\MSBuild\Current\Bin\MSBuild.exe')
     )
-    foreach ($candidate in $candidates) {
-        if ($candidate -and (Test-Path $candidate)) { return $candidate }
+    if ($programFilesX86) {
+        $candidates += (Join-Path $programFilesX86 'Microsoft Visual Studio\2022\BuildTools\MSBuild\Current\Bin\MSBuild.exe')
+        $vswhere = Join-Path $programFilesX86 'Microsoft Visual Studio\Installer\vswhere.exe'
+        if (Test-Path $vswhere) {
+            $detected = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -find 'MSBuild\**\Bin\MSBuild.exe' 2>$null | Select-Object -First 1
+            if ($detected) { $candidates = @($detected) + $candidates }
+        }
+    }
+    foreach ($candidate in $candidates | Where-Object { $_ } | Select-Object -Unique) {
+        if (Test-Path $candidate) { return $candidate }
     }
     $cmd = Get-Command msbuild.exe -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
@@ -44,6 +52,7 @@ if ($missing) {
 if (-not (Test-Path $project)) { throw "Project not found: $project" }
 
 $msbuild = Find-MSBuild
+Write-Host "Using MSBuild: $msbuild" -ForegroundColor Cyan
 if ($Clean) {
     & $msbuild $project /t:Clean /p:Configuration=$Configuration /p:Platform=x64 /p:AutoCADVersion=2023 /p:AutoCADRoot="$autoCadRoot" /p:Civil3DRoot="$civil3DRoot" /p:AecRoot="$aecRoot" /m
     if ($LASTEXITCODE -ne 0) { throw "Clean failed with exit code $LASTEXITCODE" }
