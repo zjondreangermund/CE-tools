@@ -1,9 +1,21 @@
 <Project>
   <PropertyGroup>
     <LangVersion>latest</LangVersion>
-    <Deterministic>true</Deterministic>
+    <Deterministic>false</Deterministic>
     <DeterministicSourcePaths>false</DeterministicSourcePaths>
     <TreatWarningsAsErrors>false</TreatWarningsAsErrors>
     <NoWarn>1591</NoWarn>
+
+    <!-- Civil 3D uses a large .NET Framework source set and Autodesk reference graph.
+         Keep local builds isolated and conservative to avoid Roslyn process crashes. -->
+    <UseSharedCompilation>false</UseSharedCompilation>
+    <BuildInParallel>false</BuildInParallel>
+    <RunAnalyzers>false</RunAnalyzers>
+    <RunAnalyzersDuringBuild>false</RunAnalyzersDuringBuild>
+    <RunAnalyzersDuringLiveAnalysis>false</RunAnalyzersDuringLiveAnalysis>
+    <EnableNETAnalyzers>false</EnableNETAnalyzers>
+    <UseHostCompilerIfAvailable>false</UseHostCompilerIfAvailable>
+    <ConcurrentBuild>false</ConcurrentBuild>
+    <ReportAnalyzer>false</ReportAnalyzer>
   </PropertyGroup>
 </Project>
