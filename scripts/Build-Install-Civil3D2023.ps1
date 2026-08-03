@@ -181,12 +181,28 @@ Repair-Civil3D2023RibbonSource -RepoRoot $repo
 
 $msbuild = Find-MSBuild
 Write-Host "Using MSBuild: $msbuild" -ForegroundColor Cyan
+Write-Host 'Using single-process compilation with the Roslyn compiler server disabled.' -ForegroundColor Cyan
+
+$commonBuildArgs = @(
+    "/p:Configuration=$Configuration",
+    '/p:Platform=x64',
+    '/p:AutoCADVersion=2023',
+    "/p:AutoCADRoot=$autoCadRoot",
+    "/p:Civil3DRoot=$civil3DRoot",
+    "/p:AecRoot=$aecRoot",
+    '/p:UseSharedCompilation=false',
+    '/p:BuildInParallel=false',
+    '/p:Deterministic=false',
+    '/m:1',
+    '/nr:false'
+)
+
 if ($Clean) {
-    & $msbuild $project /t:Clean /p:Configuration=$Configuration /p:Platform=x64 /p:AutoCADVersion=2023 /p:AutoCADRoot="$autoCadRoot" /p:Civil3DRoot="$civil3DRoot" /p:AecRoot="$aecRoot" /m
+    & $msbuild $project /t:Clean @commonBuildArgs
     if ($LASTEXITCODE -ne 0) { throw "Clean failed with exit code $LASTEXITCODE" }
 }
 
-& $msbuild $project /t:Restore,Build /p:Configuration=$Configuration /p:Platform=x64 /p:AutoCADVersion=2023 /p:AutoCADRoot="$autoCadRoot" /p:Civil3DRoot="$civil3DRoot" /p:AecRoot="$aecRoot" /p:ContinuousIntegrationBuild=true /m
+& $msbuild $project /t:Restore,Build /p:ContinuousIntegrationBuild=false @commonBuildArgs
 if ($LASTEXITCODE -ne 0) { throw "Build failed with exit code $LASTEXITCODE" }
 
 $bundle = Join-Path $repo 'bundle\CE Tools.bundle'
