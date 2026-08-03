@@ -46,7 +46,8 @@ Verify:
 - angle is measured from the increasing baseline direction;
 - the source line or polyline remains unchanged;
 - new geometry uses the source layer;
-- the rear boundary joins the first and last divider tips;
+- every generated bay is an individual closed polyline, not loose divider lines;
+- the generated bays can be selected immediately by `CE_PKCOUNT` and `CE_PKNUMBER`;
 - pressing Enter or choosing No at preview creates nothing;
 - one undo removes all geometry created by the command;
 - locked, sloping and curved source geometry fails safely.
@@ -69,8 +70,9 @@ Verify:
 - total bay count is twice the per-row count;
 - the selected baseline acts as the aisle centreline;
 - aisle-edge separation equals the entered aisle width;
-- divider lines point away from the aisle on both sides;
-- inner and rear boundaries are complete;
+- each side creates an equal number of individual closed bay polylines;
+- bay edges point away from the aisle on both sides;
+- the generated bays can be selected immediately by `CE_PKCOUNT` and `CE_PKNUMBER`;
 - one undo removes the complete double-row result;
 - no geometry remains after cancellation or failure.
 
