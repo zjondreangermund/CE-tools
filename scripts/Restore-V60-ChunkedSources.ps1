@@ -87,6 +87,7 @@ try {
 
     $v54Commit = '94e193dd425b8156dd40d1251da34b4bb0fc1b36'
     $v54SupportSources = @(
+        'AnnotationCommands.cs',
         'AlignmentAnnotationLinkStore.cs',
         'ProfileAnnotationLinkStore.cs',
         'CorridorAnnotationLinkStore.cs',
@@ -102,7 +103,7 @@ try {
         'FeatureProfileSurfaceCommentCommands.cs'
     )
 
-    Write-Host 'Restoring matching V54 comment-presentation support sources...' -ForegroundColor Cyan
+    Write-Host 'Restoring matching V54 comment-presentation and annotation support sources...' -ForegroundColor Cyan
     foreach ($name in $v54SupportSources) {
         $url = "https://raw.githubusercontent.com/zjondreangermund/CE-tools/$v54Commit/src/CE.Tools.Civil3D/$name"
         $download = Join-Path $temp ("v54-" + $name)
