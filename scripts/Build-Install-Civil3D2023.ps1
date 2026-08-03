@@ -34,7 +34,7 @@ function Find-MSBuild {
 function Restore-V60SupportSources {
     param([Parameter(Mandatory=$true)][string]$RepoRoot)
     $archive = Join-Path $RepoRoot 'recovery\v60\missing-v60-sources.b64'
-    if (-not (Test-Path $archive)) { return }
+    if (-not (Test-Path -LiteralPath $archive)) { return }
     $targets = @(
         'CommentPresentationCommands.cs',
         'DynamicTypicalDetailEngine.cs',
@@ -43,7 +43,7 @@ function Restore-V60SupportSources {
     $sourceRoot = Join-Path $RepoRoot 'src\CE.Tools.Civil3D'
     $needsRestore = $false
     foreach ($name in $targets) {
-        if (-not (Test-Path (Join-Path $sourceRoot $name))) { $needsRestore = $true }
+        if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot $name))) { $needsRestore = $true }
     }
     if (-not $needsRestore) { return }
 
@@ -51,13 +51,36 @@ function Restore-V60SupportSources {
     New-Item -ItemType Directory -Force -Path $temp | Out-Null
     try {
         $zip = Join-Path $temp 'sources.zip'
-        $bytes = [Convert]::FromBase64String((Get-Content $archive -Raw).Trim())
+        $raw = [System.IO.File]::ReadAllText($archive)
+        $base64 = [System.Text.RegularExpressions.Regex]::Replace($raw, '[^A-Za-z0-9+/=]', '')
+        if ([string]::IsNullOrWhiteSpace($base64)) {
+            throw 'The staged V60 recovery archive is empty after Base64 normalization.'
+        }
+        $firstPadding = $base64.IndexOf('=')
+        if ($firstPadding -ge 0 -and $firstPadding -lt ($base64.Length - 2)) {
+            $body = $base64.Substring(0, $firstPadding).Replace('=', '')
+            $base64 = $body
+        }
+        $remainder = $base64.Length % 4
+        if ($remainder -eq 2) { $base64 += '==' }
+        elseif ($remainder -eq 3) { $base64 += '=' }
+        elseif ($remainder -eq 1) { throw 'The staged V60 recovery archive has an invalid Base64 length.' }
+
+        try {
+            $bytes = [Convert]::FromBase64String($base64)
+        }
+        catch {
+            throw "The staged V60 recovery archive could not be decoded after normalization. $($_.Exception.Message)"
+        }
+        if ($bytes.Length -lt 4 -or $bytes[0] -ne 0x50 -or $bytes[1] -ne 0x4B) {
+            throw 'The decoded V60 recovery archive is not a valid ZIP file.'
+        }
         [IO.File]::WriteAllBytes($zip, $bytes)
-        Expand-Archive -Path $zip -DestinationPath $temp -Force
+        Expand-Archive -LiteralPath $zip -DestinationPath $temp -Force
         foreach ($name in $targets) {
             $from = Join-Path $temp $name
-            if (-not (Test-Path $from)) { throw "V60 recovery source missing from archive: $name" }
-            Copy-Item $from (Join-Path $sourceRoot $name) -Force
+            if (-not (Test-Path -LiteralPath $from)) { throw "V60 recovery source missing from archive: $name" }
+            Copy-Item -LiteralPath $from -Destination (Join-Path $sourceRoot $name) -Force
         }
         Write-Host 'Restored remaining V60 support sources.' -ForegroundColor Green
     }
