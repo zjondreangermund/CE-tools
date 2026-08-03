@@ -17,12 +17,14 @@ namespace CETools.Civil3D
         public void Initialize()
         {
             DynamicSectionUpdateManager.Initialize();
+            FloatingToolsCommands.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
 
         public void Terminate()
         {
             AcApplication.Idle -= OnApplicationIdle;
+            FloatingToolsCommands.Terminate();
             DynamicSectionUpdateManager.Terminate();
         }
 
@@ -37,7 +39,14 @@ namespace CETools.Civil3D
             try
             {
                 _ribbonCreated = RibbonBuilder.EnsureCreated();
-                if (_ribbonCreated) AcApplication.Idle -= OnApplicationIdle;
+                if (_ribbonCreated)
+                {
+                    // The workflow command centre must appear once when the
+                    // first Civil 3D session has a usable CE Tools ribbon.
+                    // Opening it before this point produces an empty window.
+                    FloatingToolsCommands.OpenAtFirstStartup();
+                    AcApplication.Idle -= OnApplicationIdle;
+                }
             }
             catch
             {
