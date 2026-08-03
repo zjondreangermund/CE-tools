@@ -88,6 +88,7 @@ try {
     $v54Commit = '94e193dd425b8156dd40d1251da34b4bb0fc1b36'
     $v54SupportSources = @(
         'AnnotationCommands.cs',
+        'ProfileStationInputWindow.cs',
         'AlignmentAnnotationLinkStore.cs',
         'ProfileAnnotationLinkStore.cs',
         'CorridorAnnotationLinkStore.cs',
