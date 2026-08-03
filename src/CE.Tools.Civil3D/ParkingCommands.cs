@@ -180,49 +180,35 @@ namespace CETools.Civil3D
                         sideSign * DegreesToRadians(parameters.AngleDegrees),
                         Vector3d.ZAxis);
 
-                    Point3d firstBack = Point3d.Origin;
-                    Point3d lastBack = Point3d.Origin;
-                    int createdLines = 0;
+                    int createdBays = 0;
 
-                    for (int index = 0; index <= bayCount; index++)
+                    for (int index = 0; index < bayCount; index++)
                     {
-                        Point3d front = baseline.Start +
+                        Point3d frontStart = baseline.Start +
                             (direction * (index * parameters.BayWidth));
-                        Point3d back = front +
+                        Point3d frontEnd = baseline.Start +
+                            (direction * ((index + 1) * parameters.BayWidth));
+                        Point3d backEnd = frontEnd +
+                            (dividerDirection * parameters.BayDepth);
+                        Point3d backStart = frontStart +
                             (dividerDirection * parameters.BayDepth);
 
-                        AppendLine(
+                        AppendClosedBay(
                             currentSpace,
                             transaction,
                             baseline.LayerId,
-                            front,
-                            back);
-                        createdLines++;
-
-                        if (index == 0)
-                        {
-                            firstBack = back;
-                        }
-
-                        if (index == bayCount)
-                        {
-                            lastBack = back;
-                        }
+                            frontStart,
+                            frontEnd,
+                            backEnd,
+                            backStart);
+                        createdBays++;
                     }
-
-                    AppendLine(
-                        currentSpace,
-                        transaction,
-                        baseline.LayerId,
-                        firstBack,
-                        lastBack);
-                    createdLines++;
 
                     transaction.Commit();
                     editor.WriteMessage(
-                        "\nCE_PKROW complete. Bays={0}; geometry lines created={1}.",
+                        "\nCE_PKROW complete. Closed parking bays created={0}.",
                         bayCount,
-                        createdLines);
+                        createdBays);
                 }
             }
             catch (System.Exception exception)
@@ -293,85 +279,50 @@ namespace CETools.Civil3D
 
                     Point3d leftInnerStart = baseline.Start + halfAisleOffset;
                     Point3d rightInnerStart = baseline.Start - halfAisleOffset;
-                    Point3d leftInnerEnd = leftInnerStart + (direction * usedLength);
-                    Point3d rightInnerEnd = rightInnerStart + (direction * usedLength);
-                    Point3d leftBackStart = Point3d.Origin;
-                    Point3d leftBackEnd = Point3d.Origin;
-                    Point3d rightBackStart = Point3d.Origin;
-                    Point3d rightBackEnd = Point3d.Origin;
-                    int createdLines = 0;
+                    int createdBays = 0;
 
-                    AppendLine(
-                        currentSpace,
-                        transaction,
-                        baseline.LayerId,
-                        leftInnerStart,
-                        leftInnerEnd);
-                    AppendLine(
-                        currentSpace,
-                        transaction,
-                        baseline.LayerId,
-                        rightInnerStart,
-                        rightInnerEnd);
-                    createdLines += 2;
-
-                    for (int index = 0; index <= baysPerRow; index++)
+                    for (int index = 0; index < baysPerRow; index++)
                     {
-                        double station = index * parameters.BayWidth;
-                        Point3d leftFront = leftInnerStart + (direction * station);
-                        Point3d rightFront = rightInnerStart + (direction * station);
-                        Point3d leftBack = leftFront +
+                        double startStation = index * parameters.BayWidth;
+                        double endStation = (index + 1) * parameters.BayWidth;
+                        Point3d leftFrontStart = leftInnerStart + (direction * startStation);
+                        Point3d leftFrontEnd = leftInnerStart + (direction * endStation);
+                        Point3d rightFrontStart = rightInnerStart + (direction * startStation);
+                        Point3d rightFrontEnd = rightInnerStart + (direction * endStation);
+                        Point3d leftBackEnd = leftFrontEnd +
                             (leftDivider * parameters.BayDepth);
-                        Point3d rightBack = rightFront +
+                        Point3d leftBackStart = leftFrontStart +
+                            (leftDivider * parameters.BayDepth);
+                        Point3d rightBackEnd = rightFrontEnd +
+                            (rightDivider * parameters.BayDepth);
+                        Point3d rightBackStart = rightFrontStart +
                             (rightDivider * parameters.BayDepth);
 
-                        AppendLine(
+                        AppendClosedBay(
                             currentSpace,
                             transaction,
                             baseline.LayerId,
-                            leftFront,
-                            leftBack);
-                        AppendLine(
+                            leftFrontStart,
+                            leftFrontEnd,
+                            leftBackEnd,
+                            leftBackStart);
+                        AppendClosedBay(
                             currentSpace,
                             transaction,
                             baseline.LayerId,
-                            rightFront,
-                            rightBack);
-                        createdLines += 2;
-
-                        if (index == 0)
-                        {
-                            leftBackStart = leftBack;
-                            rightBackStart = rightBack;
-                        }
-
-                        if (index == baysPerRow)
-                        {
-                            leftBackEnd = leftBack;
-                            rightBackEnd = rightBack;
-                        }
+                            rightFrontStart,
+                            rightFrontEnd,
+                            rightBackEnd,
+                            rightBackStart);
+                        createdBays += 2;
                     }
-
-                    AppendLine(
-                        currentSpace,
-                        transaction,
-                        baseline.LayerId,
-                        leftBackStart,
-                        leftBackEnd);
-                    AppendLine(
-                        currentSpace,
-                        transaction,
-                        baseline.LayerId,
-                        rightBackStart,
-                        rightBackEnd);
-                    createdLines += 2;
 
                     transaction.Commit();
                     editor.WriteMessage(
-                        "\nCE_PKDOUBLE complete. Bays per row={0}; total bays={1}; geometry lines created={2}.",
+                        "\nCE_PKDOUBLE complete. Bays per row={0}; total closed parking bays created={1}.",
                         baysPerRow,
                         baysPerRow * 2,
-                        createdLines);
+                        createdBays);
                 }
             }
             catch (System.Exception exception)
@@ -836,18 +787,26 @@ namespace CETools.Civil3D
             return degrees * Math.PI / 180.0;
         }
 
-        private static void AppendLine(
+        private static void AppendClosedBay(
             BlockTableRecord currentSpace,
             Transaction transaction,
             ObjectId layerId,
-            Point3d start,
-            Point3d end)
+            Point3d frontStart,
+            Point3d frontEnd,
+            Point3d backEnd,
+            Point3d backStart)
         {
-            var line = new Line(start, end);
-            line.SetDatabaseDefaults();
-            line.LayerId = layerId;
-            currentSpace.AppendEntity(line);
-            transaction.AddNewlyCreatedDBObject(line, true);
+            var bay = new Polyline(4);
+            bay.SetDatabaseDefaults();
+            bay.LayerId = layerId;
+            bay.Elevation = frontStart.Z;
+            bay.AddVertexAt(0, new Point2d(frontStart.X, frontStart.Y), 0.0, 0.0, 0.0);
+            bay.AddVertexAt(1, new Point2d(frontEnd.X, frontEnd.Y), 0.0, 0.0, 0.0);
+            bay.AddVertexAt(2, new Point2d(backEnd.X, backEnd.Y), 0.0, 0.0, 0.0);
+            bay.AddVertexAt(3, new Point2d(backStart.X, backStart.Y), 0.0, 0.0, 0.0);
+            bay.Closed = true;
+            currentSpace.AppendEntity(bay);
+            transaction.AddNewlyCreatedDBObject(bay, true);
         }
 
         private static BlockTableRecord OpenCurrentSpace(
