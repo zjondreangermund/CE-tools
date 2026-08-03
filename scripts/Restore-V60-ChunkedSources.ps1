@@ -61,9 +61,6 @@ try {
         Write-Host "Restored V60 source: $name" -ForegroundColor Green
     }
 
-    # The archived DynamicTypicalDetailEngine.cs was later proven to contain
-    # damaged string literals. Replace it with the original clean source from
-    # the exact Typical Details Phase 3 head where the feature was introduced.
     $cleanEngineUrl = 'https://raw.githubusercontent.com/zjondreangermund/CE-tools/90dc8cde323c253c60f3bd4a3f9e343a7dd210a2/src/CE.Tools.Civil3D/DynamicTypicalDetailEngine.cs'
     $cleanEngineTemp = Join-Path $temp 'DynamicTypicalDetailEngine.clean.cs'
     Write-Host 'Downloading verified clean DynamicTypicalDetailEngine.cs...' -ForegroundColor Cyan
@@ -88,10 +85,6 @@ try {
         (New-Object System.Text.UTF8Encoding($false)))
     Write-Host 'Replaced corrupted dynamic-detail engine with verified clean source.' -ForegroundColor Green
 
-    # CommentPresentationCommands.cs references support stores, schedule commands,
-    # parking links and refresh methods that were present in the complete V54
-    # source checkpoint but were omitted from the smaller recovered source set.
-    # Restore those files from one exact commit so their internal APIs remain aligned.
     $v54Commit = '94e193dd425b8156dd40d1251da34b4bb0fc1b36'
     $v54SupportSources = @(
         'AlignmentAnnotationLinkStore.cs',
@@ -118,8 +111,15 @@ try {
         if (-not (Test-Path -LiteralPath $download -PathType Leaf)) {
             throw "The V54 support-source download was not created: $name"
         }
+
         $text = [System.IO.File]::ReadAllText($download)
-        if ($text.Length -lt 200 -or -not $text.Contains('namespace CE.Tools.Civil3D')) {
+        $expectedType = [System.IO.Path]::GetFileNameWithoutExtension($name)
+        $hasExpectedNamespace =
+            $text.Contains('namespace CETools.Civil3D') -or
+            $text.Contains('namespace CE.Tools.Civil3D')
+        if ($text.Length -lt 200 -or
+            -not $hasExpectedNamespace -or
+            -not $text.Contains($expectedType)) {
             throw "The downloaded V54 support source failed integrity checks: $name"
         }
 
