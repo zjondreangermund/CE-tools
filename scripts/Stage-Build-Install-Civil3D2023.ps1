@@ -46,9 +46,10 @@ $global:LASTEXITCODE = 0
 $restore = Join-Path $stageRoot 'scripts\Restore-V60-ChunkedSources.ps1'
 $repair = Join-Path $stageRoot 'scripts\Repair-Civil3D2023-Compatibility.ps1'
 $finalRepair = Join-Path $stageRoot 'scripts\Repair-V60-RemainingCompatibility.ps1'
+$diagnose = Join-Path $stageRoot 'scripts\Diagnose-RoslynSourceCrash.ps1'
 $build = Join-Path $stageRoot 'scripts\Build-Install-Civil3D2023-DotNet.ps1'
 
-foreach ($required in @($restore, $repair, $finalRepair, $build)) {
+foreach ($required in @($restore, $repair, $finalRepair, $diagnose, $build)) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Required staged script was not found: $required"
     }
@@ -65,7 +66,11 @@ $global:LASTEXITCODE = 0
 & $finalRepair -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
-Write-Host "`nBuilding with the .NET SDK compiler to bypass the crashing Visual Studio csc.exe..." -ForegroundColor Cyan
+Write-Host "`nChecking restored source files for the Roslyn TextSpan parser crash..." -ForegroundColor Cyan
+& $diagnose -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nBuilding with the pinned .NET SDK compiler..." -ForegroundColor Cyan
 & $build -Clean
 if ($LASTEXITCODE -ne 0) {
     throw "CE Tools .NET SDK build or installation failed with exit code $LASTEXITCODE."
