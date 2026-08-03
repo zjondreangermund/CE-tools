@@ -33,25 +33,40 @@ try {
 
     $crashFiles = New-Object System.Collections.Generic.List[string]
     foreach ($file in $files) {
-        # Rewrite a diagnostic copy as strict UTF-8 without BOM. This removes any
-        # hidden encoding marker as a variable without changing repository files.
         $text = [System.IO.File]::ReadAllText($file.FullName, [System.Text.UTF8Encoding]::new($false, $true))
         $copy = Join-Path $temp $file.Name
         [System.IO.File]::WriteAllText($copy, $text, [System.Text.UTF8Encoding]::new($false))
         $out = Join-Path $temp ($file.BaseName + '.dll')
 
-        $result = & $dotnet $csc '/noconfig' '/nostdlib+' '/target:library' '/langversion:latest' "/out:$out" $copy 2>&1 | Out-String
+        # Native compiler crashes write to stderr and return non-zero. PowerShell 7
+        # can promote that stderr into a terminating NativeCommandError when the
+        # script preference is Stop, so temporarily allow the output to be captured.
+        $previousPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'Continue'
+        try {
+            $result = (& $dotnet $csc '/noconfig' '/nostdlib+' '/target:library' '/langversion:latest' "/out:$out" $copy 2>&1 | Out-String)
+            $compilerExitCode = $LASTEXITCODE
+        }
+        finally {
+            $ErrorActionPreference = $previousPreference
+        }
+
         if ($result -match 'ArgumentOutOfRangeException' -or
             $result -match 'TextSpan\.\.ctor' -or
             $result -match 'Process terminated') {
             $crashFiles.Add($file.FullName)
             Write-Host "Roslyn parser crash reproduced in: $($file.Name)" -ForegroundColor Red
         }
+        elseif ($compilerExitCode -ne 0) {
+            # Ordinary missing-reference or syntax diagnostics are expected when a
+            # source file is compiled by itself. They are not parser crashes.
+            Write-Host "Checked: $($file.Name)" -ForegroundColor DarkGray
+        }
     }
 
     if ($crashFiles.Count -eq 0) {
         Write-Host 'No individual source file reproduced the Roslyn parser crash.' -ForegroundColor Yellow
-        Write-Host 'The next diagnostic will isolate a crashing file combination during the full project build.' -ForegroundColor Yellow
+        Write-Host 'The full build will now continue so the next diagnostic can isolate a file combination if needed.' -ForegroundColor Yellow
         return
     }
 
