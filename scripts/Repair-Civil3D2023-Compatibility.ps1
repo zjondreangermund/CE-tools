@@ -94,4 +94,57 @@ Replace-RequiredText -Path $roadPath -Old $oldRoadCall -New $newRoadCall -Descri
 
 Replace-RequiredText -Path (Join-Path $src 'SurveyCoordinateWorkflowCommands.cs') -Old '        private static ObjectId CreateLinkedTable(' -New '        internal static ObjectId CreateLinkedTable(' -Description 'expose linked coordinate-table creation inside the CE Tools assembly'
 
+$pluginPath = Join-Path $src 'PluginEntry.cs'
+$oldRibbonRows = @'
+        private static RibbonRow Row(params RibbonItem[] items)
+        {
+            var row = new RibbonRow();
+            foreach (RibbonItem item in items) row.RowItems.Add(item);
+            return row;
+        }
+
+        private static void AddPanel(
+            RibbonTab tab,
+            string panelId,
+            string title,
+            params RibbonRow[] rows)
+        {
+            var source = new RibbonPanelSource
+            {
+                Id = panelId,
+                Title = title.ToUpperInvariant()
+            };
+            foreach (RibbonRow row in rows) source.Rows.Add(row);
+            tab.Panels.Add(new RibbonPanel { Source = source });
+        }
+'@
+$newRibbonRows = @'
+        private static RibbonItem[] Row(params RibbonItem[] items)
+        {
+            return items;
+        }
+
+        private static void AddPanel(
+            RibbonTab tab,
+            string panelId,
+            string title,
+            params RibbonItem[][] rows)
+        {
+            var source = new RibbonPanelSource
+            {
+                Id = panelId,
+                Title = title.ToUpperInvariant()
+            };
+
+            foreach (RibbonItem[] row in rows)
+            {
+                foreach (RibbonItem item in row)
+                    source.Items.Add(item);
+            }
+
+            tab.Panels.Add(new RibbonPanel { Source = source });
+        }
+'@
+Replace-RequiredText -Path $pluginPath -Old $oldRibbonRows -New $newRibbonRows -Description 'remove unsupported RibbonRow and add panel items directly for Civil 3D 2023'
+
 Write-Host 'Civil 3D 2023 compatibility repairs completed.' -ForegroundColor Cyan
