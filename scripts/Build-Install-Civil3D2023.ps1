@@ -171,7 +171,12 @@ if ($missing) {
 }
 if (-not (Test-Path $project)) { throw "Project not found: $project" }
 
-Restore-V60SupportSources -RepoRoot $repo
+try {
+    Restore-V60SupportSources -RepoRoot $repo
+}
+catch {
+    Write-Warning "Optional V60 source recovery was skipped: $($_.Exception.Message)"
+}
 Repair-Civil3D2023RibbonSource -RepoRoot $repo
 
 $msbuild = Find-MSBuild
