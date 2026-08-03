@@ -756,6 +756,7 @@ namespace CETools.Civil3D
                             number.ToString(CultureInfo.InvariantCulture);
                         currentSpace.AppendEntity(text);
                         transaction.AddNewlyCreatedDBObject(text, true);
+                        ParkingNumberLinkCommands.Link(transaction, text, entity);
 
                         number += incrementResult.Value;
                         placed++;
