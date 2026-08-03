@@ -38,15 +38,18 @@ if ($missing) {
 Write-Host "Using .NET SDK MSBuild instead of the crashing Visual Studio Roslyn host:" -ForegroundColor Cyan
 & $dotnet.Source --info
 
+# Each MSBuild property must be one complete argument. Without parentheses,
+# PowerShell expands expressions such as '/p:Configuration=' + $Configuration
+# into separate arguments, causing MSB1008 (Only one project can be specified).
 $common = @(
     'msbuild',
     $project,
-    '/p:Configuration=' + $Configuration,
+    ("/p:Configuration=$Configuration"),
     '/p:Platform=x64',
     '/p:AutoCADVersion=2023',
-    '/p:AutoCADRoot=' + $autoCadRoot,
-    '/p:Civil3DRoot=' + $civil3DRoot,
-    '/p:AecRoot=' + $aecRoot,
+    ("/p:AutoCADRoot=$autoCadRoot"),
+    ("/p:Civil3DRoot=$civil3DRoot"),
+    ("/p:AecRoot=$aecRoot"),
     '/p:UseSharedCompilation=false',
     '/p:BuildInParallel=false',
     '/p:RunAnalyzers=false',
