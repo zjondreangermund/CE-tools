@@ -87,9 +87,51 @@ try {
         ($cleanText -replace "`r?`n", "`r`n"),
         (New-Object System.Text.UTF8Encoding($false)))
     Write-Host 'Replaced corrupted dynamic-detail engine with verified clean source.' -ForegroundColor Green
+
+    # CommentPresentationCommands.cs references support stores, schedule commands,
+    # parking links and refresh methods that were present in the complete V54
+    # source checkpoint but were omitted from the smaller recovered source set.
+    # Restore those files from one exact commit so their internal APIs remain aligned.
+    $v54Commit = '94e193dd425b8156dd40d1251da34b4bb0fc1b36'
+    $v54SupportSources = @(
+        'AlignmentAnnotationLinkStore.cs',
+        'ProfileAnnotationLinkStore.cs',
+        'CorridorAnnotationLinkStore.cs',
+        'NetworkAssetScheduleCommands.cs',
+        'RoadCrossSectionScheduleCommands.cs',
+        'StandardQuantityTemplateCommands.cs',
+        'SewerExcavationCommentCommands.cs',
+        'ParkingNumberLinkStore.cs',
+        'ParkingReportLinkStore.cs',
+        'PolylineDirectionCommands.cs',
+        'FeatureLineRelativeCommands.cs',
+        'DynamicCoordinateLinkStore.cs',
+        'FeatureProfileSurfaceCommentCommands.cs'
+    )
+
+    Write-Host 'Restoring matching V54 comment-presentation support sources...' -ForegroundColor Cyan
+    foreach ($name in $v54SupportSources) {
+        $url = "https://raw.githubusercontent.com/zjondreangermund/CE-tools/$v54Commit/src/CE.Tools.Civil3D/$name"
+        $download = Join-Path $temp ("v54-" + $name)
+        Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $download
+
+        if (-not (Test-Path -LiteralPath $download -PathType Leaf)) {
+            throw "The V54 support-source download was not created: $name"
+        }
+        $text = [System.IO.File]::ReadAllText($download)
+        if ($text.Length -lt 200 -or -not $text.Contains('namespace CE.Tools.Civil3D')) {
+            throw "The downloaded V54 support source failed integrity checks: $name"
+        }
+
+        [System.IO.File]::WriteAllText(
+            (Join-Path $sourceRoot $name),
+            ($text -replace "`r?`n", "`r`n"),
+            (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host "Restored V54 support source: $name" -ForegroundColor Green
+    }
 }
 finally {
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
 }
 
-Write-Host 'Verified V60 support-source restoration completed.' -ForegroundColor Cyan
+Write-Host 'Verified V60 and matching V54 support-source restoration completed.' -ForegroundColor Cyan
