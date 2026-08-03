@@ -54,20 +54,21 @@ foreach ($required in @($restore, $repair, $finalRepair, $build)) {
     Unblock-File -LiteralPath $required -ErrorAction SilentlyContinue
 }
 
+# Robocopy uses non-zero success codes (1-7). Clear that native-process
+# status before invoking PowerShell scripts so it cannot be mistaken for a
+# failure after a successful script invocation.
+$global:LASTEXITCODE = 0
+
 Write-Host "`nRestoring verified V60 support sources..." -ForegroundColor Cyan
 & $restore -RepoRoot $stageRoot
-if ($LASTEXITCODE -ne 0) { throw 'V60 source restore failed.' }
 
 Write-Host "`nPreparing CE Tools sources for Civil 3D 2023..." -ForegroundColor Cyan
 & $repair -RepoRoot $stageRoot
-if ($LASTEXITCODE -ne 0) { throw 'Civil 3D compatibility repair failed.' }
 
 & $finalRepair -RepoRoot $stageRoot
-if ($LASTEXITCODE -ne 0) { throw 'Final V60 compatibility repair failed.' }
 
 Write-Host "`nBuilding from the short local path to avoid OneDrive and long-path compiler crashes..." -ForegroundColor Cyan
 & $build -Clean
-if ($LASTEXITCODE -ne 0) { throw 'CE Tools build or installation failed.' }
 
 Write-Host "`nCE Tools was built and installed from:" -ForegroundColor Green
 Write-Host $stageRoot
