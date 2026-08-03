@@ -9,6 +9,7 @@ Commands:
 - `CE_PKDOUBLE`
 - `CE_PKCOUNT`
 - `CE_PKNUMBER`
+- `CE_PKNUMBERREFRESH`
 
 Always test on a copy of a drawing.
 
@@ -121,6 +122,15 @@ Verify:
 - skipped objects do not consume a number;
 - pressing Enter or choosing No creates no labels;
 - failures do not leave partial numbering labels.
+
+## Linked parking-number refresh
+
+1. Create closed bays with `CE_PKROW` or `CE_PKDOUBLE`.
+2. Number them with `CE_PKNUMBER2`.
+3. Move or stretch one closed bay, then run `CE_PKNUMBERREFRESH`.
+4. Confirm its label moves to the bay centre and retains its contents and text height.
+5. Delete one numbered bay, run `CE_PKNUMBERREFRESH`, and confirm only its linked label is removed.
+6. Confirm ordinary MText and legacy `CE_PKNUMBER` / `CE_PKNUMBERX` labels are unchanged.
 
 ## Release gate
 
