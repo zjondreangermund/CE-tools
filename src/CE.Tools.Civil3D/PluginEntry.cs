@@ -298,6 +298,7 @@ namespace CETools.Civil3D
                     Cmd("Validate and Count Bays", "CE_PKCOUNTX ", "Validate blocks and closed polylines, explain rejected objects and optionally place a table."),
                     Cmd("Count Bays (Legacy)", "CE_PKCOUNT ", "Run the original parking count command."),
                     Cmd("Validate and Number Bays", "CE_PKNUMBER2 ", "Validate objects and number accepted bays using the shared 1.8, 2.0 or 5.0 text height."),
+                    Cmd("Refresh Linked Parking Numbers", "CE_PKNUMBERREFRESH ", "Move CE_PKNUMBER2 labels to their edited bays and remove labels whose bays were deleted."),
                     Cmd("Number Bays (Legacy Shared)", "CE_PKNUMBERX ", "Run the Batch 3 shared-height parking numbering command."))));
         }
 
