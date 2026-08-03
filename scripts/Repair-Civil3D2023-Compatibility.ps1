@@ -38,7 +38,18 @@ function Replace-RequiredText {
     Write-Host "Applied repair: $Description" -ForegroundColor Green
 }
 
-$repoFullPath = [System.IO.Path]::GetFullPath($RepoRoot)
+# CMD can pass a repository path ending in a backslash immediately before the
+# closing quote. On some Windows/PowerShell combinations that quote becomes part
+# of the argument. Remove only surrounding quotes and resolve the existing folder
+# without rebuilding the path from an unsafe string.
+$cleanRepoRoot = $RepoRoot.Trim().Trim('"')
+if ([string]::IsNullOrWhiteSpace($cleanRepoRoot)) {
+    throw 'The repository root argument is empty.'
+}
+if (-not (Test-Path -LiteralPath $cleanRepoRoot -PathType Container)) {
+    throw "Repository root was not found: $cleanRepoRoot"
+}
+$repoFullPath = (Resolve-Path -LiteralPath $cleanRepoRoot).ProviderPath
 $src = Join-Path -Path $repoFullPath -ChildPath 'src\CE.Tools.Civil3D'
 
 Replace-RequiredText -Path (Join-Path $src 'FloatingToolsWindow.cs') -Old '            _shortcutTarget = ComponentManager.ApplicationWindow as UIElement;' -New '            _shortcutTarget = ComponentManager.Ribbon as UIElement;' -Description 'use the Civil 3D ribbon as the Ctrl+F keyboard target'
