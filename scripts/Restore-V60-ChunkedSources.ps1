@@ -60,6 +60,33 @@ try {
         Copy-Item -LiteralPath $from -Destination (Join-Path $sourceRoot $name) -Force
         Write-Host "Restored V60 source: $name" -ForegroundColor Green
     }
+
+    # The archived DynamicTypicalDetailEngine.cs was later proven to contain
+    # damaged string literals. Replace it with the original clean source from
+    # the exact Typical Details Phase 3 head where the feature was introduced.
+    $cleanEngineUrl = 'https://raw.githubusercontent.com/zjondreangermund/CE-tools/90dc8cde323c253c60f3bd4a3f9e343a7dd210a2/src/CE.Tools.Civil3D/DynamicTypicalDetailEngine.cs'
+    $cleanEngineTemp = Join-Path $temp 'DynamicTypicalDetailEngine.clean.cs'
+    Write-Host 'Downloading verified clean DynamicTypicalDetailEngine.cs...' -ForegroundColor Cyan
+    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+    Invoke-WebRequest -UseBasicParsing -Uri $cleanEngineUrl -OutFile $cleanEngineTemp
+
+    if (-not (Test-Path -LiteralPath $cleanEngineTemp -PathType Leaf)) {
+        throw 'The verified clean dynamic-detail engine download was not created.'
+    }
+    $cleanText = [System.IO.File]::ReadAllText($cleanEngineTemp)
+    if ($cleanText.Length -lt 10000 -or
+        -not $cleanText.Contains('public sealed partial class DynamicTypicalDetailCommands') -or
+        -not $cleanText.Contains('private static ObjectId CreateLinkedDetail') -or
+        -not $cleanText.Contains('private static List<QuantityItem> CalculateQuantities')) {
+        throw 'The downloaded dynamic-detail engine did not pass source integrity checks.'
+    }
+
+    $cleanDestination = Join-Path $sourceRoot 'DynamicTypicalDetailEngine.cs'
+    [System.IO.File]::WriteAllText(
+        $cleanDestination,
+        ($cleanText -replace "`r?`n", "`r`n"),
+        (New-Object System.Text.UTF8Encoding($false)))
+    Write-Host 'Replaced corrupted dynamic-detail engine with verified clean source.' -ForegroundColor Green
 }
 finally {
     Remove-Item -LiteralPath $temp -Recurse -Force -ErrorAction SilentlyContinue
