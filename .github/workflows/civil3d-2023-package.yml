@@ -3,6 +3,8 @@ name: Civil 3D 2023 build and release package
 on:
   workflow_dispatch:
   push:
+    branches:
+      - main
     tags:
       - 'v*'
 

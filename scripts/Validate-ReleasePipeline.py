@@ -79,6 +79,8 @@ if settings_source.count("[CommandMethod") < 3:
     errors.append("SettingsCenterCommands.cs must retain the settings centre, alias and audit")
 if "workflow_dispatch:" not in workflow:
     errors.append("Civil 3D package workflow must remain manually dispatchable")
+if "branches:" not in workflow or "- main" not in workflow:
+    errors.append("Civil 3D package workflow must run automatically for main")
 
 if errors:
     print("CE Tools release-pipeline validation failed:", file=sys.stderr)
