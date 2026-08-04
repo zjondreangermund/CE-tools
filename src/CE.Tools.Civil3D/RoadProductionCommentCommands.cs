@@ -46,6 +46,7 @@ namespace CETools.Civil3D
                 "Create road design objects in sequence using the active drawing styles and CE Project Style Centre choices.",
                 new List<DisciplineWorkflowAction>
                 {
+                    RoadAction("Choose production styles", "CE_PROJECTSTYLES", "Choose road alignment/profile styles, label sets, profile-view band set, assembly, corridor and code-set styles before production starts.", "0 — Production setup"),
                     RoadAction("Create road alignments", "CE_ROADALIGN", "Create sequential linked road alignments from selected polylines.", "1 — Alignments"),
                     RoadAction("Create road profiles", "CE_ROADPROFILES", "Create existing-ground profiles and ordered profile views.", "2 — Profiles"),
                     RoadAction("Create CE road assembly", "CE_ASSEMBLYCREATE", "Create the Civil 3D roadway assembly used by corridor regions.", "3 — Assembly"),
@@ -54,7 +55,6 @@ namespace CETools.Civil3D
                     RoadAction("Corridor baselines and regions", "CE_CORBASEUI", "Review generated corridor baselines and regions.", "4 — Corridors"),
                     RoadAction("Rebuild selected corridors", "CE_CORREBUILDX", "Rebuild selected road corridors.", "4 — Corridors"),
                     RoadAction("Create dynamic intersections", "CE_INTCREATE", "Create linked road intersection output.", "5 — Intersections"),
-                    RoadAction("Project Style Centre", "CE_PROJECTSTYLES", "Select road alignment, profile, assembly, corridor and code-set styles.", "6 — Configuration"),
                     RoadAction("Road production information", "CE_ROADPRODUCTIONINFO", "Review alignments, profiles, corridors and project styles.", "7 — Review"),
                     RoadAction("All profiles report", "CE_PROFILEREPORT2", "Review all generated profiles and profile views.", "7 — Review"),
                     RoadAction("Road BOQ", "CE_BOQROAD", "Create the road bill of quantities in Excel format.", "8 — Production"),
@@ -358,6 +358,11 @@ namespace CETools.Civil3D
                             view,
                             styles.ProfileViewStyleId,
                             styles.BandSetStyleId);
+                        ProfileViewBandDataBinder.Bind(
+                            view,
+                            profileId,
+                            ObjectId.Null,
+                            ObjectId.Null);
                         WriteTag(view, "ProfileView", road.Name, road.SourceHandle);
                         views++;
 
@@ -761,12 +766,12 @@ namespace CETools.Civil3D
             out string actualName)
         {
             actualName = "<Drawing default>";
-            IEnumerable enumerable = collection as IEnumerable;
-            if (enumerable == null) throw new InvalidOperationException("A required Civil 3D style collection is unavailable.");
+            IList<object> values = CivilStyleDiscovery.Enumerate(collection);
+            if (values.Count == 0) throw new InvalidOperationException("A required Civil 3D style collection is unavailable or empty.");
             ObjectId first = ObjectId.Null;
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
-                foreach (object item in enumerable)
+                foreach (object item in values)
                 {
                     if (!(item is ObjectId)) continue;
                     ObjectId id = (ObjectId)item;

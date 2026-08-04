@@ -49,10 +49,10 @@ namespace CETools.Civil3D
                 "Sequence networks, generate linked alignments and profiles, then review or refresh the model. Configuration is stored in the active DWG.",
                 new List<DisciplineWorkflowAction>
                 {
+                    new DisciplineWorkflowAction("Choose production styles", "CE_SWSETTINGS", "Choose alignment/profile styles, label sets, profile-view style and band set before production starts.", "0 — Production setup"),
                     new DisciplineWorkflowAction("Sequence network", "CE_SWSEQ", "Create the main and branch order from a stormwater network.", "1 — Network"),
                     new DisciplineWorkflowAction("Create or refresh alignments", "CE_SWALIGN", "Build linked branch alignments and staggered plan labels.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Create or refresh profiles", "CE_SWPROFILE", "Select a surface, pick an insertion point and create linked profile views.", "3 — Profiles"),
-                    new DisciplineWorkflowAction("Stormwater settings", "CE_SWSETTINGS", "Select styles, layers, paper label height and profile layout.", "4 — Configuration"),
                     new DisciplineWorkflowAction("Stormwater information", "CE_SWINFO", "Review stored settings and generated object links.", "5 — Review")
                 });
             if (!string.IsNullOrWhiteSpace(command))
@@ -71,12 +71,12 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(
                 "CE Tools — Stormwater Settings",
                 "Blank style names use the first compatible style in the current drawing. Paper label heights and profile-view layout are stored with this DWG.");
-            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Select an installed style; blank uses the first available style.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles));
-            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Labels applied to generated branch alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles));
-            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style used for generated existing-ground profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles));
-            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set applied to generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles));
-            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style applied to generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles));
-            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set applied when profile views are created.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles));
+            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Select an installed style; blank uses the first available style.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles, "Alignment Style"));
+            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Labels applied to generated branch alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles, "Alignment Label Set Style"));
+            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style used for generated existing-ground profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles, "Profile Style"));
+            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set applied to generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles, "Profile Label Set Style"));
+            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style applied to generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles, "Profile View Style"));
+            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set applied when profile views are created.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles, "Profile View Band Set Style"));
             model.AddText("AlignmentLayer", "Layers and Annotation", "Alignment layer", settings.AlignmentLayer, "Layer for CE stormwater alignments and plan labels.");
             model.AddText("ProfileLayer", "Layers and Annotation", "Profile layer", settings.ProfileLayer, "Layer for generated profiles and profile views.");
             model.AddPaperHeight("LabelTextHeight", "Layers and Annotation", "Plan branch-label paper height", settings.LabelTextHeight, "Select 1.8, 2.0, 2.5, 3.5 or 5.0, or enter another positive height.");
@@ -1218,6 +1218,7 @@ namespace CETools.Civil3D
                         record.SourceHandles);
                     viewsCreated++;
 
+                    ObjectId bandNetworkId = ObjectId.Null;
                     if (record.SourceKind == "Network")
                     {
                         foreach (string handleText in record.SourceHandles)
@@ -1233,12 +1234,21 @@ namespace CETools.Civil3D
                                 sourceId,
                                 OpenMode.ForRead,
                                 false);
+                            object sourceNetworkId = ReadProperty(part, "NetworkId");
+                            if (sourceNetworkId is ObjectId &&
+                                !((ObjectId)sourceNetworkId).IsNull)
+                                bandNetworkId = (ObjectId)sourceNetworkId;
                             if (TryAddPartToProfileView(
                                     part,
                                     profileViewId))
                                 partsAdded++;
                         }
                     }
+                    ProfileViewBandDataBinder.Bind(
+                        profileView,
+                        profileId,
+                        ObjectId.Null,
+                        bandNetworkId);
 
                     var title = new MText();
                     title.SetDatabaseDefaults(database);

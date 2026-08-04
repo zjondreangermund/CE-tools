@@ -173,7 +173,8 @@ namespace CETools.Civil3D
                 ? new List<string>()
                 : ProductionStyleCatalog.ReadNames(
                     document.Database,
-                    ReadLabelStyleCollection(civilDocument, pipe));
+                    ReadLabelStyleCollection(civilDocument, pipe),
+                    pipe ? "Pipe Label Style" : "Structure Label Style");
         }
 
         private static object ReadLabelStyleCollection(

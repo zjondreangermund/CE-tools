@@ -110,6 +110,23 @@ namespace CETools.Civil3D
                 "UndividedCrownedRoad",
                 "Choose the Civil 3D assembly classification.",
                 new[] { "UndividedCrownedRoad", "UndividedPlanarRoad", "Other" });
+            model.AddChoice(
+                "AssemblyStyle",
+                "Assembly",
+                "Assembly style",
+                string.Empty,
+                "Apply any Civil 3D assembly style installed in the active drawing.",
+                ProductionStyleCatalog.ReadNames(
+                    document.Database,
+                    ReadProperty(civilDocument.Styles, "AssemblyStyles"),
+                    "Assembly Style"));
+            model.AddChoice(
+                "OpenPalette",
+                "Assembly",
+                "Open Civil 3D Common Assemblies after placement",
+                "Yes",
+                "Open Tool Palettes immediately so a Basic, Primary Road, Secondary Road or other Civil 3D subassembly template can be added to the new assembly.",
+                new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return ObjectId.Null;
             PromptPointResult point = document.Editor.GetPoint(
                 "\nSelect the insertion point for the CE road assembly: ");
@@ -130,13 +147,22 @@ namespace CETools.Civil3D
                 ObjectId styleId = ResolveAssemblyStyleId(
                     civilDocument,
                     document.Database,
-                    transaction);
+                    transaction,
+                    model.Text("AssemblyStyle"));
+                string styleName = string.Empty;
+                if (!styleId.IsNull)
+                {
+                    DBObject selectedStyle = transaction.GetObject(styleId, OpenMode.ForRead, false);
+                    styleName = Text(ReadProperty(selectedStyle, "Name"));
+                }
                 assemblyId = AddAssembly(
                     collection,
+                    document.Database,
                     name,
                     model.Text("Type"),
                     point.Value,
-                    styleId);
+                    styleId,
+                    styleName);
                 DBObject assembly = transaction.GetObject(
                     assemblyId,
                     OpenMode.ForWrite,
@@ -149,15 +175,19 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
             document.Editor.Regen();
+            if (string.Equals(model.Text("OpenPalette"), "Yes", StringComparison.OrdinalIgnoreCase))
+                document.SendStringToExecute("_TOOLPALETTES ", true, false, true);
             return assemblyId;
         }
 
         private static ObjectId AddAssembly(
             object collection,
+            Database database,
             string name,
             string requestedType,
             Point3d point,
-            ObjectId styleId)
+            ObjectId styleId,
+            string styleName)
         {
             System.Exception lastError = null;
             foreach (MethodInfo method in collection.GetType()
@@ -170,9 +200,15 @@ namespace CETools.Civil3D
                 for (int index = 0; index < arguments.Length; index++)
                 {
                     ParameterInfo parameter = method.GetParameters()[index];
-                    if (parameter.ParameterType == typeof(string)) arguments[index] = name;
+                    string parameterName = (parameter.Name ?? string.Empty).ToLowerInvariant();
+                    if (parameter.ParameterType == typeof(string))
+                        arguments[index] = parameterName.Contains("description")
+                            ? "CE Tools road assembly"
+                            : parameterName.Contains("style")
+                                ? styleName
+                                : name;
                     else if (parameter.ParameterType == typeof(Point3d)) arguments[index] = point;
-                    else if (parameter.ParameterType == typeof(ObjectId) && !styleId.IsNull)
+                    else if (parameter.ParameterType == typeof(ObjectId))
                         arguments[index] = styleId;
                     else if (parameter.ParameterType.IsEnum)
                         arguments[index] = ParseEnum(parameter.ParameterType, requestedType);
@@ -186,15 +222,77 @@ namespace CETools.Civil3D
                     if (result is ObjectId) return (ObjectId)result;
                     DBObject value = result as DBObject;
                     if (value != null) return value.ObjectId;
+                    // Some Civil 3D 2023 Add overloads commit the assembly but
+                    // return void. Resolve the newly created object before trying
+                    // another overload, otherwise the next call reports that the
+                    // assembly name already exists.
+                    ObjectId created = FindAssemblyId(database, collection, name);
+                    if (!created.IsNull) return created;
                 }
                 catch (TargetInvocationException exception)
                 {
                     lastError = exception.InnerException ?? exception;
+                    ObjectId created = FindAssemblyId(database, collection, name);
+                    if (!created.IsNull) return created;
                 }
             }
             throw new InvalidOperationException(
                 "No compatible Civil 3D AssemblyCollection.Add overload succeeded." +
                 (lastError == null ? string.Empty : " " + lastError.Message));
+        }
+
+        private static ObjectId FindAssemblyId(
+            Database database,
+            object collection,
+            string name)
+        {
+            if (database == null || collection == null) return ObjectId.Null;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                foreach (object value in CivilStyleDiscovery.Enumerate(collection))
+                {
+                    ObjectId id = value is ObjectId
+                        ? (ObjectId)value
+                        : value is DBObject ? ((DBObject)value).ObjectId : ObjectId.Null;
+                    if (id.IsNull || id.IsErased) continue;
+                    try
+                    {
+                        DBObject item = transaction.GetObject(id, OpenMode.ForRead, false);
+                        if (string.Equals(
+                                Text(ReadProperty(item, "Name")),
+                                name,
+                                StringComparison.OrdinalIgnoreCase))
+                            return id;
+                    }
+                    catch { }
+                }
+
+                // A newly added 2023 assembly can be resident in model space
+                // before its managed collection wrapper refreshes.
+                try
+                {
+                    BlockTableRecord space = transaction.GetObject(
+                        database.CurrentSpaceId,
+                        OpenMode.ForRead,
+                        false) as BlockTableRecord;
+                    if (space != null)
+                    {
+                        foreach (ObjectId id in space)
+                        {
+                            DBObject item = transaction.GetObject(id, OpenMode.ForRead, false);
+                            if (item.GetType().Name.IndexOf("Assembly", StringComparison.OrdinalIgnoreCase) < 0)
+                                continue;
+                            if (string.Equals(
+                                    Text(ReadProperty(item, "Name")),
+                                    name,
+                                    StringComparison.OrdinalIgnoreCase))
+                                return id;
+                        }
+                    }
+                }
+                catch { }
+            }
+            return ObjectId.Null;
         }
 
         private static object ParseEnum(Type type, string requested)
@@ -208,17 +306,15 @@ namespace CETools.Civil3D
         private static ObjectId ResolveAssemblyStyleId(
             CivilDocument civilDocument,
             Database database,
-            Transaction transaction)
+            Transaction transaction,
+            string requested)
         {
             ProjectStyleSelection selection = ProjectStyleCenterCommands.ReadSelection(database);
-            string requested = string.Empty;
-            if (selection != null)
+            if (string.IsNullOrWhiteSpace(requested) && selection != null)
                 selection.Values.TryGetValue("Assembly Style", out requested);
             object collection = ReadProperty(civilDocument.Styles, "AssemblyStyles");
-            IEnumerable values = collection as IEnumerable;
-            if (values == null) return ObjectId.Null;
             ObjectId first = ObjectId.Null;
-            foreach (object value in values)
+            foreach (object value in CivilStyleDiscovery.Enumerate(collection))
             {
                 ObjectId id = value is ObjectId ? (ObjectId)value : ObjectId.Null;
                 if (id.IsNull || id.IsErased) continue;
@@ -247,6 +343,19 @@ namespace CETools.Civil3D
                 {
                     DBObject value = transaction.GetObject(id, OpenMode.ForRead, false);
                     names.Add(Text(ReadProperty(value, "Name")));
+                }
+                object collection = ReadProperty(civilDocument, "AssemblyCollection") ??
+                                    ReadProperty(civilDocument, "Assemblies");
+                foreach (object value in CivilStyleDiscovery.Enumerate(collection))
+                {
+                    ObjectId id = value is ObjectId ? (ObjectId)value : ObjectId.Null;
+                    if (id.IsNull || id.IsErased) continue;
+                    try
+                    {
+                        DBObject assembly = transaction.GetObject(id, OpenMode.ForRead, false);
+                        names.Add(Text(ReadProperty(assembly, "Name")));
+                    }
+                    catch { }
                 }
             }
             string candidate = root;

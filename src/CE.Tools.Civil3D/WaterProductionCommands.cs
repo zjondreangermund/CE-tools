@@ -46,13 +46,13 @@ namespace CETools.Civil3D
                 "Sequence water routes, create linked alignments and profiles, then place spacing-controlled valve and hydrant review markers.",
                 new List<DisciplineWorkflowAction>
                 {
+                    new DisciplineWorkflowAction("Choose production styles", "CE_WATERSETTINGS", "Choose alignment/profile styles, label sets, profile-view style and band set before production starts.", "0 — Production setup"),
                     new DisciplineWorkflowAction("Sequence water routes", "CE_WATERSEQ", "Store main and branch order on selected source routes.", "1 — Routes"),
                     new DisciplineWorkflowAction("Create or refresh alignments", "CE_WATERALIGN", "Build linked water alignments and route labels.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Refresh linked alignments", "CE_WATERREFRESH", "Rebuild generated alignments from their live source routes.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Create water profiles", "CE_WATERPROFILE", "Select a surface, pick an insertion point and create profile views.", "3 — Profiles"),
                     new DisciplineWorkflowAction("Place asset review markers", "CE_WATERPLACE", "Place valve and hydrant review markers using stored spacing rules.", "4 — Assets"),
                     new DisciplineWorkflowAction("Refresh asset markers", "CE_WATERPLACEREFRESH", "Rebuild linked review markers after source changes.", "4 — Assets"),
-                    new DisciplineWorkflowAction("Water settings", "CE_WATERSETTINGS", "Select styles, layers, profile layout and asset spacing.", "5 — Configuration"),
                     new DisciplineWorkflowAction("Water information", "CE_WATERINFO", "Review generated objects, settings and live links.", "6 — Review")
                 });
             if (!string.IsNullOrWhiteSpace(command))
@@ -71,12 +71,12 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(
                 "CE Tools — Water Settings",
                 "Blank style names use the first compatible drawing style. Asset spacing and profile layout are saved in the active DWG.");
-            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Style for generated water alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles));
-            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Label set applied to generated alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles));
-            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style for existing-ground profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles));
-            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set applied to generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles));
-            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style for generated water profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles));
-            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set for generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles));
+            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Style for generated water alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles, "Alignment Style"));
+            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Label set applied to generated alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles, "Alignment Label Set Style"));
+            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style for existing-ground profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles, "Profile Style"));
+            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set applied to generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles, "Profile Label Set Style"));
+            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style for generated water profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles, "Profile View Style"));
+            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set for generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles, "Profile View Band Set Style"));
             model.AddText("AlignmentLayer", "Layers and Annotation", "Alignment layer", settings.AlignmentLayer, "Layer for water alignments and route labels.");
             model.AddText("ProfileLayer", "Layers and Annotation", "Profile layer", settings.ProfileLayer, "Layer for water profiles and profile views.");
             model.AddText("AssetLayer", "Layers and Annotation", "Asset review layer", settings.AssetLayer, "Layer for valve and hydrant review markers.");
@@ -514,6 +514,30 @@ namespace CETools.Civil3D
                             record.SourceHandle,
                             selectedSurface.ObjectId.Handle.ToString());
                         TryAddPressurePartsToProfileView(record, viewId, transaction);
+                        ObjectId bandNetworkId = ObjectId.Null;
+                        if (!string.IsNullOrWhiteSpace(record.SourceHandle))
+                        {
+                            ObjectId routeSourceId;
+                            if (TryGetObjectId(
+                                    document.Database,
+                                    record.SourceHandle,
+                                    out routeSourceId))
+                            {
+                                DBObject routeSource = transaction.GetObject(
+                                    routeSourceId,
+                                    OpenMode.ForRead,
+                                    false);
+                                object networkIdValue = ReadProperty(routeSource, "NetworkId") ??
+                                                        ReadProperty(routeSource, "PressureNetworkId");
+                                if (networkIdValue is ObjectId)
+                                    bandNetworkId = (ObjectId)networkIdValue;
+                            }
+                        }
+                        ProfileViewBandDataBinder.Bind(
+                            view,
+                            profileId,
+                            ObjectId.Null,
+                            bandNetworkId);
                         views++;
                     }
                     transaction.Commit();

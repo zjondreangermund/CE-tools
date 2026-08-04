@@ -46,6 +46,7 @@ namespace CETools.Civil3D
             "Alignment Style",
             "Alignment Label Set Style",
             "Profile Style",
+            "Profile Label Set Style",
             "Profile View Style",
             "Profile View Band Set Style",
             "Surface Style",
@@ -55,8 +56,11 @@ namespace CETools.Civil3D
             "Code Set Style",
             "Assembly Style",
             "Pipe Style",
+            "Pipe Label Style",
             "Structure Style",
+            "Structure Label Style",
             "Pressure Pipe Style",
+            "Pressure Pipe Label Style",
             "Fitting Style",
             "Appurtenance Style"
         };
@@ -555,6 +559,18 @@ namespace CETools.Civil3D
                     result);
             }
 
+            // Freshly imported Aecc styles can exist in the DWG before the 2023
+            // managed StylesRoot wrappers refresh. Read the database dictionaries
+            // as a second source so every valid style is immediately selectable.
+            IDictionary<string, List<string>> databaseCatalogue =
+                CivilStyleDiscovery.ReadCatalogue(document.Database);
+            foreach (KeyValuePair<string, List<string>> entry in databaseCatalogue)
+            {
+                List<string> target;
+                if (result.TryGetValue(entry.Key, out target))
+                    target.AddRange(entry.Value);
+            }
+
             // Work from a stable key snapshot. Replacing a dictionary value while
             // enumerating its KeyValuePair collection throws "Collection was
             // modified" on the .NET Framework used by Civil 3D 2023.
@@ -586,6 +602,7 @@ namespace CETools.Civil3D
                 { "Alignment Style", new[] { "AlignmentStyles" } },
                 { "Alignment Label Set Style", new[] { "LabelSetStyles.AlignmentLabelSetStyles" } },
                 { "Profile Style", new[] { "ProfileStyles" } },
+                { "Profile Label Set Style", new[] { "LabelSetStyles.ProfileLabelSetStyles" } },
                 { "Profile View Style", new[] { "ProfileViewStyles" } },
                 { "Profile View Band Set Style", new[] { "ProfileViewBandSetStyles" } },
                 { "Surface Style", new[] { "SurfaceStyles" } },
@@ -595,8 +612,11 @@ namespace CETools.Civil3D
                 { "Code Set Style", new[] { "CodeSetStyles" } },
                 { "Assembly Style", new[] { "AssemblyStyles" } },
                 { "Pipe Style", new[] { "PipeStyles" } },
+                { "Pipe Label Style", new[] { "LabelStyles.PipeLabelStyles.PlanProfileLabelStyles", "LabelStyles.PipeLabelStyles" } },
                 { "Structure Style", new[] { "StructureStyles" } },
+                { "Structure Label Style", new[] { "LabelStyles.StructureLabelStyles.PlanProfileLabelStyles", "LabelStyles.StructureLabelStyles" } },
                 { "Pressure Pipe Style", new[] { "PressurePipeStyles", "PressureNetworkStyles.PressurePipeStyles" } },
+                { "Pressure Pipe Label Style", new[] { "LabelStyles.PressurePipeLabelStyles", "PressureNetworkStyles.PressurePipeLabelStyles" } },
                 { "Fitting Style", new[] { "FittingStyles", "PressureNetworkStyles.FittingStyles" } },
                 { "Appurtenance Style", new[] { "AppurtenanceStyles", "PressureNetworkStyles.AppurtenanceStyles" } }
             };
@@ -701,77 +721,9 @@ namespace CETools.Civil3D
 
         private static IList<object> EnumerateStyleItems(object value)
         {
-            var result = new List<object>();
-            if (value == null || value is string) return result;
-
-            IEnumerable enumerable = value as IEnumerable;
-            if (enumerable != null)
-            {
-                try
-                {
-                    foreach (object item in enumerable) result.Add(item);
-                }
-                catch
-                {
-                    result.Clear();
-                }
-                if (result.Count > 0) return result;
-            }
-
-            try
-            {
-                MethodInfo objectIdsMethod = value.GetType().GetMethod(
-                    "GetObjectIds",
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null,
-                    Type.EmptyTypes,
-                    null);
-                object objectIds = objectIdsMethod == null
-                    ? null
-                    : objectIdsMethod.Invoke(value, null);
-                IEnumerable objectIdEnumerable = objectIds as IEnumerable;
-                if (objectIdEnumerable != null)
-                {
-                    foreach (object item in objectIdEnumerable) result.Add(item);
-                    if (result.Count > 0) return result;
-                }
-            }
-            catch
-            {
-                result.Clear();
-            }
-
-            try
-            {
-                PropertyInfo countProperty = value.GetType().GetProperty(
-                    "Count",
-                    BindingFlags.Public | BindingFlags.Instance);
-                int count = countProperty == null
-                    ? 0
-                    : Convert.ToInt32(
-                        countProperty.GetValue(value, null),
-                        CultureInfo.InvariantCulture);
-                PropertyInfo indexer = value.GetType().GetProperties(
-                        BindingFlags.Public | BindingFlags.Instance)
-                    .FirstOrDefault(property =>
-                    {
-                        ParameterInfo[] parameters = property.GetIndexParameters();
-                        return parameters.Length == 1 &&
-                            parameters[0].ParameterType == typeof(int) &&
-                            property.CanRead;
-                    });
-                if (indexer != null)
-                {
-                    for (int index = 0; index < count; index++)
-                        result.Add(indexer.GetValue(value, new object[] { index }));
-                }
-            }
-            catch
-            {
-                result.Clear();
-            }
-
-            return result;
+            // Shared discovery covers "GetObjectIds", explicit GetEnumerator, and
+            // Count/indexer wrappers used by Civil 3D 2023 style collections.
+            return CivilStyleDiscovery.Enumerate(value);
         }
 
         private static string ReadStyleName(object item, Transaction transaction)
@@ -804,6 +756,9 @@ namespace CETools.Civil3D
         private static string MapStyleKey(string path)
         {
             string value = (path ?? string.Empty).ToUpperInvariant();
+            if (value.Contains("STRUCTURE") && value.Contains("LABEL")) return "Structure Label Style";
+            if (value.Contains("PRESSURE") && value.Contains("PIPE") && value.Contains("LABEL")) return "Pressure Pipe Label Style";
+            if (value.Contains("PIPE") && value.Contains("LABEL")) return "Pipe Label Style";
             if (value.Contains("PRESSURE") && value.Contains("PIPE")) return "Pressure Pipe Style";
             if (value.Contains("APPURTENANCE")) return "Appurtenance Style";
             if (value.Contains("FITTING")) return "Fitting Style";
@@ -814,6 +769,7 @@ namespace CETools.Civil3D
             if (value.Contains("CORRIDOR")) return "Corridor Style";
             if (value.Contains("PROFILEVIEW") && value.Contains("BAND")) return "Profile View Band Set Style";
             if (value.Contains("PROFILEVIEW")) return "Profile View Style";
+            if (value.Contains("PROFILE") && value.Contains("LABELSET")) return "Profile Label Set Style";
             if (value.Contains("PROFILE")) return "Profile Style";
             if (value.Contains("ALIGNMENT") && value.Contains("LABEL")) return "Alignment Label Set Style";
             if (value.Contains("ALIGNMENT")) return "Alignment Style";

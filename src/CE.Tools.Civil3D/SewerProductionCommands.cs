@@ -47,6 +47,7 @@ namespace CETools.Civil3D
                 "Sequence a complete network automatically or select Branch-1 first, then create linked alignments, profiles and production labels.",
                 new List<DisciplineWorkflowAction>
                 {
+                    new DisciplineWorkflowAction("Choose production styles", "CE_SEWSETTINGS", "Choose alignment/profile styles, alignment/profile label sets, profile-view style, band set, and pipe/structure labels before production starts.", "0 — Production setup"),
                     new DisciplineWorkflowAction("Automatic network sequence", "CE_SEWSEQ", "Sequence and number the complete connected sewer network.", "1 — Network"),
                     new DisciplineWorkflowAction("Sequence with selected main", "CE_SEWSEQMAIN", "Select the intended main route before branch numbering.", "1 — Network"),
                     new DisciplineWorkflowAction("Create / refresh Civil labels", "CE_SEWLABELS", "Add the selected Civil 3D pipe and structure plan labels without duplicating existing labels.", "1 — Network"),
@@ -54,7 +55,6 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Refresh alignments", "CE_SEWREFRESH", "Rebuild generated sewer alignments from their live network sources.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Format alignments and labels", "CE_SEWFORMAT", "Reapply production styles and repeated branch labels.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Create sewer profiles", "CE_SEWPROFILE", "Select a surface, pick an insertion point and create profile views.", "3 — Profiles"),
-                    new DisciplineWorkflowAction("Sewer settings", "CE_SEWSETTINGS", "Select styles, layers, paper label height and profile layout.", "4 — Configuration"),
                     new DisciplineWorkflowAction("Sewer information", "CE_SEWINFO", "Review settings, alignments, profile views and network links.", "5 — Review")
                 });
             if (!string.IsNullOrWhiteSpace(command))
@@ -188,12 +188,12 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(
                 "CE Tools — Sewer Settings",
                 "Blank style names use the first compatible drawing style. Label height is a paper height; layout values control batch profile-view placement.");
-            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Select an installed style for generated sewer branch alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles));
-            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Label set applied automatically to generated sewer alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles));
-            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style for generated existing-ground profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles));
-            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set for generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles));
-            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style for generated sewer profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles));
-            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set for generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles));
+            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Select an installed style for generated sewer branch alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles, "Alignment Style"));
+            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Label set applied automatically to generated sewer alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles, "Alignment Label Set Style"));
+            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style for generated existing-ground profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles, "Profile Style"));
+            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set for generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles, "Profile Label Set Style"));
+            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style for generated sewer profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles, "Profile View Style"));
+            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set for generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles, "Profile View Band Set Style"));
             model.AddChoice("PipePlanLabelStyle", "Civil 3D Styles", "Pipe plan-label style", settings.PipePlanLabelStyle, "Plan label added automatically to sewer pipes after sequencing.", SewerNetworkLabelCommands.ReadPipeLabelStyleNames(document));
             model.AddChoice("StructurePlanLabelStyle", "Civil 3D Styles", "Structure plan-label style", settings.StructurePlanLabelStyle, "Plan label added automatically to sewer manholes after sequencing.", SewerNetworkLabelCommands.ReadStructureLabelStyleNames(document));
             model.AddText("ProfileLayer", "Layers and Annotation", "Profile output layer", settings.ProfileLayer, "Layer for sewer profiles and profile views.");
@@ -1059,13 +1059,18 @@ namespace CETools.Civil3D
                     WriteProfileTag(view, record.BranchKey, "ProfileView");
                     viewsCreated++;
 
-                    ObjectId networkId;
+                    ObjectId networkId = ObjectId.Null;
                     if (TryGetObjectId(database, record.NetworkHandle, out networkId))
                     {
                         var network = transaction.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
                         if (network != null)
                             partsAdded += AddBranchParts(network, record.BranchName, viewId, transaction);
                     }
+                    ProfileViewBandDataBinder.Bind(
+                        view,
+                        profileId,
+                        ObjectId.Null,
+                        networkId);
 
                     var title = new MText();
                     title.SetDatabaseDefaults(database);
