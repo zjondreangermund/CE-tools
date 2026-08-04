@@ -238,6 +238,7 @@ try {
     $validators = @(
         "Validate-ReportPresentation.py",
         "Validate-AnnotationCommands.py",
+        "Validate-Civil3D2023CompileRepairs.py",
         "Validate-WorkflowRepairs.py",
         "Validate-SurveyCoordinateWorkflows.py",
         "Validate-WorkflowWindow.py",

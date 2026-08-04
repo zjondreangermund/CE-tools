@@ -1267,15 +1267,38 @@ namespace CETools.Civil3D
             AnnotationOptions options,
             bool allowCogo)
         {
+            return Create(
+                document,
+                target,
+                labelPoint,
+                contents,
+                plainDescription,
+                options,
+                allowCogo,
+                null);
+        }
+
+        public static bool Create(
+            Document document,
+            Point3d target,
+            Point3d labelPoint,
+            string contents,
+            string plainDescription,
+            AnnotationOptions options,
+            bool allowCogo,
+            IList<ObjectId> generatedIds)
+        {
             if (options.Output == AnnotationOutput.Cogo && allowCogo)
             {
                 return CreateCogoPoint(
                     document,
                     target,
                     plainDescription,
-                    options);
+                    options,
+                    generatedIds);
             }
 
+            var createdIds = new List<ObjectId>();
             try
             {
                 using (Transaction transaction =
@@ -1288,39 +1311,40 @@ namespace CETools.Civil3D
 
                     if (options.DrawMarker)
                     {
-                        AddMarker(
+                        createdIds.Add(AddMarker(
                             currentSpace,
                             transaction,
                             target,
                             options.TextHeight,
-                            ObjectId.Null);
+                            ObjectId.Null));
                     }
 
                     if (options.Output == AnnotationOutput.MText)
                     {
-                        AddMText(
+                        createdIds.Add(AddMText(
                             document.Database,
                             currentSpace,
                             transaction,
                             labelPoint,
                             contents,
-                            options.TextHeight);
+                            options.TextHeight));
                     }
                     else
                     {
-                        AddMLeader(
+                        createdIds.Add(AddMLeader(
                             document.Database,
                             currentSpace,
                             transaction,
                             target,
                             labelPoint,
                             contents,
-                            options.TextHeight);
+                            options.TextHeight));
                     }
 
                     transaction.Commit();
                 }
 
+                AppendGeneratedIds(generatedIds, createdIds);
                 return true;
             }
             catch (System.Exception exception)
@@ -1332,7 +1356,7 @@ namespace CETools.Civil3D
             }
         }
 
-        public static void AddMarker(
+        public static ObjectId AddMarker(
             BlockTableRecord currentSpace,
             Transaction transaction,
             Point3d target,
@@ -1347,9 +1371,10 @@ namespace CETools.Civil3D
             if (!layerId.IsNull) marker.LayerId = layerId;
             currentSpace.AppendEntity(marker);
             transaction.AddNewlyCreatedDBObject(marker, true);
+            return marker.ObjectId;
         }
 
-        private static void AddMText(
+        private static ObjectId AddMText(
             Database database,
             BlockTableRecord currentSpace,
             Transaction transaction,
@@ -1365,9 +1390,10 @@ namespace CETools.Civil3D
             text.Contents = contents ?? string.Empty;
             currentSpace.AppendEntity(text);
             transaction.AddNewlyCreatedDBObject(text, true);
+            return text.ObjectId;
         }
 
-        private static void AddMLeader(
+        private static ObjectId AddMLeader(
             Database database,
             BlockTableRecord currentSpace,
             Transaction transaction,
@@ -1392,13 +1418,15 @@ namespace CETools.Civil3D
             leader.AddLastVertex(leaderLineIndex, labelPoint);
             currentSpace.AppendEntity(leader);
             transaction.AddNewlyCreatedDBObject(leader, true);
+            return leader.ObjectId;
         }
 
         private static bool CreateCogoPoint(
             Document document,
             Point3d target,
             string description,
-            AnnotationOptions options)
+            AnnotationOptions options,
+            IList<ObjectId> generatedIds)
         {
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (civilDocument == null)
@@ -1438,16 +1466,18 @@ namespace CETools.Civil3D
                             document.Database.CurrentSpaceId,
                             OpenMode.ForWrite,
                             false);
-                        AddMarker(
+                        ObjectId markerId = AddMarker(
                             currentSpace,
                             transaction,
                             target,
                             options.TextHeight,
                             ObjectId.Null);
                         transaction.Commit();
+                        createdIds.Add(markerId);
                     }
                 }
 
+                AppendGeneratedIds(generatedIds, createdIds);
                 document.Editor.WriteMessage(
                     "\nCOGO point created. Its visible label follows the drawing's current point label style.");
                 return true;
@@ -1459,6 +1489,17 @@ namespace CETools.Civil3D
                     "\nCOGO output failed. Created points were removed where possible. {0}",
                     exception.Message);
                 return false;
+            }
+        }
+
+        private static void AppendGeneratedIds(
+            IList<ObjectId> destination,
+            IEnumerable<ObjectId> source)
+        {
+            if (destination == null || source == null) return;
+            foreach (ObjectId id in source)
+            {
+                if (!id.IsNull) destination.Add(id);
             }
         }
 

@@ -49,6 +49,12 @@ All notable CE Tools changes will be recorded here.
   paper heights and MLeader/MText/COGO output choices.
 - General, Survey, Stormwater, Sewer, Water, Bulk Water and Flood workflow tabs
   now include complete ordered step sequences instead of partial summaries.
+- Reconciled the first V61 Civil 3D 2023 compiler report: shared report calls
+  accept a safe default table title, dynamic annotation creation returns generated
+  object IDs, linked feature-line refresh is callable by the shared refresh engine,
+  stored coordinate parsing initializes short-circuited values, ribbon icon mode
+  compatibility is restored, surface choices are shared with production modules,
+  and survey workflows import LINQ explicitly.
 - The verified installer now validates every manifest file in the source, staging
   and installed bundles, compares both Civil and Core DLLs, and records version,
   source commit and hashes before removing its rollback copy.

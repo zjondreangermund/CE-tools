@@ -474,9 +474,9 @@ namespace CETools.Civil3D
 
         private static bool TryReadCoordinateContents(string contents, out Point3d point)
         {
-            double x;
-            double y;
-            double z;
+            double x = 0.0;
+            double y = 0.0;
+            double z = 0.0;
             bool hasX = TryReadLabelNumber(contents, "X:", out x);
             bool hasY = TryReadLabelNumber(contents, "Y:", out y);
             bool hasZ = TryReadLabelNumber(contents, "Z:", out z);
@@ -502,9 +502,9 @@ namespace CETools.Civil3D
             IDictionary<string, string> values,
             out Point3d point)
         {
-            double x;
-            double y;
-            double z;
+            double x = 0.0;
+            double y = 0.0;
+            double z = 0.0;
             bool valid = double.TryParse(Text(values, "LastX"), NumberStyles.Float, CultureInfo.InvariantCulture, out x) &&
                 double.TryParse(Text(values, "LastY"), NumberStyles.Float, CultureInfo.InvariantCulture, out y) &&
                 double.TryParse(Text(values, "LastZ"), NumberStyles.Float, CultureInfo.InvariantCulture, out z);

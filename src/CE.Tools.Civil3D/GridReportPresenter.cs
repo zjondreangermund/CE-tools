@@ -22,7 +22,7 @@ namespace CETools.Civil3D
             string note,
             IList<string> columns,
             IList<IList<string>> rows,
-            string tableTitle)
+            string tableTitle = "")
         {
             if (document == null)
             {

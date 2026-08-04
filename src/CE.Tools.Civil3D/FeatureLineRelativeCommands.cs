@@ -311,63 +311,7 @@ namespace CETools.Civil3D
 
             try
             {
-                int rebuilt = 0;
-                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-                {
-                    CivilFeatureLine source = OpenFeatureLine(transaction, sourceId, OpenMode.ForRead);
-                    EnsureEditable(source, transaction);
-                    BlockTableRecord modelSpace = GetModelSpace(
-                        document.Database, transaction, OpenMode.ForWrite);
-
-                    using (Polyline plan = BuildPlanPolyline(source))
-                    {
-                        modelSpace.AppendEntity(plan);
-                        transaction.AddNewlyCreatedDBObject(plan, true);
-
-                        foreach (ChildRecord record in children.OrderBy(item => item.Relation.Sequence))
-                        {
-                            CivilFeatureLine oldChild = OpenFeatureLine(
-                                transaction, record.ObjectId, OpenMode.ForWrite);
-                            if (oldChild == null || oldChild.IsReferenceObject)
-                                throw new InvalidOperationException("A linked child is unavailable or referenced.");
-                            if (IsLayerLocked(transaction, oldChild.LayerId))
-                                throw new InvalidOperationException("Linked feature line '" + oldChild.Name + "' is on a locked layer.");
-
-                            string name = oldChild.Name;
-                            ObjectId layerId = oldChild.LayerId;
-                            string styleName = oldChild.StyleName;
-                            ObjectId siteId = oldChild.SiteId;
-                            oldChild.Name = "CE_TMP_FLREL_" + Guid.NewGuid().ToString("N");
-                            oldChild.Erase();
-
-                            ObjectId childId = CreateChild(
-                                source,
-                                plan,
-                                record.Relation.HorizontalOffset,
-                                record.Relation.VerticalOffset,
-                                name,
-                                layerId,
-                                styleName,
-                                siteId,
-                                modelSpace,
-                                transaction);
-                            CivilFeatureLine newChild = OpenFeatureLine(
-                                transaction, childId, OpenMode.ForWrite);
-                            WriteRelation(
-                                newChild,
-                                source.Handle.ToString(),
-                                record.Relation.HorizontalOffset,
-                                record.Relation.VerticalOffset,
-                                record.Relation.Sequence,
-                                transaction);
-                            rebuilt++;
-                        }
-
-                        if (!plan.IsErased) plan.Erase();
-                    }
-
-                    transaction.Commit();
-                }
+                int rebuilt = RebuildChildren(document, sourceId, children);
 
                 editor.WriteMessage(
                     "\nCE_FLRELUPDATE complete. Linked feature lines rebuilt: {0}.", rebuilt);
@@ -377,6 +321,158 @@ namespace CETools.Civil3D
                 editor.WriteMessage(
                     "\nCE_FLRELUPDATE cancelled. No changes were committed. " + exception.Message);
             }
+        }
+
+        public static int RefreshAll(Document document)
+        {
+            if (document == null) return 0;
+
+            var groups = new Dictionary<string, List<ChildRecord>>(
+                StringComparer.OrdinalIgnoreCase);
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    BlockTableRecord modelSpace = GetModelSpace(
+                        document.Database,
+                        transaction,
+                        OpenMode.ForRead);
+                    foreach (ObjectId objectId in modelSpace)
+                    {
+                        CivilFeatureLine child = OpenFeatureLine(
+                            transaction,
+                            objectId,
+                            OpenMode.ForRead);
+                        Relation relation;
+                        if (child == null ||
+                            !TryReadRelation(child, transaction, out relation))
+                            continue;
+
+                        List<ChildRecord> children;
+                        if (!groups.TryGetValue(relation.SourceHandle, out children))
+                        {
+                            children = new List<ChildRecord>();
+                            groups.Add(relation.SourceHandle, children);
+                        }
+                        children.Add(new ChildRecord(
+                            objectId,
+                            child.Name,
+                            relation));
+                    }
+                }
+            }
+            catch (System.Exception exception)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE linked feature-line inventory failed safely. " +
+                    exception.Message);
+                return 0;
+            }
+
+            int rebuilt = 0;
+            foreach (KeyValuePair<string, List<ChildRecord>> group in groups)
+            {
+                try
+                {
+                    ObjectId sourceId = ResolveHandle(
+                        document.Database,
+                        group.Key);
+                    rebuilt += RebuildChildren(
+                        document,
+                        sourceId,
+                        group.Value);
+                }
+                catch (System.Exception exception)
+                {
+                    document.Editor.WriteMessage(
+                        "\nA linked feature-line group was skipped during refresh. " +
+                        exception.Message);
+                }
+            }
+            return rebuilt;
+        }
+
+        private static int RebuildChildren(
+            Document document,
+            ObjectId sourceId,
+            IList<ChildRecord> children)
+        {
+            if (children == null || children.Count == 0) return 0;
+
+            int rebuilt = 0;
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                CivilFeatureLine source = OpenFeatureLine(
+                    transaction,
+                    sourceId,
+                    OpenMode.ForRead);
+                EnsureEditable(source, transaction);
+                BlockTableRecord modelSpace = GetModelSpace(
+                    document.Database,
+                    transaction,
+                    OpenMode.ForWrite);
+
+                using (Polyline plan = BuildPlanPolyline(source))
+                {
+                    modelSpace.AppendEntity(plan);
+                    transaction.AddNewlyCreatedDBObject(plan, true);
+
+                    foreach (ChildRecord record in children.OrderBy(
+                        item => item.Relation.Sequence))
+                    {
+                        CivilFeatureLine oldChild = OpenFeatureLine(
+                            transaction,
+                            record.ObjectId,
+                            OpenMode.ForWrite);
+                        if (oldChild == null || oldChild.IsReferenceObject)
+                            throw new InvalidOperationException(
+                                "A linked child is unavailable or referenced.");
+                        if (IsLayerLocked(transaction, oldChild.LayerId))
+                            throw new InvalidOperationException(
+                                "Linked feature line '" + oldChild.Name +
+                                "' is on a locked layer.");
+
+                        string name = oldChild.Name;
+                        ObjectId layerId = oldChild.LayerId;
+                        string styleName = oldChild.StyleName;
+                        ObjectId siteId = oldChild.SiteId;
+                        oldChild.Name = "CE_TMP_FLREL_" +
+                            Guid.NewGuid().ToString("N");
+                        oldChild.Erase();
+
+                        ObjectId childId = CreateChild(
+                            source,
+                            plan,
+                            record.Relation.HorizontalOffset,
+                            record.Relation.VerticalOffset,
+                            name,
+                            layerId,
+                            styleName,
+                            siteId,
+                            modelSpace,
+                            transaction);
+                        CivilFeatureLine newChild = OpenFeatureLine(
+                            transaction,
+                            childId,
+                            OpenMode.ForWrite);
+                        WriteRelation(
+                            newChild,
+                            source.Handle.ToString(),
+                            record.Relation.HorizontalOffset,
+                            record.Relation.VerticalOffset,
+                            record.Relation.Sequence,
+                            transaction);
+                        rebuilt++;
+                    }
+
+                    if (!plan.IsErased) plan.Erase();
+                }
+
+                transaction.Commit();
+            }
+            return rebuilt;
         }
 
         private static void Info(Document document)

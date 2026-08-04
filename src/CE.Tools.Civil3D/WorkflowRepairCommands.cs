@@ -965,7 +965,7 @@ namespace CETools.Civil3D
             return preview;
         }
 
-        private static List<SurfaceChoice> ReadSurfaceChoices(Document document)
+        internal static List<SurfaceChoice> ReadSurfaceChoices(Document document)
         {
             var choices = new List<SurfaceChoice>();
             CivilDocument civilDocument = CivilApplication.ActiveDocument;

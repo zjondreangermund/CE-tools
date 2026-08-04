@@ -7,6 +7,13 @@ using System.Windows.Media.Imaging;
 
 namespace CETools.Civil3D
 {
+    internal enum RibbonIconMode
+    {
+        TextOnly,
+        Cached,
+        Full
+    }
+
     /// <summary>
     /// Creates lightweight vector-style ribbon icons at runtime. Keeping the artwork
     /// inside the managed assembly avoids missing PNG resources after bundle updates
@@ -18,14 +25,29 @@ namespace CETools.Civil3D
         private static readonly Dictionary<string, ImageSource> Cache =
             new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
 
+        public static RibbonIconMode Mode { get; private set; } = RibbonIconMode.Cached;
+
+        public static void SetMode(RibbonIconMode mode)
+        {
+            Mode = mode;
+            Cache.Clear();
+        }
+
         public static ImageSource Small(string id)
         {
+            if (Mode == RibbonIconMode.TextOnly) return null;
             return Create(id, 16);
         }
 
         public static ImageSource Large(string id)
         {
+            if (Mode == RibbonIconMode.TextOnly) return null;
             return Create(id, 32);
+        }
+
+        public static ImageSource CommandSmall(string command)
+        {
+            return Small(command);
         }
 
         private static ImageSource Create(string id, int pixels)
