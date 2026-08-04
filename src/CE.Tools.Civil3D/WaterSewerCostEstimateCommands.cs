@@ -818,26 +818,34 @@ namespace CETools.Civil3D
         private static readonly HashSet<Document> Documents = new HashSet<Document>();
         private static readonly HashSet<Document> Pending = new HashSet<Document>();
         private static bool _refreshing;
+        private static bool _initialized;
 
         public static void Initialize()
         {
+            if (_initialized) return;
+            _initialized = true;
             AcApplication.DocumentManager.DocumentCreated += OnDocumentCreated;
             AcApplication.DocumentManager.DocumentActivated += OnDocumentActivated;
+            AcApplication.DocumentManager.DocumentToBeDestroyed += OnDocumentToBeDestroyed;
             foreach (Document document in AcApplication.DocumentManager)
                 Attach(document);
         }
 
         public static void Terminate()
         {
+            if (!_initialized) return;
             AcApplication.DocumentManager.DocumentCreated -= OnDocumentCreated;
             AcApplication.DocumentManager.DocumentActivated -= OnDocumentActivated;
+            AcApplication.DocumentManager.DocumentToBeDestroyed -= OnDocumentToBeDestroyed;
             foreach (Document document in Documents.ToArray()) Detach(document);
             Documents.Clear();
             Pending.Clear();
+            _initialized = false;
         }
 
         private static void OnDocumentCreated(object sender, DocumentCollectionEventArgs e) { Attach(e.Document); }
         private static void OnDocumentActivated(object sender, DocumentCollectionEventArgs e) { Attach(e.Document); }
+        private static void OnDocumentToBeDestroyed(object sender, DocumentCollectionEventArgs e) { Detach(e.Document); }
 
         private static void Attach(Document document)
         {
@@ -860,14 +868,15 @@ namespace CETools.Civil3D
             document.CommandEnded -= OnCommandEnded;
             document.CommandCancelled -= OnCommandEnded;
             document.CommandFailed -= OnCommandEnded;
+            Documents.Remove(document);
+            Pending.Remove(document);
         }
 
         private static void OnObjectModified(object sender, ObjectEventArgs e)
         {
             if (_refreshing) return;
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document != null && ReferenceEquals(document.Database, sender) &&
-                WaterSewerCostEstimateCommands.IsAutomatic(document.Database))
+            if (document != null && ReferenceEquals(document.Database, sender))
                 Pending.Add(document);
         }
 
@@ -875,8 +884,7 @@ namespace CETools.Civil3D
         {
             if (_refreshing) return;
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document != null && ReferenceEquals(document.Database, sender) &&
-                WaterSewerCostEstimateCommands.IsAutomatic(document.Database))
+            if (document != null && ReferenceEquals(document.Database, sender))
                 Pending.Add(document);
         }
 
@@ -884,6 +892,7 @@ namespace CETools.Civil3D
         {
             Document document = sender as Document;
             if (document == null || !Pending.Remove(document) || _refreshing) return;
+            if (!WaterSewerCostEstimateCommands.IsAutomatic(document.Database)) return;
             try
             {
                 _refreshing = true;
