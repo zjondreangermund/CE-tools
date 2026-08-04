@@ -308,6 +308,37 @@ namespace CETools.Civil3D
             }
         }
 
+        internal static int RefreshAll(Document document)
+        {
+            if (document == null) return 0;
+            List<ObjectId> tables = FindLinkedTables(document.Database);
+            int refreshed = 0;
+            foreach (ObjectId tableId in tables)
+            {
+                try
+                {
+                    int active;
+                    int missing;
+                    RefreshLinkedTable(
+                        document.Database,
+                        tableId,
+                        out active,
+                        out missing);
+                    refreshed++;
+                }
+                catch
+                {
+                    // One stale register must not block the remaining tables.
+                }
+            }
+            return refreshed;
+        }
+
+        internal static int CountLinkedTables(Database database)
+        {
+            return database == null ? 0 : FindLinkedTables(database).Count;
+        }
+
         [CommandMethod("CE_TOOLS", "CE_COORDPOLY2", CommandFlags.Modal | CommandFlags.Redraw)]
         public void PolylineVertexPoints()
         {
@@ -1009,6 +1040,35 @@ namespace CETools.Civil3D
             }
 
             return ids;
+        }
+
+        private static List<ObjectId> FindLinkedTables(Database database)
+        {
+            var result = new List<ObjectId>();
+            if (database == null) return result;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord currentSpace = transaction.GetObject(
+                    database.CurrentSpaceId,
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (currentSpace == null) return result;
+                foreach (ObjectId objectId in currentSpace)
+                {
+                    Table table = transaction.GetObject(
+                        objectId,
+                        OpenMode.ForRead,
+                        false) as Table;
+                    if (table == null || table.ExtensionDictionary.IsNull) continue;
+                    DBDictionary dictionary = transaction.GetObject(
+                        table.ExtensionDictionary,
+                        OpenMode.ForRead,
+                        false) as DBDictionary;
+                    if (dictionary != null && dictionary.Contains(LinkRecordName))
+                        result.Add(objectId);
+                }
+            }
+            return result;
         }
 
         private static List<Point3d> ReadPolylineVertices(

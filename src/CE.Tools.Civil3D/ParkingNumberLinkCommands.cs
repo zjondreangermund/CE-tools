@@ -76,6 +76,28 @@ namespace CETools.Civil3D
             return moved + removed;
         }
 
+        internal static int CountLinkedLabels(Database database)
+        {
+            if (database == null) return 0;
+            int count = 0;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord space = transaction.GetObject(
+                    database.CurrentSpaceId,
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (space == null) return 0;
+                foreach (ObjectId id in space)
+                {
+                    MText label = transaction.GetObject(id, OpenMode.ForRead, false) as MText;
+                    string handleText;
+                    if (label != null && TryReadSourceHandle(label, transaction, out handleText))
+                        count++;
+                }
+            }
+            return count;
+        }
+
         internal static void Link(Transaction transaction, MText label, Entity bay)
         {
             if (transaction == null || label == null || bay == null) return;

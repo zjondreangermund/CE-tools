@@ -353,6 +353,8 @@ namespace CETools.Civil3D
                         Cmd("Refresh Linked BOQ", "CE_BOQREFRESH ", "Recalculate quantities from current linked source geometry while preserving matching rates."),
                         Cmd("Linked BOQ Information", "CE_BOQINFO ", "Review link schema, discipline, unit scale and stale source handles."),
                         Cmd("Export Linked BOQ to Excel", "CE_BOQEXPORT ", "Refresh and export a linked BOQ as a dependency-free .xlsx workbook."),
+                        Cmd("Refresh All Linked Outputs", "CE_REFRESHALL ", "Refresh linked coordinate tables, setting-out schedules, parking labels, surface comparisons, BOQs, cost estimates and cross sections."),
+                        Cmd("Linked Output Refresh Status", "CE_REFRESHSTATUS ", "Review linked-output counts and automatic refresh state in the active drawing."),
                         Cmd("Road BOQ Excel", "CE_BOQROAD ", "Export road surfacing, layerworks, kerbs, drainage, markings and signs."),
                         Cmd("Platform BOQ Excel", "CE_BOQPLATFORM ", "Export platform, grading, layerworks and earthwork quantities."),
                         Cmd("Stormwater BOQ Excel", "CE_BOQSTORM ", "Export stormwater pipes, culverts, structures and open drainage."),

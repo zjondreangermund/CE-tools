@@ -461,6 +461,22 @@ namespace CETools.Civil3D
             }
         }
 
+        internal static int RefreshAll(Document document)
+        {
+            if (document == null) return 0;
+            int refreshed = 0;
+            foreach (ObjectId tableId in FindLinkedTables(document.Database))
+            {
+                if (RefreshTable(document, tableId, false)) refreshed++;
+            }
+            return refreshed;
+        }
+
+        internal static int CountLinkedTables(Database database)
+        {
+            return database == null ? 0 : FindLinkedTables(database).Count;
+        }
+
         private static ObjectId CreateLinkedTable(
             Database database,
             Point3d position,
@@ -1288,6 +1304,35 @@ namespace CETools.Civil3D
                 throw new InvalidOperationException("The linked BOQ contains no source handles.");
 
             return new BoqLink(schema, discipline, unitsPerMetre, handles);
+        }
+
+        private static List<ObjectId> FindLinkedTables(Database database)
+        {
+            var result = new List<ObjectId>();
+            if (database == null) return result;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord currentSpace = transaction.GetObject(
+                    database.CurrentSpaceId,
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (currentSpace == null) return result;
+                foreach (ObjectId objectId in currentSpace)
+                {
+                    Table table = transaction.GetObject(
+                        objectId,
+                        OpenMode.ForRead,
+                        false) as Table;
+                    if (table == null || table.ExtensionDictionary.IsNull) continue;
+                    DBDictionary dictionary = transaction.GetObject(
+                        table.ExtensionDictionary,
+                        OpenMode.ForRead,
+                        false) as DBDictionary;
+                    if (dictionary != null && dictionary.Contains(LinkRecordName))
+                        result.Add(objectId);
+                }
+            }
+            return result;
         }
 
         private static bool TryResolveHandle(

@@ -559,6 +559,8 @@ namespace CETools.Civil3D
                 tools, null,
                 Step("Project setup", "CE_PROJECTSETUP"),
                 Step("Project standards", "CE_STANDARDSELECT"),
+                Step("Refresh linked outputs", "CE_REFRESHALL"),
+                Step("Review refresh status", "CE_REFRESHSTATUS"),
                 Step("Create BOQs", "CE_BOQTOOLS"),
                 Step("Generate reports", "CE_PRESENTATIONTOOLS"));
 

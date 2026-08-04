@@ -85,6 +85,24 @@ namespace CETools.Civil3D
             return changed;
         }
 
+        public static int CountLinkedEntities(Database database)
+        {
+            if (database == null) return 0;
+            int count = 0;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId entityId in ReadEntityIds(database, transaction))
+                {
+                    DBObject value;
+                    try { value = transaction.GetObject(entityId, OpenMode.ForRead, false); }
+                    catch { continue; }
+                    LinkData link;
+                    if (TryReadRecord(database, value, transaction, out link)) count++;
+                }
+            }
+            return count;
+        }
+
         private static bool UpdateEntity(DBObject value, ComparisonResult result)
         {
             string contents = BuildContents(result);

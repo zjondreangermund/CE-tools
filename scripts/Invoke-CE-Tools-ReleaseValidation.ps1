@@ -235,6 +235,7 @@ try {
         "Validate-WorkflowWindow.py",
         "Validate-BillOfQuantities.py",
         "Validate-WaterSewerCostEstimate.py",
+        "Validate-RefreshAll.py",
         "Validate-DynamicProduction.py",
         "Validate-CommandRegistry.py"
     )

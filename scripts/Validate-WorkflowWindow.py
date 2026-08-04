@@ -52,6 +52,10 @@ for command in (
     if f'Step("' not in window or f'"{command}")' not in window:
         errors.append(f"Survey workflow step is missing: {command}")
 
+for command in ("CE_REFRESHALL", "CE_REFRESHSTATUS"):
+    if f'"{command}")' not in window:
+        errors.append(f"General workflow step is missing: {command}")
+
 for marker in (
     "FloatingToolsCommands.Initialize();",
     "FloatingToolsCommands.Terminate();",

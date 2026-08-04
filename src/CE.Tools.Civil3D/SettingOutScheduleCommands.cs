@@ -303,6 +303,11 @@ namespace CETools.Civil3D
             return refreshed;
         }
 
+        internal static int CountLinkedTables(Database database)
+        {
+            return database == null ? 0 : FindLinkedTables(database).Count;
+        }
+
         private static ObjectId CreateLinkedTable(
             Database database,
             Point3d insertionPoint,
