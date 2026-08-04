@@ -1,5 +1,7 @@
 # Implementation status
 
+- Preserved command reconciliation: the active source now restores 383 unique AutoCAD commands from the verified V54/V60 inventories while retaining newer commands and implementations. Missing Civil 3D support sources, six host-independent engineering cores and the 33-record engineering asset catalogue are restored. The short-path build recovery step now acts only as a missing-file fallback and cannot overwrite reconciled active source. Civil 3D 2023 compile and the restored-command runtime plan remain mandatory release gates.
+
 - `CE_BMVERT`: alpha source complete; live Civil 3D validation in progress.
 - `CE_TLENGTH`: alpha source complete; Civil 3D validation required.
 - `CE_TAREA`: alpha source complete; Civil 3D validation required.

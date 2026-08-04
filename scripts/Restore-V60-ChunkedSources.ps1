@@ -54,36 +54,46 @@ try {
     New-Item -ItemType Directory -Force -Path $sourceRoot | Out-Null
     foreach ($name in $targets) {
         $from = Join-Path $temp $name
+        $destination = Join-Path $sourceRoot $name
         if (-not (Test-Path -LiteralPath $from -PathType Leaf)) {
             throw "Recovered V60 source is missing from the archive: $name"
         }
-        Copy-Item -LiteralPath $from -Destination (Join-Path $sourceRoot $name) -Force
+        if (Test-Path -LiteralPath $destination -PathType Leaf) {
+            Write-Host "Retained active source; recovery fallback not required: $name" -ForegroundColor DarkGreen
+            continue
+        }
+        Copy-Item -LiteralPath $from -Destination $destination
         Write-Host "Restored V60 source: $name" -ForegroundColor Green
     }
 
-    $cleanEngineUrl = 'https://raw.githubusercontent.com/zjondreangermund/CE-tools/90dc8cde323c253c60f3bd4a3f9e343a7dd210a2/src/CE.Tools.Civil3D/DynamicTypicalDetailEngine.cs'
-    $cleanEngineTemp = Join-Path $temp 'DynamicTypicalDetailEngine.clean.cs'
-    Write-Host 'Downloading verified clean DynamicTypicalDetailEngine.cs...' -ForegroundColor Cyan
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-    Invoke-WebRequest -UseBasicParsing -Uri $cleanEngineUrl -OutFile $cleanEngineTemp
-
-    if (-not (Test-Path -LiteralPath $cleanEngineTemp -PathType Leaf)) {
-        throw 'The verified clean dynamic-detail engine download was not created.'
-    }
-    $cleanText = [System.IO.File]::ReadAllText($cleanEngineTemp)
-    if ($cleanText.Length -lt 10000 -or
-        -not $cleanText.Contains('public sealed partial class DynamicTypicalDetailCommands') -or
-        -not $cleanText.Contains('private static ObjectId CreateLinkedDetail') -or
-        -not $cleanText.Contains('private static List<QuantityItem> CalculateQuantities')) {
-        throw 'The downloaded dynamic-detail engine did not pass source integrity checks.'
-    }
-
     $cleanDestination = Join-Path $sourceRoot 'DynamicTypicalDetailEngine.cs'
-    [System.IO.File]::WriteAllText(
-        $cleanDestination,
-        ($cleanText -replace "`r?`n", "`r`n"),
-        (New-Object System.Text.UTF8Encoding($false)))
-    Write-Host 'Replaced corrupted dynamic-detail engine with verified clean source.' -ForegroundColor Green
+    if (Test-Path -LiteralPath $cleanDestination -PathType Leaf) {
+        Write-Host 'Retained active DynamicTypicalDetailEngine.cs; clean recovery fallback not required.' -ForegroundColor DarkGreen
+    }
+    else {
+        $cleanEngineUrl = 'https://raw.githubusercontent.com/zjondreangermund/CE-tools/90dc8cde323c253c60f3bd4a3f9e343a7dd210a2/src/CE.Tools.Civil3D/DynamicTypicalDetailEngine.cs'
+        $cleanEngineTemp = Join-Path $temp 'DynamicTypicalDetailEngine.clean.cs'
+        Write-Host 'Downloading verified clean DynamicTypicalDetailEngine.cs...' -ForegroundColor Cyan
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -UseBasicParsing -Uri $cleanEngineUrl -OutFile $cleanEngineTemp
+
+        if (-not (Test-Path -LiteralPath $cleanEngineTemp -PathType Leaf)) {
+            throw 'The verified clean dynamic-detail engine download was not created.'
+        }
+        $cleanText = [System.IO.File]::ReadAllText($cleanEngineTemp)
+        if ($cleanText.Length -lt 10000 -or
+            -not $cleanText.Contains('public sealed partial class DynamicTypicalDetailCommands') -or
+            -not $cleanText.Contains('private static ObjectId CreateLinkedDetail') -or
+            -not $cleanText.Contains('private static List<QuantityItem> CalculateQuantities')) {
+            throw 'The downloaded dynamic-detail engine did not pass source integrity checks.'
+        }
+
+        [System.IO.File]::WriteAllText(
+            $cleanDestination,
+            ($cleanText -replace "`r?`n", "`r`n"),
+            (New-Object System.Text.UTF8Encoding($false)))
+        Write-Host 'Restored verified clean dynamic-detail engine.' -ForegroundColor Green
+    }
 
     $v54Commit = '94e193dd425b8156dd40d1251da34b4bb0fc1b36'
     $v54SupportSources = @(
@@ -106,6 +116,11 @@ try {
 
     Write-Host 'Restoring matching V54 comment-presentation and annotation support sources...' -ForegroundColor Cyan
     foreach ($name in $v54SupportSources) {
+        $destination = Join-Path $sourceRoot $name
+        if (Test-Path -LiteralPath $destination -PathType Leaf) {
+            Write-Host "Retained active source; V54 recovery fallback not required: $name" -ForegroundColor DarkGreen
+            continue
+        }
         $url = "https://raw.githubusercontent.com/zjondreangermund/CE-tools/$v54Commit/src/CE.Tools.Civil3D/$name"
         $download = Join-Path $temp ("v54-" + $name)
         Invoke-WebRequest -UseBasicParsing -Uri $url -OutFile $download
@@ -126,7 +141,7 @@ try {
         }
 
         [System.IO.File]::WriteAllText(
-            (Join-Path $sourceRoot $name),
+            $destination,
             ($text -replace "`r?`n", "`r`n"),
             (New-Object System.Text.UTF8Encoding($false)))
         Write-Host "Restored V54 support source: $name" -ForegroundColor Green

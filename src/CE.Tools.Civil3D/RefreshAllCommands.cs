@@ -35,6 +35,7 @@ namespace CETools.Civil3D
             int boqTables;
             int costWorkbooks;
             int crossSections;
+            int restoredLinks = 0;
             LinkedTableAutoRefreshManager.BeginInternalUpdate();
             try
             {
@@ -62,6 +63,16 @@ namespace CETools.Civil3D
                     "cost-estimate workbooks",
                     failures,
                     delegate { return WaterSewerCostEstimateCommands.RefreshAll(document); });
+                restoredLinks += Run("alignment annotations", failures, delegate { return AlignmentAnnotationLinkStore.RefreshAll(document); });
+                restoredLinks += Run("profile annotations", failures, delegate { return ProfileAnnotationLinkStore.RefreshAll(document); });
+                restoredLinks += Run("corridor annotations", failures, delegate { return CorridorAnnotationLinkStore.RefreshAll(document); });
+                restoredLinks += Run("polyline direction arrows", failures, delegate { return PolylineDirectionCommands.RefreshLinkedArrows(document); });
+                restoredLinks += Run("network schedules", failures, delegate { return NetworkAssetScheduleCommands.RefreshAll(document); });
+                restoredLinks += Run("road section schedules", failures, delegate { return RoadCrossSectionScheduleCommands.RefreshAll(document); });
+                restoredLinks += Run("standard quantity schedules", failures, delegate { return StandardQuantityTemplateCommands.RefreshAll(document); });
+                restoredLinks += Run("sewer excavation schedules", failures, delegate { return SewerExcavationCommentCommands.RefreshAll(document); });
+                restoredLinks += Run("preserved parking numbers", failures, delegate { return ParkingNumberLinkStore.RefreshAll(document); });
+                restoredLinks += Run("linked parking reports", failures, delegate { return ParkingReportLinkStore.RefreshAll(document); });
                 crossSections = Run(
                     "dynamic cross sections",
                     failures,
@@ -76,7 +87,7 @@ namespace CETools.Civil3D
             document.Editor.WriteMessage(
                 "\nCE_REFRESHALL complete. Coordinate tables={0}; setting-out schedules={1}; " +
                 "parking labels={2}; surface links changed={3}; BOQ tables={4}; " +
-                "cost workbooks={5}; cross sections={6}; module failures={7}.",
+                "cost workbooks={5}; cross sections={6}; restored linked outputs={7}; module failures={8}.",
                 coordinateTables,
                 settingOutSchedules,
                 parkingLabels,
@@ -84,6 +95,7 @@ namespace CETools.Civil3D
                 boqTables,
                 costWorkbooks,
                 crossSections,
+                restoredLinks,
                 failures.Count);
 
             if (failures.Count > 0)
@@ -405,6 +417,17 @@ namespace CETools.Civil3D
                 SurveyCoordinateWorkflowCommands.RefreshAll(document);
                 SettingOutScheduleCommands.RefreshAll(document);
                 BillOfQuantitiesCommands.RefreshAll(document);
+                AlignmentAnnotationLinkStore.RefreshAll(document);
+                ProfileAnnotationLinkStore.RefreshAll(document);
+                CorridorAnnotationLinkStore.RefreshAll(document);
+                SurfaceComparisonLinkStore.RefreshAll(document);
+                PolylineDirectionCommands.RefreshLinkedArrows(document);
+                NetworkAssetScheduleCommands.RefreshAll(document);
+                RoadCrossSectionScheduleCommands.RefreshAll(document);
+                StandardQuantityTemplateCommands.RefreshAll(document);
+                SewerExcavationCommentCommands.RefreshAll(document);
+                ParkingNumberLinkStore.RefreshAll(document);
+                ParkingReportLinkStore.RefreshAll(document);
             }
             catch (System.Exception exception)
             {

@@ -57,7 +57,7 @@ foreach ($required in @($restore, $repair, $finalRepair, $sanitize, $diagnose, $
     Unblock-File -LiteralPath $required -ErrorAction SilentlyContinue
 }
 
-Write-Host "`nRestoring verified V60 support sources..." -ForegroundColor Cyan
+Write-Host "`nChecking verified V60/V54 recovery fallbacks without overwriting active sources..." -ForegroundColor Cyan
 & $restore -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 

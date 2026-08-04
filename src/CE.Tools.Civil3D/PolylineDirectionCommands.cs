@@ -36,11 +36,13 @@ namespace CETools.Civil3D
             }
 
             var options = new PromptKeywordOptions(
-                "\nPolyline direction arrows [Add/Clear] <Add>: ")
+                "\nPolyline direction arrows [Add/Refresh/Reverse/Clear] <Add>: ")
             {
                 AllowNone = true
             };
             options.Keywords.Add("Add");
+            options.Keywords.Add("Refresh");
+            options.Keywords.Add("Reverse");
             options.Keywords.Add("Clear");
 
             PromptResult result = document.Editor.GetKeywords(options);
@@ -56,6 +58,14 @@ namespace CETools.Civil3D
             if (string.Equals(mode, "Clear", StringComparison.OrdinalIgnoreCase))
             {
                 ClearArrows(document);
+            }
+            else if (string.Equals(mode, "Refresh", StringComparison.OrdinalIgnoreCase))
+            {
+                RefreshArrows(document);
+            }
+            else if (string.Equals(mode, "Reverse", StringComparison.OrdinalIgnoreCase))
+            {
+                ReversePolylines(document);
             }
             else
             {
@@ -86,6 +96,32 @@ namespace CETools.Civil3D
             if (document != null)
             {
                 ClearArrows(document);
+            }
+        }
+
+        [CommandMethod(
+            "CE_TOOLS",
+            "CE_PLDIRREFRESH",
+            CommandFlags.Modal | CommandFlags.Redraw)]
+        public void RefreshDirectionArrows()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document != null)
+            {
+                RefreshArrows(document);
+            }
+        }
+
+        [CommandMethod(
+            "CE_TOOLS",
+            "CE_PLDIRREVERSE",
+            CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void ReverseDirectionPolylines()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document != null)
+            {
+                ReversePolylines(document);
             }
         }
 
@@ -231,7 +267,13 @@ namespace CETools.Civil3D
                                     RegAppName),
                                 new TypedValue(
                                     (int)DxfCode.ExtendedDataAsciiString,
-                                    curve.Handle.ToString()));
+                                    curve.Handle.ToString()),
+                                new TypedValue(
+                                    (int)DxfCode.ExtendedDataReal,
+                                    length <= GeometryTolerance ? 0.5 : distance / length),
+                                new TypedValue(
+                                    (int)DxfCode.ExtendedDataReal,
+                                    sizeResult.Value));
 
                             currentSpace.AppendEntity(arrow);
                             transaction.AddNewlyCreatedDBObject(arrow, true);
@@ -265,6 +307,235 @@ namespace CETools.Civil3D
                     "\nCE_PLDIR cancelled. The transaction was not committed: " +
                     exception.Message);
             }
+        }
+
+        internal static int RefreshLinkedArrows(Document document)
+        {
+            if (document == null) return 0;
+
+            Database database = document.Database;
+            int refreshed = 0;
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord currentSpace =
+                    (BlockTableRecord)transaction.GetObject(
+                        database.CurrentSpaceId,
+                        OpenMode.ForRead,
+                        false);
+
+                foreach (ObjectId objectId in currentSpace)
+                {
+                    AutoCADSolid arrow = transaction.GetObject(
+                        objectId,
+                        OpenMode.ForRead,
+                        false) as AutoCADSolid;
+                    if (arrow == null || arrow.XData == null) continue;
+
+                    string sourceHandle;
+                    double fraction;
+                    double size;
+                    if (!TryReadArrowLink(
+                        arrow,
+                        out sourceHandle,
+                        out fraction,
+                        out size))
+                    {
+                        continue;
+                    }
+
+                    ObjectId sourceId;
+                    try
+                    {
+                        sourceId = database.GetObjectId(
+                            false,
+                            new Handle(Convert.ToInt64(sourceHandle, 16)),
+                            0);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    Curve curve = transaction.GetObject(
+                        sourceId,
+                        OpenMode.ForRead,
+                        false) as Curve;
+                    if (!IsSupportedPolyline(curve)) continue;
+
+                    double length = GetCurveLength(curve);
+                    if (length <= GeometryTolerance) continue;
+
+                    if (!(fraction >= 0.0 && fraction <= 1.0))
+                    {
+                        Point3d centre = AverageArrowPoints(arrow);
+                        Point3d closest = curve.GetClosestPointTo(centre, false);
+                        fraction = curve.GetDistAtPoint(closest) / length;
+                    }
+                    if (!(size > GeometryTolerance))
+                    {
+                        size = arrow.GetPointAt(2).DistanceTo(arrow.GetPointAt(0));
+                    }
+
+                    double distance = Math.Max(
+                        0.0,
+                        Math.Min(length, fraction * length));
+                    Point3d point = curve.GetPointAtDist(distance);
+                    double parameter = curve.GetParameterAtDistance(distance);
+                    Vector3d tangent = curve.GetFirstDerivative(parameter);
+                    Vector2d direction = new Vector2d(tangent.X, tangent.Y);
+                    if (direction.Length <= GeometryTolerance) continue;
+                    direction = direction.GetNormal();
+
+                    AutoCADSolid replacement = CreateArrow(
+                        database,
+                        point,
+                        direction,
+                        size,
+                        curve.Layer);
+                    arrow.UpgradeOpen();
+                    for (int index = 0; index < 4; index++)
+                    {
+                        short vertexIndex = (short)index;
+                        arrow.SetPointAt(
+                            vertexIndex,
+                            replacement.GetPointAt(vertexIndex));
+                    }
+                    arrow.Layer = curve.Layer;
+                    arrow.XData = new ResultBuffer(
+                        new TypedValue(
+                            (int)DxfCode.ExtendedDataRegAppName,
+                            RegAppName),
+                        new TypedValue(
+                            (int)DxfCode.ExtendedDataAsciiString,
+                            sourceHandle),
+                        new TypedValue(
+                            (int)DxfCode.ExtendedDataReal,
+                            fraction),
+                        new TypedValue(
+                            (int)DxfCode.ExtendedDataReal,
+                            size));
+                    replacement.Dispose();
+                    refreshed++;
+                }
+
+                transaction.Commit();
+            }
+
+            return refreshed;
+        }
+
+        private static void RefreshArrows(Document document)
+        {
+            try
+            {
+                int refreshed = RefreshLinkedArrows(document);
+                document.Editor.Regen();
+                document.Editor.WriteMessage(
+                    "\nCE_PLDIRREFRESH complete. Linked arrows refreshed: {0}.",
+                    refreshed);
+            }
+            catch (System.Exception exception)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_PLDIRREFRESH failed. No partial refresh was committed: {0}",
+                    exception.Message);
+            }
+        }
+
+        private static void ReversePolylines(Document document)
+        {
+            PromptSelectionResult selection = GetPolylineSelection(
+                document.Editor,
+                "\nSelect polylines to reverse and refresh: ");
+            if (selection.Status != PromptStatus.OK ||
+                selection.Value == null ||
+                selection.Value.Count == 0)
+            {
+                return;
+            }
+
+            if (!Confirm(
+                    document.Editor,
+                    "Reverse the selected polylines and their linked direction arrows"))
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_PLDIRREVERSE cancelled. No geometry was changed.");
+                return;
+            }
+
+            int reversed = 0;
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId objectId in selection.Value.GetObjectIds())
+                {
+                    Curve curve = transaction.GetObject(
+                        objectId,
+                        OpenMode.ForRead,
+                        false) as Curve;
+                    if (!IsSupportedPolyline(curve) ||
+                        IsLayerLocked(curve, transaction))
+                    {
+                        continue;
+                    }
+
+                    curve.UpgradeOpen();
+                    curve.ReverseCurve();
+                    reversed++;
+                }
+                transaction.Commit();
+            }
+
+            int refreshed = RefreshLinkedArrows(document);
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_PLDIRREVERSE complete. Polylines reversed: {0}; linked arrows refreshed: {1}.",
+                reversed,
+                refreshed);
+        }
+
+        private static bool TryReadArrowLink(
+            AutoCADSolid arrow,
+            out string sourceHandle,
+            out double fraction,
+            out double size)
+        {
+            sourceHandle = null;
+            fraction = double.NaN;
+            size = 0.0;
+            ResultBuffer xdata = arrow.GetXDataForApplication(RegAppName);
+            if (xdata == null) return false;
+
+            int realIndex = 0;
+            foreach (TypedValue value in xdata)
+            {
+                if (value.TypeCode == (int)DxfCode.ExtendedDataAsciiString &&
+                    sourceHandle == null)
+                {
+                    sourceHandle = value.Value as string;
+                }
+                else if (value.TypeCode == (int)DxfCode.ExtendedDataReal)
+                {
+                    double number = Convert.ToDouble(
+                        value.Value,
+                        CultureInfo.InvariantCulture);
+                    if (realIndex++ == 0) fraction = number;
+                    else size = number;
+                }
+            }
+            return !string.IsNullOrWhiteSpace(sourceHandle);
+        }
+
+        private static Point3d AverageArrowPoints(AutoCADSolid arrow)
+        {
+            Point3d first = arrow.GetPointAt(0);
+            Point3d second = arrow.GetPointAt(1);
+            Point3d tip = arrow.GetPointAt(2);
+            return new Point3d(
+                (first.X + second.X + tip.X) / 3.0,
+                (first.Y + second.Y + tip.Y) / 3.0,
+                (first.Z + second.Z + tip.Z) / 3.0);
         }
 
         private static void ClearArrows(Document document)
@@ -549,15 +820,7 @@ namespace CETools.Civil3D
 
         private static double GetDefaultArrowSize(Database database)
         {
-            double textSize = database.Textsize;
-            if (!(textSize > GeometryTolerance) ||
-                double.IsNaN(textSize) ||
-                double.IsInfinity(textSize))
-            {
-                textSize = 2.5;
-            }
-
-            return textSize * 2.0;
+            return 1.0;
         }
 
         private static bool Confirm(Editor editor, string message)

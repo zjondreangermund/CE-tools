@@ -16,7 +16,10 @@ namespace CETools.Civil3D
 
         public void Initialize()
         {
+            ParkingOptionAutoRefreshManager.Initialize();
             DynamicSectionUpdateManager.Initialize();
+            DynamicIntersectionUpdateManager.Initialize();
+            AnnotationScaleSyncManager.Initialize();
             ParkingNumberAutoRefreshManager.Initialize();
             WaterSewerCostAutoRefreshManager.Initialize();
             LinkedTableAutoRefreshManager.Initialize();
@@ -31,7 +34,10 @@ namespace CETools.Civil3D
             LinkedTableAutoRefreshManager.Terminate();
             WaterSewerCostAutoRefreshManager.Terminate();
             ParkingNumberAutoRefreshManager.Terminate();
+            AnnotationScaleSyncManager.Terminate();
+            DynamicIntersectionUpdateManager.Terminate();
             DynamicSectionUpdateManager.Terminate();
+            ParkingOptionAutoRefreshManager.Terminate();
         }
 
         private static void OnApplicationIdle(object sender, EventArgs e)
@@ -78,6 +84,7 @@ namespace CETools.Civil3D
         private const string UtilitiesPanelId = "CE_TOOLS_CATEGORY_UTILITIES";
         private const string StandardsPanelId = "CE_TOOLS_CATEGORY_STANDARDS";
         private const string AnalysisPanelId = "CE_TOOLS_CATEGORY_ANALYSIS";
+        private const string AdvancedPanelId = "CE_TOOLS_CATEGORY_ADVANCED";
         private const string ProductionPanelId = "CE_TOOLS_CATEGORY_PRODUCTION";
 
         public static bool EnsureCreated()
@@ -108,6 +115,7 @@ namespace CETools.Civil3D
             AddUtilitiesPanel(tab);
             AddStandardsPanel(tab);
             AddAnalysisPanel(tab);
+            AddAdvancedPanel(tab);
             AddProductionPanel(tab);
             return true;
         }
@@ -144,7 +152,21 @@ namespace CETools.Civil3D
                         Cmd("Standards Tools", "CE_STANDARDS ", "Open the standards menu."),
                         Cmd("Select Standards", "CE_STANDARDSELECT ", "Browse for a standards file, review it and save its traceable details."),
                         Cmd("Standards Information", "CE_STANDARDINFO ", "Review stored standards and optionally place a drawing table."),
-                        Cmd("Clear Standards", "CE_STANDARDCLEAR ", "Clear the standards record."))));
+                        Cmd("Clear Standards", "CE_STANDARDCLEAR ", "Clear the standards record.")),
+                    Menu(
+                        "CE_TOOLS_PROJECT_STYLES_MENU",
+                        "Project\nStyles",
+                        "Select and review project Civil 3D styles by discipline.",
+                        Cmd("Project Style Centre", "CE_PROJECTSTYLES ", "Select alignment, profile, corridor, point and network styles."),
+                        Cmd("Project Style Information", "CE_PROJECTSTYLEINFO ", "Review stored project style selections."),
+                        Cmd("Clear Project Styles", "CE_PROJECTSTYLECLEAR ", "Clear only the stored project style selections.")),
+                    Menu(
+                        "CE_TOOLS_UNDO_MENU",
+                        "Undo &\nRedo",
+                        "Enable full native undo recording and run one-step undo or redo.",
+                        Cmd("Enable Full Undo Recording", "CE_UNDOSETTINGS ", "Enable AutoCAD full undo recording."),
+                        Cmd("Undo One Step", "CE_UNDO ", "Run one native AutoCAD undo step."),
+                        Cmd("Redo One Step", "CE_REDO ", "Run one native AutoCAD redo step."))));
         }
 
         private static void AddSurveyPanel(RibbonTab tab)
@@ -159,6 +181,7 @@ namespace CETools.Civil3D
                         "Coordinate\nTools",
                         "Linked coordinate labels, COGO points, crosses, compact tables and polyline vertices.",
                         Cmd("Linked Picked Coordinate", "CE_COORDPICK2 ", "Create a coordinate annotation and optionally add its source point to a linked register."),
+                        Cmd("Continuous Linked Coordinates", "CE_COORDPICKCONTINUOUS ", "Place sequential linked coordinate outputs continuously."),
                         Cmd("Linked Coordinate Cross", "CE_COORDCROSS2 ", "Choose COGO point, cross, annotation and linked register output."),
                         Cmd("Create Linked Coordinate Table", "CE_COORDTABLE2 ", "Create a compact linked Y-X-Z table from selected COGO or AutoCAD points."),
                         Cmd("Refresh Linked Coordinate Table", "CE_COORDREFRESH ", "Refresh table rows from the current linked source-point coordinates."),
@@ -168,6 +191,9 @@ namespace CETools.Civil3D
                         "Survey\nUtilities",
                         "Direction arrows and preserved coordinate workflows.",
                         Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked arrows showing stored polyline direction."),
+                        Cmd("Refresh Direction Arrows", "CE_PLDIRREFRESH ", "Reposition linked arrows after polyline edits."),
+                        Cmd("Reverse Polyline and Arrows", "CE_PLDIRREVERSE ", "Reverse selected polylines and their linked arrows."),
+                        Cmd("Presentation and Dynamic Refresh", "CE_PRESENTATIONTOOLS ", "Open shared annotation, overlap and rebuild workflows."),
                         Cmd("Coordinate Tools (Legacy)", "CE_COORDINATE ", "Open the legacy coordinate tools menu."),
                         Cmd("Picked Coordinate Annotation (Legacy)", "CE_COORDPICKX ", "Create the Batch 3 coordinate annotation workflow."),
                         Cmd("Coordinate Cross + Annotation (Legacy)", "CE_COORDCROSSX ", "Create the Batch 3 cross and annotation workflow."),
@@ -185,7 +211,12 @@ namespace CETools.Civil3D
                         "CE_TOOLS_DRAWING_MENU",
                         "Drawing\nTools",
                         "AutoCAD drawing and annotation utilities.",
+                        Cmd("Open Workflow Centre", "CE_TOOLSPALETTE ", "Open every ribbon workflow and searchable command in the floating window."),
                         Cmd("Annotation Settings", "CE_ANNOTSETTINGS ", "Select 1.8, 2.0 or 5.0 height, marker circles and MLeader/MText/COGO output."),
+                        Cmd("Make Objects Annotative", "CE_MAKEANNOTATIVE ", "Apply CE annotative settings to selected supported objects."),
+                        Cmd("Synchronize Annotation Scale", "CE_ANNOSCALESYNC ", "Add the current annotation scale to supported objects."),
+                        Cmd("Scale Selected Tables", "CE_TABLESCALE ", "Resize selected tables relative to CE text height."),
+                        Cmd("Resolve Annotation Overlaps", "CE_OVERLAPFIX ", "Reposition supported annotations to reduce overlap."),
                         Cmd("Change Objects to Colour 250", "CE_COLOR250 ", "Change selected objects to colour 250."),
                         Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked direction arrows.")),
                     Menu(
@@ -255,6 +286,7 @@ namespace CETools.Civil3D
                         "Profile\nTools",
                         "Profile reporting, station elevations and plan labels.",
                         Cmd("Profile Tools", "CE_PRTOOLS ", "Open profile tools."),
+                        Cmd("Batch Profile Views", "CE_PROFILEVIEWBATCHTOOLS ", "Apply profile-view styles, band sets, automatic fit and rebuild options."),
                         Cmd("Profile Report", "CE_PRREPORTUI ", "Show profile details in a pop-up and optionally place a table."),
                         Cmd("Station Elevation", "CE_PRELEV ", "Report elevation and grade at a station."),
                         Cmd("Profile Annotation", "CE_PRLABELX ", "Create an MLeader, MText or COGO point using shared annotation settings.")),
@@ -266,7 +298,30 @@ namespace CETools.Civil3D
                         Cmd("Surface Report", "CE_SFREPORTUI ", "Show surface details in a pop-up and optionally place a table."),
                         Cmd("Surface Elevation", "CE_SFELEV ", "Report an elevation at a point."),
                         Cmd("Surface Annotation", "CE_SFLABELX ", "Create an MLeader, MText or COGO point using shared annotation settings."),
-                        Cmd("Compare Surfaces", "CE_SFCOMPARE ", "Compare two surface elevations."))));
+                        Cmd("Compare Surfaces", "CE_SFCOMPARE ", "Compare two surface elevations.")),
+                    Menu(
+                        "CE_TOOLS_SURFACE_CORRECTION_MENU",
+                        "Surface\nCorrection",
+                        "Audit, repair and simplify surfaces through reversible generated copies.",
+                        Cmd("Surface Correction Tools", "CE_SURFCTOOLS ", "Open correction, audit, simplify, restore, settings and information workflows."),
+                        Cmd("Audit Surface Quality", "CE_SURFAUDIT ", "Screen for spikes, lows, holes and likely contamination."),
+                        Cmd("Create Reversible Corrected Surface", "CE_SURFCORRECT ", "Create a separate corrected copy without editing the source."),
+                        Cmd("Create Reversible Simplified Surface", "CE_SURFSIMPLIFY ", "Create a separate performance copy."),
+                        Cmd("Restore / Remove Generated Copy", "CE_SURFCRESTORE ", "Remove only a CE-generated surface copy."),
+                        Cmd("Surface Correction Settings", "CE_SURFCSETTINGS ", "Configure audit and correction thresholds."),
+                        Cmd("Surface Correction Information", "CE_SURFCINFO ", "Review generated surface links and settings."),
+                        Cmd("Spike and Hole Repair", "CE_SURFSPIKEHOLEFIX ", "Create a repaired surface while keeping the original unchanged.")),
+                    Menu(
+                        "CE_TOOLS_DYNAMIC_INTERSECTION_MENU",
+                        "Dynamic\nIntersections",
+                        "Create and maintain linked plan intersection sets.",
+                        Cmd("Dynamic Intersection Tools", "CE_INTTOOLS ", "Open intersection create, refresh, information, detach, settings and monitor workflows."),
+                        Cmd("Create Linked Intersection Set", "CE_INTCREATE ", "Create linked markers and elevation comparisons."),
+                        Cmd("Refresh Linked Intersection Set", "CE_INTREFRESH ", "Refresh a linked set from current geometry."),
+                        Cmd("Intersection Set Information", "CE_INTINFO ", "Review sources, generated handles and monitor status."),
+                        Cmd("Detach Intersection Set", "CE_INTDETACH ", "Remove the link and keep or delete generated geometry."),
+                        Cmd("Dynamic Intersection Settings", "CE_INTSETTINGS ", "Configure marker, tolerance, sampling and corridor-code settings."),
+                        Cmd("Dynamic Intersection Monitor", "CE_INTMONITOR ", "Review linked sets and deferred refresh state."))));
         }
 
         private static void AddCorridorPanel(RibbonTab tab)
@@ -293,19 +348,55 @@ namespace CETools.Civil3D
                 tab,
                 SiteDesignPanelId,
                 "Site Design",
-                Row(Menu(
-                    "CE_TOOLS_PARKING_MENU",
-                    "Parking\nTools",
-                    "Straight parking rows, validation, reporting, counting and numbering.",
-                    Cmd("Parking Tools", "CE_PKTOOLS ", "Open legacy parking tools."),
-                    Cmd("Single Row", "CE_PKROW ", "Create a straight single row."),
-                    Cmd("Double Row", "CE_PKDOUBLE ", "Create opposing rows around an aisle."),
-                    Cmd("Parking Report", "CE_PKREPORTUI ", "Show parking bay groups in a pop-up and optionally place a table."),
-                    Cmd("Validate and Count Bays", "CE_PKCOUNTX ", "Validate blocks and closed polylines, explain rejected objects and optionally place a table."),
-                    Cmd("Count Bays (Legacy)", "CE_PKCOUNT ", "Run the original parking count command."),
-                    Cmd("Validate and Number Bays", "CE_PKNUMBER2 ", "Validate objects and number accepted bays using the shared 1.8, 2.0 or 5.0 text height."),
-                    Cmd("Refresh Linked Parking Numbers", "CE_PKNUMBERREFRESH ", "Move CE_PKNUMBER2 labels to their edited bays and remove labels whose bays were deleted."),
-                    Cmd("Number Bays (Legacy Shared)", "CE_PKNUMBERX ", "Run the Batch 3 shared-height parking numbering command."))));
+                Row(
+                    Menu(
+                        "CE_TOOLS_PARKING_MENU",
+                        "Parking\nTools",
+                        "Parking layout, reporting, numbering and boundary-driven options.",
+                        Cmd("Parking Tools", "CE_PKTOOLS ", "Open legacy parking tools."),
+                        Cmd("Single Row", "CE_PKROW ", "Create a straight single row."),
+                        Cmd("Double Row", "CE_PKDOUBLE ", "Create opposing rows around an aisle."),
+                        Cmd("Parking Report", "CE_PKREPORTUI ", "Show parking bay groups in a pop-up."),
+                        Cmd("Validate and Count Bays", "CE_PKCOUNTX ", "Validate and count block or closed-polyline bays."),
+                        Cmd("Validate and Number Bays", "CE_PKNUMBER2 ", "Validate and number accepted bays."),
+                        Cmd("Number Bays (Legacy Shared)", "CE_PKNUMBERX ", "Run the preserved shared-height parking numbering workflow."),
+                        Cmd("Refresh Linked Parking Numbers", "CE_PKNUMBERREFRESH ", "Refresh labels after bay edits."),
+                        Cmd("Dynamic Parking Options", "CE_PARKOPTIONS ", "Generate linked parking inside a selected boundary."),
+                        Cmd("Refresh Dynamic Parking", "CE_PARKOPTIONSREFRESH ", "Rebuild linked parking after boundary edits."),
+                        Cmd("Parking Option Information", "CE_PARKOPTIONSINFO ", "Review linked capacity and sources."),
+                        Cmd("Clear Dynamic Parking", "CE_PARKOPTIONSCLEAR ", "Remove generated bays while retaining the boundary.")),
+                    Menu(
+                        "CE_TOOLS_PARKING_GRADING_MENU",
+                        "Parking\nGrading",
+                        "Dynamic parking grading and drainage guides.",
+                        Cmd("Parking Grading Tools", "CE_PARKGRADETOOLS ", "Open linked parking grading workflows."),
+                        Cmd("Create Grading Guides", "CE_PARKGRADECREATE ", "Create linked low-point, crown or valley guides."),
+                        Cmd("Refresh Grading Guides", "CE_PARKGRADEREFRESH ", "Rebuild guides from current boundaries."),
+                        Cmd("Grading Information", "CE_PARKGRADEINFO ", "Review assumptions and source links."),
+                        Cmd("Clear Grading Guides", "CE_PARKGRADECLEAR ", "Remove selected grading guides."),
+                        Cmd("Automatic Parking Refresh", "CE_PARKAUTOMONITOR ", "Toggle automatic linked parking refresh."),
+                        Cmd("Refresh All Linked Parking", "CE_PARKAUTOREFRESHALL ", "Rebuild every linked parking result."),
+                        Cmd("Parking Refresh Status", "CE_PARKAUTOSTATUS ", "Review automatic refresh and pending links.")),
+                    Menu(
+                        "CE_TOOLS_PARKING_OPTIMIZER_MENU",
+                        "Parking\nOptimizer",
+                        "Optimize parking layouts around boundaries and obstacles.",
+                        Cmd("Parking Optimizer Tools", "CE_PARKOPTIMIZERTOOLS ", "Open optimize, refresh, export, information and clear workflows."),
+                        Cmd("Optimize Parking", "CE_PARKOPTIMIZE ", "Generate optimized parking candidates."),
+                        Cmd("Refresh Optimized Parking", "CE_PARKOPTREFRESH ", "Recalculate a linked optimized layout."),
+                        Cmd("Export Parking Report", "CE_PARKOPTEXPORT ", "Export optimized parking results."),
+                        Cmd("Parking Optimizer Information", "CE_PARKOPTINFO ", "Review sources and optimization settings."),
+                        Cmd("Clear Optimized Parking", "CE_PARKOPTCLEAR ", "Remove generated optimizer output.")),
+                    Menu(
+                        "CE_TOOLS_PARKING_SKEW_MENU",
+                        "Parking Skew\nValidation",
+                        "Validate perpendicular bay width and create correction outlines.",
+                        Cmd("Parking Skew Tools", "CE_PKSKTOOLS ", "Open validate, correct, clear, settings and information workflows."),
+                        Cmd("Validate Perpendicular Bay Width", "CE_PKSKVALIDATE ", "Measure true perpendicular width."),
+                        Cmd("Create Failed-Bay Correction Outlines", "CE_PKSKCORRECT ", "Create target-width outlines without changing source geometry."),
+                        Cmd("Clear Skew Review Graphics", "CE_PKSKCLEAR ", "Clear CE skew review graphics."),
+                        Cmd("Parking Skew Settings", "CE_PKSKSETTINGS ", "Configure width, tolerance, layers and annotation size."),
+                        Cmd("Parking Skew Information", "CE_PKSKINFO ", "Review generated objects and source handles."))));
         }
 
         private static void AddUtilitiesPanel(RibbonTab tab)
@@ -314,12 +405,59 @@ namespace CETools.Civil3D
                 tab,
                 UtilitiesPanelId,
                 "Utilities",
-                Row(Menu(
-                    "CE_TOOLS_PIPE_NETWORK_MENU",
-                    "Pipe Network\nTools",
-                    "Gravity-network sequencing, branch naming and branch alignments.",
-                    Cmd("Sewer Network Sequencing", "CE_SEWSEQ ", "Sequence a complete network or selected path."),
-                    Cmd("Create / Refresh Branch Alignments", "CE_SEWALIGN ", "Create branch alignments and visible branch labels."))));
+                Row(
+                    Menu(
+                        "CE_TOOLS_STORMWATER_MENU",
+                        "Stormwater\nProduction",
+                        "Sequence networks and create linked alignments and profiles.",
+                        Cmd("Stormwater Tools", "CE_SWTOOLS ", "Open the complete stormwater production menu."),
+                        Cmd("Sequence Main and Branches", "CE_SWSEQ ", "Sequence the complete stormwater network."),
+                        Cmd("Create / Refresh Alignments", "CE_SWALIGN ", "Create linked stormwater alignments."),
+                        Cmd("Refresh Alignments", "CE_SWREFRESH ", "Refresh alignments from their sources."),
+                        Cmd("Create / Refresh Profiles", "CE_SWPROFILE ", "Create EG profiles and profile views."),
+                        Cmd("Stormwater Settings", "CE_SWSETTINGS ", "Configure project styles, layers and labels."),
+                        Cmd("Stormwater Information", "CE_SWINFO ", "Review links and current settings.")),
+                    Menu(
+                        "CE_TOOLS_SEWER_PRODUCTION_MENU",
+                        "Sewer Network\nProduction",
+                        "Sequence sewer networks, format alignments and create profiles.",
+                        Cmd("Sewer Production Tools", "CE_SEWTOOLS ", "Open the complete sewer production menu."),
+                        Cmd("Sequence Network", "CE_SEWSEQ ", "Sequence a complete network or selected path."),
+                        Cmd("Sequence with Selected Main", "CE_SEWSEQMAIN ", "Select Branch-1 and sequence remaining branches."),
+                        Cmd("Create / Refresh Alignments", "CE_SEWALIGN ", "Create branch alignments and labels."),
+                        Cmd("Refresh Linked Alignments", "CE_SEWREFRESH ", "Refresh from linked source networks."),
+                        Cmd("Format Alignments and Labels", "CE_SEWFORMAT ", "Apply styles and improve label spacing."),
+                        Cmd("Create / Refresh Profiles", "CE_SEWPROFILE ", "Create EG profiles and profile views."),
+                        Cmd("Sewer Settings", "CE_SEWSETTINGS ", "Configure styles, layers and label height."),
+                        Cmd("Sewer Information", "CE_SEWINFO ", "Review links and generated output."),
+                        Cmd("Sort Branch Labels", "CE_SEWLABELSORT ", "Stagger branch labels to reduce overlap."),
+                        Cmd("Freeze Branch Labels", "CE_SEWLABELFREEZE ", "Freeze accepted label positions."),
+                        Cmd("Unfreeze Branch Labels", "CE_SEWLABELUNFREEZE ", "Return labels to automatic sorting.")),
+                    Menu(
+                        "CE_TOOLS_WATER_PRODUCTION_MENU",
+                        "Water Network\nProduction",
+                        "Create water alignments, profiles and asset review markers.",
+                        Cmd("Water Production Tools", "CE_WATERTOOLS ", "Open the complete water production menu."),
+                        Cmd("Sequence Mains and Branches", "CE_WATERSEQ ", "Sequence water routes and branches."),
+                        Cmd("Create / Refresh Alignments", "CE_WATERALIGN ", "Create linked water alignments."),
+                        Cmd("Refresh Linked Alignments", "CE_WATERREFRESH ", "Refresh from current source geometry."),
+                        Cmd("Create / Refresh Profiles", "CE_WATERPROFILE ", "Create EG profiles and profile views."),
+                        Cmd("Place Valve and Hydrant Review Markers", "CE_WATERPLACE ", "Place linked valve and hydrant review markers."),
+                        Cmd("Refresh Asset Review Markers", "CE_WATERPLACEREFRESH ", "Refresh asset locations from alignments."),
+                        Cmd("Water Settings", "CE_WATERSETTINGS ", "Configure styles, layers and spacing."),
+                        Cmd("Water Information", "CE_WATERINFO ", "Review links, output and settings.")),
+                    Menu(
+                        "CE_TOOLS_NETWORK_SCHEDULE_MENU",
+                        "Network\nSchedules",
+                        "Create linked asset schedules and reports for civil networks.",
+                        Cmd("Network Schedule Tools", "CE_NETWORKSCHEDULETOOLS ", "Open create, refresh, export, information and BOQ workflows."),
+                        Cmd("Create Network Schedule", "CE_NETWORKSCHEDULE ", "Create a linked asset schedule."),
+                        Cmd("Refresh Network Schedule", "CE_NETWORKSCHEDULEREFRESH ", "Refresh linked asset values."),
+                        Cmd("Export Network Schedule", "CE_NETWORKSCHEDULEEXPORT ", "Export the schedule to Excel."),
+                        Cmd("Network Schedule Information", "CE_NETWORKSCHEDULEINFO ", "Review sources and link status."),
+                        Cmd("Create BOQ from Schedule", "CE_NETWORKSCHEDULEBOQ ", "Hand schedule sources to the linked BOQ builder."),
+                        Cmd("Network Summary Report", "CE_NETWORKREPORT2 ", "Show a network summary popup and optional table."),
+                        Cmd("Selected Network Data", "CE_NETWORKPARTREPORT2 ", "Report selected pipe and structure data."))));
         }
 
         private static void AddStandardsPanel(RibbonTab tab)
@@ -328,15 +466,38 @@ namespace CETools.Civil3D
                 tab,
                 StandardsPanelId,
                 "Standards & Details",
-                Row(Menu(
-                    "CE_TOOLS_DESIGN_STANDARDS_MENU",
-                    "Design\nStandards",
-                    "Browse, search and apply the built-in design-standards reference library.",
-                    Cmd("Design Standards Tools", "CE_DESIGNSTANDARDS ", "Open the design-standards library menu."),
-                    Cmd("Browse Standards Library", "CE_STDBROWSE ", "Browse standards by engineering category."),
-                    Cmd("Search Standards Library", "CE_STDSEARCH ", "Search by code, title, authority or keyword."),
-                    Cmd("Apply Standard to Project", "CE_STDAPPLY ", "Record a catalogue item in the existing project standards metadata."),
-                    Cmd("Current Project Standards", "CE_STANDARDINFO ", "Report the standards currently stored in the DWG."))));
+                Row(
+                    Menu(
+                        "CE_TOOLS_DESIGN_STANDARDS_MENU",
+                        "Design\nStandards",
+                        "Browse, search and apply the built-in design-standards reference library.",
+                        Cmd("Design Standards Tools", "CE_DESIGNSTANDARDS ", "Open the design-standards library menu."),
+                        Cmd("Browse Standards Library", "CE_STDBROWSE ", "Browse standards by engineering category."),
+                        Cmd("Search Standards Library", "CE_STDSEARCH ", "Search by code, title, authority or keyword."),
+                        Cmd("Apply Standard to Project", "CE_STDAPPLY ", "Record a catalogue item in project standards."),
+                        Cmd("Current Project Standards", "CE_STANDARDINFO ", "Report current project standards.")),
+                    Menu(
+                        "CE_TOOLS_TYPICAL_DETAILS_MENU",
+                        "Typical\nDetails",
+                        "Configure, search and insert approved typical details.",
+                        Cmd("Typical Details Tools", "CE_DETAILTOOLS ", "Open the typical-details workflow."),
+                        Cmd("Set Master Library Folder", "CE_DETAILSETROOT ", "Store the project master-detail folder."),
+                        Cmd("Search Detail Library", "CE_DETAILSEARCH ", "Search DWG, DXF and PDF assets."),
+                        Cmd("Insert Approved Detail", "CE_DETAILINSERT ", "Insert an approved DWG detail as a block."),
+                        Cmd("Typical Details Information", "CE_DETAILINFO ", "Review the library root and supported formats."),
+                        Cmd("Dynamic Detail Tools", "CE_DETAILPARAMTOOLS ", "Open linked parametric detail workflows.")),
+                    Menu(
+                        "CE_TOOLS_ENGINEERING_ASSET_MENU",
+                        "Engineering\nAssets",
+                        "Search, insert and audit the preserved engineering asset catalogue.",
+                        Cmd("Asset Library Tools", "CE_ASSETLIBTOOLS ", "Open asset search, insertion and audit workflows."),
+                        Cmd("Search Asset Catalogue", "CE_ASSETSEARCH ", "Search the 33-asset catalogue."),
+                        Cmd("Insert Engineering Asset", "CE_ASSETINSERT ", "Insert a selected approved asset."),
+                        Cmd("Asset Information", "CE_ASSETINFO ", "Review catalogue and source information."),
+                        Cmd("Asset Library Settings", "CE_ASSETLIBSETTINGS ", "Configure asset-library locations."),
+                        Cmd("Audit Asset Catalogue", "CE_ASSETCATALOGAUDIT ", "Audit catalogue files and checksums."),
+                        Cmd("Export Asset Template", "CE_ASSETCATALOGTEMPLATE ", "Create an asset catalogue template."),
+                        Cmd("Check Asset Revisions", "CE_ASSETREVISIONCHECK ", "Review revision state for engineering assets."))));
         }
 
         private static void AddAnalysisPanel(RibbonTab tab)
@@ -399,6 +560,99 @@ namespace CETools.Civil3D
                         Cmd("Cross-section Information", "CE_XSINFO ", "Review source, scales, samples, capture width and generated link status."),
                         Cmd("Detach Dynamic Cross Section", "CE_XSDETACH ", "Remove the link and keep or delete generated section geometry."),
                         Cmd("Dynamic-section Monitor", "CE_XSMONITOR ", "Report automatic update-manager and pending-refresh status."))));
+        }
+
+        private static void AddAdvancedPanel(RibbonTab tab)
+        {
+            AddPanel(
+                tab,
+                AdvancedPanelId,
+                "Advanced Engineering",
+                Row(
+                    Menu(
+                        "CE_TOOLS_HYDRAULIC_REVIEW_MENU",
+                        "Hydrology &\nHydraulics",
+                        "Catchment, flow, culvert, ponding and return-period review tools.",
+                        Cmd("Hydraulic Tools", "CE_HYDRAULICTOOLS ", "Open rational-flow, catchment, culvert and pump review workflows."),
+                        Cmd("Rational Flow", "CE_RATIONALFLOW ", "Calculate rational-method peak flow."),
+                        Cmd("Quick Catchment Review", "CE_CATCHMENTQUICK ", "Review catchment area and runoff inputs."),
+                        Cmd("Culvert Review", "CE_CULVERTREVIEW ", "Review preliminary culvert capacity."),
+                        Cmd("Pump Review", "CE_PUMPREVIEW ", "Review pump duty information."),
+                        Cmd("Surface Hydrology Tools", "CE_HYDROLOGYTOOLS ", "Open surface flow and catchment workflows."),
+                        Cmd("Surface Flow Paths", "CE_SURFACEFLOW ", "Create surface flow-path review output."),
+                        Cmd("Delineate Catchment", "CE_CATCHMENTDELINEATE ", "Delineate a surface catchment."),
+                        Cmd("Compare Hydrographs", "CE_HYDROGRAPHCOMPARE ", "Compare pre/post hydrograph results."),
+                        Cmd("Return-Period Hydrographs", "CE_HYDROGRAPHPERIODS ", "Generate return-period hydrograph reviews."),
+                        Cmd("Flow Network and Culvert", "CE_FLOWNETWORK ", "Review a linked flow-network culvert system."),
+                        Cmd("Surface Ponding Review", "CE_PONDINGREVIEW ", "Identify and report likely ponding areas."),
+                        Cmd("Clear Hydraulic Review", "CE_HYDRAULICCLEAR ", "Clear generated hydraulic review output."),
+                        Cmd("Clear Hydrology Review", "CE_HYDROLOGYCLEAR ", "Clear generated hydrology output.")),
+                    Menu(
+                        "CE_TOOLS_FLOOD_REVIEW_MENU",
+                        "Flood Result\nReview",
+                        "Review flood properties, frames and browser-based animations.",
+                        Cmd("Flood Result Tools", "CE_FLOODRESULTTOOLS ", "Open flood result review workflows."),
+                        Cmd("Flood Property Report", "CE_FLOODPROPERTYREPORT ", "Create a property-impact flood report."),
+                        Cmd("Set Flood Frame", "CE_FLOODFRAMESET ", "Set plan/animation frame extents."),
+                        Cmd("Reset Flood Frame", "CE_FLOODFRAMERESET ", "Clear stored flood frame extents."),
+                        Cmd("Create Flood Animation", "CE_FLOODANIMATIONHTML ", "Generate an HTML flood-result animation.")),
+                    Menu(
+                        "CE_TOOLS_MODEL_EXCHANGE_MENU",
+                        "Model & Xref\nExchange",
+                        "Package, split, compare, back up and review project models and Xrefs.",
+                        Cmd("Xref Project Tools", "CE_XREFPROJECTTOOLS ", "Open discipline split, backup and revision workflows."),
+                        Cmd("Split Xrefs by Discipline", "CE_XREFDISCIPLINESPLIT ", "Build discipline-specific Xref sets."),
+                        Cmd("Back Up All Xrefs", "CE_XREFBACKUPALL ", "Create a project Xref backup."),
+                        Cmd("Xref Revision Dashboard", "CE_XREFREVISIONDASH ", "Review Xref revision differences."),
+                        Cmd("Background Xref Tools", "CE_BACKGROUNDTOOLS ", "Open lightweight background workflows."),
+                        Cmd("Split Background", "CE_XREFSPLIT ", "Split a selected background Xref."),
+                        Cmd("Back Up Background", "CE_XREFBACKUP ", "Back up selected backgrounds."),
+                        Cmd("Restore Background", "CE_XREFRESTORE ", "Restore a backed-up background."),
+                        Cmd("Model Exchange Tools", "CE_MODELEXCHANGETOOLS ", "Open specialist model exchange workflows."),
+                        Cmd("Export Model Package", "CE_MODELEXPORTPACKAGE ", "Create a specialist model package."),
+                        Cmd("Import Model Results", "CE_MODELRESULTIMPORT ", "Import supported specialist results."),
+                        Cmd("Model Result Information", "CE_MODELRESULTINFO ", "Review imported result links."),
+                        Cmd("Model Design Audit", "CE_MODELREPORTTOOLS ", "Open model audit, export and information workflows."),
+                        Cmd("Create Model Report", "CE_MODELREPORT ", "Create a model design audit report."),
+                        Cmd("Export Model Report", "CE_MODELREPORTEXPORT ", "Export model audit results."),
+                        Cmd("Fast Block Edit", "CE_BLOCKEDITFAST ", "Open a block or Xref definition for fast editing.")),
+                    Menu(
+                        "CE_TOOLS_ENGINEERING_SCHEDULE_MENU",
+                        "Engineering\nSchedules",
+                        "Linked road, sewer, section and standard quantity schedules.",
+                        Cmd("Road Section Data Tools", "CE_ROADSECTIONDATATOOLS ", "Open road cross-section setting-out workflows."),
+                        Cmd("Create Road Section Data", "CE_ROADSECTIONDATA ", "Create a linked road cross-section schedule."),
+                        Cmd("Refresh Road Section Data", "CE_ROADSECTIONDATAREFRESH ", "Refresh road section values."),
+                        Cmd("Export Road Section Data", "CE_ROADSECTIONDATAEXPORT ", "Export road section values."),
+                        Cmd("Sewer Excavation Schedule", "CE_SEWEREXCAVATION ", "Create a linked excavation schedule."),
+                        Cmd("Refresh Sewer Excavation", "CE_SEWEREXCAVATIONREFRESH ", "Refresh excavation quantities."),
+                        Cmd("Export Sewer Excavation", "CE_SEWEREXCAVATIONEXPORT ", "Export excavation quantities."),
+                        Cmd("Standard Quantity Tools", "CE_STANDARDQTYTOOLS ", "Open standard quantity workflows."),
+                        Cmd("Create Standard Quantity", "CE_STANDARDQTY ", "Create a linked office quantity template."),
+                        Cmd("Refresh Standard Quantity", "CE_STANDARDQTYREFRESH ", "Refresh source quantities."),
+                        Cmd("Export Standard Quantity", "CE_STANDARDQTYEXPORT ", "Export a standard quantity schedule."),
+                        Cmd("Detailed Section Tools", "CE_SECTIONDETAILTOOLS ", "Open linked section-detail annotation workflows."),
+                        Cmd("Create Detailed Section", "CE_SECTIONDETAILCREATE ", "Create a linked detailed-section annotation."),
+                        Cmd("Refresh Detailed Section", "CE_SECTIONDETAILREFRESH ", "Refresh linked detailed-section output.")),
+                    Menu(
+                        "CE_TOOLS_REVIEW_PRESENTATION_MENU",
+                        "Review &\nPresentation",
+                        "Grading diagnostics, survey comparison, pump systems and project presentation.",
+                        Cmd("Grading Diagnostics", "CE_GRADINGDIAGNOSTICS ", "Open low-point and low-slope review workflows."),
+                        Cmd("Find Low Points", "CE_LOWPOINTS ", "Identify grading low points."),
+                        Cmd("Find Low Slopes", "CE_LOWSLOPE ", "Identify areas below the selected slope."),
+                        Cmd("Clear Grading Review", "CE_GRADINGREVIEWCLEAR ", "Clear generated grading review output."),
+                        Cmd("Survey Comparison Tools", "CE_SURVEYCOMPARETOOLS ", "Compare original and corrected survey surfaces."),
+                        Cmd("Survey Changes", "CE_SURVEYCHANGES ", "Create a read-only survey change report."),
+                        Cmd("Export Survey Changes", "CE_SURVEYCHANGEEXPORT ", "Export survey comparison results."),
+                        Cmd("Pump System Tools", "CE_PUMPSYSTEMTOOLS ", "Open pump-system review workflows."),
+                        Cmd("Pump System Review", "CE_PUMPSYSTEMREVIEW ", "Review a pump system and duty points."),
+                        Cmd("Pump Folder Review", "CE_PUMPFOLDERREVIEW ", "Review pump files in a selected folder."),
+                        Cmd("Pump Curve Template", "CE_PUMPCURVETEMPLATE ", "Create a pump-curve input template."),
+                        Cmd("Project Presentation Tools", "CE_PROJECTPRESENTATIONTOOLS ", "Open project presentation workflows."),
+                        Cmd("Create Project Presentation", "CE_PRESENTATIONCREATE ", "Create a presentation package."),
+                        Cmd("Preview Project Presentation", "CE_PRESENTATIONPREVIEW ", "Preview generated presentation content."),
+                        Cmd("Ribbon Icon Settings", "CE_RIBBONICONS ", "Review or configure CE Tools ribbon icon mode."))));
         }
 
         private static void AddProductionPanel(RibbonTab tab)

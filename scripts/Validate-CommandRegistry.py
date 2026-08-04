@@ -80,9 +80,9 @@ missing = sorted(required_commands - set(commands))
 for command in missing:
     errors.append(f"Required command is missing from the registry: {command}")
 
-if len(commands) < 45:
+if len(commands) < 380:
     errors.append(
-        f"Only {len(commands)} command names were discovered; source parsing may have regressed"
+        f"Only {len(commands)} command names were discovered; the preserved 380+ command surface has regressed"
     )
 
 if errors:
