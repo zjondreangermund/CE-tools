@@ -972,18 +972,22 @@ namespace CETools.Civil3D
                 options.DrawMarker ? "Yes" : "No",
                 options.Output);
 
-            var prompt = new PromptKeywordOptions(
-                "\nUse these settings or edit them [Continue/Settings] <Continue>: ")
-            {
-                AllowNone = true
-            };
-            prompt.Keywords.Add("Continue");
-            prompt.Keywords.Add("Settings");
-            PromptResult result = editor.GetKeywords(prompt);
-            if (result.Status == PromptStatus.Cancel) return false;
+            string choice = DisciplineWorkflowDialogs.SelectWorkflow(
+                "CE Tools - Annotation Output",
+                string.Format(
+                    CultureInfo.CurrentCulture,
+                    "Current settings: {0:N1} mm paper height; marker={1}; output={2}.",
+                    options.TextHeight,
+                    options.DrawMarker ? "Yes" : "No",
+                    options.Output),
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Continue with current settings", "Continue", "Use the displayed drawing-specific annotation settings.", "01 Continue"),
+                    new DisciplineWorkflowAction("Edit annotation settings", "Settings", "Change paper height, marker and output type before continuing.", "02 Settings")
+                });
+            if (string.IsNullOrWhiteSpace(choice)) return false;
 
-            if (result.Status == PromptStatus.OK &&
-                string.Equals(result.StringResult, "Settings", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(choice, "Settings", StringComparison.OrdinalIgnoreCase))
             {
                 return EditAndSave(document, allowCogo, out options);
             }
@@ -999,72 +1003,46 @@ namespace CETools.Civil3D
             AnnotationOptions existing = Read(document.Database);
             Editor editor = document.Editor;
 
-            var heightPrompt = new PromptKeywordOptions(
-                "\nAnnotation text height [Small1.8/Standard2.0/Large5.0] <" +
-                HeightKeyword(existing.TextHeight) + ">: ")
-            {
-                AllowNone = true
-            };
-            heightPrompt.Keywords.Add("Small");
-            heightPrompt.Keywords.Add("Standard");
-            heightPrompt.Keywords.Add("Large");
-            PromptResult heightResult = editor.GetKeywords(heightPrompt);
-            if (heightResult.Status == PromptStatus.Cancel)
-            {
-                options = existing;
-                return false;
-            }
+            AnnotationOutput currentOutput = existing.Output;
+            if (!allowCogo && currentOutput == AnnotationOutput.Cogo)
+                currentOutput = AnnotationOutput.MLeader;
 
-            double height = heightResult.Status == PromptStatus.None
-                ? NormalizeHeight(existing.TextHeight)
-                : HeightFromKeyword(heightResult.StringResult);
-
-            var markerPrompt = new PromptKeywordOptions(
-                "\nDraw a marker circle at the reference point [Yes/No] <" +
-                (existing.DrawMarker ? "Yes" : "No") + ">: ")
-            {
-                AllowNone = true
-            };
-            markerPrompt.Keywords.Add("Yes");
-            markerPrompt.Keywords.Add("No");
-            PromptResult markerResult = editor.GetKeywords(markerPrompt);
-            if (markerResult.Status == PromptStatus.Cancel)
-            {
-                options = existing;
-                return false;
-            }
-
-            bool marker = markerResult.Status == PromptStatus.None
-                ? existing.DrawMarker
-                : string.Equals(markerResult.StringResult, "Yes", StringComparison.OrdinalIgnoreCase);
-
-            AnnotationOutput output = existing.Output;
-            if (!allowCogo && output == AnnotationOutput.Cogo)
-            {
-                output = AnnotationOutput.MLeader;
-            }
-
-            var outputPrompt = new PromptKeywordOptions(
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - Annotation Settings",
+                "Settings are stored in the drawing and shared by coordinate, alignment, profile, surface, feature-line, corridor and parking annotations.");
+            model.AddPaperHeight(
+                "PaperHeight",
+                "01 Presentation",
+                "Paper text height (mm)",
+                NormalizeHeight(existing.TextHeight),
+                "Standard choices are 1.8, 2.0, 2.5, 3.5 and 5.0 mm.");
+            model.AddChoice(
+                "Marker",
+                "01 Presentation",
+                "Reference marker",
+                existing.DrawMarker ? "Yes" : "No",
+                "Draw a marker circle at the referenced drawing location.",
+                new[] { "Yes", "No" });
+            model.AddChoice(
+                "Output",
+                "02 Output",
+                "Annotation object",
+                currentOutput == AnnotationOutput.Cogo ? "COGO" : currentOutput.ToString(),
+                "Choose the Civil 3D/AutoCAD object created by supported annotation workflows.",
                 allowCogo
-                    ? "\nAnnotation output [MLeader/MText/COGO] <" + output + ">: "
-                    : "\nAnnotation output [MLeader/MText] <" + output + ">: ")
-            {
-                AllowNone = true
-            };
-            outputPrompt.Keywords.Add("MLeader");
-            outputPrompt.Keywords.Add("MText");
-            if (allowCogo) outputPrompt.Keywords.Add("COGO");
-            PromptResult outputResult = editor.GetKeywords(outputPrompt);
-            if (outputResult.Status == PromptStatus.Cancel)
+                    ? new[] { "MLeader", "MText", "COGO" }
+                    : new[] { "MLeader", "MText" });
+            if (!DisciplineWorkflowDialogs.EditSettings(model))
             {
                 options = existing;
                 return false;
             }
 
-            if (outputResult.Status == PromptStatus.OK)
-            {
-                output = ParseOutput(outputResult.StringResult);
-            }
+            double height = model.Double("PaperHeight", NormalizeHeight(existing.TextHeight));
+            bool marker = string.Equals(model.Text("Marker"), "Yes", StringComparison.OrdinalIgnoreCase);
+            AnnotationOutput output = ParseOutput(model.Text("Output"));
+            if (!allowCogo && output == AnnotationOutput.Cogo)
+                output = AnnotationOutput.MLeader;
 
             options = new AnnotationOptions(height, marker, output);
             try

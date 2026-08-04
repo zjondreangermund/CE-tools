@@ -693,6 +693,7 @@ namespace CETools.Civil3D
                 "general", "General", "General Workflow",
                 "Start with project information and standards, coordinate the discipline models, refresh linked data, produce quantities and issue reports.",
                 tools, new[] { "PROJECT", "STANDARD", "PRESENTATION", "REPORT", "BOQ", "REFRESH", "XREF", "MODEL", "DRAW", "DETAIL", "ASSET" },
+                Step("Open Phase 1 utilities", "CE_PHASE1"),
                 Step("Project setup", "CE_PROJECTSETUP"),
                 Step("Project standards", "CE_STANDARDSELECT"),
                 Step("Refresh linked outputs", "CE_REFRESHALL"),
@@ -706,6 +707,7 @@ namespace CETools.Civil3D
                 "Set the drawing coordinate system, create linked survey points and crosses, generate polyline-vertex COGO points and coordinate tables, then refresh linked outputs after survey edits.",
                 tools, new[] { "SURVEY", "COORD", "COGO", "PLDIR" },
                 Step("Set coordinate system", "CE_COORDSYSASSIGN"),
+                Step("Open survey cleanup", "CE_SURVEYCLEANUP"),
                 Step("Create linked point", "CE_COORDPICK2"),
                 Step("Create coordinate cross", "CE_COORDCROSS2"),
                 Step("Create vertex points", "CE_COORDPOLY2"),
@@ -728,6 +730,12 @@ namespace CETools.Civil3D
                 "stormwater", "Stormwater", "Stormwater Workflow",
                 "Delineate catchments, review hydrology, create the stormwater network and profiles, then produce quantities and reports.",
                 tools, new[] { "SW", "STORM", "HYDRO", "CATCHMENT", "CULVERT", "FLOOD", "BOQ" },
+                Step("Open Stormwater workflow", "CE_SWTOOLS"),
+                Step("Review surface hydrology", "CE_HYDROLOGYTOOLS"),
+                Step("Sequence network", "CE_SWSEQ"),
+                Step("Create alignments", "CE_SWALIGN"),
+                Step("Create profile views", "CE_SWPROFILE"),
+                Step("Configure production settings", "CE_SWSETTINGS"),
                 Step("Create BOQ", "CE_BOQSTORM"),
                 Step("Generate report", "CE_PRESENTATIONTOOLS"));
 
@@ -737,20 +745,33 @@ namespace CETools.Civil3D
                 tools, new[] { "SEWER", "SEW", "BRANCH", "NETWORK", "PROFILE", "BOQ" },
                 Step("Sequence network", "CE_SEWSEQ"),
                 Step("Create alignments", "CE_SEWALIGN"),
+                Step("Create profile views", "CE_SEWPROFILE"),
+                Step("Configure production settings", "CE_SEWSETTINGS"),
                 Step("Create BOQ", "CE_BOQSEWER"),
+                Step("Refresh cost estimate", "CE_WSCOSTREFRESH"),
                 Step("Generate report", "CE_PRESENTATIONTOOLS"));
 
             yield return Build(
                 "water", "Water", "Water Workflow",
                 "Create water alignments and profiles, build the pipe network, place valves, run checks, then create the BOQ and report.",
                 tools, new[] { "WATER", "HYDRAULIC", "PUMP", "VALVE", "NETWORK", "BOQ" },
+                Step("Open Water workflow", "CE_WATERTOOLS"),
+                Step("Sequence network", "CE_WATERSEQ"),
+                Step("Create alignments", "CE_WATERALIGN"),
+                Step("Create profile views", "CE_WATERPROFILE"),
+                Step("Place review assets", "CE_WATERPLACE"),
+                Step("Configure production settings", "CE_WATERSETTINGS"),
                 Step("Create BOQ", "CE_BOQWATER"),
+                Step("Refresh cost estimate", "CE_WSCOSTREFRESH"),
                 Step("Generate report", "CE_PRESENTATIONTOOLS"));
 
             yield return Build(
                 "bulkwater", "Bulk Water", "Bulk Water Workflow",
                 "Develop bulk-water routes and profiles, review hydraulic assets and create linked quantities and reports.",
                 tools, new[] { "WATER", "BULK", "HYDRAULIC", "PUMP", "PROFILE", "BOQ" },
+                Step("Open Water workflow", "CE_WATERTOOLS"),
+                Step("Review hydraulics", "CE_HYDRAULICTOOLS"),
+                Step("Review pump system", "CE_PUMPSYSTEMTOOLS"),
                 Step("Create BOQ", "CE_BOQBULKWATER"),
                 Step("Generate report", "CE_PRESENTATIONTOOLS"));
 
@@ -758,6 +779,12 @@ namespace CETools.Civil3D
                 "flood", "Flood", "Flood Workflow",
                 "Prepare terrain and hydrology, review flood results and property impacts, create presentation frames and report outputs.",
                 tools, new[] { "FLOOD", "HYDRO", "SURFACE", "CATCHMENT", "ANIMATION", "REPORT" },
+                Step("Review surface hydrology", "CE_HYDROLOGYTOOLS"),
+                Step("Trace surface flow", "CE_SURFACEFLOW"),
+                Step("Delineate catchment", "CE_CATCHMENTDELINEATE"),
+                Step("Open flood-result review", "CE_FLOODRESULTTOOLS"),
+                Step("Create property report", "CE_FLOODPROPERTYREPORT"),
+                Step("Export flood animation", "CE_FLOODANIMATIONHTML"),
                 Step("Generate report", "CE_PRESENTATIONTOOLS"));
         }
 

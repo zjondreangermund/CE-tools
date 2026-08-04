@@ -33,26 +33,20 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var options = new PromptKeywordOptions(
-                "\nEngineering asset library [Settings/Template/Audit/Search/Insert/Information/Revisions] <Search>: ")
-            {
-                AllowNone = true
-            };
-            foreach (string keyword in new[]
-            {
-                "Settings", "Template", "Audit", "Search", "Insert", "Information", "Revisions"
-            }) options.Keywords.Add(keyword);
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string choice = result.Status == PromptStatus.OK ? result.StringResult : "Search";
-            string command = Equal(choice, "Settings") ? "CE_ASSETLIBSETTINGS " :
-                Equal(choice, "Template") ? "CE_ASSETCATALOGTEMPLATE " :
-                Equal(choice, "Audit") ? "CE_ASSETCATALOGAUDIT " :
-                Equal(choice, "Insert") ? "CE_ASSETINSERT " :
-                Equal(choice, "Information") ? "CE_ASSETINFO " :
-                Equal(choice, "Revisions") ? "CE_ASSETREVISIONCHECK " :
-                "CE_ASSETSEARCH ";
-            document.SendStringToExecute(command, true, false, true);
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Engineering Asset Library",
+                "Configure, audit, search and insert controlled engineering details, symbols and drawing assets.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Library settings", "CE_ASSETLIBSETTINGS", "Set the catalog path, units and minimum approval visibility.", "01 Configure"),
+                    new DisciplineWorkflowAction("Create catalog template", "CE_ASSETCATALOGTEMPLATE", "Create a standards-ready CSV asset catalog template.", "01 Configure"),
+                    new DisciplineWorkflowAction("Audit catalog", "CE_ASSETCATALOGAUDIT", "Validate catalog records, source paths and metadata.", "02 Audit"),
+                    new DisciplineWorkflowAction("Search assets", "CE_ASSETSEARCH", "Search approved details, symbols and civil assets.", "03 Use"),
+                    new DisciplineWorkflowAction("Insert asset", "CE_ASSETINSERT", "Insert a selected controlled source asset into the drawing.", "03 Use"),
+                    new DisciplineWorkflowAction("Asset information", "CE_ASSETINFO", "Inspect inserted asset source and approval metadata.", "04 Review"),
+                    new DisciplineWorkflowAction("Revision check", "CE_ASSETREVISIONCHECK", "Compare inserted assets with their current catalog revisions.", "04 Review")
+                });
         }
 
         [CommandMethod("CE_TOOLS", "CE_ASSETLIBSETTINGS", CommandFlags.Modal)]

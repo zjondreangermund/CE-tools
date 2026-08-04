@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -18,9 +19,6 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class AlignmentCommands
     {
-        private const string ReportKeyword = "Report";
-        private const string StationOffsetKeyword = "StationOffset";
-        private const string LabelKeyword = "Label";
         private const double OffsetZeroTolerance = 0.000001;
 
         [CommandMethod(
@@ -35,37 +33,16 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var options = new PromptKeywordOptions(
-                "\nAlignment tool [Report/StationOffset/Label] <Report>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add(ReportKeyword);
-            options.Keywords.Add(StationOffsetKeyword);
-            options.Keywords.Add(LabelKeyword);
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? ReportKeyword
-                : result.StringResult;
-
-            if (string.Equals(mode, StationOffsetKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                ReportStationOffset(document);
-            }
-            else if (string.Equals(mode, LabelKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                PlaceStationOffsetLabel(document);
-            }
-            else
-            {
-                ReportAlignments(document);
-            }
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Alignment Utilities",
+                "Inspect Civil 3D alignments, query station/offset and place plan annotations.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Alignment report", "CE_ALREPORT", "Report geometry, station range, styles and profile counts.", "01 Review"),
+                    new DisciplineWorkflowAction("Station and offset", "CE_ALSTOFF", "Query equation-aware station, offset and side at a picked point.", "01 Review"),
+                    new DisciplineWorkflowAction("Station/offset label", "CE_ALLABEL", "Place an alignment station-and-offset MLeader.", "02 Annotation")
+                });
         }
 
         [CommandMethod(

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
@@ -32,25 +33,49 @@ namespace CETools.Civil3D
             }
 
             Editor editor = document.Editor;
-            var options = new PromptKeywordOptions(
-                "\nDrawing cleanup [All/Overkill/Audit/Purge] <All>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add(AllKeyword);
-            options.Keywords.Add(OverkillKeyword);
-            options.Keywords.Add(AuditKeyword);
-            options.Keywords.Add(PurgeKeyword);
+            string mode = DisciplineWorkflowDialogs.SelectWorkflow(
+                "CE Tools - Drawing Cleanup",
+                "Choose the cleanup stages to run. The selected work is previewed and confirmed before AutoCAD changes the drawing.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Complete cleanup", AllKeyword, "Run OVERKILL, AUDIT and three PURGE passes.", "01 Recommended"),
+                    new DisciplineWorkflowAction("Remove duplicate geometry", OverkillKeyword, "Run AutoCAD OVERKILL on the preselection or current space.", "02 Individual Stages"),
+                    new DisciplineWorkflowAction("Audit drawing", AuditKeyword, "Run AutoCAD AUDIT and fix detected drawing errors.", "02 Individual Stages"),
+                    new DisciplineWorkflowAction("Purge unused objects", PurgeKeyword, "Run three controlled PURGE passes.", "02 Individual Stages")
+                });
+            if (string.IsNullOrWhiteSpace(mode)) return;
 
-            PromptResult result = editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
+            Run(document, mode);
+        }
 
-            string mode = result.Status == PromptStatus.None
-                ? AllKeyword
-                : result.StringResult;
+        [CommandMethod("CE_TOOLS", "CE_DRAWCLEANALL", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void RunAll()
+        {
+            Run(AcApplication.DocumentManager.MdiActiveDocument, AllKeyword);
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_DRAWOVERKILL", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void RunOverkillOnly()
+        {
+            Run(AcApplication.DocumentManager.MdiActiveDocument, OverkillKeyword);
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_DRAWAUDIT", CommandFlags.Modal | CommandFlags.Redraw)]
+        public void RunAuditOnly()
+        {
+            Run(AcApplication.DocumentManager.MdiActiveDocument, AuditKeyword);
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_DRAWPURGE", CommandFlags.Modal | CommandFlags.Redraw)]
+        public void RunPurgeOnly()
+        {
+            Run(AcApplication.DocumentManager.MdiActiveDocument, PurgeKeyword);
+        }
+
+        private static void Run(Document document, string mode)
+        {
+            if (document == null) return;
+            Editor editor = document.Editor;
 
             bool runOverkill = string.Equals(mode, AllKeyword, StringComparison.OrdinalIgnoreCase) ||
                                string.Equals(mode, OverkillKeyword, StringComparison.OrdinalIgnoreCase);
@@ -141,20 +166,9 @@ namespace CETools.Civil3D
 
         private static bool Confirm(Editor editor, string message)
         {
-            var options = new PromptKeywordOptions(
-                "\n" + message + "? [Yes/No] <No>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Yes");
-            options.Keywords.Add("No");
-
-            PromptResult result = editor.GetKeywords(options);
-            return result.Status == PromptStatus.OK &&
-                   string.Equals(
-                       result.StringResult,
-                       "Yes",
-                       StringComparison.OrdinalIgnoreCase);
+            return DisciplineWorkflowDialogs.Confirm(
+                "CE Tools - Drawing Cleanup",
+                message + "?");
         }
     }
 }

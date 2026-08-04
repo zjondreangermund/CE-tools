@@ -33,20 +33,17 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var options = new PromptKeywordOptions(
-                "\nWater/sewer cost estimate [Create/Refresh/Information/Auto] <Refresh>: ")
-            {
-                AllowNone = true
-            };
-            foreach (string item in new[] { "Create", "Refresh", "Information", "Auto" })
-                options.Keywords.Add(item);
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string choice = result.Status == PromptStatus.None ? "Refresh" : result.StringResult;
-            if (Equal(choice, "Create")) Create();
-            else if (Equal(choice, "Information")) Information();
-            else if (Equal(choice, "Auto")) ToggleAuto();
-            else Refresh();
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Water and Sewer Cost Estimate",
+                "Create and maintain an Excel estimate linked to current drawing quantities.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Create linked estimate", "CE_WSCOSTCREATE", "Copy the approved template and populate model-derived quantities.", "01 Estimate"),
+                    new DisciplineWorkflowAction("Refresh estimate", "CE_WSCOSTREFRESH", "Update quantities while preserving workbook rates and formatting.", "01 Estimate"),
+                    new DisciplineWorkflowAction("Estimate information", "CE_WSCOSTINFO", "Inspect workbook linkage, source counts and automatic-refresh state.", "02 Review"),
+                    new DisciplineWorkflowAction("Automatic refresh", "CE_WSCOSTAUTO", "Configure deferred workbook updates after drawing changes.", "03 Automation")
+                });
         }
 
         [CommandMethod("CE_TOOLS", "CE_WSCOSTCREATE", CommandFlags.Modal | CommandFlags.Redraw)]

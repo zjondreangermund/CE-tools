@@ -46,42 +46,17 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var options = new PromptKeywordOptions(
-                "\nCE Project [Setup/Info/Clear/Restore] <Setup>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Setup");
-            options.Keywords.Add("Info");
-            options.Keywords.Add("Clear");
-            options.Keywords.Add("Restore");
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? "Setup"
-                : result.StringResult;
-
-            if (string.Equals(mode, "Info", StringComparison.OrdinalIgnoreCase))
-            {
-                ReportProjectInfo(document);
-            }
-            else if (string.Equals(mode, "Clear", StringComparison.OrdinalIgnoreCase))
-            {
-                ClearProjectInfo(document);
-            }
-            else if (string.Equals(mode, "Restore", StringComparison.OrdinalIgnoreCase))
-            {
-                RestoreProjectInfo(document);
-            }
-            else
-            {
-                SetupProject(document);
-            }
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Project Setup",
+                "Create, inspect and safely maintain drawing-embedded CE Tools project metadata.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Set up project", "CE_PROJECTSETUP", "Enter project, client, location, standards, template and units.", "01 Project"),
+                    new DisciplineWorkflowAction("Project information", "CE_PROJECTINFO", "Review stored project metadata and optionally place a table.", "01 Project"),
+                    new DisciplineWorkflowAction("Clear project metadata", "CE_PROJECTCLEAR", "Back up and clear the current project metadata.", "02 Recovery"),
+                    new DisciplineWorkflowAction("Restore project metadata", "CE_PROJECTRESTORE", "Restore the latest CE Tools metadata backup.", "02 Recovery")
+                });
         }
 
         [CommandMethod(

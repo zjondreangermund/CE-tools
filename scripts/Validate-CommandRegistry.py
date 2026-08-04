@@ -89,14 +89,20 @@ required_commands = {
     "CE_RELEASEINFO",
     "CE_INSTALLVERIFY",
     "CE_UPDATECHECK",
+    "CE_PHASE1",
+    "CE_VIEWPORTTOOLS",
+    "CE_LAYERTOOLS",
+    "CE_EXCELTOOLS",
+    "CE_LABELTOOLS",
+    "CE_SURVEYCLEANUP",
 }
 missing = sorted(required_commands - set(commands))
 for command in missing:
     errors.append(f"Required command is missing from the registry: {command}")
 
-if len(commands) < 397:
+if len(commands) < 412:
     errors.append(
-        f"Only {len(commands)} command names were discovered; the current 397-command surface has regressed"
+        f"Only {len(commands)} command names were discovered; the current 412-command surface has regressed"
     )
 
 if errors:

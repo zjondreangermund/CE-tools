@@ -19,8 +19,8 @@ This register prevents the requirements gathered during Civil 3D 2023 testing fr
 | Profile tools | Select profile-view styles and band sets, batch apply, fit and rebuild | WPF `ProfileViewBatchWindow` with style/band catalogues |
 | Dynamic profile annotation | Drag a point along an alignment and update station, elevation, grade and text | `ProfileAnnotationLinkStore` |
 | Annotation | Paper text sizes, annotative scale synchronisation and overlap cleanup | Shared annotation settings, `AnnotationScaleSyncManager` and `CE_OVERLAPFIX` |
-| Workflow window | Auto-open, Ctrl+F, all commands, General/Survey/Roads/Stormwater/Sewer/Water/Bulk Water/Flood | Reflection-backed 397-command catalogue and discipline tabs |
-| Settings UX | Use dialogs rather than command-line workflow selection wherever practical | Searchable `CE_SETTINGS` centre; dedicated Stormwater/Sewer/Water workflow and settings windows; visual parent launchers for Parking, BOQ, Hydraulics, Flood, Hydrology, cross sections, polyline direction, coordinates, profiles and drawing production |
+| Workflow window | Auto-open, Ctrl+F, all commands, General/Survey/Roads/Stormwater/Sewer/Water/Bulk Water/Flood | Reflection-backed 412-command catalogue with complete ordered discipline steps |
+| Settings UX | Use dialogs rather than command-line workflow selection wherever practical | Searchable `CE_SETTINGS` centre; WPF annotation settings; dedicated production windows; visual parent launchers across the original Phase 1 and major production families |
 | BOQs and costs | Linked BOQs and water/sewer estimates with automatic refresh | BOQ/cost link stores and deferred refresh managers |
 | Drawing production | A4, A3, A1 and A0 layouts, books and indexes | Production and client-book modules |
 | Installer | Civil 3D 2023 checks, Release x64, source commit, installation log, SHA-256 comparison and rollback | V61 package with double-click elevated installer, embedded release manifest and source/stage/install verification used by both 2023 build paths |

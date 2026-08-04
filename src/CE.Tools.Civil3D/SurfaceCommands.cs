@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -18,10 +19,6 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class SurfaceCommands
     {
-        private const string ReportKeyword = "Report";
-        private const string ElevationKeyword = "Elevation";
-        private const string LabelKeyword = "Label";
-        private const string CompareKeyword = "Compare";
         private const double DifferenceTolerance = 0.000001;
 
         [CommandMethod(
@@ -36,42 +33,17 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var options = new PromptKeywordOptions(
-                "\nSurface tool [Report/Elevation/Label/Compare] <Elevation>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add(ReportKeyword);
-            options.Keywords.Add(ElevationKeyword);
-            options.Keywords.Add(LabelKeyword);
-            options.Keywords.Add(CompareKeyword);
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? ElevationKeyword
-                : result.StringResult;
-
-            if (string.Equals(mode, ReportKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                ReportSurfaces(document);
-            }
-            else if (string.Equals(mode, LabelKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                PlaceElevationLabel(document);
-            }
-            else if (string.Equals(mode, CompareKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                CompareSurfaces(document);
-            }
-            else
-            {
-                ReportElevation(document);
-            }
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Surface Utilities",
+                "Inspect Civil 3D surfaces, query elevations and create linked comparison annotations.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Surface report", "CE_SFREPORT", "Report selected surface properties and statistics.", "01 Review"),
+                    new DisciplineWorkflowAction("Surface elevation", "CE_SFELEV", "Query the selected surface at a picked point.", "01 Review"),
+                    new DisciplineWorkflowAction("Elevation label", "CE_SFLABEL", "Place a surface elevation annotation.", "02 Annotation"),
+                    new DisciplineWorkflowAction("Compare surfaces", "CE_SFCOMPARE", "Create a point cut/fill comparison between two surfaces.", "03 Comparison")
+                });
         }
 
         [CommandMethod(

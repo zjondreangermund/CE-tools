@@ -31,24 +31,17 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
 
-            var options = new PromptKeywordOptions(
-                "\nLinked feature-line tool [Create/Update/Info/Detach] <Create>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Create");
-            options.Keywords.Add("Update");
-            options.Keywords.Add("Info");
-            options.Keywords.Add("Detach");
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string mode = result.Status == PromptStatus.None ? "Create" : result.StringResult;
-
-            if (mode.Equals("Update", StringComparison.OrdinalIgnoreCase)) Update(document);
-            else if (mode.Equals("Info", StringComparison.OrdinalIgnoreCase)) Info(document);
-            else if (mode.Equals("Detach", StringComparison.OrdinalIgnoreCase)) Detach(document);
-            else Create(document);
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Linked Feature Lines",
+                "Create and maintain stepped offsets linked to an editable source feature line.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Create linked offsets", "CE_FLRELCREATE", "Create stepped-offset child feature lines.", "01 Create"),
+                    new DisciplineWorkflowAction("Update linked offsets", "CE_FLRELUPDATE", "Rebuild linked children from the current source geometry.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Link information", "CE_FLRELINFO", "Inspect stored source and relationship data.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Detach linked offset", "CE_FLRELDETACH", "Remove a selected relationship without deleting unrelated geometry.", "03 Cleanup")
+                });
         }
 
         [CommandMethod("CE_TOOLS", "CE_FLRELCREATE", CommandFlags.Modal | CommandFlags.Redraw)]

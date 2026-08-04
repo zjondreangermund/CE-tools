@@ -39,42 +39,17 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var options = new PromptKeywordOptions(
-                "\nCE Hatch tool [Create/Edit/Match/Back] <Create>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Create");
-            options.Keywords.Add("Edit");
-            options.Keywords.Add("Match");
-            options.Keywords.Add("Back");
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? "Create"
-                : result.StringResult;
-
-            if (mode.Equals("Edit", StringComparison.OrdinalIgnoreCase))
-            {
-                Edit(document);
-            }
-            else if (mode.Equals("Match", StringComparison.OrdinalIgnoreCase))
-            {
-                Match(document);
-            }
-            else if (mode.Equals("Back", StringComparison.OrdinalIgnoreCase))
-            {
-                SendToBack(document);
-            }
-            else
-            {
-                Create(document);
-            }
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Hatch Utilities",
+                "Create and maintain controlled civil drawing hatches.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Create hatch", "CE_HATCHCREATE", "Create a transparent associative hatch from selected boundaries.", "01 Create"),
+                    new DisciplineWorkflowAction("Edit hatches", "CE_HATCHEDIT", "Batch edit pattern, scale, angle, colour and transparency.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Match hatch", "CE_HATCHMATCH", "Copy visual settings from a source hatch.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Send hatches behind", "CE_HATCHBACK", "Move selected hatches behind linework.", "03 Draw Order")
+                });
         }
 
         [CommandMethod(

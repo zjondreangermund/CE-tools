@@ -30,33 +30,18 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var options = new PromptKeywordOptions(
-                "\nBackground/XREF tools [Review/LightCopy/SplitXref/XrefInfo/Backup] <Review>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Review");
-            options.Keywords.Add("LightCopy");
-            options.Keywords.Add("SplitXref");
-            options.Keywords.Add("XrefInfo");
-            options.Keywords.Add("Backup");
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string choice = result.Status == PromptStatus.OK
-                ? result.StringResult
-                : "Review";
-            string command;
-            if (string.Equals(choice, "LightCopy", StringComparison.OrdinalIgnoreCase))
-                command = "CE_BACKGROUNDLIGHT ";
-            else if (string.Equals(choice, "SplitXref", StringComparison.OrdinalIgnoreCase))
-                command = "CE_XREFSPLIT ";
-            else if (string.Equals(choice, "XrefInfo", StringComparison.OrdinalIgnoreCase))
-                command = "CE_XREFINFO ";
-            else if (string.Equals(choice, "Backup", StringComparison.OrdinalIgnoreCase))
-                command = "CE_XREFBACKUP ";
-            else
-                command = "CE_BACKGROUNDREVIEW ";
-            document.SendStringToExecute(command, true, false, true);
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Background and XREF Utilities",
+                "Audit, prepare, split and safeguard architectural or survey backgrounds.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Review background", "CE_BACKGROUNDREVIEW", "Audit layer, type, colour and locked-layer concentration.", "01 Review"),
+                    new DisciplineWorkflowAction("Create light background", "CE_BACKGROUNDLIGHT", "Copy or move selected objects to controlled light-background layers.", "02 Prepare"),
+                    new DisciplineWorkflowAction("Split and attach XREF", "CE_XREFSPLIT", "Write selected background objects to a separate DWG and attach it.", "03 XREF"),
+                    new DisciplineWorkflowAction("XREF information", "CE_XREFINFO", "Inspect attached XREF status and paths.", "03 XREF"),
+                    new DisciplineWorkflowAction("Back up XREF", "CE_XREFBACKUP", "Create a safeguarded copy of a selected external reference.", "04 Backup")
+                });
         }
 
         [CommandMethod(

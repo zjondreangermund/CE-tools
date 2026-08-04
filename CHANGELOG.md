@@ -6,6 +6,15 @@ All notable CE Tools changes will be recorded here.
 
 ### Added
 
+- Source-complete Phase 1 utility hub `CE_PHASE1` covering the original Feature
+  Line, Alignment, Drawing/Survey Cleanup, Background, Viewport, Hatch, Layer,
+  Excel, Coordinate, Label and Parking families.
+- Real paper-space viewport reporting and confirmed all-layout lock/unlock tools.
+- Readable layer register plus direct AutoCAD Layer Properties access.
+- Excel, Label and Survey Cleanup visual workflow hubs built from existing linked
+  exports, dynamic annotation and reversible surface-correction commands.
+- Direct `CE_DRAWCLEANALL`, `CE_DRAWOVERKILL`, `CE_DRAWAUDIT` and
+  `CE_DRAWPURGE` commands, eliminating ribbon-supplied keyword input.
 - Searchable `CE_SETTINGS` settings centre covering 21 General, Survey, Roads,
   Parking, Stormwater, Sewer, Water, Flood and Production configuration workflows.
 - Dedicated WPF workflow launchers for `CE_SWTOOLS`, `CE_SEWTOOLS` and
@@ -36,12 +45,16 @@ All notable CE Tools changes will be recorded here.
   directly in each production settings window.
 - High-use parent commands now launch described, grouped workflow buttons while
   preserving native Civil 3D canvas prompts for selections and geometry input.
+- Shared annotation settings now use a WPF settings window with all five standard
+  paper heights and MLeader/MText/COGO output choices.
+- General, Survey, Stormwater, Sewer, Water, Bulk Water and Flood workflow tabs
+  now include complete ordered step sequences instead of partial summaries.
 - The verified installer now validates every manifest file in the source, staging
   and installed bundles, compares both Civil and Core DLLs, and records version,
   source commit and hashes before removing its rollback copy.
 - Both supported Civil 3D 2023 build paths now create the same versioned release
   package before optional installation.
-- The complete public AutoCAD command surface is now 397 unique commands.
+- The complete public AutoCAD command surface is now 412 unique commands.
 
 ## 0.1.0-alpha — 2026-07-23
 

@@ -34,26 +34,17 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var options = new PromptKeywordOptions(
-                "\nProject XREF tools [Split/Dashboard/BackupAll/Restore] <Dashboard>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Split");
-            options.Keywords.Add("Dashboard");
-            options.Keywords.Add("BackupAll");
-            options.Keywords.Add("Restore");
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string choice = result.Status == PromptStatus.OK
-                ? result.StringResult
-                : "Dashboard";
-            string command;
-            if (Equal(choice, "Split")) command = "CE_XREFDISCIPLINESPLIT ";
-            else if (Equal(choice, "BackupAll")) command = "CE_XREFBACKUPALL ";
-            else if (Equal(choice, "Restore")) command = "CE_XREFRESTORE ";
-            else command = "CE_XREFREVISIONDASH ";
-            document.SendStringToExecute(command, true, false, true);
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Project XREF Management",
+                "Split project content by discipline, inspect revisions and perform safeguarded backup or restore.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Split by discipline", "CE_XREFDISCIPLINESPLIT", "Create discipline DWGs and attach them as external references.", "01 Project XREF"),
+                    new DisciplineWorkflowAction("Revision dashboard", "CE_XREFREVISIONDASH", "Review project XREF paths, hashes and revision status.", "02 Review"),
+                    new DisciplineWorkflowAction("Back up all XREFs", "CE_XREFBACKUPALL", "Create project revision copies of attached references.", "03 Recovery"),
+                    new DisciplineWorkflowAction("Restore XREF revision", "CE_XREFRESTORE", "Restore a controlled revision after creating a pre-restore backup.", "03 Recovery")
+                });
         }
 
         [CommandMethod(

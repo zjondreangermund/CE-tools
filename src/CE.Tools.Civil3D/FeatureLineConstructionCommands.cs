@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -20,11 +21,6 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class FeatureLineConstructionCommands
     {
-        private const string CreateKeyword = "Create";
-        private const string SurfaceKeyword = "Surface";
-        private const string InsertKeyword = "Insert";
-        private const string DeleteKeyword = "Delete";
-
         [CommandMethod(
             "CE_TOOLS",
             "CE_FLEDIT",
@@ -37,42 +33,17 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var options = new PromptKeywordOptions(
-                "\nFeature Line edit [Create/Surface/Insert/Delete] <Create>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add(CreateKeyword);
-            options.Keywords.Add(SurfaceKeyword);
-            options.Keywords.Add(InsertKeyword);
-            options.Keywords.Add(DeleteKeyword);
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? CreateKeyword
-                : result.StringResult;
-
-            if (string.Equals(mode, SurfaceKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                AssignFromSurface(document);
-            }
-            else if (string.Equals(mode, InsertKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                InsertElevationPoint(document);
-            }
-            else if (string.Equals(mode, DeleteKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                DeleteElevationPoint(document);
-            }
-            else
-            {
-                CreateFromObjects(document);
-            }
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Feature Line Construction",
+                "Create siteless feature lines and maintain surface/elevation points.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Create from objects", "CE_FLCREATE", "Convert supported lines, arcs and polylines to feature lines.", "01 Create"),
+                    new DisciplineWorkflowAction("Assign surface elevations", "CE_FLSURFACE", "Set feature-line elevations from a selected Civil 3D surface.", "02 Elevations"),
+                    new DisciplineWorkflowAction("Insert elevation point", "CE_FLINSERT", "Insert an interpolated or specified elevation point.", "03 Edit Points"),
+                    new DisciplineWorkflowAction("Delete elevation point", "CE_FLDELETE", "Remove a selected removable elevation point with confirmation.", "03 Edit Points")
+                });
         }
 
         [CommandMethod(

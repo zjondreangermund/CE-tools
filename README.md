@@ -4,9 +4,15 @@ Civil engineering productivity tools for Autodesk Civil 3D.
 
 ## Current alpha commands
 
-The V61 source contains 397 unique commands. Use `Ctrl+F`, `CE_COMMANDCENTER`
+The V61 source contains 412 unique commands. Use `Ctrl+F`, `CE_COMMANDCENTER`
 or `CE_SETTINGS` to search the complete installed command surface. The sections
 below retain detailed introductions to the original utility families.
+
+Phase 1 is source-complete. `CE_PHASE1` opens Feature Line, Alignment, Drawing
+Cleanup, Survey Cleanup, Background, Viewport, Hatch, Layer, Excel, Coordinate,
+Label and Parking utilities from one grouped window. See
+[`docs/PHASE_1_COMPLETION.md`](docs/PHASE_1_COMPLETION.md) for the completion
+ledger and the separate Civil 3D 2023 validation gate.
 
 Stormwater, Sewer and Water production launchers now open ordered workflow
 windows. Their settings windows read installed Civil 3D styles and band sets,

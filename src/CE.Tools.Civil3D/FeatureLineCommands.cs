@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -17,10 +18,6 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class FeatureLineCommands
     {
-        private const string ReportKeyword = "Report";
-        private const string RaiseLowerKeyword = "RaiseLower";
-        private const string SetElevationKeyword = "SetElevation";
-
         [CommandMethod(
             "CE_TOOLS",
             "CE_FLTOOLS",
@@ -33,38 +30,16 @@ namespace CETools.Civil3D
                 return;
             }
 
-            Editor editor = document.Editor;
-            var options = new PromptKeywordOptions(
-                "\nFeature Line tool [Report/RaiseLower/SetElevation] <Report>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add(ReportKeyword);
-            options.Keywords.Add(RaiseLowerKeyword);
-            options.Keywords.Add(SetElevationKeyword);
-
-            PromptResult result = editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? ReportKeyword
-                : result.StringResult;
-
-            if (string.Equals(mode, RaiseLowerKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                RaiseLower(document);
-            }
-            else if (string.Equals(mode, SetElevationKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                SetElevation(document);
-            }
-            else
-            {
-                Report(document);
-            }
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Feature Line Utilities",
+                "Review feature lines and apply controlled elevation changes to selected objects.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Feature-line report", "CE_FLREPORT", "Report lengths, elevations, grades and point counts.", "01 Review"),
+                    new DisciplineWorkflowAction("Raise or lower", "CE_FLRAISE", "Apply one relative elevation change to selected feature lines.", "02 Elevations"),
+                    new DisciplineWorkflowAction("Set elevation", "CE_FLSETELEV", "Set all points on selected feature lines to an absolute elevation.", "02 Elevations")
+                });
         }
 
         [CommandMethod(

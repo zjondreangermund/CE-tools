@@ -8,7 +8,10 @@ CE Tools starts as a disciplined collection of small, high-value Civil 3D utilit
 
 ## Current V61 milestone
 
-- 397 unique AutoCAD/Civil 3D commands are preserved on `main`.
+- 412 unique AutoCAD/Civil 3D commands are preserved on `main`.
+- Phase 1 is source-complete with dedicated Feature Line, Alignment,
+  Drawing/Survey Cleanup, Background, Viewport, Hatch, Layer, Excel, Coordinate,
+  Label and Parking entry points under `CE_PHASE1`.
 - The CE Tools ribbon, automatic Ctrl+F workflow centre and searchable settings
   centre are source-complete.
 - Survey coordinates, dynamic linked outputs, parking, Stormwater, Sewer, Water,
@@ -33,6 +36,9 @@ CE Tools starts as a disciplined collection of small, high-value Civil 3D utilit
 ## Phase 1 — CE Tools Utilities
 
 Small AutoLISP routines and lightweight Civil 3D add-ins that each solve one practical problem.
+
+**Status:** source-complete. Civil 3D 2023 compilation and live-drawing validation
+remain the release gate documented in `docs/PHASE_1_COMPLETION.md`.
 
 ### Current alpha utilities
 

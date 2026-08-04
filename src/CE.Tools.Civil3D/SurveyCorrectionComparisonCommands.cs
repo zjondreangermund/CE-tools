@@ -32,20 +32,15 @@ namespace CETools.Civil3D
             Document document = ActiveDocument();
             if (document == null) return;
 
-            var options = new PromptKeywordOptions(
-                "\nSurvey correction comparison [Report/Export] <Report>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Report");
-            options.Keywords.Add("Export");
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string command = result.Status == PromptStatus.OK &&
-                string.Equals(result.StringResult, "Export", StringComparison.OrdinalIgnoreCase)
-                ? "CE_SURVEYCHANGEEXPORT "
-                : "CE_SURVEYCHANGES ";
-            document.SendStringToExecute(command, true, false, true);
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Survey Correction Comparison",
+                "Compare an original survey surface with a corrected surface without modifying either source.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Survey-change report", "CE_SURVEYCHANGES", "Review sampled elevation changes in a popup and optional drawing table.", "01 Review"),
+                    new DisciplineWorkflowAction("Export survey changes", "CE_SURVEYCHANGEEXPORT", "Export the comparison to a dependency-free Excel workbook.", "02 Export")
+                });
         }
 
         [CommandMethod(

@@ -245,6 +245,7 @@ try {
         "Validate-ReleasePipeline.py",
         "Validate-DisciplineProductionDialogs.py",
         "Validate-VisualWorkflowLaunchers.py",
+        "Validate-PhaseOneCompletion.py",
         "Validate-BillOfQuantities.py",
         "Validate-WaterSewerCostEstimate.py",
         "Validate-RefreshAll.py",

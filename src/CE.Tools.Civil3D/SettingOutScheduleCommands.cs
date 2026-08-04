@@ -35,30 +35,17 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var options = new PromptKeywordOptions(
-                "\nSetting-out tools [Create/Refresh/Export/Info] <Create>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Create");
-            options.Keywords.Add("Refresh");
-            options.Keywords.Add("Export");
-            options.Keywords.Add("Info");
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string choice = result.Status == PromptStatus.OK
-                ? result.StringResult
-                : "Create";
-            string command;
-            if (string.Equals(choice, "Refresh", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SETTINGOUTREFRESH ";
-            else if (string.Equals(choice, "Export", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SETTINGOUTEXPORT ";
-            else if (string.Equals(choice, "Info", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SETTINGOUTINFO ";
-            else
-                command = "CE_SETTINGOUTPOINTS ";
-            document.SendStringToExecute(command, true, false, true);
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Setting-Out Schedules",
+                "Create and maintain linked coordinate/elevation schedules for COGO and AutoCAD points.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Create setting-out schedule", "CE_SETTINGOUTPOINTS", "Create a linked schedule from selected COGO or AutoCAD points.", "01 Schedule"),
+                    new DisciplineWorkflowAction("Refresh schedule", "CE_SETTINGOUTREFRESH", "Rebuild coordinates and surface elevations from current sources.", "01 Schedule"),
+                    new DisciplineWorkflowAction("Export schedule", "CE_SETTINGOUTEXPORT", "Export a linked schedule to Excel.", "02 Export"),
+                    new DisciplineWorkflowAction("Schedule information", "CE_SETTINGOUTINFO", "Inspect stored sources, surfaces and refresh state.", "03 Review")
+                });
         }
 
         [CommandMethod(
