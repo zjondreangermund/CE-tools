@@ -1,7 +1,7 @@
 # Next Integration Steps
 
 1. Wire `SewerBranchLabelPlacement` into `SewerBranchAlignmentCommands` without replacing newer branch sequencing logic.
-2. Restore the V54 automatic refresh hook only after checking current event subscriptions and undo behaviour.
+2. Restored the checked water/sewer cost-estimate refresh hook with database events limited to queueing and workbook refresh deferred until command completion; Civil 3D Undo/runtime validation remains required.
 3. Compare V50/V52/V54 command registries and add only genuinely missing commands.
 4. Reconcile assets separately from source: DWG, PDF, XLSX, images and standards files.
 5. Run the preservation workflow and command registry checks.
