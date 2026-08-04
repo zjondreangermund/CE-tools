@@ -64,7 +64,10 @@ namespace CETools.Civil3D
             if (_shortcutAttached)
                 return;
 
-            _shortcutTarget = ComponentManager.ApplicationWindow as UIElement;
+            // Civil 3D 2023 exposes the Autodesk ribbon as a WPF UIElement.
+            // ApplicationWindow is not a reliable keyboard-event target in that
+            // host, which previously left Ctrl+F registered in source but inert.
+            _shortcutTarget = ComponentManager.Ribbon as UIElement;
             if (_shortcutTarget == null)
                 return;
 
@@ -558,6 +561,18 @@ namespace CETools.Civil3D
                 Step("Project standards", "CE_STANDARDSELECT"),
                 Step("Create BOQs", "CE_BOQTOOLS"),
                 Step("Generate reports", "CE_PRESENTATIONTOOLS"));
+
+            yield return Build(
+                "survey", "Survey", "Survey Workflow",
+                "Set the drawing coordinate system, create linked survey points and crosses, generate polyline-vertex COGO points and coordinate tables, then refresh linked outputs after survey edits.",
+                tools, new[] { "SURVEY", "COORD", "COGO", "PLDIR" },
+                Step("Set coordinate system", "CE_COORDSYSASSIGN"),
+                Step("Create linked point", "CE_COORDPICK2"),
+                Step("Create coordinate cross", "CE_COORDCROSS2"),
+                Step("Create vertex points", "CE_COORDPOLY2"),
+                Step("Create coordinate table", "CE_COORDTABLE2"),
+                Step("Refresh linked coordinates", "CE_COORDREFRESH"),
+                Step("Show polyline direction", "CE_PLDIR"));
 
             yield return Build(
                 "roads", "Roads", "Roads Workflow",
