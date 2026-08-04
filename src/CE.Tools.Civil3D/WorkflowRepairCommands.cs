@@ -1429,7 +1429,7 @@ namespace CETools.Civil3D
     {
         private readonly DataGrid _grid;
 
-        public SurfaceSelectionWindow(IList<SurfaceChoice> surfaces)
+        public SurfaceSelectionWindow(IList<SurfaceChoice> surfaces, string noteText = null)
         {
             Title = "CE Tools — Select Civil 3D Surface";
             Width = 920;
@@ -1450,7 +1450,9 @@ namespace CETools.Civil3D
 
             var note = new TextBlock
             {
-                Text = "Select the surface that must control the selected feature-line elevations. Double-clicking a row also selects it.",
+                Text = string.IsNullOrWhiteSpace(noteText)
+                    ? "Select the surface that must control the selected feature-line elevations. Double-clicking a row also selects it."
+                    : noteText,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 10)
             };

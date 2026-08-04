@@ -41,45 +41,22 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null)
                 return;
-
-            var options = new PromptKeywordOptions(
-                "\nWater tools [Sequence/Alignments/Refresh/Profiles/PlaceAssets/RefreshAssets/Settings/Info] <Alignments>: ")
-            {
-                AllowNone = true
-            };
-            foreach (string keyword in new[]
-            {
-                "Sequence", "Alignments", "Refresh", "Profiles",
-                "PlaceAssets", "RefreshAssets", "Settings", "Info"
-            })
-                options.Keywords.Add(keyword);
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-                return;
-
-            string choice = result.Status == PromptStatus.OK
-                ? result.StringResult
-                : "Alignments";
-            string command;
-            if (choice.Equals("Sequence", StringComparison.OrdinalIgnoreCase))
-                command = "CE_WATERSEQ ";
-            else if (choice.Equals("Refresh", StringComparison.OrdinalIgnoreCase))
-                command = "CE_WATERREFRESH ";
-            else if (choice.Equals("Profiles", StringComparison.OrdinalIgnoreCase))
-                command = "CE_WATERPROFILE ";
-            else if (choice.Equals("PlaceAssets", StringComparison.OrdinalIgnoreCase))
-                command = "CE_WATERPLACE ";
-            else if (choice.Equals("RefreshAssets", StringComparison.OrdinalIgnoreCase))
-                command = "CE_WATERPLACEREFRESH ";
-            else if (choice.Equals("Settings", StringComparison.OrdinalIgnoreCase))
-                command = "CE_WATERSETTINGS ";
-            else if (choice.Equals("Info", StringComparison.OrdinalIgnoreCase))
-                command = "CE_WATERINFO ";
-            else
-                command = "CE_WATERALIGN ";
-
-            document.SendStringToExecute(command, true, false, true);
+            string command = DisciplineWorkflowDialogs.SelectWorkflow(
+                "CE Tools — Water Workflow",
+                "Sequence water routes, create linked alignments and profiles, then place spacing-controlled valve and hydrant review markers.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Sequence water routes", "CE_WATERSEQ", "Store main and branch order on selected source routes.", "1 — Routes"),
+                    new DisciplineWorkflowAction("Create or refresh alignments", "CE_WATERALIGN", "Build linked water alignments and route labels.", "2 — Alignments"),
+                    new DisciplineWorkflowAction("Refresh linked alignments", "CE_WATERREFRESH", "Rebuild generated alignments from their live source routes.", "2 — Alignments"),
+                    new DisciplineWorkflowAction("Create water profiles", "CE_WATERPROFILE", "Select a surface, pick an insertion point and create profile views.", "3 — Profiles"),
+                    new DisciplineWorkflowAction("Place asset review markers", "CE_WATERPLACE", "Place valve and hydrant review markers using stored spacing rules.", "4 — Assets"),
+                    new DisciplineWorkflowAction("Refresh asset markers", "CE_WATERPLACEREFRESH", "Rebuild linked review markers after source changes.", "4 — Assets"),
+                    new DisciplineWorkflowAction("Water settings", "CE_WATERSETTINGS", "Select styles, layers, profile layout and asset spacing.", "5 — Configuration"),
+                    new DisciplineWorkflowAction("Water information", "CE_WATERINFO", "Review generated objects, settings and live links.", "6 — Review")
+                });
+            if (!string.IsNullOrWhiteSpace(command))
+                document.SendStringToExecute(command.Trim() + " ", true, false, true);
         }
 
         [CommandMethod("CE_WATERSETTINGS", CommandFlags.Modal)]
@@ -89,41 +66,48 @@ namespace CETools.Civil3D
             if (document == null)
                 return;
 
-            Editor editor = document.Editor;
             WaterSettings settings = WaterSettings.Read(document.Database);
-            editor.WriteMessage(
-                "\nEnter exact Civil 3D style names. Blank values use the first available drawing style.");
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools — Water Settings",
+                "Blank style names use the first compatible drawing style. Asset spacing and profile layout are saved in the active DWG.");
+            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Style for generated water alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles));
+            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Label set applied to generated alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles));
+            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style for existing-ground profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles));
+            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set applied to generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles));
+            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style for generated water profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles));
+            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set for generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles));
+            model.AddText("AlignmentLayer", "Layers and Annotation", "Alignment layer", settings.AlignmentLayer, "Layer for water alignments and route labels.");
+            model.AddText("ProfileLayer", "Layers and Annotation", "Profile layer", settings.ProfileLayer, "Layer for water profiles and profile views.");
+            model.AddText("AssetLayer", "Layers and Annotation", "Asset review layer", settings.AssetLayer, "Layer for valve and hydrant review markers.");
+            model.AddPaperHeight("LabelHeight", "Layers and Annotation", "Plan label paper height", settings.LabelHeight, "Select a standard annotative paper height or enter another positive value.");
+            model.AddPositiveDouble("IsolatingValveSpacing", "Asset Spacing", "Maximum isolating-valve spacing", settings.IsolatingValveSpacing, "Maximum route spacing used for isolating-valve review markers.");
+            model.AddPositiveDouble("HydrantSpacing", "Asset Spacing", "Maximum hydrant spacing", settings.HydrantSpacing, "Maximum route spacing used for hydrant review markers.");
+            model.AddPositiveDouble("AssetRadius", "Asset Spacing", "Asset marker radius", settings.AssetRadius, "Drawing-unit radius of generated review markers.");
+            model.AddPositiveInteger("ProfileColumns", "Profile View Layout", "Profile views per row", settings.ProfileColumns, "Number of generated views before wrapping to the next row.");
+            model.AddPositiveDouble("ProfileHorizontalSpacing", "Profile View Layout", "Horizontal spacing", settings.ProfileHorizontalSpacing, "Drawing-unit spacing between profile-view columns.");
+            model.AddPositiveDouble("ProfileVerticalSpacing", "Profile View Layout", "Vertical spacing", settings.ProfileVerticalSpacing, "Drawing-unit spacing between profile-view rows.");
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
-            if (!PromptText(editor, "Alignment style", settings.AlignmentStyle, out settings.AlignmentStyle))
-                return;
-            if (!PromptText(editor, "Alignment label-set style", settings.AlignmentLabelSetStyle, out settings.AlignmentLabelSetStyle))
-                return;
-            if (!PromptText(editor, "Profile style", settings.ProfileStyle, out settings.ProfileStyle))
-                return;
-            if (!PromptText(editor, "Profile label-set style", settings.ProfileLabelSetStyle, out settings.ProfileLabelSetStyle))
-                return;
-            if (!PromptText(editor, "Profile-view style", settings.ProfileViewStyle, out settings.ProfileViewStyle))
-                return;
-            if (!PromptText(editor, "Profile-view band-set style", settings.ProfileViewBandSetStyle, out settings.ProfileViewBandSetStyle))
-                return;
-            if (!PromptText(editor, "Alignment layer", settings.AlignmentLayer, out settings.AlignmentLayer))
-                return;
-            if (!PromptText(editor, "Profile layer", settings.ProfileLayer, out settings.ProfileLayer))
-                return;
-            if (!PromptText(editor, "Asset review layer", settings.AssetLayer, out settings.AssetLayer))
-                return;
-
-            if (!PromptPositiveDouble(editor, "Plan label height", settings.LabelHeight, out settings.LabelHeight))
-                return;
-            if (!PromptPositiveDouble(editor, "Maximum isolating-valve spacing", settings.IsolatingValveSpacing, out settings.IsolatingValveSpacing))
-                return;
-            if (!PromptPositiveDouble(editor, "Maximum hydrant spacing", settings.HydrantSpacing, out settings.HydrantSpacing))
-                return;
-            if (!PromptPositiveDouble(editor, "Asset marker radius", settings.AssetRadius, out settings.AssetRadius))
-                return;
+            settings.AlignmentStyle = model.Text("AlignmentStyle");
+            settings.AlignmentLabelSetStyle = model.Text("AlignmentLabelSetStyle");
+            settings.ProfileStyle = model.Text("ProfileStyle");
+            settings.ProfileLabelSetStyle = model.Text("ProfileLabelSetStyle");
+            settings.ProfileViewStyle = model.Text("ProfileViewStyle");
+            settings.ProfileViewBandSetStyle = model.Text("ProfileViewBandSetStyle");
+            settings.AlignmentLayer = model.Text("AlignmentLayer");
+            settings.ProfileLayer = model.Text("ProfileLayer");
+            settings.AssetLayer = model.Text("AssetLayer");
+            settings.LabelHeight = model.Double("LabelHeight", settings.LabelHeight);
+            settings.IsolatingValveSpacing = model.Double("IsolatingValveSpacing", settings.IsolatingValveSpacing);
+            settings.HydrantSpacing = model.Double("HydrantSpacing", settings.HydrantSpacing);
+            settings.AssetRadius = model.Double("AssetRadius", settings.AssetRadius);
+            settings.ProfileColumns = model.Integer("ProfileColumns", settings.ProfileColumns);
+            settings.ProfileHorizontalSpacing = model.Double("ProfileHorizontalSpacing", settings.ProfileHorizontalSpacing);
+            settings.ProfileVerticalSpacing = model.Double("ProfileVerticalSpacing", settings.ProfileVerticalSpacing);
 
             settings.Write(document.Database);
-            editor.WriteMessage("\nCE_WATERSETTINGS saved in the current DWG.");
+            document.Editor.WriteMessage("\nCE_WATERSETTINGS saved in the current DWG.");
         }
 
         [CommandMethod("CE_WATERSEQ", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
@@ -399,13 +383,18 @@ namespace CETools.Civil3D
                 return;
 
             Editor editor = document.Editor;
-            PromptEntityOptions surfaceOptions = new PromptEntityOptions(
-                "\nSelect the existing-ground Civil 3D surface: ");
-            surfaceOptions.SetRejectMessage("\nSelect a Civil 3D surface.");
-            surfaceOptions.AddAllowedClass(typeof(CivilSurface), false);
-            PromptEntityResult surfaceResult = editor.GetEntity(surfaceOptions);
-            if (surfaceResult.Status != PromptStatus.OK)
+            List<SurfaceChoice> surfaceChoices = WorkflowRepairCommands.ReadSurfaceChoices(document);
+            if (surfaceChoices.Count == 0)
+            {
+                editor.WriteMessage("\nCE_WATERPROFILE cancelled. The drawing contains no Civil 3D surfaces.");
                 return;
+            }
+            var surfaceWindow = new SurfaceSelectionWindow(
+                surfaceChoices,
+                "Select the existing-ground surface for the water profiles. Double-clicking a row also selects it.");
+            AcApplication.ShowModalWindow(surfaceWindow);
+            SurfaceChoice selectedSurface = surfaceWindow.SelectedSurface;
+            if (selectedSurface == null) return;
 
             PromptPointResult insertionResult = editor.GetPoint(
                 "\nSelect the upper-left insertion point for the water profile views: ");
@@ -427,7 +416,7 @@ namespace CETools.Civil3D
             editor.WriteMessage(
                 "\nCE_WATERPROFILE preview: alignments={0}; surface={1}.",
                 records.Count,
-                surfaceResult.ObjectId.Handle);
+                selectedSurface.ObjectId.Handle);
             if (!Confirm(editor, "Create or refresh the existing-ground profiles and profile views"))
                 return;
 
@@ -480,7 +469,7 @@ namespace CETools.Civil3D
                         ObjectId profileId = InvokeCreateProfileFromSurface(
                             profileName,
                             record.AlignmentId,
-                            surfaceResult.ObjectId,
+                            selectedSurface.ObjectId,
                             profileLayerId,
                             profileStyleId,
                             profileLabelSetId);
@@ -492,7 +481,7 @@ namespace CETools.Civil3D
                             "Profile",
                             record.RouteName,
                             record.SourceHandle,
-                            surfaceResult.ObjectId.Handle.ToString());
+                            selectedSurface.ObjectId.Handle.ToString());
                         profiles++;
 
                         int column = index % settings.ProfileColumns;
@@ -520,7 +509,7 @@ namespace CETools.Civil3D
                             "ProfileView",
                             record.RouteName,
                             record.SourceHandle,
-                            surfaceResult.ObjectId.Handle.ToString());
+                            selectedSurface.ObjectId.Handle.ToString());
                         TryAddPressurePartsToProfileView(record, viewId, transaction);
                         views++;
                     }
@@ -1596,16 +1585,7 @@ namespace CETools.Civil3D
 
         private static bool Confirm(Editor editor, string message)
         {
-            var options = new PromptKeywordOptions(
-                "\n" + message + "? [Yes/No] <No>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Yes");
-            options.Keywords.Add("No");
-            PromptResult result = editor.GetKeywords(options);
-            return result.Status == PromptStatus.OK &&
-                   result.StringResult.Equals("Yes", StringComparison.OrdinalIgnoreCase);
+            return DisciplineWorkflowDialogs.Confirm("CE Tools — Water", message + "?");
         }
 
         private static string[] ReadCivilNames(

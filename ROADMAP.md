@@ -6,6 +6,18 @@ Build the civil engineering productivity platform: less clicking, more engineeri
 
 CE Tools starts as a disciplined collection of small, high-value Civil 3D utilities and grows into a professional ribbon product, then into a complete civil engineering design platform.
 
+## Current V61 milestone
+
+- 397 unique AutoCAD/Civil 3D commands are preserved on `main`.
+- The CE Tools ribbon, automatic Ctrl+F workflow centre and searchable settings
+  centre are source-complete.
+- Survey coordinates, dynamic linked outputs, parking, Stormwater, Sewer, Water,
+  profiles, annotations, BOQs, costs and drawing-production foundations are present.
+- Stormwater, Sewer and Water now use discipline workflow/settings windows with
+  installed-style catalogues and saved profile-view layouts.
+- Versioned packaging, checksums, rollback and automatic GitHub source validation
+  are present; the exact Windows Civil 3D 2023 build and signed public release remain.
+
 ## Product principles
 
 1. Solve one real engineering problem at a time.
@@ -89,15 +101,14 @@ For every utility:
 
 ## Current release gate
 
-Before adding more large commands, the present alpha must:
+Before calling V61 a public release, the present alpha must:
 
-- compile cleanly against Civil 3D 2023;
-- install without manual DLL copying;
-- load the CE Tools ribbon;
-- pass drawing tests for all five current commands;
-- support one-step undo for every modifying command;
-- fail safely without partial drawing changes;
-- document known limitations.
+- compile the exact `main` commit against Civil 3D 2023;
+- produce the versioned installer artifact and verified installation log;
+- code-sign the assemblies and release package;
+- retain one-step undo and transaction-safe failure for modifying commands;
+- complete automated source/core regression gates; and
+- document known limitations and deferred certified engineering solvers.
 
 ## Shared segmentation engine direction
 

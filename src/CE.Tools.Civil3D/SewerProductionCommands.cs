@@ -42,45 +42,22 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null)
                 return;
-
-            PromptKeywordOptions options = new PromptKeywordOptions(
-                "\nSewer tools [Sequence/SelectMain/Alignments/Refresh/Format/Profiles/Settings/Info] <Alignments>: ")
-            {
-                AllowNone = true
-            };
-            foreach (string keyword in new[]
-            {
-                "Sequence", "SelectMain", "Alignments", "Refresh",
-                "Format", "Profiles", "Settings", "Info"
-            })
-                options.Keywords.Add(keyword);
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-                return;
-
-            string choice = result.Status == PromptStatus.OK
-                ? result.StringResult
-                : "Alignments";
-            string command;
-            if (choice.Equals("Sequence", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SEWSEQ ";
-            else if (choice.Equals("SelectMain", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SEWSEQMAIN ";
-            else if (choice.Equals("Refresh", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SEWREFRESH ";
-            else if (choice.Equals("Format", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SEWFORMAT ";
-            else if (choice.Equals("Profiles", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SEWPROFILE ";
-            else if (choice.Equals("Settings", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SEWSETTINGS ";
-            else if (choice.Equals("Info", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SEWINFO ";
-            else
-                command = "CE_SEWALIGN ";
-
-            document.SendStringToExecute(command, true, false, true);
+            string command = DisciplineWorkflowDialogs.SelectWorkflow(
+                "CE Tools — Sewer Workflow",
+                "Sequence a complete network automatically or select Branch-1 first, then create linked alignments, profiles and production labels.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Automatic network sequence", "CE_SEWSEQ", "Sequence and number the complete connected sewer network.", "1 — Network"),
+                    new DisciplineWorkflowAction("Sequence with selected main", "CE_SEWSEQMAIN", "Select the intended main route before branch numbering.", "1 — Network"),
+                    new DisciplineWorkflowAction("Create sewer alignments", "CE_SEWALIGN", "Create linked branch alignments from the sequenced network.", "2 — Alignments"),
+                    new DisciplineWorkflowAction("Refresh alignments", "CE_SEWREFRESH", "Rebuild generated sewer alignments from their live network sources.", "2 — Alignments"),
+                    new DisciplineWorkflowAction("Format alignments and labels", "CE_SEWFORMAT", "Reapply production styles and repeated branch labels.", "2 — Alignments"),
+                    new DisciplineWorkflowAction("Create sewer profiles", "CE_SEWPROFILE", "Select a surface, pick an insertion point and create profile views.", "3 — Profiles"),
+                    new DisciplineWorkflowAction("Sewer settings", "CE_SEWSETTINGS", "Select styles, layers, paper label height and profile layout.", "4 — Configuration"),
+                    new DisciplineWorkflowAction("Sewer information", "CE_SEWINFO", "Review settings, alignments, profile views and network links.", "5 — Review")
+                });
+            if (!string.IsNullOrWhiteSpace(command))
+                document.SendStringToExecute(command.Trim() + " ", true, false, true);
         }
 
         [CommandMethod("CE_SEWSEQMAIN", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -202,48 +179,36 @@ namespace CETools.Civil3D
             if (document == null)
                 return;
 
-            Editor editor = document.Editor;
             SewerProductionSettings settings = SewerProductionSettings.Read(document.Database);
-            editor.WriteMessage(
-                "\nEnter exact Civil 3D style names. Blank values use the first available drawing style.");
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools — Sewer Settings",
+                "Blank style names use the first compatible drawing style. Label height is a paper height; layout values control batch profile-view placement.");
+            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Select an installed style for generated sewer branch alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles));
+            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style for generated existing-ground profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles));
+            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set for generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles));
+            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style for generated sewer profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles));
+            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set for generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles));
+            model.AddText("ProfileLayer", "Layers and Annotation", "Profile output layer", settings.ProfileLayer, "Layer for sewer profiles and profile views.");
+            model.AddPaperHeight("LabelHeight", "Layers and Annotation", "Plan branch-label paper height", settings.LabelHeight, "Select a standard annotative paper height or enter another positive value.");
+            model.AddPositiveInteger("ProfileColumns", "Profile View Layout", "Profile views per row", settings.ProfileColumns, "Number of generated views before wrapping to the next row.");
+            model.AddPositiveDouble("ProfileHorizontalSpacing", "Profile View Layout", "Horizontal spacing", settings.ProfileHorizontalSpacing, "Drawing-unit spacing between profile-view columns.");
+            model.AddPositiveDouble("ProfileVerticalSpacing", "Profile View Layout", "Vertical spacing", settings.ProfileVerticalSpacing, "Drawing-unit spacing between profile-view rows.");
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
-            string value;
-            if (!PromptText(editor, "Alignment style", settings.AlignmentStyle, out value))
-                return;
-            settings.AlignmentStyle = value;
-            if (!PromptText(editor, "Profile style", settings.ProfileStyle, out value))
-                return;
-            settings.ProfileStyle = value;
-            if (!PromptText(editor, "Profile label-set style", settings.ProfileLabelSetStyle, out value))
-                return;
-            settings.ProfileLabelSetStyle = value;
-            if (!PromptText(editor, "Profile-view style", settings.ProfileViewStyle, out value))
-                return;
-            settings.ProfileViewStyle = value;
-            if (!PromptText(editor, "Profile-view band-set style", settings.ProfileViewBandSetStyle, out value))
-                return;
-            settings.ProfileViewBandSetStyle = value;
-            if (!PromptText(editor, "Profile output layer", settings.ProfileLayer, out value))
-                return;
-            settings.ProfileLayer = value;
-
-            PromptDoubleOptions heightOptions = new PromptDoubleOptions(
-                "\nPlan branch-label height <" +
-                settings.LabelHeight.ToString("0.###", CultureInfo.InvariantCulture) +
-                ">: ")
-            {
-                AllowNegative = false,
-                AllowZero = false,
-                UseDefaultValue = true,
-                DefaultValue = settings.LabelHeight
-            };
-            PromptDoubleResult heightResult = editor.GetDouble(heightOptions);
-            if (heightResult.Status != PromptStatus.OK)
-                return;
-            settings.LabelHeight = heightResult.Value;
+            settings.AlignmentStyle = model.Text("AlignmentStyle");
+            settings.ProfileStyle = model.Text("ProfileStyle");
+            settings.ProfileLabelSetStyle = model.Text("ProfileLabelSetStyle");
+            settings.ProfileViewStyle = model.Text("ProfileViewStyle");
+            settings.ProfileViewBandSetStyle = model.Text("ProfileViewBandSetStyle");
+            settings.ProfileLayer = model.Text("ProfileLayer");
+            settings.LabelHeight = model.Double("LabelHeight", settings.LabelHeight);
+            settings.ProfileColumns = model.Integer("ProfileColumns", settings.ProfileColumns);
+            settings.ProfileHorizontalSpacing = model.Double("ProfileHorizontalSpacing", settings.ProfileHorizontalSpacing);
+            settings.ProfileVerticalSpacing = model.Double("ProfileVerticalSpacing", settings.ProfileVerticalSpacing);
 
             settings.Write(document.Database);
-            editor.WriteMessage("\nCE_SEWSETTINGS saved in the current DWG.");
+            document.Editor.WriteMessage("\nCE_SEWSETTINGS saved in the current DWG.");
         }
 
         [CommandMethod("CE_SEWREFRESH", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -414,53 +379,18 @@ namespace CETools.Civil3D
                     "\nCE_SEWPROFILE cancelled. The drawing contains no Civil 3D surfaces.");
                 return;
             }
-            var surfaceWindow = new SurfaceSelectionWindow(surfaceChoices);
+            var surfaceWindow = new SurfaceSelectionWindow(
+                surfaceChoices,
+                "Select the existing-ground surface for the sewer profiles. Double-clicking a row also selects it.");
             AcApplication.ShowModalWindow(surfaceWindow);
             SurfaceChoice selectedSurface = surfaceWindow.SelectedSurface;
             if (selectedSurface == null)
                 return;
+            SewerProductionSettings settings = SewerProductionSettings.Read(database);
 
             PromptPointResult pointResult = editor.GetPoint(
                 "\nSpecify the upper-left insertion point for the first sewer profile view: ");
             if (pointResult.Status != PromptStatus.OK)
-                return;
-
-            PromptIntegerOptions columnsOptions = new PromptIntegerOptions(
-                "\nProfile views per row <2>: ")
-            {
-                AllowNegative = false,
-                AllowZero = false,
-                UseDefaultValue = true,
-                DefaultValue = 2,
-                LowerLimit = 1,
-                UpperLimit = 10
-            };
-            PromptIntegerResult columnsResult = editor.GetInteger(columnsOptions);
-            if (columnsResult.Status != PromptStatus.OK)
-                return;
-
-            PromptDoubleOptions horizontalOptions = new PromptDoubleOptions(
-                "\nHorizontal spacing <250>: ")
-            {
-                AllowNegative = false,
-                AllowZero = false,
-                UseDefaultValue = true,
-                DefaultValue = 250.0
-            };
-            PromptDoubleResult horizontalResult = editor.GetDouble(horizontalOptions);
-            if (horizontalResult.Status != PromptStatus.OK)
-                return;
-
-            PromptDoubleOptions verticalOptions = new PromptDoubleOptions(
-                "\nVertical spacing <120>: ")
-            {
-                AllowNegative = false,
-                AllowZero = false,
-                UseDefaultValue = true,
-                DefaultValue = 120.0
-            };
-            PromptDoubleResult verticalResult = editor.GetDouble(verticalOptions);
-            if (verticalResult.Status != PromptStatus.OK)
                 return;
 
             List<SewerAlignmentRecord> records;
@@ -477,13 +407,12 @@ namespace CETools.Civil3D
             editor.WriteMessage(
                 "\nCE_SEWPROFILE preview. Branch alignments: {0}; views per row: {1}.",
                 records.Count,
-                columnsResult.Value);
+                settings.ProfileColumns);
             if (!Confirm(editor, "Create or refresh the sewer profiles and profile views"))
                 return;
 
             try
             {
-                SewerProductionSettings settings = SewerProductionSettings.Read(database);
                 int profiles;
                 int views;
                 int parts;
@@ -494,9 +423,9 @@ namespace CETools.Civil3D
                     selectedSurface.ObjectId,
                     records,
                     pointResult.Value,
-                    columnsResult.Value,
-                    horizontalResult.Value,
-                    verticalResult.Value,
+                    settings.ProfileColumns,
+                    settings.ProfileHorizontalSpacing,
+                    settings.ProfileVerticalSpacing,
                     out profiles,
                     out views,
                     out parts);
@@ -1453,15 +1382,7 @@ namespace CETools.Civil3D
 
         private static bool Confirm(Editor editor, string message)
         {
-            PromptKeywordOptions options = new PromptKeywordOptions(
-                "\n" + message + "? [Yes/No] <No>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Yes");
-            options.Keywords.Add("No");
-            PromptResult result = editor.GetKeywords(options);
-            return result.Status == PromptStatus.OK && result.StringResult.Equals("Yes", StringComparison.OrdinalIgnoreCase);
+            return DisciplineWorkflowDialogs.Confirm("CE Tools — Sewer", message + "?");
         }
 
         private sealed class SewerAlignmentRecord
@@ -1581,6 +1502,9 @@ namespace CETools.Civil3D
         public string ProfileViewBandSetStyle { get; set; } = string.Empty;
         public string ProfileLayer { get; set; } = "CE-SEWER-PROFILE";
         public double LabelHeight { get; set; } = 2.5;
+        public int ProfileColumns { get; set; } = 2;
+        public double ProfileHorizontalSpacing { get; set; } = 250.0;
+        public double ProfileVerticalSpacing { get; set; } = 120.0;
 
         public static SewerProductionSettings Read(Database database)
         {
@@ -1640,7 +1564,10 @@ namespace CETools.Civil3D
                     Value("ProfileViewStyle", ProfileViewStyle),
                     Value("ProfileViewBandSetStyle", ProfileViewBandSetStyle),
                     Value("ProfileLayer", ProfileLayer),
-                    Value("LabelHeight", LabelHeight.ToString("R", CultureInfo.InvariantCulture)));
+                    Value("LabelHeight", LabelHeight.ToString("R", CultureInfo.InvariantCulture)),
+                    Value("ProfileColumns", ProfileColumns.ToString(CultureInfo.InvariantCulture)),
+                    Value("ProfileHorizontalSpacing", ProfileHorizontalSpacing.ToString("R", CultureInfo.InvariantCulture)),
+                    Value("ProfileVerticalSpacing", ProfileVerticalSpacing.ToString("R", CultureInfo.InvariantCulture)));
                 transaction.Commit();
             }
         }
@@ -1663,6 +1590,24 @@ namespace CETools.Civil3D
                 double height;
                 if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out height) && height > 0.0)
                     settings.LabelHeight = height;
+            }
+            else if (key == "ProfileColumns")
+            {
+                int columns;
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out columns) && columns > 0)
+                    settings.ProfileColumns = columns;
+            }
+            else if (key == "ProfileHorizontalSpacing")
+            {
+                double spacing;
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && spacing > 0.0)
+                    settings.ProfileHorizontalSpacing = spacing;
+            }
+            else if (key == "ProfileVerticalSpacing")
+            {
+                double spacing;
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && spacing > 0.0)
+                    settings.ProfileVerticalSpacing = spacing;
             }
         }
     }

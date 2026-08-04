@@ -8,6 +8,12 @@ All notable CE Tools changes will be recorded here.
 
 - Searchable `CE_SETTINGS` settings centre covering 21 General, Survey, Roads,
   Parking, Stormwater, Sewer, Water, Flood and Production configuration workflows.
+- Dedicated WPF workflow launchers for `CE_SWTOOLS`, `CE_SEWTOOLS` and
+  `CE_WATERTOOLS`, replacing the former keyword menus with ordered production steps.
+- Drawing-style dropdown catalogues for Stormwater, Sewer and Water alignment,
+  profile, profile-view, label-set and band-set settings.
+- Persisted profile-view columns and horizontal/vertical spacing for all three
+  utility disciplines, plus discipline-specific surface-selection windows.
 - `CE_SETTINGSAUDIT` settings-coverage report and direct `CE_SETTINGSCENTER` alias.
 - `CE_ABOUT`, `CE_VERSION` and `CE_RELEASEINFO` exact loaded-build reporting.
 - `CE_INSTALLVERIFY` SHA-256 verification against the bundle release manifest.
@@ -21,6 +27,10 @@ All notable CE Tools changes will be recorded here.
 
 ### Changed
 
+- Stormwater, Sewer and Water confirmations now use modal Yes/No windows, while
+  drawing-dependent insertion-point selection remains in the Civil 3D canvas.
+- Standard annotation paper heights 1.8, 2.0, 2.5, 3.5 and 5.0 are selectable
+  directly in each production settings window.
 - The verified installer now validates every manifest file in the source, staging
   and installed bundles, compares both Civil and Core DLLs, and records version,
   source commit and hashes before removing its rollback copy.

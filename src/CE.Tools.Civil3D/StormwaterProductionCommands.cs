@@ -44,39 +44,19 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null)
                 return;
-
-            PromptKeywordOptions options = new PromptKeywordOptions(
-                "\nStormwater tools [Sequence/Alignments/Profiles/Settings/Info] <Alignments>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Sequence");
-            options.Keywords.Add("Alignments");
-            options.Keywords.Add("Profiles");
-            options.Keywords.Add("Settings");
-            options.Keywords.Add("Info");
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-                return;
-
-            string choice = result.Status == PromptStatus.OK
-                ? result.StringResult
-                : "Alignments";
-
-            string command;
-            if (choice.Equals("Sequence", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SWSEQ ";
-            else if (choice.Equals("Profiles", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SWPROFILE ";
-            else if (choice.Equals("Settings", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SWSETTINGS ";
-            else if (choice.Equals("Info", StringComparison.OrdinalIgnoreCase))
-                command = "CE_SWINFO ";
-            else
-                command = "CE_SWALIGN ";
-
-            document.SendStringToExecute(command, true, false, true);
+            string command = DisciplineWorkflowDialogs.SelectWorkflow(
+                "CE Tools — Stormwater Workflow",
+                "Sequence networks, generate linked alignments and profiles, then review or refresh the model. Configuration is stored in the active DWG.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Sequence network", "CE_SWSEQ", "Create the main and branch order from a stormwater network.", "1 — Network"),
+                    new DisciplineWorkflowAction("Create or refresh alignments", "CE_SWALIGN", "Build linked branch alignments and staggered plan labels.", "2 — Alignments"),
+                    new DisciplineWorkflowAction("Create or refresh profiles", "CE_SWPROFILE", "Select a surface, pick an insertion point and create linked profile views.", "3 — Profiles"),
+                    new DisciplineWorkflowAction("Stormwater settings", "CE_SWSETTINGS", "Select styles, layers, paper label height and profile layout.", "4 — Configuration"),
+                    new DisciplineWorkflowAction("Stormwater information", "CE_SWINFO", "Review stored settings and generated object links.", "5 — Review")
+                });
+            if (!string.IsNullOrWhiteSpace(command))
+                document.SendStringToExecute(command.Trim() + " ", true, false, true);
         }
 
         [CommandMethod("CE_SWSETTINGS", CommandFlags.Modal)]
@@ -86,56 +66,40 @@ namespace CETools.Civil3D
             if (document == null)
                 return;
 
-            StormwaterProductionSettings settings =
-                StormwaterProductionSettings.Read(document.Database);
-            Editor editor = document.Editor;
+            StormwaterProductionSettings settings = StormwaterProductionSettings.Read(document.Database);
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools — Stormwater Settings",
+                "Blank style names use the first compatible style in the current drawing. Paper label heights and profile-view layout are stored with this DWG.");
+            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Select an installed style; blank uses the first available style.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles));
+            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Labels applied to generated branch alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles));
+            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style used for generated existing-ground profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles));
+            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set applied to generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles));
+            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style applied to generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles));
+            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set applied when profile views are created.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles));
+            model.AddText("AlignmentLayer", "Layers and Annotation", "Alignment layer", settings.AlignmentLayer, "Layer for CE stormwater alignments and plan labels.");
+            model.AddText("ProfileLayer", "Layers and Annotation", "Profile layer", settings.ProfileLayer, "Layer for generated profiles and profile views.");
+            model.AddPaperHeight("LabelTextHeight", "Layers and Annotation", "Plan branch-label paper height", settings.LabelTextHeight, "Select 1.8, 2.0, 2.5, 3.5 or 5.0, or enter another positive height.");
+            model.AddPositiveInteger("ProfileColumns", "Profile View Layout", "Profile views per row", settings.ProfileColumns, "Number of generated views before wrapping to the next row.");
+            model.AddPositiveDouble("ProfileHorizontalSpacing", "Profile View Layout", "Horizontal spacing", settings.ProfileHorizontalSpacing, "Drawing-unit spacing between profile-view columns.");
+            model.AddPositiveDouble("ProfileVerticalSpacing", "Profile View Layout", "Vertical spacing", settings.ProfileVerticalSpacing, "Drawing-unit spacing between profile-view rows.");
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
-            editor.WriteMessage(
-                "\nEnter exact Civil 3D style names. Leave a value blank to use the first available style in the drawing.");
-
-            string value;
-            if (!PromptText(editor, "Alignment style", settings.AlignmentStyle, out value))
-                return;
-            settings.AlignmentStyle = value;
-            if (!PromptText(editor, "Alignment label-set style", settings.AlignmentLabelSetStyle, out value))
-                return;
-            settings.AlignmentLabelSetStyle = value;
-            if (!PromptText(editor, "Profile style", settings.ProfileStyle, out value))
-                return;
-            settings.ProfileStyle = value;
-            if (!PromptText(editor, "Profile label-set style", settings.ProfileLabelSetStyle, out value))
-                return;
-            settings.ProfileLabelSetStyle = value;
-            if (!PromptText(editor, "Profile-view style", settings.ProfileViewStyle, out value))
-                return;
-            settings.ProfileViewStyle = value;
-            if (!PromptText(editor, "Profile-view band-set style", settings.ProfileViewBandSetStyle, out value))
-                return;
-            settings.ProfileViewBandSetStyle = value;
-            if (!PromptText(editor, "Alignment layer", settings.AlignmentLayer, out value))
-                return;
-            settings.AlignmentLayer = value;
-            if (!PromptText(editor, "Profile layer", settings.ProfileLayer, out value))
-                return;
-            settings.ProfileLayer = value;
-
-            PromptDoubleOptions heightOptions = new PromptDoubleOptions(
-                "\nPlan branch-label text height <" +
-                settings.LabelTextHeight.ToString("0.###", CultureInfo.InvariantCulture) +
-                ">: ")
-            {
-                AllowNegative = false,
-                AllowZero = false,
-                UseDefaultValue = true,
-                DefaultValue = settings.LabelTextHeight
-            };
-            PromptDoubleResult heightResult = editor.GetDouble(heightOptions);
-            if (heightResult.Status != PromptStatus.OK)
-                return;
-            settings.LabelTextHeight = heightResult.Value;
+            settings.AlignmentStyle = model.Text("AlignmentStyle");
+            settings.AlignmentLabelSetStyle = model.Text("AlignmentLabelSetStyle");
+            settings.ProfileStyle = model.Text("ProfileStyle");
+            settings.ProfileLabelSetStyle = model.Text("ProfileLabelSetStyle");
+            settings.ProfileViewStyle = model.Text("ProfileViewStyle");
+            settings.ProfileViewBandSetStyle = model.Text("ProfileViewBandSetStyle");
+            settings.AlignmentLayer = model.Text("AlignmentLayer");
+            settings.ProfileLayer = model.Text("ProfileLayer");
+            settings.LabelTextHeight = model.Double("LabelTextHeight", settings.LabelTextHeight);
+            settings.ProfileColumns = model.Integer("ProfileColumns", settings.ProfileColumns);
+            settings.ProfileHorizontalSpacing = model.Double("ProfileHorizontalSpacing", settings.ProfileHorizontalSpacing);
+            settings.ProfileVerticalSpacing = model.Double("ProfileVerticalSpacing", settings.ProfileVerticalSpacing);
 
             settings.Write(document.Database);
-            editor.WriteMessage(
+            document.Editor.WriteMessage(
                 "\nCE_SWSETTINGS saved. Style names are resolved and checked when alignments or profiles are created.");
         }
 
@@ -267,57 +231,23 @@ namespace CETools.Civil3D
                     "\nCE_SWPROFILE cancelled. No active Civil 3D document is available.");
                 return;
             }
-
-            PromptEntityOptions surfaceOptions = new PromptEntityOptions(
-                "\nSelect the existing-ground surface for the stormwater profiles: ");
-            surfaceOptions.SetRejectMessage(
-                "\nSelect a Civil 3D surface.");
-            surfaceOptions.AddAllowedClass(typeof(CivilSurface), true);
-            PromptEntityResult surfaceResult = editor.GetEntity(surfaceOptions);
-            if (surfaceResult.Status != PromptStatus.OK)
+            StormwaterProductionSettings settings = StormwaterProductionSettings.Read(database);
+            List<SurfaceChoice> surfaceChoices = WorkflowRepairCommands.ReadSurfaceChoices(document);
+            if (surfaceChoices.Count == 0)
+            {
+                editor.WriteMessage("\nCE_SWPROFILE cancelled. The drawing contains no Civil 3D surfaces.");
                 return;
+            }
+            var surfaceWindow = new SurfaceSelectionWindow(
+                surfaceChoices,
+                "Select the existing-ground surface for the stormwater profiles. Double-clicking a row also selects it.");
+            AcApplication.ShowModalWindow(surfaceWindow);
+            SurfaceChoice selectedSurface = surfaceWindow.SelectedSurface;
+            if (selectedSurface == null) return;
 
             PromptPointResult insertionResult = editor.GetPoint(
                 "\nSpecify the upper-left insertion point for the first profile view: ");
             if (insertionResult.Status != PromptStatus.OK)
-                return;
-
-            PromptIntegerOptions columnOptions = new PromptIntegerOptions(
-                "\nProfile views per row <2>: ")
-            {
-                AllowNegative = false,
-                AllowZero = false,
-                UseDefaultValue = true,
-                DefaultValue = 2,
-                LowerLimit = 1,
-                UpperLimit = 10
-            };
-            PromptIntegerResult columnResult = editor.GetInteger(columnOptions);
-            if (columnResult.Status != PromptStatus.OK)
-                return;
-
-            PromptDoubleOptions horizontalOptions = new PromptDoubleOptions(
-                "\nHorizontal profile-view spacing <250>: ")
-            {
-                AllowNegative = false,
-                AllowZero = false,
-                UseDefaultValue = true,
-                DefaultValue = 250.0
-            };
-            PromptDoubleResult horizontalResult = editor.GetDouble(horizontalOptions);
-            if (horizontalResult.Status != PromptStatus.OK)
-                return;
-
-            PromptDoubleOptions verticalOptions = new PromptDoubleOptions(
-                "\nVertical profile-view spacing <120>: ")
-            {
-                AllowNegative = false,
-                AllowZero = false,
-                UseDefaultValue = true,
-                DefaultValue = 120.0
-            };
-            PromptDoubleResult verticalResult = editor.GetDouble(verticalOptions);
-            if (verticalResult.Status != PromptStatus.OK)
                 return;
 
             List<StormwaterAlignmentRecord> alignments;
@@ -339,8 +269,8 @@ namespace CETools.Civil3D
             editor.WriteMessage(
                 "\nCE_SWPROFILE preview. Alignments: {0}; layout: {1} per row; surface handle: {2}.",
                 alignments.Count,
-                columnResult.Value,
-                surfaceResult.ObjectId.Handle);
+                settings.ProfileColumns,
+                selectedSurface.ObjectId.Handle);
 
             if (!Confirm(
                     editor,
@@ -353,8 +283,6 @@ namespace CETools.Civil3D
 
             try
             {
-                StormwaterProductionSettings settings =
-                    StormwaterProductionSettings.Read(database);
                 int profilesCreated;
                 int viewsCreated;
                 int partsAdded;
@@ -362,12 +290,12 @@ namespace CETools.Civil3D
                     database,
                     civilDocument,
                     settings,
-                    surfaceResult.ObjectId,
+                    selectedSurface.ObjectId,
                     alignments,
                     insertionResult.Value,
-                    columnResult.Value,
-                    horizontalResult.Value,
-                    verticalResult.Value,
+                    settings.ProfileColumns,
+                    settings.ProfileHorizontalSpacing,
+                    settings.ProfileVerticalSpacing,
                     out profilesCreated,
                     out viewsCreated,
                     out partsAdded);
@@ -2147,18 +2075,7 @@ namespace CETools.Civil3D
             Editor editor,
             string message)
         {
-            PromptKeywordOptions options = new PromptKeywordOptions(
-                "\n" + message + "? [Yes/No] <No>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Yes");
-            options.Keywords.Add("No");
-            PromptResult result = editor.GetKeywords(options);
-            return result.Status == PromptStatus.OK &&
-                   result.StringResult.Equals(
-                       "Yes",
-                       StringComparison.OrdinalIgnoreCase);
+            return DisciplineWorkflowDialogs.Confirm("CE Tools — Stormwater", message + "?");
         }
 
         private sealed class StormwaterAlignmentPlan
@@ -2277,6 +2194,9 @@ namespace CETools.Civil3D
         public string AlignmentLayer { get; set; } = "CE-SW-ALIGNMENT";
         public string ProfileLayer { get; set; } = "CE-SW-PROFILE";
         public double LabelTextHeight { get; set; } = 2.5;
+        public int ProfileColumns { get; set; } = 2;
+        public double ProfileHorizontalSpacing { get; set; } = 250.0;
+        public double ProfileVerticalSpacing { get; set; } = 120.0;
 
         public static StormwaterProductionSettings Read(
             Database database)
@@ -2400,7 +2320,10 @@ namespace CETools.Civil3D
                         "LabelTextHeight",
                         LabelTextHeight.ToString(
                             "R",
-                            CultureInfo.InvariantCulture)));
+                            CultureInfo.InvariantCulture)),
+                    ToValue("ProfileColumns", ProfileColumns.ToString(CultureInfo.InvariantCulture)),
+                    ToValue("ProfileHorizontalSpacing", ProfileHorizontalSpacing.ToString("R", CultureInfo.InvariantCulture)),
+                    ToValue("ProfileVerticalSpacing", ProfileVerticalSpacing.ToString("R", CultureInfo.InvariantCulture)));
 
                 transaction.Commit();
             }
@@ -2446,6 +2369,24 @@ namespace CETools.Civil3D
                         out height) &&
                     height > 0.0)
                     settings.LabelTextHeight = height;
+            }
+            else if (key == "ProfileColumns")
+            {
+                int columns;
+                if (int.TryParse(value, NumberStyles.Integer, CultureInfo.InvariantCulture, out columns) && columns > 0)
+                    settings.ProfileColumns = columns;
+            }
+            else if (key == "ProfileHorizontalSpacing")
+            {
+                double spacing;
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && spacing > 0.0)
+                    settings.ProfileHorizontalSpacing = spacing;
+            }
+            else if (key == "ProfileVerticalSpacing")
+            {
+                double spacing;
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && spacing > 0.0)
+                    settings.ProfileVerticalSpacing = spacing;
             }
         }
     }

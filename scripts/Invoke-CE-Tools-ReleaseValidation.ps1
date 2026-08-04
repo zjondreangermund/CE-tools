@@ -243,6 +243,7 @@ try {
         "Validate-WorkflowWindow.py",
         "Validate-UserCommentCoverage.py",
         "Validate-ReleasePipeline.py",
+        "Validate-DisciplineProductionDialogs.py",
         "Validate-BillOfQuantities.py",
         "Validate-WaterSewerCostEstimate.py",
         "Validate-RefreshAll.py",

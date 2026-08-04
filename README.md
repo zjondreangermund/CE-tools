@@ -4,6 +4,15 @@ Civil engineering productivity tools for Autodesk Civil 3D.
 
 ## Current alpha commands
 
+The V61 source contains 397 unique commands. Use `Ctrl+F`, `CE_COMMANDCENTER`
+or `CE_SETTINGS` to search the complete installed command surface. The sections
+below retain detailed introductions to the original utility families.
+
+Stormwater, Sewer and Water production launchers now open ordered workflow
+windows. Their settings windows read installed Civil 3D styles and band sets,
+store annotation paper heights and control batch profile-view layout without
+numeric command-line setup prompts.
+
 ### `CE_BMVERT` — Bellmouth Densifier
 
 Processes one or many 2D lightweight polylines and inserts vertices at equal chainages while preserving true line and arc geometry.
