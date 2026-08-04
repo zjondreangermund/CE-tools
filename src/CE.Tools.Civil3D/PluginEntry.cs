@@ -79,6 +79,8 @@ namespace CETools.Civil3D
         private const string SurveyPanelId = "CE_TOOLS_CATEGORY_SURVEY";
         private const string DrawingsPanelId = "CE_TOOLS_CATEGORY_DRAWINGS";
         private const string GeometryPanelId = "CE_TOOLS_CATEGORY_GEOMETRY";
+        private const string AssemblyPanelId = "CE_TOOLS_CATEGORY_ASSEMBLY";
+        private const string RoadProductionPanelId = "CE_TOOLS_CATEGORY_ROAD_PRODUCTION";
         private const string CorridorPanelId = "CE_TOOLS_CATEGORY_CORRIDORS";
         private const string SiteDesignPanelId = "CE_TOOLS_CATEGORY_SITE_DESIGN";
         private const string UtilitiesPanelId = "CE_TOOLS_CATEGORY_UTILITIES";
@@ -138,6 +140,8 @@ namespace CETools.Civil3D
             AddSurveyPanel(tab);
             AddDrawingsPanel(tab);
             AddGeometryPanel(tab);
+            AddAssemblyPanel(tab);
+            AddRoadProductionPanel(tab);
             AddCorridorPanel(tab);
             AddSiteDesignPanel(tab);
             AddUtilitiesPanel(tab);
@@ -145,6 +149,45 @@ namespace CETools.Civil3D
             AddAnalysisPanel(tab);
             AddAdvancedPanel(tab);
             AddProductionPanel(tab);
+        }
+
+        private static void AddAssemblyPanel(RibbonTab tab)
+        {
+            AddPanel(
+                tab,
+                AssemblyPanelId,
+                "CE-ASSEMBLY",
+                Row(
+                    Menu(
+                        "CE_TOOLS_ASSEMBLY_MENU",
+                        "CE Road\nAssemblies",
+                        "Create and review Civil 3D road assemblies before corridor generation.",
+                        Cmd("Assembly Workflow", "CE_ASSEMBLYTOOLS ", "Open the ordered CE assembly workflow."),
+                        Cmd("Create CE Road Assembly", "CE_ASSEMBLYCREATE ", "Create a named Civil 3D road assembly at a selected insertion point."),
+                        Cmd("Assembly Register", "CE_ASSEMBLYREPORT ", "Review every assembly, style and subassembly count."),
+                        Cmd("Project Style Centre", "CE_PROJECTSTYLES ", "Select the project assembly, corridor and code-set styles."),
+                        Cmd("Create Road Corridors", "CE_ROADCORRIDORS ", "Create corridors using CE road alignment/profile pairs and the selected assembly."))));
+        }
+
+        private static void AddRoadProductionPanel(RibbonTab tab)
+        {
+            AddPanel(
+                tab,
+                RoadProductionPanelId,
+                "ROAD PRODUCTION",
+                Row(
+                    Menu(
+                        "CE_TOOLS_ROAD_PRODUCTION_MENU",
+                        "Road\nProduction",
+                        "Create road alignments, profiles, assemblies and corridors in engineering workflow order.",
+                        Cmd("Road Production Workflow", "CE_ROADPRODUCTION ", "Open the complete ordered road-production window."),
+                        Cmd("Create Road Alignments", "CE_ROADALIGN ", "Create sequential linked road alignments from selected polylines."),
+                        Cmd("Create Road Profiles", "CE_ROADPROFILES ", "Create existing-ground profiles and ordered profile views."),
+                        Cmd("Create CE Road Assembly", "CE_ASSEMBLYCREATE ", "Create the Civil 3D assembly used by road corridor regions."),
+                        Cmd("Create Road Corridors", "CE_ROADCORRIDORS ", "Create one corridor for each CE road alignment/profile pair."),
+                        Cmd("Road Production Information", "CE_ROADPRODUCTIONINFO ", "Review road alignments, profiles, corridors and styles."),
+                        Cmd("Road BOQ", "CE_BOQROAD ", "Create the road bill of quantities."),
+                        Cmd("Road Design Report", "CE_REPORTROAD ", "Generate the road design report."))));
         }
 
         private static void AddProjectPanel(RibbonTab tab)

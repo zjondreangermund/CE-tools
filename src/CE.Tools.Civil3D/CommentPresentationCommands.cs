@@ -644,7 +644,7 @@ namespace CETools.Civil3D
             Point3d originalCentre = Centre(original);
             var candidates = new List<PlacementCandidate>
             {
-                PlacementCandidate.From(original, Vector3d.Zero)
+                PlacementCandidate.From(original, new Vector3d(0.0, 0.0, 0.0))
             };
             double halfWidth = Math.Max(
                 (original.MaxPoint.X - original.MinPoint.X) * 0.5,

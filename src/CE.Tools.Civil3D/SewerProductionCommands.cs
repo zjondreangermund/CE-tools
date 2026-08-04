@@ -1093,14 +1093,14 @@ namespace CETools.Civil3D
             int count = 0;
             foreach (ObjectId pipeId in network.GetPipeIds())
             {
-                var pipe = transaction.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe;
+                var pipe = transaction.GetObject(pipeId, OpenMode.ForWrite, false) as CivilPipe;
                 if (pipe != null && string.Equals(pipe.Description, branchName, StringComparison.OrdinalIgnoreCase) &&
                     TryAddToProfileView(pipe, viewId))
                     count++;
             }
             foreach (ObjectId structureId in network.GetStructureIds())
             {
-                var structure = transaction.GetObject(structureId, OpenMode.ForRead, false) as CivilStructure;
+                var structure = transaction.GetObject(structureId, OpenMode.ForWrite, false) as CivilStructure;
                 if (structure != null && string.Equals(structure.Description, branchName, StringComparison.OrdinalIgnoreCase) &&
                     TryAddToProfileView(structure, viewId))
                     count++;

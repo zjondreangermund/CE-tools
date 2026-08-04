@@ -40,27 +40,27 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var window = new ProductionChoiceWindow(
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
                 "CE Tools - Road Production",
                 "Create road design objects in sequence using the active drawing styles and CE Project Style Centre choices.",
-                new List<ProductionChoice>
+                new List<DisciplineWorkflowAction>
                 {
-                    new ProductionChoice("Create sequential road alignments from selected polylines", "CE_ROADALIGN "),
-                    new ProductionChoice("Create EG profiles and profile views for CE road alignments", "CE_ROADPROFILES "),
-                    new ProductionChoice("Create corridors from CE road alignments, profiles and an assembly", "CE_ROADCORRIDORS "),
-                    new ProductionChoice("Road production status popup and optional table", "CE_ROADPRODUCTIONINFO "),
-                    new ProductionChoice("Open Project Style Centre", "CE_PROJECTSTYLES "),
-                    new ProductionChoice("All profiles popup report", "CE_PROFILEREPORT2 "),
-                    new ProductionChoice("Corridor baselines and regions popup", "CE_CORBASEUI "),
-                    new ProductionChoice("Rebuild selected corridors", "CE_CORREBUILDX "),
-                    new ProductionChoice("Road BOQ Excel", "CE_BOQROAD "),
-                    new ProductionChoice("Road design report", "CE_REPORTROAD "),
-                    new ProductionChoice("Create dynamic intersections", "CE_INTCREATE "),
-                    new ProductionChoice("Refresh all linked model data", "CE_REFRESHALL ")
+                    RoadAction("Create road alignments", "CE_ROADALIGN", "Create sequential linked road alignments from selected polylines.", "1 — Alignments"),
+                    RoadAction("Create road profiles", "CE_ROADPROFILES", "Create existing-ground profiles and ordered profile views.", "2 — Profiles"),
+                    RoadAction("Create CE road assembly", "CE_ASSEMBLYCREATE", "Create the Civil 3D roadway assembly used by corridor regions.", "3 — Assembly"),
+                    RoadAction("Assembly workflow", "CE_ASSEMBLYTOOLS", "Create, review and select project assemblies.", "3 — Assembly"),
+                    RoadAction("Create road corridors", "CE_ROADCORRIDORS", "Create one corridor for every CE road alignment/profile pair.", "4 — Corridors"),
+                    RoadAction("Corridor baselines and regions", "CE_CORBASEUI", "Review generated corridor baselines and regions.", "4 — Corridors"),
+                    RoadAction("Rebuild selected corridors", "CE_CORREBUILDX", "Rebuild selected road corridors.", "4 — Corridors"),
+                    RoadAction("Create dynamic intersections", "CE_INTCREATE", "Create linked road intersection output.", "5 — Intersections"),
+                    RoadAction("Project Style Centre", "CE_PROJECTSTYLES", "Select road alignment, profile, assembly, corridor and code-set styles.", "6 — Configuration"),
+                    RoadAction("Road production information", "CE_ROADPRODUCTIONINFO", "Review alignments, profiles, corridors and project styles.", "7 — Review"),
+                    RoadAction("All profiles report", "CE_PROFILEREPORT2", "Review all generated profiles and profile views.", "7 — Review"),
+                    RoadAction("Road BOQ", "CE_BOQROAD", "Create the road bill of quantities in Excel format.", "8 — Production"),
+                    RoadAction("Road design report", "CE_REPORTROAD", "Generate the road design report.", "8 — Production"),
+                    RoadAction("Refresh all linked model data", "CE_REFRESHALL", "Refresh road annotations, schedules, BOQs and linked outputs.", "9 — Refresh")
                 });
-            AcApplication.ShowModalWindow(window);
-            if (!window.Accepted || window.Selected == null) return;
-            document.SendStringToExecute(window.Selected.Command, true, false, true);
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADALIGN", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -424,8 +424,39 @@ namespace CETools.Civil3D
                 "Assembly");
             if (assemblies.Count == 0)
             {
-                document.Editor.WriteMessage("\nCE_ROADCORRIDORS: no Civil 3D assemblies were found. Create an assembly first.");
-                return;
+                string choice = DisciplineWorkflowDialogs.SelectWorkflow(
+                    "CE Tools - Road Corridor Assembly Required",
+                    "No Civil 3D assembly exists. Create a CE road assembly now or cancel without changing the drawing.",
+                    new List<DisciplineWorkflowAction>
+                    {
+                        RoadAction("Create CE road assembly now", "Create", "Choose the assembly type, name and insertion point, then continue corridor creation.", "1 — Assembly"),
+                        RoadAction("Cancel corridor creation", "Cancel", "Close without creating an assembly or corridor.", "2 — Cancel")
+                    });
+                if (!string.Equals(choice, "Create", StringComparison.OrdinalIgnoreCase)) return;
+                ObjectId createdAssembly;
+                try
+                {
+                    createdAssembly = CeAssemblyCommands.CreateRoadAssemblyInteractively(document);
+                }
+                catch (System.Exception exception)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADCORRIDORS stopped while creating the required assembly. {0}",
+                        exception.Message);
+                    return;
+                }
+                if (createdAssembly.IsNull) return;
+                assemblies = ReadCivilChoices(
+                    document,
+                    civilDocument,
+                    "GetAssemblyIds",
+                    "Assembly");
+                if (assemblies.Count == 0)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADCORRIDORS stopped. Civil 3D did not expose the newly created assembly.");
+                    return;
+                }
             }
             var picker = new CivilObjectPickerWindow(
                 "CE Tools - Road Assembly",
@@ -978,6 +1009,7 @@ namespace CETools.Civil3D
             ObjectId profileId,
             ObjectId assemblyId)
         {
+            System.Exception lastError = null;
             foreach (MethodInfo method in collection.GetType()
                 .GetMethods(BindingFlags.Public | BindingFlags.Instance)
                 .Where(item => item.Name == "Add")
@@ -997,9 +1029,14 @@ namespace CETools.Civil3D
                     object result = method.Invoke(collection, arguments);
                     if (result is ObjectId) return (ObjectId)result;
                 }
-                catch (TargetInvocationException) { }
+                catch (TargetInvocationException exception)
+                {
+                    lastError = exception.InnerException ?? exception;
+                }
             }
-            throw new InvalidOperationException("No compatible CorridorCollection.Add overload was found.");
+            throw new InvalidOperationException(
+                "No compatible CorridorCollection.Add overload succeeded." +
+                (lastError == null ? string.Empty : " " + lastError.Message));
         }
 
         private static bool TryBuildCorridorArguments(
@@ -1154,6 +1191,15 @@ namespace CETools.Civil3D
                 AllowDuplicates = false,
                 RejectObjectsFromNonCurrentSpace = true
             });
+        }
+
+        private static DisciplineWorkflowAction RoadAction(
+            string title,
+            string command,
+            string description,
+            string group)
+        {
+            return new DisciplineWorkflowAction(title, command, description, group);
         }
 
         private static Document ActiveDocument()
