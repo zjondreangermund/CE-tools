@@ -17,6 +17,7 @@ namespace CETools.Civil3D
         public void Initialize()
         {
             DynamicSectionUpdateManager.Initialize();
+            ParkingNumberAutoRefreshManager.Initialize();
             FloatingToolsCommands.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
@@ -25,6 +26,7 @@ namespace CETools.Civil3D
         {
             AcApplication.Idle -= OnApplicationIdle;
             FloatingToolsCommands.Terminate();
+            ParkingNumberAutoRefreshManager.Terminate();
             DynamicSectionUpdateManager.Terminate();
         }
 
