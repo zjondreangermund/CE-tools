@@ -1,7 +1,9 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -1548,6 +1550,13 @@ namespace CETools.Civil3D
             using (Transaction transaction =
                 database.TransactionManager.StartTransaction())
             {
+                ObjectId pointStyleId;
+                ObjectId pointLabelStyleId;
+                ResolveSelectedPointStyles(
+                    database,
+                    transaction,
+                    out pointStyleId,
+                    out pointLabelStyleId);
                 int count = Math.Min(pointIds.Count, pointNames.Count);
                 for (int index = 0; index < count; index++)
                 {
@@ -1559,9 +1568,122 @@ namespace CETools.Civil3D
                     {
                         point.PointName = pointNames[index];
                         point.RawDescription = pointNames[index];
+                        if (!pointStyleId.IsNull)
+                            TrySetObjectIdProperty(point, "StyleId", pointStyleId);
+                        if (!pointLabelStyleId.IsNull)
+                            TrySetObjectIdProperty(point, "LabelStyleId", pointLabelStyleId);
                     }
                 }
                 transaction.Commit();
+            }
+        }
+
+        private static void ResolveSelectedPointStyles(
+            Database database,
+            Transaction transaction,
+            out ObjectId pointStyleId,
+            out ObjectId pointLabelStyleId)
+        {
+            pointStyleId = ObjectId.Null;
+            pointLabelStyleId = ObjectId.Null;
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (civilDocument == null) return;
+            ProjectStyleSelection selection = ProjectStyleCenterCommands.ReadSelection(database);
+            string requestedPoint = ReadSelectedStyle(selection, "Point Style");
+            string requestedLabel = ReadSelectedStyle(selection, "Point Label Style");
+            object styles = civilDocument.Styles;
+            object pointStyles = ReadPublicProperty(styles, "PointStyles");
+            object labelStyles = ReadPublicProperty(styles, "LabelStyles");
+            object pointLabelStyles = ReadPublicProperty(labelStyles, "PointLabelStyles");
+            pointStyleId = ResolveStyleObjectId(
+                pointStyles,
+                requestedPoint,
+                transaction,
+                false);
+            pointLabelStyleId = ResolveStyleObjectId(
+                pointLabelStyles,
+                requestedLabel,
+                transaction,
+                true);
+        }
+
+        private static string ReadSelectedStyle(
+            ProjectStyleSelection selection,
+            string key)
+        {
+            if (selection == null || !selection.Exists) return string.Empty;
+            string value;
+            return selection.Values.TryGetValue(key, out value) &&
+                   !string.IsNullOrWhiteSpace(value)
+                ? value.Trim()
+                : string.Empty;
+        }
+
+        private static ObjectId ResolveStyleObjectId(
+            object collection,
+            string requested,
+            Transaction transaction,
+            bool preferDescription)
+        {
+            IEnumerable values = collection as IEnumerable;
+            if (values == null) return ObjectId.Null;
+            ObjectId first = ObjectId.Null;
+            ObjectId preferred = ObjectId.Null;
+            foreach (object value in values)
+            {
+                ObjectId id = value is ObjectId
+                    ? (ObjectId)value
+                    : value is DBObject ? ((DBObject)value).ObjectId : ObjectId.Null;
+                if (id.IsNull || id.IsErased) continue;
+                if (first.IsNull) first = id;
+                DBObject style;
+                try { style = transaction.GetObject(id, OpenMode.ForRead, false); }
+                catch { continue; }
+                string name = Convert.ToString(
+                    ReadPublicProperty(style, "Name"),
+                    CultureInfo.InvariantCulture);
+                if (!string.IsNullOrWhiteSpace(requested) &&
+                    string.Equals(name, requested, StringComparison.OrdinalIgnoreCase))
+                    return id;
+                if (preferDescription && preferred.IsNull &&
+                    !string.IsNullOrWhiteSpace(name) &&
+                    (name.IndexOf("RAW", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                     name.IndexOf("DESCRIPTION", StringComparison.OrdinalIgnoreCase) >= 0))
+                    preferred = id;
+            }
+            return !preferred.IsNull ? preferred : first;
+        }
+
+        private static object ReadPublicProperty(object value, string name)
+        {
+            if (value == null) return null;
+            try
+            {
+                PropertyInfo property = value.GetType().GetProperty(
+                    name,
+                    BindingFlags.Public | BindingFlags.Instance);
+                return property == null ? null : property.GetValue(value, null);
+            }
+            catch { return null; }
+        }
+
+        private static void TrySetObjectIdProperty(
+            object target,
+            string name,
+            ObjectId value)
+        {
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    name,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property != null && property.CanWrite &&
+                    property.PropertyType == typeof(ObjectId))
+                    property.SetValue(target, value, null);
+            }
+            catch
+            {
+                // Point identity remains correct even if a proxy blocks style assignment.
             }
         }
 

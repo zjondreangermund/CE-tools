@@ -81,44 +81,36 @@ namespace CETools.Civil3D
             if (document == null)
                 return;
 
-            Editor editor = document.Editor;
             string currentRoot = ReadLibraryRoot(document.Database);
-            string prompt = string.IsNullOrWhiteSpace(currentRoot)
-                ? "\nEnter the master Typical Details folder path: "
-                : "\nEnter the master Typical Details folder path <" + currentRoot + ">: ";
-
-            PromptStringOptions options = new PromptStringOptions(prompt)
+            var browser = new System.Windows.Forms.FolderBrowserDialog
             {
-                AllowSpaces = true
+                Description = "Select the master CE Tools Typical Details folder",
+                ShowNewFolderButton = false,
+                SelectedPath = Directory.Exists(currentRoot) ? currentRoot : string.Empty
             };
-            PromptResult result = editor.GetString(options);
-            if (result.Status == PromptStatus.None && !string.IsNullOrWhiteSpace(currentRoot))
-                return;
-            if (result.Status != PromptStatus.OK)
-                return;
+            if (browser.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
 
             string root;
             try
             {
                 root = Path.GetFullPath(
-                    Environment.ExpandEnvironmentVariables(
-                        result.StringResult.Trim().Trim('"')));
+                    Environment.ExpandEnvironmentVariables(browser.SelectedPath));
             }
             catch (System.Exception exception)
             {
-                editor.WriteMessage("\nCE_DETAILSETROOT: invalid folder path. " + exception.Message);
+                document.Editor.WriteMessage("\nCE_DETAILSETROOT: invalid folder path. " + exception.Message);
                 return;
             }
 
             if (!Directory.Exists(root))
             {
-                editor.WriteMessage("\nCE_DETAILSETROOT: folder not found: " + root);
+                document.Editor.WriteMessage("\nCE_DETAILSETROOT: folder not found: " + root);
                 return;
             }
 
             WriteLibraryRoot(document.Database, root);
             int count = EnumerateAssets(root).Count;
-            editor.WriteMessage(
+            document.Editor.WriteMessage(
                 "\nTypical Details master library saved. Supported assets found: " +
                 count +
                 ". Root: " +

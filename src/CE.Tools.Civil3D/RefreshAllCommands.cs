@@ -36,6 +36,7 @@ namespace CETools.Civil3D
             int boqTables;
             int costWorkbooks;
             int crossSections;
+            int projectInformationTables;
             int restoredLinks = 0;
             LinkedTableAutoRefreshManager.BeginInternalUpdate();
             try
@@ -52,6 +53,10 @@ namespace CETools.Civil3D
                     "setting-out schedules",
                     failures,
                     delegate { return SettingOutScheduleCommands.RefreshAll(document); });
+                projectInformationTables = Run(
+                    "project information tables",
+                    failures,
+                    delegate { return ProjectSetupCommands.RefreshInformationTables(document); });
                 parkingLabels = Run(
                     "parking labels",
                     failures,
@@ -93,7 +98,7 @@ namespace CETools.Civil3D
                 "\nCE_REFRESHALL complete. Coordinate followers={0}; coordinate tables={1}; " +
                 "setting-out schedules={2}; parking labels={3}; surface links changed={4}; " +
                 "BOQ tables={5}; cost workbooks={6}; cross sections={7}; " +
-                "restored linked outputs={8}; module failures={9}.",
+                "project information tables={8}; restored linked outputs={9}; module failures={10}.",
                 coordinateFollowers,
                 coordinateTables,
                 settingOutSchedules,
@@ -102,6 +107,7 @@ namespace CETools.Civil3D
                 boqTables,
                 costWorkbooks,
                 crossSections,
+                projectInformationTables,
                 restoredLinks,
                 failures.Count);
 
@@ -425,6 +431,7 @@ namespace CETools.Civil3D
                 DynamicCoordinateLinkStore.Refresh(document);
                 SurveyCoordinateWorkflowCommands.RefreshAll(document);
                 SettingOutScheduleCommands.RefreshAll(document);
+                ProjectSetupCommands.RefreshInformationTables(document);
                 BillOfQuantitiesCommands.RefreshAll(document);
                 AlignmentAnnotationLinkStore.RefreshAll(document);
                 ProfileAnnotationLinkStore.RefreshAll(document);

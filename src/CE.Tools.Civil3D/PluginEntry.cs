@@ -241,6 +241,7 @@ namespace CETools.Civil3D
                         Cmd("Polyline Direction Arrows", "CE_PLDIR ", "Add, replace or clear linked arrows showing stored polyline direction."),
                         Cmd("Refresh Direction Arrows", "CE_PLDIRREFRESH ", "Reposition linked arrows after polyline edits."),
                         Cmd("Reverse Polyline and Arrows", "CE_PLDIRREVERSE ", "Reverse selected polylines and their linked arrows."),
+                        Cmd("Break at Crossings and Junctions", "CE_PLBREAKJUNCTIONS ", "Break selected network polylines at every true crossing and T-junction."),
                         Cmd("Presentation and Dynamic Refresh", "CE_PRESENTATIONTOOLS ", "Open shared annotation, overlap and rebuild workflows."),
                         Cmd("Survey Cleanup", "CE_SURVEYCLEANUP ", "Review correction surfaces, coordinate links and controlled cleanup workflows."),
                         Cmd("Coordinate Utilities", "CE_COORDINATE ", "Open coordinate labels, crosses and tables."),

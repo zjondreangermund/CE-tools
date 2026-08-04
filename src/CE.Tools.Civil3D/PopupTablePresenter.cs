@@ -142,8 +142,8 @@ namespace CETools.Civil3D
                         int rowIndex = index + 2;
                         table.Cells[rowIndex, 0].TextString = rows[index].Key ?? string.Empty;
                         table.Cells[rowIndex, 1].TextString = rows[index].Value ?? string.Empty;
-                        table.Cells[rowIndex, 0].Alignment = CellAlignment.MiddleLeft;
-                        table.Cells[rowIndex, 1].Alignment = CellAlignment.MiddleLeft;
+                        table.Cells[rowIndex, 0].Alignment = CellAlignment.MiddleCenter;
+                        table.Cells[rowIndex, 1].Alignment = CellAlignment.MiddleCenter;
                         table.Cells[rowIndex, 0].TextHeight = textHeight;
                         table.Cells[rowIndex, 1].TextHeight = textHeight;
                     }
@@ -162,6 +162,67 @@ namespace CETools.Civil3D
                     "\nCE Tools table creation failed. No table was committed. {0}",
                     exception.Message);
             }
+        }
+
+        internal static int RefreshKeyValueTables(
+            Database database,
+            string tableTitle,
+            IList<KeyValuePair<string, string>> rows)
+        {
+            if (database == null || string.IsNullOrWhiteSpace(tableTitle)) return 0;
+            int refreshed = 0;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord space = transaction.GetObject(
+                    database.CurrentSpaceId,
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (space == null) return 0;
+                foreach (ObjectId id in space)
+                {
+                    Table table = transaction.GetObject(id, OpenMode.ForRead, false) as Table;
+                    if (table == null || table.Rows.Count < 2 || table.Columns.Count < 2)
+                        continue;
+                    string title;
+                    try { title = table.Cells[0, 0].TextString; }
+                    catch { continue; }
+                    if (!string.Equals(title, tableTitle, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    table.UpgradeOpen();
+                    double height = ResolveTextHeight(database);
+                    int dataCount = rows == null ? 0 : rows.Count;
+                    table.SetSize(dataCount + 2, 2);
+                    table.SetRowHeight(height * 2.4);
+                    table.Columns[0].Width = height * 20.0;
+                    table.Columns[1].Width = height * 45.0;
+                    table.Cells[0, 0].TextString = tableTitle;
+                    table.Cells[0, 0].TextHeight = height * 1.15;
+                    table.Cells[0, 0].Alignment = CellAlignment.MiddleCenter;
+                    table.Cells[1, 0].TextString = "Field";
+                    table.Cells[1, 1].TextString = "Value";
+                    for (int column = 0; column < 2; column++)
+                    {
+                        table.Cells[1, column].TextHeight = height;
+                        table.Cells[1, column].Alignment = CellAlignment.MiddleCenter;
+                    }
+                    for (int index = 0; index < dataCount; index++)
+                    {
+                        int row = index + 2;
+                        table.Cells[row, 0].TextString = rows[index].Key ?? string.Empty;
+                        table.Cells[row, 1].TextString = rows[index].Value ?? string.Empty;
+                        for (int column = 0; column < 2; column++)
+                        {
+                            table.Cells[row, column].TextHeight = height;
+                            table.Cells[row, column].Alignment = CellAlignment.MiddleCenter;
+                        }
+                    }
+                    PaperAnnotationScale.SetAnnotative(table);
+                    table.GenerateLayout();
+                    refreshed++;
+                }
+                transaction.Commit();
+            }
+            return refreshed;
         }
 
         private static double ResolveTextHeight(Database database)

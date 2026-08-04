@@ -156,6 +156,7 @@ namespace CETools.Civil3D
             try
             {
                 WriteProjectMetadata(document.Database, proposed, clearBackup: true);
+                RefreshInformationTables(document);
                 editor.WriteMessage(
                     "\nCE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
                 WriteMetadata(editor, proposed);
@@ -194,6 +195,19 @@ namespace CETools.Civil3D
                 "The information below is stored inside the current DWG. Choose Place Table to add a drawing table.",
                 BuildRows(metadata),
                 "CE Tools Project Information");
+        }
+
+        internal static int RefreshInformationTables(Document document)
+        {
+            if (document == null) return 0;
+            ProjectMetadata metadata = ReadProjectMetadata(
+                document.Database,
+                ProjectRecordName);
+            if (!metadata.Exists) return 0;
+            return PopupTablePresenter.RefreshKeyValueTables(
+                document.Database,
+                "CE Tools Project Information",
+                BuildRows(metadata));
         }
 
         private static void ClearProjectInfo(Document document)

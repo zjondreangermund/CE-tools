@@ -45,39 +45,42 @@ namespace CETools.Civil3D
             double spikeTolerance;
             double neighbourRadius;
             int minimumNeighbours;
-            if (!PromptPositiveDouble(
-                    document.Editor,
-                    "Spike/low-point elevation difference",
-                    1.0,
-                    out spikeTolerance))
-                return;
-            if (!PromptPositiveDouble(
-                    document.Editor,
-                    "Neighbour search radius",
-                    5.0,
-                    out neighbourRadius))
-                return;
-            if (!PromptPositiveInteger(
-                    document.Editor,
-                    "Minimum neighbouring vertices",
-                    4,
-                    out minimumNeighbours))
-                return;
-
-            PromptKeywordOptions holeOptions = new PromptKeywordOptions(
-                "\nInternal hole handling [Fill/Keep] <Fill>: ")
-            {
-                AllowNone = true
-            };
-            holeOptions.Keywords.Add("Fill");
-            holeOptions.Keywords.Add("Keep");
-            PromptResult holeResult = document.Editor.GetKeywords(holeOptions);
-            if (holeResult.Status == PromptStatus.Cancel) return;
-            bool fillHoles = holeResult.Status != PromptStatus.OK ||
-                !string.Equals(
-                    holeResult.StringResult,
-                    "Keep",
-                    StringComparison.OrdinalIgnoreCase);
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Surface Spike and Hole Repair",
+                "Set the screening tolerances. The source surface remains unchanged and the repaired result is created as a separate TIN surface.");
+            settings.AddPositiveDouble(
+                "SpikeTolerance",
+                "Repair Criteria",
+                "Spike/low-point elevation difference",
+                1.0,
+                "Vertices exceeding the local-neighbour median by this amount are replaced in the repair copy.");
+            settings.AddPositiveDouble(
+                "NeighbourRadius",
+                "Repair Criteria",
+                "Neighbour search radius",
+                5.0,
+                "Plan distance used to collect local vertices for the median check.");
+            settings.AddPositiveInteger(
+                "MinimumNeighbours",
+                "Repair Criteria",
+                "Minimum neighbouring vertices",
+                4,
+                "A vertex is only screened when this many neighbours are available.");
+            settings.AddChoice(
+                "HoleHandling",
+                "Hole Handling",
+                "Internal holes",
+                "Fill internal holes",
+                "Choose whether internal open-edge components receive centroid repair points.",
+                new[] { "Fill internal holes", "Keep internal holes" });
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+            spikeTolerance = settings.Double("SpikeTolerance", 1.0);
+            neighbourRadius = settings.Double("NeighbourRadius", 5.0);
+            minimumNeighbours = settings.Integer("MinimumNeighbours", 4);
+            bool fillHoles = !string.Equals(
+                settings.Text("HoleHandling"),
+                "Keep internal holes",
+                StringComparison.OrdinalIgnoreCase);
 
             RepairPlan plan;
             try
@@ -507,9 +510,14 @@ namespace CETools.Civil3D
             object style = ReadProperty(source, "StyleId");
             if (style is ObjectId) styleId = (ObjectId)style;
 
+            if (!IsUsableStyleId(styleId, transaction))
+                styleId = FindUsableSurfaceStyleId(transaction);
+
             foreach (MethodInfo method in tinType.GetMethods(
                 BindingFlags.Public | BindingFlags.Static)
-                .Where(item => item.Name == "Create"))
+                .Where(item => item.Name == "Create")
+                .OrderBy(item => item.GetParameters().Count(
+                    parameter => parameter.ParameterType == typeof(ObjectId))))
             {
                 ParameterInfo[] parameters = method.GetParameters();
                 var arguments = new object[parameters.Length];
@@ -522,9 +530,13 @@ namespace CETools.Civil3D
                     else if (type == typeof(Database)) arguments[index] = database;
                     else if (type == typeof(ObjectId))
                     {
-                        arguments[index] = objectIdIndex++ == 0 && !styleId.IsNull
-                            ? styleId
-                            : ObjectId.Null;
+                        objectIdIndex++;
+                        if (styleId.IsNull)
+                        {
+                            supported = false;
+                            break;
+                        }
+                        arguments[index] = styleId;
                     }
                     else
                     {
@@ -549,6 +561,47 @@ namespace CETools.Civil3D
             }
             throw new MissingMethodException(
                 "No supported TinSurface.Create overload was found.");
+        }
+
+        private static bool IsUsableStyleId(
+            ObjectId styleId,
+            Transaction transaction)
+        {
+            if (styleId.IsNull || styleId.IsErased) return false;
+            try
+            {
+                DBObject value = transaction.GetObject(
+                    styleId,
+                    OpenMode.ForRead,
+                    false);
+                return value != null && !value.IsErased;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static ObjectId FindUsableSurfaceStyleId(Transaction transaction)
+        {
+            try
+            {
+                CivilDocument civilDocument = CivilApplication.ActiveDocument;
+                if (civilDocument == null) return ObjectId.Null;
+                IEnumerable styles = civilDocument.Styles.SurfaceStyles as IEnumerable;
+                if (styles == null) return ObjectId.Null;
+                foreach (object value in styles)
+                {
+                    if (value is ObjectId &&
+                        IsUsableStyleId((ObjectId)value, transaction))
+                        return (ObjectId)value;
+                }
+            }
+            catch
+            {
+                // Style-free TinSurface.Create overloads remain available.
+            }
+            return ObjectId.Null;
         }
 
         private static void AddPoints(

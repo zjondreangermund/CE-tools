@@ -783,7 +783,7 @@ namespace CETools.Civil3D
             }
         }
 
-        private static ProjectStyleSelection ReadSelection(Database database)
+        internal static ProjectStyleSelection ReadSelection(Database database)
         {
             var selection = new ProjectStyleSelection();
             using (Transaction transaction = database.TransactionManager.StartTransaction())

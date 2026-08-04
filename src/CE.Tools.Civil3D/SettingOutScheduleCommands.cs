@@ -314,6 +314,7 @@ namespace CETools.Civil3D
                 table.SetDatabaseDefaults(database);
                 table.TableStyle = database.Tablestyle;
                 table.Position = insertionPoint;
+                PaperAnnotationScale.SetAnnotative(table);
                 ObjectId tableId = currentSpace.AppendEntity(table);
                 transaction.AddNewlyCreatedDBObject(table, true);
                 WriteLink(table, transaction, link);
@@ -341,7 +342,11 @@ namespace CETools.Civil3D
                 List<SettingOutRow> rows = ReadRows(database, transaction, link, out missing);
                 if (rows.Count == 0)
                     throw new InvalidOperationException("The linked schedule has no usable current point sources.");
-                PopulateTable(table, rows, database.Textsize, link.ScheduleType);
+                AnnotationOptions settings = AnnotationSettingsStore.Read(database);
+                double height = PaperAnnotationScale.ModelTextHeight(
+                    database,
+                    settings == null ? 2.0 : settings.TextHeight);
+                PopulateTable(table, rows, height, link.ScheduleType);
                 rowCount = rows.Count;
                 transaction.Commit();
             }
@@ -445,7 +450,7 @@ namespace CETools.Civil3D
                         missing++;
                         continue;
                     }
-                    description = "P" + fallback.ToString("D3", CultureInfo.InvariantCulture);
+                    description = "P" + fallback.ToString(CultureInfo.InvariantCulture);
                     point = dbPoint.Position;
                     fallback++;
                 }
@@ -510,8 +515,9 @@ namespace CETools.Civil3D
             const int columns = 6;
             double height = NormalizeHeight(textHeight);
             table.SetSize(rows.Count + 2, columns);
-            table.SetRowHeight(Math.Max(height * 1.8, 0.001));
-            table.SetColumnWidth(Math.Max(height * 8.0, 0.001));
+            table.SetRowHeight(Math.Max(height * 2.5, 0.001));
+            table.SetColumnWidth(Math.Max(height * 12.0, 0.001));
+            table.Columns[0].Width = Math.Max(height * 14.0, 0.001);
             table.Cells[0, 0].TextString = "CE TOOLS " + scheduleType.ToUpperInvariant() + " SETTING-OUT SCHEDULE";
             table.MergeCells(CellRange.Create(table, 0, 0, 0, columns - 1));
             string[] headings =
@@ -527,7 +533,10 @@ namespace CETools.Civil3D
             {
                 table.Cells[1, column].TextString = headings[column];
                 table.Cells[1, column].TextHeight = height;
+                table.Cells[1, column].Alignment = CellAlignment.MiddleCenter;
             }
+            table.Cells[0, 0].TextHeight = height * 1.2;
+            table.Cells[0, 0].Alignment = CellAlignment.MiddleCenter;
             for (int index = 0; index < rows.Count; index++)
             {
                 SettingOutRow row = rows[index];
@@ -539,7 +548,10 @@ namespace CETools.Civil3D
                 table.Cells[tableRow, 4].TextString = FormatNullable(row.DesignElevation);
                 table.Cells[tableRow, 5].TextString = FormatNullable(row.Difference);
                 for (int column = 0; column < columns; column++)
+                {
                     table.Cells[tableRow, column].TextHeight = height;
+                    table.Cells[tableRow, column].Alignment = CellAlignment.MiddleCenter;
+                }
             }
             table.GenerateLayout();
         }
@@ -764,9 +776,9 @@ namespace CETools.Civil3D
 
         private static double NormalizeHeight(double value)
         {
-            if (Math.Abs(value - 1.8) < 0.05) return 1.8;
-            if (Math.Abs(value - 5.0) < 0.05) return 5.0;
-            return 2.0;
+            return value > 0.0 && !double.IsNaN(value) && !double.IsInfinity(value)
+                ? value
+                : 0.002;
         }
 
         private static string FormatNullable(double? value)

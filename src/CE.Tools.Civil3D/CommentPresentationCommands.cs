@@ -203,6 +203,7 @@ namespace CETools.Civil3D
             if (selection.Status != PromptStatus.OK) return;
 
             var items = new List<PlacementItem>();
+            var anchors = new List<Point3d>();
             using (Transaction transaction =
                 document.Database.TransactionManager.StartTransaction())
             {
@@ -233,6 +234,31 @@ namespace CETools.Civil3D
                     }
                     items.Add(new PlacementItem(entity.ObjectId, extents));
                 }
+
+                BlockTableRecord space = transaction.GetObject(
+                    document.Database.CurrentSpaceId,
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (space != null)
+                {
+                    foreach (ObjectId id in space)
+                    {
+                        Entity entity = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false) as Entity;
+                        if (entity == null || !IsPointMarker(entity)) continue;
+                        try
+                        {
+                            Extents3d extents = entity.GeometricExtents;
+                            anchors.Add(Centre(extents));
+                        }
+                        catch
+                        {
+                            // Ignore proxy markers that expose no extents.
+                        }
+                    }
+                }
             }
 
             items.Sort(delegate(PlacementItem first, PlacementItem second)
@@ -243,7 +269,10 @@ namespace CETools.Civil3D
                     : first.Extents.MinPoint.X.CompareTo(second.Extents.MinPoint.X);
             });
 
-            double gap = Math.Max(settings.TextHeight * 0.8, 0.001);
+            double modelTextHeight = PaperAnnotationScale.ModelTextHeight(
+                document.Database,
+                settings.TextHeight);
+            double gap = Math.Max(modelTextHeight * 0.35, 0.000001);
             var placed = new List<Extents3d>();
             int moved = 0;
             int unchanged = 0;
@@ -262,35 +291,32 @@ namespace CETools.Civil3D
                         continue;
                     }
 
-                    Extents3d candidate = item.Extents;
-                    double dy = 0.0;
-                    int guard = 0;
-                    while (OverlapsAny(candidate, placed, gap) && guard++ < 200)
-                    {
-                        double step = Math.Max(
-                            candidate.MaxPoint.Y - candidate.MinPoint.Y + gap,
-                            settings.TextHeight * 1.5);
-                        dy -= step;
-                        candidate = Translate(item.Extents, 0.0, dy);
-                    }
+                    Point3d originalCentre = Centre(item.Extents);
+                    Point3d anchor = FindNearestAnchor(originalCentre, anchors);
+                    PlacementCandidate best = FindClosestPlacement(
+                        item.Extents,
+                        anchor,
+                        placed,
+                        gap,
+                        modelTextHeight);
 
-                    if (Math.Abs(dy) > 0.0000001)
+                    if (best.Distance > 0.0000001)
                     {
-                        entity.TransformBy(Matrix3d.Displacement(new Vector3d(0.0, dy, 0.0)));
+                        MoveAnnotation(entity, best.Displacement);
                         moved++;
                     }
                     else
                     {
                         unchanged++;
                     }
-                    placed.Add(candidate);
+                    placed.Add(best.Extents);
                 }
                 transaction.Commit();
             }
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_OVERLAPFIX complete. Moved={0}; unchanged/locked={1}. Objects were displaced vertically without changing their content.",
+                "\nCE_OVERLAPFIX complete. Moved={0}; unchanged/locked={1}. Labels were placed in the nearest clear position around their marker.",
                 moved,
                 unchanged);
         }
@@ -576,6 +602,130 @@ namespace CETools.Civil3D
                    entity is AttributeReference;
         }
 
+        private static bool IsPointMarker(Entity entity)
+        {
+            if (entity is DBPoint || entity is Circle) return true;
+            string name = entity.GetType().Name;
+            return name.IndexOf("CogoPoint", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   name.IndexOf("Structure", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static Point3d Centre(Extents3d extents)
+        {
+            return new Point3d(
+                (extents.MinPoint.X + extents.MaxPoint.X) * 0.5,
+                (extents.MinPoint.Y + extents.MaxPoint.Y) * 0.5,
+                (extents.MinPoint.Z + extents.MaxPoint.Z) * 0.5);
+        }
+
+        private static Point3d FindNearestAnchor(
+            Point3d origin,
+            IEnumerable<Point3d> anchors)
+        {
+            Point3d best = origin;
+            double bestDistance = double.MaxValue;
+            foreach (Point3d candidate in anchors)
+            {
+                double distance = origin.DistanceTo(candidate);
+                if (distance >= bestDistance) continue;
+                best = candidate;
+                bestDistance = distance;
+            }
+            return best;
+        }
+
+        private static PlacementCandidate FindClosestPlacement(
+            Extents3d original,
+            Point3d anchor,
+            IList<Extents3d> placed,
+            double gap,
+            double textHeight)
+        {
+            Point3d originalCentre = Centre(original);
+            var candidates = new List<PlacementCandidate>
+            {
+                PlacementCandidate.From(original, Vector3d.Zero)
+            };
+            double halfWidth = Math.Max(
+                (original.MaxPoint.X - original.MinPoint.X) * 0.5,
+                textHeight);
+            double halfHeight = Math.Max(
+                (original.MaxPoint.Y - original.MinPoint.Y) * 0.5,
+                textHeight * 0.5);
+            Vector2d[] directions =
+            {
+                new Vector2d(1, 0), new Vector2d(-1, 0),
+                new Vector2d(0, 1), new Vector2d(0, -1),
+                new Vector2d(1, 1), new Vector2d(-1, 1),
+                new Vector2d(1, -1), new Vector2d(-1, -1)
+            };
+            for (int ring = 1; ring <= 8; ring++)
+            {
+                foreach (Vector2d direction in directions)
+                {
+                    Vector2d unit = direction.GetNormal();
+                    double radial = ring * Math.Max(textHeight * 0.75, gap);
+                    Point3d target = new Point3d(
+                        anchor.X + unit.X * (halfWidth + gap + radial),
+                        anchor.Y + unit.Y * (halfHeight + gap + radial),
+                        originalCentre.Z);
+                    candidates.Add(PlacementCandidate.From(
+                        original,
+                        target - originalCentre));
+                }
+            }
+
+            PlacementCandidate best = candidates[0];
+            double bestScore = double.MaxValue;
+            foreach (PlacementCandidate candidate in candidates)
+            {
+                int collisions = CountOverlaps(candidate.Extents, placed, gap);
+                double anchorDistance = Centre(candidate.Extents).DistanceTo(anchor);
+                double score = collisions * 1000000000.0 + anchorDistance;
+                if (score >= bestScore) continue;
+                best = candidate;
+                bestScore = score;
+                if (collisions == 0 && candidate.Distance <= textHeight) break;
+            }
+            return best;
+        }
+
+        private static int CountOverlaps(
+            Extents3d candidate,
+            IEnumerable<Extents3d> placed,
+            double gap)
+        {
+            int count = 0;
+            foreach (Extents3d other in placed)
+            {
+                if (candidate.MaxPoint.X + gap < other.MinPoint.X ||
+                    candidate.MinPoint.X - gap > other.MaxPoint.X ||
+                    candidate.MaxPoint.Y + gap < other.MinPoint.Y ||
+                    candidate.MinPoint.Y - gap > other.MaxPoint.Y)
+                    continue;
+                count++;
+            }
+            return count;
+        }
+
+        private static void MoveAnnotation(Entity entity, Vector3d displacement)
+        {
+            MLeader leader = entity as MLeader;
+            if (leader != null)
+            {
+                try
+                {
+                    leader.TextLocation = leader.TextLocation + displacement;
+                    return;
+                }
+                catch
+                {
+                    // Fall through for older/proxy MLeader implementations.
+                }
+            }
+            entity.TransformBy(Matrix3d.Displacement(displacement));
+        }
+
         private static bool OverlapsAny(
             Extents3d candidate,
             IEnumerable<Extents3d> placed,
@@ -673,6 +823,29 @@ namespace CETools.Civil3D
 
             public ObjectId ObjectId { get; private set; }
             public Extents3d Extents { get; private set; }
+        }
+
+        private sealed class PlacementCandidate
+        {
+            private PlacementCandidate(Extents3d extents, Vector3d displacement)
+            {
+                Extents = extents;
+                Displacement = displacement;
+                Distance = displacement.Length;
+            }
+
+            public Extents3d Extents { get; private set; }
+            public Vector3d Displacement { get; private set; }
+            public double Distance { get; private set; }
+
+            public static PlacementCandidate From(
+                Extents3d extents,
+                Vector3d displacement)
+            {
+                return new PlacementCandidate(
+                    Translate(extents, displacement.X, displacement.Y),
+                    displacement);
+            }
         }
     }
 

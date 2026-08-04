@@ -33,6 +33,7 @@ namespace CETools.Civil3D
                 new List<DisciplineWorkflowAction>
                 {
                     Action("Feature Line Utilities", "CE_FLTOOLS", "Create, inspect and edit feature lines.", "01 Geometry"),
+                    Action("Break Polylines at Junctions", "CE_PLBREAKJUNCTIONS", "Break selected network paths at every crossing and T-junction.", "01 Geometry"),
                     Action("Alignment Utilities", "CE_ALTOOLS", "Inspect alignments and station/offset data.", "01 Geometry"),
                     Action("Drawing Cleanup", "CE_DRAWCLEAN", "Run controlled OVERKILL, AUDIT and PURGE stages.", "02 Drawing"),
                     Action("Survey Cleanup", "CE_SURVEYCLEANUP", "Review survey corrections, surfaces and linked coordinates.", "02 Drawing"),
