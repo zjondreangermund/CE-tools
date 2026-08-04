@@ -164,8 +164,14 @@ namespace CETools.Civil3D
         public void UndoOneStep()
         {
             Document document = ActiveDocument();
-            if (document != null)
-                document.SendStringToExecute("_.UNDO 1 ", true, false, true);
+            if (document == null) return;
+            int count;
+            if (!ChooseHistoryCount("CE Tools - Undo", "Undo", out count)) return;
+            document.SendStringToExecute(
+                "_.UNDO " + count.ToString(CultureInfo.InvariantCulture) + " ",
+                true,
+                false,
+                true);
         }
 
         [CommandMethod("CE_TOOLS", "CE_REDO", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -174,21 +180,41 @@ namespace CETools.Civil3D
             Document document = ActiveDocument();
             if (document == null) return;
 
-            PromptIntegerResult count = document.Editor.GetInteger(
-                new PromptIntegerOptions("\nNumber of actions to redo <1>: ")
-                {
-                    AllowNegative = false,
-                    AllowZero = false,
-                    DefaultValue = 1,
-                    LowerLimit = 1,
-                    UseDefaultValue = true
-                });
-            if (count.Status != PromptStatus.OK) return;
+            int count;
+            if (!ChooseHistoryCount("CE Tools - Redo", "Redo", out count)) return;
 
-            for (int index = 0; index < count.Value; index++)
+            for (int index = 0; index < count; index++)
             {
                 document.SendStringToExecute("_.REDO ", true, false, true);
             }
+        }
+
+        private static bool ChooseHistoryCount(
+            string title,
+            string action,
+            out int count)
+        {
+            count = 1;
+            string[] choices = Enumerable.Range(1, 20)
+                .Select(value => value.ToString(CultureInfo.InvariantCulture) +
+                    (value == 1 ? " action" : " actions"))
+                .ToArray();
+            var model = new ProductionSettingsDialogModel(
+                title,
+                "Choose how far to " + action.ToLowerInvariant() +
+                ". AutoCAD applies the selected number of recorded command groups.");
+            model.AddChoice(
+                "Count",
+                "History",
+                action + " through",
+                choices[0],
+                "One CE Tools operation may contain several database changes recorded as one command group.",
+                choices);
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return false;
+            string selected = model.Text("Count") ?? string.Empty;
+            string number = selected.Split(' ')[0];
+            return int.TryParse(number, NumberStyles.None,
+                CultureInfo.InvariantCulture, out count) && count > 0;
         }
 
         private static void ShowSelection(

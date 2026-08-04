@@ -449,7 +449,7 @@ namespace CETools.Civil3D
             if (insertion.Status != PromptStatus.OK) return;
 
             AnnotationOptions settings;
-            if (!AnnotationSettingsStore.Prepare(document, false, out settings)) return;
+            if (!AnnotationSettingsStore.Prepare(document, true, out settings)) return;
 
             ObjectId tableId = CreateLinkedTable(
                 document.Database,
@@ -796,7 +796,7 @@ namespace CETools.Civil3D
                     text.SetDatabaseDefaults(database);
                     text.Location = labelPoint;
                     text.Attachment = AttachmentPoint.MiddleLeft;
-                    text.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                    text.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                         database,
                         settings.TextHeight);
                     text.Contents = contents;
@@ -810,7 +810,7 @@ namespace CETools.Civil3D
                     var text = new MText();
                     text.SetDatabaseDefaults(database);
                     text.Location = labelPoint;
-                    text.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                    text.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                         database,
                         settings.TextHeight);
                     text.Contents = contents;

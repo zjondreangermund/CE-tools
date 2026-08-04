@@ -22,6 +22,18 @@ namespace CETools.Civil3D
                 MinimumHeight);
         }
 
+        /// <summary>
+        /// Height stored on an annotative DBText/MText/MLeader. AutoCAD applies
+        /// the current annotation context itself, so this value is paper height
+        /// converted only to drawing units and must not be scale-multiplied.
+        /// </summary>
+        public static double AnnotativeTextHeight(Database database, double paperMillimetres)
+        {
+            return Math.Max(
+                NormalizePaperHeight(paperMillimetres) * DrawingUnitsPerMillimetre(database),
+                MinimumHeight);
+        }
+
         public static double ModelDistance(
             Database database,
             double paperMillimetres)

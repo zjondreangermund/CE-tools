@@ -1251,7 +1251,7 @@ namespace CETools.Civil3D
                                 settings.LabelTextHeight * 4.0),
                             0.0);
                     title.Attachment = AttachmentPoint.BottomLeft;
-                    title.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                    title.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                         database,
                         settings.LabelTextHeight);
                     PaperAnnotationScale.SetAnnotative(title);

@@ -420,7 +420,7 @@ namespace CETools.Civil3D
         private static double GetTextHeight(Database database)
         {
             AnnotationOptions settings = AnnotationSettingsStore.Read(database);
-            return PaperAnnotationScale.ModelTextHeight(
+            return PaperAnnotationScale.AnnotativeTextHeight(
                 database,
                 settings == null ? 2.0 : settings.TextHeight);
         }

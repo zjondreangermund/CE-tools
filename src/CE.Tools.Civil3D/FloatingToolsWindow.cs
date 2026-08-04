@@ -816,8 +816,27 @@ namespace CETools.Civil3D
                 shortTitle,
                 title,
                 description,
-                selected.Distinct().OrderBy(tool => tool.Text),
+                OrderForWorkflow(selected.Distinct(), steps),
                 steps);
+        }
+
+        private static IEnumerable<FloatingToolDefinition> OrderForWorkflow(
+            IEnumerable<FloatingToolDefinition> tools,
+            IEnumerable<WorkflowStep> steps)
+        {
+            var order = steps
+                .Select((step, index) => new { step.Command, Index = index })
+                .ToDictionary(item => item.Command, item => item.Index,
+                    StringComparer.OrdinalIgnoreCase);
+            return tools
+                .Select((tool, index) => new { Tool = tool, Original = index })
+                .OrderBy(item => order.ContainsKey(item.Tool.Command.Trim())
+                    ? order[item.Tool.Command.Trim()]
+                    : int.MaxValue)
+                .ThenBy(item => item.Tool.Panel, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.Tool.Group, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(item => item.Original)
+                .Select(item => item.Tool);
         }
 
         private static WorkflowStep Step(string title, string command)

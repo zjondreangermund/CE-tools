@@ -839,12 +839,17 @@ namespace CETools.Civil3D
 
         public void Execute(object parameter)
         {
+            string command = parameter as string;
             var button = parameter as RibbonButton;
-            string command = button == null ? null : button.CommandParameter as string;
+            var menuItem = parameter as RibbonMenuItem;
+            if (string.IsNullOrWhiteSpace(command) && button != null)
+                command = button.CommandParameter as string;
+            if (string.IsNullOrWhiteSpace(command) && menuItem != null)
+                command = menuItem.CommandParameter as string;
             if (string.IsNullOrWhiteSpace(command)) return;
 
             AcApplication.DocumentManager.MdiActiveDocument?.SendStringToExecute(
-                command,
+                command.Trim() + " ",
                 true,
                 false,
                 true);

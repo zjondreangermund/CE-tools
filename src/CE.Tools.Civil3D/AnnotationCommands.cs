@@ -682,7 +682,7 @@ namespace CETools.Civil3D
                         text.LayerId = entity.LayerId;
                         text.Location = center;
                         text.Attachment = AttachmentPoint.MiddleCenter;
-                        text.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                        text.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                             document.Database,
                             settings.TextHeight);
                         PaperAnnotationScale.SetAnnotative(text);
@@ -1399,7 +1399,7 @@ namespace CETools.Civil3D
             text.SetDatabaseDefaults(database);
             text.Location = labelPoint;
             text.Attachment = AttachmentPoint.MiddleLeft;
-            text.TextHeight = PaperAnnotationScale.ModelTextHeight(
+            text.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                 database,
                 textHeight);
             text.Contents = contents ?? string.Empty;
@@ -1421,7 +1421,7 @@ namespace CETools.Civil3D
             var text = new MText();
             text.SetDatabaseDefaults(database);
             text.Location = labelPoint;
-            text.TextHeight = PaperAnnotationScale.ModelTextHeight(
+            text.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                 database,
                 textHeight);
             text.Contents = contents ?? string.Empty;

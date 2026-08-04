@@ -343,7 +343,7 @@ namespace CETools.Civil3D
                         // aware perpendicular offset. Do not collapse those
                         // positions back onto the alignment centre here.
                         label.Annotative = AnnotativeStates.True;
-                        label.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                        label.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                             database,
                             settings.LabelHeight);
                         labelsMoved++;
@@ -802,7 +802,13 @@ namespace CETools.Civil3D
 
             ApplySewerPath(plan.Main, 1, transaction, true);
             for (int index = 0; index < plan.Branches.Count; index++)
+            {
+                // Branch extraction walks from the downstream junction outward.
+                // Production numbering must read from the upstream first manhole
+                // back toward that junction, so reverse each side branch first.
+                plan.Branches[index].Reverse();
                 ApplySewerPath(plan.Branches[index], index + 2, transaction, false);
+            }
 
             network.Description = string.Format(
                 CultureInfo.InvariantCulture,
@@ -830,7 +836,9 @@ namespace CETools.Civil3D
             int nodeSequence = 1;
             for (int index = 0; index < path.Nodes.Count; index++)
             {
-                if (index == 0 && !renameFirstNode)
+                // A side branch's final node is its shared downstream junction;
+                // retain the main/receiving-branch name on that shared structure.
+                if (!renameFirstNode && index == path.Nodes.Count - 1)
                     continue;
                 var structure = transaction.GetObject(path.Nodes[index], OpenMode.ForWrite, false) as CivilStructure;
                 if (structure == null)
@@ -990,7 +998,7 @@ namespace CETools.Civil3D
                             settings.LabelHeight * 4.0),
                         0.0);
                     title.Attachment = AttachmentPoint.BottomLeft;
-                    title.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                    title.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                         database,
                         settings.LabelHeight);
                     PaperAnnotationScale.SetAnnotative(title);

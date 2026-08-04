@@ -122,7 +122,7 @@ namespace CETools.Civil3D
                 placeAbove);
             label.Attachment = AttachmentPoint.MiddleCenter;
             label.Annotative = AnnotativeStates.True;
-            label.TextHeight = PaperAnnotationScale.ModelTextHeight(
+            label.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                 database,
                 paperHeight);
             label.Rotation = placement.Rotation;

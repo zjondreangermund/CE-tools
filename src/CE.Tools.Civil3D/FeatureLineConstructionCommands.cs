@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -101,6 +102,37 @@ namespace CETools.Civil3D
         private static void CreateFromObjects(Document document)
         {
             Editor editor = document.Editor;
+            List<SurfaceChoice> surfaces = WorkflowRepairCommands.ReadSurfaceChoices(document);
+            string[] surfaceNames = new[] { "<Keep source elevations>" }
+                .Concat(surfaces.Select(surface => surface.Name))
+                .ToArray();
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Create Feature Lines",
+                "Choose the elevation source before selecting the objects to convert.");
+            settings.AddChoice(
+                "Surface",
+                "Elevation Source",
+                "Surface",
+                surfaceNames[0],
+                "Keep source elevations or assign the new feature lines to a Civil 3D surface.",
+                surfaceNames);
+            settings.AddChoice(
+                "Intermediate",
+                "Elevation Source",
+                "Add intermediate surface points",
+                "No",
+                "Insert surface grade-break points between the original vertices.",
+                new[] { "No", "Yes" });
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+
+            string selectedSurfaceName = settings.Text("Surface");
+            SurfaceChoice selectedSurface = surfaces.FirstOrDefault(surface =>
+                string.Equals(surface.Name, selectedSurfaceName,
+                    StringComparison.OrdinalIgnoreCase));
+            bool includeIntermediate = string.Equals(
+                settings.Text("Intermediate"), "Yes",
+                StringComparison.OrdinalIgnoreCase);
+
             PromptSelectionResult selection = GetSelection(
                 editor,
                 "\nSelect lines, arcs or polylines to convert to siteless feature lines: ");
@@ -139,7 +171,20 @@ namespace CETools.Civil3D
                             continue;
                         }
 
-                        CivilFeatureLine.Create(string.Empty, selectedObject.ObjectId);
+                        ObjectId featureLineId = CivilFeatureLine.Create(
+                            string.Empty,
+                            selectedObject.ObjectId);
+                        if (selectedSurface != null)
+                        {
+                            CivilFeatureLine featureLine = transaction.GetObject(
+                                featureLineId,
+                                OpenMode.ForWrite,
+                                false) as CivilFeatureLine;
+                            if (featureLine != null)
+                                featureLine.AssignElevationsFromSurface(
+                                    selectedSurface.ObjectId,
+                                    includeIntermediate);
+                        }
                         created++;
                     }
 
@@ -147,9 +192,11 @@ namespace CETools.Civil3D
                 }
 
                 editor.WriteMessage(
-                    "\nCE_FLCREATE complete. Feature lines created: {0}; skipped: {1}.",
+                    "\nCE_FLCREATE complete. Feature lines created: {0}; skipped: {1}; surface: {2}; intermediate points: {3}.",
                     created,
-                    skipped);
+                    skipped,
+                    selectedSurface == null ? "source elevations" : selectedSurface.Name,
+                    includeIntermediate ? "Yes" : "No");
             }
             catch (System.Exception exception)
             {

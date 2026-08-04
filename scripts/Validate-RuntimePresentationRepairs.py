@@ -47,7 +47,7 @@ required = {
     ),
     "visuals": ("RibbonIconMode.TextOnly",),
     "labels": (
-        "PaperAnnotationScale.ModelTextHeight",
+        "PaperAnnotationScale.AnnotativeTextHeight",
         "OffsetPoint",
         "RepeatSpacing",
     ),
@@ -82,7 +82,7 @@ required = {
     "grid": ("PaperAnnotationScale.SetAnnotative(table);",),
     "popup": ("PaperAnnotationScale.SetAnnotative(table);",),
     "water": (
-        "PaperAnnotationScale.ModelTextHeight(\n                            document.Database,",
+        "PaperAnnotationScale.AnnotativeTextHeight(\n                            document.Database,",
         "PaperAnnotationScale.SetAnnotative(label);",
     ),
 }

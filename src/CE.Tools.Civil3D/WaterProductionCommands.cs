@@ -345,7 +345,7 @@ namespace CETools.Civil3D
                         label.LayerId = alignmentLayerId;
                         label.Location = GetRouteLabelPoint(source.Points, created - 1, settings.LabelHeight);
                         label.Attachment = AttachmentPoint.MiddleCenter;
-                        label.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                        label.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                             document.Database,
                             settings.LabelHeight);
                         PaperAnnotationScale.SetAnnotative(label);
@@ -647,7 +647,7 @@ namespace CETools.Civil3D
                             settings.AssetRadius * 1.8,
                             settings.AssetRadius * 1.8,
                             0.0);
-                        label.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                        label.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                             document.Database,
                             settings.LabelHeight);
                         PaperAnnotationScale.SetAnnotative(label);
