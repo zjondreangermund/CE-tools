@@ -30,6 +30,9 @@ survey = read("SurveyCoordinateWorkflowCommands.cs")
 required = {
     "GridReportPresenter.cs": (
         'string tableTitle = ""',
+        "IList<IList<string>> reportRows",
+        "columns = reportRows[0] ?? new List<string>();",
+        "for (int index = 1; index < reportRows.Count; index++)",
     ),
     "AnnotationCommands.cs": (
         "IList<ObjectId> generatedIds",
@@ -76,6 +79,8 @@ if "private static List<SurfaceChoice> ReadSurfaceChoices" in workflow:
     errors.append("ReadSurfaceChoices regressed to private and breaks production modules")
 if annotation.count("public static bool Create(") < 2:
     errors.append("AnnotationWriter generated-object compatibility overload is missing")
+if grid.count("public static void ShowReportAndOfferTable(") < 2:
+    errors.append("GridReportPresenter legacy row-matrix compatibility overload is missing")
 
 for name, text in texts.items():
     if text.count("{") != text.count("}"):
@@ -88,7 +93,7 @@ if errors:
     raise SystemExit(1)
 
 print(
-    "Civil 3D 2023 V61 compile repairs passed: report compatibility, annotation "
+    "Civil 3D 2023 V61 compile repairs passed: both report signatures, annotation "
     "object capture, feature-line refresh, coordinate initialization, ribbon "
     "icons, surface selection and survey LINQ are protected."
 )

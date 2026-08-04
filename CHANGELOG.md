@@ -55,6 +55,9 @@ All notable CE Tools changes will be recorded here.
   stored coordinate parsing initializes short-circuited values, ribbon icon mode
   compatibility is restored, surface choices are shared with production modules,
   and survey workflows import LINQ explicitly.
+- Restored the legacy report-row overload used by engineering asset, culvert,
+  hydrology, audit, pump and project reports; its first row is preserved as the
+  table headings while the remaining rows stay as report data.
 - The verified installer now validates every manifest file in the source, staging
   and installed bundles, compares both Civil and Core DLLs, and records version,
   source commit and hashes before removing its rollback copy.

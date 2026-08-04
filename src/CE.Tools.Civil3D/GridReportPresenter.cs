@@ -20,6 +20,34 @@ namespace CETools.Civil3D
             Document document,
             string title,
             string note,
+            IList<IList<string>> reportRows,
+            string tableTitle)
+        {
+            IList<string> columns = new List<string>();
+            var rows = new List<IList<string>>();
+
+            if (reportRows != null && reportRows.Count > 0)
+            {
+                columns = reportRows[0] ?? new List<string>();
+                for (int index = 1; index < reportRows.Count; index++)
+                {
+                    rows.Add(reportRows[index]);
+                }
+            }
+
+            ShowReportAndOfferTable(
+                document,
+                title,
+                note,
+                columns,
+                rows,
+                tableTitle);
+        }
+
+        public static void ShowReportAndOfferTable(
+            Document document,
+            string title,
+            string note,
             IList<string> columns,
             IList<IList<string>> rows,
             string tableTitle = "")
