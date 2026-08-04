@@ -790,12 +790,12 @@ namespace CETools.Civil3D
             return new RibbonCommandDefinition(text, command, toolTip);
         }
 
-        private static RibbonButton CreateCommandButton(
+        private static RibbonMenuItem CreateCommandButton(
             RibbonCommandDefinition definition,
             string menuId,
             int commandIndex)
         {
-            return new RibbonButton
+            return new RibbonMenuItem
             {
                 Id = (menuId ?? "CE_TOOLS_MENU") + "_COMMAND_" +
                     commandIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) +
@@ -803,8 +803,7 @@ namespace CETools.Civil3D
                 Text = definition.Text,
                 ShowText = true,
                 ShowImage = true,
-                Image = RibbonVisuals.Small(definition.Command),
-                Size = RibbonItemSize.Standard,
+                Image = RibbonVisuals.CommandSmall(definition.Command),
                 CommandParameter = definition.Command,
                 CommandHandler = new RibbonCommandHandler(),
                 ToolTip = definition.ToolTip

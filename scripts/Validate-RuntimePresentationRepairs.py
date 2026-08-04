@@ -40,6 +40,8 @@ required = {
     "ribbon": (
         "BuildPanels(tab);",
         "RibbonIconMode.TextOnly",
+        "private static RibbonMenuItem CreateCommandButton(",
+        "return new RibbonMenuItem",
         'menuId ?? "CE_TOOLS_MENU"',
         '"_COMMAND_"',
     ),
@@ -90,6 +92,12 @@ for name, markers in required.items():
     for marker in markers:
         if marker not in text:
             errors.append(f"{FILES[name].name} is missing runtime repair marker: {marker}")
+
+if "private static RibbonButton CreateCommandButton(" in texts.get("ribbon", ""):
+    errors.append(
+        "PluginEntry.cs adds RibbonButton to RibbonMenuButton.Items; Civil 3D 2023 "
+        "requires RibbonMenuItem"
+    )
 
 for name, text in texts.items():
     if text.count("{") != text.count("}"):

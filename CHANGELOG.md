@@ -41,7 +41,8 @@ All notable CE Tools changes will be recorded here.
 
 - Repaired the installed Civil 3D 2023 presentation path: the CE TOOLS ribbon
   now falls back to text-only controls if cached icon creation fails, and menu
-  item identifiers are unique across the complete command surface.
+  entries use Civil 3D-compatible `RibbonMenuItem` objects with unique identifiers
+  across the complete command surface.
 - Corrected CE annotation semantics so 1.8, 2.0, 2.5, 3.5 and 5.0 are paper
   text heights; MText, MLeaders, branch labels and tables now calculate their
   model-space size from the active annotation scale and drawing units.
