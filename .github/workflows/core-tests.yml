@@ -28,6 +28,9 @@ jobs:
       - name: Validate linked survey coordinate workflows
         run: python3 scripts/Validate-SurveyCoordinateWorkflows.py
 
+      - name: Validate workflow command centre
+        run: python3 scripts/Validate-WorkflowWindow.py
+
       - name: Validate linked BOQ and Excel export source
         run: python3 scripts/Validate-BillOfQuantities.py
 
