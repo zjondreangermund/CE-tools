@@ -160,7 +160,7 @@ namespace CETools.Civil3D
             document.SendStringToExecute("_.UNDO _Control _All ", true, false, true);
         }
 
-        [CommandMethod("CE_TOOLS", "CE_UNDO", CommandFlags.Modal | CommandFlags.Redraw)]
+        [CommandMethod("CE_TOOLS", "CE_UNDO", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.NoHistory | CommandFlags.NoUndoMarker)]
         public void UndoOneStep()
         {
             Document document = ActiveDocument();
@@ -174,7 +174,7 @@ namespace CETools.Civil3D
                 true);
         }
 
-        [CommandMethod("CE_TOOLS", "CE_REDO", CommandFlags.Modal | CommandFlags.Redraw)]
+        [CommandMethod("CE_TOOLS", "CE_REDO", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.NoHistory | CommandFlags.NoUndoMarker)]
         public void RedoOneStep()
         {
             Document document = ActiveDocument();

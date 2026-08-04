@@ -92,7 +92,7 @@ namespace CETools.Civil3D
                 Definition("Detach Dynamic Detail", "CE_DETAILPARAMDETACH ", "Keep generated objects as ordinary content or delete the linked set."),
                 Definition("Clear Dynamic Details", "CE_DETAILPARAMCLEAR ", "Clear selected or current-space CE dynamic details after confirmation."),
                 Definition("Dynamic Detail Settings", "CE_DETAILPARAMSETTINGS ", "Store drawing units, annotation offsets and output layers."),
-                Definition("Ribbon Icon Mode", "CE_RIBBONICONS ", "Choose TextOnly, Cached or Full icon mode; Cached is the session default."));
+                Definition("Ribbon Icon Mode", "CE_RIBBONICONS ", "Choose Full, Cached or TextOnly icon mode; Full is the session default."));
         }
 
         private static RibbonMenuButton CreateMenu(

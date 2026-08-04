@@ -18,7 +18,7 @@ namespace CETools.Civil3D
         // Integration trigger: keep this helper wired into the active sewer alignment command.
         internal const double DefaultPaperHeight = 3.5;
         internal const double RepeatSpacing = 50.0;
-        internal const double OffsetFactor = 2.75;
+        internal const double OffsetFactor = 5.0;
         internal const int MaximumLabelsPerBranch = 200;
         private const double GeometryTolerance = 1e-8;
 
@@ -148,7 +148,9 @@ namespace CETools.Civil3D
                 placement,
                 paperHeight,
                 placeAbove);
-            label.Attachment = AttachmentPoint.MiddleCenter;
+            label.Attachment = placeAbove
+                ? AttachmentPoint.BottomCenter
+                : AttachmentPoint.TopCenter;
             label.Annotative = AnnotativeStates.True;
             label.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                 database,

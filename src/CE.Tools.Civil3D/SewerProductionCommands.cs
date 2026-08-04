@@ -295,6 +295,8 @@ namespace CETools.Civil3D
                         transaction);
                     var alignmentByBranch = new Dictionary<string, CivilAlignment>(
                         StringComparer.OrdinalIgnoreCase);
+                    var recordByBranch = new Dictionary<string, SewerAlignmentRecord>(
+                        StringComparer.OrdinalIgnoreCase);
 
                     foreach (SewerAlignmentRecord record in records)
                     {
@@ -310,6 +312,7 @@ namespace CETools.Civil3D
                             "CE sewer alignment - " + record.BranchName +
                             " | style=" + actualStyle;
                         alignmentByBranch[record.BranchKey] = alignment;
+                        recordByBranch[record.BranchKey] = record;
                         styled++;
                     }
 
@@ -337,17 +340,35 @@ namespace CETools.Civil3D
                             objectType != "Label")
                             continue;
 
-                        if (!alignmentByBranch.ContainsKey(branchKey))
+                        CivilAlignment branchAlignment;
+                        SewerAlignmentRecord branchRecord;
+                        if (!alignmentByBranch.TryGetValue(branchKey, out branchAlignment) ||
+                            !recordByBranch.TryGetValue(branchKey, out branchRecord))
                             continue;
 
                         label.UpgradeOpen();
-                        // CE_SEWALIGN already places each label at a tangent-
-                        // aware perpendicular offset. Do not collapse those
-                        // positions back onto the alignment centre here.
-                        label.Annotative = AnnotativeStates.True;
-                        label.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
+                        SewerBranchLabelPlacement.Placement placement;
+                        if (!TryBuildLabelPlacement(
+                                branchAlignment,
+                                label.Location,
+                                out placement))
+                            continue;
+                        bool placeAbove = string.Equals(
+                                settings.BranchLabelSide,
+                                "Above",
+                                StringComparison.OrdinalIgnoreCase) ||
+                            (!string.Equals(
+                                settings.BranchLabelSide,
+                                "Below",
+                                StringComparison.OrdinalIgnoreCase) &&
+                             (BranchNumber(branchRecord.BranchName) % 2) != 0);
+                        SewerBranchLabelPlacement.ConfigureLabel(
+                            label,
                             database,
-                            settings.LabelHeight);
+                            placement,
+                            branchRecord.BranchName,
+                            settings.LabelHeight,
+                            placeAbove);
                         labelsMoved++;
                     }
 
@@ -363,6 +384,54 @@ namespace CETools.Civil3D
             {
                 document.Editor.WriteMessage(
                     "\nCE_SEWFORMAT cancelled. " + exception.Message);
+            }
+        }
+
+        private static bool TryBuildLabelPlacement(
+            CivilAlignment alignment,
+            Point3d currentLocation,
+            out SewerBranchLabelPlacement.Placement placement)
+        {
+            placement = null;
+            if (alignment == null) return false;
+            try
+            {
+                double station = 0.0;
+                double ignoredOffset = 0.0;
+                alignment.StationOffset(
+                    currentLocation.X,
+                    currentLocation.Y,
+                    ref station,
+                    ref ignoredOffset);
+                station = Math.Max(
+                    alignment.StartingStation,
+                    Math.Min(alignment.EndingStation, station));
+                double span = Math.Max(
+                    alignment.EndingStation - alignment.StartingStation,
+                    0.001);
+                double delta = Math.Max(0.001, Math.Min(span * 0.001, 0.10));
+                double before = Math.Max(alignment.StartingStation, station - delta);
+                double after = Math.Min(alignment.EndingStation, station + delta);
+                double x = 0.0;
+                double y = 0.0;
+                double x1 = 0.0;
+                double y1 = 0.0;
+                double x2 = 0.0;
+                double y2 = 0.0;
+                alignment.PointLocation(station, 0.0, ref x, ref y);
+                alignment.PointLocation(before, 0.0, ref x1, ref y1);
+                alignment.PointLocation(after, 0.0, ref x2, ref y2);
+                double rotation = Math.Atan2(y2 - y1, x2 - x1);
+                while (rotation > Math.PI / 2.0) rotation -= Math.PI;
+                while (rotation < -Math.PI / 2.0) rotation += Math.PI;
+                placement = new SewerBranchLabelPlacement.Placement(
+                    new Point3d(x, y, currentLocation.Z),
+                    rotation);
+                return true;
+            }
+            catch
+            {
+                return false;
             }
         }
 

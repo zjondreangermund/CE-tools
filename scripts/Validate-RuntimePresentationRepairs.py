@@ -47,7 +47,11 @@ required = {
         'menuId ?? "CE_TOOLS_MENU"',
         '"_COMMAND_"',
     ),
-    "visuals": ("RibbonIconMode.TextOnly",),
+    "visuals": (
+        "RibbonIconMode.TextOnly",
+        "RibbonIconMode.Full",
+        "= RibbonIconMode.Full;",
+    ),
     "labels": (
         "PaperAnnotationScale.AnnotativeTextHeight",
         "OffsetPoint",
@@ -57,6 +61,8 @@ required = {
         'model.AddChoice("BranchLabelSide"',
         'new[] { "Alternating", "Above", "Below" }',
         'Value("BranchLabelSide", BranchLabelSide)',
+        "TryBuildLabelPlacement",
+        "SewerBranchLabelPlacement.ConfigureLabel",
     ),
     "stormwater": (
         'model.AddChoice("BranchLabelSide"',
