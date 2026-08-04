@@ -18,6 +18,7 @@ namespace CETools.Civil3D
         {
             DynamicSectionUpdateManager.Initialize();
             ParkingNumberAutoRefreshManager.Initialize();
+            WaterSewerCostAutoRefreshManager.Initialize();
             FloatingToolsCommands.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
@@ -26,6 +27,7 @@ namespace CETools.Civil3D
         {
             AcApplication.Idle -= OnApplicationIdle;
             FloatingToolsCommands.Terminate();
+            WaterSewerCostAutoRefreshManager.Terminate();
             ParkingNumberAutoRefreshManager.Terminate();
             DynamicSectionUpdateManager.Terminate();
         }
@@ -359,6 +361,15 @@ namespace CETools.Civil3D
                         Cmd("Bulk-water BOQ Excel", "CE_BOQBULKWATER ", "Export bulk pipeline, storage, pump and fitting quantities."),
                         Cmd("Total Length", "CE_TLENGTH ", "Preserved quick total of selected curve lengths by layer."),
                         Cmd("Total Area", "CE_TAREA ", "Preserved quick total of selected areas by layer.")),
+                    Menu(
+                        "CE_TOOLS_WATER_SEWER_COST_MENU",
+                        "Water & Sewer\nCost Estimate",
+                        "Create and maintain the linked water/sewer Excel cost estimate while preserving workbook rates and formatting.",
+                        Cmd("Cost Estimate Tools", "CE_WSCOSTTOOLS ", "Open create, refresh, information and automatic-refresh options."),
+                        Cmd("Create Linked Cost Estimate", "CE_WSCOSTCREATE ", "Create a linked estimate from the installed or selected Excel template."),
+                        Cmd("Refresh Cost Estimate", "CE_WSCOSTREFRESH ", "Update model-derived quantities without replacing workbook rates or formatting."),
+                        Cmd("Cost Estimate Information", "CE_WSCOSTINFO ", "Review workbook path, link status, unit scale, asset counts and automatic-refresh state."),
+                        Cmd("Automatic Cost Refresh", "CE_WSCOSTAUTO ", "Turn deferred refresh after drawing commands on or off.")),
                     Menu(
                         "CE_TOOLS_DESIGN_REPORT_MENU",
                         "Design\nReports",
