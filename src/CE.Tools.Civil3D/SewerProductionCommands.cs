@@ -49,6 +49,7 @@ namespace CETools.Civil3D
                 {
                     new DisciplineWorkflowAction("Automatic network sequence", "CE_SEWSEQ", "Sequence and number the complete connected sewer network.", "1 — Network"),
                     new DisciplineWorkflowAction("Sequence with selected main", "CE_SEWSEQMAIN", "Select the intended main route before branch numbering.", "1 — Network"),
+                    new DisciplineWorkflowAction("Create / refresh Civil labels", "CE_SEWLABELS", "Add the selected Civil 3D pipe and structure plan labels without duplicating existing labels.", "1 — Network"),
                     new DisciplineWorkflowAction("Create sewer alignments", "CE_SEWALIGN", "Create linked branch alignments from the sequenced network.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Refresh alignments", "CE_SEWREFRESH", "Rebuild generated sewer alignments from their live network sources.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Format alignments and labels", "CE_SEWFORMAT", "Reapply production styles and repeated branch labels.", "2 — Alignments"),
@@ -163,6 +164,9 @@ namespace CETools.Civil3D
                     plan.Branches.Count + 1,
                     plan.Graph.Edges.Count,
                     plan.Graph.Nodes.Count);
+                SewerNetworkLabelCommands.EnsureLabels(
+                    document,
+                    new[] { networkId });
             }
             catch (System.Exception exception)
             {
@@ -190,6 +194,8 @@ namespace CETools.Civil3D
             model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set for generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles));
             model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style for generated sewer profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles));
             model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set for generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles));
+            model.AddChoice("PipePlanLabelStyle", "Civil 3D Styles", "Pipe plan-label style", settings.PipePlanLabelStyle, "Plan label added automatically to sewer pipes after sequencing.", SewerNetworkLabelCommands.ReadPipeLabelStyleNames(document));
+            model.AddChoice("StructurePlanLabelStyle", "Civil 3D Styles", "Structure plan-label style", settings.StructurePlanLabelStyle, "Plan label added automatically to sewer manholes after sequencing.", SewerNetworkLabelCommands.ReadStructureLabelStyleNames(document));
             model.AddText("ProfileLayer", "Layers and Annotation", "Profile output layer", settings.ProfileLayer, "Layer for sewer profiles and profile views.");
             model.AddPaperHeight("LabelHeight", "Layers and Annotation", "Plan branch-label paper height", settings.LabelHeight, "Select a standard annotative paper height or enter another positive value.");
             model.AddChoice("BranchLabelSide", "Layers and Annotation", "Branch-label offset side", settings.BranchLabelSide, "Place every branch name above, below, or alternate sides while keeping it clear of the alignment.", new[] { "Alternating", "Above", "Below" });
@@ -204,6 +210,8 @@ namespace CETools.Civil3D
             settings.ProfileLabelSetStyle = model.Text("ProfileLabelSetStyle");
             settings.ProfileViewStyle = model.Text("ProfileViewStyle");
             settings.ProfileViewBandSetStyle = model.Text("ProfileViewBandSetStyle");
+            settings.PipePlanLabelStyle = model.Text("PipePlanLabelStyle");
+            settings.StructurePlanLabelStyle = model.Text("StructurePlanLabelStyle");
             settings.ProfileLayer = model.Text("ProfileLayer");
             settings.LabelHeight = model.Double("LabelHeight", settings.LabelHeight);
             settings.BranchLabelSide = model.Text("BranchLabelSide");
@@ -1592,8 +1600,10 @@ namespace CETools.Civil3D
         public string ProfileLabelSetStyle { get; set; } = string.Empty;
         public string ProfileViewStyle { get; set; } = string.Empty;
         public string ProfileViewBandSetStyle { get; set; } = string.Empty;
+        public string PipePlanLabelStyle { get; set; } = string.Empty;
+        public string StructurePlanLabelStyle { get; set; } = string.Empty;
         public string ProfileLayer { get; set; } = "CE-SEWER-PROFILE";
-        public double LabelHeight { get; set; } = 2.5;
+        public double LabelHeight { get; set; } = 5.0;
         public string BranchLabelSide { get; set; } = "Alternating";
         public int ProfileColumns { get; set; } = 2;
         public double ProfileHorizontalSpacing { get; set; } = 250.0;
@@ -1657,6 +1667,8 @@ namespace CETools.Civil3D
                     Value("ProfileLabelSetStyle", ProfileLabelSetStyle),
                     Value("ProfileViewStyle", ProfileViewStyle),
                     Value("ProfileViewBandSetStyle", ProfileViewBandSetStyle),
+                    Value("PipePlanLabelStyle", PipePlanLabelStyle),
+                    Value("StructurePlanLabelStyle", StructurePlanLabelStyle),
                     Value("ProfileLayer", ProfileLayer),
                     Value("LabelHeight", LabelHeight.ToString("R", CultureInfo.InvariantCulture)),
                     Value("BranchLabelSide", BranchLabelSide),
@@ -1680,13 +1692,23 @@ namespace CETools.Civil3D
             else if (key == "ProfileLabelSetStyle") settings.ProfileLabelSetStyle = value;
             else if (key == "ProfileViewStyle") settings.ProfileViewStyle = value;
             else if (key == "ProfileViewBandSetStyle") settings.ProfileViewBandSetStyle = value;
+            else if (key == "PipePlanLabelStyle") settings.PipePlanLabelStyle = value;
+            else if (key == "StructurePlanLabelStyle") settings.StructurePlanLabelStyle = value;
             else if (key == "ProfileLayer") settings.ProfileLayer = value;
             else if (key == "BranchLabelSide") settings.BranchLabelSide = value;
             else if (key == "LabelHeight")
             {
                 double height;
                 if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out height) && height > 0.0)
-                    settings.LabelHeight = height;
+                {
+                    // Repair values previously persisted in metre drawing units
+                    // (for example 0.005) back to their paper-mm equivalent.
+                    settings.LabelHeight = height <= 0.05
+                        ? height * 1000.0
+                        : Math.Abs(height - 2.5) < 0.001
+                            ? 5.0
+                            : height;
+                }
             }
             else if (key == "ProfileColumns")
             {

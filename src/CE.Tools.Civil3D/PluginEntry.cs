@@ -23,6 +23,7 @@ namespace CETools.Civil3D
             ParkingNumberAutoRefreshManager.Initialize();
             WaterSewerCostAutoRefreshManager.Initialize();
             LinkedTableAutoRefreshManager.Initialize();
+            CommandUsageTracker.Initialize();
             FloatingToolsCommands.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
@@ -31,6 +32,7 @@ namespace CETools.Civil3D
         {
             AcApplication.Idle -= OnApplicationIdle;
             FloatingToolsCommands.Terminate();
+            CommandUsageTracker.Terminate();
             LinkedTableAutoRefreshManager.Terminate();
             WaterSewerCostAutoRefreshManager.Terminate();
             ParkingNumberAutoRefreshManager.Terminate();
@@ -523,6 +525,7 @@ namespace CETools.Civil3D
                         Cmd("Sewer Production Tools", "CE_SEWTOOLS ", "Open the complete sewer production menu."),
                         Cmd("Sequence Network", "CE_SEWSEQ ", "Sequence a complete network or selected path."),
                         Cmd("Sequence with Selected Main", "CE_SEWSEQMAIN ", "Select Branch-1 and sequence remaining branches."),
+                        Cmd("Create / Refresh Pipe and Structure Labels", "CE_SEWLABELS ", "Add the selected Civil 3D plan labels without duplicating existing labels."),
                         Cmd("Create / Refresh Alignments", "CE_SEWALIGN ", "Create branch alignments and labels."),
                         Cmd("Refresh Linked Alignments", "CE_SEWREFRESH ", "Refresh from linked source networks."),
                         Cmd("Format Alignments and Labels", "CE_SEWFORMAT ", "Apply styles and improve label spacing."),

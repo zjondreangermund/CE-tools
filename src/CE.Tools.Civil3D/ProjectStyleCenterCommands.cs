@@ -539,6 +539,13 @@ namespace CETools.Civil3D
             using (Transaction transaction =
                 document.Database.TransactionManager.StartTransaction())
             {
+                // Civil 3D 2023 style collections do not all expose a common
+                // enumerable surface.  Read the production collections directly
+                // first, then retain the recursive scan for future/extra types.
+                CollectKnownStyleCollections(
+                    stylesRoot,
+                    transaction,
+                    result);
                 CollectStyles(
                     stylesRoot,
                     string.Empty,
@@ -567,6 +574,57 @@ namespace CETools.Civil3D
             }
 
             return result;
+        }
+
+        private static void CollectKnownStyleCollections(
+            object stylesRoot,
+            Transaction transaction,
+            IDictionary<string, List<string>> result)
+        {
+            var paths = new Dictionary<string, string[]>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "Alignment Style", new[] { "AlignmentStyles" } },
+                { "Alignment Label Set Style", new[] { "LabelSetStyles.AlignmentLabelSetStyles" } },
+                { "Profile Style", new[] { "ProfileStyles" } },
+                { "Profile View Style", new[] { "ProfileViewStyles" } },
+                { "Profile View Band Set Style", new[] { "ProfileViewBandSetStyles" } },
+                { "Surface Style", new[] { "SurfaceStyles" } },
+                { "Point Style", new[] { "PointStyles" } },
+                { "Point Label Style", new[] { "LabelStyles.PointLabelStyles" } },
+                { "Corridor Style", new[] { "CorridorStyles" } },
+                { "Code Set Style", new[] { "CodeSetStyles" } },
+                { "Assembly Style", new[] { "AssemblyStyles" } },
+                { "Pipe Style", new[] { "PipeStyles" } },
+                { "Structure Style", new[] { "StructureStyles" } },
+                { "Pressure Pipe Style", new[] { "PressurePipeStyles", "PressureNetworkStyles.PressurePipeStyles" } },
+                { "Fitting Style", new[] { "FittingStyles", "PressureNetworkStyles.FittingStyles" } },
+                { "Appurtenance Style", new[] { "AppurtenanceStyles", "PressureNetworkStyles.AppurtenanceStyles" } }
+            };
+
+            foreach (KeyValuePair<string, string[]> entry in paths)
+            {
+                foreach (string path in entry.Value)
+                {
+                    object collection = ReadPropertyPath(stylesRoot, path);
+                    foreach (object item in EnumerateStyleItems(collection))
+                    {
+                        string name = ReadStyleName(item, transaction);
+                        if (!string.IsNullOrWhiteSpace(name))
+                            result[entry.Key].Add(name);
+                    }
+                }
+            }
+        }
+
+        private static object ReadPropertyPath(object value, string path)
+        {
+            object current = value;
+            foreach (string part in (path ?? string.Empty).Split('.'))
+            {
+                current = ReadProperty(current, part);
+                if (current == null) return null;
+            }
+            return current;
         }
 
         private static void CollectStyles(

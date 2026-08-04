@@ -317,9 +317,17 @@ namespace CETools.Civil3D
             new List<FloatingToolButton>();
         private readonly TextBlock _resultCount;
         private readonly TabControl _tabs;
+        private readonly TextBox _search;
+        private readonly IList<FloatingToolDefinition> _tools;
+        private readonly Dictionary<string, TabItem> _usageTabs =
+            new Dictionary<string, TabItem>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<Button> _stepButtons = new List<Button>();
+        private WorkflowStep _activeStep;
+        private string _activeStepWorkflow;
 
         public FloatingToolsWindow(IList<FloatingToolDefinition> tools)
         {
+            _tools = tools ?? new List<FloatingToolDefinition>();
             Title = "CE Tools - Discipline Workflow Command Centre";
             Width = 1240.0;
             Height = 820.0;
@@ -350,14 +358,14 @@ namespace CETools.Civil3D
             DockPanel.SetDock(header, Dock.Top);
             root.Children.Add(header);
 
-            var search = new TextBox
+            _search = new TextBox
             {
                 MinWidth = 360.0,
                 Padding = new Thickness(8.0, 5.0, 8.0, 5.0),
                 ToolTip = "Search command, group, panel or tooltip"
             };
-            Grid.SetColumn(search, 0);
-            header.Children.Add(search);
+            Grid.SetColumn(_search, 0);
+            header.Children.Add(_search);
 
             _resultCount = new TextBlock
             {
@@ -370,27 +378,115 @@ namespace CETools.Civil3D
             _tabs = new TabControl();
             root.Children.Add(_tabs);
 
-            foreach (WorkflowDefinition workflow in WorkflowCatalog.Create(tools))
+            AddUsageTab("favorites", "⭐ Favorites");
+            AddUsageTab("mostused", "🔥 Most Used");
+            AddUsageTab("recent", "🕒 Recent");
+            foreach (WorkflowDefinition workflow in WorkflowCatalog.Create(_tools))
                 _tabs.Items.Add(CreateWorkflowTab(workflow));
 
+            if (_tabs.Items.Count > 3) _tabs.SelectedIndex = 3;
+            RefreshUsageTabs();
             UpdateFilter(string.Empty);
-            search.TextChanged += delegate
+            _search.TextChanged += delegate
             {
-                UpdateFilter(search.Text);
+                UpdateFilter(_search.Text);
             };
             Loaded += delegate
             {
-                search.Focus();
+                _search.Focus();
             };
             PreviewKeyDown += delegate(object sender, KeyEventArgs args)
             {
                 if (args.Key == Key.Escape)
                 {
-                    search.Clear();
+                    _search.Clear();
                     args.Handled = true;
                 }
             };
-            _tabs.SelectionChanged += delegate { UpdateFilter(search.Text); };
+            _tabs.SelectionChanged += delegate { UpdateFilter(_search.Text); };
+            CommandUsageTracker.UsageChanged += OnUsageChanged;
+            Closed += delegate { CommandUsageTracker.UsageChanged -= OnUsageChanged; };
+        }
+
+        private void AddUsageTab(string key, string title)
+        {
+            var tab = new TabItem { Header = title, Tag = key };
+            _usageTabs[key] = tab;
+            _tabs.Items.Add(tab);
+        }
+
+        private void OnUsageChanged(object sender, EventArgs args)
+        {
+            Dispatcher.BeginInvoke(new Action(delegate
+            {
+                RefreshUsageTabs();
+                UpdateFilter(_search.Text);
+            }));
+        }
+
+        private void RefreshUsageTabs()
+        {
+            _buttons.RemoveAll(item =>
+                string.Equals(item.WorkflowKey, "favorites", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(item.WorkflowKey, "mostused", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(item.WorkflowKey, "recent", StringComparison.OrdinalIgnoreCase));
+            BuildUsageTab("favorites", CommandUsageTracker.Favorites(),
+                "Right-click any command and choose Add to Favorites.");
+            BuildUsageTab("mostused", CommandUsageTracker.MostUsed(24),
+                "Commands ranked automatically by completed executions.");
+            BuildUsageTab("recent", CommandUsageTracker.Recent(24),
+                "The latest completed CE Tools commands across ribbon, command line and workflow centre.");
+        }
+
+        private void BuildUsageTab(
+            string key,
+            IList<CommandUsageRecord> records,
+            string description)
+        {
+            TabItem tab;
+            if (!_usageTabs.TryGetValue(key, out tab)) return;
+            var page = new StackPanel { Margin = new Thickness(4.0) };
+            page.Children.Add(new TextBlock
+            {
+                Text = description,
+                Foreground = Brushes.DimGray,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(4.0, 4.0, 4.0, 10.0)
+            });
+            var wrap = new WrapPanel();
+            foreach (CommandUsageRecord record in records)
+            {
+                FloatingToolDefinition definition = _tools.FirstOrDefault(item =>
+                    string.Equals(item.Command.Trim(), record.Command,
+                        StringComparison.OrdinalIgnoreCase)) ??
+                    new FloatingToolDefinition(
+                        "Command Catalogue",
+                        "Tracked command",
+                        record.Command,
+                        record.Command + " ",
+                        "Run " + record.Command + ".");
+                Button button = CreateButton(definition, false, null, true);
+                _buttons.Add(new FloatingToolButton(definition, button, key));
+                wrap.Children.Add(button);
+            }
+            if (records.Count == 0)
+            {
+                wrap.Children.Add(new TextBlock
+                {
+                    Text = key == "favorites"
+                        ? "No favorites yet. Right-click a command card to add one."
+                        : "Usage statistics will appear after CE Tools commands complete.",
+                    Margin = new Thickness(8.0),
+                    Foreground = Brushes.Gray
+                });
+            }
+            page.Children.Add(wrap);
+            tab.Content = new ScrollViewer
+            {
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = page
+            };
         }
 
         private TabItem CreateWorkflowTab(WorkflowDefinition workflow)
@@ -430,7 +526,21 @@ namespace CETools.Civil3D
                     if (tool == null)
                         continue;
 
-                    Button stepButton = CreateButton(tool, true);
+                    Button stepButton = CreateButton(
+                        tool,
+                        true,
+                        delegate(Button clicked)
+                        {
+                            bool clear = ReferenceEquals(_activeStep, step) &&
+                                string.Equals(_activeStepWorkflow, workflow.Key,
+                                    StringComparison.OrdinalIgnoreCase);
+                            foreach (Button item in _stepButtons) item.Background = null;
+                            _activeStep = clear ? null : step;
+                            _activeStepWorkflow = clear ? null : workflow.Key;
+                            if (!clear) clicked.Background = Brushes.LightBlue;
+                            UpdateFilter(_search.Text);
+                        },
+                        false);
                     stepButton.Content = new TextBlock
                     {
                         Text = (index + 1).ToString() + ". " + step.Title,
@@ -440,6 +550,9 @@ namespace CETools.Civil3D
                     };
                     stepButton.Width = 150.0;
                     stepButton.MinHeight = 54.0;
+                    stepButton.ToolTip = step.Title +
+                        " — click to show only the commands for this workflow step; click again to show all.";
+                    _stepButtons.Add(stepButton);
                     flow.Children.Add(stepButton);
                     if (index < workflow.Steps.Count - 1)
                     {
@@ -465,7 +578,7 @@ namespace CETools.Civil3D
             var commandWrap = new WrapPanel();
             foreach (FloatingToolDefinition definition in workflow.Tools)
             {
-                Button button = CreateButton(definition, false);
+                Button button = CreateButton(definition, false, null, false);
                 _buttons.Add(new FloatingToolButton(definition, button, workflow.Key));
                 commandWrap.Children.Add(button);
             }
@@ -486,7 +599,9 @@ namespace CETools.Civil3D
 
         private static Button CreateButton(
             FloatingToolDefinition definition,
-            bool workflowStep)
+            bool workflowStep,
+            Action<Button> customClick,
+            bool showUsage)
         {
             var content = new Grid();
             content.ColumnDefinitions.Add(new ColumnDefinition
@@ -523,6 +638,19 @@ namespace CETools.Civil3D
                 FontWeight = FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap
             });
+            if (showUsage)
+            {
+                CommandUsageRecord usage = CommandUsageTracker.Read(
+                    definition.Command);
+                labels.Children.Add(new TextBlock
+                {
+                    Text = UsageSummary(usage),
+                    FontSize = 10.0,
+                    Foreground = Brushes.DarkSlateGray,
+                    TextWrapping = TextWrapping.Wrap,
+                    Margin = new Thickness(0.0, 3.0, 0.0, 0.0)
+                });
+            }
             labels.Children.Add(new TextBlock
             {
                 Text = definition.Panel + " / " + definition.Group,
@@ -554,6 +682,11 @@ namespace CETools.Civil3D
             };
             button.Click += delegate
             {
+                if (customClick != null)
+                {
+                    customClick(button);
+                    return;
+                }
                 var document = AcApplication.DocumentManager.MdiActiveDocument;
                 if (document == null)
                     return;
@@ -564,7 +697,53 @@ namespace CETools.Civil3D
                     false,
                     true);
             };
+            if (!workflowStep)
+            {
+                var favorite = new MenuItem();
+                var menu = new ContextMenu();
+                menu.Items.Add(favorite);
+                menu.Opened += delegate
+                {
+                    favorite.Header = CommandUsageTracker.Read(
+                        definition.Command).IsFavorite
+                        ? "Remove from Favorites"
+                        : "Add to Favorites";
+                };
+                favorite.Click += delegate
+                {
+                    CommandUsageTracker.ToggleFavorite(definition.Command);
+                };
+                button.ContextMenu = menu;
+            }
             return button;
+        }
+
+        private static string UsageSummary(CommandUsageRecord usage)
+        {
+            if (usage == null) return string.Empty;
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                "Clicks {0:N0}  •  time {1}  •  saved ≈{2:N0} clicks / {3}",
+                usage.Clicks,
+                FormatDuration(usage.TotalSeconds),
+                usage.EstimatedClicksSaved,
+                FormatDuration(usage.EstimatedSecondsSaved));
+        }
+
+        private static string FormatDuration(double seconds)
+        {
+            TimeSpan value = TimeSpan.FromSeconds(Math.Max(0.0, seconds));
+            if (value.TotalHours >= 1.0)
+                return string.Format(
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    "{0:0.0}h", value.TotalHours);
+            if (value.TotalMinutes >= 1.0)
+                return string.Format(
+                    System.Globalization.CultureInfo.CurrentCulture,
+                    "{0:0.0}m", value.TotalMinutes);
+            return string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                "{0:0}s", value.TotalSeconds);
         }
 
         private void UpdateFilter(string searchText)
@@ -581,9 +760,13 @@ namespace CETools.Civil3D
                     item.WorkflowKey,
                     selectedWorkflow,
                     StringComparison.OrdinalIgnoreCase);
-                if (onPage)
+                bool matchesStep = _activeStep == null ||
+                    !string.Equals(_activeStepWorkflow, selectedWorkflow,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    _activeStep.Matches(item.Definition);
+                if (onPage && matchesStep)
                     available++;
-                bool show = onPage && (query.Length == 0 ||
+                bool show = onPage && matchesStep && (query.Length == 0 ||
                     item.Definition.SearchText.IndexOf(
                         query,
                         StringComparison.OrdinalIgnoreCase) >= 0);
@@ -643,14 +826,45 @@ namespace CETools.Civil3D
 
     internal sealed class WorkflowStep
     {
-        public WorkflowStep(string title, string command)
+        public WorkflowStep(
+            string title,
+            string command,
+            params string[] filterTokens)
         {
             Title = title;
             Command = command;
+            FilterTokens = (filterTokens ?? new string[0])
+                .Where(item => !string.IsNullOrWhiteSpace(item))
+                .ToList();
+            if (FilterTokens.Count == 0)
+            {
+                var ignored = new HashSet<string>(
+                    new[] { "OPEN", "CREATE", "REVIEW", "GENERATE", "CONFIGURE", "RUN" },
+                    StringComparer.OrdinalIgnoreCase);
+                FilterTokens = (title ?? string.Empty)
+                    .Split(new[] { ' ', '/', '-' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Where(item => item.Length >= 4 && !ignored.Contains(item))
+                    .ToList();
+            }
         }
 
         public string Title { get; private set; }
         public string Command { get; private set; }
+        public IList<string> FilterTokens { get; private set; }
+
+        public bool Matches(FloatingToolDefinition definition)
+        {
+            if (definition == null) return false;
+            if (string.Equals(
+                    definition.Command.Trim(),
+                    Command,
+                    StringComparison.OrdinalIgnoreCase))
+                return true;
+            return FilterTokens.Any(token =>
+                definition.SearchText.IndexOf(
+                    token,
+                    StringComparison.OrdinalIgnoreCase) >= 0);
+        }
     }
 
     internal sealed class WorkflowDefinition
@@ -745,13 +959,14 @@ namespace CETools.Civil3D
                 "sewer", "Sewer", "Sewer Workflow",
                 "Sequence sewer branches, create linked alignments and profiles, validate the network, then create the sewer BOQ and report.",
                 tools, new[] { "SEWER", "SEW", "BRANCH", "NETWORK", "PROFILE", "BOQ" },
-                Step("Sequence network", "CE_SEWSEQ"),
-                Step("Create alignments", "CE_SEWALIGN"),
+                Step("Open Sewer workflow", "CE_SEWTOOLS", "CE_SEWTOOLS"),
+                Step("Sequence network", "CE_SEWSEQ", "CE_SEWSEQ", "CE_SEWLABELS"),
+                Step("Create alignments", "CE_SEWALIGN", "CE_SEWALIGN", "CE_SEWREFRESH", "CE_SEWFORMAT"),
                 Step("Create profile views", "CE_SEWPROFILE"),
-                Step("Configure production settings", "CE_SEWSETTINGS"),
-                Step("Create BOQ", "CE_BOQSEWER"),
-                Step("Refresh cost estimate", "CE_WSCOSTREFRESH"),
-                Step("Generate report", "CE_PRESENTATIONTOOLS"));
+                Step("Configure production settings", "CE_SEWSETTINGS", "CE_SEWSETTINGS", "PROJECT STYLE"),
+                Step("Create BOQ", "CE_BOQSEWER", "CE_BOQSEWER", "SEWER BOQ"),
+                Step("Refresh cost estimate", "CE_WSCOSTREFRESH", "CE_WSCOST"),
+                Step("Generate report", "CE_PRESENTATIONTOOLS", "SEWER REPORT", "DISCIPLINE REPORT"));
 
             yield return Build(
                 "water", "Water", "Water Workflow",
@@ -841,9 +1056,12 @@ namespace CETools.Civil3D
                 .Select(item => item.Tool);
         }
 
-        private static WorkflowStep Step(string title, string command)
+        private static WorkflowStep Step(
+            string title,
+            string command,
+            params string[] filterTokens)
         {
-            return new WorkflowStep(title, command);
+            return new WorkflowStep(title, command, filterTokens);
         }
     }
 }

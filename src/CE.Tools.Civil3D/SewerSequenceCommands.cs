@@ -214,6 +214,9 @@ namespace CETools.Civil3D
                     totalBranches,
                     totalStructures,
                     totalPipes);
+                SewerNetworkLabelCommands.EnsureLabels(
+                    document,
+                    plans.Select(plan => plan.NetworkId));
             }
             catch (System.Exception exception)
             {
@@ -841,6 +844,7 @@ namespace CETools.Civil3D
         {
             Editor editor = document.Editor;
             Database database = document.Database;
+            ObjectId labelledNetworkId = ObjectId.Null;
 
             PromptEntityResult startResult = PromptForStructure(
                 editor,
@@ -908,6 +912,7 @@ namespace CETools.Civil3D
                         editor.WriteMessage("\nUnable to open the selected pipe network.");
                         return;
                     }
+                    labelledNetworkId = network.ObjectId;
 
                     PathResult path = FindShortestPath(
                         network,
@@ -964,6 +969,12 @@ namespace CETools.Civil3D
                         branchName,
                         path.StructureIds.Count,
                         path.PipeIds.Count);
+                }
+                if (!labelledNetworkId.IsNull)
+                {
+                    SewerNetworkLabelCommands.EnsureLabels(
+                        document,
+                        new[] { labelledNetworkId });
                 }
             }
             catch (System.Exception exception)

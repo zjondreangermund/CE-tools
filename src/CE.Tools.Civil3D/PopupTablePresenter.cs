@@ -119,9 +119,9 @@ namespace CETools.Civil3D
                     PaperAnnotationScale.SetAnnotative(table);
 
                     table.SetSize(dataCount + 2, 2);
-                    table.SetRowHeight(textHeight * 2.4);
-                    table.Columns[0].Width = textHeight * 20.0;
-                    table.Columns[1].Width = textHeight * 45.0;
+                    table.SetRowHeight(textHeight * 2.2);
+                    table.Columns[0].Width = textHeight * 16.0;
+                    table.Columns[1].Width = textHeight * 36.0;
 
                     table.MergeCells(CellRange.Create(table, 0, 0, 0, 1));
                     table.Cells[0, 0].TextString = string.IsNullOrWhiteSpace(tableTitle)
@@ -192,9 +192,9 @@ namespace CETools.Civil3D
                     double height = ResolveTextHeight(database);
                     int dataCount = rows == null ? 0 : rows.Count;
                     table.SetSize(dataCount + 2, 2);
-                    table.SetRowHeight(height * 2.4);
-                    table.Columns[0].Width = height * 20.0;
-                    table.Columns[1].Width = height * 45.0;
+                    table.SetRowHeight(height * 2.2);
+                    table.Columns[0].Width = height * 16.0;
+                    table.Columns[1].Width = height * 36.0;
                     table.Cells[0, 0].TextString = tableTitle;
                     table.Cells[0, 0].TextHeight = height * 1.15;
                     table.Cells[0, 0].Alignment = CellAlignment.MiddleCenter;
@@ -229,9 +229,13 @@ namespace CETools.Civil3D
         {
             if (database == null) return 2.0;
             AnnotationOptions settings = AnnotationSettingsStore.Read(database);
+            double requested = settings == null ? 1.8 : settings.TextHeight;
+            // Information tables are schedules, not drawing titles.  Keep them
+            // compact even when the active annotation default is 3.5 or 5.0 mm.
+            requested = Math.Min(2.0, Math.Max(1.8, requested));
             return PaperAnnotationScale.ModelTextHeight(
                 database,
-                settings == null ? 2.0 : settings.TextHeight);
+                requested);
         }
 
         private enum PopupWindowAction

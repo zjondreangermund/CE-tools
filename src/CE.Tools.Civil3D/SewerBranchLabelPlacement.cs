@@ -16,9 +16,11 @@ namespace CETools.Civil3D
     internal static class SewerBranchLabelPlacement
     {
         // Integration trigger: keep this helper wired into the active sewer alignment command.
-        internal const double DefaultPaperHeight = 3.5;
+        // Previous compatibility baseline was DefaultPaperHeight = 3.5; the
+        // approved sewer production presentation now uses 5.0 mm.
+        internal const double DefaultPaperHeight = 5.0;
         internal const double RepeatSpacing = 50.0;
-        internal const double OffsetFactor = 5.0;
+        internal const double OffsetFactor = 2.75;
         internal const int MaximumLabelsPerBranch = 200;
         private const double GeometryTolerance = 1e-8;
 
@@ -152,11 +154,17 @@ namespace CETools.Civil3D
                 ? AttachmentPoint.BottomCenter
                 : AttachmentPoint.TopCenter;
             label.Annotative = AnnotativeStates.True;
-            label.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
-                database,
-                paperHeight);
+            // Civil 3D's Properties palette reports annotative MText paper height
+            // from the entity's raw height.  Store the requested CE paper value
+            // directly so 5.0 mm remains 5.0 (instead of displaying 0.005 in a
+            // metre drawing) while annotation contexts handle viewport scaling.
+            // This label intentionally does not use
+            // PaperAnnotationScale.AnnotativeTextHeight because that conversion
+            // is exactly what makes the palette display 0.005.
+            label.TextHeight = PaperAnnotationScale.NormalizePaperHeight(paperHeight);
             label.Rotation = placement.Rotation;
             label.Contents = branchName ?? string.Empty;
+            label.ColorIndex = 3;
             label.BackgroundFill = true;
             label.UseBackgroundColor = true;
         }
