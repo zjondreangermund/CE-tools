@@ -191,6 +191,7 @@ namespace CETools.Civil3D
             model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set for generated profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles));
             model.AddText("ProfileLayer", "Layers and Annotation", "Profile output layer", settings.ProfileLayer, "Layer for sewer profiles and profile views.");
             model.AddPaperHeight("LabelHeight", "Layers and Annotation", "Plan branch-label paper height", settings.LabelHeight, "Select a standard annotative paper height or enter another positive value.");
+            model.AddChoice("BranchLabelSide", "Layers and Annotation", "Branch-label offset side", settings.BranchLabelSide, "Place every branch name above, below, or alternate sides while keeping it clear of the alignment.", new[] { "Alternating", "Above", "Below" });
             model.AddPositiveInteger("ProfileColumns", "Profile View Layout", "Profile views per row", settings.ProfileColumns, "Number of generated views before wrapping to the next row.");
             model.AddPositiveDouble("ProfileHorizontalSpacing", "Profile View Layout", "Horizontal spacing", settings.ProfileHorizontalSpacing, "Drawing-unit spacing between profile-view columns.");
             model.AddPositiveDouble("ProfileVerticalSpacing", "Profile View Layout", "Vertical spacing", settings.ProfileVerticalSpacing, "Drawing-unit spacing between profile-view rows.");
@@ -203,6 +204,7 @@ namespace CETools.Civil3D
             settings.ProfileViewBandSetStyle = model.Text("ProfileViewBandSetStyle");
             settings.ProfileLayer = model.Text("ProfileLayer");
             settings.LabelHeight = model.Double("LabelHeight", settings.LabelHeight);
+            settings.BranchLabelSide = model.Text("BranchLabelSide");
             settings.ProfileColumns = model.Integer("ProfileColumns", settings.ProfileColumns);
             settings.ProfileHorizontalSpacing = model.Double("ProfileHorizontalSpacing", settings.ProfileHorizontalSpacing);
             settings.ProfileVerticalSpacing = model.Double("ProfileVerticalSpacing", settings.ProfileVerticalSpacing);
@@ -341,7 +343,9 @@ namespace CETools.Civil3D
                         // aware perpendicular offset. Do not collapse those
                         // positions back onto the alignment centre here.
                         label.Annotative = AnnotativeStates.True;
-                        label.TextHeight = settings.LabelHeight;
+                        label.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                            database,
+                            settings.LabelHeight);
                         labelsMoved++;
                     }
 
@@ -979,9 +983,17 @@ namespace CETools.Civil3D
                     var title = new MText();
                     title.SetDatabaseDefaults(database);
                     title.LayerId = layerId;
-                    title.Location = location + new Vector3d(0.0, settings.LabelHeight * 4.0, 0.0);
+                    title.Location = location + new Vector3d(
+                        0.0,
+                        PaperAnnotationScale.ModelDistance(
+                            database,
+                            settings.LabelHeight * 4.0),
+                        0.0);
                     title.Attachment = AttachmentPoint.BottomLeft;
-                    title.TextHeight = settings.LabelHeight;
+                    title.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                        database,
+                        settings.LabelHeight);
+                    PaperAnnotationScale.SetAnnotative(title);
                     title.Contents = record.BranchName.ToUpperInvariant() +
                         " SEWER PROFILE\\PProfile: " + profileStyleName +
                         " | View: " + viewStyleName + " | Bands: " + bandName;
@@ -1502,6 +1514,7 @@ namespace CETools.Civil3D
         public string ProfileViewBandSetStyle { get; set; } = string.Empty;
         public string ProfileLayer { get; set; } = "CE-SEWER-PROFILE";
         public double LabelHeight { get; set; } = 2.5;
+        public string BranchLabelSide { get; set; } = "Alternating";
         public int ProfileColumns { get; set; } = 2;
         public double ProfileHorizontalSpacing { get; set; } = 250.0;
         public double ProfileVerticalSpacing { get; set; } = 120.0;
@@ -1565,6 +1578,7 @@ namespace CETools.Civil3D
                     Value("ProfileViewBandSetStyle", ProfileViewBandSetStyle),
                     Value("ProfileLayer", ProfileLayer),
                     Value("LabelHeight", LabelHeight.ToString("R", CultureInfo.InvariantCulture)),
+                    Value("BranchLabelSide", BranchLabelSide),
                     Value("ProfileColumns", ProfileColumns.ToString(CultureInfo.InvariantCulture)),
                     Value("ProfileHorizontalSpacing", ProfileHorizontalSpacing.ToString("R", CultureInfo.InvariantCulture)),
                     Value("ProfileVerticalSpacing", ProfileVerticalSpacing.ToString("R", CultureInfo.InvariantCulture)));
@@ -1585,6 +1599,7 @@ namespace CETools.Civil3D
             else if (key == "ProfileViewStyle") settings.ProfileViewStyle = value;
             else if (key == "ProfileViewBandSetStyle") settings.ProfileViewBandSetStyle = value;
             else if (key == "ProfileLayer") settings.ProfileLayer = value;
+            else if (key == "BranchLabelSide") settings.BranchLabelSide = value;
             else if (key == "LabelHeight")
             {
                 double height;

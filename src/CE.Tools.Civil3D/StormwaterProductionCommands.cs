@@ -80,6 +80,7 @@ namespace CETools.Civil3D
             model.AddText("AlignmentLayer", "Layers and Annotation", "Alignment layer", settings.AlignmentLayer, "Layer for CE stormwater alignments and plan labels.");
             model.AddText("ProfileLayer", "Layers and Annotation", "Profile layer", settings.ProfileLayer, "Layer for generated profiles and profile views.");
             model.AddPaperHeight("LabelTextHeight", "Layers and Annotation", "Plan branch-label paper height", settings.LabelTextHeight, "Select 1.8, 2.0, 2.5, 3.5 or 5.0, or enter another positive height.");
+            model.AddChoice("BranchLabelSide", "Layers and Annotation", "Branch-label offset side", settings.BranchLabelSide, "Place branch names above, below, or alternate sides at a scale-aware perpendicular offset.", new[] { "Alternating", "Above", "Below" });
             model.AddPositiveInteger("ProfileColumns", "Profile View Layout", "Profile views per row", settings.ProfileColumns, "Number of generated views before wrapping to the next row.");
             model.AddPositiveDouble("ProfileHorizontalSpacing", "Profile View Layout", "Horizontal spacing", settings.ProfileHorizontalSpacing, "Drawing-unit spacing between profile-view columns.");
             model.AddPositiveDouble("ProfileVerticalSpacing", "Profile View Layout", "Vertical spacing", settings.ProfileVerticalSpacing, "Drawing-unit spacing between profile-view rows.");
@@ -94,6 +95,7 @@ namespace CETools.Civil3D
             settings.AlignmentLayer = model.Text("AlignmentLayer");
             settings.ProfileLayer = model.Text("ProfileLayer");
             settings.LabelTextHeight = model.Double("LabelTextHeight", settings.LabelTextHeight);
+            settings.BranchLabelSide = model.Text("BranchLabelSide");
             settings.ProfileColumns = model.Integer("ProfileColumns", settings.ProfileColumns);
             settings.ProfileHorizontalSpacing = model.Double("ProfileHorizontalSpacing", settings.ProfileHorizontalSpacing);
             settings.ProfileVerticalSpacing = model.Double("ProfileVerticalSpacing", settings.ProfileVerticalSpacing);
@@ -126,22 +128,19 @@ namespace CETools.Civil3D
                 return;
             }
 
-            PromptKeywordOptions sourceOptions = new PromptKeywordOptions(
-                "\nStormwater alignment source [Network/Polylines] <Network>: ")
-            {
-                AllowNone = true
-            };
-            sourceOptions.Keywords.Add("Network");
-            sourceOptions.Keywords.Add("Polylines");
-            PromptResult sourceResult = editor.GetKeywords(sourceOptions);
-            if (sourceResult.Status == PromptStatus.Cancel)
-                return;
+            string sourceChoice = DisciplineWorkflowDialogs.SelectWorkflow(
+                "CE Tools - Stormwater Alignment Source",
+                "Choose the source type. Civil 3D object selection continues in the drawing canvas.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Existing pipe network", "Network", "Build branch alignments from selected stormwater pipes and structures.", "01 Source"),
+                    new DisciplineWorkflowAction("Selected polylines", "Polylines", "Build branches from one or more selected open polylines.", "01 Source")
+                });
+            if (string.IsNullOrWhiteSpace(sourceChoice)) return;
 
-            bool fromPolylines =
-                sourceResult.Status == PromptStatus.OK &&
-                sourceResult.StringResult.Equals(
-                    "Polylines",
-                    StringComparison.OrdinalIgnoreCase);
+            bool fromPolylines = sourceChoice.Equals(
+                "Polylines",
+                StringComparison.OrdinalIgnoreCase);
 
             List<StormwaterAlignmentPlan> plans;
             int unsupported;
@@ -710,22 +709,20 @@ namespace CETools.Civil3D
             Database database = document.Database;
             unsupported = 0;
 
-            PromptKeywordOptions mainOptions = new PromptKeywordOptions(
-                "\nPolyline main branch [Automatic/SelectMain] <Automatic>: ")
-            {
-                AllowNone = true
-            };
-            mainOptions.Keywords.Add("Automatic");
-            mainOptions.Keywords.Add("SelectMain");
-            PromptResult mainResult = editor.GetKeywords(mainOptions);
-            if (mainResult.Status == PromptStatus.Cancel)
+            string mainChoice = DisciplineWorkflowDialogs.SelectWorkflow(
+                "CE Tools - Stormwater Main Branch",
+                "Choose automatic sequencing or identify the main branch before selecting the remaining polylines.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Automatic main branch", "Automatic", "CE Tools orders the selected branches automatically.", "01 Sequence"),
+                    new DisciplineWorkflowAction("Select main branch first", "SelectMain", "Pick the main polyline first, then select the complete network.", "01 Sequence")
+                });
+            if (string.IsNullOrWhiteSpace(mainChoice))
                 return new List<StormwaterAlignmentPlan>();
 
-            bool selectMain =
-                mainResult.Status == PromptStatus.OK &&
-                mainResult.StringResult.Equals(
-                    "SelectMain",
-                    StringComparison.OrdinalIgnoreCase);
+            bool selectMain = mainChoice.Equals(
+                "SelectMain",
+                StringComparison.OrdinalIgnoreCase);
 
             ObjectId selectedMainId = ObjectId.Null;
             if (selectMain)
@@ -1002,32 +999,40 @@ namespace CETools.Civil3D
                         plan.SourceHandles);
                     alignmentsCreated++;
 
-                    Point3d midpoint = GetMidpoint(plan.PlanPoints);
-                    Vector3d normal = GetMidpointNormal(plan.PlanPoints);
-                    double offset =
-                        settings.LabelTextHeight *
-                        (2.0 + (index % 3) * 1.5);
-                    Point3d labelPoint = midpoint + normal * offset;
-
-                    var label = new MText();
-                    label.SetDatabaseDefaults(database);
-                    label.LayerId = layerId;
-                    label.Location = labelPoint;
-                    label.Attachment = AttachmentPoint.MiddleCenter;
-                    label.TextHeight = settings.LabelTextHeight;
-                    label.Contents = plan.BranchKey;
-                    label.BackgroundFill = true;
-                    label.UseBackgroundColor = true;
-                    WriteProductionTag(
-                        label,
-                        StormwaterMetadata.AlignmentRegAppName,
-                        plan.BranchKey,
-                        "Label",
-                        plan.SourceKind,
-                        plan.SourceHandles);
-                    modelSpace.AppendEntity(label);
-                    transaction.AddNewlyCreatedDBObject(label, true);
-                    labelsCreated++;
+                    bool placeAbove = string.Equals(
+                            settings.BranchLabelSide,
+                            "Above",
+                            StringComparison.OrdinalIgnoreCase) ||
+                        (!string.Equals(
+                            settings.BranchLabelSide,
+                            "Below",
+                            StringComparison.OrdinalIgnoreCase) &&
+                         index % 2 == 0);
+                    IReadOnlyList<SewerBranchLabelPlacement.Placement> placements =
+                        SewerBranchLabelPlacement.BuildPlacements(plan.PlanPoints);
+                    foreach (SewerBranchLabelPlacement.Placement placement in placements)
+                    {
+                        var label = new MText();
+                        label.SetDatabaseDefaults(database);
+                        label.LayerId = layerId;
+                        SewerBranchLabelPlacement.ConfigureLabel(
+                            label,
+                            database,
+                            placement,
+                            plan.BranchKey,
+                            settings.LabelTextHeight,
+                            placeAbove);
+                        WriteProductionTag(
+                            label,
+                            StormwaterMetadata.AlignmentRegAppName,
+                            plan.BranchKey,
+                            "Label",
+                            plan.SourceKind,
+                            plan.SourceHandles);
+                        modelSpace.AppendEntity(label);
+                        transaction.AddNewlyCreatedDBObject(label, true);
+                        labelsCreated++;
+                    }
                 }
 
                 transaction.Commit();
@@ -1239,9 +1244,17 @@ namespace CETools.Civil3D
                     title.SetDatabaseDefaults(database);
                     title.LayerId = layerId;
                     title.Location = location +
-                        new Vector3d(0.0, settings.LabelTextHeight * 4.0, 0.0);
+                        new Vector3d(
+                            0.0,
+                            PaperAnnotationScale.ModelDistance(
+                                database,
+                                settings.LabelTextHeight * 4.0),
+                            0.0);
                     title.Attachment = AttachmentPoint.BottomLeft;
-                    title.TextHeight = settings.LabelTextHeight;
+                    title.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                        database,
+                        settings.LabelTextHeight);
+                    PaperAnnotationScale.SetAnnotative(title);
                     title.Contents =
                         record.BranchKey +
                         " STORMWATER PROFILE" +
@@ -2194,6 +2207,7 @@ namespace CETools.Civil3D
         public string AlignmentLayer { get; set; } = "CE-SW-ALIGNMENT";
         public string ProfileLayer { get; set; } = "CE-SW-PROFILE";
         public double LabelTextHeight { get; set; } = 2.5;
+        public string BranchLabelSide { get; set; } = "Alternating";
         public int ProfileColumns { get; set; } = 2;
         public double ProfileHorizontalSpacing { get; set; } = 250.0;
         public double ProfileVerticalSpacing { get; set; } = 120.0;
@@ -2321,6 +2335,7 @@ namespace CETools.Civil3D
                         LabelTextHeight.ToString(
                             "R",
                             CultureInfo.InvariantCulture)),
+                    ToValue("BranchLabelSide", BranchLabelSide),
                     ToValue("ProfileColumns", ProfileColumns.ToString(CultureInfo.InvariantCulture)),
                     ToValue("ProfileHorizontalSpacing", ProfileHorizontalSpacing.ToString("R", CultureInfo.InvariantCulture)),
                     ToValue("ProfileVerticalSpacing", ProfileVerticalSpacing.ToString("R", CultureInfo.InvariantCulture)));
@@ -2370,6 +2385,8 @@ namespace CETools.Civil3D
                     height > 0.0)
                     settings.LabelTextHeight = height;
             }
+            else if (key == "BranchLabelSide")
+                settings.BranchLabelSide = value;
             else if (key == "ProfileColumns")
             {
                 int columns;

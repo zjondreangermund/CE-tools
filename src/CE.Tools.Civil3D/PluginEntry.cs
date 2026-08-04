@@ -106,6 +106,34 @@ namespace CETools.Civil3D
             // CE Tools owns this tab. Rebuild it so stale panels and duplicate
             // buttons cannot remain after an upgrade or ribbon reload.
             tab.Panels.Clear();
+            try
+            {
+                BuildPanels(tab);
+            }
+            catch (System.Exception firstException)
+            {
+                // Runtime icon rendering varies between Civil 3D display stacks.
+                // A text-only retry guarantees that the tab never remains blank.
+                RibbonVisuals.SetMode(RibbonIconMode.TextOnly);
+                tab.Panels.Clear();
+                try
+                {
+                    BuildPanels(tab);
+                }
+                catch
+                {
+                    tab.Panels.Clear();
+                    throw new InvalidOperationException(
+                        "CE Tools could not build its ribbon panels. " +
+                        firstException.Message,
+                        firstException);
+                }
+            }
+            return true;
+        }
+
+        private static void BuildPanels(RibbonTab tab)
+        {
             AddProjectPanel(tab);
             AddSurveyPanel(tab);
             AddDrawingsPanel(tab);
@@ -117,7 +145,6 @@ namespace CETools.Civil3D
             AddAnalysisPanel(tab);
             AddAdvancedPanel(tab);
             AddProductionPanel(tab);
-            return true;
         }
 
         private static void AddProjectPanel(RibbonTab tab)
@@ -749,8 +776,9 @@ namespace CETools.Civil3D
                 LargeImage = RibbonVisuals.Large(id),
                 ToolTip = toolTip
             };
+            int commandIndex = 0;
             foreach (RibbonCommandDefinition command in commands)
-                menu.Items.Add(CreateCommandButton(command));
+                menu.Items.Add(CreateCommandButton(command, id, commandIndex++));
             return menu;
         }
 
@@ -763,11 +791,15 @@ namespace CETools.Civil3D
         }
 
         private static RibbonButton CreateCommandButton(
-            RibbonCommandDefinition definition)
+            RibbonCommandDefinition definition,
+            string menuId,
+            int commandIndex)
         {
             return new RibbonButton
             {
-                Id = "CE_TOOLS_COMMAND_" + definition.Command.Trim().Replace(' ', '_'),
+                Id = (menuId ?? "CE_TOOLS_MENU") + "_COMMAND_" +
+                    commandIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) +
+                    "_" + definition.Command.Trim().Replace(' ', '_'),
                 Text = definition.Text,
                 ShowText = true,
                 ShowImage = true,

@@ -98,7 +98,7 @@ namespace CETools.Civil3D
                 return;
             }
 
-            double textHeight = ResolveTextHeight();
+            double textHeight = ResolveTextHeight(document.Database);
             int dataCount = rows == null ? 0 : rows.Count;
 
             try
@@ -116,6 +116,7 @@ namespace CETools.Civil3D
                         TableStyle = document.Database.Tablestyle,
                         Position = pointResult.Value
                     };
+                    PaperAnnotationScale.SetAnnotative(table);
 
                     table.SetSize(dataCount + 2, 2);
                     table.SetRowHeight(textHeight * 2.4);
@@ -163,23 +164,13 @@ namespace CETools.Civil3D
             }
         }
 
-        private static double ResolveTextHeight()
+        private static double ResolveTextHeight(Database database)
         {
-            try
-            {
-                object value = AcApplication.GetSystemVariable("TEXTSIZE");
-                double height = Convert.ToDouble(value);
-                if (height > 0.0)
-                {
-                    return Math.Max(1.8, Math.Min(5.0, height));
-                }
-            }
-            catch
-            {
-                // Use the CE Tools default below.
-            }
-
-            return 2.0;
+            if (database == null) return 2.0;
+            AnnotationOptions settings = AnnotationSettingsStore.Read(database);
+            return PaperAnnotationScale.ModelTextHeight(
+                database,
+                settings == null ? 2.0 : settings.TextHeight);
         }
 
         private enum PopupWindowAction

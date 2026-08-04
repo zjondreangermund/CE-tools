@@ -345,7 +345,10 @@ namespace CETools.Civil3D
                         label.LayerId = alignmentLayerId;
                         label.Location = GetRouteLabelPoint(source.Points, created - 1, settings.LabelHeight);
                         label.Attachment = AttachmentPoint.MiddleCenter;
-                        label.TextHeight = settings.LabelHeight;
+                        label.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                            document.Database,
+                            settings.LabelHeight);
+                        PaperAnnotationScale.SetAnnotative(label);
                         label.Contents = source.RouteName;
                         label.BackgroundFill = true;
                         label.UseBackgroundColor = true;
@@ -644,7 +647,10 @@ namespace CETools.Civil3D
                             settings.AssetRadius * 1.8,
                             settings.AssetRadius * 1.8,
                             0.0);
-                        label.TextHeight = settings.LabelHeight;
+                        label.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                            document.Database,
+                            settings.LabelHeight);
+                        PaperAnnotationScale.SetAnnotative(label);
                         label.Attachment = AttachmentPoint.BottomLeft;
                         label.Contents =
                             proposal.AssetCode + "\n" +

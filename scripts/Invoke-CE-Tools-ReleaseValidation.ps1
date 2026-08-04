@@ -252,7 +252,8 @@ try {
         "Validate-RefreshAll.py",
         "Validate-DynamicProduction.py",
         "Validate-CommandRegistry.py",
-        "Validate-RestoredCommandSurface.py"
+        "Validate-RestoredCommandSurface.py",
+        "Validate-RuntimePresentationRepairs.py"
     )
     foreach ($validator in $validators) {
         $path = Join-Path $PSScriptRoot $validator

@@ -6,6 +6,7 @@ using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
+using Autodesk.Civil.ApplicationServices;
 using CivilCogoPoint = Autodesk.Civil.DatabaseServices.CogoPoint;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
 
@@ -112,13 +113,32 @@ namespace CETools.Civil3D
         {
             if (database == null || pointId.IsNull || pointId.IsErased) return;
             string value = (pointName ?? string.Empty).Trim();
+            if (value.Length > 0)
+            {
+                try
+                {
+                    CivilDocument civilDocument = CivilApplication.ActiveDocument;
+                    if (civilDocument != null)
+                    {
+                        civilDocument.CogoPoints.SetRawDescription(
+                            new List<ObjectId> { pointId },
+                            new List<string> { value });
+                    }
+                }
+                catch
+                {
+                    // Non-COGO anchors do not participate in the Civil collection.
+                }
+            }
             using (Transaction tr = database.TransactionManager.StartTransaction())
             {
                 DBObject target = tr.GetObject(pointId, OpenMode.ForWrite, false);
                 CivilCogoPoint cogo = target as CivilCogoPoint;
                 if (cogo != null && value.Length > 0)
                 {
-                    try { cogo.PointName = value; cogo.RawDescription = value; }
+                    try { cogo.PointName = value; }
+                    catch { }
+                    try { cogo.RawDescription = value; }
                     catch { }
                 }
                 Write(target, tr, PointNameRecord,

@@ -145,9 +145,11 @@ namespace CETools.Civil3D
                         location.Y + (textHeight * 5.0),
                         location.Z);
 
-                    string pointId = string.IsNullOrWhiteSpace(point.PointName)
-                        ? point.PointNumber.ToString(CultureInfo.InvariantCulture)
-                        : point.PointName;
+                    string pointId = !string.IsNullOrWhiteSpace(point.RawDescription)
+                        ? point.RawDescription
+                        : !string.IsNullOrWhiteSpace(point.PointName)
+                            ? point.PointName
+                            : "P" + point.PointNumber.ToString(CultureInfo.InvariantCulture);
 
                     AddMLeader(
                         database,
@@ -299,6 +301,7 @@ namespace CETools.Civil3D
                 table.SetDatabaseDefaults(database);
                 table.TableStyle = database.Tablestyle;
                 table.Position = insertionPoint;
+                PaperAnnotationScale.SetAnnotative(table);
                 table.SetSize(records.Count + 2, 6);
 
                 double textHeight = GetTextHeight(database);
@@ -321,7 +324,12 @@ namespace CETools.Civil3D
                 for (int column = 0; column < headings.Length; column++)
                 {
                     table.Cells[1, column].TextString = headings[column];
+                    table.Cells[1, column].TextHeight = textHeight;
+                    table.Cells[1, column].Alignment = CellAlignment.MiddleCenter;
                 }
+
+                table.Cells[0, 0].TextHeight = textHeight * 1.15;
+                table.Cells[0, 0].Alignment = CellAlignment.MiddleCenter;
 
                 for (int index = 0; index < records.Count; index++)
                 {
@@ -333,6 +341,11 @@ namespace CETools.Civil3D
                     table.Cells[row, 3].TextString = record.Y.ToString("N3", CultureInfo.CurrentCulture);
                     table.Cells[row, 4].TextString = record.Z.ToString("N3", CultureInfo.CurrentCulture);
                     table.Cells[row, 5].TextString = string.Empty;
+                    for (int column = 0; column < headings.Length; column++)
+                    {
+                        table.Cells[row, column].TextHeight = textHeight;
+                        table.Cells[row, column].Alignment = CellAlignment.MiddleCenter;
+                    }
                 }
 
                 currentSpace.AppendEntity(table);
@@ -363,6 +376,7 @@ namespace CETools.Civil3D
             leader.SetDatabaseDefaults(database);
             leader.ContentType = ContentType.MTextContent;
             leader.MText = mtext;
+            PaperAnnotationScale.SetAnnotative(leader);
 
             int leaderIndex = leader.AddLeader();
             int leaderLineIndex = leader.AddLeaderLine(leaderIndex);
@@ -405,10 +419,10 @@ namespace CETools.Civil3D
 
         private static double GetTextHeight(Database database)
         {
-            double textHeight = database.Textsize;
-            return textHeight > 0.0 && !double.IsNaN(textHeight) && !double.IsInfinity(textHeight)
-                ? textHeight
-                : 2.5;
+            AnnotationOptions settings = AnnotationSettingsStore.Read(database);
+            return PaperAnnotationScale.ModelTextHeight(
+                database,
+                settings == null ? 2.0 : settings.TextHeight);
         }
 
         private static BlockTableRecord GetCurrentSpace(

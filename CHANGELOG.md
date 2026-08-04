@@ -39,6 +39,24 @@ All notable CE Tools changes will be recorded here.
 
 ### Changed
 
+- Repaired the installed Civil 3D 2023 presentation path: the CE TOOLS ribbon
+  now falls back to text-only controls if cached icon creation fails, and menu
+  item identifiers are unique across the complete command surface.
+- Corrected CE annotation semantics so 1.8, 2.0, 2.5, 3.5 and 5.0 are paper
+  text heights; MText, MLeaders, branch labels and tables now calculate their
+  model-space size from the active annotation scale and drawing units.
+- Sewer and stormwater branch labels repeat along long branches and use a
+  selectable Above, Below or Alternating perpendicular offset instead of being
+  placed directly over the alignment.
+- Linked coordinate naming now writes the Civil 3D COGO raw description and
+  coordinate tables prefer that raw description, keeping visible point labels
+  and table names such as P1 synchronized.
+- Project Style Centre now reads Civil 3D style collections through enumerable,
+  object-ID and indexed collection APIs and keeps its selector area clear at
+  Civil 3D display scaling.
+- Coordinate naming/register choices, stormwater source/main-branch choices and
+  ribbon visual settings now use popup windows while drawing picks remain in the
+  Civil 3D canvas.
 - Stormwater, Sewer and Water confirmations now use modal Yes/No windows, while
   drawing-dependent insertion-point selection remains in the Civil 3D canvas.
 - Standard annotation paper heights 1.8, 2.0, 2.5, 3.5 and 5.0 are selectable

@@ -147,27 +147,11 @@ namespace CETools.Civil3D
             if (!PromptOptionalSurface(document, out surfaceId)) return;
 
             Editor editor = document.Editor;
-            PromptResult prefixResult = editor.GetString(
-                new PromptStringOptions("\nPoint-name prefix <P>: ")
-                {
-                    AllowSpaces = false,
-                    DefaultValue = "P",
-                    UseDefaultValue = true
-                });
-            if (prefixResult.Status != PromptStatus.OK) return;
+            string pointPrefix;
+            int pointStart;
+            if (!PromptPointSequence(editor, "P", 1, out pointPrefix, out pointStart)) return;
 
-            PromptIntegerResult startResult = editor.GetInteger(
-                new PromptIntegerOptions("\nStarting point-name sequence <1>: ")
-                {
-                    AllowNegative = false,
-                    AllowZero = false,
-                    DefaultValue = 1,
-                    LowerLimit = 1,
-                    UseDefaultValue = true
-                });
-            if (startResult.Status != PromptStatus.OK) return;
-
-            int sequence = startResult.Value;
+            int sequence = pointStart;
             int placed = 0;
             ObjectId tableId = ObjectId.Null;
             while (true)
@@ -186,7 +170,7 @@ namespace CETools.Civil3D
                 if (pointResult.Status != PromptStatus.OK) break;
 
                 string pointName = FormatPointName(
-                    prefixResult.StringResult,
+                    pointPrefix,
                     sequence++);
                 Point3d target = SampleSurface(
                     document.Database,
@@ -221,7 +205,9 @@ namespace CETools.Civil3D
                             document.Database,
                             sourceId,
                             pointName);
-                        double offset = settings.TextHeight * 2.5;
+                        double offset = PaperAnnotationScale.ModelDistance(
+                            document.Database,
+                            settings.TextHeight * 2.5);
                         Point3d labelPoint = new Point3d(
                             target.X + offset,
                             target.Y + offset,
@@ -623,25 +609,14 @@ namespace CETools.Civil3D
             }
 
             string defaultPrefix = BuildPrefix(string.Empty);
-            PromptResult prefixResult = editor.GetString(
-                new PromptStringOptions("\nPoint-name prefix <" + defaultPrefix + ">: ")
-                {
-                    AllowSpaces = false,
-                    DefaultValue = defaultPrefix,
-                    UseDefaultValue = true
-                });
-            if (prefixResult.Status != PromptStatus.OK) return;
-
-            PromptIntegerResult startResult = editor.GetInteger(
-                new PromptIntegerOptions("\nStarting point-name sequence <1>: ")
-                {
-                    AllowNegative = false,
-                    AllowZero = false,
-                    DefaultValue = 1,
-                    LowerLimit = 1,
-                    UseDefaultValue = true
-                });
-            if (startResult.Status != PromptStatus.OK) return;
+            string pointPrefix;
+            int pointStart;
+            if (!PromptPointSequence(
+                    editor,
+                    defaultPrefix,
+                    1,
+                    out pointPrefix,
+                    out pointStart)) return;
 
             PromptPointResult insertion = editor.GetPoint(
                 "\nPick insertion point for the compact X-Y-Z vertex table: ");
@@ -654,8 +629,8 @@ namespace CETools.Civil3D
             for (int index = 0; index < vertices.Count; index++)
             {
                 pointNames.Add(FormatPointName(
-                    prefixResult.StringResult,
-                    startResult.Value + index));
+                    pointPrefix,
+                    pointStart + index));
             }
 
             var createdIds = new List<ObjectId>();
@@ -706,7 +681,9 @@ namespace CETools.Civil3D
                             anchorId,
                             pointNames[index]);
 
-                        double offset = settings.TextHeight * 2.5;
+                        double offset = PaperAnnotationScale.ModelDistance(
+                            document.Database,
+                            settings.TextHeight * 2.5);
                         Point3d labelPoint = new Point3d(
                             vertex.X + offset,
                             vertex.Y + (index % 2 == 0 ? offset : -offset),
@@ -819,9 +796,11 @@ namespace CETools.Civil3D
                     text.SetDatabaseDefaults(database);
                     text.Location = labelPoint;
                     text.Attachment = AttachmentPoint.MiddleLeft;
-                    text.TextHeight = settings.TextHeight;
+                    text.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                        database,
+                        settings.TextHeight);
                     text.Contents = contents;
-                    SetAnnotative(text);
+                    PaperAnnotationScale.SetAnnotative(text);
                     ObjectId textId = currentSpace.AppendEntity(text);
                     transaction.AddNewlyCreatedDBObject(text, true);
                     created.Add(textId);
@@ -831,14 +810,16 @@ namespace CETools.Civil3D
                     var text = new MText();
                     text.SetDatabaseDefaults(database);
                     text.Location = labelPoint;
-                    text.TextHeight = settings.TextHeight;
+                    text.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                        database,
+                        settings.TextHeight);
                     text.Contents = contents;
 
                     var leader = new MLeader();
                     leader.SetDatabaseDefaults(database);
                     leader.ContentType = ContentType.MTextContent;
                     leader.MText = text;
-                    SetAnnotative(leader);
+                    PaperAnnotationScale.SetAnnotative(leader);
                     int leaderIndex = leader.AddLeader();
                     int leaderLineIndex = leader.AddLeaderLine(leaderIndex);
                     leader.AddFirstVertex(leaderLineIndex, target);
@@ -883,7 +864,9 @@ namespace CETools.Civil3D
             var marker = new Circle(
                 target,
                 Vector3d.ZAxis,
-                Math.Max(textHeight * 0.25, 0.001));
+                Math.Max(
+                    PaperAnnotationScale.ModelDistance(database, textHeight * 0.25),
+                    0.001));
             marker.SetDatabaseDefaults(database);
             ObjectId markerId = currentSpace.AppendEntity(marker);
             transaction.AddNewlyCreatedDBObject(marker, true);
@@ -932,7 +915,9 @@ namespace CETools.Civil3D
             double textHeight,
             ICollection<ObjectId> created)
         {
-            double halfSize = Math.Max(textHeight * 1.5, 0.001);
+            double halfSize = Math.Max(
+                PaperAnnotationScale.ModelDistance(database, textHeight * 1.5),
+                0.001);
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
                 BlockTableRecord currentSpace = OpenCurrentSpace(database, transaction);
@@ -958,23 +943,17 @@ namespace CETools.Civil3D
         private static CoordinateRegisterTarget PromptForRegisterTarget(Document document)
         {
             Editor editor = document.Editor;
-            var options = new PromptKeywordOptions(
-                "\nCoordinate register [New/Existing/None] <None>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("New");
-            options.Keywords.Add("Existing");
-            options.Keywords.Add("None");
-            PromptResult result = editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
+            string choice = DisciplineWorkflowDialogs.SelectWorkflow(
+                "CE Tools - Coordinate Register",
+                "Choose how the selected or created coordinate points connect to a dynamic register.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Create a new linked register", "New", "Pick its insertion point in the drawing after this window closes.", "01 Register"),
+                    new DisciplineWorkflowAction("Append to an existing register", "Existing", "Select an existing CE Tools linked coordinate table in the drawing.", "01 Register"),
+                    new DisciplineWorkflowAction("Do not create a register", "None", "Create only the selected point and annotation outputs.", "02 Skip")
+                });
+            if (string.IsNullOrWhiteSpace(choice))
                 return CoordinateRegisterTarget.Cancel();
-            }
-
-            string choice = result.Status == PromptStatus.None
-                ? "None"
-                : result.StringResult;
             if (string.Equals(choice, "None", StringComparison.OrdinalIgnoreCase))
             {
                 return CoordinateRegisterTarget.None();
@@ -1044,6 +1023,7 @@ namespace CETools.Civil3D
                 table.SetDatabaseDefaults(database);
                 table.TableStyle = database.Tablestyle;
                 table.Position = insertionPoint;
+                PaperAnnotationScale.SetAnnotative(table);
                 ObjectId tableId = currentSpace.AppendEntity(table);
                 transaction.AddNewlyCreatedDBObject(table, true);
 
@@ -1177,9 +1157,9 @@ namespace CETools.Civil3D
                 CivilCogoPoint cogo = value as CivilCogoPoint;
                 if (cogo != null)
                 {
-                    string pointName = string.IsNullOrWhiteSpace(cogo.PointName)
-                        ? cogo.RawDescription
-                        : cogo.PointName;
+                    string pointName = string.IsNullOrWhiteSpace(cogo.RawDescription)
+                        ? cogo.PointName
+                        : cogo.RawDescription;
                     if (string.IsNullOrWhiteSpace(pointName))
                     {
                         pointName = "P" + cogo.PointNumber.ToString(CultureInfo.InvariantCulture);
@@ -1513,41 +1493,31 @@ namespace CETools.Civil3D
             out string prefix,
             out int sequence)
         {
-            PromptResult prefixResult = editor.GetString(
-                new PromptStringOptions(
-                    "\nPoint-name prefix <" + defaultPrefix + ">: ")
-                {
-                    AllowSpaces = false,
-                    DefaultValue = defaultPrefix,
-                    UseDefaultValue = true
-                });
-            if (prefixResult.Status != PromptStatus.OK)
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - Point Naming",
+                "Set one raw-description sequence for the COGO labels and linked coordinate table.");
+            model.AddText(
+                "Prefix",
+                "Point Names",
+                "Raw-description prefix",
+                string.IsNullOrWhiteSpace(defaultPrefix) ? "P" : defaultPrefix,
+                "Use P for P1, P2, P3... labels.");
+            model.AddPositiveInteger(
+                "Start",
+                "Point Names",
+                "Starting number",
+                Math.Max(defaultSequence, 1),
+                "The first selected point receives this number.");
+            if (!DisciplineWorkflowDialogs.EditSettings(model))
             {
                 prefix = string.Empty;
                 sequence = 0;
                 return false;
             }
 
-            PromptIntegerResult numberResult = editor.GetInteger(
-                new PromptIntegerOptions(
-                    "\nStarting point-name number <" +
-                    defaultSequence.ToString(CultureInfo.InvariantCulture) + ">: ")
-                {
-                    AllowNegative = false,
-                    AllowZero = false,
-                    DefaultValue = defaultSequence,
-                    LowerLimit = 1,
-                    UseDefaultValue = true
-                });
-            if (numberResult.Status != PromptStatus.OK)
-            {
-                prefix = string.Empty;
-                sequence = 0;
-                return false;
-            }
-
-            prefix = prefixResult.StringResult;
-            sequence = numberResult.Value;
+            prefix = model.Text("Prefix");
+            if (string.IsNullOrWhiteSpace(prefix)) prefix = "P";
+            sequence = model.Integer("Start", Math.Max(defaultSequence, 1));
             return true;
         }
 
@@ -1595,10 +1565,9 @@ namespace CETools.Civil3D
             Database database,
             double paperHeightMillimetres)
         {
-            // Annotative entities store their paper height directly. Multiplying
-            // by CANNOSCALEVALUE here made 3.5 display as 7 and 5 display as 10,
-            // and caused tables to change size when the drawing scale changed.
-            return NormalizeHeight(paperHeightMillimetres);
+            return PaperAnnotationScale.ModelTextHeight(
+                database,
+                paperHeightMillimetres);
         }
 
         private static double ReadCurrentTableTextHeight(Table table, double fallback)
@@ -1663,40 +1632,17 @@ namespace CETools.Civil3D
                 point.Z);
         }
 
-        private static void SetAnnotative(object value)
-        {
-            if (value == null) return;
-            try
-            {
-                System.Reflection.PropertyInfo property = value.GetType().GetProperty(
-                    "Annotative",
-                    System.Reflection.BindingFlags.Instance |
-                    System.Reflection.BindingFlags.Public);
-                if (property != null && property.CanWrite)
-                {
-                    property.SetValue(value, AnnotativeStates.True, null);
-                }
-            }
-            catch
-            {
-                // Some Civil 3D wrapper types do not expose Annotative.
-            }
-        }
-
         private static bool PromptYesNo(Editor editor, string message, bool defaultValue)
         {
-            var options = new PromptKeywordOptions(
-                "\n" + message + " [Yes/No] <" + (defaultValue ? "Yes" : "No") + ">: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Yes");
-            options.Keywords.Add("No");
-            PromptResult result = editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return false;
-            return result.Status == PromptStatus.None
-                ? defaultValue
-                : string.Equals(result.StringResult, "Yes", StringComparison.OrdinalIgnoreCase);
+            System.Windows.MessageBoxResult result = System.Windows.MessageBox.Show(
+                message,
+                "CE Tools - Coordinate Utilities",
+                System.Windows.MessageBoxButton.YesNo,
+                System.Windows.MessageBoxImage.Question,
+                defaultValue
+                    ? System.Windows.MessageBoxResult.Yes
+                    : System.Windows.MessageBoxResult.No);
+            return result == System.Windows.MessageBoxResult.Yes;
         }
 
         private static bool PromptOptionalSurface(

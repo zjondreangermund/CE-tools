@@ -538,6 +538,8 @@ namespace CETools.Civil3D
         {
             alignmentsCreated = 0;
             labelsCreated = 0;
+            SewerProductionSettings productionSettings =
+                SewerProductionSettings.Read(database);
 
             using (Transaction transaction =
                 database.TransactionManager.StartTransaction())
@@ -625,8 +627,16 @@ namespace CETools.Civil3D
 
                         IReadOnlyList<SewerBranchLabelPlacement.Placement> placements =
                             SewerBranchLabelPlacement.BuildPlacements(branch.PlanPoints);
-                        double paperHeight = SewerBranchLabelPlacement.DefaultPaperHeight;
-                        bool placeAbove = (branch.BranchNumber % 2) != 0;
+                        double paperHeight = productionSettings.LabelHeight;
+                        bool placeAbove = string.Equals(
+                                productionSettings.BranchLabelSide,
+                                "Above",
+                                StringComparison.OrdinalIgnoreCase) ||
+                            (!string.Equals(
+                                productionSettings.BranchLabelSide,
+                                "Below",
+                                StringComparison.OrdinalIgnoreCase) &&
+                             (branch.BranchNumber % 2) != 0);
 
                         foreach (SewerBranchLabelPlacement.Placement placement in placements)
                         {
@@ -923,20 +933,9 @@ namespace CETools.Civil3D
 
         private static bool Confirm(Editor editor, string message)
         {
-            var options = new PromptKeywordOptions(
-                "\n" + message + "? [Yes/No] <No>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Yes");
-            options.Keywords.Add("No");
-
-            PromptResult result = editor.GetKeywords(options);
-            return result.Status == PromptStatus.OK &&
-                   string.Equals(
-                       result.StringResult,
-                       "Yes",
-                       StringComparison.OrdinalIgnoreCase);
+            return DisciplineWorkflowDialogs.Confirm(
+                "CE Tools - Sewer Alignments",
+                message + "?");
         }
 
         private sealed class NetworkAlignmentPlan

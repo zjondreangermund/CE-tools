@@ -263,11 +263,11 @@ namespace CETools.Civil3D
             if (value == null || depth > 4 || visited.Contains(value)) return;
             visited.Add(value);
 
-            IEnumerable enumerable = value as IEnumerable;
-            if (enumerable != null && !(value is string))
+            IList<object> items = EnumerateStyleItems(value);
+            if (items.Count > 0)
             {
                 int count = 0;
-                foreach (object item in enumerable)
+                foreach (object item in items)
                 {
                     if (count++ > 10000) break;
                     string name = ReadStyleName(item, transaction);
@@ -322,6 +322,81 @@ namespace CETools.Civil3D
                     transaction,
                     result);
             }
+        }
+
+        private static IList<object> EnumerateStyleItems(object value)
+        {
+            var result = new List<object>();
+            if (value == null || value is string) return result;
+
+            IEnumerable enumerable = value as IEnumerable;
+            if (enumerable != null)
+            {
+                try
+                {
+                    foreach (object item in enumerable) result.Add(item);
+                }
+                catch
+                {
+                    result.Clear();
+                }
+                if (result.Count > 0) return result;
+            }
+
+            try
+            {
+                MethodInfo objectIdsMethod = value.GetType().GetMethod(
+                    "GetObjectIds",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+                object objectIds = objectIdsMethod == null
+                    ? null
+                    : objectIdsMethod.Invoke(value, null);
+                IEnumerable objectIdEnumerable = objectIds as IEnumerable;
+                if (objectIdEnumerable != null)
+                {
+                    foreach (object item in objectIdEnumerable) result.Add(item);
+                    if (result.Count > 0) return result;
+                }
+            }
+            catch
+            {
+                result.Clear();
+            }
+
+            try
+            {
+                PropertyInfo countProperty = value.GetType().GetProperty(
+                    "Count",
+                    BindingFlags.Public | BindingFlags.Instance);
+                int count = countProperty == null
+                    ? 0
+                    : Convert.ToInt32(
+                        countProperty.GetValue(value, null),
+                        CultureInfo.InvariantCulture);
+                PropertyInfo indexer = value.GetType().GetProperties(
+                        BindingFlags.Public | BindingFlags.Instance)
+                    .FirstOrDefault(property =>
+                    {
+                        ParameterInfo[] parameters = property.GetIndexParameters();
+                        return parameters.Length == 1 &&
+                            parameters[0].ParameterType == typeof(int) &&
+                            property.CanRead;
+                    });
+                if (indexer != null)
+                {
+                    for (int index = 0; index < count; index++)
+                        result.Add(indexer.GetValue(value, new object[] { index }));
+                }
+            }
+            catch
+            {
+                result.Clear();
+            }
+
+            return result;
         }
 
         private static string ReadStyleName(object item, Transaction transaction)
@@ -571,7 +646,11 @@ namespace CETools.Civil3D
 
             var note = new TextBlock
             {
-                Text = "Choose the discipline and preferred drawing styles. Choices are stored inside this DWG; drawing styles are not renamed or deleted.",
+                Text = "Choose the discipline and preferred drawing styles. " +
+                    Math.Max(
+                        0,
+                        catalogue.Values.Sum(items => Math.Max(0, items.Count - 1))) +
+                    " installed Civil 3D style choices were found. Choices are stored inside this DWG; drawing styles are not renamed or deleted.",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 12)
             };
@@ -680,6 +759,12 @@ namespace CETools.Civil3D
             buttons.Children.Add(cancel);
             DockPanel.SetDock(buttons, Dock.Bottom);
             root.Children.Add(buttons);
+
+            // The scroll area must be the DockPanel's final fill child. Keeping
+            // the button row last caused it to stretch across the full window at
+            // high DPI and covered the style selectors.
+            root.Children.Remove(scroll);
+            root.Children.Add(scroll);
         }
 
         public bool Accepted { get; private set; }

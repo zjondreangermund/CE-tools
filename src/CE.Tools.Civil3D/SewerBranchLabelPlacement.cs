@@ -122,7 +122,9 @@ namespace CETools.Civil3D
                 placeAbove);
             label.Attachment = AttachmentPoint.MiddleCenter;
             label.Annotative = AnnotativeStates.True;
-            label.TextHeight = paperHeight;
+            label.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                database,
+                paperHeight);
             label.Rotation = placement.Rotation;
             label.Contents = branchName ?? string.Empty;
             label.BackgroundFill = true;
@@ -133,35 +135,8 @@ namespace CETools.Civil3D
             Database database,
             double paperMillimetres)
         {
-            double annotationScale = 1.0;
-            try
-            {
-                annotationScale = Convert.ToDouble(
-                    Autodesk.AutoCAD.ApplicationServices.Core.Application
-                        .GetSystemVariable("CANNOSCALEVALUE"),
-                    CultureInfo.InvariantCulture);
-            }
-            catch
-            {
-                annotationScale = Math.Max(database.Dimscale, 1.0);
-            }
-
-            if (!(annotationScale > 0.0))
-            {
-                annotationScale = 1.0;
-            }
-
-            string units = database.Insunits.ToString();
-            double millimetresToDrawingUnits =
-                string.Equals(units, "Millimeters", StringComparison.OrdinalIgnoreCase) ? 1.0 :
-                string.Equals(units, "Centimeters", StringComparison.OrdinalIgnoreCase) ? 0.1 :
-                string.Equals(units, "Meters", StringComparison.OrdinalIgnoreCase) ? 0.001 :
-                string.Equals(units, "Inches", StringComparison.OrdinalIgnoreCase) ? 0.0393700787 :
-                string.Equals(units, "Feet", StringComparison.OrdinalIgnoreCase) ? 0.0032808399 :
-                0.001;
-
             return Math.Max(
-                paperMillimetres * annotationScale * millimetresToDrawingUnits,
+                PaperAnnotationScale.ModelDistance(database, paperMillimetres),
                 GeometryTolerance);
         }
 

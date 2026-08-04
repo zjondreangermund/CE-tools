@@ -107,11 +107,14 @@ namespace CETools.Civil3D
                     }
 
                     bool handled = SetAnnotativeByReflection(entity);
-                    handled = ApplyTextHeight(entity, settings.TextHeight) || handled;
+                    double modelHeight = PaperAnnotationScale.ModelTextHeight(
+                        document.Database,
+                        settings.TextHeight);
+                    handled = ApplyTextHeight(entity, modelHeight) || handled;
                     var table = entity as Table;
                     if (table != null)
                     {
-                        ScaleTable(table, settings.TextHeight);
+                        ScaleTable(table, modelHeight);
                         handled = true;
                     }
 
@@ -163,7 +166,11 @@ namespace CETools.Civil3D
                         skipped++;
                         continue;
                     }
-                    ScaleTable(table, settings.TextHeight);
+                    ScaleTable(
+                        table,
+                        PaperAnnotationScale.ModelTextHeight(
+                            document.Database,
+                            settings.TextHeight));
                     SetAnnotativeByReflection(table);
                     changed++;
                 }
@@ -555,9 +562,7 @@ namespace CETools.Civil3D
 
         private static double NormalizeHeight(double value)
         {
-            if (Math.Abs(value - 1.8) < 0.05) return 1.8;
-            if (Math.Abs(value - 5.0) < 0.05) return 5.0;
-            return 2.0;
+            return PaperAnnotationScale.NormalizePaperHeight(value);
         }
 
         private static bool IsAnnotationEntity(Entity entity)

@@ -25,7 +25,7 @@ namespace CETools.Civil3D
         private static readonly Dictionary<string, ImageSource> Cache =
             new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
 
-        public static RibbonIconMode Mode { get; private set; } = RibbonIconMode.Cached;
+        public static RibbonIconMode Mode { get; private set; } = RibbonIconMode.TextOnly;
 
         public static void SetMode(RibbonIconMode mode)
         {

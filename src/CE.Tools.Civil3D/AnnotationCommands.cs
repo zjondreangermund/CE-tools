@@ -682,7 +682,10 @@ namespace CETools.Civil3D
                         text.LayerId = entity.LayerId;
                         text.Location = center;
                         text.Attachment = AttachmentPoint.MiddleCenter;
-                        text.TextHeight = settings.TextHeight;
+                        text.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                            document.Database,
+                            settings.TextHeight);
+                        PaperAnnotationScale.SetAnnotative(text);
                         text.Contents = prefixResult.StringResult +
                             number.ToString(CultureInfo.InvariantCulture);
                         currentSpace.AppendEntity(text);
@@ -796,7 +799,11 @@ namespace CETools.Civil3D
             Point3d target,
             double textHeight)
         {
-            double halfSize = Math.Max(textHeight * 1.5, 0.001);
+            double halfSize = Math.Max(
+                PaperAnnotationScale.ModelDistance(
+                    document.Database,
+                    textHeight * 1.5),
+                0.001);
             try
             {
                 using (Transaction transaction =
@@ -1059,10 +1066,14 @@ namespace CETools.Civil3D
             }
         }
 
-        private static AnnotationOptions Read(Database database)
+        internal static AnnotationOptions Read(Database database)
         {
             AnnotationOptions defaults = new AnnotationOptions(
-                NormalizeHeight(database == null ? 2.0 : database.Textsize),
+                database == null
+                    ? 2.0
+                    : PaperAnnotationScale.PaperTextHeight(
+                        database,
+                        database.Textsize),
                 true,
                 AnnotationOutput.MLeader);
 
@@ -1193,9 +1204,7 @@ namespace CETools.Civil3D
 
         private static double NormalizeHeight(double height)
         {
-            if (Math.Abs(height - 1.8) < 0.05) return 1.8;
-            if (Math.Abs(height - 5.0) < 0.05) return 5.0;
-            return 2.0;
+            return PaperAnnotationScale.NormalizePaperHeight(height);
         }
 
         private static string HeightKeyword(double height)
@@ -1366,7 +1375,11 @@ namespace CETools.Civil3D
             var marker = new Circle(
                 target,
                 Vector3d.ZAxis,
-                Math.Max(textHeight * 0.75, 0.001));
+                Math.Max(
+                    PaperAnnotationScale.ModelDistance(
+                        currentSpace.Database,
+                        textHeight * 0.75),
+                    0.001));
             marker.SetDatabaseDefaults();
             if (!layerId.IsNull) marker.LayerId = layerId;
             currentSpace.AppendEntity(marker);
@@ -1386,8 +1399,11 @@ namespace CETools.Civil3D
             text.SetDatabaseDefaults(database);
             text.Location = labelPoint;
             text.Attachment = AttachmentPoint.MiddleLeft;
-            text.TextHeight = textHeight;
+            text.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                database,
+                textHeight);
             text.Contents = contents ?? string.Empty;
+            PaperAnnotationScale.SetAnnotative(text);
             currentSpace.AppendEntity(text);
             transaction.AddNewlyCreatedDBObject(text, true);
             return text.ObjectId;
@@ -1405,13 +1421,16 @@ namespace CETools.Civil3D
             var text = new MText();
             text.SetDatabaseDefaults(database);
             text.Location = labelPoint;
-            text.TextHeight = textHeight;
+            text.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                database,
+                textHeight);
             text.Contents = contents ?? string.Empty;
 
             var leader = new MLeader();
             leader.SetDatabaseDefaults(database);
             leader.ContentType = ContentType.MTextContent;
             leader.MText = text;
+            PaperAnnotationScale.SetAnnotative(leader);
             int leaderIndex = leader.AddLeader();
             int leaderLineIndex = leader.AddLeaderLine(leaderIndex);
             leader.AddFirstVertex(leaderLineIndex, target);

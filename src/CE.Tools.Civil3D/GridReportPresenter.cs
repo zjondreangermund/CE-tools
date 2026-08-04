@@ -104,6 +104,7 @@ namespace CETools.Civil3D
                         TableStyle = document.Database.Tablestyle,
                         Position = pointResult.Value
                     };
+                    PaperAnnotationScale.SetAnnotative(table);
 
                     table.SetSize(dataCount + 2, columns.Count);
                     table.SetRowHeight(textHeight * 2.4);
@@ -186,13 +187,11 @@ namespace CETools.Civil3D
 
         private static double ResolveTextHeight(Database database)
         {
-            double height = database == null ? 0.0 : database.Textsize;
-            if (height > 0.0 && !double.IsNaN(height) && !double.IsInfinity(height))
-            {
-                return Math.Max(1.8, Math.Min(5.0, height));
-            }
-
-            return 2.0;
+            if (database == null) return 2.0;
+            AnnotationOptions settings = AnnotationSettingsStore.Read(database);
+            return PaperAnnotationScale.ModelTextHeight(
+                database,
+                settings == null ? 2.0 : settings.TextHeight);
         }
 
         private sealed class GridReportWindow : Window
