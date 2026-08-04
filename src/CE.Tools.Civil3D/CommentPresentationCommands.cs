@@ -36,6 +36,7 @@ namespace CETools.Civil3D
             var choices = new List<CommandChoice>
             {
                 new CommandChoice("Make selected text/tables annotative", "CE_MAKEANNOTATIVE "),
+                new CommandChoice("Automatically format Civil and CE labels", "CE_CIVILLABELFORMAT "),
                 new CommandChoice("Scale selected tables to CE text height", "CE_TABLESCALE "),
                 new CommandChoice("Resolve selected annotation overlaps", "CE_OVERLAPFIX "),
                 new CommandChoice("Reverse multiple polylines", "CE_PLREVERSE "),

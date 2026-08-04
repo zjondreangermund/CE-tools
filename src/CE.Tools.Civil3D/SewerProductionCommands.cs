@@ -185,6 +185,7 @@ namespace CETools.Civil3D
                 "CE Tools — Sewer Settings",
                 "Blank style names use the first compatible drawing style. Label height is a paper height; layout values control batch profile-view placement.");
             model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Select an installed style for generated sewer branch alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles));
+            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Label set applied automatically to generated sewer alignments.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles));
             model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style for generated existing-ground profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles));
             model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set for generated profiles.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles));
             model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style for generated sewer profile views.", ProductionStyleCatalog.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles));
@@ -198,6 +199,7 @@ namespace CETools.Civil3D
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             settings.AlignmentStyle = model.Text("AlignmentStyle");
+            settings.AlignmentLabelSetStyle = model.Text("AlignmentLabelSetStyle");
             settings.ProfileStyle = model.Text("ProfileStyle");
             settings.ProfileLabelSetStyle = model.Text("ProfileLabelSetStyle");
             settings.ProfileViewStyle = model.Text("ProfileViewStyle");
@@ -1516,6 +1518,7 @@ namespace CETools.Civil3D
     internal sealed class SewerProductionSettings
     {
         public string AlignmentStyle { get; set; } = string.Empty;
+        public string AlignmentLabelSetStyle { get; set; } = string.Empty;
         public string ProfileStyle { get; set; } = string.Empty;
         public string ProfileLabelSetStyle { get; set; } = string.Empty;
         public string ProfileViewStyle { get; set; } = string.Empty;
@@ -1580,6 +1583,7 @@ namespace CETools.Civil3D
                 }
                 record.Data = new ResultBuffer(
                     Value("AlignmentStyle", AlignmentStyle),
+                    Value("AlignmentLabelSetStyle", AlignmentLabelSetStyle),
                     Value("ProfileStyle", ProfileStyle),
                     Value("ProfileLabelSetStyle", ProfileLabelSetStyle),
                     Value("ProfileViewStyle", ProfileViewStyle),
@@ -1602,6 +1606,7 @@ namespace CETools.Civil3D
         private static void Apply(SewerProductionSettings settings, string key, string value)
         {
             if (key == "AlignmentStyle") settings.AlignmentStyle = value;
+            else if (key == "AlignmentLabelSetStyle") settings.AlignmentLabelSetStyle = value;
             else if (key == "ProfileStyle") settings.ProfileStyle = value;
             else if (key == "ProfileLabelSetStyle") settings.ProfileLabelSetStyle = value;
             else if (key == "ProfileViewStyle") settings.ProfileViewStyle = value;

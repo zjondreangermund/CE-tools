@@ -569,14 +569,14 @@ namespace CETools.Civil3D
         public static IList<string> ReadNames(Database database, object styleCollection)
         {
             var names = new List<string>();
-            var enumerable = styleCollection as IEnumerable;
-            if (database == null || enumerable == null) return names;
+            if (database == null || styleCollection == null) return names;
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
-                foreach (object value in enumerable)
+                foreach (object value in Enumerate(styleCollection))
                 {
-                    if (!(value is ObjectId)) continue;
-                    ObjectId id = (ObjectId)value;
+                    ObjectId id = value is ObjectId
+                        ? (ObjectId)value
+                        : value is DBObject ? ((DBObject)value).ObjectId : ObjectId.Null;
                     if (id.IsNull || id.IsErased) continue;
                     try
                     {
@@ -597,6 +597,84 @@ namespace CETools.Civil3D
                 .Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(item => item, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        private static IEnumerable<object> Enumerate(object collection)
+        {
+            var values = new List<object>();
+            IEnumerable enumerable = collection as IEnumerable;
+            if (enumerable != null)
+            {
+                try
+                {
+                    foreach (object value in enumerable) values.Add(value);
+                }
+                catch
+                {
+                    values.Clear();
+                }
+                if (values.Count > 0) return values;
+            }
+
+            try
+            {
+                MethodInfo method = collection.GetType().GetMethod(
+                    "GetObjectIds",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+                IEnumerable ids = method == null
+                    ? null
+                    : method.Invoke(collection, null) as IEnumerable;
+                if (ids != null)
+                {
+                    foreach (object value in ids) values.Add(value);
+                    if (values.Count > 0) return values;
+                }
+            }
+            catch
+            {
+                values.Clear();
+            }
+
+            try
+            {
+                PropertyInfo countProperty = collection.GetType().GetProperty(
+                    "Count",
+                    BindingFlags.Public | BindingFlags.Instance);
+                int count = countProperty == null
+                    ? 0
+                    : Convert.ToInt32(countProperty.GetValue(collection, null),
+                        CultureInfo.InvariantCulture);
+                PropertyInfo indexer = collection.GetType()
+                    .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                    .FirstOrDefault(property =>
+                        property.GetIndexParameters().Length == 1 &&
+                        property.GetGetMethod() != null);
+                if (indexer == null) return values;
+                Type indexType = indexer.GetIndexParameters()[0].ParameterType;
+                for (int index = 0; index < count; index++)
+                {
+                    try
+                    {
+                        values.Add(indexer.GetValue(collection, new[]
+                        {
+                            Convert.ChangeType(index, indexType,
+                                CultureInfo.InvariantCulture)
+                        }));
+                    }
+                    catch
+                    {
+                        // Continue past one inaccessible style slot.
+                    }
+                }
+            }
+            catch
+            {
+                values.Clear();
+            }
+            return values;
         }
     }
 }

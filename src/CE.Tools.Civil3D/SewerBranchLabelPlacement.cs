@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
@@ -56,23 +57,50 @@ namespace CETools.Civil3D
                 return result;
             }
 
-            int labelCount = Math.Max(
-                1,
-                Math.Min(
-                    MaximumLabelsPerBranch,
-                    (int)Math.Ceiling(totalLength / RepeatSpacing)));
+            int labelCount = Math.Max(1, Math.Min(
+                MaximumLabelsPerBranch,
+                (int)Math.Ceiling(totalLength / RepeatSpacing)));
 
-            for (int labelIndex = 0; labelIndex < labelCount; labelIndex++)
+            // Put labels at real pipe/tangent midpoints. Equal-distance points
+            // along the complete branch can fall on a bend or immediately next
+            // to a junction, which makes the name appear off-centre.
+            var candidates = new List<PlacementCandidate>();
+            double travelled = 0.0;
+            for (int index = 0; index < segmentLengths.Length; index++)
             {
-                double targetDistance =
-                    ((labelIndex + 0.5) / labelCount) * totalLength;
+                double length = segmentLengths[index];
+                if (length > GeometryTolerance)
+                {
+                    candidates.Add(new PlacementCandidate(
+                        length,
+                        travelled + (length * 0.5)));
+                }
+                travelled += length;
+            }
+            foreach (PlacementCandidate candidate in candidates
+                .OrderByDescending(item => item.Length)
+                .Take(Math.Min(labelCount, candidates.Count))
+                .OrderBy(item => item.Distance))
+            {
                 result.Add(PlacementAtDistance(
                     points,
                     segmentLengths,
-                    targetDistance));
+                    candidate.Distance));
             }
 
             return result;
+        }
+
+        private sealed class PlacementCandidate
+        {
+            internal PlacementCandidate(double length, double distance)
+            {
+                Length = length;
+                Distance = distance;
+            }
+
+            internal double Length { get; private set; }
+            internal double Distance { get; private set; }
         }
 
         internal static Point3d OffsetPoint(

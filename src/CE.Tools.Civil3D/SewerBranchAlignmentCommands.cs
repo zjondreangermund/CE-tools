@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -546,12 +547,16 @@ namespace CETools.Civil3D
             {
                 EnsureRegApp(database, transaction);
                 ObjectId layerId = GetOrCreateLayer(database, transaction);
-                ObjectId alignmentStyleId = GetFirstStyleId(
+                ObjectId alignmentStyleId = ResolveStyleId(
                     civilDocument.Styles.AlignmentStyles,
-                    "alignment style");
-                ObjectId labelSetStyleId = GetFirstStyleId(
+                    productionSettings.AlignmentStyle,
+                    "alignment style",
+                    transaction);
+                ObjectId labelSetStyleId = ResolveStyleId(
                     civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles,
-                    "alignment label-set style");
+                    productionSettings.AlignmentLabelSetStyle,
+                    "alignment label-set style",
+                    transaction);
 
                 BlockTable blockTable = (BlockTable)transaction.GetObject(
                     database.BlockTableId,
@@ -674,6 +679,33 @@ namespace CETools.Civil3D
             }
 
             return id;
+        }
+
+        private static ObjectId ResolveStyleId(
+            IEnumerable<ObjectId> styleIds,
+            string requested,
+            string description,
+            Transaction transaction)
+        {
+            List<ObjectId> ids = styleIds.ToList();
+            if (ids.Count == 0)
+                throw new InvalidOperationException(
+                    "The drawing contains no " + description + ".");
+            if (string.IsNullOrWhiteSpace(requested)) return ids[0];
+
+            foreach (ObjectId id in ids)
+            {
+                DBObject style = transaction.GetObject(id, OpenMode.ForRead, false);
+                PropertyInfo property = style.GetType().GetProperty(
+                    "Name", BindingFlags.Public | BindingFlags.Instance);
+                string name = Convert.ToString(
+                    property == null ? null : property.GetValue(style, null),
+                    CultureInfo.InvariantCulture);
+                if (string.Equals(name, requested.Trim(), StringComparison.OrdinalIgnoreCase))
+                    return id;
+            }
+            throw new InvalidOperationException(
+                "The requested " + description + " '" + requested + "' was not found.");
         }
 
         private static ObjectId AddSourcePolyline(

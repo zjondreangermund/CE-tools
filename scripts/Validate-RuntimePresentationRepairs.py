@@ -20,6 +20,8 @@ FILES = {
     "grid": SRC / "GridReportPresenter.cs",
     "popup": SRC / "PopupTablePresenter.cs",
     "water": SRC / "WaterProductionCommands.cs",
+    "catalogue": SRC / "DisciplineWorkflowDialogs.cs",
+    "formatting": SRC / "CivilLabelFormattingCommands.cs",
 }
 
 errors: list[str] = []
@@ -84,6 +86,18 @@ required = {
     "water": (
         "PaperAnnotationScale.AnnotativeTextHeight(\n                            document.Database,",
         "PaperAnnotationScale.SetAnnotative(label);",
+    ),
+    "catalogue": (
+        '"GetObjectIds"',
+        "PropertyInfo countProperty",
+        "GetIndexParameters().Length == 1",
+    ),
+    "formatting": (
+        '"CE_CIVILLABELFORMAT"',
+        '"Entire current drawing"',
+        '"Select objects"',
+        'string.Equals(method.Name, "GetComponents"',
+        "PaperAnnotationScale.ModelTextHeight",
     ),
 }
 
