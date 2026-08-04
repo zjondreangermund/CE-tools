@@ -232,6 +232,7 @@ try {
         "Validate-AnnotationCommands.py",
         "Validate-WorkflowRepairs.py",
         "Validate-SurveyCoordinateWorkflows.py",
+        "Validate-WorkflowWindow.py",
         "Validate-BillOfQuantities.py",
         "Validate-DynamicProduction.py",
         "Validate-CommandRegistry.py"
