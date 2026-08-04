@@ -65,7 +65,11 @@ required = {
         '"CE Tools - Point Naming"',
         '"CE Tools - Coordinate Register"',
     ),
-    "links": ("CogoPoints.SetRawDescription",),
+    "links": (
+        "CogoPoints.SetRawDescription",
+        "pointNameRepairs",
+        "SetPointName(database, repair.Key, repair.Value);",
+    ),
     "styles": (
         "EnumerateStyleItems",
         '"GetObjectIds"',

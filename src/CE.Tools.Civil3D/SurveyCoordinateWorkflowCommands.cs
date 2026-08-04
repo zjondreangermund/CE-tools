@@ -1157,9 +1157,13 @@ namespace CETools.Civil3D
                 CivilCogoPoint cogo = value as CivilCogoPoint;
                 if (cogo != null)
                 {
-                    string pointName = string.IsNullOrWhiteSpace(cogo.RawDescription)
+                    string fallbackName = string.IsNullOrWhiteSpace(cogo.RawDescription)
                         ? cogo.PointName
                         : cogo.RawDescription;
+                    string pointName = DynamicCoordinateLinkStore.ReadPointName(
+                        cogo,
+                        transaction,
+                        fallbackName);
                     if (string.IsNullOrWhiteSpace(pointName))
                     {
                         pointName = "P" + cogo.PointNumber.ToString(CultureInfo.InvariantCulture);

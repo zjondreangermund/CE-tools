@@ -50,7 +50,8 @@ All notable CE Tools changes will be recorded here.
   placed directly over the alignment.
 - Linked coordinate naming now writes the Civil 3D COGO raw description and
   coordinate tables prefer that raw description, keeping visible point labels
-  and table names such as P1 synchronized.
+  and table names such as P1 synchronized. Dynamic refresh also migrates P1/P2
+  names stored by earlier builds into the corresponding raw descriptions.
 - Project Style Centre now reads Civil 3D style collections through enumerable,
   object-ID and indexed collection APIs and keeps its selector area clear at
   Civil 3D display scaling.

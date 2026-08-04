@@ -161,6 +161,7 @@ namespace CETools.Civil3D
             if (document == null || document.Database == null) return 0;
             Database database = document.Database;
             int changed = 0;
+            var pointNameRepairs = new List<KeyValuePair<ObjectId, string>>();
             using (Transaction tr = database.TransactionManager.StartTransaction())
             {
                 List<ObjectId> ids = ReadCurrentSpaceIds(database, tr);
@@ -172,6 +173,21 @@ namespace CETools.Civil3D
                     DBObject target;
                     try { target = tr.GetObject(id, OpenMode.ForRead, false); }
                     catch { continue; }
+
+                    CivilCogoPoint namedCogo = target as CivilCogoPoint;
+                    if (namedCogo != null)
+                    {
+                        string storedName = ReadPointName(namedCogo, tr, string.Empty);
+                        if (!string.IsNullOrWhiteSpace(storedName) &&
+                            !string.Equals(
+                                namedCogo.RawDescription,
+                                storedName,
+                                StringComparison.Ordinal))
+                        {
+                            pointNameRepairs.Add(
+                                new KeyValuePair<ObjectId, string>(id, storedName));
+                        }
+                    }
 
                     Point3d current;
                     if (!TryReadPoint(target, out current)) continue;
@@ -272,6 +288,16 @@ namespace CETools.Civil3D
                 }
 
                 tr.Commit();
+            }
+
+            // Older builds stored P1/P2 in the CE link record and point name but
+            // could leave Civil 3D's raw description at the numeric point value.
+            // Repair those records after the read transaction so point styles
+            // using <Raw Description> and coordinate tables display one name.
+            foreach (KeyValuePair<ObjectId, string> repair in pointNameRepairs)
+            {
+                SetPointName(database, repair.Key, repair.Value);
+                changed++;
             }
             return changed;
         }
