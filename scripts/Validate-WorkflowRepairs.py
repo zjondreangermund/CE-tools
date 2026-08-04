@@ -14,10 +14,11 @@ WORKFLOW = ROOT / "src" / "CE.Tools.Civil3D" / "WorkflowRepairCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 LEGACY_CORRIDOR = ROOT / "src" / "CE.Tools.Civil3D" / "CorridorCommands.cs"
 LEGACY_FEATURE = ROOT / "src" / "CE.Tools.Civil3D" / "FeatureLineCommands.cs"
+PARKING_LINKS = ROOT / "src" / "CE.Tools.Civil3D" / "ParkingNumberLinkCommands.cs"
 
 errors: list[str] = []
 
-for path in (WORKFLOW, RIBBON, LEGACY_CORRIDOR, LEGACY_FEATURE):
+for path in (WORKFLOW, RIBBON, LEGACY_CORRIDOR, LEGACY_FEATURE, PARKING_LINKS):
     if not path.exists():
         errors.append(f"Missing required file: {path.relative_to(ROOT)}")
 
@@ -29,6 +30,7 @@ workflow = WORKFLOW.read_text(encoding="utf-8")
 ribbon = RIBBON.read_text(encoding="utf-8")
 legacy_corridor = LEGACY_CORRIDOR.read_text(encoding="utf-8")
 legacy_feature = LEGACY_FEATURE.read_text(encoding="utf-8")
+parking_links = PARKING_LINKS.read_text(encoding="utf-8")
 
 commands = [
     "CE_CORREBUILDX",
@@ -62,6 +64,26 @@ for marker in required_mutation_markers:
     if marker not in workflow:
         errors.append(f"Workflow repair source is missing expected marker: {marker}")
 
+for marker in (
+    '"CE_PKNUMBERREFRESH"',
+    'LinkRecordName = "CE_PARKING_NUMBER_LINK"',
+    "ParkingNumberLinkCommands.Refresh(document, false)",
+    "document.Database.ObjectModified += OnParkingBayChanged",
+    "document.Database.ObjectErased += OnParkingBayErased",
+    "AcApplication.Idle += OnIdle",
+    "document.Editor.IsQuiescent",
+    "using (document.LockDocument())",
+):
+    if marker not in parking_links:
+        errors.append(f"Dynamic parking-number source is missing: {marker}")
+
+for marker in (
+    "ParkingNumberAutoRefreshManager.Initialize();",
+    "ParkingNumberAutoRefreshManager.Terminate();",
+):
+    if marker not in ribbon:
+        errors.append(f"Parking-number lifecycle is missing: {marker}")
+
 # The original command names remain available for command-line compatibility.
 for command, source in (
     ("CE_CORREBUILD", legacy_corridor),
@@ -91,6 +113,7 @@ for preserved in (
 for name, text in (
     ("WorkflowRepairCommands.cs", workflow),
     ("PluginEntry.cs", ribbon),
+    ("ParkingNumberLinkCommands.cs", parking_links),
 ):
     if text.count("{") != text.count("}"):
         errors.append(f"Unbalanced braces detected in {name}")
