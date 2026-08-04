@@ -561,6 +561,7 @@ namespace CETools.Civil3D
                 Step("Project standards", "CE_STANDARDSELECT"),
                 Step("Refresh linked outputs", "CE_REFRESHALL"),
                 Step("Review refresh status", "CE_REFRESHSTATUS"),
+                Step("Configure automatic refresh", "CE_AUTOREFRESH"),
                 Step("Create BOQs", "CE_BOQTOOLS"),
                 Step("Generate reports", "CE_PRESENTATIONTOOLS"));
 

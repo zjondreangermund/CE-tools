@@ -36,7 +36,7 @@ refresh = texts["refresh coordinator"]
 plugin = texts["ribbon"]
 window = texts["workflow window"]
 
-for command in ("CE_REFRESHALL", "CE_REFRESHSTATUS"):
+for command in ("CE_REFRESHALL", "CE_REFRESHSTATUS", "CE_AUTOREFRESH"):
     if f'"{command}"' not in refresh:
         errors.append(f"Shared refresh command is not declared: {command}")
     if f'"{command} "' not in plugin:
@@ -54,6 +54,8 @@ refresh_markers = (
     "DynamicCrossSectionCommands.RefreshLinkedSection(",
     "document.Editor.Regen();",
     "Other linked outputs were still processed.",
+    "LinkedTableAutoRefreshManager.BeginInternalUpdate();",
+    "LinkedTableAutoRefreshManager.EndInternalUpdate();",
 )
 for marker in refresh_markers:
     if marker not in refresh:
@@ -69,6 +71,38 @@ count_markers = {
 for source_name, marker in count_markers.items():
     if marker not in texts[source_name]:
         errors.append(f"Refresh-status count API is missing from {source_name}: {marker}")
+
+for marker in (
+    "LinkedTableAutoRefreshManager.Initialize();",
+    "LinkedTableAutoRefreshManager.Terminate();",
+):
+    if marker not in plugin:
+        errors.append(f"Linked-table automatic-refresh lifecycle is missing: {marker}")
+
+for marker in (
+    "DocumentToBeDestroyed += OnDocumentToBeDestroyed",
+    "DocumentToBeDestroyed -= OnDocumentToBeDestroyed",
+    "document.Database.ObjectModified += OnObjectChanged",
+    "document.Database.ObjectAppended += OnObjectChanged",
+    "document.Database.ObjectErased += OnObjectErased",
+    "document.CommandEnded += OnCommandEnded",
+    "SurveyCoordinateWorkflowCommands.RefreshAll(document);",
+    "SettingOutScheduleCommands.RefreshAll(document);",
+    "BillOfQuantitiesCommands.RefreshAll(document);",
+):
+    if marker not in refresh:
+        errors.append(f"Safe automatic linked-table refresh is missing: {marker}")
+
+modified_handler = refresh.split("private static void OnObjectChanged", 1)[-1].split(
+    "private static void OnObjectErased", 1
+)[0]
+erased_handler = refresh.split("private static void OnObjectErased", 1)[-1].split(
+    "private static void MarkPending", 1
+)[0]
+for name, handler in (("ObjectModified/ObjectAppended", modified_handler), ("ObjectErased", erased_handler)):
+    for unsafe_marker in ("StartTransaction", "RefreshAll("):
+        if unsafe_marker in handler:
+            errors.append(f"{name} performs unsafe work inside a database event: {unsafe_marker}")
 
 # Commands that can rebuild issue deliverables stay separate because they require
 # a deliberate review/confirmation workflow.

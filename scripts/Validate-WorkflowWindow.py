@@ -52,7 +52,7 @@ for command in (
     if f'Step("' not in window or f'"{command}")' not in window:
         errors.append(f"Survey workflow step is missing: {command}")
 
-for command in ("CE_REFRESHALL", "CE_REFRESHSTATUS"):
+for command in ("CE_REFRESHALL", "CE_REFRESHSTATUS", "CE_AUTOREFRESH"):
     if f'"{command}")' not in window:
         errors.append(f"General workflow step is missing: {command}")
 

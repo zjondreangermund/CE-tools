@@ -19,6 +19,7 @@ namespace CETools.Civil3D
             DynamicSectionUpdateManager.Initialize();
             ParkingNumberAutoRefreshManager.Initialize();
             WaterSewerCostAutoRefreshManager.Initialize();
+            LinkedTableAutoRefreshManager.Initialize();
             FloatingToolsCommands.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
@@ -27,6 +28,7 @@ namespace CETools.Civil3D
         {
             AcApplication.Idle -= OnApplicationIdle;
             FloatingToolsCommands.Terminate();
+            LinkedTableAutoRefreshManager.Terminate();
             WaterSewerCostAutoRefreshManager.Terminate();
             ParkingNumberAutoRefreshManager.Terminate();
             DynamicSectionUpdateManager.Terminate();
@@ -355,6 +357,7 @@ namespace CETools.Civil3D
                         Cmd("Export Linked BOQ to Excel", "CE_BOQEXPORT ", "Refresh and export a linked BOQ as a dependency-free .xlsx workbook."),
                         Cmd("Refresh All Linked Outputs", "CE_REFRESHALL ", "Refresh linked coordinate tables, setting-out schedules, parking labels, surface comparisons, BOQs, cost estimates and cross sections."),
                         Cmd("Linked Output Refresh Status", "CE_REFRESHSTATUS ", "Review linked-output counts and automatic refresh state in the active drawing."),
+                        Cmd("Automatic Linked-Table Refresh", "CE_AUTOREFRESH ", "Turn deferred automatic coordinate, setting-out and BOQ table refresh on or off for the active drawing."),
                         Cmd("Road BOQ Excel", "CE_BOQROAD ", "Export road surfacing, layerworks, kerbs, drainage, markings and signs."),
                         Cmd("Platform BOQ Excel", "CE_BOQPLATFORM ", "Export platform, grading, layerworks and earthwork quantities."),
                         Cmd("Stormwater BOQ Excel", "CE_BOQSTORM ", "Export stormwater pipes, culverts, structures and open drainage."),
