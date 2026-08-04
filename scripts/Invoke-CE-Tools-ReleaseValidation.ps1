@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [ValidateSet("2023", "2024", "All")]
-    [string]$Version = "All",
+    [string]$Version = "2023",
 
     [ValidateSet("Debug", "Release")]
     [string]$Configuration = "Release",
@@ -185,29 +185,37 @@ function Write-Report {
     $lines.Add("")
     $lines.Add("## Mandatory Civil 3D runtime checks")
     $lines.Add("")
-    foreach ($item in @(
+    $runtimeChecks = @(
         "Load the exact built DLL in Civil 3D 2023 and confirm the CE Tools ribbon loads without duplicate-command errors.",
-        "Repeat in Civil 3D 2024.",
         "Run the Batch 1 through Batch 7 manual test plans on copies of representative drawings.",
         "Validate automatic cross-section refresh after source-line grip edits and after surface/design-object edits.",
         "Validate linked BOQ and coordinate-table refresh, including repeated refresh and Undo.",
         "Open generated XLSX files in Microsoft Excel and confirm no repair warning.",
         "Publish A4, A3, A1 and A0 layouts using office-approved PC3 and CTB/STB settings.",
-        "Record all defects before any stacked PR is merged."
-    )) {
+        "Run CE_INSTALLVERIFY and confirm every release-manifest file passes.",
+        "Record every defect against the exact source commit before release."
+    )
+    if ($Version -in @("2024", "All")) {
+        $runtimeChecks += "Repeat the applicable runtime sequence in Civil 3D 2024."
+    }
+    foreach ($item in $runtimeChecks) {
         $lines.Add("- [ ] $item")
     }
     $lines.Add("")
     $lines.Add("## Release decision")
     $lines.Add("")
-    $lines.Add("- [ ] Civil 3D 2023 compile passed")
-    $lines.Add("- [ ] Civil 3D 2024 compile passed")
-    $lines.Add("- [ ] Civil 3D 2023 runtime passed")
-    $lines.Add("- [ ] Civil 3D 2024 runtime passed")
+    if ($Version -in @("2023", "All")) {
+        $lines.Add("- [ ] Civil 3D 2023 compile passed")
+        $lines.Add("- [ ] Civil 3D 2023 runtime passed")
+    }
+    if ($Version -in @("2024", "All")) {
+        $lines.Add("- [ ] Civil 3D 2024 compile passed")
+        $lines.Add("- [ ] Civil 3D 2024 runtime passed")
+    }
     $lines.Add("- [ ] Excel validation passed")
     $lines.Add("- [ ] PDF publishing validation passed")
-    $lines.Add("- [ ] Exact-head approval recorded for PRs #18, #19, #20, #21, #22, #23 and #25")
-    $lines.Add("- [ ] Approved to merge in dependency order")
+    $lines.Add("- [ ] CE_INSTALLVERIFY passed against the packaged source commit")
+    $lines.Add("- [ ] Approved to publish the exact main-branch commit")
 
     Set-Content -Path $reportPath -Value $lines -Encoding UTF8
     return $reportPath
@@ -234,6 +242,7 @@ try {
         "Validate-SurveyCoordinateWorkflows.py",
         "Validate-WorkflowWindow.py",
         "Validate-UserCommentCoverage.py",
+        "Validate-ReleasePipeline.py",
         "Validate-BillOfQuantities.py",
         "Validate-WaterSewerCostEstimate.py",
         "Validate-RefreshAll.py",

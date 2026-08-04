@@ -34,6 +34,9 @@ jobs:
       - name: Validate user comment coverage
         run: python3 scripts/Validate-UserCommentCoverage.py
 
+      - name: Validate versioned release and installer pipeline
+        run: python3 scripts/Validate-ReleasePipeline.py
+
       - name: Validate linked BOQ and Excel export source
         run: python3 scripts/Validate-BillOfQuantities.py
 

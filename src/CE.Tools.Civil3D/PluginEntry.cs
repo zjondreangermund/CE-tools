@@ -176,7 +176,16 @@ namespace CETools.Civil3D
                         Cmd("Command Audit", "CE_COMMANDAUDIT ", "Audit unique declarations and ribbon coverage."),
                         Cmd("Export Command CSV", "CE_COMMANDEXPORT ", "Export the command catalogue to CSV."),
                         Cmd("Export Searchable HTML", "CE_COMMANDHTML ", "Create a searchable offline command reference."),
-                        Cmd("Refresh Ribbon and Catalogue", "CE_RIBBONREFRESH ", "Rebuild the CE Tools ribbon and reload the command catalogue."))));
+                        Cmd("Refresh Ribbon and Catalogue", "CE_RIBBONREFRESH ", "Rebuild the CE Tools ribbon and reload the command catalogue.")),
+                    Menu(
+                        "CE_TOOLS_SETTINGS_CENTRE_MENU",
+                        "Settings &\nRelease",
+                        "Open all configuration workflows and verify the exact installed release.",
+                        Cmd("Settings Centre", "CE_SETTINGS ", "Open every discipline configuration workflow in one searchable window."),
+                        Cmd("Settings Coverage Audit", "CE_SETTINGSAUDIT ", "Review the configuration workflows exposed by the settings centre."),
+                        Cmd("Installed Version", "CE_VERSION ", "Review the loaded assembly, source commit and bundle identity."),
+                        Cmd("Verify Installation", "CE_INSTALLVERIFY ", "Verify packaged files against the installed SHA-256 release manifest."),
+                        Cmd("Check for Updates", "CE_UPDATECHECK ", "Compare the installed assembly with the latest packaged GitHub release."))));
         }
 
         private static void AddSurveyPanel(RibbonTab tab)

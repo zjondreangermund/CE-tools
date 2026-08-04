@@ -108,9 +108,9 @@ for source in (ROOT / "src" / "CE.Tools.Civil3D").glob("*.cs"):
         values = quoted_pattern.findall(attribute)
         if values:
             declared_commands.add(values[-1].upper())
-if len(declared_commands) < 389:
+if len(declared_commands) < 397:
     errors.append(
-        "The all-command workflow catalogue is backed by fewer than 389 "
+        "The all-command workflow catalogue is backed by fewer than 397 "
         f"declared commands ({len(declared_commands)} found)."
     )
 

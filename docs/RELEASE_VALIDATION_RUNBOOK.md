@@ -1,30 +1,18 @@
-# CE Tools Exact-Head Release Validation Runbook
+# CE Tools V61 Civil 3D 2023 Release Validation Runbook
 
 This runbook begins only after all implementation batches are drafted and their
 GitHub checks are green. It does not replace the command-specific Civil 3D test
 plans in `docs`.
 
-## Current stacked dependency order
-
-Validate and later merge only in this order:
-
-1. PR #18 — Batch 1
-2. PR #19 — Batch 2
-3. PR #20 — Batch 3
-4. PR #21 — Batch 4
-5. PR #22 — Batch 5
-6. PR #23 — Batch 6
-7. PR #25 — Batch 7
-
-Do not merge a dependent PR before its base PR. Do not approve a PR after its
-head commit changes until the exact new head has been rebuilt and retested.
+The repository `main` branch is the release source. Do not install a working-tree
+build that differs from the committed source SHA recorded in the package manifest.
 
 ## Prepare the Windows validation workstation
 
 Required:
 
 - Windows 10 or Windows 11.
-- Civil 3D 2023 and Civil 3D 2024 installed.
+- Civil 3D 2023 installed.
 - .NET 8 SDK.
 - Python available as `python`.
 - PowerShell.
@@ -40,21 +28,21 @@ From the repository root:
 
 ```powershell
 git fetch --all --prune
-git checkout comments-2026-07-23-batch-7
+git checkout main
 git pull --ff-only
 git status --short
 git rev-parse HEAD
 ```
 
-The working tree must be clean. Record the displayed commit SHA in the release
-validation report and compare it to PR #25 before testing.
+The working tree must be clean. Record the displayed commit SHA and compare it
+with `RELEASE-MANIFEST.json` in the generated V61 package.
 
 ## Run the complete validation harness
 
 ```powershell
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
 .\scripts\Invoke-CE-Tools-ReleaseValidation.ps1 `
-  -Version All `
+  -Version 2023 `
   -Configuration Release
 ```
 
@@ -65,8 +53,8 @@ The harness:
 3. runs all source validators;
 4. audits AutoCAD command names for duplicate declarations;
 5. runs the host-independent geometry tests;
-6. verifies Civil 3D 2023 and 2024 managed assemblies;
-7. builds the plugin separately for 2023 and 2024;
+6. verifies Civil 3D 2023 managed assemblies;
+7. builds the Civil 3D 2023 plugin;
 8. verifies the expected bundle DLLs;
 9. creates a timestamped application-bundle snapshot;
 10. calculates SHA-256 hashes; and
@@ -89,22 +77,21 @@ bundle-snapshot\
 
 ## Workstation path overrides
 
-Use explicit installation roots when Civil 3D is not installed in the default
-locations:
+Use an explicit installation root when Civil 3D 2023 is not installed in the
+default location:
 
 ```powershell
 .\scripts\Invoke-CE-Tools-ReleaseValidation.ps1 `
-  -Version All `
-  -AutoCAD2023Root "D:\Autodesk\AutoCAD 2023" `
-  -AutoCAD2024Root "D:\Autodesk\AutoCAD 2024"
+  -Version 2023 `
+  -AutoCAD2023Root "D:\Autodesk\AutoCAD 2023"
 ```
 
-Build only one host version when diagnosing a compiler issue:
+Build the supported release host when diagnosing a compiler issue:
 
 ```powershell
 .\scripts\Invoke-CE-Tools-ReleaseValidation.ps1 `
-  -Version 2024 `
-  -AutoCAD2024Root "C:\Program Files\Autodesk\AutoCAD 2024"
+  -Version 2023 `
+  -AutoCAD2023Root "C:\Program Files\Autodesk\AutoCAD 2023"
 ```
 
 Run source and core checks without Autodesk compilation only for diagnosing the
@@ -112,7 +99,7 @@ validation harness itself:
 
 ```powershell
 .\scripts\Invoke-CE-Tools-ReleaseValidation.ps1 `
-  -Version All `
+  -Version 2023 `
   -SkipCivilBuild `
   -SkipInstallSnapshot
 ```
@@ -121,7 +108,7 @@ A `-SkipCivilBuild` result is not release approval.
 
 ## Install the exact bundle snapshot
 
-After both builds pass, install from the generated `bundle-snapshot` rather
+After the build passes, install from the generated `bundle-snapshot` rather
 than rebuilding or copying a different working tree.
 
 Keep the SHA-256 file with the tested snapshot. Any DLL change invalidates the
@@ -129,8 +116,8 @@ runtime results and requires a new validation run.
 
 ## Civil 3D runtime sequence
 
-Use copies of representative production drawings. Complete the full sequence
-in Civil 3D 2023 and then repeat it in Civil 3D 2024.
+Use copies of representative production drawings and complete the sequence in
+Civil 3D 2023.
 
 ### Load and ribbon
 
@@ -193,11 +180,9 @@ Do not approve based on a previous SHA.
 A merge is allowed only after all are true:
 
 - Civil 3D 2023 Release compilation passed.
-- Civil 3D 2024 Release compilation passed.
-- Runtime plans passed in both versions.
+- Civil 3D 2023 runtime plans passed.
 - Excel validation passed.
 - PDF publishing validation passed.
-- Exact PR heads match the validated dependency stack.
-- All PRs are mergeable.
-- No later commit invalidated an earlier result.
-- Approval is recorded before merging in dependency order.
+- The package manifest source commit matches the validated `main` commit.
+- `CE_INSTALLVERIFY` passes in the loaded Civil 3D 2023 session.
+- No later commit invalidated the tested package.

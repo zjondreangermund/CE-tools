@@ -180,7 +180,36 @@ bundle\CE Tools.bundle\Contents\Windows\<year>
 
 ## Install or update
 
-Close Civil 3D before installing an updated build.
+### One-click Civil 3D 2023 development build and install
+
+Close Civil 3D 2023, then double-click:
+
+```text
+BUILD-INSTALL-CIVIL3D-2023.cmd
+```
+
+The command stages the repository outside OneDrive, builds Release x64 with the
+pinned .NET 8 SDK, writes a V61 source-commit manifest, produces a verified ZIP
+and installs to:
+
+```text
+C:\ProgramData\Autodesk\ApplicationPlugins\CE Tools.bundle
+```
+
+### Install a packaged V61 release
+
+Extract `CE-Tools-V61-Civil3D-2023-<commit>.zip`, close Civil 3D and double-click:
+
+```text
+INSTALL-CE-TOOLS.cmd
+```
+
+The installer requests administrator access, refuses to replace the bundle while
+`acad.exe` is running, validates SHA-256 hashes before and after installation,
+and restores the previous bundle if installation fails. After Civil 3D starts,
+run `CE_INSTALLVERIFY` to verify the exact loaded files.
+
+The older user-scope installer remains available for development scenarios:
 
 ```powershell
 .\scripts\Install-CE-Tools.ps1 -Scope User
@@ -220,6 +249,11 @@ CE_COORDINATE
 CE_SEWSEQ
 CE_COLOR250
 COLOR250
+CE_SETTINGS
+CE_SETTINGSAUDIT
+CE_VERSION
+CE_INSTALLVERIFY
+CE_UPDATECHECK
 ```
 
 To uninstall:
