@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
@@ -14,7 +15,7 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 namespace CETools.Civil3D
 {
     /// <summary>
-    /// Opens the current CE Tools ribbon commands in a normal modeless window.
+    /// Opens every command declared by CE Tools in a normal modeless window.
     /// The window can be dragged to another monitor and shows direct command
     /// buttons instead of requiring the ribbon flyout menus.
     /// </summary>
@@ -128,58 +129,178 @@ namespace CETools.Civil3D
             }
         }
 
+        internal static void ReloadWindow()
+        {
+            if (_window != null)
+            {
+                _window.Close();
+                _window = null;
+            }
+            ShowWindow();
+        }
+
         internal static List<FloatingToolDefinition> ReadCurrentRibbonTools()
         {
             var result = new List<FloatingToolDefinition>();
             RibbonControl ribbon = ComponentManager.Ribbon;
-            if (ribbon == null)
-                return result;
-
-            RibbonTab tab = ribbon.Tabs.FirstOrDefault(
-                item => item != null && item.Id == "CE_TOOLS_RIBBON_TAB");
-            if (tab == null)
-                return result;
-
-            foreach (RibbonPanel panel in tab.Panels)
+            RibbonTab tab = ribbon == null
+                ? null
+                : ribbon.Tabs.FirstOrDefault(
+                    item => item != null && item.Id == "CE_TOOLS_RIBBON_TAB");
+            if (tab != null)
             {
-                if (panel == null || panel.Source == null)
-                    continue;
-
-                string panelName = CleanRibbonText(panel.Source.Title);
-                foreach (RibbonItem item in panel.Source.Items)
+                foreach (RibbonPanel panel in tab.Panels)
                 {
-                    RibbonMenuButton menu = item as RibbonMenuButton;
-                    if (menu == null)
+                    if (panel == null || panel.Source == null)
                         continue;
 
-                    string groupName = CleanRibbonText(menu.Text);
-                    foreach (object child in menu.Items)
+                    string panelName = CleanRibbonText(panel.Source.Title);
+                    foreach (RibbonItem item in panel.Source.Items)
                     {
-                        RibbonMenuItem command = child as RibbonMenuItem;
-                        if (command == null)
+                        RibbonMenuButton menu = item as RibbonMenuButton;
+                        if (menu == null)
                             continue;
 
-                        string commandText = command.CommandParameter as string;
-                        if (string.IsNullOrWhiteSpace(commandText))
-                            continue;
+                        string groupName = CleanRibbonText(menu.Text);
+                        foreach (object child in menu.Items)
+                        {
+                            RibbonMenuItem command = child as RibbonMenuItem;
+                            if (command == null)
+                                continue;
 
-                        result.Add(new FloatingToolDefinition(
-                            panelName,
-                            groupName,
-                            CleanRibbonText(command.Text),
-                            commandText,
-                            command.ToolTip == null
-                                ? string.Empty
-                                : command.ToolTip.ToString()));
+                            string commandText = command.CommandParameter as string;
+                            if (string.IsNullOrWhiteSpace(commandText))
+                                continue;
+
+                            result.Add(new FloatingToolDefinition(
+                                panelName,
+                                groupName,
+                                CleanRibbonText(command.Text),
+                                commandText,
+                                command.ToolTip == null
+                                    ? string.Empty
+                                    : command.ToolTip.ToString()));
+                        }
                     }
                 }
             }
 
-            return result
+            return MergeDeclaredCommands(result)
                 .OrderBy(item => item.Panel, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => item.Group, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => item.Text, StringComparer.OrdinalIgnoreCase)
                 .ToList();
+        }
+
+        private static IEnumerable<FloatingToolDefinition> MergeDeclaredCommands(
+            IEnumerable<FloatingToolDefinition> ribbonTools)
+        {
+            var commands = new Dictionary<string, FloatingToolDefinition>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (FloatingToolDefinition tool in ribbonTools)
+            {
+                string name = tool.Command.Trim();
+                if (name.Length > 0 && !commands.ContainsKey(name))
+                    commands.Add(name, tool);
+            }
+
+            foreach (FloatingToolDefinition tool in ReadDeclaredCommands())
+            {
+                string name = tool.Command.Trim();
+                if (name.Length > 0 && !commands.ContainsKey(name))
+                    commands.Add(name, tool);
+            }
+            return commands.Values;
+        }
+
+        internal static IEnumerable<FloatingToolDefinition> ReadDeclaredCommands()
+        {
+            Type[] types;
+            try
+            {
+                types = Assembly.GetExecutingAssembly().GetTypes();
+            }
+            catch (ReflectionTypeLoadException exception)
+            {
+                types = exception.Types.Where(item => item != null).ToArray();
+            }
+
+            foreach (Type type in types.OrderBy(item => item.FullName))
+            {
+                foreach (MethodInfo method in type.GetMethods(
+                    BindingFlags.Instance |
+                    BindingFlags.Static |
+                    BindingFlags.Public |
+                    BindingFlags.NonPublic |
+                    BindingFlags.DeclaredOnly))
+                {
+                    object[] attributes;
+                    try
+                    {
+                        attributes = method.GetCustomAttributes(
+                            typeof(CommandMethodAttribute),
+                            false);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    foreach (object attribute in attributes)
+                    {
+                        string command = ReadAttributeText(attribute, "GlobalName");
+                        if (string.IsNullOrWhiteSpace(command))
+                            continue;
+
+                        yield return new FloatingToolDefinition(
+                            "Command Catalogue",
+                            FriendlyName(type.Name.Replace("Commands", string.Empty)),
+                            FriendlyName(method.Name),
+                            command.Trim() + " ",
+                            "Run " + command.Trim() + ". Declared by " +
+                            type.Name + "." + method.Name + ".");
+                    }
+                }
+            }
+        }
+
+        private static string ReadAttributeText(object attribute, string propertyName)
+        {
+            if (attribute == null)
+                return string.Empty;
+            try
+            {
+                PropertyInfo property = attribute.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Instance |
+                    BindingFlags.Public |
+                    BindingFlags.NonPublic);
+                object value = property == null ? null : property.GetValue(attribute, null);
+                return value as string ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static string FriendlyName(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+
+            var characters = new List<char>();
+            char previous = '\0';
+            foreach (char current in value.Replace('_', ' ').Trim())
+            {
+                if (characters.Count > 0 && current != ' ' &&
+                    char.IsUpper(current) &&
+                    (char.IsLower(previous) || char.IsDigit(previous)))
+                    characters.Add(' ');
+                characters.Add(current);
+                previous = current;
+            }
+            return new string(characters.ToArray());
         }
 
         private static string CleanRibbonText(string text)
@@ -409,6 +530,13 @@ namespace CETools.Civil3D
                 Foreground = Brushes.DimGray,
                 TextWrapping = TextWrapping.Wrap
             });
+            labels.Children.Add(new TextBlock
+            {
+                Text = definition.Command.Trim(),
+                FontSize = 10.0,
+                Foreground = Brushes.SteelBlue,
+                TextWrapping = TextWrapping.Wrap
+            });
             Grid.SetColumn(labels, 1);
             content.Children.Add(labels);
 
@@ -446,12 +574,15 @@ namespace CETools.Civil3D
                 ? selected.Tag as string
                 : null;
             int visible = 0;
+            int available = 0;
             foreach (FloatingToolButton item in _buttons)
             {
                 bool onPage = string.Equals(
                     item.WorkflowKey,
                     selectedWorkflow,
                     StringComparison.OrdinalIgnoreCase);
+                if (onPage)
+                    available++;
                 bool show = onPage && (query.Length == 0 ||
                     item.Definition.SearchText.IndexOf(
                         query,
@@ -463,8 +594,8 @@ namespace CETools.Civil3D
                     visible++;
             }
 
-            _resultCount.Text = visible.ToString() +
-                " commands  •  Ctrl+F opens this window";
+            _resultCount.Text = visible.ToString() + " of " +
+                available.ToString() + " commands  •  Ctrl+F opens this window";
         }
     }
 
@@ -554,9 +685,14 @@ namespace CETools.Civil3D
             IList<FloatingToolDefinition> tools)
         {
             yield return Build(
+                "all", "All", "All CE Tools Commands",
+                "Search and launch every CE Tools command declared by the loaded plug-in, including specialist commands that are not pinned to the ribbon.",
+                tools, null);
+
+            yield return Build(
                 "general", "General", "General Workflow",
                 "Start with project information and standards, coordinate the discipline models, refresh linked data, produce quantities and issue reports.",
-                tools, null,
+                tools, new[] { "PROJECT", "STANDARD", "PRESENTATION", "REPORT", "BOQ", "REFRESH", "XREF", "MODEL", "DRAW", "DETAIL", "ASSET" },
                 Step("Project setup", "CE_PROJECTSETUP"),
                 Step("Project standards", "CE_STANDARDSELECT"),
                 Step("Refresh linked outputs", "CE_REFRESHALL"),

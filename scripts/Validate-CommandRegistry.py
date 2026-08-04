@@ -75,14 +75,20 @@ required_commands = {
     "CE_CLIENTBOOKREFRESH",
     "CE_CLIENTBOOKINFO",
     "CE_CLIENTBOOKINDEX",
+    "CE_COMMANDCENTER",
+    "CE_COMMANDREPORT",
+    "CE_COMMANDAUDIT",
+    "CE_COMMANDEXPORT",
+    "CE_COMMANDHTML",
+    "CE_RIBBONREFRESH",
 }
 missing = sorted(required_commands - set(commands))
 for command in missing:
     errors.append(f"Required command is missing from the registry: {command}")
 
-if len(commands) < 380:
+if len(commands) < 389:
     errors.append(
-        f"Only {len(commands)} command names were discovered; the preserved 380+ command surface has regressed"
+        f"Only {len(commands)} command names were discovered; the current 389-command surface has regressed"
     )
 
 if errors:

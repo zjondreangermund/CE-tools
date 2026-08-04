@@ -2,14 +2,16 @@
 """Source-shape checks for the Civil 3D workflow command centre."""
 
 from pathlib import Path
+import re
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 WINDOW = ROOT / "src" / "CE.Tools.Civil3D" / "FloatingToolsWindow.cs"
 PLUGIN = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
+CATALOGUE = ROOT / "src" / "CE.Tools.Civil3D" / "CommandCatalogueCommands.cs"
 
 errors: list[str] = []
-for path in (WINDOW, PLUGIN):
+for path in (WINDOW, PLUGIN, CATALOGUE):
     if not path.exists():
         errors.append(f"Missing required file: {path.relative_to(ROOT)}")
 
@@ -19,6 +21,7 @@ if errors:
 
 window = WINDOW.read_text(encoding="utf-8")
 plugin = PLUGIN.read_text(encoding="utf-8")
+catalogue = CATALOGUE.read_text(encoding="utf-8")
 
 required_window_markers = [
     '"CE_TOOLSPALETTE"',
@@ -27,6 +30,13 @@ required_window_markers = [
     "args.Key != Key.F",
     "ModifierKeys.Control",
     "OpenAtFirstStartup()",
+    "Assembly.GetExecutingAssembly().GetTypes()",
+    "typeof(CommandMethodAttribute)",
+    'ReadAttributeText(attribute, "GlobalName")',
+    "MergeDeclaredCommands(result)",
+    '"all", "All", "All CE Tools Commands"',
+    'Text = definition.Command.Trim()',
+    'available.ToString() + " commands',
     '"general", "General", "General Workflow"',
     '"survey", "Survey", "Survey Workflow"',
     '"roads", "Roads", "Roads Workflow"',
@@ -64,7 +74,51 @@ for marker in (
     if marker not in plugin:
         errors.append(f"Plugin workflow lifecycle is missing: {marker}")
 
-for name, text in ((WINDOW.name, window), (PLUGIN.name, plugin)):
+for command in (
+    "CE_COMMANDCENTER",
+    "CE_COMMANDREPORT",
+    "CE_COMMANDAUDIT",
+    "CE_COMMANDEXPORT",
+    "CE_COMMANDHTML",
+    "CE_RIBBONREFRESH",
+):
+    if f'"{command}"' not in catalogue:
+        errors.append(f"Command catalogue implementation is missing: {command}")
+    if f'"{command} "' not in plugin:
+        errors.append(f"Command catalogue ribbon launcher is missing: {command}")
+
+for marker in (
+    "GridReportPresenter.ShowReportAndOfferTable(",
+    "File.WriteAllLines(path, lines, new UTF8Encoding(true));",
+    "File.WriteAllText(path, html, new UTF8Encoding(true));",
+    "RibbonBuilder.EnsureCreated();",
+    "FloatingToolsCommands.ReloadWindow();",
+):
+    if marker not in catalogue:
+        errors.append(f"Command catalogue implementation is missing: {marker}")
+
+command_pattern = re.compile(
+    r'\[CommandMethod\((.*?)\)\]',
+    flags=re.DOTALL,
+)
+quoted_pattern = re.compile(r'"([^"]+)"')
+declared_commands: set[str] = set()
+for source in (ROOT / "src" / "CE.Tools.Civil3D").glob("*.cs"):
+    for attribute in command_pattern.findall(source.read_text(encoding="utf-8-sig")):
+        values = quoted_pattern.findall(attribute)
+        if values:
+            declared_commands.add(values[-1].upper())
+if len(declared_commands) < 389:
+    errors.append(
+        "The all-command workflow catalogue is backed by fewer than 389 "
+        f"declared commands ({len(declared_commands)} found)."
+    )
+
+for name, text in (
+    (WINDOW.name, window),
+    (PLUGIN.name, plugin),
+    (CATALOGUE.name, catalogue),
+):
     if text.count("{") != text.count("}"):
         errors.append(f"Unbalanced braces detected in {name}")
 

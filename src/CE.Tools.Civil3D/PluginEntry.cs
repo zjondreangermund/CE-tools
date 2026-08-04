@@ -166,7 +166,17 @@ namespace CETools.Civil3D
                         "Enable full native undo recording and run one-step undo or redo.",
                         Cmd("Enable Full Undo Recording", "CE_UNDOSETTINGS ", "Enable AutoCAD full undo recording."),
                         Cmd("Undo One Step", "CE_UNDO ", "Run one native AutoCAD undo step."),
-                        Cmd("Redo One Step", "CE_REDO ", "Run one native AutoCAD redo step."))));
+                        Cmd("Redo One Step", "CE_REDO ", "Run one native AutoCAD redo step.")),
+                    Menu(
+                        "CE_TOOLS_COMMAND_CATALOGUE_MENU",
+                        "Command\nCatalogue",
+                        "Search, audit and export every command declared by CE Tools.",
+                        Cmd("Open All Commands", "CE_COMMANDCENTER ", "Open the searchable all-command workflow centre."),
+                        Cmd("Command Report", "CE_COMMANDREPORT ", "Review every command, module and ribbon assignment."),
+                        Cmd("Command Audit", "CE_COMMANDAUDIT ", "Audit unique declarations and ribbon coverage."),
+                        Cmd("Export Command CSV", "CE_COMMANDEXPORT ", "Export the command catalogue to CSV."),
+                        Cmd("Export Searchable HTML", "CE_COMMANDHTML ", "Create a searchable offline command reference."),
+                        Cmd("Refresh Ribbon and Catalogue", "CE_RIBBONREFRESH ", "Rebuild the CE Tools ribbon and reload the command catalogue."))));
         }
 
         private static void AddSurveyPanel(RibbonTab tab)
