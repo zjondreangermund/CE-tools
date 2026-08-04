@@ -127,10 +127,12 @@ Verify:
 
 1. Create closed bays with `CE_PKROW` or `CE_PKDOUBLE`.
 2. Number them with `CE_PKNUMBER2`.
-3. Move or stretch one closed bay, then run `CE_PKNUMBERREFRESH`.
-4. Confirm its label moves to the bay centre and retains its contents and text height.
-5. Delete one numbered bay, run `CE_PKNUMBERREFRESH`, and confirm only its linked label is removed.
-6. Confirm ordinary MText and legacy `CE_PKNUMBER` / `CE_PKNUMBERX` labels are unchanged.
+3. Move or stretch one closed bay and finish the grip-edit command.
+4. Confirm its label automatically moves to the bay centre and retains its contents and text height.
+5. Delete one numbered bay and confirm only its linked label is removed automatically after Civil 3D becomes idle.
+6. Run `CE_PKNUMBERREFRESH` and confirm it remains available as a manual rebuild command.
+7. Confirm ordinary MText and legacy `CE_PKNUMBER` / `CE_PKNUMBERX` labels are unchanged.
+8. Repeat while another drawing is active and confirm only the edited drawing refreshes.
 
 ## Release gate
 
