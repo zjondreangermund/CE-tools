@@ -79,6 +79,7 @@ namespace CETools.Civil3D
             new List<SettingsCenterItem>
             {
                 Item("General", "Project setup", "CE_PROJECTSETUP", "Project identity, client, issue and drawing metadata."),
+                Item("General", "Import project styles", "CE_PROJECTSTYLEIMPORT", "Import approved Civil 3D styles from supplied or browsed DWG/DWT sources."),
                 Item("General", "Project style centre", "CE_PROJECTSTYLES", "Alignment, profile, corridor, point and network style selections."),
                 Item("General", "Annotation settings", "CE_ANNOTSETTINGS", "Paper text height, markers and annotation output."),
                 Item("General", "Undo settings", "CE_UNDOSETTINGS", "Enable full native AutoCAD undo recording."),

@@ -73,6 +73,9 @@ jobs:
       - name: Validate installed runtime presentation repairs
         run: python3 scripts/Validate-RuntimePresentationRepairs.py
 
+      - name: Validate supplied Civil 3D project style sources
+        run: python3 scripts/Validate-ProjectStyleSources.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:

@@ -19,7 +19,7 @@ This register prevents the requirements gathered during Civil 3D 2023 testing fr
 | Profile tools | Select profile-view styles and band sets, batch apply, fit and rebuild | WPF `ProfileViewBatchWindow` with style/band catalogues |
 | Dynamic profile annotation | Drag a point along an alignment and update station, elevation, grade and text | `ProfileAnnotationLinkStore` |
 | Annotation | Paper text sizes, annotative scale synchronisation and overlap cleanup | Shared annotation settings, `AnnotationScaleSyncManager` and `CE_OVERLAPFIX` |
-| Workflow window | Auto-open, Ctrl+F, all commands, General/Survey/Roads/Stormwater/Sewer/Water/Bulk Water/Flood | Reflection-backed 412-command catalogue with complete ordered discipline steps |
+| Workflow window | Auto-open, Ctrl+F, all commands, General/Survey/Roads/Stormwater/Sewer/Water/Bulk Water/Flood | Reflection-backed 413-command catalogue with complete ordered discipline steps |
 | Settings UX | Use dialogs rather than command-line workflow selection wherever practical | Searchable `CE_SETTINGS` centre; WPF annotation settings; dedicated production windows; visual parent launchers across the original Phase 1 and major production families |
 | BOQs and costs | Linked BOQs and water/sewer estimates with automatic refresh | BOQ/cost link stores and deferred refresh managers |
 | Drawing production | A4, A3, A1 and A0 layouts, books and indexes | Production and client-book modules |

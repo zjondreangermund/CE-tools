@@ -117,7 +117,7 @@ for marker in (
     "Coordinate Utilities",
     "Label Utilities",
     "Parking Utilities",
-    "412 unique commands",
+    "413 unique commands",
 ):
     if marker not in completion:
         errors.append(f"Phase 1 completion ledger is missing: {marker}")
@@ -131,8 +131,8 @@ for path in SOURCE.glob("*.cs"):
         values = string_pattern.findall(match.group(1))
         if values:
             commands.add(values[-1].upper())
-if len(commands) < 412:
-    errors.append(f"Phase 1 command surface regressed below 412 ({len(commands)} found)")
+if len(commands) < 413:
+    errors.append(f"Phase 1 command surface regressed below 413 ({len(commands)} found)")
 
 if phase_one.count("{") != phase_one.count("}"):
     errors.append("PhaseOneUtilityCommands.cs has unbalanced braces")
@@ -145,5 +145,5 @@ if errors:
 
 print(
     "CE Tools Phase 1 source-completion validation passed: all original utility "
-    "families, visual launchers, workflow steps and 412 commands are present."
+    "families, visual launchers, workflow steps and 413 commands are present."
 )

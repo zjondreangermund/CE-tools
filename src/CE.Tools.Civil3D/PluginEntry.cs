@@ -185,6 +185,7 @@ namespace CETools.Civil3D
                         "CE_TOOLS_PROJECT_STYLES_MENU",
                         "Project\nStyles",
                         "Select and review project Civil 3D styles by discipline.",
+                        Cmd("Import Source Styles", "CE_PROJECTSTYLEIMPORT ", "Import Civil 3D styles from the three supplied source drawings or another DWG/DWT."),
                         Cmd("Project Style Centre", "CE_PROJECTSTYLES ", "Select alignment, profile, corridor, point and network styles."),
                         Cmd("Project Style Information", "CE_PROJECTSTYLEINFO ", "Review stored project style selections."),
                         Cmd("Clear Project Styles", "CE_PROJECTSTYLECLEAR ", "Clear only the stored project style selections.")),

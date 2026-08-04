@@ -4,7 +4,7 @@ Civil engineering productivity tools for Autodesk Civil 3D.
 
 ## Current alpha commands
 
-The V61 source contains 412 unique commands. Use `Ctrl+F`, `CE_COMMANDCENTER`
+The V61 source contains 413 unique commands. Use `Ctrl+F`, `CE_COMMANDCENTER`
 or `CE_SETTINGS` to search the complete installed command surface. The sections
 below retain detailed introductions to the original utility families.
 

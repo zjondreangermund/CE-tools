@@ -6,6 +6,9 @@ All notable CE Tools changes will be recorded here.
 
 ### Added
 
+- Three owner-supplied Civil 3D source drawings packaged as approved project
+  style libraries, plus `CE_PROJECTSTYLEIMPORT` for transferring their object,
+  label and dependent styles without importing design geometry.
 - Source-complete Phase 1 utility hub `CE_PHASE1` covering the original Feature
   Line, Alignment, Drawing/Survey Cleanup, Background, Viewport, Hatch, Layer,
   Excel, Coordinate, Label and Parking families.
@@ -83,7 +86,7 @@ All notable CE Tools changes will be recorded here.
   source commit and hashes before removing its rollback copy.
 - Both supported Civil 3D 2023 build paths now create the same versioned release
   package before optional installation.
-- The complete public AutoCAD command surface is now 412 unique commands.
+- The complete public AutoCAD command surface is now 413 unique commands.
 
 ## 0.1.0-alpha — 2026-07-23
 

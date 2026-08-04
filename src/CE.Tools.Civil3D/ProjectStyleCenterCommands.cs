@@ -2,6 +2,7 @@ using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Reflection;
 using System.Windows;
@@ -10,7 +11,9 @@ using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
+using Autodesk.Civil;
 using Autodesk.Civil.ApplicationServices;
+using Autodesk.Civil.DatabaseServices.Styles;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.ProjectStyleCenterCommands))]
@@ -64,27 +67,44 @@ namespace CETools.Civil3D
             Document document = ActiveDocument();
             if (document == null) return;
 
-            Dictionary<string, List<string>> catalogue = ReadCivilStyleCatalogue(document);
-            ProjectStyleSelection existing = ReadSelection(document.Database);
-            var window = new ProjectStyleCenterWindow(
-                Disciplines,
-                SelectionKeys,
-                catalogue,
-                existing);
-            AcApplication.ShowModalWindow(window);
-            if (!window.Accepted)
+            while (true)
             {
-                document.Editor.WriteMessage("\nCE_PROJECTSTYLES cancelled. Existing project style selections were not changed.");
+                Dictionary<string, List<string>> catalogue =
+                    ReadCivilStyleCatalogue(document);
+                ProjectStyleSelection existing = ReadSelection(document.Database);
+                var window = new ProjectStyleCenterWindow(
+                    Disciplines,
+                    SelectionKeys,
+                    catalogue,
+                    existing);
+                AcApplication.ShowModalWindow(window);
+                if (window.ImportRequested)
+                {
+                    ImportProjectStyleSource(document, false);
+                    continue;
+                }
+                if (!window.Accepted)
+                {
+                    document.Editor.WriteMessage("\nCE_PROJECTSTYLES cancelled. Existing project style selections were not changed.");
+                    return;
+                }
+
+                ProjectStyleSelection selection = window.BuildSelection();
+                WriteSelection(document.Database, selection);
+                document.Editor.WriteMessage(
+                    "\nCE_PROJECTSTYLES complete. Discipline={0}; stored style selections={1}.",
+                    selection.Discipline,
+                    selection.Values.Count);
+                ShowSelection(document, selection, "CE Tools - Project Style Centre");
                 return;
             }
+        }
 
-            ProjectStyleSelection selection = window.BuildSelection();
-            WriteSelection(document.Database, selection);
-            document.Editor.WriteMessage(
-                "\nCE_PROJECTSTYLES complete. Discipline={0}; stored style selections={1}.",
-                selection.Discipline,
-                selection.Values.Count);
-            ShowSelection(document, selection, "CE Tools - Project Style Centre");
+        [CommandMethod("CE_TOOLS", "CE_PROJECTSTYLEIMPORT", CommandFlags.Modal | CommandFlags.Redraw)]
+        public void ImportProjectStyles()
+        {
+            Document document = ActiveDocument();
+            if (document != null) ImportProjectStyleSource(document, true);
         }
 
         [CommandMethod("CE_TOOLS", "CE_PROJECTSTYLEINFO", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -202,6 +222,277 @@ namespace CETools.Civil3D
                 rows.Add(new KeyValuePair<string, string>(key, value));
             }
             return rows;
+        }
+
+        private static bool ImportProjectStyleSource(
+            Document document,
+            bool showResult)
+        {
+            List<ProjectStyleSource> sources = FindBundledStyleSources();
+            var sourceLabels = sources
+                .Select(source => source.DisplayName)
+                .ToList();
+            const string allBundledLabel = "All supplied CE style sources (01 to 03)";
+            if (sources.Count > 1) sourceLabels.Insert(0, allBundledLabel);
+            const string browseLabel = "Browse for another Civil 3D DWG or DWT...";
+            sourceLabels.Add(browseLabel);
+
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - Import Project Styles",
+                "Choose the approved source drawing(s). CE Tools uses Civil 3D's supported style export API and never imports design geometry.");
+            model.AddChoice(
+                "Source",
+                "Style Source",
+                "Source drawing or template",
+                sourceLabels[0],
+                "The three supplied CE project drawings are installed with the application bundle.",
+                sourceLabels);
+            model.AddChoice(
+                "Conflict",
+                "Conflict Handling",
+                "Same-name style handling",
+                "Keep existing and rename imported",
+                "Choose whether current drawing styles win or the approved source replaces matching names.",
+                new[]
+                {
+                    "Keep existing and rename imported",
+                    "Replace matching styles from source"
+                });
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return false;
+
+            string selected = model.Text("Source");
+            var sourcePaths = new List<string>();
+            if (string.Equals(selected, browseLabel, StringComparison.OrdinalIgnoreCase))
+            {
+                var browse = new Microsoft.Win32.OpenFileDialog
+                {
+                    Title = "Select Civil 3D Project Style Source",
+                    Filter = "Civil 3D drawing or template (*.dwg;*.dwt)|*.dwg;*.dwt|All files (*.*)|*.*",
+                    CheckFileExists = true,
+                    Multiselect = false
+                };
+                if (browse.ShowDialog() != true) return false;
+                sourcePaths.Add(browse.FileName);
+            }
+            else if (string.Equals(
+                selected,
+                allBundledLabel,
+                StringComparison.OrdinalIgnoreCase))
+            {
+                sourcePaths.AddRange(sources.Select(source => source.FilePath));
+            }
+            else
+            {
+                ProjectStyleSource source = sources.FirstOrDefault(item =>
+                    string.Equals(
+                        item.DisplayName,
+                        selected,
+                        StringComparison.OrdinalIgnoreCase));
+                if (source != null) sourcePaths.Add(source.FilePath);
+            }
+
+            if (sourcePaths.Count == 0 || sourcePaths.Any(path =>
+                string.IsNullOrWhiteSpace(path) || !File.Exists(path)))
+            {
+                MessageBox.Show(
+                    "The selected style source could not be found. Reinstall CE Tools or browse to another Civil 3D DWG/DWT.",
+                    "CE Tools - Import Project Styles",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return false;
+            }
+
+            bool replace = string.Equals(
+                model.Text("Conflict"),
+                "Replace matching styles from source",
+                StringComparison.OrdinalIgnoreCase);
+            if (!PopupTablePresenter.ShowReview(
+                "CE Tools - Confirm Style Import",
+                replace
+                    ? "Matching style names in the active drawing will be replaced by the approved source definitions."
+                    : "Existing styles will remain; same-name source styles will be imported under a renamed copy.",
+                new List<KeyValuePair<string, string>>
+                {
+                    new KeyValuePair<string, string>("Sources", string.Join(", ", sourcePaths.Select(Path.GetFileName))),
+                    new KeyValuePair<string, string>("Source count", sourcePaths.Count.ToString(CultureInfo.CurrentCulture)),
+                    new KeyValuePair<string, string>("Conflict handling", replace ? "Replace" : "Keep and rename")
+                },
+                "Import"))
+            {
+                return false;
+            }
+
+            int exported = 0;
+            try
+            {
+                foreach (string sourcePath in sourcePaths)
+                {
+                    exported += ExportStylesFromSource(
+                        sourcePath,
+                        document.Database,
+                        replace
+                            ? StyleConflictResolverType.Override
+                            : StyleConflictResolverType.Rename);
+                }
+            }
+            catch (System.Exception exception)
+            {
+                MessageBox.Show(
+                    "Civil 3D could not import styles from the selected source.\n\n" +
+                    exception.Message,
+                    "CE Tools - Import Project Styles",
+                    MessageBoxButton.OK,
+                    MessageBoxImage.Error);
+                return false;
+            }
+
+            Dictionary<string, List<string>> catalogue =
+                ReadCivilStyleCatalogue(document);
+            int installedChoices = catalogue.Values.Sum(items =>
+                Math.Max(0, items.Count - 1));
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_PROJECTSTYLEIMPORT complete. Source styles processed={0}; installed style choices found={1}.",
+                exported,
+                installedChoices);
+            if (showResult)
+            {
+                PopupTablePresenter.ShowReportAndOfferTable(
+                    document,
+                    "CE Tools - Project Styles Imported",
+                    "The source drawing remains unchanged. Open Project Style Centre to assign imported styles by discipline.",
+                    new List<KeyValuePair<string, string>>
+                    {
+                        new KeyValuePair<string, string>("Sources", string.Join(", ", sourcePaths.Select(Path.GetFileName))),
+                        new KeyValuePair<string, string>("Source styles processed", exported.ToString(CultureInfo.CurrentCulture)),
+                        new KeyValuePair<string, string>("Installed selectable choices", installedChoices.ToString(CultureInfo.CurrentCulture)),
+                        new KeyValuePair<string, string>("Conflict handling", replace ? "Replaced matching styles" : "Kept existing styles")
+                    },
+                    "CE TOOLS PROJECT STYLE IMPORT");
+            }
+            return true;
+        }
+
+        private static int ExportStylesFromSource(
+            string sourcePath,
+            Database destination,
+            StyleConflictResolverType conflictResolution)
+        {
+            using (var source = new Database(false, true))
+            {
+                source.ReadDwgFile(
+                    sourcePath,
+                    FileShare.Read,
+                    true,
+                    string.Empty);
+                source.CloseInput(true);
+                CivilDocument civilSource = CivilDocument.GetCivilDocument(source);
+                if (civilSource == null)
+                    throw new InvalidOperationException(
+                        "The selected file does not contain a readable Civil 3D document.");
+
+                var styleIds = new ObjectIdCollection();
+                using (Transaction transaction =
+                    source.TransactionManager.StartTransaction())
+                {
+                    var candidates = new HashSet<ObjectId>();
+                    CollectStyleObjectIds(
+                        ReadProperty(civilSource, "Styles"),
+                        0,
+                        new HashSet<object>(ReferenceEqualityComparer.Instance),
+                        candidates);
+                    foreach (ObjectId id in candidates)
+                    {
+                        if (id.IsNull || id.IsErased) continue;
+                        DBObject value;
+                        try
+                        {
+                            value = transaction.GetObject(id, OpenMode.ForRead, false);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+                        if (value is StyleBase) styleIds.Add(id);
+                    }
+                    if (styleIds.Count == 0)
+                        throw new InvalidOperationException(
+                            "No transferable Civil 3D styles were found in the selected file.");
+
+                    StyleBase.ExportTo(
+                        styleIds,
+                        destination,
+                        conflictResolution);
+                    transaction.Commit();
+                }
+                return styleIds.Count;
+            }
+        }
+
+        private static void CollectStyleObjectIds(
+            object value,
+            int depth,
+            ISet<object> visited,
+            ISet<ObjectId> result)
+        {
+            if (value == null || value is string || depth > 6 || visited.Contains(value))
+                return;
+            visited.Add(value);
+
+            foreach (object item in EnumerateStyleItems(value))
+            {
+                if (item is ObjectId) result.Add((ObjectId)item);
+            }
+
+            PropertyInfo[] properties;
+            try
+            {
+                properties = value.GetType().GetProperties(
+                    BindingFlags.Public | BindingFlags.Instance);
+            }
+            catch
+            {
+                return;
+            }
+            foreach (PropertyInfo property in properties)
+            {
+                if (!property.CanRead || property.GetIndexParameters().Length != 0)
+                    continue;
+                if (depth > 0 &&
+                    property.Name.IndexOf("Style", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                object child;
+                try
+                {
+                    child = property.GetValue(value, null);
+                }
+                catch
+                {
+                    continue;
+                }
+                CollectStyleObjectIds(child, depth + 1, visited, result);
+            }
+        }
+
+        private static List<ProjectStyleSource> FindBundledStyleSources()
+        {
+            string assemblyFolder = Path.GetDirectoryName(
+                Assembly.GetExecutingAssembly().Location) ?? string.Empty;
+            string resources = Path.GetFullPath(Path.Combine(
+                assemblyFolder,
+                "..",
+                "..",
+                "Resources",
+                "ProjectStyles"));
+            if (!Directory.Exists(resources)) return new List<ProjectStyleSource>();
+            return Directory.GetFiles(resources, "*.dwg")
+                .Concat(Directory.GetFiles(resources, "*.dwt"))
+                .OrderBy(path => path, StringComparer.CurrentCultureIgnoreCase)
+                .Select((path, index) => new ProjectStyleSource(
+                    "CE supplied source " + (index + 1).ToString("00", CultureInfo.InvariantCulture) +
+                    " — " + Path.GetFileName(path),
+                    path))
+                .ToList();
         }
 
         private static Dictionary<string, List<string>> ReadCivilStyleCatalogue(
@@ -610,6 +901,18 @@ namespace CETools.Civil3D
         public Dictionary<string, string> Values { get; private set; }
     }
 
+    internal sealed class ProjectStyleSource
+    {
+        public ProjectStyleSource(string displayName, string filePath)
+        {
+            DisplayName = displayName ?? string.Empty;
+            FilePath = filePath ?? string.Empty;
+        }
+
+        public string DisplayName { get; private set; }
+        public string FilePath { get; private set; }
+    }
+
     internal sealed class ProjectStyleCenterWindow : Window
     {
         private readonly ComboBox _discipline;
@@ -622,6 +925,7 @@ namespace CETools.Civil3D
             ProjectStyleSelection existing)
         {
             Accepted = false;
+            ImportRequested = false;
             _selectors = new Dictionary<string, ComboBox>(StringComparer.OrdinalIgnoreCase);
             Title = "CE Tools - Project Style Centre";
             Width = 760;
@@ -748,6 +1052,18 @@ namespace CETools.Civil3D
                 DialogResult = true;
                 Close();
             };
+            var import = new Button
+            {
+                Content = "Import Source Styles...",
+                MinWidth = 150,
+                Padding = new Thickness(12, 6, 12, 6),
+                Margin = new Thickness(0, 0, 8, 0)
+            };
+            import.Click += delegate
+            {
+                ImportRequested = true;
+                Close();
+            };
             var cancel = new Button
             {
                 Content = "Cancel",
@@ -755,6 +1071,7 @@ namespace CETools.Civil3D
                 Padding = new Thickness(12, 6, 12, 6),
                 IsCancel = true
             };
+            buttons.Children.Add(import);
             buttons.Children.Add(save);
             buttons.Children.Add(cancel);
             DockPanel.SetDock(buttons, Dock.Bottom);
@@ -768,6 +1085,7 @@ namespace CETools.Civil3D
         }
 
         public bool Accepted { get; private set; }
+        public bool ImportRequested { get; private set; }
 
         public ProjectStyleSelection BuildSelection()
         {
