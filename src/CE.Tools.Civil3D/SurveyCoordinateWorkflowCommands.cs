@@ -493,6 +493,7 @@ namespace CETools.Civil3D
 
             try
             {
+                DynamicCoordinateLinkStore.Refresh(document);
                 int active;
                 int missing;
                 RefreshLinkedTable(
@@ -558,32 +559,49 @@ namespace CETools.Civil3D
             }
 
             Editor editor = document.Editor;
-            var entityOptions = new PromptEntityOptions(
-                "\nSelect a polyline. Point order follows the stored polyline direction: ");
-            entityOptions.SetRejectMessage(
-                "\nSelect an AutoCAD lightweight, 2D or 3D polyline.");
-            entityOptions.AddAllowedClass(typeof(Polyline), false);
-            entityOptions.AddAllowedClass(typeof(Polyline2d), false);
-            entityOptions.AddAllowedClass(typeof(Polyline3d), false);
-            PromptEntityResult entityResult = editor.GetEntity(entityOptions);
-            if (entityResult.Status != PromptStatus.OK) return;
+            var selectionOptions = new PromptSelectionOptions
+            {
+                MessageForAdding =
+                    "\nSelect one or more lightweight, 2D or 3D polylines. " +
+                    "Point order follows each stored polyline direction: ",
+                AllowDuplicates = false,
+                RejectObjectsFromNonCurrentSpace = true
+            };
+            var selectionFilter = new SelectionFilter(new[]
+            {
+                new TypedValue((int)DxfCode.Start, "LWPOLYLINE,POLYLINE")
+            });
+            PromptSelectionResult selectionResult = editor.GetSelection(
+                selectionOptions,
+                selectionFilter);
+            if (selectionResult.Status != PromptStatus.OK) return;
+            ObjectId[] sourceObjectIds = selectionResult.Value.GetObjectIds()
+                .Distinct()
+                .ToArray();
+            if (sourceObjectIds.Length == 0) return;
 
-            List<Point3d> vertices;
-            string layer;
+            var vertices = new List<Point3d>();
+            var vertexCounts = new List<int>();
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                Entity source = transaction.GetObject(
-                    entityResult.ObjectId,
-                    OpenMode.ForRead,
-                    false) as Entity;
-                if (source == null)
+                foreach (ObjectId sourceObjectId in sourceObjectIds)
                 {
-                    editor.WriteMessage("\nCE_COORDPOLY2 cancelled. The polyline could not be opened.");
-                    return;
-                }
+                    Entity source = transaction.GetObject(
+                        sourceObjectId,
+                        OpenMode.ForRead,
+                        false) as Entity;
+                    if (source == null)
+                    {
+                        vertexCounts.Add(0);
+                        continue;
+                    }
 
-                layer = source.Layer;
-                vertices = ReadPolylineVertices(source, transaction);
+                    List<Point3d> sourceVertices = ReadPolylineVertices(
+                        source,
+                        transaction);
+                    vertexCounts.Add(sourceVertices.Count);
+                    vertices.AddRange(sourceVertices);
+                }
             }
 
             if (vertices.Count == 0)
@@ -603,7 +621,7 @@ namespace CETools.Civil3D
                         vertices[index]);
             }
 
-            string defaultPrefix = BuildPrefix(layer);
+            string defaultPrefix = BuildPrefix(string.Empty);
             PromptResult prefixResult = editor.GetString(
                 new PromptStringOptions("\nPoint-name prefix <" + defaultPrefix + ">: ")
                 {
@@ -625,7 +643,7 @@ namespace CETools.Civil3D
             if (startResult.Status != PromptStatus.OK) return;
 
             PromptPointResult insertion = editor.GetPoint(
-                "\nPick insertion point for the compact Y-X-Z vertex table: ");
+                "\nPick insertion point for the compact X-Y-Z vertex table: ");
             if (insertion.Status != PromptStatus.OK) return;
 
             AnnotationOptions settings;
@@ -710,10 +728,19 @@ namespace CETools.Civil3D
                     }
                 }
 
-                DynamicCoordinateLinkStore.LinkPolylineVertices(
-                    document.Database,
-                    entityResult.ObjectId,
-                    sourceIds);
+                int sourceCursor = 0;
+                for (int sourceIndex = 0;
+                    sourceIndex < sourceObjectIds.Length;
+                    sourceIndex++)
+                {
+                    int count = vertexCounts[sourceIndex];
+                    if (count <= 0) continue;
+                    DynamicCoordinateLinkStore.LinkPolylineVertices(
+                        document.Database,
+                        sourceObjectIds[sourceIndex],
+                        sourceIds.Skip(sourceCursor).Take(count).ToList());
+                    sourceCursor += count;
+                }
                 if (!surfaceId.IsNull)
                     DynamicCoordinateLinkStore.LinkSurfaceElevation(
                         document.Database,
@@ -728,7 +755,8 @@ namespace CETools.Civil3D
                     "POLYLINE VERTEX POINTS — X / Y / Z");
 
                 editor.WriteMessage(
-                    "\nCE_COORDPOLY2 complete. Vertices={0}; first={1}; last={2}; table={3}.",
+                    "\nCE_COORDPOLY2 complete. Polylines={0}; vertices={1}; first={2}; last={3}; table={4}.",
+                    sourceObjectIds.Length,
                     sourceIds.Count,
                     pointNames[0],
                     pointNames[pointNames.Count - 1],
@@ -1171,7 +1199,7 @@ namespace CETools.Civil3D
                     string pointName = DynamicCoordinateLinkStore.ReadPointName(
                         point,
                         transaction,
-                        "P" + fallbackNumber.ToString("D3", CultureInfo.InvariantCulture));
+                        "P" + fallbackNumber.ToString(CultureInfo.InvariantCulture));
                     rows.Add(new CoordinateRow(
                         fallbackNumber.ToString(CultureInfo.InvariantCulture),
                         pointName,
@@ -1200,36 +1228,49 @@ namespace CETools.Civil3D
                     "A coordinate table cannot be populated with zero rows.");
             }
 
-            const int columns = 5;
+            const int columns = 4;
             table.SetSize(rows.Count + 2, columns);
             double height = NormalizeHeight(textHeight);
-            table.SetRowHeight(Math.Max(height * 1.65, 3.0));
-            table.SetColumnWidth(Math.Max(height * 5.5, 12.0));
+            table.SetRowHeight(Math.Max(height * 2.4, 5.0));
+            table.SetColumnWidth(Math.Max(height * 7.0, 18.0));
+            table.Columns[0].Width = Math.Max(height * 7.5, 20.0);
             table.Cells[0, 0].TextString = title;
             table.MergeCells(CellRange.Create(table, 0, 0, 0, columns - 1));
 
             string[] headings =
             {
-                "POINT",
                 "POINT NAME",
-                "Y / NORTHING",
-                "X / EASTING",
-                "Z / ELEVATION"
+                "X",
+                "Y",
+                "Z"
             };
             for (int column = 0; column < headings.Length; column++)
             {
                 table.Cells[1, column].TextString = headings[column];
+                table.Cells[1, column].TextHeight = height;
+                table.Cells[1, column].Alignment = CellAlignment.MiddleCenter;
             }
+
+            table.Cells[0, 0].TextHeight = height * 1.15;
+            table.Cells[0, 0].Alignment = CellAlignment.MiddleCenter;
 
             for (int index = 0; index < rows.Count; index++)
             {
                 CoordinateRow row = rows[index];
                 int tableRow = index + 2;
-                table.Cells[tableRow, 0].TextString = row.Point;
-                table.Cells[tableRow, 1].TextString = row.PointName;
-                table.Cells[tableRow, 2].TextString = row.Y.ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[tableRow, 3].TextString = row.X.ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[tableRow, 4].TextString = row.Z.ToString("N3", CultureInfo.CurrentCulture);
+                string[] values =
+                {
+                    row.PointName,
+                    row.X.ToString("N3", CultureInfo.CurrentCulture),
+                    row.Y.ToString("N3", CultureInfo.CurrentCulture),
+                    row.Z.ToString("N3", CultureInfo.CurrentCulture)
+                };
+                for (int column = 0; column < values.Length; column++)
+                {
+                    table.Cells[tableRow, column].TextString = values[column];
+                    table.Cells[tableRow, column].TextHeight = height;
+                    table.Cells[tableRow, column].Alignment = CellAlignment.MiddleCenter;
+                }
             }
 
             table.GenerateLayout();

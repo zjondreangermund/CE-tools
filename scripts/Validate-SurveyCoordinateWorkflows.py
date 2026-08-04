@@ -15,9 +15,10 @@ SOURCE = ROOT / "src" / "CE.Tools.Civil3D" / "SurveyCoordinateWorkflowCommands.c
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 DIRECTION = ROOT / "src" / "CE.Tools.Civil3D" / "PolylineDirectionCommands.cs"
 LEGACY_POLY = ROOT / "src" / "CE.Tools.Civil3D" / "CoordinatePolylineCommands.cs"
+DYNAMIC_LINKS = ROOT / "src" / "CE.Tools.Civil3D" / "DynamicCoordinateLinkStore.cs"
 
 errors: list[str] = []
-for path in (SOURCE, RIBBON, DIRECTION, LEGACY_POLY):
+for path in (SOURCE, RIBBON, DIRECTION, LEGACY_POLY, DYNAMIC_LINKS):
     if not path.exists():
         errors.append(f"Missing required file: {path.relative_to(ROOT)}")
 
@@ -29,6 +30,7 @@ source = SOURCE.read_text(encoding="utf-8")
 ribbon = RIBBON.read_text(encoding="utf-8")
 direction = DIRECTION.read_text(encoding="utf-8")
 legacy_poly = LEGACY_POLY.read_text(encoding="utf-8")
+dynamic_links = DYNAMIC_LINKS.read_text(encoding="utf-8")
 
 commands = [
     "CE_COORDPICK2",
@@ -51,10 +53,15 @@ required_markers = [
     "database.GetObjectId",
     "A coordinate table cannot be populated with zero rows.",
     '"POINT NAME"',
-    '"Y / NORTHING"',
-    '"X / EASTING"',
-    '"Z / ELEVATION"',
+    '"X"',
+    '"Y"',
+    '"Z"',
+    "const int columns = 4;",
+    "table.Cells[tableRow, column].Alignment = CellAlignment.MiddleCenter;",
     "ReadPolylineVertices",
+    "Select one or more lightweight, 2D or 3D polylines",
+    "sourceObjectIds[sourceIndex]",
+    "sourceIds.Skip(sourceCursor).Take(count).ToList()",
     "CivilApplication.ActiveDocument",
     "CogoPoints.Add",
     "SetRawDescription",
@@ -64,7 +71,30 @@ for marker in required_markers:
     if marker not in source:
         errors.append(f"Linked coordinate implementation is missing: {marker}")
 
-if "Math.Max(height * 5.5, 12.0)" not in source:
+for forbidden in ('"Y / NORTHING"', '"X / EASTING"', '"Z / ELEVATION"'):
+    if forbidden in source or forbidden in legacy_poly:
+        errors.append(
+            "Coordinate-table wording regressed; use only X, Y and Z: " + forbidden
+        )
+
+for marker in (
+    'FollowerRecord = "CE_DYNAMIC_COORDINATE_FOLLOWER"',
+    'VertexRecord = "CE_DYNAMIC_POLYLINE_VERTEX"',
+    'SurfaceRecord = "CE_DYNAMIC_SURFACE_ELEVATION"',
+    '"LastX="',
+    "TryReadVertex(",
+    "TrySetPoint(",
+    "entity.TransformBy(Matrix3d.Displacement(sourcePoint - lastPoint))",
+    "UpdateCoordinateContents(",
+    "public static int CountLinks(Database database)",
+):
+    if marker not in dynamic_links:
+        errors.append(f"Dynamic coordinate-link implementation is missing: {marker}")
+
+if "DynamicCoordinateLinkStore.Refresh(document);" not in source:
+    errors.append("Coordinate-table refresh does not first update dynamic point links")
+
+if "Math.Max(height * 7.0, 18.0)" not in source:
     errors.append("Compact coordinate-table width rule is missing")
 if re.search(r"SetColumnWidth\([^\n]*(?:2500|5000)", source):
     errors.append("Oversized coordinate-table width was introduced")
@@ -87,6 +117,7 @@ for marker, text, description in (
 for name, text in (
     (SOURCE.name, source),
     (RIBBON.name, ribbon),
+    (DYNAMIC_LINKS.name, dynamic_links),
 ):
     if text.count("{") != text.count("}"):
         errors.append(f"Unbalanced braces detected in {name}")

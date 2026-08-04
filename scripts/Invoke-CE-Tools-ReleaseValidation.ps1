@@ -233,6 +233,7 @@ try {
         "Validate-WorkflowRepairs.py",
         "Validate-SurveyCoordinateWorkflows.py",
         "Validate-WorkflowWindow.py",
+        "Validate-UserCommentCoverage.py",
         "Validate-BillOfQuantities.py",
         "Validate-WaterSewerCostEstimate.py",
         "Validate-RefreshAll.py",

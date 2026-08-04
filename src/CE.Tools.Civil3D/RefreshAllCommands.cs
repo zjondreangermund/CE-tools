@@ -28,6 +28,7 @@ namespace CETools.Civil3D
             if (document == null) return;
 
             var failures = new List<string>();
+            int coordinateFollowers;
             int coordinateTables;
             int settingOutSchedules;
             int parkingLabels;
@@ -39,6 +40,10 @@ namespace CETools.Civil3D
             LinkedTableAutoRefreshManager.BeginInternalUpdate();
             try
             {
+                coordinateFollowers = Run(
+                    "dynamic coordinate followers",
+                    failures,
+                    delegate { return DynamicCoordinateLinkStore.Refresh(document); });
                 coordinateTables = Run(
                     "coordinate tables",
                     failures,
@@ -85,9 +90,11 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_REFRESHALL complete. Coordinate tables={0}; setting-out schedules={1}; " +
-                "parking labels={2}; surface links changed={3}; BOQ tables={4}; " +
-                "cost workbooks={5}; cross sections={6}; restored linked outputs={7}; module failures={8}.",
+                "\nCE_REFRESHALL complete. Coordinate followers={0}; coordinate tables={1}; " +
+                "setting-out schedules={2}; parking labels={3}; surface links changed={4}; " +
+                "BOQ tables={5}; cost workbooks={6}; cross sections={7}; " +
+                "restored linked outputs={8}; module failures={9}.",
+                coordinateFollowers,
                 coordinateTables,
                 settingOutSchedules,
                 parkingLabels,
@@ -145,6 +152,7 @@ namespace CETools.Civil3D
 
             var rows = new List<KeyValuePair<string, string>>
             {
+                Pair("Dynamic coordinate links", SafeCount(delegate { return DynamicCoordinateLinkStore.CountLinks(database); })),
                 Pair("Linked coordinate tables", SafeCount(delegate { return SurveyCoordinateWorkflowCommands.CountLinkedTables(database); })),
                 Pair("Linked setting-out schedules", SafeCount(delegate { return SettingOutScheduleCommands.CountLinkedTables(database); })),
                 Pair("Linked parking labels", SafeCount(delegate { return ParkingNumberLinkCommands.CountLinkedLabels(database); })),
@@ -414,6 +422,7 @@ namespace CETools.Civil3D
             _internalUpdate = true;
             try
             {
+                DynamicCoordinateLinkStore.Refresh(document);
                 SurveyCoordinateWorkflowCommands.RefreshAll(document);
                 SettingOutScheduleCommands.RefreshAll(document);
                 BillOfQuantitiesCommands.RefreshAll(document);

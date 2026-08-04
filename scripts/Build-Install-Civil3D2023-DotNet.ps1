@@ -2,7 +2,8 @@
 param(
     [switch]$SkipInstall,
     [switch]$Clean,
-    [string]$Configuration = 'Release'
+    [string]$Configuration = 'Release',
+    [string]$SourceCommit = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -10,6 +11,7 @@ Set-StrictMode -Version Latest
 
 $repo = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repo 'src\CE.Tools.Civil3D\CE.Tools.Civil3D.csproj'
+$verifiedInstaller = Join-Path $repo 'scripts\Install-VerifiedCivil3D2023Bundle.ps1'
 $autoCadRoot = 'C:\Program Files\Autodesk\AutoCAD 2023'
 $civil3DRoot = if (Test-Path (Join-Path $autoCadRoot 'AeccDbMgd.dll')) { $autoCadRoot } else { Join-Path $autoCadRoot 'C3D' }
 $aecRoot = if (Test-Path (Join-Path $civil3DRoot 'AecBaseMgd.dll')) { $civil3DRoot } else { $autoCadRoot }
@@ -20,6 +22,14 @@ if (-not $dotnet) {
 }
 if (-not (Test-Path -LiteralPath $project)) {
     throw "Project not found: $project"
+}
+if (-not (Test-Path -LiteralPath $verifiedInstaller)) {
+    throw "Verified installer not found: $verifiedInstaller"
+}
+if ([string]::IsNullOrWhiteSpace($SourceCommit)) {
+    try { $SourceCommit = (& git -C $repo rev-parse HEAD 2>$null).Trim() }
+    catch { $SourceCommit = 'UNKNOWN' }
+    if ([string]::IsNullOrWhiteSpace($SourceCommit)) { $SourceCommit = 'UNKNOWN' }
 }
 
 $required = @(
@@ -92,14 +102,14 @@ if (Test-Path -LiteralPath $zip) { Remove-Item -LiteralPath $zip -Force }
 Compress-Archive -Path $bundle -DestinationPath $zip -CompressionLevel Optimal
 
 if (-not $SkipInstall) {
-    $targetRoot = Join-Path $env:ProgramData 'Autodesk\ApplicationPlugins'
-    $target = Join-Path $targetRoot 'CE Tools.bundle'
-    New-Item -ItemType Directory -Force -Path $targetRoot | Out-Null
-    if (Test-Path -LiteralPath $target) { Remove-Item -LiteralPath $target -Recurse -Force }
-    Copy-Item -LiteralPath $bundle -Destination $targetRoot -Recurse -Force
-    Write-Host "Installed to: $target" -ForegroundColor Green
+    $buildLog = Join-Path $releaseDir ('build-install-' + (Get-Date -Format 'yyyyMMdd-HHmmss') + '.log')
+    & $verifiedInstaller `
+        -SourceBundle $bundle `
+        -SourceCommit $SourceCommit `
+        -BuildLogPath $buildLog
 }
 
 Write-Host 'Build succeeded with the pinned .NET 8 SDK compiler.' -ForegroundColor Green
 Write-Host "Package: $zip"
 Write-Host "Civil 3D DLL: $dll"
+Write-Host "Source commit: $SourceCommit"

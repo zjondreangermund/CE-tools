@@ -300,14 +300,7 @@ namespace CETools.Civil3D
 
         private static string BuildDefaultDescriptionPrefix(string layer)
         {
-            string value = string.IsNullOrWhiteSpace(layer)
-                ? "PL-VTX"
-                : layer.Trim();
-
-            value = value.Replace(' ', '-');
-            return value.Length > 24
-                ? value.Substring(0, 24)
-                : value;
+            return "P";
         }
 
         private static string FormatDescription(
@@ -316,7 +309,7 @@ namespace CETools.Civil3D
         {
             return string.Format(
                 CultureInfo.InvariantCulture,
-                "{0}-{1:D3}",
+                "{0}{1}",
                 prefix,
                 sequence);
         }
@@ -387,10 +380,10 @@ namespace CETools.Civil3D
                 string[] headings =
                 {
                     "POINT",
-                    "DESCRIPTION",
-                    "X / EASTING",
-                    "Y / NORTHING",
-                    "Z / ELEVATION",
+                    "POINT NAME",
+                    "X",
+                    "Y",
+                    "Z",
                     "VERTEX"
                 };
 

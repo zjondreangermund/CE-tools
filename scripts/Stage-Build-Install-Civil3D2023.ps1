@@ -12,6 +12,11 @@ if (-not (Test-Path -LiteralPath (Join-Path $source 'CE.Tools.sln'))) {
     throw "CE Tools repository was not found at: $source"
 }
 
+$sourceCommit = 'UNKNOWN'
+try { $sourceCommit = (& git -C $source rev-parse HEAD 2>$null).Trim() }
+catch { $sourceCommit = 'UNKNOWN' }
+if ([string]::IsNullOrWhiteSpace($sourceCommit)) { $sourceCommit = 'UNKNOWN' }
+
 $stageRoot = Join-Path $env:LOCALAPPDATA 'CE-Tools-Build\main-c3d2023'
 if (Test-Path -LiteralPath $stageRoot) {
     Remove-Item -LiteralPath $stageRoot -Recurse -Force
@@ -76,10 +81,11 @@ Write-Host "`nChecking restored source files for the Roslyn TextSpan parser cras
 $global:LASTEXITCODE = 0
 
 Write-Host "`nBuilding with the pinned .NET SDK compiler..." -ForegroundColor Cyan
-& $build -Clean
+& $build -Clean -SourceCommit $sourceCommit
 if ($LASTEXITCODE -ne 0) {
     throw "CE Tools .NET SDK build or installation failed with exit code $LASTEXITCODE."
 }
 
 Write-Host "`nCE Tools was built and installed from:" -ForegroundColor Green
 Write-Host $stageRoot
+Write-Host "Source commit: $sourceCommit"
