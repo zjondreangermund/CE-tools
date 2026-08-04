@@ -49,7 +49,7 @@ This branch exists to consolidate the working CE Tools source without losing fea
 ### Annotation and presentation
 
 - Floating CE Tools workflow window at startup and through Ctrl+F.
-- Discipline workflows for General, Roads, Stormwater, Sewer, Water, Bulk Water and Flood.
+- Discipline workflows for General, Survey, Roads, Stormwater, Sewer, Water, Bulk Water and Flood.
 - Popup-based commands rather than command-line-only workflows where implemented.
 - Annotative MText, MLeaders, COGO labels and tables using paper sizes 1.8, 2.0, 2.5, 3.5 and 5.0.
 - Correct alignment-name sizing and label-overlap management.
