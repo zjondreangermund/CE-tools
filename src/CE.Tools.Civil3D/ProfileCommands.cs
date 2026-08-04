@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -19,9 +20,6 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class ProfileCommands
     {
-        private const string ReportKeyword = "Report";
-        private const string ElevationKeyword = "Elevation";
-        private const string LabelKeyword = "Label";
         private const double StationTolerance = 0.000001;
 
         [CommandMethod(
@@ -36,37 +34,16 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var options = new PromptKeywordOptions(
-                "\nProfile tool [Report/Elevation/Label] <Report>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add(ReportKeyword);
-            options.Keywords.Add(ElevationKeyword);
-            options.Keywords.Add(LabelKeyword);
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? ReportKeyword
-                : result.StringResult;
-
-            if (string.Equals(mode, ElevationKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                ReportElevation(document);
-            }
-            else if (string.Equals(mode, LabelKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                PlaceProfileLabel(document);
-            }
-            else
-            {
-                ReportProfiles(document);
-            }
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Profile Utilities",
+                "Inspect profiles, query elevations and place linked plan annotations.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Profile report", "CE_PRREPORT", "Report selected Civil 3D profile information.", "01 Review"),
+                    new DisciplineWorkflowAction("Station elevation", "CE_PRELEV", "Query an elevation at a profile station.", "01 Review"),
+                    new DisciplineWorkflowAction("Profile label", "CE_PRLABEL", "Place a plan MLeader linked to profile data.", "02 Annotation")
+                });
         }
 
         [CommandMethod(

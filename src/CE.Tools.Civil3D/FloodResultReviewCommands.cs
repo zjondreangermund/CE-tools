@@ -33,21 +33,17 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var options = new PromptKeywordOptions(
-                "\nImported flood-result tools [Properties/Frame/Reset/Animation] <Properties>: ")
-            {
-                AllowNone = true
-            };
-            foreach (string keyword in new[] { "Properties", "Frame", "Reset", "Animation" })
-                options.Keywords.Add(keyword);
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string choice = result.Status == PromptStatus.OK ? result.StringResult : "Properties";
-            string command = Equal(choice, "Frame") ? "CE_FLOODFRAMESET " :
-                Equal(choice, "Reset") ? "CE_FLOODFRAMERESET " :
-                Equal(choice, "Animation") ? "CE_FLOODANIMATIONHTML " :
-                "CE_FLOODPROPERTYREPORT ";
-            document.SendStringToExecute(command, true, false, true);
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Flood Result Review",
+                "Review imported specialist flood results by property, scenario and time frame.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Affected-property report", "CE_FLOODPROPERTYREPORT", "Summarise affected properties and peak imported point results.", "01 Reports"),
+                    new DisciplineWorkflowAction("Set displayed frame", "CE_FLOODFRAMESET", "Display a selected scenario and time frame.", "02 Frames"),
+                    new DisciplineWorkflowAction("Reset displayed frames", "CE_FLOODFRAMERESET", "Restore imported result visibility.", "02 Frames"),
+                    new DisciplineWorkflowAction("Export animation", "CE_FLOODANIMATIONHTML", "Create an HTML animation of imported result frames.", "03 Presentation")
+                });
         }
 
         [CommandMethod("CE_TOOLS", "CE_FLOODPROPERTYREPORT", CommandFlags.Modal | CommandFlags.Redraw)]

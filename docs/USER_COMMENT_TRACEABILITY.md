@@ -20,7 +20,7 @@ This register prevents the requirements gathered during Civil 3D 2023 testing fr
 | Dynamic profile annotation | Drag a point along an alignment and update station, elevation, grade and text | `ProfileAnnotationLinkStore` |
 | Annotation | Paper text sizes, annotative scale synchronisation and overlap cleanup | Shared annotation settings, `AnnotationScaleSyncManager` and `CE_OVERLAPFIX` |
 | Workflow window | Auto-open, Ctrl+F, all commands, General/Survey/Roads/Stormwater/Sewer/Water/Bulk Water/Flood | Reflection-backed 397-command catalogue and discipline tabs |
-| Settings UX | Use dialogs rather than command-line workflow selection wherever practical | Searchable `CE_SETTINGS` centre plus dedicated Stormwater, Sewer and Water workflow/settings windows with installed-style dropdowns, paper heights and persisted profile layout |
+| Settings UX | Use dialogs rather than command-line workflow selection wherever practical | Searchable `CE_SETTINGS` centre; dedicated Stormwater/Sewer/Water workflow and settings windows; visual parent launchers for Parking, BOQ, Hydraulics, Flood, Hydrology, cross sections, polyline direction, coordinates, profiles and drawing production |
 | BOQs and costs | Linked BOQs and water/sewer estimates with automatic refresh | BOQ/cost link stores and deferred refresh managers |
 | Drawing production | A4, A3, A1 and A0 layouts, books and indexes | Production and client-book modules |
 | Installer | Civil 3D 2023 checks, Release x64, source commit, installation log, SHA-256 comparison and rollback | V61 package with double-click elevated installer, embedded release manifest and source/stage/install verification used by both 2023 build paths |
@@ -39,7 +39,7 @@ This register prevents the requirements gathered during Civil 3D 2023 testing fr
 ## Not represented as complete
 
 - Full solved 2D/3D hydraulic flood simulation is not claimed. Current flood tools provide terrain/hydrology screening, imported result review, property tables and point-sample animation. A certified solver and calibrated model workflow remain a later module.
-- Replacing every remaining advanced command-line settings prompt with a dialog remains ongoing. Stormwater, Sewer and Water launchers/settings/profile layout are now window-driven; specialist geometry inputs and several older utility settings still use Civil 3D prompts.
+- Replacing every remaining advanced command-line settings prompt with a dialog remains ongoing. The principal production, parking, quantity, hydraulic, survey/profile and drawing-production launchers are now window-driven; specialist geometry inputs and several older utility settings still use Civil 3D prompts.
 - Public code signing remains release-pipeline work. A safe in-product update check and a Windows Civil 3D GitHub workflow now exist; automatic binary replacement remains intentionally disabled until signed releases and a configured self-hosted Civil3D2023 runner are available.
 
 The source regression gate is `scripts/Validate-UserCommentCoverage.py`.

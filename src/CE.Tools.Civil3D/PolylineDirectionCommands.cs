@@ -35,42 +35,17 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var options = new PromptKeywordOptions(
-                "\nPolyline direction arrows [Add/Refresh/Reverse/Clear] <Add>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Add");
-            options.Keywords.Add("Refresh");
-            options.Keywords.Add("Reverse");
-            options.Keywords.Add("Clear");
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? "Add"
-                : result.StringResult;
-
-            if (string.Equals(mode, "Clear", StringComparison.OrdinalIgnoreCase))
-            {
-                ClearArrows(document);
-            }
-            else if (string.Equals(mode, "Refresh", StringComparison.OrdinalIgnoreCase))
-            {
-                RefreshArrows(document);
-            }
-            else if (string.Equals(mode, "Reverse", StringComparison.OrdinalIgnoreCase))
-            {
-                ReversePolylines(document);
-            }
-            else
-            {
-                AddArrows(document);
-            }
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Polyline Direction",
+                "Create and maintain dynamic direction arrows without a command-line option menu.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Add direction arrows", "CE_PLDIRADD", "Add linked arrows to selected polylines.", "01 Arrows"),
+                    new DisciplineWorkflowAction("Refresh arrows", "CE_PLDIRREFRESH", "Rebuild linked arrows after geometry changes.", "01 Arrows"),
+                    new DisciplineWorkflowAction("Reverse polylines", "CE_PLDIRREVERSE", "Reverse selected polylines and refresh their arrows.", "02 Geometry"),
+                    new DisciplineWorkflowAction("Clear arrows", "CE_PLDIRCLEAR", "Remove CE Tools direction arrows.", "03 Cleanup")
+                });
         }
 
         [CommandMethod(

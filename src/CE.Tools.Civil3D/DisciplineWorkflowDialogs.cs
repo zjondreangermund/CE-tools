@@ -6,6 +6,7 @@ using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
@@ -26,6 +27,22 @@ namespace CETools.Civil3D
             var window = new DisciplineWorkflowWindow(title, note, actions);
             AcApplication.ShowModalWindow(window);
             return window.SelectedCommand ?? string.Empty;
+        }
+
+        public static void SelectAndRun(
+            Document document,
+            string title,
+            string note,
+            IList<DisciplineWorkflowAction> actions)
+        {
+            if (document == null) return;
+            string command = SelectWorkflow(title, note, actions);
+            if (string.IsNullOrWhiteSpace(command)) return;
+            document.SendStringToExecute(
+                command.Trim() + " ",
+                true,
+                false,
+                true);
         }
 
         public static bool EditSettings(ProductionSettingsDialogModel model)

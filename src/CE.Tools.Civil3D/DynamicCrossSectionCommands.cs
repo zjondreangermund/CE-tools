@@ -39,30 +39,18 @@ namespace CETools.Civil3D
             Document document = ActiveDocument();
             if (document == null) return;
 
-            var options = new PromptKeywordOptions(
-                "\nCross-section tool [Create/Refresh/Information/Detach/Monitor] <Create>: ")
-            {
-                AllowNone = true
-            };
-            foreach (string keyword in new[]
-            {
-                "Create", "Refresh", "Information", "Detach", "Monitor"
-            })
-            {
-                options.Keywords.Add(keyword);
-            }
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string mode = result.Status == PromptStatus.None
-                ? "Create"
-                : result.StringResult;
-
-            if (Equal(mode, "Refresh")) Refresh();
-            else if (Equal(mode, "Information")) Information();
-            else if (Equal(mode, "Detach")) Detach();
-            else if (Equal(mode, "Monitor")) MonitorInformation();
-            else Create();
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Dynamic Cross Sections",
+                "Create and maintain cross sections linked to source section lines and Civil 3D design objects.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Create linked cross section", "CE_XSCREATE", "Create a cross-section drawing from a selected source line.", "01 Create"),
+                    new DisciplineWorkflowAction("Refresh cross section", "CE_XSREFRESH", "Rebuild a linked cross section from current geometry.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Cross-section information", "CE_XSINFO", "Inspect stored source and generated-object links.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Automatic update status", "CE_XSMONITOR", "Review dynamic cross-section monitoring status.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Detach cross section", "CE_XSDETACH", "Remove the link while preserving selected geometry where supported.", "03 Cleanup")
+                });
         }
 
         [CommandMethod(

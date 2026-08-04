@@ -26,20 +26,17 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var options = new PromptKeywordOptions(
-                "\nDynamic parking monitor [On/Off/RefreshNow/Status] <Status>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("On");
-            options.Keywords.Add("Off");
-            options.Keywords.Add("RefreshNow");
-            options.Keywords.Add("Status");
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string choice = result.Status == PromptStatus.OK
-                ? result.StringResult
-                : "Status";
+            string choice = DisciplineWorkflowDialogs.SelectWorkflow(
+                "CE Tools - Dynamic Parking Monitor",
+                "Control automatic parking option refresh after boundary grip edits.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Enable automatic refresh", "On", "Monitor linked parking boundaries and queue refreshes.", "01 Monitor"),
+                    new DisciplineWorkflowAction("Disable automatic refresh", "Off", "Stop automatic parking refresh monitoring.", "01 Monitor"),
+                    new DisciplineWorkflowAction("Refresh all now", "RefreshNow", "Immediately refresh linked parking options and grading guides.", "02 Actions"),
+                    new DisciplineWorkflowAction("Monitor status", "Status", "Report the current monitor and linkage status.", "02 Actions")
+                });
+            if (string.IsNullOrWhiteSpace(choice)) return;
             if (string.Equals(choice, "On", StringComparison.OrdinalIgnoreCase))
             {
                 ParkingOptionAutoRefreshManager.Enabled = true;
@@ -76,30 +73,17 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var options = new PromptKeywordOptions(
-                "\nParking grading guides [Create/Refresh/Info/Clear] <Create>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Create");
-            options.Keywords.Add("Refresh");
-            options.Keywords.Add("Info");
-            options.Keywords.Add("Clear");
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string choice = result.Status == PromptStatus.OK
-                ? result.StringResult
-                : "Create";
-            string command;
-            if (string.Equals(choice, "Refresh", StringComparison.OrdinalIgnoreCase))
-                command = "CE_PARKGRADEREFRESH ";
-            else if (string.Equals(choice, "Info", StringComparison.OrdinalIgnoreCase))
-                command = "CE_PARKGRADEINFO ";
-            else if (string.Equals(choice, "Clear", StringComparison.OrdinalIgnoreCase))
-                command = "CE_PARKGRADECLEAR ";
-            else
-                command = "CE_PARKGRADECREATE ";
-            document.SendStringToExecute(command, true, false, true);
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Parking Grading",
+                "Create and maintain boundary-linked 3D parking grading guides.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Create grading guides", "CE_PARKGRADECREATE", "Create linked 3D grading guides for a parking option.", "01 Grading"),
+                    new DisciplineWorkflowAction("Refresh grading guides", "CE_PARKGRADEREFRESH", "Rebuild grading guides after source changes.", "01 Grading"),
+                    new DisciplineWorkflowAction("Grading information", "CE_PARKGRADEINFO", "Inspect grading linkage and current settings.", "02 Review"),
+                    new DisciplineWorkflowAction("Clear grading guides", "CE_PARKGRADECLEAR", "Remove generated parking grading guides.", "03 Cleanup")
+                });
         }
 
         [CommandMethod("CE_TOOLS", "CE_PARKGRADECREATE", CommandFlags.Modal | CommandFlags.Redraw)]

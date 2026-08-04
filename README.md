@@ -13,6 +13,11 @@ windows. Their settings windows read installed Civil 3D styles and band sets,
 store annotation paper heights and control batch profile-view layout without
 numeric command-line setup prompts.
 
+The same visual launcher pattern now covers Parking, dynamic parking grading,
+BOQs, Hydraulic/Flood/Hydrology review, dynamic cross sections, polyline arrows,
+coordinate utilities, coordinate systems, profile utilities and report/drawing
+production. Drawing selections and insertion points continue in the Civil 3D canvas.
+
 ### `CE_BMVERT` — Bellmouth Densifier
 
 Processes one or many 2D lightweight polylines and inserts vertices at equal chainages while preserving true line and arc geometry.

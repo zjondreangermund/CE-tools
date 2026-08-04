@@ -35,26 +35,17 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var options = new PromptKeywordOptions(
-                "\nSurface hydrology tools [Flow/Catchment/Hydrograph/Clear] <Flow>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Flow");
-            options.Keywords.Add("Catchment");
-            options.Keywords.Add("Hydrograph");
-            options.Keywords.Add("Clear");
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string choice = result.Status == PromptStatus.OK
-                ? result.StringResult
-                : "Flow";
-            string command;
-            if (Equal(choice, "Catchment")) command = "CE_CATCHMENTDELINEATE ";
-            else if (Equal(choice, "Hydrograph")) command = "CE_HYDROGRAPHCOMPARE ";
-            else if (Equal(choice, "Clear")) command = "CE_HYDROLOGYCLEAR ";
-            else command = "CE_SURFACEFLOW ";
-            document.SendStringToExecute(command, true, false, true);
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Surface Hydrology",
+                "Run preliminary surface-flow, catchment and pre/post hydrograph workflows.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Surface flow route", "CE_SURFACEFLOW", "Trace a route over a sampled Civil 3D surface.", "01 Terrain"),
+                    new DisciplineWorkflowAction("Delineate catchment", "CE_CATCHMENTDELINEATE", "Derive a preliminary outlet catchment from the sampled surface.", "01 Terrain"),
+                    new DisciplineWorkflowAction("Compare hydrographs", "CE_HYDROGRAPHCOMPARE", "Review pre- and post-development hydrograph inputs.", "02 Hydrology"),
+                    new DisciplineWorkflowAction("Clear hydrology graphics", "CE_HYDROLOGYCLEAR", "Remove CE Tools hydrology review graphics.", "03 Cleanup")
+                });
         }
 
         [CommandMethod("CE_TOOLS", "CE_SURFACEFLOW", CommandFlags.Modal | CommandFlags.Redraw)]

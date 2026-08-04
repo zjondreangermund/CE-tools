@@ -17,10 +17,6 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class ParkingCommands
     {
-        private const string RowKeyword = "Row";
-        private const string DoubleRowKeyword = "DoubleRow";
-        private const string CountKeyword = "Count";
-        private const string NumberKeyword = "Number";
         private const double GeometryTolerance = 0.000001;
 
         [CommandMethod(
@@ -35,42 +31,17 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var options = new PromptKeywordOptions(
-                "\nParking tool [Row/DoubleRow/Count/Number] <Row>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add(RowKeyword);
-            options.Keywords.Add(DoubleRowKeyword);
-            options.Keywords.Add(CountKeyword);
-            options.Keywords.Add(NumberKeyword);
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? RowKeyword
-                : result.StringResult;
-
-            if (string.Equals(mode, DoubleRowKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                CreateDoubleRow(document);
-            }
-            else if (string.Equals(mode, CountKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                CountParkingBays(document);
-            }
-            else if (string.Equals(mode, NumberKeyword, StringComparison.OrdinalIgnoreCase))
-            {
-                NumberParkingBays(document);
-            }
-            else
-            {
-                CreateSingleRow(document);
-            }
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Parking",
+                "Create parking rows, count bays and maintain drawing-linked numbering from one visual launcher.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Single parking row", "CE_PKROW", "Create bays along one side of a selected baseline.", "01 Layout"),
+                    new DisciplineWorkflowAction("Double parking row", "CE_PKDOUBLE", "Create paired parking rows along the selected baseline.", "01 Layout"),
+                    new DisciplineWorkflowAction("Count parking bays", "CE_PKCOUNT", "Count selected or drawing parking bay blocks.", "02 Review"),
+                    new DisciplineWorkflowAction("Number parking bays", "CE_PKNUMBER", "Apply linked parking bay numbers and labels.", "02 Review")
+                });
         }
 
         [CommandMethod("CE_TOOLS", "CE_PKROW", CommandFlags.Modal | CommandFlags.Redraw)]

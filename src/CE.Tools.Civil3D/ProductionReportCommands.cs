@@ -36,29 +36,20 @@ namespace CETools.Civil3D
             Document document = ActiveDocument();
             if (document == null) return;
 
-            var options = new PromptKeywordOptions(
-                "\nReport/production tool [Full/Discipline/Export/Summary/RefreshSummary/DrawingBook/BookIndex] <Full>: ")
-            {
-                AllowNone = true
-            };
-            foreach (string keyword in new[]
-            {
-                "Full", "Discipline", "Export", "Summary", "RefreshSummary",
-                "DrawingBook", "BookIndex"
-            })
-                options.Keywords.Add(keyword);
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string mode = result.Status == PromptStatus.None ? "Full" : result.StringResult;
-
-            if (Equal(mode, "Discipline")) DisciplineReport();
-            else if (Equal(mode, "Export")) ExportReport();
-            else if (Equal(mode, "Summary")) CreateSummarySheet();
-            else if (Equal(mode, "RefreshSummary")) RefreshSummarySheet();
-            else if (Equal(mode, "DrawingBook")) CreateDrawingBook();
-            else if (Equal(mode, "BookIndex")) ExportDrawingBookIndex();
-            else FullReport();
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Reports and Drawing Production",
+                "Create model-derived reports, linked summary sheets and standard drawing-book layouts.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Full project report", "CE_REPORTFULL", "Review all supported disciplines in the current drawing.", "01 Reports"),
+                    new DisciplineWorkflowAction("Discipline report", "CE_REPORTDISC", "Choose and review one engineering discipline.", "01 Reports"),
+                    new DisciplineWorkflowAction("Export report", "CE_REPORTEXPORT", "Export current model-derived report data.", "01 Reports"),
+                    new DisciplineWorkflowAction("Create summary sheet", "CE_SUMMARYSHEET", "Create a linked project summary sheet.", "02 Summary Sheet"),
+                    new DisciplineWorkflowAction("Refresh summary sheet", "CE_SUMMARYREFRESH", "Update an existing linked summary sheet.", "02 Summary Sheet"),
+                    new DisciplineWorkflowAction("Create drawing book", "CE_DRAWINGBOOK", "Create standard A0, A1, A3 or A4 layouts.", "03 Drawing Book"),
+                    new DisciplineWorkflowAction("Export book index", "CE_BOOKINDEX", "Export the drawing-book layout index.", "03 Drawing Book")
+                });
         }
 
         [CommandMethod("CE_TOOLS", "CE_REPORTFULL", CommandFlags.Modal | CommandFlags.Redraw)]

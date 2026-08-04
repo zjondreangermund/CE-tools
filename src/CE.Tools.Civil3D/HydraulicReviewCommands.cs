@@ -32,33 +32,18 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var options = new PromptKeywordOptions(
-                "\nHydraulic review tools [Catchment/Rational/Culvert/Pump/Clear] <Catchment>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Catchment");
-            options.Keywords.Add("Rational");
-            options.Keywords.Add("Culvert");
-            options.Keywords.Add("Pump");
-            options.Keywords.Add("Clear");
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string choice = result.Status == PromptStatus.OK
-                ? result.StringResult
-                : "Catchment";
-            string command;
-            if (string.Equals(choice, "Rational", StringComparison.OrdinalIgnoreCase))
-                command = "CE_RATIONALFLOW ";
-            else if (string.Equals(choice, "Culvert", StringComparison.OrdinalIgnoreCase))
-                command = "CE_CULVERTREVIEW ";
-            else if (string.Equals(choice, "Pump", StringComparison.OrdinalIgnoreCase))
-                command = "CE_PUMPREVIEW ";
-            else if (string.Equals(choice, "Clear", StringComparison.OrdinalIgnoreCase))
-                command = "CE_HYDRAULICCLEAR ";
-            else
-                command = "CE_CATCHMENTQUICK ";
-            document.SendStringToExecute(command, true, false, true);
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Hydraulic Review",
+                "Run preliminary catchment, pipe and pump screening tools. Results remain subject to engineering verification.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Quick catchment review", "CE_CATCHMENTQUICK", "Review a selected catchment and its basic hydrologic properties.", "01 Hydrology"),
+                    new DisciplineWorkflowAction("Rational-method flow", "CE_RATIONALFLOW", "Calculate preliminary return-period peak flows.", "01 Hydrology"),
+                    new DisciplineWorkflowAction("Culvert review", "CE_CULVERTREVIEW", "Screen culvert capacity and hydraulic performance.", "02 Hydraulics"),
+                    new DisciplineWorkflowAction("Pump review", "CE_PUMPREVIEW", "Screen pump duty and operating-point inputs.", "02 Hydraulics"),
+                    new DisciplineWorkflowAction("Clear review graphics", "CE_HYDRAULICCLEAR", "Remove CE Tools hydraulic review graphics.", "03 Cleanup")
+                });
         }
 
         [CommandMethod("CE_TOOLS", "CE_RATIONALFLOW", CommandFlags.Modal | CommandFlags.Redraw)]

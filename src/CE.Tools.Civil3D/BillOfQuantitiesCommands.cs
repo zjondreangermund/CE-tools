@@ -40,34 +40,23 @@ namespace CETools.Civil3D
             Document document = ActiveDocument();
             if (document == null) return;
 
-            var options = new PromptKeywordOptions(
-                "\nBOQ tool [Build/Refresh/Information/Export/Road/Platform/Stormwater/Sewer/Water/BulkWater] <Build>: ")
-            {
-                AllowNone = true
-            };
-            foreach (string keyword in new[]
-            {
-                "Build", "Refresh", "Information", "Export", "Road", "Platform",
-                "Stormwater", "Sewer", "Water", "BulkWater"
-            })
-            {
-                options.Keywords.Add(keyword);
-            }
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel) return;
-            string mode = result.Status == PromptStatus.None ? "Build" : result.StringResult;
-
-            if (Equal(mode, "Refresh")) Refresh();
-            else if (Equal(mode, "Information")) Information();
-            else if (Equal(mode, "Export")) ExportLinked();
-            else if (Equal(mode, "Road")) ExportDiscipline(document, BoqDiscipline.Road);
-            else if (Equal(mode, "Platform")) ExportDiscipline(document, BoqDiscipline.Platform);
-            else if (Equal(mode, "Stormwater")) ExportDiscipline(document, BoqDiscipline.Stormwater);
-            else if (Equal(mode, "Sewer")) ExportDiscipline(document, BoqDiscipline.Sewer);
-            else if (Equal(mode, "Water")) ExportDiscipline(document, BoqDiscipline.Water);
-            else if (Equal(mode, "BulkWater")) ExportDiscipline(document, BoqDiscipline.BulkWater);
-            else Build();
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Quantity Takeoff and BOQ",
+                "Build drawing-linked quantities, refresh existing tables and export discipline-specific workbooks.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Build linked BOQ", "CE_BOQBUILD", "Create a quantity table linked to selected design objects.", "01 Linked BOQ"),
+                    new DisciplineWorkflowAction("Refresh linked BOQ", "CE_BOQREFRESH", "Recalculate quantities while preserving matching rates.", "01 Linked BOQ"),
+                    new DisciplineWorkflowAction("BOQ information", "CE_BOQINFO", "Inspect linkage, discipline and current table status.", "01 Linked BOQ"),
+                    new DisciplineWorkflowAction("Export linked BOQ", "CE_BOQEXPORT", "Export a selected linked BOQ to Excel.", "02 Export"),
+                    new DisciplineWorkflowAction("Road quantities", "CE_BOQROAD", "Extract and export road quantities.", "03 Discipline Export"),
+                    new DisciplineWorkflowAction("Platform quantities", "CE_BOQPLATFORM", "Extract and export platform quantities.", "03 Discipline Export"),
+                    new DisciplineWorkflowAction("Stormwater quantities", "CE_BOQSTORM", "Extract and export stormwater quantities.", "03 Discipline Export"),
+                    new DisciplineWorkflowAction("Sewer quantities", "CE_BOQSEWER", "Extract and export sewer quantities.", "03 Discipline Export"),
+                    new DisciplineWorkflowAction("Water quantities", "CE_BOQWATER", "Extract and export water quantities.", "03 Discipline Export"),
+                    new DisciplineWorkflowAction("Bulk-water quantities", "CE_BOQBULKWATER", "Extract and export bulk-water quantities.", "03 Discipline Export")
+                });
         }
 
         [CommandMethod(

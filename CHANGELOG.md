@@ -10,6 +10,9 @@ All notable CE Tools changes will be recorded here.
   Parking, Stormwater, Sewer, Water, Flood and Production configuration workflows.
 - Dedicated WPF workflow launchers for `CE_SWTOOLS`, `CE_SEWTOOLS` and
   `CE_WATERTOOLS`, replacing the former keyword menus with ordered production steps.
+- Shared visual launchers for Parking, parking grading/monitoring, BOQ, Hydraulic,
+  Flood, Hydrology, dynamic cross sections, polyline direction, coordinates,
+  coordinate systems, profile utilities and drawing production.
 - Drawing-style dropdown catalogues for Stormwater, Sewer and Water alignment,
   profile, profile-view, label-set and band-set settings.
 - Persisted profile-view columns and horizontal/vertical spacing for all three
@@ -31,6 +34,8 @@ All notable CE Tools changes will be recorded here.
   drawing-dependent insertion-point selection remains in the Civil 3D canvas.
 - Standard annotation paper heights 1.8, 2.0, 2.5, 3.5 and 5.0 are selectable
   directly in each production settings window.
+- High-use parent commands now launch described, grouped workflow buttons while
+  preserving native Civil 3D canvas prompts for selections and geometry input.
 - The verified installer now validates every manifest file in the source, staging
   and installed bundles, compares both Civil and Core DLLs, and records version,
   source commit and hashes before removing its rollback copy.

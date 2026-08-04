@@ -15,6 +15,8 @@ CE Tools starts as a disciplined collection of small, high-value Civil 3D utilit
   profiles, annotations, BOQs, costs and drawing-production foundations are present.
 - Stormwater, Sewer and Water now use discipline workflow/settings windows with
   installed-style catalogues and saved profile-view layouts.
+- Parking, BOQ, Hydraulic/Flood/Hydrology, dynamic cross-section, polyline,
+  coordinate, profile and drawing-production parent workflows now use shared windows.
 - Versioned packaging, checksums, rollback and automatic GitHub source validation
   are present; the exact Windows Civil 3D 2023 build and signed public release remain.
 

@@ -40,6 +40,9 @@ jobs:
       - name: Validate discipline workflow and settings dialogs
         run: python3 scripts/Validate-DisciplineProductionDialogs.py
 
+      - name: Validate visual workflow launchers
+        run: python3 scripts/Validate-VisualWorkflowLaunchers.py
+
       - name: Validate linked BOQ and Excel export source
         run: python3 scripts/Validate-BillOfQuantities.py
 

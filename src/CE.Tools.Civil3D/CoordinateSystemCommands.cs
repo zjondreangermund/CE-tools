@@ -33,47 +33,18 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var options = new PromptKeywordOptions(
-                "\nCoordinate Systems [Info/Assign/Code/Search/Clear] <Info>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add("Info");
-            options.Keywords.Add("Assign");
-            options.Keywords.Add("Code");
-            options.Keywords.Add("Search");
-            options.Keywords.Add("Clear");
-
-            PromptResult result = document.Editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? "Info"
-                : result.StringResult;
-
-            if (string.Equals(mode, "Assign", StringComparison.OrdinalIgnoreCase))
-            {
-                OpenNativeCoordinateSystemDialog(document);
-            }
-            else if (string.Equals(mode, "Code", StringComparison.OrdinalIgnoreCase))
-            {
-                AssignCoordinateSystemByCode(document);
-            }
-            else if (string.Equals(mode, "Search", StringComparison.OrdinalIgnoreCase))
-            {
-                SearchCoordinateSystems(document);
-            }
-            else if (string.Equals(mode, "Clear", StringComparison.OrdinalIgnoreCase))
-            {
-                ClearCoordinateSystem(document);
-            }
-            else
-            {
-                ReportCoordinateSystem(document);
-            }
+            DisciplineWorkflowDialogs.SelectAndRun(
+                document,
+                "CE Tools - Coordinate Systems",
+                "Inspect or configure the Civil 3D drawing coordinate system. These tools do not transform existing geometry.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Coordinate-system information", "CE_COORDSYSINFO", "Report the current Civil 3D coordinate-system assignment.", "01 Review"),
+                    new DisciplineWorkflowAction("Native assignment dialog", "CE_COORDSYSASSIGN", "Open Civil 3D's native coordinate-system selector.", "02 Assign"),
+                    new DisciplineWorkflowAction("Assign by code", "CE_COORDSYSCODE", "Assign a known coordinate-system code.", "02 Assign"),
+                    new DisciplineWorkflowAction("Search coordinate systems", "CE_COORDSYSSEARCH", "Search available coordinate-system definitions.", "02 Assign"),
+                    new DisciplineWorkflowAction("Clear assignment", "CE_COORDSYSCLEAR", "Remove the drawing coordinate-system assignment.", "03 Cleanup")
+                });
         }
 
         [CommandMethod("CE_TOOLS", "CE_COORDSYSINFO", CommandFlags.Modal | CommandFlags.Redraw)]

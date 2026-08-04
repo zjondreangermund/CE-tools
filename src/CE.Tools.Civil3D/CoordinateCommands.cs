@@ -36,26 +36,17 @@ namespace CETools.Civil3D
                 return;
             }
 
-            Editor editor = document.Editor;
-            var options = new PromptKeywordOptions(
-                "\nCoordinate tool [Pick/Cogo/Cross/Table] <Pick>: ")
-            {
-                AllowNone = true
-            };
-            options.Keywords.Add(PickKeyword);
-            options.Keywords.Add(CogoKeyword);
-            options.Keywords.Add(CrossKeyword);
-            options.Keywords.Add(TableKeyword);
-
-            PromptResult result = editor.GetKeywords(options);
-            if (result.Status == PromptStatus.Cancel)
-            {
-                return;
-            }
-
-            string mode = result.Status == PromptStatus.None
-                ? PickKeyword
-                : result.StringResult;
+            string mode = DisciplineWorkflowDialogs.SelectWorkflow(
+                "CE Tools - Coordinate Utilities",
+                "Create coordinate labels, crosses and linked coordinate tables from a visual workflow.",
+                new List<DisciplineWorkflowAction>
+                {
+                    new DisciplineWorkflowAction("Label picked coordinate", PickKeyword, "Pick a drawing location and place an Easting/Northing label.", "01 Labels"),
+                    new DisciplineWorkflowAction("Label COGO points", CogoKeyword, "Batch label selected Civil 3D COGO points.", "01 Labels"),
+                    new DisciplineWorkflowAction("Place coordinate cross", CrossKeyword, "Create a coordinate cross at a picked location.", "02 Graphics"),
+                    new DisciplineWorkflowAction("Create coordinate table", TableKeyword, "Create a coordinate table from selected points.", "03 Tables")
+                });
+            if (string.IsNullOrWhiteSpace(mode)) return;
 
             if (string.Equals(mode, CogoKeyword, StringComparison.OrdinalIgnoreCase))
             {
