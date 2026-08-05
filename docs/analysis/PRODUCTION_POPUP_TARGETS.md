@@ -6783,7 +6783,7 @@ Hits: `PromptKeywordOptions`, `GetKeywords(`
 ## ProductionCommentCommands.cs
 Hits: `CE_DRAWINGBOOK`, `CE_BOOKINDEX`, `CE_CLIENTBOOK`, `CE_PROJECTCLOSEOUT`
 
-### Lines 62-160
+### Lines 62-162
 ```csharp
 00062:                     new ProductionChoice("Profile popup report", "CE_PROFILEREPORT2 "),
 00063:                     new ProductionChoice("Surface popup report", "CE_SURFACEREPORT2 "),
@@ -6808,86 +6808,881 @@ Hits: `CE_DRAWINGBOOK`, `CE_BOOKINDEX`, `CE_CLIENTBOOK`, `CE_PROJECTCLOSEOUT`
 00082:                     new ProductionChoice("Refresh all linked client-book pages", "CE_CLIENTBOOKREFRESH "),
 00083:                     new ProductionChoice("Review client-book link and revision information", "CE_CLIENTBOOKINFO "),
 00084:                     new ProductionChoice("Export client-book register to Excel", "CE_CLIENTBOOKINDEX "),
-00085:                     new ProductionChoice("Create A4/A3 client and A1/A0 construction layouts", "CE_DRAWINGBOOK "),
-00086:                     new ProductionChoice("Export drawing-book layout register to Excel", "CE_BOOKINDEX "),
-00087:                     new ProductionChoice("Open AutoCAD Publish for batch PDF output", "CE_BATCHPUBLISH "),
-00088:                     new ProductionChoice("Show where CE books and exports are stored", "CE_OUTPUTLOCATION ")
-00089:                 });
-00090:         }
-00091: 
-00092:         [CommandMethod("CE_TOOLS", "CE_PRINTCENTER", CommandFlags.Modal | CommandFlags.Redraw)]
-00093:         public void PrintCentre()
-00094:         {
-00095:             RunChoiceWindow(
-00096:                 "CE Tools - Print and Publish Centre",
-00097:                 "Prepare linked books first, then use AutoCAD's native plot or publish workflows for PDF or hard-copy output.",
-00098:                 new List<ProductionChoice>
-00099:                 {
-00100:                     new ProductionChoice("Create/refresh A-series drawing-book layouts", "CE_DRAWINGBOOK "),
-00101:                     new ProductionChoice("Create/refresh A4/A3 client books", "CE_CLIENTBOOK "),
-00102:                     new ProductionChoice("Refresh client-book pages", "CE_CLIENTBOOKREFRESH "),
-00103:                     new ProductionChoice("Open AutoCAD Publish for batch PDF", "CE_BATCHPUBLISH "),
-00104:                     new ProductionChoice("Open AutoCAD Plot for current sheet", "_.PLOT "),
-00105:                     new ProductionChoice("Export drawing-book index", "CE_BOOKINDEX "),
-00106:                     new ProductionChoice("Export client-book index", "CE_CLIENTBOOKINDEX "),
-00107:                     new ProductionChoice("Show output locations", "CE_OUTPUTLOCATION ")
-00108:                 });
-00109:         }
-00110: 
-00111:         [CommandMethod("CE_TOOLS", "CE_BATCHPUBLISH", CommandFlags.Modal | CommandFlags.Redraw)]
-00112:         public void BatchPublish()
-00113:         {
-00114:             Document document = ActiveDocument();
-00115:             if (document == null) return;
-00116:             document.Editor.WriteMessage("\nCE_BATCHPUBLISH is opening AutoCAD Publish. Select the generated A1/A0 construction layouts or A4/A3 client-book layouts and choose a PDF publish setup.");
-00117:             document.SendStringToExecute("_.PUBLISH ", true, false, true);
+00085:                     new ProductionChoice("Edit drawing titles and drawing register", "CE_DRAWINGREGISTEREDIT "),
+00086:                     new ProductionChoice("Create A4/A3 client and A1/A0 construction layouts", "CE_DRAWINGBOOK "),
+00087:                     new ProductionChoice("Export drawing-book layout register to Excel", "CE_BOOKINDEX "),
+00088:                     new ProductionChoice("Open AutoCAD Publish for batch PDF output", "CE_BATCHPUBLISH "),
+00089:                     new ProductionChoice("Show where CE books and exports are stored", "CE_OUTPUTLOCATION ")
+00090:                 });
+00091:         }
+00092: 
+00093:         [CommandMethod("CE_TOOLS", "CE_PRINTCENTER", CommandFlags.Modal | CommandFlags.Redraw)]
+00094:         public void PrintCentre()
+00095:         {
+00096:             RunChoiceWindow(
+00097:                 "CE Tools - Print and Publish Centre",
+00098:                 "Prepare linked books first, then use AutoCAD's native plot or publish workflows for PDF or hard-copy output.",
+00099:                 new List<ProductionChoice>
+00100:                 {
+00101:                     new ProductionChoice("Edit drawing titles and drawing register", "CE_DRAWINGREGISTEREDIT "),
+00102:                     new ProductionChoice("Create/refresh A-series drawing-book layouts", "CE_DRAWINGBOOK "),
+00103:                     new ProductionChoice("Create/refresh A4/A3 client books", "CE_CLIENTBOOK "),
+00104:                     new ProductionChoice("Refresh client-book pages", "CE_CLIENTBOOKREFRESH "),
+00105:                     new ProductionChoice("Open AutoCAD Publish for batch PDF", "CE_BATCHPUBLISH "),
+00106:                     new ProductionChoice("Open AutoCAD Plot for current sheet", "_.PLOT "),
+00107:                     new ProductionChoice("Export drawing-book index", "CE_BOOKINDEX "),
+00108:                     new ProductionChoice("Export client-book index", "CE_CLIENTBOOKINDEX "),
+00109:                     new ProductionChoice("Show output locations", "CE_OUTPUTLOCATION ")
+00110:                 });
+00111:         }
+00112: 
+00113:         [CommandMethod("CE_TOOLS", "CE_BATCHPUBLISH", CommandFlags.Modal | CommandFlags.Redraw)]
+00114:         public void BatchPublish()
+00115:         {
+00116:             Document document = ActiveDocument();
+00117:             if (document == null) return;
+00118:             document.Editor.WriteMessage("\nCE_BATCHPUBLISH is opening AutoCAD Publish. Select the generated A1/A0 construction layouts or A4/A3 client-book layouts and choose a PDF publish setup.");
+00119:             document.SendStringToExecute("_.PUBLISH ", true, false, true);
+00120:         }
+00121: 
+00122:         [CommandMethod("CE_TOOLS", "CE_OUTPUTLOCATION", CommandFlags.Modal | CommandFlags.Redraw)]
+00123:         public void OutputLocation()
+00124:         {
+00125:             Document document = ActiveDocument();
+00126:             if (document == null) return;
+00127:             string drawingPath = document.Database.Filename;
+00128:             string folder = string.IsNullOrWhiteSpace(drawingPath) ? "<Drawing has not been saved>" : Path.GetDirectoryName(drawingPath);
+00129:             int layouts = CountLayouts(document.Database);
+00130:             var rows = new List<IList<string>>
+00131:             {
+00132:                 new List<string> { "Current DWG", string.IsNullOrWhiteSpace(drawingPath) ? "<Unsaved drawing>" : drawingPath },
+00133:                 new List<string> { "Drawing folder", string.IsNullOrWhiteSpace(folder) ? "<Unavailable>" : folder },
+00134:                 new List<string> { "A-series drawing books", "Stored as layouts inside the current DWG until plotted or published" },
+00135:                 new List<string> { "A4/A3 client books", "Stored as linked layouts/pages inside the current DWG" },
+00136:                 new List<string> { "Current layout count", layouts.ToString(System.Globalization.CultureInfo.InvariantCulture) },
+00137:                 new List<string> { "BOQ and report Excel files", "Saved to the location selected in the export dialog" },
+00138:                 new List<string> { "Published PDFs", "Saved to the path selected in AutoCAD Publish/Plot" },
+00139:                 new List<string> { "Recommended project output folder", string.IsNullOrWhiteSpace(folder) ? "Save the DWG first" : Path.Combine(folder, "CE Tools Outputs") }
+00140:             };
+00141:             GridReportPresenter.ShowReportAndOfferTable(
+00142:                 document,
+00143:                 "CE Tools - Output Locations",
+00144:                 "CE drawing and client books are linked DWG layouts. Excel and PDF paths are selected when exporting or publishing.",
+00145:                 new List<string> { "Output", "Location / Behaviour" },
+00146:                 rows,
+00147:                 "CE TOOLS OUTPUT LOCATIONS");
+00148:         }
+00149: 
+00150:         private static int CountLayouts(Database database)
+00151:         {
+00152:             int count = 0;
+00153:             using (Transaction transaction = database.TransactionManager.StartTransaction())
+00154:             {
+00155:                 DBDictionary layouts = transaction.GetObject(database.LayoutDictionaryId, OpenMode.ForRead, false) as DBDictionary;
+00156:                 if (layouts != null)
+00157:                 {
+00158:                     foreach (DBDictionaryEntry entry in layouts)
+00159:                     {
+00160:                         Layout layout = transaction.GetObject(entry.Value, OpenMode.ForRead, false) as Layout;
+00161:                         if (layout != null && !layout.ModelType) count++;
+00162:                     }
+```
+
+## ProductionDrawingRegisterCommands.cs
+Hits: `DrawingRegister`, `GetString(`
+
+### Lines 1-531
+```csharp
+00001: using System;
+00002: using System.Collections.Generic;
+00003: using System.Collections.ObjectModel;
+00004: using System.Globalization;
+00005: using System.IO;
+00006: using System.Linq;
+00007: using System.Reflection;
+00008: using System.Text;
+00009: using System.Windows;
+00010: using System.Windows.Controls;
+00011: using System.Windows.Data;
+00012: using Autodesk.AutoCAD.ApplicationServices;
+00013: using Autodesk.AutoCAD.DatabaseServices;
+00014: using Autodesk.AutoCAD.Geometry;
+00015: using Autodesk.AutoCAD.Runtime;
+00016: using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+00017: 
+00018: [assembly: CommandClass(typeof(CETools.Civil3D.ProductionDrawingRegisterCommands))]
+00019: 
+00020: namespace CETools.Civil3D
+00021: {
+00022:     public sealed class ProductionDrawingRegisterCommands
+00023:     {
+00024:         [CommandMethod("CE_TOOLS", "CE_DRAWINGREGISTEREDIT", CommandFlags.Modal | CommandFlags.Redraw)]
+00025:         public void EditDrawingRegister()
+00026:         {
+00027:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
+00028:             if (document == null) return;
+00029:             ProductionDrawingRegisterData result;
+00030:             EditForProduction(
+00031:                 document,
+00032:                 ReadLayoutSeeds(document.Database),
+00033:                 "Save Register",
+00034:                 out result);
+00035:         }
+00036: 
+00037:         internal static bool EditForProduction(
+00038:             Document document,
+00039:             IEnumerable<ProductionDrawingSeed> seeds,
+00040:             string actionText,
+00041:             out ProductionDrawingRegisterData result)
+00042:         {
+00043:             result = null;
+00044:             if (document == null) return false;
+00045:             ProductionDrawingRegisterData data = ProductionDrawingRegisterStore.Read(
+00046:                 document.Database);
+00047:             IDictionary<string, string> project =
+00048:                 ProjectSetupCommands.ReadSharedProjectMetadata(document.Database);
+00049:             data.ApplyProjectDefaults(project);
+00050:             data.MergeSeeds(seeds ?? Enumerable.Empty<ProductionDrawingSeed>());
+00051:             data.ApplyRowDefaults();
+00052: 
+00053:             var window = new ProductionDrawingRegisterWindow(
+00054:                 data,
+00055:                 string.IsNullOrWhiteSpace(actionText)
+00056:                     ? "Save"
+00057:                     : actionText);
+00058:             AcApplication.ShowModalWindow(window);
+00059:             if (!window.Accepted) return false;
+00060: 
+00061:             result = window.BuildResult();
+00062:             result.ApplyRowDefaults();
+00063:             ProductionDrawingRegisterStore.Write(document.Database, result);
+00064:             ProjectSetupCommands.MergeSharedProjectMetadata(
+00065:                 document.Database,
+00066:                 result.Headers);
+00067:             ProjectSetupCommands.RefreshInformationTables(document);
+00068:             document.Editor.WriteMessage(
+00069:                 "\nCE drawing register saved. Rows={0}; title metadata is linked to production layouts and exports.",
+00070:                 result.Rows.Count);
+00071:             return true;
+00072:         }
+00073: 
+00074:         internal static List<ProductionDrawingSeed> ReadLayoutSeeds(Database database)
+00075:         {
+00076:             var result = new List<ProductionDrawingSeed>();
+00077:             using (Transaction transaction =
+00078:                 database.TransactionManager.StartTransaction())
+00079:             {
+00080:                 DBDictionary layouts = transaction.GetObject(
+00081:                     database.LayoutDictionaryId,
+00082:                     OpenMode.ForRead,
+00083:                     false) as DBDictionary;
+00084:                 if (layouts == null) return result;
+00085:                 foreach (DBDictionaryEntry entry in layouts)
+00086:                 {
+00087:                     Layout layout = transaction.GetObject(
+00088:                         entry.Value,
+00089:                         OpenMode.ForRead,
+00090:                         false) as Layout;
+00091:                     if (layout == null || layout.ModelType) continue;
+00092:                     result.Add(new ProductionDrawingSeed(
+00093:                         layout.LayoutName,
+00094:                         layout.LayoutName,
+00095:                         "Project drawing",
+00096:                         "Existing",
+00097:                         "As shown"));
+00098:                 }
+00099:             }
+00100:             return result;
+00101:         }
+00102:     }
+00103: 
+00104:     internal sealed class ProductionDrawingSeed
+00105:     {
+00106:         internal ProductionDrawingSeed(
+00107:             string layout,
+00108:             string title,
+00109:             string purpose,
+00110:             string paper,
+00111:             string scale)
+00112:         {
+00113:             Layout = layout ?? string.Empty;
+00114:             Title = title ?? string.Empty;
+00115:             Purpose = purpose ?? string.Empty;
+00116:             Paper = paper ?? string.Empty;
+00117:             Scale = scale ?? string.Empty;
 00118:         }
-00119: 
-00120:         [CommandMethod("CE_TOOLS", "CE_OUTPUTLOCATION", CommandFlags.Modal | CommandFlags.Redraw)]
-00121:         public void OutputLocation()
-00122:         {
-00123:             Document document = ActiveDocument();
-00124:             if (document == null) return;
-00125:             string drawingPath = document.Database.Filename;
-00126:             string folder = string.IsNullOrWhiteSpace(drawingPath) ? "<Drawing has not been saved>" : Path.GetDirectoryName(drawingPath);
-00127:             int layouts = CountLayouts(document.Database);
-00128:             var rows = new List<IList<string>>
-00129:             {
-00130:                 new List<string> { "Current DWG", string.IsNullOrWhiteSpace(drawingPath) ? "<Unsaved drawing>" : drawingPath },
-00131:                 new List<string> { "Drawing folder", string.IsNullOrWhiteSpace(folder) ? "<Unavailable>" : folder },
-00132:                 new List<string> { "A-series drawing books", "Stored as layouts inside the current DWG until plotted or published" },
-00133:                 new List<string> { "A4/A3 client books", "Stored as linked layouts/pages inside the current DWG" },
-00134:                 new List<string> { "Current layout count", layouts.ToString(System.Globalization.CultureInfo.InvariantCulture) },
-00135:                 new List<string> { "BOQ and report Excel files", "Saved to the location selected in the export dialog" },
-00136:                 new List<string> { "Published PDFs", "Saved to the path selected in AutoCAD Publish/Plot" },
-00137:                 new List<string> { "Recommended project output folder", string.IsNullOrWhiteSpace(folder) ? "Save the DWG first" : Path.Combine(folder, "CE Tools Outputs") }
-00138:             };
-00139:             GridReportPresenter.ShowReportAndOfferTable(
-00140:                 document,
-00141:                 "CE Tools - Output Locations",
-00142:                 "CE drawing and client books are linked DWG layouts. Excel and PDF paths are selected when exporting or publishing.",
-00143:                 new List<string> { "Output", "Location / Behaviour" },
-00144:                 rows,
-00145:                 "CE TOOLS OUTPUT LOCATIONS");
-00146:         }
-00147: 
-00148:         private static int CountLayouts(Database database)
-00149:         {
-00150:             int count = 0;
-00151:             using (Transaction transaction = database.TransactionManager.StartTransaction())
-00152:             {
-00153:                 DBDictionary layouts = transaction.GetObject(database.LayoutDictionaryId, OpenMode.ForRead, false) as DBDictionary;
-00154:                 if (layouts != null)
-00155:                 {
-00156:                     foreach (DBDictionaryEntry entry in layouts)
-00157:                     {
-00158:                         Layout layout = transaction.GetObject(entry.Value, OpenMode.ForRead, false) as Layout;
-00159:                         if (layout != null && !layout.ModelType) count++;
-00160:                     }
+00119:         internal string Layout { get; private set; }
+00120:         internal string Title { get; private set; }
+00121:         internal string Purpose { get; private set; }
+00122:         internal string Paper { get; private set; }
+00123:         internal string Scale { get; private set; }
+00124:     }
+00125: 
+00126:     internal sealed class ProductionDrawingRegisterRow
+00127:     {
+00128:         public string DrawingNumber { get; set; }
+00129:         public string Layout { get; set; }
+00130:         public string Title { get; set; }
+00131:         public string Purpose { get; set; }
+00132:         public string Paper { get; set; }
+00133:         public string Scale { get; set; }
+00134:         public string Stage { get; set; }
+00135:         public string Revision { get; set; }
+00136:         public string IssueDate { get; set; }
+00137: 
+00138:         internal ProductionDrawingRegisterRow Clone()
+00139:         {
+00140:             return new ProductionDrawingRegisterRow
+00141:             {
+00142:                 DrawingNumber = DrawingNumber ?? string.Empty,
+00143:                 Layout = Layout ?? string.Empty,
+00144:                 Title = Title ?? string.Empty,
+00145:                 Purpose = Purpose ?? string.Empty,
+00146:                 Paper = Paper ?? string.Empty,
+00147:                 Scale = Scale ?? string.Empty,
+00148:                 Stage = Stage ?? string.Empty,
+00149:                 Revision = Revision ?? string.Empty,
+00150:                 IssueDate = IssueDate ?? string.Empty
+00151:             };
+00152:         }
+00153:     }
+00154: 
+00155:     internal sealed class ProductionDrawingRegisterData
+00156:     {
+00157:         internal static readonly string[] HeaderFields =
+00158:         {
+00159:             "Project Name",
+00160:             "Project Number",
+00161:             "Client",
+00162:             "Company",
+00163:             "Project Stage",
+00164:             "Revision",
+00165:             "Issue Date",
+00166:             "Drawing Number Prefix",
+00167:             "Designed By",
+00168:             "Drawn By",
+00169:             "Checked By",
+00170:             "Approved By",
+00171:             "Title Block Source"
+00172:         };
+00173: 
+00174:         internal ProductionDrawingRegisterData()
+00175:         {
+00176:             Headers = new Dictionary<string, string>(
+00177:                 StringComparer.OrdinalIgnoreCase);
+00178:             foreach (string field in HeaderFields) Headers[field] = string.Empty;
+00179:             Rows = new List<ProductionDrawingRegisterRow>();
+00180:         }
+00181: 
+00182:         internal IDictionary<string, string> Headers { get; private set; }
+00183:         internal List<ProductionDrawingRegisterRow> Rows { get; private set; }
+00184: 
+00185:         internal string Header(string name)
+00186:         {
+00187:             string value;
+00188:             return Headers.TryGetValue(name, out value)
+00189:                 ? value ?? string.Empty
+00190:                 : string.Empty;
+00191:         }
+00192: 
+00193:         internal void ApplyProjectDefaults(IDictionary<string, string> project)
+00194:         {
+00195:             foreach (string field in HeaderFields)
+00196:             {
+00197:                 if (string.Equals(field, "Title Block Source", StringComparison.OrdinalIgnoreCase))
+00198:                     continue;
+00199:                 string existing = Header(field);
+00200:                 string value;
+00201:                 if (string.IsNullOrWhiteSpace(existing) &&
+00202:                     project != null && project.TryGetValue(field, out value))
+00203:                     Headers[field] = value ?? string.Empty;
+00204:             }
+00205:             if (string.IsNullOrWhiteSpace(Header("Issue Date")))
+00206:                 Headers["Issue Date"] = DateTime.Today.ToString(
+00207:                     "yyyy-MM-dd",
+00208:                     CultureInfo.InvariantCulture);
+00209:             if (string.IsNullOrWhiteSpace(Header("Drawing Number Prefix")))
+00210:                 Headers["Drawing Number Prefix"] = "CE";
+00211:             if (string.IsNullOrWhiteSpace(Header("Title Block Source")))
+00212:             {
+00213:                 string bundled = ProductionTitleBlockManager.FindBundledSource();
+00214:                 if (!string.IsNullOrWhiteSpace(bundled))
+00215:                     Headers["Title Block Source"] = bundled;
+00216:             }
+00217:         }
+00218: 
+00219:         internal void MergeSeeds(IEnumerable<ProductionDrawingSeed> seeds)
+00220:         {
+00221:             foreach (ProductionDrawingSeed seed in seeds)
+00222:             {
+00223:                 if (seed == null || string.IsNullOrWhiteSpace(seed.Layout)) continue;
+00224:                 ProductionDrawingRegisterRow row = Find(seed.Layout);
+00225:                 if (row == null)
+00226:                 {
+00227:                     row = new ProductionDrawingRegisterRow
+00228:                     {
+00229:                         Layout = seed.Layout,
+00230:                         Title = seed.Title,
+00231:                         Purpose = seed.Purpose,
+00232:                         Paper = seed.Paper,
+00233:                         Scale = seed.Scale
+00234:                     };
+00235:                     Rows.Add(row);
+00236:                 }
+00237:                 else
+00238:                 {
+00239:                     if (string.IsNullOrWhiteSpace(row.Title)) row.Title = seed.Title;
+00240:                     if (string.IsNullOrWhiteSpace(row.Purpose)) row.Purpose = seed.Purpose;
+00241:                     if (string.IsNullOrWhiteSpace(row.Paper)) row.Paper = seed.Paper;
+00242:                     if (string.IsNullOrWhiteSpace(row.Scale)) row.Scale = seed.Scale;
+00243:                 }
+00244:             }
+00245:         }
+00246: 
+00247:         internal void ApplyRowDefaults()
+00248:         {
+00249:             string prefix = Header("Drawing Number Prefix");
+00250:             string stage = Header("Project Stage");
+00251:             string revision = Header("Revision");
+00252:             string issueDate = Header("Issue Date");
+00253:             int next = 1;
+00254:             foreach (ProductionDrawingRegisterRow row in Rows)
+00255:             {
+00256:                 if (string.IsNullOrWhiteSpace(row.DrawingNumber))
+00257:                     row.DrawingNumber = (string.IsNullOrWhiteSpace(prefix) ? "CE" : prefix) +
+00258:                         "-" + next.ToString("000", CultureInfo.InvariantCulture);
+00259:                 if (string.IsNullOrWhiteSpace(row.Title)) row.Title = row.Layout;
+00260:                 if (string.IsNullOrWhiteSpace(row.Purpose)) row.Purpose = "Project drawing";
+00261:                 if (string.IsNullOrWhiteSpace(row.Scale)) row.Scale = "As shown";
+00262:                 if (string.IsNullOrWhiteSpace(row.Stage)) row.Stage = stage;
+00263:                 if (string.IsNullOrWhiteSpace(row.Revision)) row.Revision = revision;
+00264:                 if (string.IsNullOrWhiteSpace(row.IssueDate)) row.IssueDate = issueDate;
+00265:                 next++;
+00266:             }
+00267:         }
+00268: 
+00269:         internal ProductionDrawingRegisterRow Find(string layout)
+00270:         {
+00271:             return Rows.FirstOrDefault(row => string.Equals(
+00272:                 row.Layout,
+00273:                 layout,
+00274:                 StringComparison.OrdinalIgnoreCase));
+00275:         }
+00276: 
+00277:         internal ProductionDrawingRegisterData Clone()
+00278:         {
+00279:             var result = new ProductionDrawingRegisterData();
+00280:             foreach (KeyValuePair<string, string> pair in Headers)
+00281:                 result.Headers[pair.Key] = pair.Value ?? string.Empty;
+00282:             result.Rows.Clear();
+00283:             result.Rows.AddRange(Rows.Select(row => row.Clone()));
+00284:             return result;
+00285:         }
+00286:     }
+00287: 
+00288:     internal static class ProductionDrawingRegisterStore
+00289:     {
+00290:         private const string RootName = "CE_TOOLS";
+00291:         private const string RecordName = "DRAWING_REGISTER_METADATA";
+00292: 
+00293:         internal static ProductionDrawingRegisterData Read(Database database)
+00294:         {
+00295:             var result = new ProductionDrawingRegisterData();
+00296:             if (database == null) return result;
+00297:             using (Transaction transaction =
+00298:                 database.TransactionManager.StartTransaction())
+00299:             {
+00300:                 DBDictionary named = transaction.GetObject(
+00301:                     database.NamedObjectsDictionaryId,
+00302:                     OpenMode.ForRead,
+00303:                     false) as DBDictionary;
+00304:                 if (named == null || !named.Contains(RootName)) return result;
+00305:                 DBDictionary root = transaction.GetObject(
+00306:                     named.GetAt(RootName),
+00307:                     OpenMode.ForRead,
+00308:                     false) as DBDictionary;
+00309:                 if (root == null || !root.Contains(RecordName)) return result;
+00310:                 Xrecord record = transaction.GetObject(
+00311:                     root.GetAt(RecordName),
+00312:                     OpenMode.ForRead,
+00313:                     false) as Xrecord;
+00314:                 if (record == null || record.Data == null) return result;
+00315:                 foreach (TypedValue value in record.Data)
+00316:                 {
+00317:                     string text = value.Value as string;
+00318:                     if (string.IsNullOrWhiteSpace(text)) continue;
+00319:                     string[] parts = text.Split('|');
+00320:                     if (parts.Length == 3 && parts[0] == "H")
+00321:                         result.Headers[Decode(parts[1])] = Decode(parts[2]);
+00322:                     else if (parts.Length == 10 && parts[0] == "R")
+00323:                     {
+00324:                         result.Rows.Add(new ProductionDrawingRegisterRow
+00325:                         {
+00326:                             DrawingNumber = Decode(parts[1]),
+00327:                             Layout = Decode(parts[2]),
+00328:                             Title = Decode(parts[3]),
+00329:                             Purpose = Decode(parts[4]),
+00330:                             Paper = Decode(parts[5]),
+00331:                             Scale = Decode(parts[6]),
+00332:                             Stage = Decode(parts[7]),
+00333:                             Revision = Decode(parts[8]),
+00334:                             IssueDate = Decode(parts[9])
+00335:                         });
+00336:                     }
+00337:                 }
+00338:             }
+00339:             return result;
+00340:         }
+00341: 
+00342:         internal static void Write(
+00343:             Database database,
+00344:             ProductionDrawingRegisterData data)
+00345:         {
+00346:             using (Transaction transaction =
+00347:                 database.TransactionManager.StartTransaction())
+00348:             {
+00349:                 DBDictionary named = transaction.GetObject(
+00350:                     database.NamedObjectsDictionaryId,
+00351:                     OpenMode.ForWrite,
+00352:                     false) as DBDictionary;
+00353:                 DBDictionary root;
+00354:                 if (named.Contains(RootName))
+00355:                     root = transaction.GetObject(
+00356:                         named.GetAt(RootName),
+00357:                         OpenMode.ForWrite,
+00358:                         false) as DBDictionary;
+00359:                 else
+00360:                 {
+00361:                     root = new DBDictionary();
+00362:                     named.SetAt(RootName, root);
+00363:                     transaction.AddNewlyCreatedDBObject(root, true);
+00364:                 }
+00365:                 Xrecord record;
+00366:                 if (root.Contains(RecordName))
+00367:                     record = transaction.GetObject(
+00368:                         root.GetAt(RecordName),
+00369:                         OpenMode.ForWrite,
+00370:                         false) as Xrecord;
+00371:                 else
+00372:                 {
+00373:                     record = new Xrecord();
+00374:                     root.SetAt(RecordName, record);
+00375:                     transaction.AddNewlyCreatedDBObject(record, true);
+00376:                 }
+00377:                 var values = new List<TypedValue>
+00378:                 {
+00379:                     new TypedValue((int)DxfCode.Text, "SCHEMA|1")
+00380:                 };
+00381:                 foreach (string field in ProductionDrawingRegisterData.HeaderFields)
+00382:                     values.Add(new TypedValue(
+00383:                         (int)DxfCode.Text,
+00384:                         "H|" + Encode(field) + "|" + Encode(data.Header(field))));
+00385:                 foreach (ProductionDrawingRegisterRow row in data.Rows)
+00386:                 {
+00387:                     values.Add(new TypedValue(
+00388:                         (int)DxfCode.Text,
+00389:                         string.Join("|", new[]
+00390:                         {
+00391:                             "R",
+00392:                             Encode(row.DrawingNumber),
+00393:                             Encode(row.Layout),
+00394:                             Encode(row.Title),
+00395:                             Encode(row.Purpose),
+00396:                             Encode(row.Paper),
+00397:                             Encode(row.Scale),
+00398:                             Encode(row.Stage),
+00399:                             Encode(row.Revision),
+00400:                             Encode(row.IssueDate)
+00401:                         })));
+00402:                 }
+00403:                 record.Data = new ResultBuffer(values.ToArray());
+00404:                 transaction.Commit();
+00405:             }
+00406:         }
+00407: 
+00408:         private static string Encode(string value)
+00409:         {
+00410:             return Convert.ToBase64String(
+00411:                 Encoding.UTF8.GetBytes(value ?? string.Empty));
+00412:         }
+00413: 
+00414:         private static string Decode(string value)
+00415:         {
+00416:             try
+00417:             {
+00418:                 return Encoding.UTF8.GetString(
+00419:                     Convert.FromBase64String(value ?? string.Empty));
+00420:             }
+00421:             catch
+00422:             {
+00423:                 return string.Empty;
+00424:             }
+00425:         }
+00426:     }
+00427: 
+00428:     internal sealed class ProductionDrawingRegisterWindow : Window
+00429:     {
+00430:         private readonly IDictionary<string, TextBox> _headers =
+00431:             new Dictionary<string, TextBox>(StringComparer.OrdinalIgnoreCase);
+00432:         private readonly ObservableCollection<ProductionDrawingRegisterRow> _rows;
+00433:         private readonly DataGrid _grid;
+00434: 
+00435:         internal ProductionDrawingRegisterWindow(
+00436:             ProductionDrawingRegisterData source,
+00437:             string actionText)
+00438:         {
+00439:             Title = "CE Tools - Drawing Titles and Register";
+00440:             Width = 1180;
+00441:             Height = 760;
+00442:             MinWidth = 860;
+00443:             MinHeight = 560;
+00444:             WindowStartupLocation = WindowStartupLocation.CenterOwner;
+00445:             ResizeMode = ResizeMode.CanResizeWithGrip;
+00446: 
+00447:             _rows = new ObservableCollection<ProductionDrawingRegisterRow>(
+00448:                 source.Rows.Select(row => row.Clone()));
+00449:             var root = new DockPanel { Margin = new Thickness(14) };
+00450:             Content = root;
+00451: 
+00452:             var buttons = new StackPanel
+00453:             {
+00454:                 Orientation = Orientation.Horizontal,
+00455:                 HorizontalAlignment = HorizontalAlignment.Right,
+00456:                 Margin = new Thickness(0, 10, 0, 0)
+00457:             };
+00458:             DockPanel.SetDock(buttons, Dock.Bottom);
+00459:             root.Children.Add(buttons);
+00460:             var add = Button("Add Drawing", 105);
+00461:             add.Click += delegate
+00462:             {
+00463:                 _rows.Add(new ProductionDrawingRegisterRow
+00464:                 {
+00465:                     Stage = Value("Project Stage"),
+00466:                     Revision = Value("Revision"),
+00467:                     IssueDate = Value("Issue Date"),
+00468:                     Scale = "As shown"
+00469:                 });
+00470:             };
+00471:             buttons.Children.Add(add);
+00472:             var remove = Button("Remove Selected", 125);
+00473:             remove.Margin = new Thickness(6, 0, 0, 0);
+00474:             remove.Click += delegate
+00475:             {
+00476:                 ProductionDrawingRegisterRow row =
+00477:                     _grid.SelectedItem as ProductionDrawingRegisterRow;
+00478:                 if (row != null) _rows.Remove(row);
+00479:             };
+00480:             buttons.Children.Add(remove);
+00481:             var cancel = Button("Cancel", 90);
+00482:             cancel.IsCancel = true;
+00483:             cancel.Margin = new Thickness(18, 0, 0, 0);
+00484:             cancel.Click += delegate { DialogResult = false; };
+00485:             buttons.Children.Add(cancel);
+00486:             var save = Button(actionText, 145);
+00487:             save.IsDefault = true;
+00488:             save.Margin = new Thickness(6, 0, 0, 0);
+00489:             save.Click += delegate
+00490:             {
+00491:                 _grid.CommitEdit(DataGridEditingUnit.Cell, true);
+00492:                 _grid.CommitEdit(DataGridEditingUnit.Row, true);
+00493:                 if (_rows.Any(row => string.IsNullOrWhiteSpace(row.Layout)))
+00494:                 {
+00495:                     MessageBox.Show(
+00496:                         "Every drawing-register row must have a layout name.",
+00497:                         "CE Tools",
+00498:                         MessageBoxButton.OK,
+00499:                         MessageBoxImage.Warning);
+00500:                     return;
+00501:                 }
+00502:                 Accepted = true;
+00503:                 DialogResult = true;
+00504:             };
+00505:             buttons.Children.Add(save);
+00506: 
+00507:             var heading = new TextBlock
+00508:             {
+00509:                 Text = "Drawing titles, title block information and drawing register",
+00510:                 FontSize = 20,
+00511:                 FontWeight = FontWeights.SemiBold,
+00512:                 Margin = new Thickness(0, 0, 0, 4)
+00513:             };
+00514:             DockPanel.SetDock(heading, Dock.Top);
+00515:             root.Children.Add(heading);
+00516:             var note = new TextBlock
+00517:             {
+00518:                 Text = "Edit project issue data and every sheet in one popup. The saved values drive drawing titles, title-block attributes, on-sheet registers and Excel indexes.",
+00519:                 TextWrapping = TextWrapping.Wrap,
+00520:                 Margin = new Thickness(0, 0, 0, 10)
+00521:             };
+00522:             DockPanel.SetDock(note, Dock.Top);
+00523:             root.Children.Add(note);
+00524: 
+00525:             var headerGrid = BuildHeaderGrid(source);
+00526:             var headerScroll = new ScrollViewer
+00527:             {
+00528:                 Content = headerGrid,
+00529:                 Height = 215,
+00530:                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+00531:                 Margin = new Thickness(0, 0, 0, 10)
+```
+
+### Lines 542-636
+```csharp
+00542:                 SelectionMode = DataGridSelectionMode.Single,
+00543:                 HeadersVisibility = DataGridHeadersVisibility.Column,
+00544:                 GridLinesVisibility = DataGridGridLinesVisibility.All
+00545:             };
+00546:             AddColumn("Drawing No.", "DrawingNumber", 110);
+00547:             AddColumn("Layout", "Layout", 145);
+00548:             AddColumn("Title", "Title", 220);
+00549:             AddColumn("Purpose / Discipline", "Purpose", 155);
+00550:             AddColumn("Paper", "Paper", 75);
+00551:             AddColumn("Scale", "Scale", 85);
+00552:             AddColumn("Stage", "Stage", 105);
+00553:             AddColumn("Revision", "Revision", 75);
+00554:             AddColumn("Issue Date", "IssueDate", 100);
+00555:             root.Children.Add(_grid);
+00556:         }
+00557: 
+00558:         internal bool Accepted { get; private set; }
+00559: 
+00560:         internal ProductionDrawingRegisterData BuildResult()
+00561:         {
+00562:             var result = new ProductionDrawingRegisterData();
+00563:             foreach (string field in ProductionDrawingRegisterData.HeaderFields)
+00564:                 result.Headers[field] = Value(field);
+00565:             result.Rows.Clear();
+00566:             result.Rows.AddRange(_rows.Select(row => row.Clone()));
+00567:             return result;
+00568:         }
+00569: 
+00570:         private Grid BuildHeaderGrid(ProductionDrawingRegisterData source)
+00571:         {
+00572:             var grid = new Grid();
+00573:             grid.ColumnDefinitions.Add(new ColumnDefinition
+00574:             {
+00575:                 Width = new GridLength(175)
+00576:             });
+00577:             grid.ColumnDefinitions.Add(new ColumnDefinition
+00578:             {
+00579:                 Width = new GridLength(1, GridUnitType.Star)
+00580:             });
+00581:             int row = 0;
+00582:             foreach (string field in ProductionDrawingRegisterData.HeaderFields)
+00583:             {
+00584:                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+00585:                 var label = new TextBlock
+00586:                 {
+00587:                     Text = field,
+00588:                     VerticalAlignment = VerticalAlignment.Center,
+00589:                     Margin = new Thickness(0, 3, 10, 3)
+00590:                 };
+00591:                 Grid.SetRow(label, row);
+00592:                 grid.Children.Add(label);
+00593:                 var editor = new TextBox
+00594:                 {
+00595:                     Text = source.Header(field),
+00596:                     Margin = new Thickness(0, 2, 0, 2),
+00597:                     Padding = new Thickness(4, 2, 4, 2)
+00598:                 };
+00599:                 _headers[field] = editor;
+00600:                 if (string.Equals(field, "Title Block Source", StringComparison.OrdinalIgnoreCase))
+00601:                 {
+00602:                     var panel = new DockPanel();
+00603:                     var browse = Button("Browse...", 85);
+00604:                     DockPanel.SetDock(browse, Dock.Right);
+00605:                     browse.Margin = new Thickness(6, 2, 0, 2);
+00606:                     browse.Click += delegate
+00607:                     {
+00608:                         var dialog = new Microsoft.Win32.OpenFileDialog
+00609:                         {
+00610:                             Title = "Select CE Tools title-block source DWG",
+00611:                             Filter = "AutoCAD drawing (*.dwg)|*.dwg|All files (*.*)|*.*",
+00612:                             CheckFileExists = true,
+00613:                             Multiselect = false
+00614:                         };
+00615:                         if (dialog.ShowDialog() == true)
+00616:                             editor.Text = dialog.FileName;
+00617:                     };
+00618:                     panel.Children.Add(browse);
+00619:                     panel.Children.Add(editor);
+00620:                     Grid.SetRow(panel, row);
+00621:                     Grid.SetColumn(panel, 1);
+00622:                     grid.Children.Add(panel);
+00623:                 }
+00624:                 else
+00625:                 {
+00626:                     Grid.SetRow(editor, row);
+00627:                     Grid.SetColumn(editor, 1);
+00628:                     grid.Children.Add(editor);
+00629:                 }
+00630:                 row++;
+00631:             }
+00632:             return grid;
+00633:         }
+00634: 
+00635:         private void AddColumn(string header, string path, double width)
+00636:         {
+```
+
+### Lines 680-753
+```csharp
+00680:                     "Resources",
+00681:                     "TitleBlocks",
+00682:                     "CE TOOLS - TITLE BLOCKS.dwg"));
+00683:                 return File.Exists(path) ? path : string.Empty;
+00684:             }
+00685:             catch
+00686:             {
+00687:                 return string.Empty;
+00688:             }
+00689:         }
+00690: 
+00691:         internal static ObjectId TryInsert(
+00692:             Database destination,
+00693:             Transaction transaction,
+00694:             BlockTableRecord paperSpace,
+00695:             string sourcePath,
+00696:             string paperName,
+00697:             Point3d insertion,
+00698:             ProductionDrawingRegisterData register,
+00699:             ProductionDrawingRegisterRow row,
+00700:             out string diagnostic)
+00701:         {
+00702:             diagnostic = string.Empty;
+00703:             if (destination == null || transaction == null || paperSpace == null ||
+00704:                 string.IsNullOrWhiteSpace(sourcePath) || !File.Exists(sourcePath))
+00705:             {
+00706:                 diagnostic = "No readable title-block source DWG was selected.";
+00707:                 return ObjectId.Null;
+00708:             }
+00709: 
+00710:             try
+00711:             {
+00712:                 string blockName;
+00713:                 using (var source = new Database(false, true))
+00714:                 {
+00715:                     source.ReadDwgFile(sourcePath, FileShare.Read, true, string.Empty);
+00716:                     source.CloseInput(true);
+00717:                     ObjectId sourceBlockId = FindBestBlock(
+00718:                         source,
+00719:                         paperName,
+00720:                         out blockName);
+00721:                     if (sourceBlockId.IsNull)
+00722:                     {
+00723:                         diagnostic = "No compatible " + paperName +
+00724:                             " attributed block definition was found in the selected DWG.";
+00725:                         return ObjectId.Null;
+00726:                     }
+00727:                     var ids = new ObjectIdCollection();
+00728:                     ids.Add(sourceBlockId);
+00729:                     var mapping = new IdMapping();
+00730:                     source.WblockCloneObjects(
+00731:                         ids,
+00732:                         destination.BlockTableId,
+00733:                         mapping,
+00734:                         DuplicateRecordCloning.Replace,
+00735:                         false);
+00736:                 }
+00737: 
+00738:                 BlockTable blockTable = transaction.GetObject(
+00739:                     destination.BlockTableId,
+00740:                     OpenMode.ForRead,
+00741:                     false) as BlockTable;
+00742:                 if (blockTable == null || !blockTable.Has(blockName))
+00743:                 {
+00744:                     diagnostic = "The title-block definition could not be cloned into the active drawing.";
+00745:                     return ObjectId.Null;
+00746:                 }
+00747: 
+00748:                 ObjectId definitionId = blockTable[blockName];
+00749:                 var reference = new BlockReference(insertion, definitionId);
+00750:                 reference.SetDatabaseDefaults(destination);
+00751:                 paperSpace.AppendEntity(reference);
+00752:                 transaction.AddNewlyCreatedDBObject(reference, true);
+00753: 
+```
+
+### Lines 818-891
+```csharp
+00818:                     string name = block.Name ?? string.Empty;
+00819:                     if (name.IndexOf(paperName ?? string.Empty,
+00820:                             StringComparison.OrdinalIgnoreCase) >= 0)
+00821:                         score += 100;
+00822:                     if (name.IndexOf("TITLE", StringComparison.OrdinalIgnoreCase) >= 0)
+00823:                         score += 25;
+00824:                     if (score > bestScore && attributes > 0)
+00825:                     {
+00826:                         bestScore = score;
+00827:                         best = id;
+00828:                         blockName = name;
+00829:                     }
+00830:                 }
+00831:             }
+00832:             return best;
+00833:         }
+00834: 
+00835:         private static IDictionary<string, string> BuildAttributeValues(
+00836:             ProductionDrawingRegisterData data,
+00837:             ProductionDrawingRegisterRow row)
+00838:         {
+00839:             var result = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+00840:             {
+00841:                 { "PROJECT", data.Header("Project Name") },
+00842:                 { "PROJECTNAME", data.Header("Project Name") },
+00843:                 { "PROJECTNO", data.Header("Project Number") },
+00844:                 { "PROJECTNUMBER", data.Header("Project Number") },
+00845:                 { "CLIENT", data.Header("Client") },
+00846:                 { "COMPANY", data.Header("Company") },
+00847:                 { "DRAWINGNO", row.DrawingNumber },
+00848:                 { "DRAWINGNUMBER", row.DrawingNumber },
+00849:                 { "DWGNO", row.DrawingNumber },
+00850:                 { "TITLE", row.Title },
+00851:                 { "DRAWINGTITLE", row.Title },
+00852:                 { "SHEETTITLE", row.Title },
+00853:                 { "PURPOSE", row.Purpose },
+00854:                 { "DISCIPLINE", row.Purpose },
+00855:                 { "SCALE", row.Scale },
+00856:                 { "STAGE", row.Stage },
+00857:                 { "STATUS", row.Stage },
+00858:                 { "REV", row.Revision },
+00859:                 { "REVISION", row.Revision },
+00860:                 { "DATE", row.IssueDate },
+00861:                 { "ISSUEDATE", row.IssueDate },
+00862:                 { "DESIGNED", data.Header("Designed By") },
+00863:                 { "DESIGNEDBY", data.Header("Designed By") },
+00864:                 { "DRAWN", data.Header("Drawn By") },
+00865:                 { "DRAWNBY", data.Header("Drawn By") },
+00866:                 { "CHECKED", data.Header("Checked By") },
+00867:                 { "CHECKEDBY", data.Header("Checked By") },
+00868:                 { "APPROVED", data.Header("Approved By") },
+00869:                 { "APPROVEDBY", data.Header("Approved By") },
+00870:                 { "LAYOUT", row.Layout },
+00871:                 { "SHEET", row.Layout }
+00872:             };
+00873:             return result;
+00874:         }
+00875: 
+00876:         private static string ResolveAttributeValue(
+00877:             string tag,
+00878:             string fallback,
+00879:             IDictionary<string, string> values)
+00880:         {
+00881:             string key = NormalizeTag(tag);
+00882:             string value;
+00883:             if (values.TryGetValue(key, out value)) return value ?? string.Empty;
+00884:             foreach (KeyValuePair<string, string> pair in values)
+00885:             {
+00886:                 if (key.Contains(pair.Key) || pair.Key.Contains(key))
+00887:                     return pair.Value ?? string.Empty;
+00888:             }
+00889:             return fallback ?? string.Empty;
+00890:         }
+00891: 
 ```
 
 ## ProductionReportCommands.cs
-Hits: `CE_DRAWINGBOOK`, `CE_BOOKINDEX`, `PromptKeywordOptions`, `GetKeywords(`
+Hits: `CE_DRAWINGBOOK`, `CE_BOOKINDEX`, `DrawingRegister`, `PromptKeywordOptions`, `GetKeywords(`
 
 ### Lines 32-105
 ```csharp
@@ -6967,7 +7762,7 @@ Hits: `CE_DRAWINGBOOK`, `CE_BOOKINDEX`, `PromptKeywordOptions`, `GetKeywords(`
 00105:                     path,
 ```
 
-### Lines 247-443
+### Lines 247-466
 ```csharp
 00247:                     new List<string> { "Refresh model", "Explicit CE_SUMMARYREFRESH" }
 00248:                 };
@@ -6996,311 +7791,577 @@ Hits: `CE_DRAWINGBOOK`, `CE_BOOKINDEX`, `PromptKeywordOptions`, `GetKeywords(`
 00271:             ProjectSnapshot snapshot = BuildSnapshot(
 00272:                 document.Database,
 00273:                 ReportDiscipline.All);
-00274:             var packages = StandardBookPackages();
-00275:             document.Editor.WriteMessage(
-00276:                 "\nCE_DRAWINGBOOK preview. Layout packages: {0}. Existing layouts: {1}.",
-00277:                 packages.Count,
-00278:                 snapshot.Layouts.Count);
-00279:             foreach (BookPackage package in packages)
-00280:             {
-00281:                 document.Editor.WriteMessage(
-00282:                     "\n  {0}: {1:N0} x {2:N0} mm, {3}.",
-00283:                     package.LayoutName,
-00284:                     package.Width,
-00285:                     package.Height,
-00286:                     package.Purpose);
-00287:             }
-00288: 
-00289:             if (!Confirm(
-00290:                 document.Editor,
-00291:                 "Create or refresh the A4/A3 client and A1/A0 construction-book layouts"))
-00292:                 return;
-00293: 
-00294:             try
-00295:             {
-00296:                 int created = 0;
-00297:                 int refreshed = 0;
-00298:                 foreach (BookPackage package in packages)
-00299:                 {
-00300:                     bool wasCreated = CreateOrRefreshBookLayout(
-00301:                         document.Database,
-00302:                         package,
-00303:                         snapshot);
-00304:                     if (wasCreated) created++;
-00305:                     else refreshed++;
-00306:                 }
-00307:                 document.Editor.WriteMessage(
-00308:                     "\nCE_DRAWINGBOOK complete. Layouts created={0}; refreshed={1}. " +
-00309:                     "Frames use true millimetre A-series dimensions; plot-device/media assignment remains workstation-specific.",
-00310:                     created,
-00311:                     refreshed);
-00312:             }
-00313:             catch (System.Exception exception)
-00314:             {
-00315:                 document.Editor.WriteMessage(
-00316:                     "\nCE_DRAWINGBOOK failed. {0}",
-00317:                     exception.Message);
-00318:             }
-00319:         }
-00320: 
-00321:         [CommandMethod("CE_TOOLS", "CE_BOOKINDEX", CommandFlags.Modal | CommandFlags.Redraw)]
-00322:         public void ExportDrawingBookIndex()
-00323:         {
-00324:             Document document = ActiveDocument();
-00325:             if (document == null) return;
-00326:             ProjectSnapshot snapshot = BuildSnapshot(
-00327:                 document.Database,
-00328:                 ReportDiscipline.All);
-00329:             string path;
-00330:             if (!PromptExcelPath(
-00331:                 document.Editor,
-00332:                 "CE-Tools-Drawing-Book-Index.xlsx",
-00333:                 out path)) return;
-00334: 
-00335:             var rows = new List<IList<string>>
-00336:             {
-00337:                 new List<string>
-00338:                 {
-00339:                     "CE TOOLS DRAWING BOOK INDEX", string.Empty, string.Empty,
-00340:                     string.Empty, string.Empty, string.Empty
-00341:                 },
-00342:                 new List<string>
-00343:                 {
-00344:                     "NO.", "LAYOUT", "PURPOSE", "PAPER FAMILY", "STATUS", "PROJECT"
-00345:                 }
-00346:             };
-00347: 
-00348:             int index = 1;
-00349:             foreach (BookPackage package in StandardBookPackages())
-00350:             {
-00351:                 bool exists = snapshot.Layouts.Any(
-00352:                     item => Equal(item.Name, package.LayoutName));
-00353:                 rows.Add(new List<string>
-00354:                 {
-00355:                     index++.ToString(CultureInfo.InvariantCulture),
-00356:                     package.LayoutName,
-00357:                     package.Purpose,
-00358:                     package.PaperName,
-00359:                     exists ? "Available" : "Missing",
-00360:                     snapshot.Project.Get("Project Name")
-00361:                 });
-00362:             }
-00363:             foreach (LayoutSnapshot layout in snapshot.Layouts
-00364:                 .Where(item => !StandardBookPackages().Any(
-00365:                     standard => Equal(standard.LayoutName, item.Name))))
-00366:             {
-00367:                 rows.Add(new List<string>
-00368:                 {
-00369:                     index++.ToString(CultureInfo.InvariantCulture),
-00370:                     layout.Name,
-00371:                     "Project drawing",
-00372:                     "Existing layout",
-00373:                     "Available",
-00374:                     snapshot.Project.Get("Project Name")
-00375:                 });
-00376:             }
-00377: 
-00378:             try
-00379:             {
-00380:                 SimpleXlsxWriter.Write(path, "Drawing Book Index", rows);
-00381:                 document.Editor.WriteMessage(
-00382:                     "\nCE_BOOKINDEX complete. Layouts listed={0}; workbook={1}",
-00383:                     rows.Count - 2,
-00384:                     path);
-00385:             }
-00386:             catch (System.Exception exception)
-00387:             {
-00388:                 document.Editor.WriteMessage(
-00389:                     "\nCE_BOOKINDEX failed. {0}",
-00390:                     exception.Message);
-00391:             }
-00392:         }
-00393: 
-00394:         private static void ShowReport(
-00395:             Document document,
-00396:             ReportDiscipline discipline,
-00397:             bool offerTable)
-00398:         {
-00399:             if (document == null) return;
-00400:             ProjectSnapshot snapshot = BuildSnapshot(document.Database, discipline);
-00401:             WriteSnapshotPreview(document.Editor, snapshot);
-00402: 
-00403:             var columns = new List<string>
-00404:             {
-00405:                 "Discipline", "Layer", "Object Type", "Count",
-00406:                 "Length", "Area", "Volume", "Status / Detail"
-00407:             };
-00408:             var rows = new List<IList<string>>();
-00409:             foreach (ReportGroup group in snapshot.Groups)
-00410:             {
-00411:                 rows.Add(new List<string>
-00412:                 {
-00413:                     group.Discipline.ToString(),
-00414:                     group.Layer,
-00415:                     group.TypeName,
-00416:                     group.Count.ToString(CultureInfo.InvariantCulture),
-00417:                     group.Length > 0.0
-00418:                         ? group.Length.ToString("N3", CultureInfo.CurrentCulture)
-00419:                         : string.Empty,
-00420:                     group.Area > 0.0
-00421:                         ? group.Area.ToString("N3", CultureInfo.CurrentCulture)
-00422:                         : string.Empty,
-00423:                     group.Volume > 0.0
-00424:                         ? group.Volume.ToString("N3", CultureInfo.CurrentCulture)
-00425:                         : string.Empty,
-00426:                     group.Detail
-00427:                 });
-00428:             }
-00429: 
-00430:             if (rows.Count == 0)
-00431:             {
-00432:                 rows.Add(new List<string>
-00433:                 {
-00434:                     discipline.ToString(), string.Empty, string.Empty, "0",
-00435:                     string.Empty, string.Empty, string.Empty,
-00436:                     "No matching model-space design objects"
-00437:                 });
-00438:             }
-00439: 
-00440:             GridReportPresenter.ShowReportAndOfferTable(
-00441:                 document,
-00442:                 "CE Tools " + discipline + " Design Report",
-00443:                 BuildReportNote(snapshot),
+00274:             List<BookPackage> packages = StandardBookPackages();
+00275:             var seeds = packages.Select(package => new ProductionDrawingSeed(
+00276:                 package.LayoutName,
+00277:                 package.Purpose,
+00278:                 package.Purpose,
+00279:                 package.PaperName,
+00280:                 "As shown")).ToList();
+00281:             foreach (LayoutSnapshot layout in snapshot.Layouts)
+00282:             {
+00283:                 if (seeds.Any(seed => string.Equals(
+00284:                         seed.Layout,
+00285:                         layout.Name,
+00286:                         StringComparison.OrdinalIgnoreCase)))
+00287:                     continue;
+00288:                 seeds.Add(new ProductionDrawingSeed(
+00289:                     layout.Name,
+00290:                     layout.Name,
+00291:                     "Project drawing",
+00292:                     "Existing",
+00293:                     "As shown"));
+00294:             }
+00295: 
+00296:             ProductionDrawingRegisterData drawingRegister;
+00297:             if (!ProductionDrawingRegisterCommands.EditForProduction(
+00298:                     document,
+00299:                     seeds,
+00300:                     "Save & Generate",
+00301:                     out drawingRegister))
+00302:                 return;
+00303: 
+00304:             try
+00305:             {
+00306:                 int created = 0;
+00307:                 int refreshed = 0;
+00308:                 foreach (BookPackage package in packages)
+00309:                 {
+00310:                     bool wasCreated = CreateOrRefreshBookLayout(
+00311:                         document.Database,
+00312:                         package,
+00313:                         snapshot,
+00314:                         drawingRegister);
+00315:                     if (wasCreated) created++;
+00316:                     else refreshed++;
+00317:                 }
+00318:                 document.Editor.WriteMessage(
+00319:                     "
+00320: CE_DRAWINGBOOK complete. Layouts created={0}; refreshed={1}. Titles, title blocks and the drawing register use the saved popup values.",
+00321:                     created,
+00322:                     refreshed);
+00323:             }
+00324:             catch (System.Exception exception)
+00325:             {
+00326:                 document.Editor.WriteMessage(
+00327:                     "
+00328: CE_DRAWINGBOOK failed. {0}",
+00329:                     exception.Message);
+00330:             }
+00331:         }
+00332: 
+00333:         [CommandMethod("CE_TOOLS", "CE_BOOKINDEX", CommandFlags.Modal | CommandFlags.Redraw)]
+00334:         public void ExportDrawingBookIndex()
+00335:         {
+00336:             Document document = ActiveDocument();
+00337:             if (document == null) return;
+00338:             ProjectSnapshot snapshot = BuildSnapshot(
+00339:                 document.Database,
+00340:                 ReportDiscipline.All);
+00341:             var seeds = StandardBookPackages()
+00342:                 .Select(package => new ProductionDrawingSeed(
+00343:                     package.LayoutName,
+00344:                     package.Purpose,
+00345:                     package.Purpose,
+00346:                     package.PaperName,
+00347:                     "As shown"))
+00348:                 .ToList();
+00349:             foreach (LayoutSnapshot layout in snapshot.Layouts)
+00350:                 seeds.Add(new ProductionDrawingSeed(
+00351:                     layout.Name,
+00352:                     layout.Name,
+00353:                     "Project drawing",
+00354:                     "Existing",
+00355:                     "As shown"));
+00356: 
+00357:             ProductionDrawingRegisterData register;
+00358:             if (!ProductionDrawingRegisterCommands.EditForProduction(
+00359:                     document,
+00360:                     seeds,
+00361:                     "Save & Export Index",
+00362:                     out register))
+00363:                 return;
+00364: 
+00365:             string path;
+00366:             if (!PromptExcelPath(
+00367:                 document.Editor,
+00368:                 "CE-Tools-Drawing-Book-Index.xlsx",
+00369:                 out path)) return;
+00370:             var rows = new List<IList<string>>
+00371:             {
+00372:                 new List<string>
+00373:                 {
+00374:                     "CE TOOLS DRAWING BOOK INDEX", string.Empty, string.Empty,
+00375:                     string.Empty, string.Empty, string.Empty, string.Empty,
+00376:                     string.Empty, string.Empty
+00377:                 },
+00378:                 new List<string>
+00379:                 {
+00380:                     "DRAWING NO.", "LAYOUT", "TITLE", "PURPOSE / DISCIPLINE",
+00381:                     "PAPER", "SCALE", "STAGE", "REVISION", "ISSUE DATE"
+00382:                 }
+00383:             };
+00384:             foreach (ProductionDrawingRegisterRow row in register.Rows)
+00385:             {
+00386:                 rows.Add(new List<string>
+00387:                 {
+00388:                     row.DrawingNumber,
+00389:                     row.Layout,
+00390:                     row.Title,
+00391:                     row.Purpose,
+00392:                     row.Paper,
+00393:                     row.Scale,
+00394:                     row.Stage,
+00395:                     row.Revision,
+00396:                     row.IssueDate
+00397:                 });
+00398:             }
+00399:             try
+00400:             {
+00401:                 SimpleXlsxWriter.Write(path, "Drawing Book Index", rows);
+00402:                 document.Editor.WriteMessage(
+00403:                     "
+00404: CE_BOOKINDEX complete. Drawings listed={0}; workbook={1}",
+00405:                     register.Rows.Count,
+00406:                     path);
+00407:             }
+00408:             catch (System.Exception exception)
+00409:             {
+00410:                 document.Editor.WriteMessage(
+00411:                     "
+00412: CE_BOOKINDEX failed. {0}",
+00413:                     exception.Message);
+00414:             }
+00415:         }
+00416: 
+00417:         private static void ShowReport(
+00418:             Document document,
+00419:             ReportDiscipline discipline,
+00420:             bool offerTable)
+00421:         {
+00422:             if (document == null) return;
+00423:             ProjectSnapshot snapshot = BuildSnapshot(document.Database, discipline);
+00424:             WriteSnapshotPreview(document.Editor, snapshot);
+00425: 
+00426:             var columns = new List<string>
+00427:             {
+00428:                 "Discipline", "Layer", "Object Type", "Count",
+00429:                 "Length", "Area", "Volume", "Status / Detail"
+00430:             };
+00431:             var rows = new List<IList<string>>();
+00432:             foreach (ReportGroup group in snapshot.Groups)
+00433:             {
+00434:                 rows.Add(new List<string>
+00435:                 {
+00436:                     group.Discipline.ToString(),
+00437:                     group.Layer,
+00438:                     group.TypeName,
+00439:                     group.Count.ToString(CultureInfo.InvariantCulture),
+00440:                     group.Length > 0.0
+00441:                         ? group.Length.ToString("N3", CultureInfo.CurrentCulture)
+00442:                         : string.Empty,
+00443:                     group.Area > 0.0
+00444:                         ? group.Area.ToString("N3", CultureInfo.CurrentCulture)
+00445:                         : string.Empty,
+00446:                     group.Volume > 0.0
+00447:                         ? group.Volume.ToString("N3", CultureInfo.CurrentCulture)
+00448:                         : string.Empty,
+00449:                     group.Detail
+00450:                 });
+00451:             }
+00452: 
+00453:             if (rows.Count == 0)
+00454:             {
+00455:                 rows.Add(new List<string>
+00456:                 {
+00457:                     discipline.ToString(), string.Empty, string.Empty, "0",
+00458:                     string.Empty, string.Empty, string.Empty,
+00459:                     "No matching model-space design objects"
+00460:                 });
+00461:             }
+00462: 
+00463:             GridReportPresenter.ShowReportAndOfferTable(
+00464:                 document,
+00465:                 "CE Tools " + discipline + " Design Report",
+00466:                 BuildReportNote(snapshot),
 ```
 
-### Lines 1573-1703
+### Lines 870-990
 ```csharp
-01573:                     map.Add(group.Discipline, summary);
-01574:                 }
-01575:                 summary.Count += group.Count;
-01576:                 summary.Length += group.Length;
-01577:                 summary.Area += group.Area;
-01578:                 summary.Volume += group.Volume;
-01579:             }
-01580:             if (map.Count == 0)
-01581:                 map.Add(ReportDiscipline.General, new DisciplineSummary(ReportDiscipline.General));
-01582:             return map.Values.ToList();
-01583:         }
-01584: 
-01585:         private static bool PromptDiscipline(
-01586:             Editor editor,
-01587:             bool includeAll,
-01588:             out ReportDiscipline discipline)
-01589:         {
-01590:             string allText = includeAll ? "All/" : string.Empty;
-01591:             var options = new PromptKeywordOptions(
-01592:                 "\nReport discipline [" + allText +
-01593:                 "General/Road/Platform/Stormwater/Sewer/Water/BulkWater] <" +
-01594:                 (includeAll ? "All" : "General") + ">: ")
-01595:             {
-01596:                 AllowNone = true
-01597:             };
-01598:             if (includeAll) options.Keywords.Add("All");
-01599:             foreach (string keyword in new[]
-01600:             {
-01601:                 "General", "Road", "Platform", "Stormwater", "Sewer", "Water", "BulkWater"
-01602:             })
-01603:                 options.Keywords.Add(keyword);
-01604:             PromptResult result = editor.GetKeywords(options);
-01605:             if (result.Status == PromptStatus.Cancel)
-01606:             {
-01607:                 discipline = ReportDiscipline.General;
-01608:                 return false;
-01609:             }
-01610:             string selected = result.Status == PromptStatus.None
-01611:                 ? (includeAll ? "All" : "General")
-01612:                 : result.StringResult;
-01613:             return Enum.TryParse(selected, true, out discipline);
-01614:         }
-01615: 
-01616:         private static bool PromptExcelPath(
-01617:             Editor editor,
-01618:             string defaultName,
-01619:             out string path)
-01620:         {
-01621:             var options = new PromptSaveFileOptions(
-01622:                 "\nSelect Excel workbook output path: ")
-01623:             {
-01624:                 Filter = "Excel Workbook (*.xlsx)|*.xlsx",
-01625:                 DialogCaption = "Export CE Tools Design Report",
-01626:                 InitialFileName = defaultName
-01627:             };
-01628:             PromptFileNameResult result = editor.GetFileNameForSave(options);
-01629:             if (result.Status != PromptStatus.OK)
-01630:             {
-01631:                 path = string.Empty;
-01632:                 return false;
-01633:             }
-01634:             path = result.StringResult;
-01635:             if (!path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-01636:                 path += ".xlsx";
-01637:             return true;
-01638:         }
-01639: 
-01640:         private static bool Confirm(Editor editor, string message)
-01641:         {
-01642:             var options = new PromptKeywordOptions(
-01643:                 "\n" + message + "? [Yes/No] <No>: ")
-01644:             {
-01645:                 AllowNone = true
-01646:             };
-01647:             options.Keywords.Add("Yes");
-01648:             options.Keywords.Add("No");
-01649:             PromptResult result = editor.GetKeywords(options);
-01650:             return result.Status == PromptStatus.OK && Equal(result.StringResult, "Yes");
-01651:         }
-01652: 
-01653:         private static ObjectId FindLayoutId(Database database, string layoutName)
-01654:         {
-01655:             using (Transaction transaction = database.TransactionManager.StartTransaction())
-01656:             {
-01657:                 DBDictionary layouts = transaction.GetObject(
-01658:                     database.LayoutDictionaryId,
-01659:                     OpenMode.ForRead,
-01660:                     false) as DBDictionary;
-01661:                 if (layouts != null && layouts.Contains(layoutName))
-01662:                     return layouts.GetAt(layoutName);
-01663:             }
-01664:             return ObjectId.Null;
-01665:         }
-01666: 
-01667:         private static bool HasRecord(
-01668:             DBObject value,
-01669:             Transaction transaction,
-01670:             string recordName)
-01671:         {
-01672:             if (value == null || value.ExtensionDictionary.IsNull) return false;
-01673:             DBDictionary dictionary = transaction.GetObject(
-01674:                 value.ExtensionDictionary,
-01675:                 OpenMode.ForRead,
-01676:                 false) as DBDictionary;
-01677:             return dictionary != null && dictionary.Contains(recordName);
-01678:         }
-01679: 
-01680:         private static Xrecord OpenOrCreateRecord(
-01681:             DBDictionary dictionary,
-01682:             string name,
-01683:             Transaction transaction)
-01684:         {
-01685:             if (dictionary == null)
-01686:                 throw new InvalidOperationException("The CE Tools extension dictionary is unavailable.");
-01687:             if (dictionary.Contains(name))
-01688:                 return transaction.GetObject(
-01689:                     dictionary.GetAt(name),
-01690:                     OpenMode.ForWrite,
-01691:                     false) as Xrecord;
-01692:             var record = new Xrecord();
-01693:             dictionary.SetAt(name, record);
-01694:             transaction.AddNewlyCreatedDBObject(record, true);
-01695:             return record;
-01696:         }
-01697: 
-01698:         private static bool TryResolveHandle(
-01699:             Database database,
-01700:             string handleText,
-01701:             out ObjectId objectId)
-01702:         {
-01703:             return DynamicCrossSectionCommands.TryResolveHandle(
+00870:             entity.CreateExtensionDictionary();
+00871:             DBDictionary dictionary = transaction.GetObject(
+00872:                 entity.ExtensionDictionary,
+00873:                 OpenMode.ForWrite,
+00874:                 false) as DBDictionary;
+00875:             Xrecord record = OpenOrCreateRecord(
+00876:                 dictionary,
+00877:                 SummaryGeneratedRecordName,
+00878:                 transaction);
+00879:             record.Data = new ResultBuffer(
+00880:                 new TypedValue((int)DxfCode.Text, "Anchor=" + anchorHandle));
+00881:             handles.Add(entity.Handle.ToString());
+00882:         }
+00883: 
+00884:         private static bool CreateOrRefreshBookLayout(
+00885:             Database database,
+00886:             BookPackage package,
+00887:             ProjectSnapshot snapshot,
+00888:             ProductionDrawingRegisterData drawingRegister)
+00889:         {
+00890:             bool created = false;
+00891:             ObjectId layoutId = FindLayoutId(database, package.LayoutName);
+00892:             if (layoutId.IsNull)
+00893:             {
+00894:                 layoutId = LayoutManager.Current.CreateLayout(package.LayoutName);
+00895:                 created = true;
+00896:             }
+00897: 
+00898:             using (Transaction transaction = database.TransactionManager.StartTransaction())
+00899:             {
+00900:                 Layout layout = transaction.GetObject(
+00901:                     layoutId,
+00902:                     OpenMode.ForWrite,
+00903:                     false) as Layout;
+00904:                 if (layout == null)
+00905:                     throw new InvalidOperationException(
+00906:                         "Layout could not be opened: " + package.LayoutName);
+00907: 
+00908:                 BookLink oldLink = ReadBookLinkIfPresent(layout, transaction);
+00909:                 if (oldLink != null)
+00910:                 {
+00911:                     foreach (string handle in oldLink.GeneratedHandles)
+00912:                     {
+00913:                         ObjectId id;
+00914:                         if (!TryResolveHandle(database, handle, out id)) continue;
+00915:                         Entity old = transaction.GetObject(
+00916:                             id,
+00917:                             OpenMode.ForWrite,
+00918:                             false) as Entity;
+00919:                         if (old != null && !old.IsErased) old.Erase();
+00920:                     }
+00921:                 }
+00922: 
+00923:                 BlockTableRecord paperSpace = transaction.GetObject(
+00924:                     layout.BlockTableRecordId,
+00925:                     OpenMode.ForWrite,
+00926:                     false) as BlockTableRecord;
+00927:                 if (paperSpace == null)
+00928:                     throw new InvalidOperationException(
+00929:                         "Paper space could not be opened for " + package.LayoutName);
+00930: 
+00931:                 double margin = package.Width >= 800.0 ? 20.0 : 10.0;
+00932:                 double titleHeight = package.Width >= 800.0 ? 7.0 : 4.0;
+00933:                 var generated = new List<string>();
+00934:                 ProductionDrawingRegisterRow registerRow =
+00935:                     drawingRegister.Find(package.LayoutName) ??
+00936:                     new ProductionDrawingRegisterRow
+00937:                     {
+00938:                         DrawingNumber = package.LayoutName,
+00939:                         Layout = package.LayoutName,
+00940:                         Title = package.Purpose,
+00941:                         Purpose = package.Purpose,
+00942:                         Paper = package.PaperName,
+00943:                         Scale = "As shown",
+00944:                         Stage = drawingRegister.Header("Project Stage"),
+00945:                         Revision = drawingRegister.Header("Revision"),
+00946:                         IssueDate = drawingRegister.Header("Issue Date")
+00947:                     };
+00948: 
+00949:                 string titleBlockDiagnostic;
+00950:                 ObjectId titleBlockId = ProductionTitleBlockManager.TryInsert(
+00951:                     database,
+00952:                     transaction,
+00953:                     paperSpace,
+00954:                     drawingRegister.Header("Title Block Source"),
+00955:                     package.PaperName,
+00956:                     Point3d.Origin,
+00957:                     drawingRegister,
+00958:                     registerRow,
+00959:                     out titleBlockDiagnostic);
+00960:                 if (!titleBlockId.IsNull)
+00961:                     generated.Add(titleBlockId.Handle.ToString());
+00962: 
+00963:                 var frame = new Polyline();
+00964:                 frame.SetDatabaseDefaults(database);
+00965:                 frame.AddVertexAt(0, new Point2d(margin, margin), 0.0, 0.0, 0.0);
+00966:                 frame.AddVertexAt(1, new Point2d(package.Width - margin, margin), 0.0, 0.0, 0.0);
+00967:                 frame.AddVertexAt(2, new Point2d(package.Width - margin, package.Height - margin), 0.0, 0.0, 0.0);
+00968:                 frame.AddVertexAt(3, new Point2d(margin, package.Height - margin), 0.0, 0.0, 0.0);
+00969:                 frame.Closed = true;
+00970:                 AddBookGenerated(transaction, paperSpace, frame, package.LayoutName, generated);
+00971: 
+00972:                 var title = new MText();
+00973:                 title.SetDatabaseDefaults(database);
+00974:                 title.Location = new Point3d(
+00975:                     margin * 1.5,
+00976:                     package.Height - margin * 1.8,
+00977:                     0.0);
+00978:                 title.TextHeight = titleHeight;
+00979:                 title.Width = package.Width - margin * 3.0;
+00980:                 title.Contents = string.Join(
+00981:                     "\\P",
+00982:                     registerRow.DrawingNumber + "  |  " + registerRow.Title.ToUpperInvariant(),
+00983:                     ValueOrNotSet(drawingRegister.Header("Project Name")) +
+00984:                         "  |  " + ValueOrNotSet(drawingRegister.Header("Client")),
+00985:                     registerRow.Paper + " | Scale " + registerRow.Scale +
+00986:                         " | Stage " + registerRow.Stage +
+00987:                         " | Rev " + registerRow.Revision +
+00988:                         " | " + registerRow.IssueDate);
+00989:                 AddBookGenerated(transaction, paperSpace, title, package.LayoutName, generated);
+00990: 
+```
+
+### Lines 1017-1130
+```csharp
+01017:                     new BookLink(
+01018:                         SchemaVersion,
+01019:                         package.LayoutName,
+01020:                         package.PaperName,
+01021:                         package.Purpose,
+01022:                         package.Width,
+01023:                         package.Height,
+01024:                         generated));
+01025:                 transaction.Commit();
+01026:             }
+01027:             return created;
+01028:         }
+01029: 
+01030:         private static Table BuildBookRegister(
+01031:             Database database,
+01032:             Point3d position,
+01033:             BookPackage package,
+01034:             ProjectSnapshot snapshot,
+01035:             ProductionDrawingRegisterData drawingRegister,
+01036:             double textHeight)
+01037:         {
+01038:             List<ProductionDrawingRegisterRow> rows = drawingRegister.Rows
+01039:                 .Take(package.PaperName == "A4" ? 10 : 24)
+01040:                 .ToList();
+01041:             if (rows.Count == 0)
+01042:             {
+01043:                 rows.Add(new ProductionDrawingRegisterRow
+01044:                 {
+01045:                     DrawingNumber = "-",
+01046:                     Layout = package.LayoutName,
+01047:                     Title = "No drawings registered",
+01048:                     Purpose = package.Purpose,
+01049:                     Revision = drawingRegister.Header("Revision")
+01050:                 });
+01051:             }
+01052: 
+01053:             var table = new Table();
+01054:             table.SetDatabaseDefaults(database);
+01055:             table.TableStyle = database.Tablestyle;
+01056:             table.Position = position;
+01057:             table.SetSize(rows.Count + 2, 5);
+01058:             table.SetRowHeight(textHeight * 2.0);
+01059:             double available = package.Width * 0.82;
+01060:             table.Columns[0].Width = available * 0.14;
+01061:             table.Columns[1].Width = available * 0.24;
+01062:             table.Columns[2].Width = available * 0.38;
+01063:             table.Columns[3].Width = available * 0.12;
+01064:             table.Columns[4].Width = available * 0.12;
+01065:             table.MergeCells(CellRange.Create(table, 0, 0, 0, 4));
+01066:             table.Cells[0, 0].TextString = "DRAWING BOOK REGISTER";
+01067:             string[] headings =
+01068:             {
+01069:                 "DRAWING NO.", "LAYOUT", "TITLE", "SCALE", "REV"
+01070:             };
+01071:             for (int column = 0; column < headings.Length; column++)
+01072:                 table.Cells[1, column].TextString = headings[column];
+01073:             for (int index = 0; index < rows.Count; index++)
+01074:             {
+01075:                 int rowIndex = index + 2;
+01076:                 ProductionDrawingRegisterRow item = rows[index];
+01077:                 table.Cells[rowIndex, 0].TextString = item.DrawingNumber;
+01078:                 table.Cells[rowIndex, 1].TextString = item.Layout;
+01079:                 table.Cells[rowIndex, 2].TextString = item.Title;
+01080:                 table.Cells[rowIndex, 3].TextString = item.Scale;
+01081:                 table.Cells[rowIndex, 4].TextString = item.Revision;
+01082:             }
+01083:             for (int rowIndex = 0; rowIndex < table.Rows.Count; rowIndex++)
+01084:                 for (int column = 0; column < table.Columns.Count; column++)
+01085:                     table.Cells[rowIndex, column].TextHeight = textHeight;
+01086:             return table;
+01087:         }
+01088: 
+01089:         private static void AddBookGenerated(
+01090:             Transaction transaction,
+01091:             BlockTableRecord paperSpace,
+01092:             Entity entity,
+01093:             string layoutName,
+01094:             ICollection<string> handles)
+01095:         {
+01096:             paperSpace.AppendEntity(entity);
+01097:             transaction.AddNewlyCreatedDBObject(entity, true);
+01098:             entity.CreateExtensionDictionary();
+01099:             DBDictionary dictionary = transaction.GetObject(
+01100:                 entity.ExtensionDictionary,
+01101:                 OpenMode.ForWrite,
+01102:                 false) as DBDictionary;
+01103:             Xrecord record = OpenOrCreateRecord(
+01104:                 dictionary,
+01105:                 BookRecordName,
+01106:                 transaction);
+01107:             record.Data = new ResultBuffer(
+01108:                 new TypedValue((int)DxfCode.Text, "Layout=" + layoutName));
+01109:             handles.Add(entity.Handle.ToString());
+01110:         }
+01111: 
+01112:         private static void WriteSummaryLink(
+01113:             Entity anchor,
+01114:             Transaction transaction,
+01115:             SummaryLink link)
+01116:         {
+01117:             DBDictionary dictionary = transaction.GetObject(
+01118:                 anchor.ExtensionDictionary,
+01119:                 OpenMode.ForWrite,
+01120:                 false) as DBDictionary;
+01121:             Xrecord record = OpenOrCreateRecord(
+01122:                 dictionary,
+01123:                 SummaryRecordName,
+01124:                 transaction);
+01125:             var values = new List<TypedValue>
+01126:             {
+01127:                 new TypedValue((int)DxfCode.Text, "Schema=" + SchemaVersion),
+01128:                 new TypedValue((int)DxfCode.Text, "Anchor=" + link.AnchorHandle),
+01129:                 new TypedValue((int)DxfCode.Text, "InsertionX=" + link.InsertionPoint.X.ToString("R", CultureInfo.InvariantCulture)),
+01130:                 new TypedValue((int)DxfCode.Text, "InsertionY=" + link.InsertionPoint.Y.ToString("R", CultureInfo.InvariantCulture)),
+```
+
+### Lines 1643-1773
+```csharp
+01643:                     map.Add(group.Discipline, summary);
+01644:                 }
+01645:                 summary.Count += group.Count;
+01646:                 summary.Length += group.Length;
+01647:                 summary.Area += group.Area;
+01648:                 summary.Volume += group.Volume;
+01649:             }
+01650:             if (map.Count == 0)
+01651:                 map.Add(ReportDiscipline.General, new DisciplineSummary(ReportDiscipline.General));
+01652:             return map.Values.ToList();
+01653:         }
+01654: 
+01655:         private static bool PromptDiscipline(
+01656:             Editor editor,
+01657:             bool includeAll,
+01658:             out ReportDiscipline discipline)
+01659:         {
+01660:             string allText = includeAll ? "All/" : string.Empty;
+01661:             var options = new PromptKeywordOptions(
+01662:                 "\nReport discipline [" + allText +
+01663:                 "General/Road/Platform/Stormwater/Sewer/Water/BulkWater] <" +
+01664:                 (includeAll ? "All" : "General") + ">: ")
+01665:             {
+01666:                 AllowNone = true
+01667:             };
+01668:             if (includeAll) options.Keywords.Add("All");
+01669:             foreach (string keyword in new[]
+01670:             {
+01671:                 "General", "Road", "Platform", "Stormwater", "Sewer", "Water", "BulkWater"
+01672:             })
+01673:                 options.Keywords.Add(keyword);
+01674:             PromptResult result = editor.GetKeywords(options);
+01675:             if (result.Status == PromptStatus.Cancel)
+01676:             {
+01677:                 discipline = ReportDiscipline.General;
+01678:                 return false;
+01679:             }
+01680:             string selected = result.Status == PromptStatus.None
+01681:                 ? (includeAll ? "All" : "General")
+01682:                 : result.StringResult;
+01683:             return Enum.TryParse(selected, true, out discipline);
+01684:         }
+01685: 
+01686:         private static bool PromptExcelPath(
+01687:             Editor editor,
+01688:             string defaultName,
+01689:             out string path)
+01690:         {
+01691:             var options = new PromptSaveFileOptions(
+01692:                 "\nSelect Excel workbook output path: ")
+01693:             {
+01694:                 Filter = "Excel Workbook (*.xlsx)|*.xlsx",
+01695:                 DialogCaption = "Export CE Tools Design Report",
+01696:                 InitialFileName = defaultName
+01697:             };
+01698:             PromptFileNameResult result = editor.GetFileNameForSave(options);
+01699:             if (result.Status != PromptStatus.OK)
+01700:             {
+01701:                 path = string.Empty;
+01702:                 return false;
+01703:             }
+01704:             path = result.StringResult;
+01705:             if (!path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
+01706:                 path += ".xlsx";
+01707:             return true;
+01708:         }
+01709: 
+01710:         private static bool Confirm(Editor editor, string message)
+01711:         {
+01712:             var options = new PromptKeywordOptions(
+01713:                 "\n" + message + "? [Yes/No] <No>: ")
+01714:             {
+01715:                 AllowNone = true
+01716:             };
+01717:             options.Keywords.Add("Yes");
+01718:             options.Keywords.Add("No");
+01719:             PromptResult result = editor.GetKeywords(options);
+01720:             return result.Status == PromptStatus.OK && Equal(result.StringResult, "Yes");
+01721:         }
+01722: 
+01723:         private static ObjectId FindLayoutId(Database database, string layoutName)
+01724:         {
+01725:             using (Transaction transaction = database.TransactionManager.StartTransaction())
+01726:             {
+01727:                 DBDictionary layouts = transaction.GetObject(
+01728:                     database.LayoutDictionaryId,
+01729:                     OpenMode.ForRead,
+01730:                     false) as DBDictionary;
+01731:                 if (layouts != null && layouts.Contains(layoutName))
+01732:                     return layouts.GetAt(layoutName);
+01733:             }
+01734:             return ObjectId.Null;
+01735:         }
+01736: 
+01737:         private static bool HasRecord(
+01738:             DBObject value,
+01739:             Transaction transaction,
+01740:             string recordName)
+01741:         {
+01742:             if (value == null || value.ExtensionDictionary.IsNull) return false;
+01743:             DBDictionary dictionary = transaction.GetObject(
+01744:                 value.ExtensionDictionary,
+01745:                 OpenMode.ForRead,
+01746:                 false) as DBDictionary;
+01747:             return dictionary != null && dictionary.Contains(recordName);
+01748:         }
+01749: 
+01750:         private static Xrecord OpenOrCreateRecord(
+01751:             DBDictionary dictionary,
+01752:             string name,
+01753:             Transaction transaction)
+01754:         {
+01755:             if (dictionary == null)
+01756:                 throw new InvalidOperationException("The CE Tools extension dictionary is unavailable.");
+01757:             if (dictionary.Contains(name))
+01758:                 return transaction.GetObject(
+01759:                     dictionary.GetAt(name),
+01760:                     OpenMode.ForWrite,
+01761:                     false) as Xrecord;
+01762:             var record = new Xrecord();
+01763:             dictionary.SetAt(name, record);
+01764:             transaction.AddNewlyCreatedDBObject(record, true);
+01765:             return record;
+01766:         }
+01767: 
+01768:         private static bool TryResolveHandle(
+01769:             Database database,
+01770:             string handleText,
+01771:             out ObjectId objectId)
+01772:         {
+01773:             return DynamicCrossSectionCommands.TryResolveHandle(
 ```
 
 ## ProfileViewBatchCommands.cs
@@ -7575,285 +8636,292 @@ Hits: `PromptStringOptions`, `PromptKeywordOptions`, `GetString(`, `GetKeywords(
 ```
 
 ## ProjectSetupCommands.cs
-Hits: `CE_PROJECTSETUP`, `PromptStringOptions`, `GetString(`
+Hits: `CE_PROJECTSETUP`, `PromptStringOptions`, `GetString(`, `ProjectSetupPopupWindow`
 
-### Lines 37-227
+### Lines 48-245
 ```csharp
-00037:         [CommandMethod(
-00038:             "CE_TOOLS",
-00039:             "CE_PROJECT",
-00040:             CommandFlags.Modal | CommandFlags.Redraw)]
-00041:         public void ProjectMenu()
-00042:         {
-00043:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-00044:             if (document == null)
-00045:             {
-00046:                 return;
-00047:             }
-00048: 
-00049:             DisciplineWorkflowDialogs.SelectAndRun(
-00050:                 document,
-00051:                 "CE Tools - Project Setup",
-00052:                 "Create, inspect and safely maintain drawing-embedded CE Tools project metadata.",
-00053:                 new List<DisciplineWorkflowAction>
-00054:                 {
-00055:                     new DisciplineWorkflowAction("Set up project", "CE_PROJECTSETUP", "Enter project, client, location, standards, template and units.", "01 Project"),
-00056:                     new DisciplineWorkflowAction("Project information", "CE_PROJECTINFO", "Review stored project metadata and optionally place a table.", "01 Project"),
-00057:                     new DisciplineWorkflowAction("Clear project metadata", "CE_PROJECTCLEAR", "Back up and clear the current project metadata.", "02 Recovery"),
-00058:                     new DisciplineWorkflowAction("Restore project metadata", "CE_PROJECTRESTORE", "Restore the latest CE Tools metadata backup.", "02 Recovery")
-00059:                 });
-00060:         }
-00061: 
-00062:         [CommandMethod(
-00063:             "CE_TOOLS",
-00064:             "CE_PROJECTSETUP",
-00065:             CommandFlags.Modal | CommandFlags.Redraw)]
-00066:         public void ProjectSetup()
-00067:         {
-00068:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-00069:             if (document != null)
-00070:             {
-00071:                 SetupProject(document);
-00072:             }
-00073:         }
-00074: 
-00075:         [CommandMethod(
-00076:             "CE_TOOLS",
-00077:             "CE_PROJECTINFO",
-00078:             CommandFlags.Modal | CommandFlags.Redraw)]
-00079:         public void ProjectInfo()
-00080:         {
-00081:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-00082:             if (document != null)
-00083:             {
-00084:                 ReportProjectInfo(document);
-00085:             }
-00086:         }
-00087: 
-00088:         [CommandMethod(
-00089:             "CE_TOOLS",
-00090:             "CE_PROJECTCLEAR",
-00091:             CommandFlags.Modal | CommandFlags.Redraw)]
-00092:         public void ProjectClear()
-00093:         {
-00094:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-00095:             if (document != null)
-00096:             {
-00097:                 ClearProjectInfo(document);
-00098:             }
-00099:         }
-00100: 
-00101:         [CommandMethod(
-00102:             "CE_TOOLS",
-00103:             "CE_PROJECTRESTORE",
-00104:             CommandFlags.Modal | CommandFlags.Redraw)]
-00105:         public void ProjectRestore()
-00106:         {
-00107:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-00108:             if (document != null)
-00109:             {
-00110:                 RestoreProjectInfo(document);
-00111:             }
-00112:         }
-00113: 
-00114:         private static void SetupProject(Document document)
-00115:         {
-00116:             Editor editor = document.Editor;
-00117:             ProjectMetadata existing = ReadProjectMetadata(
-00118:                 document.Database,
-00119:                 ProjectRecordName);
-00120:             var proposed = new ProjectMetadata();
-00121: 
-00122:             for (int index = 0; index < FieldOrder.Length; index++)
-00123:             {
-00124:                 string field = FieldOrder[index];
-00125:                 string currentValue = existing.Get(field);
-00126:                 if (string.IsNullOrWhiteSpace(currentValue) &&
-00127:                     string.Equals(field, "Units", StringComparison.OrdinalIgnoreCase))
-00128:                 {
-00129:                     currentValue = "Metric";
-00130:                 }
-00131: 
-00132:                 PromptResult result = PromptForValue(editor, field, currentValue);
-00133:                 if (result.Status != PromptStatus.OK)
-00134:                 {
-00135:                     editor.WriteMessage(
-00136:                         "\nCE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
-00137:                     return;
-00138:                 }
-00139: 
-00140:                 proposed.Set(field, result.StringResult == null
-00141:                     ? string.Empty
-00142:                     : result.StringResult.Trim());
+00048:         [CommandMethod(
+00049:             "CE_TOOLS",
+00050:             "CE_PROJECT",
+00051:             CommandFlags.Modal | CommandFlags.Redraw)]
+00052:         public void ProjectMenu()
+00053:         {
+00054:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
+00055:             if (document == null)
+00056:             {
+00057:                 return;
+00058:             }
+00059: 
+00060:             DisciplineWorkflowDialogs.SelectAndRun(
+00061:                 document,
+00062:                 "CE Tools - Project Setup",
+00063:                 "Create, inspect and safely maintain drawing-embedded CE Tools project metadata.",
+00064:                 new List<DisciplineWorkflowAction>
+00065:                 {
+00066:                     new DisciplineWorkflowAction("Set up project", "CE_PROJECTSETUP", "Enter project, client, location, standards, template and units.", "01 Project"),
+00067:                     new DisciplineWorkflowAction("Project information", "CE_PROJECTINFO", "Review stored project metadata and optionally place a table.", "01 Project"),
+00068:                     new DisciplineWorkflowAction("Clear project metadata", "CE_PROJECTCLEAR", "Back up and clear the current project metadata.", "02 Recovery"),
+00069:                     new DisciplineWorkflowAction("Restore project metadata", "CE_PROJECTRESTORE", "Restore the latest CE Tools metadata backup.", "02 Recovery")
+00070:                 });
+00071:         }
+00072: 
+00073:         [CommandMethod(
+00074:             "CE_TOOLS",
+00075:             "CE_PROJECTSETUP",
+00076:             CommandFlags.Modal | CommandFlags.Redraw)]
+00077:         public void ProjectSetup()
+00078:         {
+00079:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
+00080:             if (document != null)
+00081:             {
+00082:                 SetupProject(document);
+00083:             }
+00084:         }
+00085: 
+00086:         [CommandMethod(
+00087:             "CE_TOOLS",
+00088:             "CE_PROJECTINFO",
+00089:             CommandFlags.Modal | CommandFlags.Redraw)]
+00090:         public void ProjectInfo()
+00091:         {
+00092:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
+00093:             if (document != null)
+00094:             {
+00095:                 ReportProjectInfo(document);
+00096:             }
+00097:         }
+00098: 
+00099:         [CommandMethod(
+00100:             "CE_TOOLS",
+00101:             "CE_PROJECTCLEAR",
+00102:             CommandFlags.Modal | CommandFlags.Redraw)]
+00103:         public void ProjectClear()
+00104:         {
+00105:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
+00106:             if (document != null)
+00107:             {
+00108:                 ClearProjectInfo(document);
+00109:             }
+00110:         }
+00111: 
+00112:         [CommandMethod(
+00113:             "CE_TOOLS",
+00114:             "CE_PROJECTRESTORE",
+00115:             CommandFlags.Modal | CommandFlags.Redraw)]
+00116:         public void ProjectRestore()
+00117:         {
+00118:             Document document = AcApplication.DocumentManager.MdiActiveDocument;
+00119:             if (document != null)
+00120:             {
+00121:                 RestoreProjectInfo(document);
+00122:             }
+00123:         }
+00124: 
+00125:         private static void SetupProject(Document document)
+00126:         {
+00127:             Editor editor = document.Editor;
+00128:             ProjectMetadata existing = ReadProjectMetadata(
+00129:                 document.Database,
+00130:                 ProjectRecordName);
+00131:             var initialValues = new Dictionary<string, string>(
+00132:                 StringComparer.OrdinalIgnoreCase);
+00133:             foreach (string field in FieldOrder)
+00134:             {
+00135:                 string value = existing.Get(field);
+00136:                 if (string.IsNullOrWhiteSpace(value) &&
+00137:                     string.Equals(field, "Units", StringComparison.OrdinalIgnoreCase))
+00138:                     value = "Metric";
+00139:                 if (string.IsNullOrWhiteSpace(value) &&
+00140:                     string.Equals(field, "Issue Date", StringComparison.OrdinalIgnoreCase))
+00141:                     value = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+00142:                 initialValues[field] = value ?? string.Empty;
 00143:             }
 00144: 
-00145:             if (!PopupTablePresenter.ShowReview(
-00146:                 "CE Tools - Project Setup",
-00147:                 "Review the project information before it is saved inside this drawing.",
-00148:                 BuildRows(proposed),
-00149:                 "Save"))
+00145:             var window = new ProjectSetupPopupWindow(
+00146:                 FieldOrder,
+00147:                 initialValues);
+00148:             AcApplication.ShowModalWindow(window);
+00149:             if (!window.Accepted)
 00150:             {
 00151:                 editor.WriteMessage(
-00152:                     "\nCE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
-00153:                 return;
-00154:             }
-00155: 
-00156:             try
-00157:             {
-00158:                 WriteProjectMetadata(document.Database, proposed, clearBackup: true);
-00159:                 RefreshInformationTables(document);
-00160:                 editor.WriteMessage(
-00161:                     "\nCE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
-00162:                 WriteMetadata(editor, proposed);
-00163:                 PopupTablePresenter.ShowReportAndOfferTable(
-00164:                     document,
-00165:                     "CE Tools - Project Information",
-00166:                     "Project setup is complete. Choose Place Table to insert these details into the current drawing.",
-00167:                     BuildRows(proposed),
-00168:                     "CE Tools Project Information");
-00169:             }
-00170:             catch (System.Exception exception)
-00171:             {
-00172:                 editor.WriteMessage(
-00173:                     "\nCE_PROJECTSETUP cancelled. Existing metadata was not replaced. {0}",
-00174:                     exception.Message);
-00175:             }
-00176:         }
-00177: 
-00178:         private static void ReportProjectInfo(Document document)
-00179:         {
-00180:             ProjectMetadata metadata = ReadProjectMetadata(
-00181:                 document.Database,
-00182:                 ProjectRecordName);
-00183:             if (!metadata.Exists)
-00184:             {
-00185:                 document.Editor.WriteMessage(
-00186:                     "\nCE_PROJECTINFO: no CE Tools project metadata is stored in this drawing.");
-00187:                 return;
-00188:             }
-00189: 
-00190:             document.Editor.WriteMessage("\nCE Tools Project Information");
-00191:             WriteMetadata(document.Editor, metadata);
-00192:             PopupTablePresenter.ShowReportAndOfferTable(
-00193:                 document,
-00194:                 "CE Tools - Project Information",
-00195:                 "The information below is stored inside the current DWG. Choose Place Table to add a drawing table.",
-00196:                 BuildRows(metadata),
-00197:                 "CE Tools Project Information");
-00198:         }
-00199: 
-00200:         internal static int RefreshInformationTables(Document document)
-00201:         {
-00202:             if (document == null) return 0;
-00203:             ProjectMetadata metadata = ReadProjectMetadata(
-00204:                 document.Database,
-00205:                 ProjectRecordName);
-00206:             if (!metadata.Exists) return 0;
-00207:             return PopupTablePresenter.RefreshKeyValueTables(
-00208:                 document.Database,
-00209:                 "CE Tools Project Information",
-00210:                 BuildRows(metadata));
-00211:         }
-00212: 
-00213:         private static void ClearProjectInfo(Document document)
-00214:         {
-00215:             Editor editor = document.Editor;
-00216:             ProjectMetadata metadata = ReadProjectMetadata(
-00217:                 document.Database,
-00218:                 ProjectRecordName);
-00219:             if (!metadata.Exists)
-00220:             {
-00221:                 editor.WriteMessage(
-00222:                     "\nCE_PROJECTCLEAR: no CE Tools project metadata is stored in this drawing.");
-00223:                 return;
-00224:             }
+00152:                     "
+00153: CE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
+00154:                 return;
+00155:             }
+00156: 
+00157:             var proposed = new ProjectMetadata();
+00158:             foreach (string field in FieldOrder)
+00159:                 proposed.Set(field, window.GetValue(field));
+00160: 
+00161:             if (!PopupTablePresenter.ShowReview(
+00162:                 "CE Tools - Project Setup",
+00163:                 "Review the project information before it is saved inside this drawing and linked to title blocks and drawing registers.",
+00164:                 BuildRows(proposed),
+00165:                 "Save"))
+00166:             {
+00167:                 editor.WriteMessage(
+00168:                     "
+00169: CE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
+00170:                 return;
+00171:             }
+00172: 
+00173:             try
+00174:             {
+00175:                 WriteProjectMetadata(document.Database, proposed, clearBackup: true);
+00176:                 RefreshInformationTables(document);
+00177:                 editor.WriteMessage(
+00178:                     "
+00179: CE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
+00180:                 PopupTablePresenter.ShowReportAndOfferTable(
+00181:                     document,
+00182:                     "CE Tools - Project Information",
+00183:                     "Project setup is complete and is now the shared source for drawing titles and registers.",
+00184:                     BuildRows(proposed),
+00185:                     "CE Tools Project Information");
+00186:             }
+00187:             catch (System.Exception exception)
+00188:             {
+00189:                 editor.WriteMessage(
+00190:                     "
+00191: CE_PROJECTSETUP cancelled. Existing metadata was not replaced. {0}",
+00192:                     exception.Message);
+00193:             }
+00194:         }
+00195: 
+00196:         internal static IDictionary<string, string> ReadSharedProjectMetadata(
+00197:             Database database)
+00198:         {
+00199:             ProjectMetadata metadata = ReadProjectMetadata(
+00200:                 database,
+00201:                 ProjectRecordName);
+00202:             var result = new Dictionary<string, string>(
+00203:                 StringComparer.OrdinalIgnoreCase);
+00204:             foreach (string field in FieldOrder)
+00205:                 result[field] = metadata.Get(field);
+00206:             return result;
+00207:         }
+00208: 
+00209:         internal static void MergeSharedProjectMetadata(
+00210:             Database database,
+00211:             IDictionary<string, string> values)
+00212:         {
+00213:             ProjectMetadata metadata = ReadProjectMetadata(
+00214:                 database,
+00215:                 ProjectRecordName);
+00216:             foreach (string field in FieldOrder)
+00217:             {
+00218:                 string value;
+00219:                 if (values != null && values.TryGetValue(field, out value))
+00220:                     metadata.Set(field, value ?? string.Empty);
+00221:             }
+00222:             metadata.Exists = true;
+00223:             WriteProjectMetadata(database, metadata, clearBackup: false);
+00224:         }
 00225: 
-00226:             WriteMetadata(editor, metadata);
-00227: 
+00226:         private static void ReportProjectInfo(Document document)
+00227:         {
+00228:             ProjectMetadata metadata = ReadProjectMetadata(
+00229:                 document.Database,
+00230:                 ProjectRecordName);
+00231:             if (!metadata.Exists)
+00232:             {
+00233:                 document.Editor.WriteMessage(
+00234:                     "\nCE_PROJECTINFO: no CE Tools project metadata is stored in this drawing.");
+00235:                 return;
+00236:             }
+00237: 
+00238:             document.Editor.WriteMessage("\nCE Tools Project Information");
+00239:             WriteMetadata(document.Editor, metadata);
+00240:             PopupTablePresenter.ShowReportAndOfferTable(
+00241:                 document,
+00242:                 "CE Tools - Project Information",
+00243:                 "The information below is stored inside the current DWG. Choose Place Table to add a drawing table.",
+00244:                 BuildRows(metadata),
+00245:                 "CE Tools Project Information");
 ```
 
-### Lines 287-366
+### Lines 335-414
 ```csharp
-00287:             }
-00288:             catch (System.Exception exception)
-00289:             {
-00290:                 editor.WriteMessage(
-00291:                     "\nCE_PROJECTRESTORE cancelled. The backup was retained. {0}",
-00292:                     exception.Message);
-00293:             }
-00294:         }
-00295: 
-00296:         private static PromptResult PromptForValue(
-00297:             Editor editor,
-00298:             string fieldName,
-00299:             string defaultValue)
-00300:         {
-00301:             string prompt = string.IsNullOrWhiteSpace(defaultValue)
-00302:                 ? string.Format("\n{0}: ", fieldName)
-00303:                 : string.Format("\n{0} <{1}>: ", fieldName, defaultValue);
-00304: 
-00305:             var options = new PromptStringOptions(prompt)
-00306:             {
-00307:                 AllowSpaces = true,
-00308:                 UseDefaultValue = !string.IsNullOrWhiteSpace(defaultValue),
-00309:                 DefaultValue = defaultValue ?? string.Empty
-00310:             };
-00311: 
-00312:             return editor.GetString(options);
-00313:         }
-00314: 
-00315:         private static ProjectMetadata ReadProjectMetadata(
-00316:             Database database,
-00317:             string recordName)
-00318:         {
-00319:             var metadata = new ProjectMetadata();
-00320: 
-00321:             try
-00322:             {
-00323:                 using (Transaction transaction = database.TransactionManager.StartTransaction())
-00324:                 {
-00325:                     DBDictionary namedObjects = transaction.GetObject(
-00326:                         database.NamedObjectsDictionaryId,
-00327:                         OpenMode.ForRead,
-00328:                         false) as DBDictionary;
-00329:                     if (namedObjects == null || !namedObjects.Contains(RootDictionaryName))
-00330:                     {
-00331:                         return metadata;
-00332:                     }
-00333: 
-00334:                     DBDictionary root = transaction.GetObject(
-00335:                         namedObjects.GetAt(RootDictionaryName),
-00336:                         OpenMode.ForRead,
-00337:                         false) as DBDictionary;
-00338:                     if (root == null || !root.Contains(recordName))
-00339:                     {
-00340:                         return metadata;
-00341:                     }
-00342: 
-00343:                     Xrecord record = transaction.GetObject(
-00344:                         root.GetAt(recordName),
-00345:                         OpenMode.ForRead,
-00346:                         false) as Xrecord;
-00347:                     if (record == null || record.Data == null)
-00348:                     {
-00349:                         return metadata;
-00350:                     }
-00351: 
-00352:                     ReadPairs(record.Data, metadata.Set);
-00353:                     metadata.Exists = true;
-00354:                 }
-00355:             }
-00356:             catch
-00357:             {
-00358:                 // A malformed or inaccessible metadata record is treated as absent.
-00359:             }
-00360: 
-00361:             return metadata;
-00362:         }
-00363: 
-00364:         private static void WriteProjectMetadata(
-00365:             Database database,
-00366:             ProjectMetadata metadata,
+00335:             }
+00336:             catch (System.Exception exception)
+00337:             {
+00338:                 editor.WriteMessage(
+00339:                     "\nCE_PROJECTRESTORE cancelled. The backup was retained. {0}",
+00340:                     exception.Message);
+00341:             }
+00342:         }
+00343: 
+00344:         private static PromptResult PromptForValue(
+00345:             Editor editor,
+00346:             string fieldName,
+00347:             string defaultValue)
+00348:         {
+00349:             string prompt = string.IsNullOrWhiteSpace(defaultValue)
+00350:                 ? string.Format("\n{0}: ", fieldName)
+00351:                 : string.Format("\n{0} <{1}>: ", fieldName, defaultValue);
+00352: 
+00353:             var options = new PromptStringOptions(prompt)
+00354:             {
+00355:                 AllowSpaces = true,
+00356:                 UseDefaultValue = !string.IsNullOrWhiteSpace(defaultValue),
+00357:                 DefaultValue = defaultValue ?? string.Empty
+00358:             };
+00359: 
+00360:             return editor.GetString(options);
+00361:         }
+00362: 
+00363:         private static ProjectMetadata ReadProjectMetadata(
+00364:             Database database,
+00365:             string recordName)
+00366:         {
+00367:             var metadata = new ProjectMetadata();
+00368: 
+00369:             try
+00370:             {
+00371:                 using (Transaction transaction = database.TransactionManager.StartTransaction())
+00372:                 {
+00373:                     DBDictionary namedObjects = transaction.GetObject(
+00374:                         database.NamedObjectsDictionaryId,
+00375:                         OpenMode.ForRead,
+00376:                         false) as DBDictionary;
+00377:                     if (namedObjects == null || !namedObjects.Contains(RootDictionaryName))
+00378:                     {
+00379:                         return metadata;
+00380:                     }
+00381: 
+00382:                     DBDictionary root = transaction.GetObject(
+00383:                         namedObjects.GetAt(RootDictionaryName),
+00384:                         OpenMode.ForRead,
+00385:                         false) as DBDictionary;
+00386:                     if (root == null || !root.Contains(recordName))
+00387:                     {
+00388:                         return metadata;
+00389:                     }
+00390: 
+00391:                     Xrecord record = transaction.GetObject(
+00392:                         root.GetAt(recordName),
+00393:                         OpenMode.ForRead,
+00394:                         false) as Xrecord;
+00395:                     if (record == null || record.Data == null)
+00396:                     {
+00397:                         return metadata;
+00398:                     }
+00399: 
+00400:                     ReadPairs(record.Data, metadata.Set);
+00401:                     metadata.Exists = true;
+00402:                 }
+00403:             }
+00404:             catch
+00405:             {
+00406:                 // A malformed or inaccessible metadata record is treated as absent.
+00407:             }
+00408: 
+00409:             return metadata;
+00410:         }
+00411: 
+00412:         private static void WriteProjectMetadata(
+00413:             Database database,
+00414:             ProjectMetadata metadata,
 ```
 
 ## ProjectSetupPopupWindow.cs
@@ -9127,86 +10195,86 @@ Hits: `PromptKeywordOptions`, `GetKeywords(`
 ## SewerProductionCommands.cs
 Hits: `PromptStringOptions`, `GetString(`
 
-### Lines 1455-1532
+### Lines 1461-1538
 ```csharp
-01455:             }
-01456:             catch
-01457:             {
-01458:                 return false;
-01459:             }
-01460:         }
-01461: 
-01462:         private static int BranchNumber(string branchName)
-01463:         {
-01464:             string digits = new string((branchName ?? string.Empty).Where(char.IsDigit).ToArray());
-01465:             int value;
-01466:             return int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out value)
-01467:                 ? value
-01468:                 : int.MaxValue;
-01469:         }
-01470: 
-01471:         private static bool PromptText(Editor editor, string label, string current, out string value)
-01472:         {
-01473:             PromptStringOptions options = new PromptStringOptions(
-01474:                 "\n" + label + " <" + Display(current) + ">: ")
-01475:             {
-01476:                 AllowSpaces = true
-01477:             };
-01478:             PromptResult result = editor.GetString(options);
-01479:             if (result.Status == PromptStatus.Cancel)
-01480:             {
-01481:                 value = current;
-01482:                 return false;
-01483:             }
-01484:             value = result.Status == PromptStatus.OK ? result.StringResult.Trim() : current;
-01485:             return true;
-01486:         }
-01487: 
-01488:         private static string Display(string value)
-01489:         {
-01490:             return string.IsNullOrWhiteSpace(value) ? "first available" : value;
-01491:         }
-01492: 
-01493:         private static bool Confirm(Editor editor, string message)
-01494:         {
-01495:             return DisciplineWorkflowDialogs.Confirm("CE Tools — Sewer", message + "?");
-01496:         }
-01497: 
-01498:         private sealed class SewerAlignmentRecord
-01499:         {
-01500:             public SewerAlignmentRecord(ObjectId alignmentId, string branchKey, string networkHandle, string branchName)
-01501:             {
-01502:                 AlignmentId = alignmentId;
-01503:                 BranchKey = branchKey;
-01504:                 NetworkHandle = networkHandle;
-01505:                 BranchName = branchName;
-01506:             }
-01507:             public ObjectId AlignmentId { get; }
-01508:             public string BranchKey { get; }
-01509:             public string NetworkHandle { get; }
-01510:             public string BranchName { get; }
-01511:         }
-01512: 
-01513:         private sealed class SewerSequencePlan
-01514:         {
-01515:             public SewerSequencePlan(SewerGraph graph, SewerPath main, IReadOnlyList<SewerPath> branches)
-01516:             {
-01517:                 Graph = graph;
-01518:                 Main = main;
-01519:                 Branches = branches;
-01520:             }
-01521:             public SewerGraph Graph { get; }
-01522:             public SewerPath Main { get; }
-01523:             public IReadOnlyList<SewerPath> Branches { get; }
-01524:         }
-01525: 
-01526:         private sealed class SewerCandidate
-01527:         {
-01528:             public SewerCandidate(ObjectId root, int rootOrder, SewerPath path)
-01529:             {
-01530:                 Root = root;
-01531:                 RootOrder = rootOrder;
-01532:                 Path = path;
+01461:             }
+01462:             catch
+01463:             {
+01464:                 return false;
+01465:             }
+01466:         }
+01467: 
+01468:         private static int BranchNumber(string branchName)
+01469:         {
+01470:             string digits = new string((branchName ?? string.Empty).Where(char.IsDigit).ToArray());
+01471:             int value;
+01472:             return int.TryParse(digits, NumberStyles.None, CultureInfo.InvariantCulture, out value)
+01473:                 ? value
+01474:                 : int.MaxValue;
+01475:         }
+01476: 
+01477:         private static bool PromptText(Editor editor, string label, string current, out string value)
+01478:         {
+01479:             PromptStringOptions options = new PromptStringOptions(
+01480:                 "\n" + label + " <" + Display(current) + ">: ")
+01481:             {
+01482:                 AllowSpaces = true
+01483:             };
+01484:             PromptResult result = editor.GetString(options);
+01485:             if (result.Status == PromptStatus.Cancel)
+01486:             {
+01487:                 value = current;
+01488:                 return false;
+01489:             }
+01490:             value = result.Status == PromptStatus.OK ? result.StringResult.Trim() : current;
+01491:             return true;
+01492:         }
+01493: 
+01494:         private static string Display(string value)
+01495:         {
+01496:             return string.IsNullOrWhiteSpace(value) ? "first available" : value;
+01497:         }
+01498: 
+01499:         private static bool Confirm(Editor editor, string message)
+01500:         {
+01501:             return DisciplineWorkflowDialogs.Confirm("CE Tools — Sewer", message + "?");
+01502:         }
+01503: 
+01504:         private sealed class SewerAlignmentRecord
+01505:         {
+01506:             public SewerAlignmentRecord(ObjectId alignmentId, string branchKey, string networkHandle, string branchName)
+01507:             {
+01508:                 AlignmentId = alignmentId;
+01509:                 BranchKey = branchKey;
+01510:                 NetworkHandle = networkHandle;
+01511:                 BranchName = branchName;
+01512:             }
+01513:             public ObjectId AlignmentId { get; }
+01514:             public string BranchKey { get; }
+01515:             public string NetworkHandle { get; }
+01516:             public string BranchName { get; }
+01517:         }
+01518: 
+01519:         private sealed class SewerSequencePlan
+01520:         {
+01521:             public SewerSequencePlan(SewerGraph graph, SewerPath main, IReadOnlyList<SewerPath> branches)
+01522:             {
+01523:                 Graph = graph;
+01524:                 Main = main;
+01525:                 Branches = branches;
+01526:             }
+01527:             public SewerGraph Graph { get; }
+01528:             public SewerPath Main { get; }
+01529:             public IReadOnlyList<SewerPath> Branches { get; }
+01530:         }
+01531: 
+01532:         private sealed class SewerCandidate
+01533:         {
+01534:             public SewerCandidate(ObjectId root, int rootOrder, SewerPath path)
+01535:             {
+01536:                 Root = root;
+01537:                 RootOrder = rootOrder;
+01538:                 Path = path;
 ```
 
 ## SewerSequenceCommands.cs
