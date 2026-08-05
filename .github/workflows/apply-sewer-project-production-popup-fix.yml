@@ -29,6 +29,11 @@ jobs:
       - name: Apply source repairs
         run: python3 scripts/Apply-SewerProjectProductionPopupFix.py
 
+      - name: Show drawing-book integration markers
+        shell: bash
+        run: |
+          grep -n -E "ProductionDrawingRegister|ProductionTitleBlock|drawingRegister|CreateOrRefreshBookLayout" src/CE.Tools.Civil3D/ProductionReportCommands.cs | head -120 || true
+
       - name: Validate sewer, project and production popups
         run: python3 scripts/Validate-SewerProjectProductionPopups.py
 
