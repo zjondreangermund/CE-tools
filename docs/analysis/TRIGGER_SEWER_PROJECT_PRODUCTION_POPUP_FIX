@@ -6,3 +6,4 @@ Capture the generated drawing-book method section for the remaining boundary rep
 Retry after scoping the title matcher to the book-layout title only.
 Trigger the Project Setup popup string-literal repair workflow.
 Retry after enabling the pull-request trigger.
+Retry with whitespace-safe literal matching.
