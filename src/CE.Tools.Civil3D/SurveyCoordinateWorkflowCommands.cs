@@ -9,6 +9,7 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
+using Autodesk.Civil;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
@@ -551,26 +552,25 @@ namespace CETools.Civil3D
             var selectionOptions = new PromptSelectionOptions
             {
                 MessageForAdding =
-                    "\nSelect one or more lightweight, 2D or 3D polylines. " +
-                    "Point order follows each stored polyline direction: ",
+                    "\nSelect one or more polylines and/or Civil 3D feature lines. " +
+                    "Point order follows each stored source direction: ",
                 AllowDuplicates = false,
                 RejectObjectsFromNonCurrentSpace = true
             };
-            var selectionFilter = new SelectionFilter(new[]
-            {
-                new TypedValue((int)DxfCode.Start, "LWPOLYLINE,POLYLINE")
-            });
             PromptSelectionResult selectionResult = editor.GetSelection(
-                selectionOptions,
-                selectionFilter);
+                selectionOptions);
             if (selectionResult.Status != PromptStatus.OK) return;
             ObjectId[] sourceObjectIds = selectionResult.Value.GetObjectIds()
                 .Distinct()
                 .ToArray();
             if (sourceObjectIds.Length == 0) return;
 
-            var vertices = new List<Point3d>();
-            var vertexCounts = new List<int>();
+            GeometryPointOptions geometryOptions;
+            if (!PromptGeometryPointOptions(out geometryOptions)) return;
+
+            var definitions = new List<GeometryPointDefinition>();
+            var arcs = new List<GeometryArcDefinition>();
+            int rejectedSources = 0;
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 foreach (ObjectId sourceObjectId in sourceObjectIds)
@@ -581,23 +581,27 @@ namespace CETools.Civil3D
                         false) as Entity;
                     if (source == null)
                     {
-                        vertexCounts.Add(0);
+                        rejectedSources++;
                         continue;
                     }
-
-                    List<Point3d> sourceVertices = ReadPolylineVertices(
-                        source,
-                        transaction);
-                    vertexCounts.Add(sourceVertices.Count);
-                    vertices.AddRange(sourceVertices);
+                    if (!ReadGeometryPointDefinitions(
+                            source,
+                            transaction,
+                            geometryOptions,
+                            definitions,
+                            arcs))
+                        rejectedSources++;
                 }
             }
 
-            if (vertices.Count == 0)
+            if (definitions.Count == 0)
             {
-                editor.WriteMessage("\nCE_COORDPOLY2 cancelled. No usable vertices were found.");
+                editor.WriteMessage(
+                    "\nCE_COORDPOLY2 cancelled. No usable polyline or feature-line geometry was found.");
                 return;
             }
+
+            var vertices = definitions.Select(item => item.Point).ToList();
 
             ObjectId surfaceId;
             if (!PromptOptionalSurface(document, out surfaceId)) return;
@@ -621,11 +625,11 @@ namespace CETools.Civil3D
                     out pointStart)) return;
 
             PromptPointResult insertion = editor.GetPoint(
-                "\nPick insertion point for the compact X-Y-Z vertex table: ");
+                "\nPick insertion point for the dynamic X-Y-Z setting-out table: ");
             if (insertion.Status != PromptStatus.OK) return;
 
             AnnotationOptions settings;
-            if (!AnnotationSettingsStore.Prepare(document, false, out settings)) return;
+            if (!AnnotationSettingsStore.Prepare(document, true, out settings)) return;
 
             var pointNames = new List<string>();
             for (int index = 0; index < vertices.Count; index++)
@@ -708,18 +712,16 @@ namespace CETools.Civil3D
                     }
                 }
 
-                int sourceCursor = 0;
-                for (int sourceIndex = 0;
-                    sourceIndex < sourceObjectIds.Length;
-                    sourceIndex++)
+                for (int index = 0; index < definitions.Count; index++)
                 {
-                    int count = vertexCounts[sourceIndex];
-                    if (count <= 0) continue;
-                    DynamicCoordinateLinkStore.LinkPolylineVertices(
+                    GeometryPointDefinition definition = definitions[index];
+                    DynamicCoordinateLinkStore.LinkGeometryPoint(
                         document.Database,
-                        sourceObjectIds[sourceIndex],
-                        sourceIds.Skip(sourceCursor).Take(count).ToList());
-                    sourceCursor += count;
+                        definition.SourceId,
+                        sourceIds[index],
+                        definition.Mode,
+                        definition.Index,
+                        definition.Fraction);
                 }
                 if (!surfaceId.IsNull)
                     DynamicCoordinateLinkStore.LinkSurfaceElevation(
@@ -732,15 +734,39 @@ namespace CETools.Civil3D
                     ToWorld(editor, insertion.Value),
                     sourceIds,
                     settings.TextHeight,
-                    "POLYLINE VERTEX POINTS — X / Y / Z");
+                    "GEOMETRY SETTING-OUT POINTS — X / Y / Z");
+                createdIds.Add(tableId);
+
+                int radialDimensions = geometryOptions.RadialDimensions
+                    ? CreateRadialDimensions(
+                        document.Database,
+                        arcs,
+                        createdIds)
+                    : 0;
+                double scheduleOffset = PaperAnnotationScale.ModelDistance(
+                    document.Database,
+                    Math.Max(90.0, settings.TextHeight * 24.0));
+                ObjectId settingOutTableId = SettingOutScheduleCommands
+                    .CreateAutomaticGeometrySchedule(
+                        document,
+                        sourceIds,
+                        new Point3d(
+                            ToWorld(editor, insertion.Value).X + scheduleOffset,
+                            ToWorld(editor, insertion.Value).Y,
+                            ToWorld(editor, insertion.Value).Z),
+                        settings.TextHeight);
+                if (!settingOutTableId.IsNull) createdIds.Add(settingOutTableId);
 
                 editor.WriteMessage(
-                    "\nCE_COORDPOLY2 complete. Polylines={0}; vertices={1}; first={2}; last={3}; table={4}.",
-                    sourceObjectIds.Length,
+                    "\nCE_COORDPOLY2 complete. Sources={0}; rejected={1}; points={2}; radial dimensions={3}; first={4}; last={5}; coordinate table={6}; setting-out table={7}.",
+                    sourceObjectIds.Length - rejectedSources,
+                    rejectedSources,
                     sourceIds.Count,
+                    radialDimensions,
                     pointNames[0],
                     pointNames[pointNames.Count - 1],
-                    tableId.Handle);
+                    tableId.Handle,
+                    settingOutTableId.IsNull ? "Not created" : settingOutTableId.Handle.ToString());
             }
             catch (System.Exception exception)
             {
@@ -1390,6 +1416,330 @@ namespace CETools.Civil3D
             return result;
         }
 
+        private static bool PromptGeometryPointOptions(
+            out GeometryPointOptions options)
+        {
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - Geometry Setting-Out Points",
+                "Create dynamic setting-out points from multiple polylines and feature lines. Arc and tangent thresholds are entered in metres and converted to the drawing's insertion units.");
+            model.AddChoice(
+                "Vertices", "01 Point Rules", "Add every vertex", "Yes",
+                "Create one point at every source vertex.",
+                new[] { "Yes", "No" });
+            model.AddChoice(
+                "ArcMidpoints", "01 Point Rules", "Add midpoint on long arcs", "Yes",
+                "Add the midpoint when an arc or bellmouth exceeds the selected length.",
+                new[] { "Yes", "No" });
+            model.AddPositiveDouble(
+                "ArcThreshold", "01 Point Rules", "Long arc/bellmouth length (m)", 10.0,
+                "Arcs longer than this many metres receive a midpoint.");
+            model.AddChoice(
+                "ArcCenters", "01 Point Rules", "Add all arc/bellmouth centres", "Yes",
+                "Create a setting-out point at the calculated centre of every true arc.",
+                new[] { "Yes", "No" });
+            model.AddChoice(
+                "RadialDimensions", "02 Dimensions", "Add radial dimensions to all arcs", "Yes",
+                "Create one radius dimension for every detected arc/bellmouth.",
+                new[] { "Yes", "No" });
+            model.AddChoice(
+                "TangentPoints", "01 Point Rules", "Add points on long tangents", "Yes",
+                "Add one midpoint above 20 m, or three quarter points above 40 m using the editable thresholds below.",
+                new[] { "Yes", "No" });
+            model.AddPositiveDouble(
+                "TangentMidThreshold", "01 Point Rules", "One-point tangent length (m)", 20.0,
+                "Straight segments longer than this many metres receive a midpoint.");
+            model.AddPositiveDouble(
+                "TangentThreeThreshold", "01 Point Rules", "Three-point tangent length (m)", 40.0,
+                "Straight segments longer than this many metres receive points at 25%, 50% and 75%.");
+            if (!DisciplineWorkflowDialogs.EditSettings(model))
+            {
+                options = null;
+                return false;
+            }
+
+            options = new GeometryPointOptions
+            {
+                Vertices = IsYes(model.Text("Vertices")),
+                ArcMidpoints = IsYes(model.Text("ArcMidpoints")),
+                ArcThreshold = model.Double("ArcThreshold", 10.0),
+                ArcCenters = IsYes(model.Text("ArcCenters")),
+                RadialDimensions = IsYes(model.Text("RadialDimensions")),
+                TangentPoints = IsYes(model.Text("TangentPoints")),
+                TangentMidThreshold = model.Double("TangentMidThreshold", 20.0),
+                TangentThreeThreshold = model.Double("TangentThreeThreshold", 40.0)
+            };
+            if (options.TangentThreeThreshold < options.TangentMidThreshold)
+                options.TangentThreeThreshold = options.TangentMidThreshold;
+            return true;
+        }
+
+        private static bool IsYes(string value)
+        {
+            return string.Equals(value, "Yes", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool ReadGeometryPointDefinitions(
+            Entity source,
+            Transaction transaction,
+            GeometryPointOptions options,
+            ICollection<GeometryPointDefinition> definitions,
+            ICollection<GeometryArcDefinition> arcs)
+        {
+            List<Point3d> vertices;
+            List<double> bulges;
+            bool closed;
+            if (!ReadGeometrySource(
+                    source,
+                    transaction,
+                    out vertices,
+                    out bulges,
+                    out closed))
+                return false;
+
+            if (options.Vertices)
+            {
+                for (int index = 0; index < vertices.Count; index++)
+                    definitions.Add(new GeometryPointDefinition(
+                        source.ObjectId,
+                        "Vertex",
+                        index,
+                        0.0,
+                        vertices[index]));
+            }
+
+            int segmentCount = closed ? vertices.Count : vertices.Count - 1;
+            double unitsPerMetre = DrawingUnitsPerMetre(source.Database);
+            for (int segment = 0; segment < segmentCount; segment++)
+            {
+                Point3d start = vertices[segment];
+                Point3d end = vertices[(segment + 1) % vertices.Count];
+                double bulge = segment < bulges.Count ? bulges[segment] : 0.0;
+                if (Math.Abs(bulge) > 1e-12)
+                {
+                    Point3d center;
+                    Point3d midpoint;
+                    double length;
+                    if (!TryReadArc(start, end, bulge, out center, out midpoint, out length))
+                        continue;
+                    arcs.Add(new GeometryArcDefinition(
+                        source.ObjectId,
+                        segment,
+                        center,
+                        midpoint));
+                    if (options.ArcMidpoints &&
+                        length > options.ArcThreshold * unitsPerMetre)
+                        definitions.Add(new GeometryPointDefinition(
+                            source.ObjectId,
+                            "Segment",
+                            segment,
+                            0.5,
+                            midpoint));
+                    if (options.ArcCenters)
+                        definitions.Add(new GeometryPointDefinition(
+                            source.ObjectId,
+                            "ArcCenter",
+                            segment,
+                            0.0,
+                            center));
+                    continue;
+                }
+
+                if (!options.TangentPoints) continue;
+                double length = start.DistanceTo(end);
+                if (length > options.TangentThreeThreshold * unitsPerMetre)
+                {
+                    AddSegmentDefinition(definitions, source.ObjectId, segment, start, end, 0.25);
+                    AddSegmentDefinition(definitions, source.ObjectId, segment, start, end, 0.50);
+                    AddSegmentDefinition(definitions, source.ObjectId, segment, start, end, 0.75);
+                }
+                else if (length > options.TangentMidThreshold * unitsPerMetre)
+                {
+                    AddSegmentDefinition(definitions, source.ObjectId, segment, start, end, 0.50);
+                }
+            }
+            return true;
+        }
+
+        private static void AddSegmentDefinition(
+            ICollection<GeometryPointDefinition> definitions,
+            ObjectId sourceId,
+            int segment,
+            Point3d start,
+            Point3d end,
+            double fraction)
+        {
+            definitions.Add(new GeometryPointDefinition(
+                sourceId,
+                "Segment",
+                segment,
+                fraction,
+                new Point3d(
+                    start.X + (end.X - start.X) * fraction,
+                    start.Y + (end.Y - start.Y) * fraction,
+                    start.Z + (end.Z - start.Z) * fraction)));
+        }
+
+        private static bool ReadGeometrySource(
+            Entity source,
+            Transaction transaction,
+            out List<Point3d> vertices,
+            out List<double> bulges,
+            out bool closed)
+        {
+            vertices = new List<Point3d>();
+            bulges = new List<double>();
+            closed = false;
+            Polyline lightweight = source as Polyline;
+            if (lightweight != null)
+            {
+                closed = lightweight.Closed;
+                for (int index = 0; index < lightweight.NumberOfVertices; index++)
+                {
+                    vertices.Add(lightweight.GetPoint3dAt(index));
+                    bulges.Add(lightweight.GetBulgeAt(index));
+                }
+                return vertices.Count >= 2;
+            }
+
+            Polyline2d polyline2d = source as Polyline2d;
+            if (polyline2d != null)
+            {
+                closed = polyline2d.Closed;
+                foreach (ObjectId id in polyline2d)
+                {
+                    Vertex2d vertex = transaction.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as Vertex2d;
+                    if (vertex == null) continue;
+                    vertices.Add(vertex.Position);
+                    bulges.Add(vertex.Bulge);
+                }
+                return vertices.Count >= 2;
+            }
+
+            Polyline3d polyline3d = source as Polyline3d;
+            if (polyline3d != null)
+            {
+                closed = polyline3d.Closed;
+                foreach (ObjectId id in polyline3d)
+                {
+                    PolylineVertex3d vertex = transaction.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as PolylineVertex3d;
+                    if (vertex == null) continue;
+                    vertices.Add(vertex.Position);
+                    bulges.Add(0.0);
+                }
+                return vertices.Count >= 2;
+            }
+
+            FeatureLine featureLine = source as FeatureLine;
+            if (featureLine == null) return false;
+            closed = featureLine.Closed;
+            Point3dCollection points = featureLine.GetPoints(
+                FeatureLinePointType.PIPoint);
+            foreach (Point3d point in points) vertices.Add(point);
+            RemoveClosingDuplicate(vertices);
+            int segmentCount = closed ? vertices.Count : vertices.Count - 1;
+            for (int index = 0; index < vertices.Count; index++)
+                bulges.Add(index < segmentCount ? featureLine.GetBulge(index) : 0.0);
+            return vertices.Count >= 2;
+        }
+
+        private static bool TryReadArc(
+            Point3d start,
+            Point3d end,
+            double bulge,
+            out Point3d center,
+            out Point3d midpoint,
+            out double length)
+        {
+            double dx = end.X - start.X;
+            double dy = end.Y - start.Y;
+            double chord = Math.Sqrt(dx * dx + dy * dy);
+            if (chord <= PointTolerance || Math.Abs(bulge) <= 1e-12)
+            {
+                center = midpoint = Point3d.Origin;
+                length = 0.0;
+                return false;
+            }
+            double centerOffset = chord * (1.0 - bulge * bulge) /
+                                  (4.0 * bulge);
+            center = new Point3d(
+                (start.X + end.X) * 0.5 - dy / chord * centerOffset,
+                (start.Y + end.Y) * 0.5 + dx / chord * centerOffset,
+                (start.Z + end.Z) * 0.5);
+            double radius = Math.Sqrt(
+                (start.X - center.X) * (start.X - center.X) +
+                (start.Y - center.Y) * (start.Y - center.Y));
+            double includedAngle = 4.0 * Math.Atan(bulge);
+            double startAngle = Math.Atan2(
+                start.Y - center.Y,
+                start.X - center.X);
+            double midpointAngle = startAngle + includedAngle * 0.5;
+            midpoint = new Point3d(
+                center.X + Math.Cos(midpointAngle) * radius,
+                center.Y + Math.Sin(midpointAngle) * radius,
+                (start.Z + end.Z) * 0.5);
+            length = radius * Math.Abs(includedAngle);
+            return true;
+        }
+
+        private static double DrawingUnitsPerMetre(Database database)
+        {
+            string units = database == null ? string.Empty : database.Insunits.ToString();
+            if (string.Equals(units, "Millimeters", StringComparison.OrdinalIgnoreCase)) return 1000.0;
+            if (string.Equals(units, "Centimeters", StringComparison.OrdinalIgnoreCase)) return 100.0;
+            if (string.Equals(units, "Meters", StringComparison.OrdinalIgnoreCase)) return 1.0;
+            if (string.Equals(units, "Inches", StringComparison.OrdinalIgnoreCase)) return 39.3700787;
+            if (string.Equals(units, "Feet", StringComparison.OrdinalIgnoreCase)) return 3.2808399;
+            return 1.0;
+        }
+
+        private static int CreateRadialDimensions(
+            Database database,
+            IEnumerable<GeometryArcDefinition> arcs,
+            ICollection<ObjectId> created)
+        {
+            int count = 0;
+            var links = new List<Tuple<ObjectId, ObjectId, int>>();
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord currentSpace = OpenCurrentSpace(
+                    database,
+                    transaction);
+                foreach (GeometryArcDefinition arc in arcs)
+                {
+                    double radius = arc.Center.DistanceTo(arc.ChordPoint);
+                    if (radius <= PointTolerance) continue;
+                    var dimension = new RadialDimension(
+                        arc.Center,
+                        arc.ChordPoint,
+                        Math.Max(radius * 0.35, database.Textsize * 2.0),
+                        string.Empty,
+                        database.Dimstyle);
+                    dimension.SetDatabaseDefaults(database);
+                    PaperAnnotationScale.SetAnnotative(dimension);
+                    ObjectId id = currentSpace.AppendEntity(dimension);
+                    transaction.AddNewlyCreatedDBObject(dimension, true);
+                    created.Add(id);
+                    links.Add(Tuple.Create(arc.SourceId, id, arc.Segment));
+                    count++;
+                }
+                transaction.Commit();
+            }
+            foreach (Tuple<ObjectId, ObjectId, int> link in links)
+                DynamicCoordinateLinkStore.LinkRadialDimension(
+                    database,
+                    link.Item1,
+                    link.Item2,
+                    link.Item3);
+            return count;
+        }
+
         private static List<Point3d> ReadPolylineVertices(
             Entity source,
             Transaction transaction)
@@ -1946,6 +2296,61 @@ namespace CETools.Civil3D
             {
                 // Best-effort rollback for objects created through mixed APIs.
             }
+        }
+
+        private sealed class GeometryPointOptions
+        {
+            public bool Vertices { get; set; }
+            public bool ArcMidpoints { get; set; }
+            public double ArcThreshold { get; set; }
+            public bool ArcCenters { get; set; }
+            public bool RadialDimensions { get; set; }
+            public bool TangentPoints { get; set; }
+            public double TangentMidThreshold { get; set; }
+            public double TangentThreeThreshold { get; set; }
+        }
+
+        private sealed class GeometryPointDefinition
+        {
+            public GeometryPointDefinition(
+                ObjectId sourceId,
+                string mode,
+                int index,
+                double fraction,
+                Point3d point)
+            {
+                SourceId = sourceId;
+                Mode = mode;
+                Index = index;
+                Fraction = fraction;
+                Point = point;
+            }
+
+            public ObjectId SourceId { get; }
+            public string Mode { get; }
+            public int Index { get; }
+            public double Fraction { get; }
+            public Point3d Point { get; }
+        }
+
+        private sealed class GeometryArcDefinition
+        {
+            public GeometryArcDefinition(
+                ObjectId sourceId,
+                int segment,
+                Point3d center,
+                Point3d chordPoint)
+            {
+                SourceId = sourceId;
+                Segment = segment;
+                Center = center;
+                ChordPoint = chordPoint;
+            }
+
+            public ObjectId SourceId { get; }
+            public int Segment { get; }
+            public Point3d Center { get; }
+            public Point3d ChordPoint { get; }
         }
 
         private sealed class CoordinateRow
