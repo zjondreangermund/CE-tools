@@ -10,8 +10,10 @@ pattern = re.compile(
 )
 replacement = r"""production = replace_regex(
     production,
-    r'''                title\.Contents = string\.Join\(.*?                AddBookGenerated\(transaction, paperSpace, title, package\.LayoutName, generated\);''',
-    r'''                title.Contents = string.Join(
+    r'''                title\.Width = package\.Width - margin \* 3\.0;
+                title\.Contents = string\.Join\(.*?                AddBookGenerated\(transaction, paperSpace, title, package\.LayoutName, generated\);''',
+    r'''                title.Width = package.Width - margin * 3.0;
+                title.Contents = string.Join(
                     "\\\\P",
                     registerRow.DrawingNumber + "  |  " + registerRow.Title.ToUpperInvariant(),
                     ValueOrNotSet(drawingRegister.Header("Project Name")) +
@@ -28,4 +30,4 @@ updated, count = pattern.subn(lambda match: replacement, text, count=1)
 if count != 1:
     raise SystemExit(f"Could not repair drawing-title matcher; matches={count}")
 path.write_text(updated, encoding="utf-8")
-print("Repaired drawing-title patch matcher.")
+print("Scoped drawing-title patch matcher to the book-layout title.")
