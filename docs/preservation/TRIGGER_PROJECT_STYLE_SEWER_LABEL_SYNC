@@ -1,2 +1,3 @@
 Trigger the branch-local project style persistence and sewer label synchronization workflow.
 Retry after adding the three-line Branch / Length / @ Slope pipe-label presentation.
+Retry after adding SewerLabelStyleSyncCommands.cs to the integration commit list.
