@@ -1,0 +1,28 @@
+name: Scan production popup targets
+
+on:
+  push:
+    branches:
+      - agent/fix-sewer-alignment-project-production-popups
+
+permissions:
+  contents: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-sewer-alignment-project-production-popups
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - run: python3 scripts/Scan-ProductionPopupTargets.py
+      - name: Commit report
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add docs/analysis/PRODUCTION_POPUP_TARGETS.md
+          if git diff --cached --quiet; then exit 0; fi
+          git commit -m "Record production popup target scan"
+          git push origin HEAD:agent/fix-sewer-alignment-project-production-popups
