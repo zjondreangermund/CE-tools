@@ -186,6 +186,8 @@ namespace CETools.Civil3D
             // entity in Civil 3D 2023. Convert the selected absolute paper-mm
             // value through the active annotation scale so Properties reports
             // exactly 1.8/2.0/2.5/3.5/5.0 instead of a doubled or 0.005 value.
+            paperHeight = PaperAnnotationScale.NormalizeConfiguredPaperHeight(
+                paperHeight);
             label.TextHeight = PaperAnnotationScale.ModelTextHeight(
                 database,
                 paperHeight);

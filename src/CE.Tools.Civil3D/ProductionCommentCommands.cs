@@ -82,6 +82,7 @@ namespace CETools.Civil3D
                     new ProductionChoice("Refresh all linked client-book pages", "CE_CLIENTBOOKREFRESH "),
                     new ProductionChoice("Review client-book link and revision information", "CE_CLIENTBOOKINFO "),
                     new ProductionChoice("Export client-book register to Excel", "CE_CLIENTBOOKINDEX "),
+                    new ProductionChoice("Edit drawing titles and drawing register", "CE_DRAWINGREGISTEREDIT "),
                     new ProductionChoice("Create A4/A3 client and A1/A0 construction layouts", "CE_DRAWINGBOOK "),
                     new ProductionChoice("Export drawing-book layout register to Excel", "CE_BOOKINDEX "),
                     new ProductionChoice("Open AutoCAD Publish for batch PDF output", "CE_BATCHPUBLISH "),
@@ -97,6 +98,7 @@ namespace CETools.Civil3D
                 "Prepare linked books first, then use AutoCAD's native plot or publish workflows for PDF or hard-copy output.",
                 new List<ProductionChoice>
                 {
+                    new ProductionChoice("Edit drawing titles and drawing register", "CE_DRAWINGREGISTEREDIT "),
                     new ProductionChoice("Create/refresh A-series drawing-book layouts", "CE_DRAWINGBOOK "),
                     new ProductionChoice("Create/refresh A4/A3 client books", "CE_CLIENTBOOK "),
                     new ProductionChoice("Refresh client-book pages", "CE_CLIENTBOOKREFRESH "),

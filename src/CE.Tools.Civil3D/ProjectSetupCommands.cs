@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -22,16 +23,26 @@ namespace CETools.Civil3D
         private const string ProjectBackupRecordName = "PROJECT_METADATA_CLEAR_BACKUP";
         private const string SchemaVersion = "2";
 
-        private static readonly string[] FieldOrder =
+        internal static readonly string[] FieldOrder =
         {
             "Project Name",
+            "Project Number",
             "Client",
+            "Company",
             "Country",
             "Town",
             "Coordinate System",
             "Standards",
             "Drawing Template",
-            "Units"
+            "Units",
+            "Project Stage",
+            "Revision",
+            "Issue Date",
+            "Drawing Number Prefix",
+            "Designed By",
+            "Drawn By",
+            "Checked By",
+            "Approved By"
         };
 
         [CommandMethod(
@@ -117,39 +128,45 @@ namespace CETools.Civil3D
             ProjectMetadata existing = ReadProjectMetadata(
                 document.Database,
                 ProjectRecordName);
-            var proposed = new ProjectMetadata();
-
-            for (int index = 0; index < FieldOrder.Length; index++)
+            var initialValues = new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (string field in FieldOrder)
             {
-                string field = FieldOrder[index];
-                string currentValue = existing.Get(field);
-                if (string.IsNullOrWhiteSpace(currentValue) &&
+                string value = existing.Get(field);
+                if (string.IsNullOrWhiteSpace(value) &&
                     string.Equals(field, "Units", StringComparison.OrdinalIgnoreCase))
-                {
-                    currentValue = "Metric";
-                }
-
-                PromptResult result = PromptForValue(editor, field, currentValue);
-                if (result.Status != PromptStatus.OK)
-                {
-                    editor.WriteMessage(
-                        "\nCE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
-                    return;
-                }
-
-                proposed.Set(field, result.StringResult == null
-                    ? string.Empty
-                    : result.StringResult.Trim());
+                    value = "Metric";
+                if (string.IsNullOrWhiteSpace(value) &&
+                    string.Equals(field, "Issue Date", StringComparison.OrdinalIgnoreCase))
+                    value = DateTime.Today.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+                initialValues[field] = value ?? string.Empty;
             }
+
+            var window = new ProjectSetupPopupWindow(
+                FieldOrder,
+                initialValues);
+            AcApplication.ShowModalWindow(window);
+            if (!window.Accepted)
+            {
+                editor.WriteMessage(
+                    "
+CE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
+                return;
+            }
+
+            var proposed = new ProjectMetadata();
+            foreach (string field in FieldOrder)
+                proposed.Set(field, window.GetValue(field));
 
             if (!PopupTablePresenter.ShowReview(
                 "CE Tools - Project Setup",
-                "Review the project information before it is saved inside this drawing.",
+                "Review the project information before it is saved inside this drawing and linked to title blocks and drawing registers.",
                 BuildRows(proposed),
                 "Save"))
             {
                 editor.WriteMessage(
-                    "\nCE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
+                    "
+CE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
                 return;
             }
 
@@ -158,21 +175,52 @@ namespace CETools.Civil3D
                 WriteProjectMetadata(document.Database, proposed, clearBackup: true);
                 RefreshInformationTables(document);
                 editor.WriteMessage(
-                    "\nCE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
-                WriteMetadata(editor, proposed);
+                    "
+CE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
                 PopupTablePresenter.ShowReportAndOfferTable(
                     document,
                     "CE Tools - Project Information",
-                    "Project setup is complete. Choose Place Table to insert these details into the current drawing.",
+                    "Project setup is complete and is now the shared source for drawing titles and registers.",
                     BuildRows(proposed),
                     "CE Tools Project Information");
             }
             catch (System.Exception exception)
             {
                 editor.WriteMessage(
-                    "\nCE_PROJECTSETUP cancelled. Existing metadata was not replaced. {0}",
+                    "
+CE_PROJECTSETUP cancelled. Existing metadata was not replaced. {0}",
                     exception.Message);
             }
+        }
+
+        internal static IDictionary<string, string> ReadSharedProjectMetadata(
+            Database database)
+        {
+            ProjectMetadata metadata = ReadProjectMetadata(
+                database,
+                ProjectRecordName);
+            var result = new Dictionary<string, string>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (string field in FieldOrder)
+                result[field] = metadata.Get(field);
+            return result;
+        }
+
+        internal static void MergeSharedProjectMetadata(
+            Database database,
+            IDictionary<string, string> values)
+        {
+            ProjectMetadata metadata = ReadProjectMetadata(
+                database,
+                ProjectRecordName);
+            foreach (string field in FieldOrder)
+            {
+                string value;
+                if (values != null && values.TryGetValue(field, out value))
+                    metadata.Set(field, value ?? string.Empty);
+            }
+            metadata.Exists = true;
+            WriteProjectMetadata(database, metadata, clearBackup: false);
         }
 
         private static void ReportProjectInfo(Document document)

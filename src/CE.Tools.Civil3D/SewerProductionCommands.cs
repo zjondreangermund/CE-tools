@@ -188,12 +188,12 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(
                 "CE Tools — Sewer Settings",
                 "Blank style names use the first compatible drawing style. Label height is a paper height; layout values control batch profile-view placement.");
-            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Select an installed style for generated sewer branch alignments.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.AlignmentStyles, "Alignment Style"));
-            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Label set applied automatically to generated sewer alignments.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles, "Alignment Label Set Style"));
-            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style for generated existing-ground profiles.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileStyles, "Profile Style"));
-            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set for generated profiles.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles, "Profile Label Set Style"));
-            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style for generated sewer profile views.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewStyles, "Profile View Style"));
-            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set for generated profile views.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument == null ? null : (object)civilDocument.Styles.ProfileViewBandSetStyles, "Profile View Band Set Style"));
+            model.AddChoice("AlignmentStyle", "Civil 3D Styles", "Alignment style", settings.AlignmentStyle, "Select an installed style for generated sewer branch alignments.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument, "Alignment Style"));
+            model.AddChoice("AlignmentLabelSetStyle", "Civil 3D Styles", "Alignment label-set style", settings.AlignmentLabelSetStyle, "Label set applied automatically to generated sewer alignments.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument, "Alignment Label Set Style"));
+            model.AddChoice("ProfileStyle", "Civil 3D Styles", "Profile style", settings.ProfileStyle, "Style for generated existing-ground profiles.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument, "Profile Style"));
+            model.AddChoice("ProfileLabelSetStyle", "Civil 3D Styles", "Profile label-set style", settings.ProfileLabelSetStyle, "Label set for generated profiles.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument, "Profile Label Set Style"));
+            model.AddChoice("ProfileViewStyle", "Civil 3D Styles", "Profile-view style", settings.ProfileViewStyle, "Style for generated sewer profile views.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument, "Profile View Style"));
+            model.AddChoice("ProfileViewBandSetStyle", "Civil 3D Styles", "Profile-view band-set style", settings.ProfileViewBandSetStyle, "Band set for generated profile views.", CivilStyleCatalogV2.ReadNames(document.Database, civilDocument, "Profile View Band Set Style"));
             model.AddChoice("PipePlanLabelStyle", "Civil 3D Styles", "Pipe plan-label style", settings.PipePlanLabelStyle, "Plan label added automatically to sewer pipes after sequencing.", SewerNetworkLabelCommands.ReadPipeLabelStyleNames(document));
             model.AddChoice("StructurePlanLabelStyle", "Civil 3D Styles", "Structure plan-label style", settings.StructurePlanLabelStyle, "Plan label added automatically to sewer manholes after sequencing.", SewerNetworkLabelCommands.ReadStructureLabelStyleNames(document));
             model.AddText("ProfileLayer", "Layers and Annotation", "Profile output layer", settings.ProfileLayer, "Layer for sewer profiles and profile views.");
@@ -215,7 +215,8 @@ namespace CETools.Civil3D
             settings.PipePlanLabelStyle = model.Text("PipePlanLabelStyle");
             settings.StructurePlanLabelStyle = model.Text("StructurePlanLabelStyle");
             settings.ProfileLayer = model.Text("ProfileLayer");
-            settings.LabelHeight = model.Double("LabelHeight", settings.LabelHeight);
+            settings.LabelHeight = PaperAnnotationScale.NormalizeConfiguredPaperHeight(
+                model.Double("LabelHeight", settings.LabelHeight));
             settings.BranchLabelSide = model.Text("BranchLabelSide");
             settings.BranchLabelAboveOffset = model.Double("BranchLabelAboveOffset", settings.BranchLabelAboveOffset);
             settings.BranchLabelBelowOffset = model.Double("BranchLabelBelowOffset", settings.BranchLabelBelowOffset);
@@ -295,10 +296,11 @@ namespace CETools.Civil3D
                 using (Transaction transaction = database.TransactionManager.StartTransaction())
                 {
                     string actualStyle;
-                    ObjectId styleId = ResolveStyleId(
-                        civilDocument.Styles.AlignmentStyles,
+                    ObjectId styleId = CivilStyleCatalogV2.ResolveStyleId(
+                        database,
+                        civilDocument,
+                        "Alignment Style",
                         settings.AlignmentStyle,
-                        "alignment style",
                         transaction,
                         out actualStyle);
 
@@ -998,31 +1000,35 @@ namespace CETools.Civil3D
                 EnsureRegApp(database, transaction, ProfileRegAppName);
                 ObjectId layerId = GetOrCreateLayer(database, transaction, settings.ProfileLayer, DefaultProfileLayer);
                 string profileStyleName;
-                ObjectId profileStyleId = ResolveStyleId(
-                    civilDocument.Styles.ProfileStyles,
+                ObjectId profileStyleId = CivilStyleCatalogV2.ResolveStyleId(
+                    database,
+                    civilDocument,
+                    "Profile Style",
                     settings.ProfileStyle,
-                    "profile style",
                     transaction,
                     out profileStyleName);
                 string profileLabelName;
-                ObjectId profileLabelId = ResolveStyleId(
-                    civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles,
+                ObjectId profileLabelId = CivilStyleCatalogV2.ResolveStyleId(
+                    database,
+                    civilDocument,
+                    "Profile Label Set Style",
                     settings.ProfileLabelSetStyle,
-                    "profile label-set style",
                     transaction,
                     out profileLabelName);
                 string viewStyleName;
-                ObjectId viewStyleId = ResolveStyleId(
-                    civilDocument.Styles.ProfileViewStyles,
+                ObjectId viewStyleId = CivilStyleCatalogV2.ResolveStyleId(
+                    database,
+                    civilDocument,
+                    "Profile View Style",
                     settings.ProfileViewStyle,
-                    "profile-view style",
                     transaction,
                     out viewStyleName);
                 string bandName;
-                ObjectId bandId = ResolveStyleId(
-                    civilDocument.Styles.ProfileViewBandSetStyles,
+                ObjectId bandId = CivilStyleCatalogV2.ResolveStyleId(
+                    database,
+                    civilDocument,
+                    "Profile View Band Set Style",
                     settings.ProfileViewBandSetStyle,
-                    "profile-view band-set style",
                     transaction,
                     out bandName);
 

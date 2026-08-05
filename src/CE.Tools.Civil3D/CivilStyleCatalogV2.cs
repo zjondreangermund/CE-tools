@@ -237,6 +237,245 @@ namespace CETools.Civil3D
                 .ToList();
         }
 
+        internal static IList<string> ReadNames(
+            Database database,
+            CivilDocument civilDocument,
+            string category)
+        {
+            var names = new List<string>();
+            if (database == null || civilDocument == null ||
+                string.IsNullOrWhiteSpace(category))
+                return names;
+
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in ReadCategoryObjectIds(
+                    database,
+                    civilDocument,
+                    category,
+                    transaction))
+                {
+                    StyleBase item = OpenStyle(id, transaction);
+                    if (item != null &&
+                        !string.IsNullOrWhiteSpace(item.Name) &&
+                        !LooksLikeRuntimeClassName(item.Name))
+                        names.Add(item.Name.Trim());
+                }
+            }
+
+            return names
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(value => value, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        internal static ObjectId ResolveStyleId(
+            Database database,
+            CivilDocument civilDocument,
+            string category,
+            string requested,
+            Transaction transaction,
+            out string actualName)
+        {
+            actualName = string.Empty;
+            if (database == null || civilDocument == null || transaction == null)
+                throw new InvalidOperationException(
+                    "The active Civil 3D drawing is unavailable while resolving " + category + ".");
+
+            IList<ObjectId> ids = ReadCategoryObjectIds(
+                database,
+                civilDocument,
+                category,
+                transaction);
+            if (ids.Count == 0)
+                throw new InvalidOperationException(
+                    "The drawing contains no compatible " + category + ". Import the approved source styles first.");
+
+            bool useDefault = string.IsNullOrWhiteSpace(requested) ||
+                string.Equals(
+                    requested,
+                    DrawingDefault,
+                    StringComparison.OrdinalIgnoreCase);
+            ObjectId first = ObjectId.Null;
+            string firstName = string.Empty;
+            foreach (ObjectId id in ids)
+            {
+                StyleBase item = OpenStyle(id, transaction);
+                if (item == null || string.IsNullOrWhiteSpace(item.Name)) continue;
+                string name = item.Name.Trim();
+                if (LooksLikeRuntimeClassName(name)) continue;
+                if (first.IsNull)
+                {
+                    first = id;
+                    firstName = name;
+                }
+                if (!useDefault && string.Equals(
+                        name,
+                        requested.Trim(),
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    actualName = name;
+                    return id;
+                }
+            }
+
+            if (useDefault && !first.IsNull)
+            {
+                actualName = firstName;
+                return first;
+            }
+
+            throw new InvalidOperationException(
+                "The selected " + category + " '" + requested +
+                "' is no longer available in this drawing. Reopen the settings popup and select an installed style.");
+        }
+
+        private static IList<ObjectId> ReadCategoryObjectIds(
+            Database database,
+            CivilDocument civilDocument,
+            string category,
+            Transaction transaction)
+        {
+            var result = new HashSet<ObjectId>();
+            string[] paths;
+            if (KnownPaths.TryGetValue(category ?? string.Empty, out paths))
+            {
+                object stylesRoot = ReadProperty(civilDocument, "Styles");
+                foreach (string path in paths)
+                {
+                    object collection = ReadPropertyPath(stylesRoot, path);
+                    if (collection == null) continue;
+                    CollectStyleIds(
+                        collection,
+                        transaction,
+                        0,
+                        new HashSet<object>(ReferenceComparer.Instance),
+                        result);
+                }
+            }
+
+            // Civil 3D 2023 can expose a collection property whose metadata exists
+            // but whose getter is unavailable in the current host. Fall back to
+            // the real StyleBase records stored in the DWG dictionaries instead
+            // of invoking that missing getter.
+            if (result.Count == 0 && database != null)
+            {
+                ScanStyleDictionary(
+                    database.NamedObjectsDictionaryId,
+                    string.Empty,
+                    0,
+                    category,
+                    transaction,
+                    new HashSet<ObjectId>(),
+                    result);
+            }
+
+            return result
+                .Where(id => !id.IsNull && !id.IsErased)
+                .OrderBy(id => id.Handle.Value)
+                .ToList();
+        }
+
+        private static void ScanStyleDictionary(
+            ObjectId dictionaryId,
+            string path,
+            int depth,
+            string category,
+            Transaction transaction,
+            ISet<ObjectId> visited,
+            ISet<ObjectId> result)
+        {
+            if (dictionaryId.IsNull || depth > 16 || visited.Contains(dictionaryId))
+                return;
+            visited.Add(dictionaryId);
+
+            DBDictionary dictionary;
+            try
+            {
+                dictionary = transaction.GetObject(
+                    dictionaryId,
+                    OpenMode.ForRead,
+                    false) as DBDictionary;
+            }
+            catch
+            {
+                return;
+            }
+            if (dictionary == null) return;
+
+            foreach (DBDictionaryEntry entry in dictionary)
+            {
+                string childPath = string.IsNullOrWhiteSpace(path)
+                    ? entry.Key
+                    : path + "." + entry.Key;
+                DBObject value;
+                try
+                {
+                    value = transaction.GetObject(
+                        entry.Value,
+                        OpenMode.ForRead,
+                        false);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                DBDictionary child = value as DBDictionary;
+                if (child != null)
+                {
+                    ScanStyleDictionary(
+                        child.ObjectId,
+                        childPath,
+                        depth + 1,
+                        category,
+                        transaction,
+                        visited,
+                        result);
+                    continue;
+                }
+
+                StyleBase item = value as StyleBase;
+                if (item == null || string.IsNullOrWhiteSpace(item.Name)) continue;
+                string mapped = MapCategory(
+                    childPath + "." + value.GetType().Name);
+                if (string.Equals(mapped, category, StringComparison.OrdinalIgnoreCase))
+                    result.Add(item.ObjectId);
+            }
+        }
+
+        private static string MapCategory(string source)
+        {
+            string value = (source ?? string.Empty)
+                .Replace("_", string.Empty)
+                .Replace(" ", string.Empty)
+                .ToUpperInvariant();
+            if (value.Contains("PROFILEVIEW") && value.Contains("BAND")) return "Profile View Band Set Style";
+            if (value.Contains("SECTIONVIEW") && value.Contains("BAND")) return "Section View Band Set Style";
+            if (value.Contains("ALIGNMENT") && value.Contains("LABELSET")) return "Alignment Label Set Style";
+            if (value.Contains("PROFILE") && value.Contains("LABELSET")) return "Profile Label Set Style";
+            if (value.Contains("SECTION") && value.Contains("LABELSET")) return "Section Label Set Style";
+            if (value.Contains("STRUCTURE") && value.Contains("RULE")) return "Structure Rule Set";
+            if (value.Contains("PIPE") && value.Contains("RULE")) return "Pipe Rule Set";
+            if (value.Contains("STRUCTURE") && value.Contains("LABEL")) return "Structure Label Style";
+            if (value.Contains("PRESSURE") && value.Contains("PIPE") && value.Contains("LABEL")) return "Pressure Pipe Label Style";
+            if (value.Contains("PIPE") && value.Contains("LABEL")) return "Pipe Label Style";
+            if (value.Contains("PROFILEVIEW")) return "Profile View Style";
+            if (value.Contains("PROFILE") && value.Contains("LABEL")) return "Profile Label Style";
+            if (value.Contains("PROFILE")) return "Profile Style";
+            if (value.Contains("ALIGNMENT") && value.Contains("LABEL")) return "Alignment Label Style";
+            if (value.Contains("ALIGNMENT")) return "Alignment Style";
+            if (value.Contains("STRUCTURE")) return "Structure Style";
+            if (value.Contains("PIPE")) return "Pipe Style";
+            if (value.Contains("CODESET")) return "Code Set Style";
+            if (value.Contains("ASSEMBLY")) return "Assembly Style";
+            if (value.Contains("CORRIDOR")) return "Corridor Style";
+            if (value.Contains("SURFACE")) return "Surface Style";
+            if (value.Contains("POINT")) return "Point Style";
+            return string.Empty;
+        }
+
         internal static IList<object> Enumerate(object collection)
         {
             var result = new List<object>();

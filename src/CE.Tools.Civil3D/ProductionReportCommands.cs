@@ -271,24 +271,34 @@ namespace CETools.Civil3D
             ProjectSnapshot snapshot = BuildSnapshot(
                 document.Database,
                 ReportDiscipline.All);
-            var packages = StandardBookPackages();
-            document.Editor.WriteMessage(
-                "\nCE_DRAWINGBOOK preview. Layout packages: {0}. Existing layouts: {1}.",
-                packages.Count,
-                snapshot.Layouts.Count);
-            foreach (BookPackage package in packages)
+            List<BookPackage> packages = StandardBookPackages();
+            var seeds = packages.Select(package => new ProductionDrawingSeed(
+                package.LayoutName,
+                package.Purpose,
+                package.Purpose,
+                package.PaperName,
+                "As shown")).ToList();
+            foreach (LayoutSnapshot layout in snapshot.Layouts)
             {
-                document.Editor.WriteMessage(
-                    "\n  {0}: {1:N0} x {2:N0} mm, {3}.",
-                    package.LayoutName,
-                    package.Width,
-                    package.Height,
-                    package.Purpose);
+                if (seeds.Any(seed => string.Equals(
+                        seed.Layout,
+                        layout.Name,
+                        StringComparison.OrdinalIgnoreCase)))
+                    continue;
+                seeds.Add(new ProductionDrawingSeed(
+                    layout.Name,
+                    layout.Name,
+                    "Project drawing",
+                    "Existing",
+                    "As shown"));
             }
 
-            if (!Confirm(
-                document.Editor,
-                "Create or refresh the A4/A3 client and A1/A0 construction-book layouts"))
+            ProductionDrawingRegisterData drawingRegister;
+            if (!ProductionDrawingRegisterCommands.EditForProduction(
+                    document,
+                    seeds,
+                    "Save & Generate",
+                    out drawingRegister))
                 return;
 
             try
@@ -300,20 +310,22 @@ namespace CETools.Civil3D
                     bool wasCreated = CreateOrRefreshBookLayout(
                         document.Database,
                         package,
-                        snapshot);
+                        snapshot,
+                        drawingRegister);
                     if (wasCreated) created++;
                     else refreshed++;
                 }
                 document.Editor.WriteMessage(
-                    "\nCE_DRAWINGBOOK complete. Layouts created={0}; refreshed={1}. " +
-                    "Frames use true millimetre A-series dimensions; plot-device/media assignment remains workstation-specific.",
+                    "
+CE_DRAWINGBOOK complete. Layouts created={0}; refreshed={1}. Titles, title blocks and the drawing register use the saved popup values.",
                     created,
                     refreshed);
             }
             catch (System.Exception exception)
             {
                 document.Editor.WriteMessage(
-                    "\nCE_DRAWINGBOOK failed. {0}",
+                    "
+CE_DRAWINGBOOK failed. {0}",
                     exception.Message);
             }
         }
@@ -326,67 +338,78 @@ namespace CETools.Civil3D
             ProjectSnapshot snapshot = BuildSnapshot(
                 document.Database,
                 ReportDiscipline.All);
+            var seeds = StandardBookPackages()
+                .Select(package => new ProductionDrawingSeed(
+                    package.LayoutName,
+                    package.Purpose,
+                    package.Purpose,
+                    package.PaperName,
+                    "As shown"))
+                .ToList();
+            foreach (LayoutSnapshot layout in snapshot.Layouts)
+                seeds.Add(new ProductionDrawingSeed(
+                    layout.Name,
+                    layout.Name,
+                    "Project drawing",
+                    "Existing",
+                    "As shown"));
+
+            ProductionDrawingRegisterData register;
+            if (!ProductionDrawingRegisterCommands.EditForProduction(
+                    document,
+                    seeds,
+                    "Save & Export Index",
+                    out register))
+                return;
+
             string path;
             if (!PromptExcelPath(
                 document.Editor,
                 "CE-Tools-Drawing-Book-Index.xlsx",
                 out path)) return;
-
             var rows = new List<IList<string>>
             {
                 new List<string>
                 {
                     "CE TOOLS DRAWING BOOK INDEX", string.Empty, string.Empty,
-                    string.Empty, string.Empty, string.Empty
+                    string.Empty, string.Empty, string.Empty, string.Empty,
+                    string.Empty, string.Empty
                 },
                 new List<string>
                 {
-                    "NO.", "LAYOUT", "PURPOSE", "PAPER FAMILY", "STATUS", "PROJECT"
+                    "DRAWING NO.", "LAYOUT", "TITLE", "PURPOSE / DISCIPLINE",
+                    "PAPER", "SCALE", "STAGE", "REVISION", "ISSUE DATE"
                 }
             };
-
-            int index = 1;
-            foreach (BookPackage package in StandardBookPackages())
-            {
-                bool exists = snapshot.Layouts.Any(
-                    item => Equal(item.Name, package.LayoutName));
-                rows.Add(new List<string>
-                {
-                    index++.ToString(CultureInfo.InvariantCulture),
-                    package.LayoutName,
-                    package.Purpose,
-                    package.PaperName,
-                    exists ? "Available" : "Missing",
-                    snapshot.Project.Get("Project Name")
-                });
-            }
-            foreach (LayoutSnapshot layout in snapshot.Layouts
-                .Where(item => !StandardBookPackages().Any(
-                    standard => Equal(standard.LayoutName, item.Name))))
+            foreach (ProductionDrawingRegisterRow row in register.Rows)
             {
                 rows.Add(new List<string>
                 {
-                    index++.ToString(CultureInfo.InvariantCulture),
-                    layout.Name,
-                    "Project drawing",
-                    "Existing layout",
-                    "Available",
-                    snapshot.Project.Get("Project Name")
+                    row.DrawingNumber,
+                    row.Layout,
+                    row.Title,
+                    row.Purpose,
+                    row.Paper,
+                    row.Scale,
+                    row.Stage,
+                    row.Revision,
+                    row.IssueDate
                 });
             }
-
             try
             {
                 SimpleXlsxWriter.Write(path, "Drawing Book Index", rows);
                 document.Editor.WriteMessage(
-                    "\nCE_BOOKINDEX complete. Layouts listed={0}; workbook={1}",
-                    rows.Count - 2,
+                    "
+CE_BOOKINDEX complete. Drawings listed={0}; workbook={1}",
+                    register.Rows.Count,
                     path);
             }
             catch (System.Exception exception)
             {
                 document.Editor.WriteMessage(
-                    "\nCE_BOOKINDEX failed. {0}",
+                    "
+CE_BOOKINDEX failed. {0}",
                     exception.Message);
             }
         }
@@ -861,7 +884,8 @@ namespace CETools.Civil3D
         private static bool CreateOrRefreshBookLayout(
             Database database,
             BookPackage package,
-            ProjectSnapshot snapshot)
+            ProjectSnapshot snapshot,
+            ProductionDrawingRegisterData drawingRegister)
         {
             bool created = false;
             ObjectId layoutId = FindLayoutId(database, package.LayoutName);
@@ -907,6 +931,34 @@ namespace CETools.Civil3D
                 double margin = package.Width >= 800.0 ? 20.0 : 10.0;
                 double titleHeight = package.Width >= 800.0 ? 7.0 : 4.0;
                 var generated = new List<string>();
+                ProductionDrawingRegisterRow registerRow =
+                    drawingRegister.Find(package.LayoutName) ??
+                    new ProductionDrawingRegisterRow
+                    {
+                        DrawingNumber = package.LayoutName,
+                        Layout = package.LayoutName,
+                        Title = package.Purpose,
+                        Purpose = package.Purpose,
+                        Paper = package.PaperName,
+                        Scale = "As shown",
+                        Stage = drawingRegister.Header("Project Stage"),
+                        Revision = drawingRegister.Header("Revision"),
+                        IssueDate = drawingRegister.Header("Issue Date")
+                    };
+
+                string titleBlockDiagnostic;
+                ObjectId titleBlockId = ProductionTitleBlockManager.TryInsert(
+                    database,
+                    transaction,
+                    paperSpace,
+                    drawingRegister.Header("Title Block Source"),
+                    package.PaperName,
+                    Point3d.Origin,
+                    drawingRegister,
+                    registerRow,
+                    out titleBlockDiagnostic);
+                if (!titleBlockId.IsNull)
+                    generated.Add(titleBlockId.Handle.ToString());
 
                 var frame = new Polyline();
                 frame.SetDatabaseDefaults(database);
@@ -927,10 +979,13 @@ namespace CETools.Civil3D
                 title.Width = package.Width - margin * 3.0;
                 title.Contents = string.Join(
                     "\\P",
-                    ValueOrNotSet(snapshot.Project.Get("Project Name")),
-                    package.Purpose.ToUpperInvariant(),
-                    package.PaperName + " | " + package.Width.ToString("N0", CultureInfo.InvariantCulture) +
-                        " x " + package.Height.ToString("N0", CultureInfo.InvariantCulture) + " mm");
+                    registerRow.DrawingNumber + "  |  " + registerRow.Title.ToUpperInvariant(),
+                    ValueOrNotSet(drawingRegister.Header("Project Name")) +
+                        "  |  " + ValueOrNotSet(drawingRegister.Header("Client")),
+                    registerRow.Paper + " | Scale " + registerRow.Scale +
+                        " | Stage " + registerRow.Stage +
+                        " | Rev " + registerRow.Revision +
+                        " | " + registerRow.IssueDate);
                 AddBookGenerated(transaction, paperSpace, title, package.LayoutName, generated);
 
                 Table register = BuildBookRegister(
@@ -941,6 +996,7 @@ namespace CETools.Civil3D
                         0.0),
                     package,
                     snapshot,
+                    drawingRegister,
                     titleHeight * 0.5);
                 AddBookGenerated(transaction, paperSpace, register, package.LayoutName, generated);
                 register.GenerateLayout();
@@ -951,9 +1007,8 @@ namespace CETools.Civil3D
                 note.TextHeight = titleHeight * 0.45;
                 note.Width = package.Width - margin * 3.0;
                 note.Contents =
-                    "CE Tools created the true-size A-series paper-space frame and drawing register. " +
-                    "Assign the office-approved PC3, CTB/STB and canonical media before publishing. " +
-                    "Client books use A4/A3; construction sets use A1/A0.";
+                    "Drawing title and register data are linked to CE_DRAWINGREGISTEREDIT. " +
+                    titleBlockDiagnostic + " Assign the office-approved PC3, CTB/STB and canonical media before publishing.";
                 AddBookGenerated(transaction, paperSpace, note, package.LayoutName, generated);
 
                 WriteBookLink(
@@ -977,42 +1032,57 @@ namespace CETools.Civil3D
             Point3d position,
             BookPackage package,
             ProjectSnapshot snapshot,
+            ProductionDrawingRegisterData drawingRegister,
             double textHeight)
         {
-            List<LayoutSnapshot> layouts = snapshot.Layouts
-                .Where(item => !Equal(item.Name, package.LayoutName))
-                .Take(package.PaperName == "A4" ? 10 : 20)
+            List<ProductionDrawingRegisterRow> rows = drawingRegister.Rows
+                .Take(package.PaperName == "A4" ? 10 : 24)
                 .ToList();
-            if (layouts.Count == 0)
-                layouts.Add(new LayoutSnapshot("No project layouts detected", 0));
+            if (rows.Count == 0)
+            {
+                rows.Add(new ProductionDrawingRegisterRow
+                {
+                    DrawingNumber = "-",
+                    Layout = package.LayoutName,
+                    Title = "No drawings registered",
+                    Purpose = package.Purpose,
+                    Revision = drawingRegister.Header("Revision")
+                });
+            }
 
             var table = new Table();
             table.SetDatabaseDefaults(database);
             table.TableStyle = database.Tablestyle;
             table.Position = position;
-            table.SetSize(layouts.Count + 2, 4);
+            table.SetSize(rows.Count + 2, 5);
             table.SetRowHeight(textHeight * 2.0);
-            double available = package.Width * 0.72;
-            table.Columns[0].Width = available * 0.10;
-            table.Columns[1].Width = available * 0.42;
-            table.Columns[2].Width = available * 0.28;
-            table.Columns[3].Width = available * 0.20;
-            table.MergeCells(CellRange.Create(table, 0, 0, 0, 3));
+            double available = package.Width * 0.82;
+            table.Columns[0].Width = available * 0.14;
+            table.Columns[1].Width = available * 0.24;
+            table.Columns[2].Width = available * 0.38;
+            table.Columns[3].Width = available * 0.12;
+            table.Columns[4].Width = available * 0.12;
+            table.MergeCells(CellRange.Create(table, 0, 0, 0, 4));
             table.Cells[0, 0].TextString = "DRAWING BOOK REGISTER";
-            string[] headings = { "NO.", "LAYOUT / DRAWING", "PURPOSE", "STATUS" };
+            string[] headings =
+            {
+                "DRAWING NO.", "LAYOUT", "TITLE", "SCALE", "REV"
+            };
             for (int column = 0; column < headings.Length; column++)
                 table.Cells[1, column].TextString = headings[column];
-            for (int index = 0; index < layouts.Count; index++)
+            for (int index = 0; index < rows.Count; index++)
             {
-                int row = index + 2;
-                table.Cells[row, 0].TextString = (index + 1).ToString(CultureInfo.InvariantCulture);
-                table.Cells[row, 1].TextString = layouts[index].Name;
-                table.Cells[row, 2].TextString = package.Purpose;
-                table.Cells[row, 3].TextString = "For review";
+                int rowIndex = index + 2;
+                ProductionDrawingRegisterRow item = rows[index];
+                table.Cells[rowIndex, 0].TextString = item.DrawingNumber;
+                table.Cells[rowIndex, 1].TextString = item.Layout;
+                table.Cells[rowIndex, 2].TextString = item.Title;
+                table.Cells[rowIndex, 3].TextString = item.Scale;
+                table.Cells[rowIndex, 4].TextString = item.Revision;
             }
-            for (int row = 0; row < table.Rows.Count; row++)
+            for (int rowIndex = 0; rowIndex < table.Rows.Count; rowIndex++)
                 for (int column = 0; column < table.Columns.Count; column++)
-                    table.Cells[row, column].TextHeight = textHeight;
+                    table.Cells[rowIndex, column].TextHeight = textHeight;
             return table;
         }
 
