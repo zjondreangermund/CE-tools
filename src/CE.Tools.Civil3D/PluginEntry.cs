@@ -278,7 +278,7 @@ namespace CETools.Civil3D
                         Cmd("Linked Coordinate Cross", "CE_COORDCROSS2 ", "Choose COGO point, cross, annotation and linked register output."),
                         Cmd("Create Linked Coordinate Table", "CE_COORDTABLE2 ", "Create a compact linked Y-X-Z table from selected COGO or AutoCAD points."),
                         Cmd("Refresh Linked Coordinate Table", "CE_COORDREFRESH ", "Refresh table rows from the current linked source-point coordinates."),
-                        Cmd("Polyline Vertex Linked Points", "CE_COORDPOLY2 ", "Create sequential COGO points in polyline direction and a linked Point Name, Y, X, Z table.")),
+                        Cmd("Dynamic Geometry Setting-Out Points", "CE_COORDPOLY2 ", "Create COGO, MText or MLeader points at polyline/feature-line vertices, long tangents, arc midpoints and arc centres, with radial dimensions and linked export tables.")),
                     Menu(
                         "CE_TOOLS_SURVEY_UTILITIES_MENU",
                         "Survey\nUtilities",

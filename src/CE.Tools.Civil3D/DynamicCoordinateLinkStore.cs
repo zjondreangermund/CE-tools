@@ -7,7 +7,9 @@ using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.Civil.ApplicationServices;
+using Autodesk.Civil;
 using CivilCogoPoint = Autodesk.Civil.DatabaseServices.CogoPoint;
+using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
 
 namespace CETools.Civil3D
@@ -21,6 +23,7 @@ namespace CETools.Civil3D
     {
         private const string FollowerRecord = "CE_DYNAMIC_COORDINATE_FOLLOWER";
         private const string VertexRecord = "CE_DYNAMIC_POLYLINE_VERTEX";
+        private const string GeometryRecord = "CE_DYNAMIC_GEOMETRY_POINT";
         private const string SurfaceRecord = "CE_DYNAMIC_SURFACE_ELEVATION";
         private const string PointNameRecord = "CE_DYNAMIC_POINT_NAME";
 
@@ -88,6 +91,44 @@ namespace CETools.Civil3D
                     new TypedValue((int)DxfCode.Text, "Vertex=" + vertexIndex));
                 tr.Commit();
             }
+        }
+
+        public static void LinkGeometryPoint(
+            Database database,
+            ObjectId sourceId,
+            ObjectId pointId,
+            string mode,
+            int index,
+            double fraction)
+        {
+            if (database == null || sourceId.IsNull || pointId.IsNull ||
+                pointId.IsErased || index < 0) return;
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+            {
+                DBObject target = tr.GetObject(pointId, OpenMode.ForWrite, false);
+                Write(target, tr, GeometryRecord,
+                    new TypedValue((int)DxfCode.Text, "Schema=1"),
+                    new TypedValue((int)DxfCode.Text, "Source=" + sourceId.Handle),
+                    new TypedValue((int)DxfCode.Text, "Mode=" + (mode ?? "Vertex")),
+                    new TypedValue((int)DxfCode.Text, "Index=" + index.ToString(CultureInfo.InvariantCulture)),
+                    new TypedValue((int)DxfCode.Text, "Fraction=" + fraction.ToString("R", CultureInfo.InvariantCulture)));
+                tr.Commit();
+            }
+        }
+
+        public static void LinkRadialDimension(
+            Database database,
+            ObjectId sourceId,
+            ObjectId dimensionId,
+            int segmentIndex)
+        {
+            LinkGeometryPoint(
+                database,
+                sourceId,
+                dimensionId,
+                "RadialDimension",
+                segmentIndex,
+                0.5);
         }
 
         public static void LinkSurfaceElevation(Database database, ObjectId surfaceId, IEnumerable<ObjectId> pointIds)
@@ -189,23 +230,80 @@ namespace CETools.Civil3D
                         }
                     }
 
+                    RadialDimension radial = target as RadialDimension;
+                    Dictionary<string, string> radialLink;
+                    if (radial != null &&
+                        TryReadRecord(target, tr, GeometryRecord, out radialLink) &&
+                        string.Equals(
+                            Text(radialLink, "Mode"),
+                            "RadialDimension",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        ObjectId radialSourceId;
+                        int radialSegment;
+                        double ignoredFraction;
+                        Point3d center;
+                        Point3d chordPoint;
+                        if (TryResolve(database, Text(radialLink, "Source"), out radialSourceId) &&
+                            int.TryParse(Text(radialLink, "Index"), NumberStyles.Integer, CultureInfo.InvariantCulture, out radialSegment) &&
+                            double.TryParse(Text(radialLink, "Fraction"), NumberStyles.Float, CultureInfo.InvariantCulture, out ignoredFraction) &&
+                            TryReadGeometryPoint(tr, radialSourceId, "ArcCenter", radialSegment, 0.0, out center) &&
+                            TryReadGeometryPoint(tr, radialSourceId, "Segment", radialSegment, 0.5, out chordPoint))
+                        {
+                            if (radial.Center.DistanceTo(center) > 0.0000001 ||
+                                radial.ChordPoint.DistanceTo(chordPoint) > 0.0000001)
+                            {
+                                radial.UpgradeOpen();
+                                radial.Center = center;
+                                radial.ChordPoint = chordPoint;
+                                changed++;
+                            }
+                        }
+                        continue;
+                    }
+
                     Point3d current;
                     if (!TryReadPoint(target, out current)) continue;
                     Point3d updated = current;
                     bool linked = false;
 
-                    Dictionary<string, string> vertex;
-                    if (TryReadRecord(target, tr, VertexRecord, out vertex))
+                    Dictionary<string, string> geometry;
+                    if (TryReadRecord(target, tr, GeometryRecord, out geometry))
                     {
                         ObjectId sourceId;
-                        int vertexIndex;
-                        Point3d vertexPoint;
-                        if (TryResolve(database, Text(vertex, "Source"), out sourceId) &&
-                            int.TryParse(Text(vertex, "Vertex"), NumberStyles.Integer, CultureInfo.InvariantCulture, out vertexIndex) &&
-                            TryReadVertex(tr, sourceId, vertexIndex, out vertexPoint))
+                        int index;
+                        double fraction;
+                        Point3d geometryPoint;
+                        if (TryResolve(database, Text(geometry, "Source"), out sourceId) &&
+                            int.TryParse(Text(geometry, "Index"), NumberStyles.Integer, CultureInfo.InvariantCulture, out index) &&
+                            double.TryParse(Text(geometry, "Fraction"), NumberStyles.Float, CultureInfo.InvariantCulture, out fraction) &&
+                            TryReadGeometryPoint(
+                                tr,
+                                sourceId,
+                                Text(geometry, "Mode"),
+                                index,
+                                fraction,
+                                out geometryPoint))
                         {
-                            updated = vertexPoint;
+                            updated = geometryPoint;
                             linked = true;
+                        }
+                    }
+                    else
+                    {
+                        Dictionary<string, string> vertex;
+                        if (TryReadRecord(target, tr, VertexRecord, out vertex))
+                        {
+                            ObjectId sourceId;
+                            int vertexIndex;
+                            Point3d vertexPoint;
+                            if (TryResolve(database, Text(vertex, "Source"), out sourceId) &&
+                                int.TryParse(Text(vertex, "Vertex"), NumberStyles.Integer, CultureInfo.InvariantCulture, out vertexIndex) &&
+                                TryReadVertex(tr, sourceId, vertexIndex, out vertexPoint))
+                            {
+                                updated = vertexPoint;
+                                linked = true;
+                            }
                         }
                     }
 
@@ -316,7 +414,8 @@ namespace CETools.Civil3D
                     Dictionary<string, string> ignored;
                     if (TryReadRecord(value, tr, FollowerRecord, out ignored) ||
                         TryReadRecord(value, tr, VertexRecord, out ignored) ||
-                        TryReadRecord(value, tr, SurfaceRecord, out ignored))
+                        TryReadRecord(value, tr, SurfaceRecord, out ignored) ||
+                        TryReadRecord(value, tr, GeometryRecord, out ignored))
                         count++;
                 }
             }
@@ -409,6 +508,162 @@ namespace CETools.Civil3D
                 // Unsupported source types are ignored without breaking other links.
             }
             return false;
+        }
+
+        private static bool TryReadGeometryPoint(
+            Transaction tr,
+            ObjectId sourceId,
+            string mode,
+            int index,
+            double fraction,
+            out Point3d point)
+        {
+            point = Point3d.Origin;
+            DBObject source;
+            try { source = tr.GetObject(sourceId, OpenMode.ForRead, false); }
+            catch { return false; }
+
+            List<Point3d> vertices;
+            List<double> bulges;
+            bool closed;
+            if (!TryReadGeometry(source, tr, out vertices, out bulges, out closed))
+                return false;
+            if (string.Equals(mode, "Vertex", StringComparison.OrdinalIgnoreCase))
+            {
+                if (index < 0 || index >= vertices.Count) return false;
+                point = vertices[index];
+                return true;
+            }
+
+            int segmentCount = closed ? vertices.Count : vertices.Count - 1;
+            if (index < 0 || index >= segmentCount) return false;
+            Point3d start = vertices[index];
+            Point3d end = vertices[(index + 1) % vertices.Count];
+            double bulge = index < bulges.Count ? bulges[index] : 0.0;
+            if (string.Equals(mode, "ArcCenter", StringComparison.OrdinalIgnoreCase))
+                return TryArcCenter(start, end, bulge, out point);
+
+            fraction = Math.Max(0.0, Math.Min(1.0, fraction));
+            if (Math.Abs(bulge) <= 1e-12)
+            {
+                point = new Point3d(
+                    start.X + (end.X - start.X) * fraction,
+                    start.Y + (end.Y - start.Y) * fraction,
+                    start.Z + (end.Z - start.Z) * fraction);
+                return true;
+            }
+            return TryArcPoint(start, end, bulge, fraction, out point);
+        }
+
+        private static bool TryReadGeometry(
+            DBObject source,
+            Transaction tr,
+            out List<Point3d> vertices,
+            out List<double> bulges,
+            out bool closed)
+        {
+            vertices = new List<Point3d>();
+            bulges = new List<double>();
+            closed = false;
+            Polyline lightweight = source as Polyline;
+            if (lightweight != null)
+            {
+                closed = lightweight.Closed;
+                for (int index = 0; index < lightweight.NumberOfVertices; index++)
+                {
+                    vertices.Add(lightweight.GetPoint3dAt(index));
+                    bulges.Add(lightweight.GetBulgeAt(index));
+                }
+                return vertices.Count >= 2;
+            }
+
+            Polyline2d polyline2d = source as Polyline2d;
+            if (polyline2d != null)
+            {
+                closed = polyline2d.Closed;
+                foreach (ObjectId id in polyline2d)
+                {
+                    Vertex2d vertex = tr.GetObject(id, OpenMode.ForRead, false) as Vertex2d;
+                    if (vertex == null) continue;
+                    vertices.Add(vertex.Position);
+                    bulges.Add(vertex.Bulge);
+                }
+                return vertices.Count >= 2;
+            }
+
+            Polyline3d polyline3d = source as Polyline3d;
+            if (polyline3d != null)
+            {
+                closed = polyline3d.Closed;
+                foreach (ObjectId id in polyline3d)
+                {
+                    PolylineVertex3d vertex = tr.GetObject(id, OpenMode.ForRead, false) as PolylineVertex3d;
+                    if (vertex == null) continue;
+                    vertices.Add(vertex.Position);
+                    bulges.Add(0.0);
+                }
+                return vertices.Count >= 2;
+            }
+
+            CivilFeatureLine featureLine = source as CivilFeatureLine;
+            if (featureLine == null) return false;
+            closed = featureLine.Closed;
+            Point3dCollection points = featureLine.GetPoints(FeatureLinePointType.PIPoint);
+            foreach (Point3d value in points) vertices.Add(value);
+            if (closed && vertices.Count > 2 &&
+                vertices[0].DistanceTo(vertices[vertices.Count - 1]) <= 1e-8)
+                vertices.RemoveAt(vertices.Count - 1);
+            int segments = closed ? vertices.Count : vertices.Count - 1;
+            for (int index = 0; index < vertices.Count; index++)
+                bulges.Add(index < segments ? featureLine.GetBulge(index) : 0.0);
+            return vertices.Count >= 2;
+        }
+
+        private static bool TryArcCenter(
+            Point3d start,
+            Point3d end,
+            double bulge,
+            out Point3d center)
+        {
+            double dx = end.X - start.X;
+            double dy = end.Y - start.Y;
+            double chord = Math.Sqrt(dx * dx + dy * dy);
+            if (chord <= 1e-12 || Math.Abs(bulge) <= 1e-12)
+            {
+                center = Point3d.Origin;
+                return false;
+            }
+            double offset = chord * (1.0 - bulge * bulge) / (4.0 * bulge);
+            center = new Point3d(
+                (start.X + end.X) * 0.5 - dy / chord * offset,
+                (start.Y + end.Y) * 0.5 + dx / chord * offset,
+                (start.Z + end.Z) * 0.5);
+            return true;
+        }
+
+        private static bool TryArcPoint(
+            Point3d start,
+            Point3d end,
+            double bulge,
+            double fraction,
+            out Point3d point)
+        {
+            Point3d center;
+            if (!TryArcCenter(start, end, bulge, out center))
+            {
+                point = Point3d.Origin;
+                return false;
+            }
+            double radius = Math.Sqrt(
+                (start.X - center.X) * (start.X - center.X) +
+                (start.Y - center.Y) * (start.Y - center.Y));
+            double angle = Math.Atan2(start.Y - center.Y, start.X - center.X) +
+                           4.0 * Math.Atan(bulge) * fraction;
+            point = new Point3d(
+                center.X + Math.Cos(angle) * radius,
+                center.Y + Math.Sin(angle) * radius,
+                start.Z + (end.Z - start.Z) * fraction);
+            return true;
         }
 
         private static bool TryReadPoint(DBObject value, out Point3d point)

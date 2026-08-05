@@ -39,7 +39,7 @@ namespace CETools.Civil3D
                 {
                     new DisciplineWorkflowAction("Create linked stepped set", "CE_FLRELCREATE", "Create multiple stepped offsets that auto-refresh with one source feature line.", "01 Create"),
                     new DisciplineWorkflowAction("Heal stepped feature lines", "CE_FLSTEPJOIN", "Close small gaps and create one feature line with vertices at piece endpoints.", "01 Create"),
-                    new DisciplineWorkflowAction("Update all offsets from source", "CE_FLRELUPDATE", "Select the source or any child and immediately rebuild the complete linked set.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Update offsets from multiple sources", "CE_FLRELUPDATE", "Select one or more source feature lines or linked children and rebuild every matching linked set.", "02 Maintain"),
                     new DisciplineWorkflowAction("Link information", "CE_FLRELINFO", "Inspect stored source and relationship data.", "02 Maintain"),
                     new DisciplineWorkflowAction("Detach linked offset", "CE_FLRELDETACH", "Remove a selected relationship without deleting unrelated geometry.", "03 Cleanup")
                 });
@@ -219,32 +219,57 @@ namespace CETools.Civil3D
         private static void Update(Document document)
         {
             Editor editor = document.Editor;
-            PromptEntityResult selectedResult = PromptFeatureLine(
-                editor,
-                "\nSelect a source feature line or one linked child: ");
+            PromptSelectionResult selectedResult = editor.GetSelection(
+                new PromptSelectionOptions
+                {
+                    MessageForAdding =
+                        "\nSelect one or more source feature lines and/or linked children: ",
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
             if (selectedResult.Status != PromptStatus.OK) return;
 
-            ObjectId sourceId;
-            List<ChildRecord> children;
+            var groups = new Dictionary<ObjectId, List<ChildRecord>>();
+            int rejected = 0;
             try
             {
                 using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
                 {
-                    CivilFeatureLine selected = OpenFeatureLine(
-                        transaction, selectedResult.ObjectId, OpenMode.ForRead);
-                    if (selected == null) throw new InvalidOperationException("Select an ordinary feature line.");
-
-                    Relation relation;
-                    sourceId = TryReadRelation(selected, transaction, out relation)
-                        ? ResolveHandle(document.Database, relation.SourceHandle)
-                        : selected.ObjectId;
-
-                    CivilFeatureLine source = OpenFeatureLine(transaction, sourceId, OpenMode.ForRead);
-                    EnsureEditable(source, transaction);
                     BlockTableRecord modelSpace = GetModelSpace(
                         document.Database, transaction, OpenMode.ForRead);
-                    children = FindChildren(
-                        modelSpace, source.Handle.ToString(), transaction);
+                    foreach (ObjectId selectedId in selectedResult.Value.GetObjectIds())
+                    {
+                        CivilFeatureLine selected = OpenFeatureLine(
+                            transaction,
+                            selectedId,
+                            OpenMode.ForRead);
+                        if (selected == null)
+                        {
+                            rejected++;
+                            continue;
+                        }
+
+                        Relation relation;
+                        ObjectId sourceId = TryReadRelation(
+                            selected,
+                            transaction,
+                            out relation)
+                            ? ResolveHandle(document.Database, relation.SourceHandle)
+                            : selected.ObjectId;
+                        if (groups.ContainsKey(sourceId)) continue;
+
+                        CivilFeatureLine source = OpenFeatureLine(
+                            transaction,
+                            sourceId,
+                            OpenMode.ForRead);
+                        EnsureEditable(source, transaction);
+                        groups.Add(
+                            sourceId,
+                            FindChildren(
+                                modelSpace,
+                                source.Handle.ToString(),
+                                transaction));
+                    }
                 }
             }
             catch (System.Exception exception)
@@ -253,24 +278,41 @@ namespace CETools.Civil3D
                 return;
             }
 
-            if (children.Count == 0)
+            if (groups.Count == 0)
             {
-                editor.WriteMessage("\nNo linked stepped-offset feature lines were found.");
+                editor.WriteMessage(
+                    "\nNo editable source feature lines or linked children were selected.");
                 return;
             }
 
-            try
+            int rebuilt = 0;
+            int sourcesUpdated = 0;
+            int sourcesWithoutChildren = 0;
+            foreach (KeyValuePair<ObjectId, List<ChildRecord>> group in groups)
             {
-                int rebuilt = RebuildChildren(document, sourceId, children);
-
-                editor.WriteMessage(
-                    "\nCE_FLRELUPDATE complete. Linked feature lines rebuilt: {0}.", rebuilt);
+                if (group.Value.Count == 0)
+                {
+                    sourcesWithoutChildren++;
+                    continue;
+                }
+                try
+                {
+                    rebuilt += RebuildChildren(document, group.Key, group.Value);
+                    sourcesUpdated++;
+                }
+                catch (System.Exception exception)
+                {
+                    editor.WriteMessage(
+                        "\nA selected stepped-offset source was skipped. " +
+                        exception.Message);
+                }
             }
-            catch (System.Exception exception)
-            {
-                editor.WriteMessage(
-                    "\nCE_FLRELUPDATE cancelled. No changes were committed. " + exception.Message);
-            }
+            editor.WriteMessage(
+                "\nCE_FLRELUPDATE complete. Sources updated={0}; linked feature lines rebuilt={1}; sources without linked children={2}; rejected selections={3}.",
+                sourcesUpdated,
+                rebuilt,
+                sourcesWithoutChildren,
+                rejected);
         }
 
         public static int RefreshAll(Document document)

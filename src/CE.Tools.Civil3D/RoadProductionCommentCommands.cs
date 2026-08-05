@@ -422,11 +422,10 @@ namespace CETools.Civil3D
                 document.Editor.WriteMessage("\nCE_ROADCORRIDORS: no CE road alignments were found.");
                 return;
             }
-            List<CivilObjectChoice> assemblies = ReadCivilChoices(
+            List<CivilObjectChoice> assemblies = ReadAssemblyChoices(
                 document,
                 civilDocument,
-                "GetAssemblyIds",
-                "Assembly");
+                ObjectId.Null);
             if (assemblies.Count == 0)
             {
                 string choice = DisciplineWorkflowDialogs.SelectWorkflow(
@@ -451,11 +450,10 @@ namespace CETools.Civil3D
                     return;
                 }
                 if (createdAssembly.IsNull) return;
-                assemblies = ReadCivilChoices(
+                assemblies = ReadAssemblyChoices(
                     document,
                     civilDocument,
-                    "GetAssemblyIds",
-                    "Assembly");
+                    createdAssembly);
                 if (assemblies.Count == 0)
                 {
                     document.Editor.WriteMessage(
@@ -705,6 +703,51 @@ namespace CETools.Civil3D
                 }
             }
             return result.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
+
+        private static List<CivilObjectChoice> ReadAssemblyChoices(
+            Document document,
+            CivilDocument civilDocument,
+            ObjectId preferredId)
+        {
+            var ids = CeAssemblyCommands.ReadAssemblyIds(
+                    civilDocument,
+                    document.Database)
+                .ToList();
+            if (!preferredId.IsNull && !preferredId.IsErased &&
+                !ids.Contains(preferredId))
+                ids.Insert(0, preferredId);
+
+            var result = new List<CivilObjectChoice>();
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in ids.Distinct())
+                {
+                    if (id.IsNull || id.IsErased) continue;
+                    try
+                    {
+                        DBObject value = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false);
+                        string name = Convert.ToString(
+                            ReadProperty(value, "Name"),
+                            CultureInfo.CurrentCulture);
+                        if (string.IsNullOrWhiteSpace(name))
+                            name = "Assembly " + id.Handle;
+                        result.Add(new CivilObjectChoice(id, name, "Assembly"));
+                    }
+                    catch
+                    {
+                        // One stale proxy ID must not hide other usable assemblies.
+                    }
+                }
+            }
+            return result
+                .OrderByDescending(item => item.ObjectId == preferredId)
+                .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
         }
 
         private static ProjectRoadStyles ResolveRoadStyles(

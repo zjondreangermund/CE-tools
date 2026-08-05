@@ -72,7 +72,7 @@ namespace CETools.Civil3D
             var rows = new List<IList<string>>();
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                foreach (ObjectId id in ReadAssemblyIds(civilDocument))
+                foreach (ObjectId id in ReadAssemblyIds(civilDocument, document.Database))
                 {
                     DBObject assembly = transaction.GetObject(id, OpenMode.ForRead, false);
                     rows.Add(new List<string>
@@ -339,7 +339,7 @@ namespace CETools.Civil3D
             var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
-                foreach (ObjectId id in ReadAssemblyIds(civilDocument))
+                foreach (ObjectId id in ReadAssemblyIds(civilDocument, database))
                 {
                     DBObject value = transaction.GetObject(id, OpenMode.ForRead, false);
                     names.Add(Text(ReadProperty(value, "Name")));
@@ -367,6 +367,13 @@ namespace CETools.Civil3D
 
         internal static IList<ObjectId> ReadAssemblyIds(CivilDocument civilDocument)
         {
+            return ReadAssemblyIds(civilDocument, null);
+        }
+
+        internal static IList<ObjectId> ReadAssemblyIds(
+            CivilDocument civilDocument,
+            Database database)
+        {
             var result = new List<ObjectId>();
             if (civilDocument == null) return result;
             try
@@ -382,10 +389,80 @@ namespace CETools.Civil3D
                     : method.Invoke(civilDocument, null) as IEnumerable;
                 if (values != null)
                     foreach (object value in values)
-                        if (value is ObjectId) result.Add((ObjectId)value);
+                        AddAssemblyId(result, value);
             }
             catch { }
+
+            // Civil 3D 2023 can return an empty GetAssemblyIds() result until its
+            // managed collection wrapper has refreshed. Read both known collection
+            // properties so an existing assembly is still available to corridor
+            // creation in the same command session.
+            object collection = ReadProperty(civilDocument, "AssemblyCollection") ??
+                                ReadProperty(civilDocument, "Assemblies");
+            foreach (object value in CivilStyleDiscovery.Enumerate(collection))
+                AddAssemblyId(result, value);
+
+            // Some 2023 builds expose a newly created assembly in model space before
+            // either CivilDocument API reports it. Scan model space as the final,
+            // drawing-owned fallback and de-duplicate all discovery paths.
+            if (database != null)
+            {
+                try
+                {
+                    using (Transaction transaction =
+                        database.TransactionManager.StartTransaction())
+                    {
+                        BlockTable blockTable = transaction.GetObject(
+                            database.BlockTableId,
+                            OpenMode.ForRead,
+                            false) as BlockTable;
+                        BlockTableRecord modelSpace = blockTable == null
+                            ? null
+                            : transaction.GetObject(
+                                blockTable[BlockTableRecord.ModelSpace],
+                                OpenMode.ForRead,
+                                false) as BlockTableRecord;
+                        if (modelSpace != null)
+                        {
+                            foreach (ObjectId id in modelSpace)
+                            {
+                                if (id.IsNull || id.IsErased) continue;
+                                try
+                                {
+                                    DBObject value = transaction.GetObject(
+                                        id,
+                                        OpenMode.ForRead,
+                                        false);
+                                    if (value != null && string.Equals(
+                                            value.GetType().Name,
+                                            "Assembly",
+                                            StringComparison.OrdinalIgnoreCase))
+                                        AddAssemblyId(result, id);
+                                }
+                                catch
+                                {
+                                    // Keep scanning when one proxy cannot be opened.
+                                }
+                            }
+                        }
+                    }
+                }
+                catch
+                {
+                    // A proxy or unavailable model-space object must not hide valid
+                    // IDs already returned by the CivilDocument APIs.
+                }
+            }
             return result;
+        }
+
+        private static void AddAssemblyId(ICollection<ObjectId> result, object value)
+        {
+            ObjectId id = value is ObjectId
+                ? (ObjectId)value
+                : value is DBObject ? ((DBObject)value).ObjectId : ObjectId.Null;
+            if (id.IsNull || id.IsErased || result.Contains(id)) return;
+            result.Add(id);
         }
 
         private static int CountValues(object value)
