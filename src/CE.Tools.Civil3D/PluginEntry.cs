@@ -25,12 +25,14 @@ namespace CETools.Civil3D
             LinkedTableAutoRefreshManager.Initialize();
             CommandUsageTracker.Initialize();
             FloatingToolsCommands.Initialize();
+            ProjectStylePresetManager.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
 
         public void Terminate()
         {
             AcApplication.Idle -= OnApplicationIdle;
+            ProjectStylePresetManager.Terminate();
             FloatingToolsCommands.Terminate();
             CommandUsageTracker.Terminate();
             LinkedTableAutoRefreshManager.Terminate();

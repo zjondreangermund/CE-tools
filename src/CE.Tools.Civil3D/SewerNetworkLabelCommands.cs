@@ -61,7 +61,10 @@ namespace CETools.Civil3D
         {
             try
             {
-                return EnsureLabelsCore(document, networkIds);
+                SewerNetworkLabelResult result = EnsureLabelsCore(
+                    document, networkIds);
+                SewerLabelStyleSyncCommands.ApplySelectedStyles(document);
+                return result;
             }
             catch (System.Exception exception)
             {

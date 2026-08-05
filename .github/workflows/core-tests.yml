@@ -82,6 +82,9 @@ jobs:
       - name: Validate sewer project and production popups
         run: python3 scripts/Validate-SewerProjectProductionPopups.py
 
+      - name: Validate project style persistence and sewer label sync
+        run: python3 scripts/Validate-ProjectStylePersistenceAndSewerLabels.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
