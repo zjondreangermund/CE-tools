@@ -3,3 +3,4 @@ Retry after repairing the drawing-title patch matcher.
 Retry with drawing-book integration diagnostics.
 Retry after narrowing the drawing-register method replacement.
 Capture the generated drawing-book method section for the remaining boundary repair.
+Retry after scoping the title matcher to the book-layout title only.
