@@ -149,8 +149,7 @@ namespace CETools.Civil3D
             if (!window.Accepted)
             {
                 editor.WriteMessage(
-                    "
-CE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
+                    "\nCE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
                 return;
             }
 
@@ -165,8 +164,7 @@ CE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
                 "Save"))
             {
                 editor.WriteMessage(
-                    "
-CE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
+                    "\nCE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
                 return;
             }
 
@@ -175,8 +173,7 @@ CE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
                 WriteProjectMetadata(document.Database, proposed, clearBackup: true);
                 RefreshInformationTables(document);
                 editor.WriteMessage(
-                    "
-CE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
+                    "\nCE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
                 PopupTablePresenter.ShowReportAndOfferTable(
                     document,
                     "CE Tools - Project Information",
@@ -187,8 +184,7 @@ CE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
             catch (System.Exception exception)
             {
                 editor.WriteMessage(
-                    "
-CE_PROJECTSETUP cancelled. Existing metadata was not replaced. {0}",
+                    "\nCE_PROJECTSETUP cancelled. Existing metadata was not replaced. {0}",
                     exception.Message);
             }
         }
