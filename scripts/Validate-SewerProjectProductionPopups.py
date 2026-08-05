@@ -34,7 +34,7 @@ for marker in (
     "ResolveStyleId(",
     '"Alignment Label Set Style"',
     '"Profile View Band Set Style"',
-    "property.GetGetMethod() == null",
+    "ReadPropertyPath(stylesRoot, path)",
 ):
     if marker not in catalog:
         errors.append(f"Safe Civil style resolver is missing: {marker}")
