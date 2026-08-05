@@ -316,16 +316,14 @@ namespace CETools.Civil3D
                     else refreshed++;
                 }
                 document.Editor.WriteMessage(
-                    "
-CE_DRAWINGBOOK complete. Layouts created={0}; refreshed={1}. Titles, title blocks and the drawing register use the saved popup values.",
+                    "\nCE_DRAWINGBOOK complete. Layouts created={0}; refreshed={1}. Titles, title blocks and the drawing register use the saved popup values.",
                     created,
                     refreshed);
             }
             catch (System.Exception exception)
             {
                 document.Editor.WriteMessage(
-                    "
-CE_DRAWINGBOOK failed. {0}",
+                    "\nCE_DRAWINGBOOK failed. {0}",
                     exception.Message);
             }
         }
@@ -400,16 +398,14 @@ CE_DRAWINGBOOK failed. {0}",
             {
                 SimpleXlsxWriter.Write(path, "Drawing Book Index", rows);
                 document.Editor.WriteMessage(
-                    "
-CE_BOOKINDEX complete. Drawings listed={0}; workbook={1}",
+                    "\nCE_BOOKINDEX complete. Drawings listed={0}; workbook={1}",
                     register.Rows.Count,
                     path);
             }
             catch (System.Exception exception)
             {
                 document.Editor.WriteMessage(
-                    "
-CE_BOOKINDEX failed. {0}",
+                    "\nCE_BOOKINDEX failed. {0}",
                     exception.Message);
             }
         }
