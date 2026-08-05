@@ -60,7 +60,7 @@ for filename, markers in disciplines.items():
     for marker in (
         "DisciplineWorkflowDialogs.SelectWorkflow",
         "DisciplineWorkflowDialogs.EditSettings",
-        "ProductionStyleCatalog.ReadNames",
+        "ReadNames(",
         "ProfileColumns",
         "ProfileHorizontalSpacing",
         "ProfileVerticalSpacing",

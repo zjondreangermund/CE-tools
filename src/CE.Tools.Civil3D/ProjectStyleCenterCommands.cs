@@ -45,13 +45,24 @@ namespace CETools.Civil3D
         {
             "Alignment Style",
             "Alignment Label Set Style",
+            "Alignment Label Style",
             "Profile Style",
             "Profile Label Set Style",
+            "Profile Label Style",
             "Profile View Style",
             "Profile View Band Set Style",
+            "Profile View Label Style",
             "Surface Style",
+            "Surface Label Style",
             "Point Style",
             "Point Label Style",
+            "Feature Line Style",
+            "Feature Line Label Style",
+            "Parcel Style",
+            "Parcel Label Style",
+            "Catchment Style",
+            "Catchment Label Style",
+            "Grading Style",
             "Corridor Style",
             "Code Set Style",
             "Assembly Style",
@@ -59,10 +70,31 @@ namespace CETools.Civil3D
             "Pipe Label Style",
             "Structure Style",
             "Structure Label Style",
+            "Pipe Rule Set",
+            "Structure Rule Set",
             "Pressure Pipe Style",
             "Pressure Pipe Label Style",
             "Fitting Style",
-            "Appurtenance Style"
+            "Fitting Label Style",
+            "Appurtenance Style",
+            "Appurtenance Label Style",
+            "Section Style",
+            "Section Label Set Style",
+            "Section Label Style",
+            "Section View Style",
+            "Section View Band Set Style",
+            "Section View Label Style",
+            "Sample Line Style",
+            "Sample Line Label Style",
+            "Mass Haul View Style",
+            "Mass Haul Line Style",
+            "Marker Style",
+            "Alignment Table Style",
+            "Parcel Table Style",
+            "Point Table Style",
+            "Pipe Table Style",
+            "Structure Table Style",
+            "Surface Table Style"
         };
 
         [CommandMethod("CE_TOOLS", "CE_PROJECTSTYLES", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -528,68 +560,9 @@ namespace CETools.Civil3D
         private static Dictionary<string, List<string>> ReadCivilStyleCatalogue(
             Document document)
         {
-            var result = new Dictionary<string, List<string>>(
-                StringComparer.OrdinalIgnoreCase);
-            foreach (string key in SelectionKeys)
-                result[key] = new List<string> { "<Use drawing default>" };
-
-            CivilDocument civilDocument = CivilApplication.ActiveDocument;
-            if (civilDocument == null) return result;
-
-            object stylesRoot = ReadProperty(civilDocument, "Styles");
-            if (stylesRoot == null) return result;
-
-            var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
-            using (Transaction transaction =
-                document.Database.TransactionManager.StartTransaction())
-            {
-                // Civil 3D 2023 style collections do not all expose a common
-                // enumerable surface.  Read the production collections directly
-                // first, then retain the recursive scan for future/extra types.
-                CollectKnownStyleCollections(
-                    stylesRoot,
-                    transaction,
-                    result);
-                CollectStyles(
-                    stylesRoot,
-                    string.Empty,
-                    0,
-                    visited,
-                    transaction,
-                    result);
-            }
-
-            // Freshly imported Aecc styles can exist in the DWG before the 2023
-            // managed StylesRoot wrappers refresh. Read the database dictionaries
-            // as a second source so every valid style is immediately selectable.
-            IDictionary<string, List<string>> databaseCatalogue =
-                CivilStyleDiscovery.ReadCatalogue(document.Database);
-            foreach (KeyValuePair<string, List<string>> entry in databaseCatalogue)
-            {
-                List<string> target;
-                if (result.TryGetValue(entry.Key, out target))
-                    target.AddRange(entry.Value);
-            }
-
-            // Work from a stable key snapshot. Replacing a dictionary value while
-            // enumerating its KeyValuePair collection throws "Collection was
-            // modified" on the .NET Framework used by Civil 3D 2023.
-            foreach (string catalogueKey in result.Keys.ToList())
-            {
-                List<string> ordered = result[catalogueKey]
-                    .Where(value => !string.IsNullOrWhiteSpace(value))
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .OrderBy(value => value, StringComparer.CurrentCultureIgnoreCase)
-                    .ToList();
-                ordered.RemoveAll(value => string.Equals(
-                    value,
-                    "<Use drawing default>",
-                    StringComparison.OrdinalIgnoreCase));
-                ordered.Insert(0, "<Use drawing default>");
-                result[catalogueKey] = ordered;
-            }
-
-            return result;
+            return CivilStyleCatalogV2.ReadProjectCatalogue(
+                document,
+                SelectionKeys);
         }
 
         private static void CollectKnownStyleCollections(
@@ -614,7 +587,7 @@ namespace CETools.Civil3D
                 { "Pipe Style", new[] { "PipeStyles" } },
                 { "Pipe Label Style", new[] { "LabelStyles.PipeLabelStyles.PlanProfileLabelStyles", "LabelStyles.PipeLabelStyles" } },
                 { "Structure Style", new[] { "StructureStyles" } },
-                { "Structure Label Style", new[] { "LabelStyles.StructureLabelStyles.PlanProfileLabelStyles", "LabelStyles.StructureLabelStyles" } },
+                { "Structure Label Style", new[] { "LabelStyles.StructureLabelStyles.LabelStyles", "LabelStyles.StructureLabelStyles" } },
                 { "Pressure Pipe Style", new[] { "PressurePipeStyles", "PressureNetworkStyles.PressurePipeStyles" } },
                 { "Pressure Pipe Label Style", new[] { "LabelStyles.PressurePipeLabelStyles", "PressureNetworkStyles.PressurePipeLabelStyles" } },
                 { "Fitting Style", new[] { "FittingStyles", "PressureNetworkStyles.FittingStyles" } },

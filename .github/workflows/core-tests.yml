@@ -76,6 +76,9 @@ jobs:
       - name: Validate supplied Civil 3D project style sources
         run: python3 scripts/Validate-ProjectStyleSources.py
 
+      - name: Validate Civil style catalogue and sewer labels
+        run: python3 scripts/Validate-CivilStyleCatalogueAndSewerLabels.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
