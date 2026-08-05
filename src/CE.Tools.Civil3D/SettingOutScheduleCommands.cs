@@ -295,6 +295,39 @@ namespace CETools.Civil3D
             return database == null ? 0 : FindLinkedTables(database).Count;
         }
 
+        internal static ObjectId CreateAutomaticGeometrySchedule(
+            Document document,
+            IList<ObjectId> sourceIds,
+            Point3d insertionPoint,
+            double textHeight)
+        {
+            if (document == null || sourceIds == null || sourceIds.Count == 0)
+                return ObjectId.Null;
+            var link = new SettingOutLink(
+                "Polyline / Feature Line Geometry",
+                SettingOutSurfaceChoice.PointElevation(),
+                SettingOutSurfaceChoice.PointElevation(),
+                sourceIds.Select(id => id.Handle.ToString()));
+            int missing;
+            List<SettingOutRow> rows;
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                rows = ReadRows(
+                    document.Database,
+                    transaction,
+                    link,
+                    out missing);
+            }
+            if (rows.Count == 0) return ObjectId.Null;
+            return CreateLinkedTable(
+                document.Database,
+                insertionPoint,
+                rows,
+                link,
+                textHeight);
+        }
+
         private static ObjectId CreateLinkedTable(
             Database database,
             Point3d insertionPoint,
