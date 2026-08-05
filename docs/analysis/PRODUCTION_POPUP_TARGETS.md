@@ -8638,7 +8638,7 @@ Hits: `PromptStringOptions`, `PromptKeywordOptions`, `GetString(`, `GetKeywords(
 ## ProjectSetupCommands.cs
 Hits: `CE_PROJECTSETUP`, `PromptStringOptions`, `GetString(`, `ProjectSetupPopupWindow`
 
-### Lines 48-245
+### Lines 48-241
 ```csharp
 00048:         [CommandMethod(
 00049:             "CE_TOOLS",
@@ -8744,184 +8744,180 @@ Hits: `CE_PROJECTSETUP`, `PromptStringOptions`, `GetString(`, `ProjectSetupPopup
 00149:             if (!window.Accepted)
 00150:             {
 00151:                 editor.WriteMessage(
-00152:                     "
-00153: CE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
-00154:                 return;
-00155:             }
-00156: 
-00157:             var proposed = new ProjectMetadata();
-00158:             foreach (string field in FieldOrder)
-00159:                 proposed.Set(field, window.GetValue(field));
-00160: 
-00161:             if (!PopupTablePresenter.ShowReview(
-00162:                 "CE Tools - Project Setup",
-00163:                 "Review the project information before it is saved inside this drawing and linked to title blocks and drawing registers.",
-00164:                 BuildRows(proposed),
-00165:                 "Save"))
-00166:             {
-00167:                 editor.WriteMessage(
-00168:                     "
-00169: CE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
-00170:                 return;
-00171:             }
-00172: 
-00173:             try
-00174:             {
-00175:                 WriteProjectMetadata(document.Database, proposed, clearBackup: true);
-00176:                 RefreshInformationTables(document);
-00177:                 editor.WriteMessage(
-00178:                     "
-00179: CE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
-00180:                 PopupTablePresenter.ShowReportAndOfferTable(
-00181:                     document,
-00182:                     "CE Tools - Project Information",
-00183:                     "Project setup is complete and is now the shared source for drawing titles and registers.",
-00184:                     BuildRows(proposed),
-00185:                     "CE Tools Project Information");
-00186:             }
-00187:             catch (System.Exception exception)
-00188:             {
-00189:                 editor.WriteMessage(
-00190:                     "
-00191: CE_PROJECTSETUP cancelled. Existing metadata was not replaced. {0}",
-00192:                     exception.Message);
-00193:             }
-00194:         }
-00195: 
-00196:         internal static IDictionary<string, string> ReadSharedProjectMetadata(
-00197:             Database database)
-00198:         {
-00199:             ProjectMetadata metadata = ReadProjectMetadata(
-00200:                 database,
-00201:                 ProjectRecordName);
-00202:             var result = new Dictionary<string, string>(
-00203:                 StringComparer.OrdinalIgnoreCase);
-00204:             foreach (string field in FieldOrder)
-00205:                 result[field] = metadata.Get(field);
-00206:             return result;
-00207:         }
-00208: 
-00209:         internal static void MergeSharedProjectMetadata(
-00210:             Database database,
-00211:             IDictionary<string, string> values)
-00212:         {
-00213:             ProjectMetadata metadata = ReadProjectMetadata(
-00214:                 database,
-00215:                 ProjectRecordName);
-00216:             foreach (string field in FieldOrder)
-00217:             {
-00218:                 string value;
-00219:                 if (values != null && values.TryGetValue(field, out value))
-00220:                     metadata.Set(field, value ?? string.Empty);
-00221:             }
-00222:             metadata.Exists = true;
-00223:             WriteProjectMetadata(database, metadata, clearBackup: false);
-00224:         }
-00225: 
-00226:         private static void ReportProjectInfo(Document document)
-00227:         {
-00228:             ProjectMetadata metadata = ReadProjectMetadata(
-00229:                 document.Database,
-00230:                 ProjectRecordName);
-00231:             if (!metadata.Exists)
-00232:             {
-00233:                 document.Editor.WriteMessage(
-00234:                     "\nCE_PROJECTINFO: no CE Tools project metadata is stored in this drawing.");
-00235:                 return;
-00236:             }
-00237: 
-00238:             document.Editor.WriteMessage("\nCE Tools Project Information");
-00239:             WriteMetadata(document.Editor, metadata);
-00240:             PopupTablePresenter.ShowReportAndOfferTable(
-00241:                 document,
-00242:                 "CE Tools - Project Information",
-00243:                 "The information below is stored inside the current DWG. Choose Place Table to add a drawing table.",
-00244:                 BuildRows(metadata),
-00245:                 "CE Tools Project Information");
+00152:                     "\nCE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
+00153:                 return;
+00154:             }
+00155: 
+00156:             var proposed = new ProjectMetadata();
+00157:             foreach (string field in FieldOrder)
+00158:                 proposed.Set(field, window.GetValue(field));
+00159: 
+00160:             if (!PopupTablePresenter.ShowReview(
+00161:                 "CE Tools - Project Setup",
+00162:                 "Review the project information before it is saved inside this drawing and linked to title blocks and drawing registers.",
+00163:                 BuildRows(proposed),
+00164:                 "Save"))
+00165:             {
+00166:                 editor.WriteMessage(
+00167:                     "\nCE_PROJECTSETUP cancelled. Existing project metadata was not changed.");
+00168:                 return;
+00169:             }
+00170: 
+00171:             try
+00172:             {
+00173:                 WriteProjectMetadata(document.Database, proposed, clearBackup: true);
+00174:                 RefreshInformationTables(document);
+00175:                 editor.WriteMessage(
+00176:                     "\nCE_PROJECTSETUP complete. Project metadata saved inside this DWG.");
+00177:                 PopupTablePresenter.ShowReportAndOfferTable(
+00178:                     document,
+00179:                     "CE Tools - Project Information",
+00180:                     "Project setup is complete and is now the shared source for drawing titles and registers.",
+00181:                     BuildRows(proposed),
+00182:                     "CE Tools Project Information");
+00183:             }
+00184:             catch (System.Exception exception)
+00185:             {
+00186:                 editor.WriteMessage(
+00187:                     "\nCE_PROJECTSETUP cancelled. Existing metadata was not replaced. {0}",
+00188:                     exception.Message);
+00189:             }
+00190:         }
+00191: 
+00192:         internal static IDictionary<string, string> ReadSharedProjectMetadata(
+00193:             Database database)
+00194:         {
+00195:             ProjectMetadata metadata = ReadProjectMetadata(
+00196:                 database,
+00197:                 ProjectRecordName);
+00198:             var result = new Dictionary<string, string>(
+00199:                 StringComparer.OrdinalIgnoreCase);
+00200:             foreach (string field in FieldOrder)
+00201:                 result[field] = metadata.Get(field);
+00202:             return result;
+00203:         }
+00204: 
+00205:         internal static void MergeSharedProjectMetadata(
+00206:             Database database,
+00207:             IDictionary<string, string> values)
+00208:         {
+00209:             ProjectMetadata metadata = ReadProjectMetadata(
+00210:                 database,
+00211:                 ProjectRecordName);
+00212:             foreach (string field in FieldOrder)
+00213:             {
+00214:                 string value;
+00215:                 if (values != null && values.TryGetValue(field, out value))
+00216:                     metadata.Set(field, value ?? string.Empty);
+00217:             }
+00218:             metadata.Exists = true;
+00219:             WriteProjectMetadata(database, metadata, clearBackup: false);
+00220:         }
+00221: 
+00222:         private static void ReportProjectInfo(Document document)
+00223:         {
+00224:             ProjectMetadata metadata = ReadProjectMetadata(
+00225:                 document.Database,
+00226:                 ProjectRecordName);
+00227:             if (!metadata.Exists)
+00228:             {
+00229:                 document.Editor.WriteMessage(
+00230:                     "\nCE_PROJECTINFO: no CE Tools project metadata is stored in this drawing.");
+00231:                 return;
+00232:             }
+00233: 
+00234:             document.Editor.WriteMessage("\nCE Tools Project Information");
+00235:             WriteMetadata(document.Editor, metadata);
+00236:             PopupTablePresenter.ShowReportAndOfferTable(
+00237:                 document,
+00238:                 "CE Tools - Project Information",
+00239:                 "The information below is stored inside the current DWG. Choose Place Table to add a drawing table.",
+00240:                 BuildRows(metadata),
+00241:                 "CE Tools Project Information");
 ```
 
-### Lines 335-414
+### Lines 331-410
 ```csharp
-00335:             }
-00336:             catch (System.Exception exception)
-00337:             {
-00338:                 editor.WriteMessage(
-00339:                     "\nCE_PROJECTRESTORE cancelled. The backup was retained. {0}",
-00340:                     exception.Message);
-00341:             }
-00342:         }
-00343: 
-00344:         private static PromptResult PromptForValue(
-00345:             Editor editor,
-00346:             string fieldName,
-00347:             string defaultValue)
-00348:         {
-00349:             string prompt = string.IsNullOrWhiteSpace(defaultValue)
-00350:                 ? string.Format("\n{0}: ", fieldName)
-00351:                 : string.Format("\n{0} <{1}>: ", fieldName, defaultValue);
-00352: 
-00353:             var options = new PromptStringOptions(prompt)
-00354:             {
-00355:                 AllowSpaces = true,
-00356:                 UseDefaultValue = !string.IsNullOrWhiteSpace(defaultValue),
-00357:                 DefaultValue = defaultValue ?? string.Empty
-00358:             };
-00359: 
-00360:             return editor.GetString(options);
-00361:         }
-00362: 
-00363:         private static ProjectMetadata ReadProjectMetadata(
-00364:             Database database,
-00365:             string recordName)
-00366:         {
-00367:             var metadata = new ProjectMetadata();
-00368: 
-00369:             try
-00370:             {
-00371:                 using (Transaction transaction = database.TransactionManager.StartTransaction())
-00372:                 {
-00373:                     DBDictionary namedObjects = transaction.GetObject(
-00374:                         database.NamedObjectsDictionaryId,
-00375:                         OpenMode.ForRead,
-00376:                         false) as DBDictionary;
-00377:                     if (namedObjects == null || !namedObjects.Contains(RootDictionaryName))
-00378:                     {
-00379:                         return metadata;
-00380:                     }
-00381: 
-00382:                     DBDictionary root = transaction.GetObject(
-00383:                         namedObjects.GetAt(RootDictionaryName),
-00384:                         OpenMode.ForRead,
-00385:                         false) as DBDictionary;
-00386:                     if (root == null || !root.Contains(recordName))
-00387:                     {
-00388:                         return metadata;
-00389:                     }
-00390: 
-00391:                     Xrecord record = transaction.GetObject(
-00392:                         root.GetAt(recordName),
-00393:                         OpenMode.ForRead,
-00394:                         false) as Xrecord;
-00395:                     if (record == null || record.Data == null)
-00396:                     {
-00397:                         return metadata;
-00398:                     }
-00399: 
-00400:                     ReadPairs(record.Data, metadata.Set);
-00401:                     metadata.Exists = true;
-00402:                 }
+00331:             }
+00332:             catch (System.Exception exception)
+00333:             {
+00334:                 editor.WriteMessage(
+00335:                     "\nCE_PROJECTRESTORE cancelled. The backup was retained. {0}",
+00336:                     exception.Message);
+00337:             }
+00338:         }
+00339: 
+00340:         private static PromptResult PromptForValue(
+00341:             Editor editor,
+00342:             string fieldName,
+00343:             string defaultValue)
+00344:         {
+00345:             string prompt = string.IsNullOrWhiteSpace(defaultValue)
+00346:                 ? string.Format("\n{0}: ", fieldName)
+00347:                 : string.Format("\n{0} <{1}>: ", fieldName, defaultValue);
+00348: 
+00349:             var options = new PromptStringOptions(prompt)
+00350:             {
+00351:                 AllowSpaces = true,
+00352:                 UseDefaultValue = !string.IsNullOrWhiteSpace(defaultValue),
+00353:                 DefaultValue = defaultValue ?? string.Empty
+00354:             };
+00355: 
+00356:             return editor.GetString(options);
+00357:         }
+00358: 
+00359:         private static ProjectMetadata ReadProjectMetadata(
+00360:             Database database,
+00361:             string recordName)
+00362:         {
+00363:             var metadata = new ProjectMetadata();
+00364: 
+00365:             try
+00366:             {
+00367:                 using (Transaction transaction = database.TransactionManager.StartTransaction())
+00368:                 {
+00369:                     DBDictionary namedObjects = transaction.GetObject(
+00370:                         database.NamedObjectsDictionaryId,
+00371:                         OpenMode.ForRead,
+00372:                         false) as DBDictionary;
+00373:                     if (namedObjects == null || !namedObjects.Contains(RootDictionaryName))
+00374:                     {
+00375:                         return metadata;
+00376:                     }
+00377: 
+00378:                     DBDictionary root = transaction.GetObject(
+00379:                         namedObjects.GetAt(RootDictionaryName),
+00380:                         OpenMode.ForRead,
+00381:                         false) as DBDictionary;
+00382:                     if (root == null || !root.Contains(recordName))
+00383:                     {
+00384:                         return metadata;
+00385:                     }
+00386: 
+00387:                     Xrecord record = transaction.GetObject(
+00388:                         root.GetAt(recordName),
+00389:                         OpenMode.ForRead,
+00390:                         false) as Xrecord;
+00391:                     if (record == null || record.Data == null)
+00392:                     {
+00393:                         return metadata;
+00394:                     }
+00395: 
+00396:                     ReadPairs(record.Data, metadata.Set);
+00397:                     metadata.Exists = true;
+00398:                 }
+00399:             }
+00400:             catch
+00401:             {
+00402:                 // A malformed or inaccessible metadata record is treated as absent.
 00403:             }
-00404:             catch
-00405:             {
-00406:                 // A malformed or inaccessible metadata record is treated as absent.
-00407:             }
-00408: 
-00409:             return metadata;
-00410:         }
-00411: 
-00412:         private static void WriteProjectMetadata(
-00413:             Database database,
-00414:             ProjectMetadata metadata,
+00404: 
+00405:             return metadata;
+00406:         }
+00407: 
+00408:         private static void WriteProjectMetadata(
+00409:             Database database,
+00410:             ProjectMetadata metadata,
 ```
 
 ## ProjectSetupPopupWindow.cs
