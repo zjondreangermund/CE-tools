@@ -1,0 +1,84 @@
+name: Apply road and vertex integration
+
+on:
+  push:
+    branches:
+      - agent/fix-road-assembly-vertex-settingout
+    paths:
+      - scripts/Apply-AgentRoadVertexPatch.py
+      - .github/workflows/agent-road-vertex-patch.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out feature branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fix-road-assembly-vertex-settingout
+          fetch-depth: 0
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Correct patch-script guards
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("scripts/Apply-AgentRoadVertexPatch.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              'if "CE_FLRELUPDATEMULTI" not in feature.split(command_marker, 1)[0]:',
+              'if "public void UpdateMultipleCommand()" not in feature:',
+          )
+          text = text.replace(
+              '"VertexSettingOutCommands.RefreshAll",',
+              '"internal static int RefreshAll(Document document)",',
+          )
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Apply targeted source integration
+        run: python scripts/Apply-AgentRoadVertexPatch.py
+
+      - name: Validate patch idempotency and source formatting
+        shell: bash
+        run: |
+          git diff --check
+          before="$(git diff --binary | sha256sum | cut -d' ' -f1)"
+          python scripts/Apply-AgentRoadVertexPatch.py
+          after="$(git diff --binary | sha256sum | cut -d' ' -f1)"
+          test "$before" = "$after"
+          python -m compileall -q scripts
+          if test -f scripts/Validate-RoadAssemblyProduction.py; then
+            python scripts/Validate-RoadAssemblyProduction.py
+          fi
+          if test -f scripts/Validate-FeatureLineSteppedWorkflows.py; then
+            python scripts/Validate-FeatureLineSteppedWorkflows.py
+          fi
+
+      - name: Commit integrated source files
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No integration changes were required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            scripts/Apply-AgentRoadVertexPatch.py \
+            src/CE.Tools.Civil3D/RoadProductionCommentCommands.cs \
+            src/CE.Tools.Civil3D/CeAssemblyCommands.cs \
+            src/CE.Tools.Civil3D/FeatureLineRelativeCommands.cs \
+            src/CE.Tools.Civil3D/CommentPresentationCommands.cs \
+            src/CE.Tools.Civil3D/PluginEntry.cs
+          git commit -m "feat: integrate road assembly and vertex setting-out"
+          git push origin HEAD:agent/fix-road-assembly-vertex-settingout
