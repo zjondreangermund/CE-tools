@@ -6,6 +6,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Windows;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
@@ -316,14 +317,20 @@ namespace CETools.Civil3D
         private readonly List<FloatingToolButton> _buttons =
             new List<FloatingToolButton>();
         private readonly TextBlock _resultCount;
+        private readonly TextBlock _usageTotals;
         private readonly TabControl _tabs;
         private readonly TextBox _search;
+        private readonly ComboBox _projectSelector;
+        private readonly DispatcherTimer _usageTimer;
         private readonly IList<FloatingToolDefinition> _tools;
         private readonly Dictionary<string, TabItem> _usageTabs =
             new Dictionary<string, TabItem>(StringComparer.OrdinalIgnoreCase);
         private readonly List<Button> _stepButtons = new List<Button>();
         private WorkflowStep _activeStep;
         private string _activeStepWorkflow;
+        private string _activeProjectKey;
+        private string _selectedProjectKey;
+        private bool _refreshingProjectSelector;
 
         public FloatingToolsWindow(IList<FloatingToolDefinition> tools)
         {
@@ -375,6 +382,69 @@ namespace CETools.Civil3D
             Grid.SetColumn(_resultCount, 1);
             header.Children.Add(_resultCount);
 
+            var analytics = new Grid
+            {
+                Margin = new Thickness(0.0, 0.0, 0.0, 10.0)
+            };
+            analytics.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = GridLength.Auto
+            });
+            analytics.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(340.0)
+            });
+            analytics.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1.0, GridUnitType.Star)
+            });
+            analytics.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = GridLength.Auto
+            });
+            DockPanel.SetDock(analytics, Dock.Top);
+            root.Children.Add(analytics);
+
+            var projectLabel = new TextBlock
+            {
+                Text = "Project / drawing:",
+                FontWeight = FontWeights.SemiBold,
+                VerticalAlignment = VerticalAlignment.Center,
+                Margin = new Thickness(0.0, 0.0, 8.0, 0.0)
+            };
+            Grid.SetColumn(projectLabel, 0);
+            analytics.Children.Add(projectLabel);
+
+            _projectSelector = new ComboBox
+            {
+                DisplayMemberPath = "SelectorText",
+                MinWidth = 280.0,
+                MaxDropDownHeight = 360.0,
+                Padding = new Thickness(6.0, 3.0, 6.0, 3.0),
+                ToolTip = "Current drawing and the last 10 opened saved DWGs"
+            };
+            Grid.SetColumn(_projectSelector, 1);
+            analytics.Children.Add(_projectSelector);
+
+            _usageTotals = new TextBlock
+            {
+                VerticalAlignment = VerticalAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(14.0, 0.0, 14.0, 0.0),
+                Foreground = Brushes.DarkSlateGray
+            };
+            Grid.SetColumn(_usageTotals, 2);
+            analytics.Children.Add(_usageTotals);
+
+            var clearUsage = new Button
+            {
+                Content = "Clear project stats",
+                Padding = new Thickness(12.0, 5.0, 12.0, 5.0),
+                ToolTip = "Clear command history, favorites and tracked time for the selected drawing only"
+            };
+            Grid.SetColumn(clearUsage, 3);
+            analytics.Children.Add(clearUsage);
+
             _tabs = new TabControl();
             root.Children.Add(_tabs);
 
@@ -385,7 +455,9 @@ namespace CETools.Civil3D
                 _tabs.Items.Add(CreateWorkflowTab(workflow));
 
             if (_tabs.Items.Count > 3) _tabs.SelectedIndex = 3;
+            RefreshProjectSelector(false);
             RefreshUsageTabs();
+            RefreshUsageTotals();
             UpdateFilter(string.Empty);
             _search.TextChanged += delegate
             {
@@ -394,6 +466,7 @@ namespace CETools.Civil3D
             Loaded += delegate
             {
                 _search.Focus();
+                _usageTimer.Start();
             };
             PreviewKeyDown += delegate(object sender, KeyEventArgs args)
             {
@@ -404,8 +477,32 @@ namespace CETools.Civil3D
                 }
             };
             _tabs.SelectionChanged += delegate { UpdateFilter(_search.Text); };
+            _projectSelector.SelectionChanged += delegate
+            {
+                if (_refreshingProjectSelector) return;
+                ProjectUsageSummary selected =
+                    _projectSelector.SelectedItem as ProjectUsageSummary;
+                _selectedProjectKey = selected == null ? string.Empty : selected.Key;
+                _projectSelector.ToolTip = selected == null ||
+                    string.IsNullOrWhiteSpace(selected.FullName)
+                    ? "Current drawing and the last 10 opened saved DWGs"
+                    : selected.FullName;
+                RefreshUsageTabs();
+                RefreshUsageTotals();
+                UpdateFilter(_search.Text);
+            };
+            clearUsage.Click += delegate { ClearSelectedProject(); };
+            _usageTimer = new DispatcherTimer
+            {
+                Interval = TimeSpan.FromSeconds(1.0)
+            };
+            _usageTimer.Tick += delegate { RefreshUsageTotals(); };
             CommandUsageTracker.UsageChanged += OnUsageChanged;
-            Closed += delegate { CommandUsageTracker.UsageChanged -= OnUsageChanged; };
+            Closed += delegate
+            {
+                _usageTimer.Stop();
+                CommandUsageTracker.UsageChanged -= OnUsageChanged;
+            };
         }
 
         private void AddUsageTab(string key, string title)
@@ -419,23 +516,92 @@ namespace CETools.Civil3D
         {
             Dispatcher.BeginInvoke(new Action(delegate
             {
+                RefreshProjectSelector(true);
                 RefreshUsageTabs();
+                RefreshUsageTotals();
                 UpdateFilter(_search.Text);
             }));
         }
 
+        private void RefreshProjectSelector(bool preserveSelection)
+        {
+            string currentProjectKey = CommandUsageTracker.CurrentProjectKey();
+            bool documentChanged = !string.Equals(
+                currentProjectKey,
+                _activeProjectKey,
+                StringComparison.OrdinalIgnoreCase);
+            _activeProjectKey = currentProjectKey;
+            string requestedKey = preserveSelection && !documentChanged
+                ? _selectedProjectKey
+                : currentProjectKey;
+            IList<ProjectUsageSummary> projects = CommandUsageTracker.Projects(10);
+            ProjectUsageSummary selected = string.IsNullOrWhiteSpace(requestedKey)
+                ? null
+                : projects.FirstOrDefault(item =>
+                    string.Equals(item.Key, requestedKey, StringComparison.OrdinalIgnoreCase));
+
+            _refreshingProjectSelector = true;
+            _projectSelector.ItemsSource = projects;
+            _projectSelector.SelectedItem = selected;
+            _refreshingProjectSelector = false;
+            _selectedProjectKey = selected == null ? string.Empty : selected.Key;
+            _projectSelector.ToolTip = selected != null &&
+                !string.IsNullOrWhiteSpace(selected.FullName)
+                ? selected.FullName
+                : "Current drawing and the last 10 opened saved DWGs";
+        }
+
+        private void RefreshUsageTotals()
+        {
+            ProjectUsageSummary summary = CommandUsageTracker.Summary(
+                SelectedProjectKey());
+            _usageTotals.Text = string.Format(
+                System.Globalization.CultureInfo.CurrentCulture,
+                "Total project time {0}  •  CE command time {1}  •  clicks {2:N0}  •  saved ≈{3:N0} clicks / {4}",
+                FormatDuration(summary.ActiveSeconds),
+                FormatDuration(summary.CommandSeconds),
+                summary.Clicks,
+                summary.EstimatedClicksSaved,
+                FormatDuration(summary.EstimatedSecondsSaved));
+        }
+
+        private string SelectedProjectKey()
+        {
+            return string.IsNullOrWhiteSpace(_selectedProjectKey)
+                ? CommandUsageTracker.CurrentProjectKey()
+                : _selectedProjectKey;
+        }
+
+        private void ClearSelectedProject()
+        {
+            ProjectUsageSummary summary = CommandUsageTracker.Summary(
+                SelectedProjectKey());
+            string name = string.IsNullOrWhiteSpace(summary.DisplayName)
+                ? "this drawing"
+                : summary.DisplayName;
+            MessageBoxResult result = System.Windows.MessageBox.Show(
+                "Clear all tracked time, command statistics and favorites for " +
+                    name + "? Other drawings will not be changed.",
+                "CE Tools - Clear Project Statistics",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes) return;
+            CommandUsageTracker.ClearProject(summary.Key);
+        }
+
         private void RefreshUsageTabs()
         {
+            string projectKey = SelectedProjectKey();
             _buttons.RemoveAll(item =>
                 string.Equals(item.WorkflowKey, "favorites", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(item.WorkflowKey, "mostused", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(item.WorkflowKey, "recent", StringComparison.OrdinalIgnoreCase));
-            BuildUsageTab("favorites", CommandUsageTracker.Favorites(),
+            BuildUsageTab("favorites", CommandUsageTracker.Favorites(projectKey),
                 "Right-click any command and choose Add to Favorites.");
-            BuildUsageTab("mostused", CommandUsageTracker.MostUsed(24),
+            BuildUsageTab("mostused", CommandUsageTracker.MostUsed(projectKey, 24),
                 "Commands ranked automatically by completed executions.");
-            BuildUsageTab("recent", CommandUsageTracker.Recent(24),
-                "The latest completed CE Tools commands across ribbon, command line and workflow centre.");
+            BuildUsageTab("recent", CommandUsageTracker.Recent(projectKey, 24),
+                "The latest completed CE Tools commands for the selected drawing.");
         }
 
         private void BuildUsageTab(
@@ -465,7 +631,12 @@ namespace CETools.Civil3D
                         record.Command,
                         record.Command + " ",
                         "Run " + record.Command + ".");
-                Button button = CreateButton(definition, false, null, true);
+                Button button = CreateButton(
+                    definition,
+                    false,
+                    null,
+                    true,
+                    SelectedProjectKey());
                 _buttons.Add(new FloatingToolButton(definition, button, key));
                 wrap.Children.Add(button);
             }
@@ -540,7 +711,8 @@ namespace CETools.Civil3D
                             if (!clear) clicked.Background = Brushes.LightBlue;
                             UpdateFilter(_search.Text);
                         },
-                        false);
+                        false,
+                        null);
                     stepButton.Content = new TextBlock
                     {
                         Text = (index + 1).ToString() + ". " + step.Title,
@@ -578,7 +750,7 @@ namespace CETools.Civil3D
             var commandWrap = new WrapPanel();
             foreach (FloatingToolDefinition definition in workflow.Tools)
             {
-                Button button = CreateButton(definition, false, null, false);
+                Button button = CreateButton(definition, false, null, false, null);
                 _buttons.Add(new FloatingToolButton(definition, button, workflow.Key));
                 commandWrap.Children.Add(button);
             }
@@ -601,7 +773,8 @@ namespace CETools.Civil3D
             FloatingToolDefinition definition,
             bool workflowStep,
             Action<Button> customClick,
-            bool showUsage)
+            bool showUsage,
+            string usageProjectKey)
         {
             var content = new Grid();
             content.ColumnDefinitions.Add(new ColumnDefinition
@@ -641,6 +814,7 @@ namespace CETools.Civil3D
             if (showUsage)
             {
                 CommandUsageRecord usage = CommandUsageTracker.Read(
+                    usageProjectKey,
                     definition.Command);
                 labels.Children.Add(new TextBlock
                 {
@@ -704,14 +878,23 @@ namespace CETools.Civil3D
                 menu.Items.Add(favorite);
                 menu.Opened += delegate
                 {
+                    string projectKey = string.IsNullOrWhiteSpace(usageProjectKey)
+                        ? CommandUsageTracker.CurrentProjectKey()
+                        : usageProjectKey;
                     favorite.Header = CommandUsageTracker.Read(
+                        projectKey,
                         definition.Command).IsFavorite
                         ? "Remove from Favorites"
                         : "Add to Favorites";
                 };
                 favorite.Click += delegate
                 {
-                    CommandUsageTracker.ToggleFavorite(definition.Command);
+                    string projectKey = string.IsNullOrWhiteSpace(usageProjectKey)
+                        ? CommandUsageTracker.CurrentProjectKey()
+                        : usageProjectKey;
+                    CommandUsageTracker.ToggleFavorite(
+                        projectKey,
+                        definition.Command);
                 };
                 button.ContextMenu = menu;
             }

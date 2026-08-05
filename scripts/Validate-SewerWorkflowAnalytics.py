@@ -43,11 +43,23 @@ checks = {
         'AddUsageTab("favorites", "⭐ Favorites")',
         'AddUsageTab("mostused", "🔥 Most Used")',
         'AddUsageTab("recent", "🕒 Recent")',
+        "CommandUsageTracker.Projects(10)",
+        "CommandUsageTracker.ClearProject(summary.Key)",
+        '"Total project time {0}',
+        "_projectSelector",
+        "_usageTotals",
+        "DispatcherTimer",
         "_activeStep.Matches(item.Definition)",
         'Step("Open Sewer workflow", "CE_SEWTOOLS"',
     ],
     "CommandUsageTracker.cs": [
         "document.CommandWillStart += OnCommandWillStart",
+        "DocumentManager.DocumentActivated += OnDocumentActivated",
+        "ProjectsByKey",
+        '"UNSAVED|" + Guid.NewGuid()',
+        "ProjectUsageSummary",
+        "ClearProject(string projectKey)",
+        "Legacy global rows are deliberately ignored",
         "EstimatedClicksSaved",
         "EstimatedSecondsSaved",
         "ToggleFavorite",
@@ -68,6 +80,19 @@ for filename, markers in checks.items():
     for marker in markers:
         if marker not in text:
             errors.append(f"{filename} is missing: {marker}")
+
+tracker = read("CommandUsageTracker.cs")
+for obsolete in [
+    "Favorites()",
+    "MostUsed(int maximum)",
+    "Recent(int maximum)",
+    "Read(string command)",
+    "ToggleFavorite(string command)",
+]:
+    if obsolete in tracker:
+        errors.append(
+            "CommandUsageTracker.cs still exposes global analytics: " + obsolete
+        )
 
 if errors:
     print("CE Tools sewer workflow analytics validation failed:")
