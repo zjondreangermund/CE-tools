@@ -1234,10 +1234,12 @@ namespace CETools.Civil3D
                                 sourceId,
                                 OpenMode.ForRead,
                                 false);
-                            object sourceNetworkId = ReadProperty(part, "NetworkId");
-                            if (sourceNetworkId is ObjectId &&
-                                !((ObjectId)sourceNetworkId).IsNull)
-                                bandNetworkId = (ObjectId)sourceNetworkId;
+                            CivilPipe bandPipe = part as CivilPipe;
+                            CivilStructure bandStructure = part as CivilStructure;
+                            if (bandPipe != null && !bandPipe.NetworkId.IsNull)
+                                bandNetworkId = bandPipe.NetworkId;
+                            else if (bandStructure != null && !bandStructure.NetworkId.IsNull)
+                                bandNetworkId = bandStructure.NetworkId;
                             if (TryAddPartToProfileView(
                                     part,
                                     profileViewId))
