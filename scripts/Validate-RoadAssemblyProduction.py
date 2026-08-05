@@ -19,6 +19,8 @@ required = {
     "assembly create command": '"CE_ASSEMBLYCREATE"' in assembly,
     "assembly report command": '"CE_ASSEMBLYREPORT"' in assembly,
     "road assembly recovery": "CreateRoadAssemblyInteractively" in roads,
+    "road assembly fallback discovery": "ReadAssemblyChoices" in roads,
+    "Civil 3D 2023 model-space assembly fallback": "BlockTableRecord.ModelSpace" in assembly,
     "road ordered workflow": "new List<DisciplineWorkflowAction>" in roads,
     "assembly ribbon panel": '"CE-ASSEMBLY"' in ribbon,
     "road production ribbon panel": '"ROAD PRODUCTION"' in ribbon,
