@@ -55,7 +55,7 @@ requirements = {
     "SewerProductionCommands.cs": [
         '"CE_SEWSEQMAIN"',
         '"CE_SEWPROFILE"',
-        "ProfileViewBandSetStyles",
+        'CivilStyleCatalogV2.ReadNames(document.Database, civilDocument, "Profile View Band Set Style")',
     ],
     "SewerBranchAlignmentCommands.cs": [
         '"CE_SEWALIGN"',
