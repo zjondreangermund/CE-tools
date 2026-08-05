@@ -4,12 +4,16 @@ on:
   push:
     branches:
       - agent/fix-sewer-alignment-project-production-popups
+  pull_request:
+    branches:
+      - agent/fix-sewer-alignment-project-production-popups
 
 permissions:
   contents: write
 
 jobs:
   repair:
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
