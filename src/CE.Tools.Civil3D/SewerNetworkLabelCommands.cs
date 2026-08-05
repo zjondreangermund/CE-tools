@@ -97,10 +97,17 @@ namespace CETools.Civil3D
                     pipeStyles, settings.PipePlanLabelStyle, transaction);
                 ObjectId structureStyleId = ResolveStyleId(
                     structureStyles, settings.StructurePlanLabelStyle, transaction);
-                if (pipeStyleId.IsNull || structureStyleId.IsNull)
+                var unavailableStyles = new List<string>();
+                if (pipeStyleId.IsNull)
+                    unavailableStyles.Add("pipe plan-label style");
+                if (structureStyleId.IsNull)
+                    unavailableStyles.Add("structure plan-label style");
+                if (unavailableStyles.Count > 0)
                 {
-                    result.Warning = "Choose compatible pipe and structure plan-label styles in Sewer Settings.";
-                    return result;
+                    result.Warning =
+                        "No compatible " +
+                        string.Join(" and ", unavailableStyles) +
+                        " was found. Import/select the source-drawing styles in Sewer Settings.";
                 }
 
                 HashSet<ObjectId> labelledParts = ReadExistingLabelledParts(
@@ -132,7 +139,7 @@ namespace CETools.Civil3D
                             result.ExistingLabels++;
                             continue;
                         }
-                        if (TryCreateLabel(pipeLabelType, pipeId, pipeStyleId, transaction))
+                        if (TryCreatePipeLabel(pipeLabelType, pipeId, pipeStyleId, transaction))
                         {
                             result.PipeLabelsAdded++;
                             labelledParts.Add(pipeId);
@@ -147,7 +154,7 @@ namespace CETools.Civil3D
                             result.ExistingLabels++;
                             continue;
                         }
-                        if (TryCreateLabel(
+                        if (TryCreateStructureLabel(
                                 structureLabelType,
                                 structureId,
                                 structureStyleId,
@@ -171,7 +178,7 @@ namespace CETools.Civil3D
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             return document == null || civilDocument == null
                 ? new List<string>()
-                : ProductionStyleCatalog.ReadNames(
+                : CivilStyleCatalogV2.ReadNames(
                     document.Database,
                     ReadLabelStyleCollection(civilDocument, pipe),
                     pipe ? "Pipe Label Style" : "Structure Label Style");
@@ -186,8 +193,18 @@ namespace CETools.Civil3D
             object family = ReadProperty(
                 labelStyles,
                 pipe ? "PipeLabelStyles" : "StructureLabelStyles");
-            return ReadProperty(family, "PlanProfileLabelStyles") ??
-                ReadProperty(family, "PlanLabelStyles") ?? family;
+            if (family == null) return null;
+
+            // Civil 3D exposes pipe plan/profile labels under
+            // PipeLabelStylesRoot.PlanProfileLabelStyles, while structure plan
+            // labels are under StructureLabelStylesRoot.LabelStyles.
+            object exact = ReadProperty(
+                family,
+                pipe ? "PlanProfileLabelStyles" : "LabelStyles");
+            if (exact != null) return exact;
+
+            // Some builds expose a PlanLabelStyles compatibility property.
+            return ReadProperty(family, "PlanLabelStyles") ?? family;
         }
 
         private static HashSet<ObjectId> ReadExistingLabelledParts(
@@ -218,7 +235,101 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static bool TryCreateLabel(
+        private static bool TryCreatePipeLabel(
+            Type labelType,
+            ObjectId pipeId,
+            ObjectId styleId,
+            Transaction transaction)
+        {
+            if (labelType == null || pipeId.IsNull || styleId.IsNull)
+                return false;
+
+            foreach (MethodInfo method in labelType.GetMethods(
+                BindingFlags.Public | BindingFlags.Static)
+                .Where(candidate => string.Equals(
+                    candidate.Name,
+                    "Create",
+                    StringComparison.Ordinal)))
+            {
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length != 3 ||
+                    parameters[0].ParameterType != typeof(ObjectId) ||
+                    parameters[1].ParameterType != typeof(double) ||
+                    parameters[2].ParameterType != typeof(ObjectId))
+                    continue;
+                if (TryInvokeCreate(
+                        method,
+                        new object[] { pipeId, 0.5, styleId },
+                        transaction))
+                    return true;
+            }
+
+            return TryCreateCompatibleLabel(
+                labelType,
+                pipeId,
+                styleId,
+                transaction);
+        }
+
+        private static bool TryCreateStructureLabel(
+            Type labelType,
+            ObjectId structureId,
+            ObjectId styleId,
+            Transaction transaction)
+        {
+            if (labelType == null || structureId.IsNull || styleId.IsNull)
+                return false;
+
+            Point3d location = ReadFeaturePoint(structureId, transaction);
+            foreach (MethodInfo method in labelType.GetMethods(
+                BindingFlags.Public | BindingFlags.Static)
+                .Where(candidate => string.Equals(
+                    candidate.Name,
+                    "Create",
+                    StringComparison.Ordinal)))
+            {
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length != 3 ||
+                    parameters[0].ParameterType != typeof(ObjectId) ||
+                    parameters[1].ParameterType != typeof(ObjectId) ||
+                    parameters[2].ParameterType != typeof(Point3d))
+                    continue;
+                if (TryInvokeCreate(
+                        method,
+                        new object[] { structureId, styleId, location },
+                        transaction))
+                    return true;
+            }
+
+            return TryCreateCompatibleLabel(
+                labelType,
+                structureId,
+                styleId,
+                transaction);
+        }
+
+        private static bool TryInvokeCreate(
+            MethodInfo method,
+            object[] arguments,
+            Transaction transaction)
+        {
+            try
+            {
+                object created = method.Invoke(null, arguments);
+                ObjectId id = created is ObjectId
+                    ? (ObjectId)created
+                    : ReadObjectIdProperty(created, "ObjectId", "Id");
+                if (id.IsNull) return false;
+                transaction.GetObject(id, OpenMode.ForRead, false);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryCreateCompatibleLabel(
             Type labelType,
             ObjectId featureId,
             ObjectId styleId,
@@ -310,24 +421,37 @@ namespace CETools.Civil3D
             string requested,
             Transaction transaction)
         {
-            ObjectId first = ObjectId.Null;
-            foreach (object item in Enumerate(collection))
+            IList<ObjectId> ids =
+                CivilStyleCatalogV2.ReadObjectIds(collection, transaction);
+            ObjectId first = ids.Count == 0 ? ObjectId.Null : ids[0];
+            bool useFirst = string.IsNullOrWhiteSpace(requested) ||
+                string.Equals(
+                    requested,
+                    CivilStyleCatalogV2.DrawingDefault,
+                    StringComparison.OrdinalIgnoreCase);
+            if (useFirst) return first;
+
+            foreach (ObjectId id in ids)
             {
-                ObjectId id = item is ObjectId
-                    ? (ObjectId)item
-                    : ReadObjectIdProperty(item, "ObjectId", "Id");
-                if (id.IsNull || id.IsErased) continue;
-                if (first.IsNull) first = id;
-                if (string.IsNullOrWhiteSpace(requested)) continue;
                 try
                 {
-                    DBObject style = transaction.GetObject(id, OpenMode.ForRead, false);
+                    DBObject style = transaction.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false);
                     string name = Convert.ToString(
-                        ReadProperty(style, "Name"), CultureInfo.CurrentCulture);
-                    if (string.Equals(name, requested, StringComparison.OrdinalIgnoreCase))
+                        ReadProperty(style, "Name"),
+                        CultureInfo.CurrentCulture);
+                    if (string.Equals(
+                            name,
+                            requested,
+                            StringComparison.OrdinalIgnoreCase))
                         return id;
                 }
-                catch { }
+                catch
+                {
+                    // Try the next real Civil style.
+                }
             }
             return first;
         }

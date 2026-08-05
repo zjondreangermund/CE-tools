@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.Civil.DatabaseServices.Styles;
 
 namespace CETools.Civil3D
 {
@@ -207,8 +208,9 @@ namespace CETools.Civil3D
                     continue;
                 }
 
-                string name = Convert.ToString(ReadProperty(value, "Name"),
-                    CultureInfo.CurrentCulture);
+                StyleBase style = value as StyleBase;
+                if (style == null) continue;
+                string name = style.Name;
                 if (string.IsNullOrWhiteSpace(name)) continue;
                 string category = MapCategory(childPath + "." + value.GetType().Name);
                 if (string.IsNullOrWhiteSpace(category)) continue;
@@ -228,26 +230,110 @@ namespace CETools.Civil3D
                 .Replace("_", string.Empty)
                 .Replace(" ", string.Empty)
                 .ToUpperInvariant();
-            if (value.Contains("PROFILEVIEW") && value.Contains("BAND")) return "Profile View Band Set Style";
-            if (value.Contains("PROFILE") && value.Contains("LABELSET")) return "Profile Label Set Style";
-            if (value.Contains("ALIGNMENT") && value.Contains("LABELSET")) return "Alignment Label Set Style";
-            if (value.Contains("STRUCTURE") && value.Contains("LABEL")) return "Structure Label Style";
-            if (value.Contains("PRESSURE") && value.Contains("PIPE") && value.Contains("LABEL")) return "Pressure Pipe Label Style";
-            if (value.Contains("PIPE") && value.Contains("LABEL")) return "Pipe Label Style";
-            if (value.Contains("POINT") && value.Contains("LABEL")) return "Point Label Style";
-            if (value.Contains("PRESSURE") && value.Contains("PIPE")) return "Pressure Pipe Style";
-            if (value.Contains("APPURTENANCE")) return "Appurtenance Style";
-            if (value.Contains("FITTING")) return "Fitting Style";
-            if (value.Contains("STRUCTURE")) return "Structure Style";
-            if (value.Contains("PIPE")) return "Pipe Style";
-            if (value.Contains("CODESET")) return "Code Set Style";
-            if (value.Contains("ASSEMBLY")) return "Assembly Style";
-            if (value.Contains("CORRIDOR")) return "Corridor Style";
-            if (value.Contains("PROFILEVIEW")) return "Profile View Style";
-            if (value.Contains("PROFILE")) return "Profile Style";
-            if (value.Contains("ALIGNMENT")) return "Alignment Style";
-            if (value.Contains("POINT")) return "Point Style";
-            if (value.Contains("SURFACE")) return "Surface Style";
+
+            if (value.Contains("SECTIONVIEW") && value.Contains("BAND"))
+                return "Section View Band Set Style";
+            if (value.Contains("PROFILEVIEW") && value.Contains("BAND"))
+                return "Profile View Band Set Style";
+            if (value.Contains("SECTION") && value.Contains("LABELSET"))
+                return "Section Label Set Style";
+            if (value.Contains("PROFILE") && value.Contains("LABELSET"))
+                return "Profile Label Set Style";
+            if (value.Contains("ALIGNMENT") && value.Contains("LABELSET"))
+                return "Alignment Label Set Style";
+            if (value.Contains("STRUCTURERULE"))
+                return "Structure Rule Set";
+            if (value.Contains("PIPERULE"))
+                return "Pipe Rule Set";
+            if (value.Contains("STRUCTURE") && value.Contains("LABEL"))
+                return "Structure Label Style";
+            if (value.Contains("PRESSURE") && value.Contains("PIPE") &&
+                value.Contains("LABEL"))
+                return "Pressure Pipe Label Style";
+            if (value.Contains("PIPE") && value.Contains("LABEL"))
+                return "Pipe Label Style";
+            if (value.Contains("SECTIONVIEW") && value.Contains("LABEL"))
+                return "Section View Label Style";
+            if (value.Contains("SECTION") && value.Contains("LABEL"))
+                return "Section Label Style";
+            if (value.Contains("PROFILEVIEW") && value.Contains("LABEL"))
+                return "Profile View Label Style";
+            if (value.Contains("PROFILE") && value.Contains("LABEL"))
+                return "Profile Label Style";
+            if (value.Contains("ALIGNMENT") && value.Contains("LABEL"))
+                return "Alignment Label Style";
+            if (value.Contains("SURFACE") && value.Contains("LABEL"))
+                return "Surface Label Style";
+            if (value.Contains("POINT") && value.Contains("LABEL"))
+                return "Point Label Style";
+            if (value.Contains("FEATURELINE") && value.Contains("LABEL"))
+                return "Feature Line Label Style";
+            if (value.Contains("PARCEL") && value.Contains("LABEL"))
+                return "Parcel Label Style";
+            if (value.Contains("CATCHMENT") && value.Contains("LABEL"))
+                return "Catchment Label Style";
+            if (value.Contains("PRESSURE") && value.Contains("PIPE"))
+                return "Pressure Pipe Style";
+            if (value.Contains("APPURTENANCE") && value.Contains("LABEL"))
+                return "Appurtenance Label Style";
+            if (value.Contains("APPURTENANCE"))
+                return "Appurtenance Style";
+            if (value.Contains("FITTING") && value.Contains("LABEL"))
+                return "Fitting Label Style";
+            if (value.Contains("FITTING"))
+                return "Fitting Style";
+            if (value.Contains("STRUCTURETABLE"))
+                return "Structure Table Style";
+            if (value.Contains("PIPETABLE"))
+                return "Pipe Table Style";
+            if (value.Contains("SURFACETABLE"))
+                return "Surface Table Style";
+            if (value.Contains("POINTTABLE"))
+                return "Point Table Style";
+            if (value.Contains("PARCELTABLE"))
+                return "Parcel Table Style";
+            if (value.Contains("ALIGNMENTTABLE"))
+                return "Alignment Table Style";
+            if (value.Contains("STRUCTURE"))
+                return "Structure Style";
+            if (value.Contains("PIPE"))
+                return "Pipe Style";
+            if (value.Contains("CODESET"))
+                return "Code Set Style";
+            if (value.Contains("ASSEMBLY"))
+                return "Assembly Style";
+            if (value.Contains("CORRIDOR"))
+                return "Corridor Style";
+            if (value.Contains("SECTIONVIEW"))
+                return "Section View Style";
+            if (value.Contains("SECTION"))
+                return "Section Style";
+            if (value.Contains("PROFILEVIEW"))
+                return "Profile View Style";
+            if (value.Contains("PROFILE"))
+                return "Profile Style";
+            if (value.Contains("ALIGNMENT"))
+                return "Alignment Style";
+            if (value.Contains("FEATURELINE"))
+                return "Feature Line Style";
+            if (value.Contains("POINT"))
+                return "Point Style";
+            if (value.Contains("SURFACE"))
+                return "Surface Style";
+            if (value.Contains("PARCEL"))
+                return "Parcel Style";
+            if (value.Contains("CATCHMENT"))
+                return "Catchment Style";
+            if (value.Contains("GRADING"))
+                return "Grading Style";
+            if (value.Contains("SAMPLELINE"))
+                return "Sample Line Style";
+            if (value.Contains("MASSHAULVIEW"))
+                return "Mass Haul View Style";
+            if (value.Contains("MASSHAULLINE"))
+                return "Mass Haul Line Style";
+            if (value.Contains("MARKER"))
+                return "Marker Style";
             return string.Empty;
         }
 
