@@ -654,6 +654,8 @@ namespace CETools.Civil3D
                                 placement,
                                 branch.BranchName,
                                 paperHeight,
+                                productionSettings.BranchLabelAboveOffset,
+                                productionSettings.BranchLabelBelowOffset,
                                 placeAbove);
                             label.XData = BuildTag(branchKey, "Label");
                             modelSpace.AppendEntity(label);

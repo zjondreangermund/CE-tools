@@ -53,14 +53,18 @@ required = {
         "= RibbonIconMode.Full;",
     ),
     "labels": (
-        "PaperAnnotationScale.AnnotativeTextHeight",
+        "PaperAnnotationScale.ModelTextHeight",
         "OffsetPoint",
         "RepeatSpacing",
+        "aboveOffsetPaperDistance",
+        "belowOffsetPaperDistance",
     ),
     "sewer": (
         'model.AddChoice("BranchLabelSide"',
         'new[] { "Alternating", "Above", "Below" }',
         'Value("BranchLabelSide", BranchLabelSide)',
+        'Value("BranchLabelAboveOffset", BranchLabelAboveOffset.ToString',
+        'Value("BranchLabelBelowOffset", BranchLabelBelowOffset.ToString',
         "TryBuildLabelPlacement",
         "SewerBranchLabelPlacement.ConfigureLabel",
     ),
@@ -97,6 +101,7 @@ required = {
         '"GetObjectIds"',
         "PropertyInfo countProperty",
         "GetIndexParameters().Length == 1",
+        'value.ToString("0.0##", CultureInfo.InvariantCulture)',
     ),
     "formatting": (
         '"CE_CIVILLABELFORMAT"',

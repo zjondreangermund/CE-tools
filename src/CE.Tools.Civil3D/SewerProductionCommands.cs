@@ -199,6 +199,8 @@ namespace CETools.Civil3D
             model.AddText("ProfileLayer", "Layers and Annotation", "Profile output layer", settings.ProfileLayer, "Layer for sewer profiles and profile views.");
             model.AddPaperHeight("LabelHeight", "Layers and Annotation", "Plan branch-label paper height", settings.LabelHeight, "Select a standard annotative paper height or enter another positive value.");
             model.AddChoice("BranchLabelSide", "Layers and Annotation", "Branch-label offset side", settings.BranchLabelSide, "Place every branch name above, below, or alternate sides while keeping it clear of the alignment.", new[] { "Alternating", "Above", "Below" });
+            model.AddPositiveDouble("BranchLabelAboveOffset", "Layers and Annotation", "Above offset distance (paper mm)", settings.BranchLabelAboveOffset, "Move labels placed above the pipe this perpendicular paper distance from the pipe centreline.");
+            model.AddPositiveDouble("BranchLabelBelowOffset", "Layers and Annotation", "Below offset distance (paper mm)", settings.BranchLabelBelowOffset, "Move labels placed below the pipe this perpendicular paper distance from the pipe centreline.");
             model.AddPositiveInteger("ProfileColumns", "Profile View Layout", "Profile views per row", settings.ProfileColumns, "Number of generated views before wrapping to the next row.");
             model.AddPositiveDouble("ProfileHorizontalSpacing", "Profile View Layout", "Horizontal spacing", settings.ProfileHorizontalSpacing, "Drawing-unit spacing between profile-view columns.");
             model.AddPositiveDouble("ProfileVerticalSpacing", "Profile View Layout", "Vertical spacing", settings.ProfileVerticalSpacing, "Drawing-unit spacing between profile-view rows.");
@@ -215,6 +217,8 @@ namespace CETools.Civil3D
             settings.ProfileLayer = model.Text("ProfileLayer");
             settings.LabelHeight = model.Double("LabelHeight", settings.LabelHeight);
             settings.BranchLabelSide = model.Text("BranchLabelSide");
+            settings.BranchLabelAboveOffset = model.Double("BranchLabelAboveOffset", settings.BranchLabelAboveOffset);
+            settings.BranchLabelBelowOffset = model.Double("BranchLabelBelowOffset", settings.BranchLabelBelowOffset);
             settings.ProfileColumns = model.Integer("ProfileColumns", settings.ProfileColumns);
             settings.ProfileHorizontalSpacing = model.Double("ProfileHorizontalSpacing", settings.ProfileHorizontalSpacing);
             settings.ProfileVerticalSpacing = model.Double("ProfileVerticalSpacing", settings.ProfileVerticalSpacing);
@@ -376,6 +380,8 @@ namespace CETools.Civil3D
                             placement,
                             branchRecord.BranchName,
                             settings.LabelHeight,
+                            settings.BranchLabelAboveOffset,
+                            settings.BranchLabelBelowOffset,
                             placeAbove);
                         labelsMoved++;
                     }
@@ -1610,6 +1616,8 @@ namespace CETools.Civil3D
         public string ProfileLayer { get; set; } = "CE-SEWER-PROFILE";
         public double LabelHeight { get; set; } = 5.0;
         public string BranchLabelSide { get; set; } = "Alternating";
+        public double BranchLabelAboveOffset { get; set; } = 10.0;
+        public double BranchLabelBelowOffset { get; set; } = 10.0;
         public int ProfileColumns { get; set; } = 2;
         public double ProfileHorizontalSpacing { get; set; } = 250.0;
         public double ProfileVerticalSpacing { get; set; } = 120.0;
@@ -1677,6 +1685,8 @@ namespace CETools.Civil3D
                     Value("ProfileLayer", ProfileLayer),
                     Value("LabelHeight", LabelHeight.ToString("R", CultureInfo.InvariantCulture)),
                     Value("BranchLabelSide", BranchLabelSide),
+                    Value("BranchLabelAboveOffset", BranchLabelAboveOffset.ToString("R", CultureInfo.InvariantCulture)),
+                    Value("BranchLabelBelowOffset", BranchLabelBelowOffset.ToString("R", CultureInfo.InvariantCulture)),
                     Value("ProfileColumns", ProfileColumns.ToString(CultureInfo.InvariantCulture)),
                     Value("ProfileHorizontalSpacing", ProfileHorizontalSpacing.ToString("R", CultureInfo.InvariantCulture)),
                     Value("ProfileVerticalSpacing", ProfileVerticalSpacing.ToString("R", CultureInfo.InvariantCulture)));
@@ -1701,6 +1711,18 @@ namespace CETools.Civil3D
             else if (key == "StructurePlanLabelStyle") settings.StructurePlanLabelStyle = value;
             else if (key == "ProfileLayer") settings.ProfileLayer = value;
             else if (key == "BranchLabelSide") settings.BranchLabelSide = value;
+            else if (key == "BranchLabelAboveOffset")
+            {
+                double offset;
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out offset) && offset > 0.0)
+                    settings.BranchLabelAboveOffset = offset;
+            }
+            else if (key == "BranchLabelBelowOffset")
+            {
+                double offset;
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out offset) && offset > 0.0)
+                    settings.BranchLabelBelowOffset = offset;
+            }
             else if (key == "LabelHeight")
             {
                 double height;
@@ -1708,11 +1730,10 @@ namespace CETools.Civil3D
                 {
                     // Repair values previously persisted in metre drawing units
                     // (for example 0.005) back to their paper-mm equivalent.
+                    // Standard absolute values, including 2.5, remain unchanged.
                     settings.LabelHeight = height <= 0.05
                         ? height * 1000.0
-                        : Math.Abs(height - 2.5) < 0.001
-                            ? 5.0
-                            : height;
+                        : height;
                 }
             }
             else if (key == "ProfileColumns")

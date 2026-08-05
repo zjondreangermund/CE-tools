@@ -16,8 +16,10 @@ checks = {
     "SewerBranchLabelPlacement.cs": [
         "DefaultPaperHeight = 5.0",
         "label.ColorIndex = 3",
-        "label.TextHeight = PaperAnnotationScale.NormalizePaperHeight",
+        "label.TextHeight = PaperAnnotationScale.ModelTextHeight",
         "OffsetFactor = 2.75",
+        "aboveOffsetPaperDistance",
+        "belowOffsetPaperDistance",
     ],
     "SewerNetworkLabelCommands.cs": [
         'CommandMethod("CE_SEWLABELS"',
@@ -31,6 +33,10 @@ checks = {
     "SewerProductionCommands.cs": [
         'model.AddChoice("PipePlanLabelStyle"',
         'model.AddChoice("StructurePlanLabelStyle"',
+        'model.AddPositiveDouble("BranchLabelAboveOffset"',
+        'model.AddPositiveDouble("BranchLabelBelowOffset"',
+        'Value("BranchLabelAboveOffset", BranchLabelAboveOffset.ToString',
+        'Value("BranchLabelBelowOffset", BranchLabelBelowOffset.ToString',
         'new DisciplineWorkflowAction("Create / refresh Civil labels"',
     ],
     "FloatingToolsWindow.cs": [

@@ -140,28 +140,55 @@ namespace CETools.Civil3D
             double paperHeight,
             bool placeAbove)
         {
+            ConfigureLabel(
+                label,
+                database,
+                placement,
+                branchName,
+                paperHeight,
+                paperHeight * OffsetFactor,
+                paperHeight * OffsetFactor,
+                placeAbove);
+        }
+
+        internal static void ConfigureLabel(
+            MText label,
+            Database database,
+            Placement placement,
+            string branchName,
+            double paperHeight,
+            double aboveOffsetPaperDistance,
+            double belowOffsetPaperDistance,
+            bool placeAbove)
+        {
             if (label == null)
             {
                 throw new ArgumentNullException(nameof(label));
             }
 
-            label.Location = OffsetPoint(
+            double paperOffset = placeAbove
+                ? aboveOffsetPaperDistance
+                : belowOffsetPaperDistance;
+            double offsetDistance = ResolveScaleAwarePaperDistance(
                 database,
-                placement,
-                paperHeight,
-                placeAbove);
+                Math.Max(paperOffset, GeometryTolerance));
+            double side = placeAbove ? 1.0 : -1.0;
+            var normal = new Vector3d(
+                -Math.Sin(placement.Rotation),
+                Math.Cos(placement.Rotation),
+                0.0);
+            label.Location = placement.Point + (normal * offsetDistance * side);
             label.Attachment = placeAbove
                 ? AttachmentPoint.BottomCenter
                 : AttachmentPoint.TopCenter;
             label.Annotative = AnnotativeStates.True;
-            // Civil 3D's Properties palette reports annotative MText paper height
-            // from the entity's raw height.  Store the requested CE paper value
-            // directly so 5.0 mm remains 5.0 (instead of displaying 0.005 in a
-            // metre drawing) while annotation contexts handle viewport scaling.
-            // This label intentionally does not use
-            // PaperAnnotationScale.AnnotativeTextHeight because that conversion
-            // is exactly what makes the palette display 0.005.
-            label.TextHeight = PaperAnnotationScale.NormalizePaperHeight(paperHeight);
+            // MText.TextHeight is the model height even for this annotative
+            // entity in Civil 3D 2023. Convert the selected absolute paper-mm
+            // value through the active annotation scale so Properties reports
+            // exactly 1.8/2.0/2.5/3.5/5.0 instead of a doubled or 0.005 value.
+            label.TextHeight = PaperAnnotationScale.ModelTextHeight(
+                database,
+                paperHeight);
             label.Rotation = placement.Rotation;
             label.Contents = branchName ?? string.Empty;
             label.ColorIndex = 3;

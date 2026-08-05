@@ -315,7 +315,9 @@ namespace CETools.Civil3D
 
         public void AddPaperHeight(string key, string group, string label, double value, string description)
         {
-            Add(key, group, label, value.ToString("0.###", CultureInfo.InvariantCulture), description, ProductionSettingsFieldKind.PaperHeight);
+            // Always show an explicit absolute paper-mm value (2.0 rather than
+            // 2) so the settings window matches the Civil 3D Properties value.
+            Add(key, group, label, value.ToString("0.0##", CultureInfo.InvariantCulture), description, ProductionSettingsFieldKind.PaperHeight);
         }
 
         public string Text(string key)
