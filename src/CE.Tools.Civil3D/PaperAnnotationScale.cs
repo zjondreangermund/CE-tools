@@ -139,7 +139,12 @@ namespace CETools.Civil3D
 
         private static double CurrentAnnotationScale(Database database)
         {
-            double scale = 0.0;
+            double scale = ReadNamedAnnotationScale();
+            if (IsValidScale(scale)) return scale;
+
+            scale = ReadDatabaseAnnotationScale(database);
+            if (IsValidScale(scale)) return scale;
+
             try
             {
                 scale = Convert.ToDouble(
@@ -149,11 +154,98 @@ namespace CETools.Civil3D
             }
             catch
             {
-                if (database != null) scale = database.Dimscale;
+                scale = 0.0;
             }
-            return scale > 0.0 && !double.IsNaN(scale) && !double.IsInfinity(scale)
-                ? scale
-                : 1.0;
+            if (IsValidScale(scale) && scale >= 10.0) return scale;
+
+            if (database != null && IsValidScale(database.Dimscale))
+                return database.Dimscale;
+            return 1.0;
+        }
+
+        private static double ReadNamedAnnotationScale()
+        {
+            try
+            {
+                string text = Convert.ToString(
+                    Autodesk.AutoCAD.ApplicationServices.Core.Application
+                        .GetSystemVariable("CANNOSCALE"),
+                    CultureInfo.InvariantCulture);
+                if (string.IsNullOrWhiteSpace(text)) return 0.0;
+                text = text.Trim();
+                int separator = text.IndexOf(':');
+                if (separator > 0 && separator < text.Length - 1)
+                {
+                    double paper;
+                    double drawing;
+                    if (double.TryParse(
+                            text.Substring(0, separator).Trim(),
+                            NumberStyles.Float,
+                            CultureInfo.InvariantCulture,
+                            out paper) &&
+                        double.TryParse(
+                            text.Substring(separator + 1).Trim(),
+                            NumberStyles.Float,
+                            CultureInfo.InvariantCulture,
+                            out drawing) &&
+                        paper > 0.0 && drawing > 0.0)
+                        return drawing / paper;
+                }
+            }
+            catch
+            {
+                // Continue to the database annotation-scale object.
+            }
+            return 0.0;
+        }
+
+        private static double ReadDatabaseAnnotationScale(Database database)
+        {
+            if (database == null) return 0.0;
+            try
+            {
+                PropertyInfo property = database.GetType().GetProperty(
+                    "Cannoscale",
+                    BindingFlags.Public | BindingFlags.Instance);
+                object context = property == null || property.GetGetMethod() == null
+                    ? null
+                    : property.GetValue(database, null);
+                if (context == null) return 0.0;
+                double paper = ReadDouble(context, "PaperUnits");
+                double drawing = ReadDouble(context, "DrawingUnits");
+                return paper > 0.0 && drawing > 0.0
+                    ? drawing / paper
+                    : 0.0;
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+
+        private static double ReadDouble(object value, string propertyName)
+        {
+            try
+            {
+                PropertyInfo property = value.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || property.GetGetMethod() == null) return 0.0;
+                return Convert.ToDouble(
+                    property.GetValue(value, null),
+                    CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+
+        private static bool IsValidScale(double value)
+        {
+            return value > 0.0 &&
+                !double.IsNaN(value) &&
+                !double.IsInfinity(value);
         }
 
         private static double DrawingUnitsPerMillimetre(Database database)

@@ -547,16 +547,22 @@ namespace CETools.Civil3D
             {
                 EnsureRegApp(database, transaction);
                 ObjectId layerId = GetOrCreateLayer(database, transaction);
-                ObjectId alignmentStyleId = ResolveStyleId(
-                    civilDocument.Styles.AlignmentStyles,
+                string alignmentStyleName;
+                ObjectId alignmentStyleId = CivilStyleCatalogV2.ResolveStyleId(
+                    database,
+                    civilDocument,
+                    "Alignment Style",
                     productionSettings.AlignmentStyle,
-                    "alignment style",
-                    transaction);
-                ObjectId labelSetStyleId = ResolveStyleId(
-                    civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles,
+                    transaction,
+                    out alignmentStyleName);
+                string labelSetStyleName;
+                ObjectId labelSetStyleId = CivilStyleCatalogV2.ResolveStyleId(
+                    database,
+                    civilDocument,
+                    "Alignment Label Set Style",
                     productionSettings.AlignmentLabelSetStyle,
-                    "alignment label-set style",
-                    transaction);
+                    transaction,
+                    out labelSetStyleName);
 
                 BlockTable blockTable = (BlockTable)transaction.GetObject(
                     database.BlockTableId,
@@ -681,33 +687,6 @@ namespace CETools.Civil3D
             }
 
             return id;
-        }
-
-        private static ObjectId ResolveStyleId(
-            IEnumerable<ObjectId> styleIds,
-            string requested,
-            string description,
-            Transaction transaction)
-        {
-            List<ObjectId> ids = styleIds.ToList();
-            if (ids.Count == 0)
-                throw new InvalidOperationException(
-                    "The drawing contains no " + description + ".");
-            if (string.IsNullOrWhiteSpace(requested)) return ids[0];
-
-            foreach (ObjectId id in ids)
-            {
-                DBObject style = transaction.GetObject(id, OpenMode.ForRead, false);
-                PropertyInfo property = style.GetType().GetProperty(
-                    "Name", BindingFlags.Public | BindingFlags.Instance);
-                string name = Convert.ToString(
-                    property == null ? null : property.GetValue(style, null),
-                    CultureInfo.InvariantCulture);
-                if (string.Equals(name, requested.Trim(), StringComparison.OrdinalIgnoreCase))
-                    return id;
-            }
-            throw new InvalidOperationException(
-                "The requested " + description + " '" + requested + "' was not found.");
         }
 
         private static ObjectId AddSourcePolyline(
