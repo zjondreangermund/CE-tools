@@ -56,6 +56,10 @@ required = {
         '"StyleId", "LabelStyleId"',
         '"LabelLocation", "Location"',
         "ResolveOverlaps(document)",
+        "ApplyPipeLabelPresentation(value, transaction);",
+        "GetTextComponentIds",
+        "SetTextComponentOverride",
+        '" m\\\\P@ "',
     ),
     RESET: (
         '"CE_DRAWINGRESETALL"',
@@ -91,6 +95,6 @@ if errors:
 
 print(
     "Project style persistence and sewer labels passed: cross-drawing presets, "
-    "opening choice popup, existing-label style synchronization, overlap cleanup "
-    "and protected drawing reset are wired."
+    "opening choice popup, existing-label style synchronization, three-line "
+    "pipe presentation, overlap cleanup and protected drawing reset are wired."
 )
