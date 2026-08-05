@@ -79,6 +79,9 @@ jobs:
       - name: Validate Civil style catalogue and sewer labels
         run: python3 scripts/Validate-CivilStyleCatalogueAndSewerLabels.py
 
+      - name: Validate sewer project and production popups
+        run: python3 scripts/Validate-SewerProjectProductionPopups.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
