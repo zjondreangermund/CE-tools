@@ -34,6 +34,8 @@ required = {
         'settings.AddPositiveInteger(',
         'public static int RefreshAll(Document document)',
         'private const string RecordKey = "CE_FLREL";',
+        'Select one or more source feature lines and/or linked children',
+        'new Dictionary<ObjectId, List<ChildRecord>>()',
     ),
     "FeatureLineSteppedJoinCommands.cs": (
         '"CE_FLSTEPJOIN"',
@@ -102,5 +104,5 @@ if errors:
 
 print(
     "Stepped feature-line workflows passed: popup multi-offset creation, automatic linked refresh, "
-    "one-selection set rebuild, gap-tolerant healing and endpoint-vertex preservation are protected."
+    "multi-source set rebuild, gap-tolerant healing and endpoint-vertex preservation are protected."
 )
