@@ -50,7 +50,8 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add src/CE.Tools.Civil3D/PluginEntry.cs \
                   src/CE.Tools.Civil3D/ProjectStyleCenterCommands.cs \
-                  src/CE.Tools.Civil3D/SewerNetworkLabelCommands.cs
+                  src/CE.Tools.Civil3D/SewerNetworkLabelCommands.cs \
+                  src/CE.Tools.Civil3D/SewerLabelStyleSyncCommands.cs
           if git diff --cached --quiet; then
             echo "No integration changes remain."
             exit 0
