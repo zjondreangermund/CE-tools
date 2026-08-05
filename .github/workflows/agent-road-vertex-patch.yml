@@ -35,6 +35,11 @@ jobs:
         with:
           python-version: '3.x'
 
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
       - name: Correct patch-script guards
         shell: bash
         run: |
@@ -72,6 +77,41 @@ jobs:
           if test -f scripts/Validate-FeatureLineSteppedWorkflows.py; then
             python scripts/Validate-FeatureLineSteppedWorkflows.py
           fi
+
+      - name: Parse all C# source with Roslyn
+        shell: bash
+        run: |
+          work="${RUNNER_TEMP}/ce-tools-syntax"
+          dotnet new console --framework net8.0 --output "$work" --force >/dev/null
+          dotnet add "$work/ce-tools-syntax.csproj" package Microsoft.CodeAnalysis.CSharp >/dev/null
+          cat > "$work/Program.cs" <<'CS'
+          using Microsoft.CodeAnalysis;
+          using Microsoft.CodeAnalysis.CSharp;
+
+          var root = Path.Combine(Environment.CurrentDirectory, "src");
+          var failures = new List<string>();
+          foreach (var path in Directory.EnumerateFiles(root, "*.cs", SearchOption.AllDirectories))
+          {
+              var source = File.ReadAllText(path);
+              var tree = CSharpSyntaxTree.ParseText(
+                  source,
+                  new CSharpParseOptions(LanguageVersion.Latest),
+                  path);
+              foreach (var diagnostic in tree.GetDiagnostics().Where(
+                  item => item.Severity == DiagnosticSeverity.Error))
+              {
+                  failures.Add(diagnostic.ToString());
+              }
+          }
+          if (failures.Count > 0)
+          {
+              Console.Error.WriteLine(string.Join(Environment.NewLine, failures));
+              return 1;
+          }
+          Console.WriteLine("Roslyn syntax validation passed for all C# source files.");
+          return 0;
+          CS
+          dotnet run --project "$work/ce-tools-syntax.csproj" --configuration Release
 
       - name: Commit integrated source files
         if: github.event_name == 'push' || github.base_ref == 'agent/fix-road-assembly-vertex-settingout'
