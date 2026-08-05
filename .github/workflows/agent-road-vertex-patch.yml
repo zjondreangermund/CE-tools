@@ -7,6 +7,13 @@ on:
     paths:
       - scripts/Apply-AgentRoadVertexPatch.py
       - .github/workflows/agent-road-vertex-patch.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - scripts/Apply-AgentRoadVertexPatch.py
+      - src/CE.Tools.Civil3D/**
+      - .github/workflows/agent-road-vertex-patch.yml
 
 permissions:
   contents: write
@@ -65,6 +72,7 @@ jobs:
           fi
 
       - name: Commit integrated source files
+        if: github.event_name == 'push'
         shell: bash
         run: |
           if git diff --quiet; then
