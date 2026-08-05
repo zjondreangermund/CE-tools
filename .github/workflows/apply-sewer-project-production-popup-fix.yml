@@ -36,6 +36,8 @@ jobs:
         shell: bash
         run: |
           grep -n -E "ProductionDrawingRegister|ProductionTitleBlock|drawingRegister|CreateOrRefreshBookLayout" src/CE.Tools.Civil3D/ProductionReportCommands.cs | head -120 || true
+          echo "--- GENERATED DRAWING BOOK SECTION ---"
+          sed -n '520,760p' src/CE.Tools.Civil3D/ProductionReportCommands.cs
 
       - name: Validate sewer, project and production popups
         run: python3 scripts/Validate-SewerProjectProductionPopups.py
