@@ -956,7 +956,7 @@ namespace CETools.Civil3D
     {
         private const string RootDictionaryName = "CE_TOOLS";
         private const string RecordName = "ANNOTATION_SETTINGS";
-        private const string SchemaVersion = "1";
+        private const string SchemaVersion = "2";
 
         public static bool Prepare(
             Document document,
@@ -1204,7 +1204,7 @@ namespace CETools.Civil3D
 
         private static double NormalizeHeight(double height)
         {
-            return PaperAnnotationScale.NormalizePaperHeight(height);
+            return PaperAnnotationScale.NormalizeConfiguredPaperHeight(height);
         }
 
         private static string HeightKeyword(double height)

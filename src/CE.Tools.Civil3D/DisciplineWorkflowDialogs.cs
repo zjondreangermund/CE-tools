@@ -317,7 +317,8 @@ namespace CETools.Civil3D
         {
             // Always show an explicit absolute paper-mm value (2.0 rather than
             // 2) so the settings window matches the Civil 3D Properties value.
-            Add(key, group, label, value.ToString("0.0##", CultureInfo.InvariantCulture), description, ProductionSettingsFieldKind.PaperHeight);
+            double normalized = PaperAnnotationScale.NormalizeConfiguredPaperHeight(value);
+            Add(key, group, label, normalized.ToString("0.0##", CultureInfo.InvariantCulture), description, ProductionSettingsFieldKind.PaperHeight);
         }
 
         public string Text(string key)
@@ -489,18 +490,28 @@ namespace CETools.Civil3D
             {
                 var combo = new ComboBox
                 {
-                    IsEditable = true,
+                    IsEditable = field.Kind == ProductionSettingsFieldKind.Choice,
                     Padding = new Thickness(7, 5, 7, 5),
-                    Text = field.Value,
                     FontWeight = FontWeights.Normal
                 };
-                IEnumerable<string> choices = field.Kind == ProductionSettingsFieldKind.PaperHeight
+                List<string> choices = (field.Kind == ProductionSettingsFieldKind.PaperHeight
                     ? new[] { "1.8", "2.0", "2.5", "3.5", "5.0" }
-                    : field.Choices;
+                    : field.Choices).ToList();
                 if (field.Kind == ProductionSettingsFieldKind.Choice)
                     combo.Items.Add(string.Empty);
                 foreach (string choice in choices)
                     combo.Items.Add(choice);
+                if (field.Kind == ProductionSettingsFieldKind.PaperHeight)
+                {
+                    string selected = choices.FirstOrDefault(choice =>
+                        string.Equals(choice, field.Value, StringComparison.OrdinalIgnoreCase)) ??
+                        "2.0";
+                    combo.SelectedItem = selected;
+                }
+                else
+                {
+                    combo.Text = field.Value;
+                }
                 control = combo;
             }
             else

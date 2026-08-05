@@ -16,37 +16,43 @@ namespace CETools.Civil3D
 
         public static double ModelTextHeight(Database database, double paperMillimetres)
         {
-            double paper = NormalizePaperHeight(paperMillimetres);
+            double paper = NormalizeConfiguredPaperHeight(paperMillimetres);
             return Math.Max(
                 paper * CurrentAnnotationScale(database) * DrawingUnitsPerMillimetre(database),
                 MinimumHeight);
         }
 
         /// <summary>
-        /// Height stored on an annotative DBText/MText/MLeader. AutoCAD applies
-        /// the current annotation context itself, so this value is paper height
-        /// converted only to drawing units and must not be scale-multiplied.
+        /// Height stored on annotative DBText/MText/MLeader objects in Civil 3D
+        /// 2023. The managed entity property is still the model-space height;
+        /// Civil 3D derives the displayed Paper text height from that value and
+        /// the active annotation scale. Using paper millimetres directly here
+        /// produced 0.005-style heights in metre drawings and forced users to
+        /// enter artificial values such as 1200.
         /// </summary>
         public static double AnnotativeTextHeight(Database database, double paperMillimetres)
         {
-            return Math.Max(
-                NormalizePaperHeight(paperMillimetres) * DrawingUnitsPerMillimetre(database),
-                MinimumHeight);
+            return ModelTextHeight(database, paperMillimetres);
         }
 
         public static double ModelDistance(
             Database database,
             double paperMillimetres)
         {
-            return ModelTextHeight(database, paperMillimetres);
+            return Math.Max(
+                NormalizePaperHeight(paperMillimetres) *
+                    CurrentAnnotationScale(database) *
+                    DrawingUnitsPerMillimetre(database),
+                MinimumHeight);
         }
 
         public static double PaperTextHeight(Database database, double modelHeight)
         {
             double denominator =
                 CurrentAnnotationScale(database) * DrawingUnitsPerMillimetre(database);
-            if (!(denominator > 0.0)) return NormalizePaperHeight(modelHeight);
-            return NormalizePaperHeight(modelHeight / denominator);
+            if (!(denominator > 0.0))
+                return NormalizeConfiguredPaperHeight(modelHeight);
+            return NormalizeConfiguredPaperHeight(modelHeight / denominator);
         }
 
         public static double NormalizePaperHeight(double value)
@@ -59,6 +65,40 @@ namespace CETools.Civil3D
             if (Math.Abs(value - 3.5) < 0.05) return 3.5;
             if (Math.Abs(value - 5.0) < 0.05) return 5.0;
             return value;
+        }
+
+        /// <summary>
+        /// Repairs persisted UI values from earlier builds while preserving the
+        /// five absolute paper-mm choices used throughout CE Tools.
+        /// </summary>
+        public static double NormalizeConfiguredPaperHeight(double value)
+        {
+            if (!(value > 0.0) || double.IsNaN(value) || double.IsInfinity(value))
+                return 2.0;
+
+            // Earlier metre-drawing builds persisted values such as 0.005 for
+            // 5 mm. Convert those drawing-unit values back to paper millimetres.
+            if (value < 0.05)
+                value *= 1000.0;
+
+            // Oversized compensating values (for example 1200) were entered to
+            // work around the old missing annotation-scale multiplication.
+            if (value > 25.0)
+                return 5.0;
+
+            double[] choices = { 1.8, 2.0, 2.5, 3.5, 5.0 };
+            double nearest = choices[0];
+            double difference = Math.Abs(value - nearest);
+            foreach (double choice in choices)
+            {
+                double candidate = Math.Abs(value - choice);
+                if (candidate <= difference)
+                {
+                    nearest = choice;
+                    difference = candidate;
+                }
+            }
+            return nearest;
         }
 
         public static bool SetAnnotative(object value)

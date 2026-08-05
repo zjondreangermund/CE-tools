@@ -37,6 +37,10 @@ required = {
         'GetSystemVariable("CANNOSCALEVALUE")',
         'string.Equals(units, "Meters"',
         "paper * CurrentAnnotationScale(database) * DrawingUnitsPerMillimetre(database)",
+        "return ModelTextHeight(database, paperMillimetres);",
+        "NormalizeConfiguredPaperHeight",
+        "if (value > 25.0)",
+        "double[] choices = { 1.8, 2.0, 2.5, 3.5, 5.0 };",
         'string[] candidates = { "True", "Yes", "On" };',
     ),
     "ribbon": (
@@ -101,7 +105,9 @@ required = {
         '"GetObjectIds"',
         "PropertyInfo countProperty",
         "GetIndexParameters().Length == 1",
-        'value.ToString("0.0##", CultureInfo.InvariantCulture)',
+        'normalized.ToString("0.0##", CultureInfo.InvariantCulture)',
+        "IsEditable = field.Kind == ProductionSettingsFieldKind.Choice",
+        "PaperAnnotationScale.NormalizeConfiguredPaperHeight(value)",
     ),
     "formatting": (
         '"CE_CIVILLABELFORMAT"',
