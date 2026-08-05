@@ -367,25 +367,12 @@ namespace CETools.Civil3D
 
         internal static IList<ObjectId> ReadAssemblyIds(CivilDocument civilDocument)
         {
-            var result = new List<ObjectId>();
-            if (civilDocument == null) return result;
-            try
-            {
-                MethodInfo method = civilDocument.GetType().GetMethod(
-                    "GetAssemblyIds",
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null,
-                    Type.EmptyTypes,
-                    null);
-                IEnumerable values = method == null
-                    ? null
-                    : method.Invoke(civilDocument, null) as IEnumerable;
-                if (values != null)
-                    foreach (object value in values)
-                        if (value is ObjectId) result.Add((ObjectId)value);
-            }
-            catch { }
-            return result;
+            Document document = ActiveDocument();
+            return document == null
+                ? new List<ObjectId>()
+                : CivilAssemblyResolver.GetAssemblyIds(
+                    civilDocument,
+                    document.Database);
         }
 
         private static int CountValues(object value)

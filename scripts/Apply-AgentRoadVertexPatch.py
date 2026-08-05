@@ -74,7 +74,7 @@ feature = replace_once(
 
 command_marker = """        [CommandMethod(\"CE_TOOLS\", \"CE_FLRELINFO\", CommandFlags.Modal)]"""
 command_block = """        [CommandMethod(\n            \"CE_TOOLS\",\n            \"CE_FLRELUPDATEMULTI\",\n            CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]\n        public void UpdateMultipleCommand()\n        {\n            Document document = AcApplication.DocumentManager.MdiActiveDocument;\n            if (document != null) UpdateMultiple(document);\n        }\n\n"""
-if "CE_FLRELUPDATEMULTI" not in feature.split(command_marker, 1)[0]:
+if "public void UpdateMultipleCommand()" not in feature:
     if command_marker not in feature:
         raise SystemExit("FeatureLineRelativeCommands: info command marker was not found")
     feature = feature.replace(command_marker, command_block + command_marker, 1)
@@ -149,7 +149,7 @@ checks = {
         '"CE_VERTEXSETTINGOUT"',
         '"CE_VERTEXSETTINGOUTREFRESH"',
         '"CE_VERTEXSETTINGOUTEXPORT"',
-        "VertexSettingOutCommands.RefreshAll",
+        "internal static int RefreshAll(Document document)",
         "SimpleXlsxWriter.Write",
         "new RadialDimension",
     ),

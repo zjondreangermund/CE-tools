@@ -278,7 +278,10 @@ namespace CETools.Civil3D
                         Cmd("Linked Coordinate Cross", "CE_COORDCROSS2 ", "Choose COGO point, cross, annotation and linked register output."),
                         Cmd("Create Linked Coordinate Table", "CE_COORDTABLE2 ", "Create a compact linked Y-X-Z table from selected COGO or AutoCAD points."),
                         Cmd("Refresh Linked Coordinate Table", "CE_COORDREFRESH ", "Refresh table rows from the current linked source-point coordinates."),
-                        Cmd("Polyline Vertex Linked Points", "CE_COORDPOLY2 ", "Create sequential COGO points in polyline direction and a linked Point Name, Y, X, Z table.")),
+                        Cmd("Polyline Vertex Linked Points", "CE_COORDPOLY2 ", "Create sequential COGO points in polyline direction and a linked Point Name, Y, X, Z table."),
+                        Cmd("Multi-Source Vertex Setting-Out", "CE_VERTEXSETTINGOUT ", "Create dynamic COGO, MText or MLeader points from multiple polylines and feature lines, including arc centres and long-segment points."),
+                        Cmd("Refresh Vertex Setting-Out", "CE_VERTEXSETTINGOUTREFRESH ", "Recalculate linked vertex points, names, coordinates, radius dimensions and table rows."),
+                        Cmd("Export Vertex Setting-Out", "CE_VERTEXSETTINGOUTEXPORT ", "Refresh and export a linked vertex setting-out table to Excel.")),
                     Menu(
                         "CE_TOOLS_SURVEY_UTILITIES_MENU",
                         "Survey\nUtilities",
@@ -373,6 +376,7 @@ namespace CETools.Civil3D
                         Cmd("Create Linked Offset Set", "CE_FLRELCREATE ", "Create multiple stepped offsets linked to one source feature line with automatic refresh."),
                         Cmd("Heal Stepped Feature Lines", "CE_FLSTEPJOIN ", "Close small endpoint gaps and create one feature line while preserving piece endpoints as vertices."),
                         Cmd("Update Linked Offset Set", "CE_FLRELUPDATE ", "Select the source or any child and immediately refresh the complete linked offset set."),
+                        Cmd("Update Multiple Offset Sets", "CE_FLRELUPDATEMULTI ", "Select multiple source feature lines or linked children and rebuild only those stepped-offset sets."),
                         Cmd("Linked Offset Information", "CE_FLRELINFO ", "Report a linked offset relationship."),
                         Cmd("Detach Linked Offset", "CE_FLRELDETACH ", "Keep geometry but remove the CE relationship.")),
                     Menu(
