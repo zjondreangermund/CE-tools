@@ -26,6 +26,9 @@ jobs:
       - name: Repair integration matcher
         run: python3 scripts/Repair-SewerProjectProductionPatch.py
 
+      - name: Narrow drawing register method patch
+        run: python3 scripts/Repair-DrawingRegisterPatch.py
+
       - name: Apply source repairs
         run: python3 scripts/Apply-SewerProjectProductionPopupFix.py
 
