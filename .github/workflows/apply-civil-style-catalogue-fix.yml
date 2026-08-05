@@ -1,0 +1,48 @@
+name: Apply Civil Style Catalogue Fix
+
+on:
+  push:
+    branches:
+      - agent/fix-civil-style-catalogue-sewer-labels
+
+permissions:
+  contents: write
+
+jobs:
+  integrate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/fix-civil-style-catalogue-sewer-labels
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply typed Civil style and sewer-label repair
+        run: python3 scripts/Apply-CivilStyleCatalogueFix.py
+
+      - name: Validate style catalogue and sewer labels
+        run: python3 scripts/Validate-CivilStyleCatalogueAndSewerLabels.py
+
+      - name: Validate supplied style-source drawings
+        run: python3 scripts/Validate-ProjectStyleSources.py
+
+      - name: Validate production settings dialogs
+        run: python3 scripts/Validate-DisciplineProductionDialogs.py
+
+      - name: Validate patch formatting
+        run: git diff --check
+
+      - name: Commit integrated source
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No integration changes remain."
+            exit 0
+          fi
+          git commit -m "Fix Civil style catalogues and sewer labels"
+          git push origin HEAD:agent/fix-civil-style-catalogue-sewer-labels
