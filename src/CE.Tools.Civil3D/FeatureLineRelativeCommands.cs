@@ -40,6 +40,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Create linked stepped set", "CE_FLRELCREATE", "Create multiple stepped offsets that auto-refresh with one source feature line.", "01 Create"),
                     new DisciplineWorkflowAction("Heal stepped feature lines", "CE_FLSTEPJOIN", "Close small gaps and create one feature line with vertices at piece endpoints.", "01 Create"),
                     new DisciplineWorkflowAction("Update all offsets from source", "CE_FLRELUPDATE", "Select the source or any child and immediately rebuild the complete linked set.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Update multiple source sets", "CE_FLRELUPDATEMULTI", "Select multiple source feature lines or linked children and rebuild only those complete stepped-offset sets.", "02 Maintain"),
                     new DisciplineWorkflowAction("Link information", "CE_FLRELINFO", "Inspect stored source and relationship data.", "02 Maintain"),
                     new DisciplineWorkflowAction("Detach linked offset", "CE_FLRELDETACH", "Remove a selected relationship without deleting unrelated geometry.", "03 Cleanup")
                 });
@@ -57,6 +58,16 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document != null) Update(document);
+        }
+
+        [CommandMethod(
+            "CE_TOOLS",
+            "CE_FLRELUPDATEMULTI",
+            CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void UpdateMultipleCommand()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document != null) UpdateMultiple(document);
         }
 
         [CommandMethod("CE_TOOLS", "CE_FLRELINFO", CommandFlags.Modal)]
@@ -271,6 +282,124 @@ namespace CETools.Civil3D
                 editor.WriteMessage(
                     "\nCE_FLRELUPDATE cancelled. No changes were committed. " + exception.Message);
             }
+        }
+
+        private static void UpdateMultiple(Document document)
+        {
+            Editor editor = document.Editor;
+            PromptSelectionResult selection = editor.SelectImplied();
+            if (selection.Status != PromptStatus.OK ||
+                selection.Value == null ||
+                selection.Value.Count == 0)
+            {
+                selection = editor.GetSelection(new PromptSelectionOptions
+                {
+                    MessageForAdding = "\nSelect multiple source feature lines or linked children: ",
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
+            }
+            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+
+            var groups = new Dictionary<ObjectId, List<ChildRecord>>();
+            int rejected = 0;
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    BlockTableRecord modelSpace = GetModelSpace(
+                        document.Database,
+                        transaction,
+                        OpenMode.ForRead);
+                    foreach (SelectedObject selectedObject in selection.Value)
+                    {
+                        if (selectedObject == null || selectedObject.ObjectId.IsNull)
+                        {
+                            rejected++;
+                            continue;
+                        }
+
+                        CivilFeatureLine selected = OpenFeatureLine(
+                            transaction,
+                            selectedObject.ObjectId,
+                            OpenMode.ForRead);
+                        if (selected == null)
+                        {
+                            rejected++;
+                            continue;
+                        }
+
+                        Relation relation;
+                        ObjectId sourceId = TryReadRelation(
+                                selected,
+                                transaction,
+                                out relation)
+                            ? ResolveHandle(document.Database, relation.SourceHandle)
+                            : selected.ObjectId;
+                        if (sourceId.IsNull || sourceId.IsErased || groups.ContainsKey(sourceId))
+                            continue;
+
+                        CivilFeatureLine source = OpenFeatureLine(
+                            transaction,
+                            sourceId,
+                            OpenMode.ForRead);
+                        EnsureEditable(source, transaction);
+                        List<ChildRecord> children = FindChildren(
+                            modelSpace,
+                            source.Handle.ToString(),
+                            transaction);
+                        if (children.Count == 0)
+                        {
+                            rejected++;
+                            continue;
+                        }
+                        groups.Add(sourceId, children);
+                    }
+                }
+            }
+            catch (System.Exception exception)
+            {
+                editor.WriteMessage(
+                    "\nCE_FLRELUPDATEMULTI cancelled during source discovery. " +
+                    exception.Message);
+                return;
+            }
+
+            if (groups.Count == 0)
+            {
+                editor.WriteMessage(
+                    "\nCE_FLRELUPDATEMULTI: no selected linked stepped-offset source sets were found.");
+                return;
+            }
+
+            int rebuilt = 0;
+            int failed = 0;
+            foreach (KeyValuePair<ObjectId, List<ChildRecord>> group in groups)
+            {
+                try
+                {
+                    rebuilt += RebuildChildren(
+                        document,
+                        group.Key,
+                        group.Value);
+                }
+                catch (System.Exception exception)
+                {
+                    failed++;
+                    editor.WriteMessage(
+                        "\nA selected linked stepped-offset set was skipped. " +
+                        exception.Message);
+                }
+            }
+
+            document.Editor.Regen();
+            editor.WriteMessage(
+                "\nCE_FLRELUPDATEMULTI complete. Source sets={0}; linked feature lines rebuilt={1}; rejected={2}; failed sets={3}.",
+                groups.Count,
+                rebuilt,
+                rejected,
+                failed);
         }
 
         public static int RefreshAll(Document document)

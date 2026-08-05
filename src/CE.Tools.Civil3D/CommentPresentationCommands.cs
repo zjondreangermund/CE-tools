@@ -1083,6 +1083,7 @@ namespace CETools.Civil3D
             {
                 summary.FeatureLines +=
                     FeatureLineRelativeCommands.RefreshAll(document);
+                VertexSettingOutCommands.RefreshAll(document);
             }
             catch
             {

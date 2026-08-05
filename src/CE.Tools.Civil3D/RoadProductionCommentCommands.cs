@@ -688,7 +688,14 @@ namespace CETools.Civil3D
             string context)
         {
             var result = new List<CivilObjectChoice>();
-            IEnumerable ids = InvokeEnumerable(civilDocument, methodName);
+            IEnumerable ids = string.Equals(
+                    methodName,
+                    "GetAssemblyIds",
+                    StringComparison.OrdinalIgnoreCase)
+                ? (IEnumerable)CivilAssemblyResolver.GetAssemblyIds(
+                    civilDocument,
+                    document.Database)
+                : InvokeEnumerable(civilDocument, methodName);
             if (ids == null) return result;
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
