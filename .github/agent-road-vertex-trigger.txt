@@ -1,1 +1,2 @@
 Trigger the branch-local road assembly and vertex setting-out integration workflow.
+Roslyn syntax validation rerun requested.
