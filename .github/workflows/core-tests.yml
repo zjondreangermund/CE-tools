@@ -87,5 +87,8 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Parse Civil 3D C# syntax
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
+
       - name: Run geometry tests
         run: dotnet run --project tests/CE.Tools.Core.Tests/CE.Tools.Core.Tests.csproj -c Release
