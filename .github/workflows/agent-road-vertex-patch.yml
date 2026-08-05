@@ -10,10 +10,12 @@ on:
   pull_request:
     branches:
       - main
+      - agent/fix-road-assembly-vertex-settingout
     paths:
       - scripts/Apply-AgentRoadVertexPatch.py
       - src/CE.Tools.Civil3D/**
       - .github/workflows/agent-road-vertex-patch.yml
+      - .github/agent-road-vertex-trigger.txt
 
 permissions:
   contents: write
@@ -22,7 +24,7 @@ jobs:
   apply-and-validate:
     runs-on: ubuntu-latest
     steps:
-      - name: Check out feature branch
+      - name: Check out integration branch
         uses: actions/checkout@v4
         with:
           ref: agent/fix-road-assembly-vertex-settingout
@@ -72,7 +74,7 @@ jobs:
           fi
 
       - name: Commit integrated source files
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || github.base_ref == 'agent/fix-road-assembly-vertex-settingout'
         shell: bash
         run: |
           if git diff --quiet; then
