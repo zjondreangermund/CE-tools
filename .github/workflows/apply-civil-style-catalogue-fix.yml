@@ -43,6 +43,9 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          # Workflow files require a separate GitHub App permission. Keep the
+          # tested source changes in this commit and update core-tests separately.
+          git restore .github/workflows/core-tests.yml
           git add -A
           if git diff --cached --quiet; then
             echo "No integration changes remain."
