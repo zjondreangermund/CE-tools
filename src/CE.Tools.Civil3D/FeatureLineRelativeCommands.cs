@@ -37,8 +37,9 @@ namespace CETools.Civil3D
                 "Create and maintain stepped offsets linked to an editable source feature line.",
                 new List<DisciplineWorkflowAction>
                 {
-                    new DisciplineWorkflowAction("Create linked offsets", "CE_FLRELCREATE", "Create stepped-offset child feature lines.", "01 Create"),
-                    new DisciplineWorkflowAction("Update linked offsets", "CE_FLRELUPDATE", "Rebuild linked children from the current source geometry.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Create linked stepped set", "CE_FLRELCREATE", "Create multiple stepped offsets that auto-refresh with one source feature line.", "01 Create"),
+                    new DisciplineWorkflowAction("Heal stepped feature lines", "CE_FLSTEPJOIN", "Close small gaps and create one feature line with vertices at piece endpoints.", "01 Create"),
+                    new DisciplineWorkflowAction("Update all offsets from source", "CE_FLRELUPDATE", "Select the source or any child and immediately rebuild the complete linked set.", "02 Maintain"),
                     new DisciplineWorkflowAction("Link information", "CE_FLRELINFO", "Inspect stored source and relationship data.", "02 Maintain"),
                     new DisciplineWorkflowAction("Detach linked offset", "CE_FLRELDETACH", "Remove a selected relationship without deleting unrelated geometry.", "03 Cleanup")
                 });
@@ -78,41 +79,6 @@ namespace CETools.Civil3D
             PromptEntityResult sourceResult = PromptFeatureLine(editor, "\nSelect SOURCE feature line: ");
             if (sourceResult.Status != PromptStatus.OK) return;
 
-            PromptPointResult sideResult = editor.GetPoint(
-                "\nPick the side on which the stepped offsets must be created: ");
-            if (sideResult.Status != PromptStatus.OK) return;
-
-            PromptDoubleResult horizontalResult = editor.GetDouble(new PromptDoubleOptions(
-                "\nHorizontal step distance <1.000>: ")
-            {
-                AllowNegative = false,
-                AllowZero = false,
-                DefaultValue = 1.0,
-                UseDefaultValue = true
-            });
-            if (horizontalResult.Status != PromptStatus.OK) return;
-
-            PromptDoubleResult verticalResult = editor.GetDouble(new PromptDoubleOptions(
-                "\nVertical step difference; positive is above, negative is below <0.000>: ")
-            {
-                AllowNegative = true,
-                AllowZero = true,
-                DefaultValue = 0.0,
-                UseDefaultValue = true
-            });
-            if (verticalResult.Status != PromptStatus.OK) return;
-
-            PromptIntegerResult countResult = editor.GetInteger(new PromptIntegerOptions(
-                "\nNumber of linked stepped offsets <1>: ")
-            {
-                AllowNegative = false,
-                AllowZero = false,
-                DefaultValue = 1,
-                LowerLimit = 1,
-                UseDefaultValue = true
-            });
-            if (countResult.Status != PromptStatus.OK) return;
-
             string defaultPrefix;
             try
             {
@@ -132,17 +98,39 @@ namespace CETools.Civil3D
                 return;
             }
 
-            PromptResult prefixResult = editor.GetString(new PromptStringOptions(
-                "\nLinked feature-line name prefix <" + defaultPrefix + ">: ")
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Linked Stepped Feature Lines",
+                "Create a complete linked offset set from one source. The set is rebuilt automatically by CE Tools when the source drawing geometry changes.");
+            settings.AddPositiveDouble(
+                "HorizontalStep", "01 Stepped offsets", "Horizontal step", 1.0,
+                "Drawing-unit offset between successive linked feature lines.");
+            settings.AddText(
+                "VerticalStep", "01 Stepped offsets", "Vertical step", "0.000",
+                "Elevation difference per step. Use a negative value for steps below the source.");
+            settings.AddPositiveInteger(
+                "Count", "01 Stepped offsets", "Number of offsets", 1,
+                "Create this many linked stepped feature lines from the selected source.");
+            settings.AddText(
+                "Prefix", "02 Naming", "Feature-line name prefix", defaultPrefix,
+                "Names are created as Prefix-1, Prefix-2, and so on.");
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+
+            double horizontalStep = settings.Double("HorizontalStep", 1.0);
+            double verticalStep;
+            if (!ProductionSettingsDialogModel.TryDouble(
+                    settings.Text("VerticalStep"), out verticalStep))
             {
-                AllowSpaces = true,
-                DefaultValue = defaultPrefix,
-                UseDefaultValue = true
-            });
-            if (prefixResult.Status != PromptStatus.OK) return;
-            string prefix = string.IsNullOrWhiteSpace(prefixResult.StringResult)
+                editor.WriteMessage("\nCE_FLREL cancelled. Vertical step must be a number.");
+                return;
+            }
+            int count = settings.Integer("Count", 1);
+            string prefix = string.IsNullOrWhiteSpace(settings.Text("Prefix"))
                 ? defaultPrefix
-                : prefixResult.StringResult.Trim();
+                : settings.Text("Prefix");
+
+            PromptPointResult sideResult = editor.GetPoint(
+                "\nPick the side on which the stepped offsets must be created: ");
+            if (sideResult.Status != PromptStatus.OK) return;
 
             Point3d sidePoint = sideResult.Value.TransformBy(editor.CurrentUserCoordinateSystem);
             double sign;
@@ -155,35 +143,13 @@ namespace CETools.Civil3D
                     EnsureEditable(source, transaction);
                     using (Polyline plan = BuildPlanPolyline(source))
                     {
-                        sign = ResolveOffsetSign(plan, horizontalResult.Value, sidePoint);
+                        sign = ResolveOffsetSign(plan, horizontalStep, sidePoint);
                     }
                 }
             }
             catch (System.Exception exception)
             {
                 editor.WriteMessage("\nCE_FLREL cancelled while preparing the offset. " + exception.Message);
-                return;
-            }
-
-            editor.WriteMessage(
-                "\nCE_FLREL preview: offsets={0}; horizontal step={1:N3}; vertical step={2:N3}; side={3}.",
-                countResult.Value,
-                horizontalResult.Value,
-                verticalResult.Value,
-                sign > 0.0 ? "Left" : "Right");
-            for (int index = 1; index <= countResult.Value; index++)
-            {
-                editor.WriteMessage(
-                    "\n  {0}-{1}: horizontal={2:N3}; vertical={3:N3}",
-                    prefix,
-                    index,
-                    sign * horizontalResult.Value * index,
-                    verticalResult.Value * index);
-            }
-
-            if (!Confirm(editor, "Create these linked stepped-offset feature lines"))
-            {
-                editor.WriteMessage("\nCE_FLREL cancelled. No feature lines were created.");
                 return;
             }
 
@@ -204,10 +170,10 @@ namespace CETools.Civil3D
                         modelSpace.AppendEntity(plan);
                         transaction.AddNewlyCreatedDBObject(plan, true);
 
-                        for (int index = 1; index <= countResult.Value; index++)
+                        for (int index = 1; index <= count; index++)
                         {
-                            double horizontal = sign * horizontalResult.Value * index;
-                            double vertical = verticalResult.Value * index;
+                            double horizontal = sign * horizontalStep * index;
+                            double vertical = verticalStep * index;
                             string name = UniqueName(
                                 prefix + "-" + index.ToString(CultureInfo.InvariantCulture), names);
                             ObjectId childId = CreateChild(
@@ -240,7 +206,7 @@ namespace CETools.Civil3D
                 }
 
                 editor.WriteMessage(
-                    "\nCE_FLREL complete. Linked feature lines created: {0}. Run CE_FLRELUPDATE after changing the source.",
+                    "\nCE_FLREL complete. Linked feature lines created: {0}. Automatic linked refresh is enabled; CE_FLRELUPDATE also rebuilds this complete source set on demand.",
                     created);
             }
             catch (System.Exception exception)
@@ -290,22 +256,6 @@ namespace CETools.Civil3D
             if (children.Count == 0)
             {
                 editor.WriteMessage("\nNo linked stepped-offset feature lines were found.");
-                return;
-            }
-
-            editor.WriteMessage("\nCE_FLRELUPDATE preview: linked children={0}.", children.Count);
-            foreach (ChildRecord child in children.OrderBy(item => item.Relation.Sequence))
-            {
-                editor.WriteMessage(
-                    "\n  {0}: horizontal={1:N3}; vertical={2:N3}",
-                    child.Name,
-                    child.Relation.HorizontalOffset,
-                    child.Relation.VerticalOffset);
-            }
-
-            if (!Confirm(editor, "Refresh all linked feature lines from this source"))
-            {
-                editor.WriteMessage("\nCE_FLRELUPDATE cancelled. No feature lines were changed.");
                 return;
             }
 

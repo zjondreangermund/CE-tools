@@ -37,10 +37,11 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Feature Line Construction",
-                "Create siteless feature lines and maintain surface/elevation points.",
+                "Create and heal feature lines, then maintain surface/elevation points.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction("Create from objects", "CE_FLCREATE", "Convert supported lines, arcs and polylines to feature lines.", "01 Create"),
+                    new DisciplineWorkflowAction("Heal stepped feature lines", "CE_FLSTEPJOIN", "Auto-order stepped pieces, close small gaps and preserve every piece endpoint as a vertex.", "01 Create"),
                     new DisciplineWorkflowAction("Assign surface elevations", "CE_FLSURFACE", "Set feature-line elevations from a selected Civil 3D surface.", "02 Elevations"),
                     new DisciplineWorkflowAction("Insert elevation point", "CE_FLINSERT", "Insert an interpolated or specified elevation point.", "03 Edit Points"),
                     new DisciplineWorkflowAction("Delete elevation point", "CE_FLDELETE", "Remove a selected removable elevation point with confirmation.", "03 Edit Points")

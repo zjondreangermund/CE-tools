@@ -370,8 +370,9 @@ namespace CETools.Civil3D
                         Cmd("Delete Elevation Point", "CE_FLDELETE ", "Delete a confirmed elevation point."),
                         Cmd("Weed Elevation Points", "CE_FLWEED ", "Remove redundant elevation points."),
                         Cmd("Linked Stepped Offset", "CE_FLREL ", "Create, update, inspect or detach linked stepped offsets."),
-                        Cmd("Create Linked Offset", "CE_FLRELCREATE ", "Create relative stepped-offset feature lines."),
-                        Cmd("Update Linked Offsets", "CE_FLRELUPDATE ", "Refresh linked offsets from their source."),
+                        Cmd("Create Linked Offset Set", "CE_FLRELCREATE ", "Create multiple stepped offsets linked to one source feature line with automatic refresh."),
+                        Cmd("Heal Stepped Feature Lines", "CE_FLSTEPJOIN ", "Close small endpoint gaps and create one feature line while preserving piece endpoints as vertices."),
+                        Cmd("Update Linked Offset Set", "CE_FLRELUPDATE ", "Select the source or any child and immediately refresh the complete linked offset set."),
                         Cmd("Linked Offset Information", "CE_FLRELINFO ", "Report a linked offset relationship."),
                         Cmd("Detach Linked Offset", "CE_FLRELDETACH ", "Keep geometry but remove the CE relationship.")),
                     Menu(
