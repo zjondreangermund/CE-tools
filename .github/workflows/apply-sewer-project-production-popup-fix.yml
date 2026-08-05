@@ -23,6 +23,9 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Repair integration matcher
+        run: python3 scripts/Repair-SewerProjectProductionPatch.py
+
       - name: Apply source repairs
         run: python3 scripts/Apply-SewerProjectProductionPopupFix.py
 
