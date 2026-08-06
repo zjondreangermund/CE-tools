@@ -88,6 +88,9 @@ jobs:
       - name: Validate dynamic COGO vertex and sewer links
         run: python3 scripts/Validate-DynamicCogoVertexSewerLinks.py
 
+      - name: Validate final remaining comment completion
+        run: python3 scripts/Validate-FinalCommentCompletion.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
