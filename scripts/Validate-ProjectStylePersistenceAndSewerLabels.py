@@ -42,6 +42,9 @@ required = {
         "DocumentActivated += OnDocumentActivated",
         "PROJECT_STYLE_SELECTION_",
         "SynchronizeDisciplineSettings",
+        "document.LockDocument()",
+        'GetSystemVariable("CMDNAMES")',
+        'GetSystemVariable("CMDACTIVE")',
     ),
     LABEL_COMMANDS: (
         "SewerLabelStyleSyncCommands.ApplySelectedStyles(document);",
@@ -57,9 +60,7 @@ required = {
         '"LabelLocation", "Location"',
         "ResolveOverlaps(document)",
         "ApplyPipeLabelPresentation(value, transaction);",
-        "GetTextComponentIds",
-        "SetTextComponentOverride",
-        '" m\\\\P@ "',
+        "SewerPlanLabelRuntimeManager.ConfigureLabel(label, transaction);",
     ),
     RESET: (
         '"CE_DRAWINGRESETALL"',
@@ -95,6 +96,6 @@ if errors:
 
 print(
     "Project style persistence and sewer labels passed: cross-drawing presets, "
-    "opening choice popup, existing-label style synchronization, three-line "
-    "pipe presentation, overlap cleanup and protected drawing reset are wired."
+    "quiescent locked preset application, existing-label style synchronization, "
+    "selected Civil label presentation, bounded overlap cleanup and protected drawing reset are wired."
 )
