@@ -2,7 +2,6 @@
 """Validate the complete final screenshot comment batch before a Civil 3D build."""
 
 from pathlib import Path
-import re
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC = ROOT / "src" / "CE.Tools.Civil3D"
@@ -170,19 +169,9 @@ for command in (
 ):
     require(ribbon, command, f"ribbon command {command}")
 
-# Prevent accidental duplicate CommandMethod declarations.
-command_pattern = re.compile(r'\[CommandMethod\([^\]]*?"(CE_[A-Z0-9_]+)"', re.S)
-commands = []
-for path in SRC.glob("*.cs"):
-    commands.extend((match.group(1), path.name) for match in command_pattern.finditer(path.read_text(encoding="utf-8")))
-duplicates = {}
-for command, filename in commands:
-    duplicates.setdefault(command, []).append(filename)
-duplicates = {key: value for key, value in duplicates.items() if len(value) > 1}
-if duplicates:
-    formatted = "; ".join(f"{key}: {', '.join(value)}" for key, value in sorted(duplicates.items()))
-    raise SystemExit("Duplicate CE command declarations found: " + formatted)
-
+# Command uniqueness is intentionally delegated to the repository's dedicated
+# Validate-CommandRegistry.py, which correctly understands both CommandMethod
+# overloads and command groups.
 print(
     "Pre-build runtime completion validation passed: curve conversion, bounded dynamic annotations, "
     "saved-style locking, COGO visibility, collision-safe sewer resequencing, plan-readable Civil labels, "
