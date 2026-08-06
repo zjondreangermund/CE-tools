@@ -15,7 +15,7 @@ old = '''def regex_once(path: Path, pattern: str, replacement: str) -> None:
 new = '''def regex_once(path: Path, pattern: str, replacement: str) -> None:
     text = read(path)
     candidates = [pattern]
-    normalized = pattern.replace("\\\\", "\\")
+    normalized = pattern.encode("utf-8").decode("unicode_escape")
     if normalized != pattern:
         candidates.append(normalized)
     for candidate in candidates:
