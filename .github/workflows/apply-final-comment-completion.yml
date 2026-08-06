@@ -53,10 +53,9 @@ jobs:
                   src/CE.Tools.Civil3D/RoadProductionCommentCommands.cs \
                   src/CE.Tools.Civil3D/ProductionCommentCommands.cs \
                   src/CE.Tools.Civil3D/CurveConversionCommands.cs \
-                  scripts/Validate-FinalCommentCompletion.py \
-                  .github/workflows/core-tests.yml
+                  scripts/Validate-FinalCommentCompletion.py
           if git diff --cached --quiet; then
-            echo "No integration changes remain."
+            echo "No source integration changes remain."
             exit 0
           fi
           git commit -m "Wire final remaining CE Tools comments"
