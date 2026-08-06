@@ -1,9 +1,6 @@
 name: Apply Pre-Build Runtime Completion
 
 on:
-  push:
-    branches:
-      - agent/finish-prebuild-runtime-comments
   pull_request:
     branches:
       - main
@@ -14,7 +11,7 @@ permissions:
 
 jobs:
   integrate:
-    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     steps:
       - name: Check out completion branch
@@ -99,5 +96,4 @@ jobs:
             exit 0
           fi
           git commit -m "Finish all runtime comments before Civil 3D build"
-          git pull --rebase origin agent/finish-prebuild-runtime-comments
           git push origin HEAD:agent/finish-prebuild-runtime-comments
