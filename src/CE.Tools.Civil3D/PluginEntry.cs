@@ -26,12 +26,16 @@ namespace CETools.Civil3D
             CommandUsageTracker.Initialize();
             FloatingToolsCommands.Initialize();
             ProjectStylePresetManager.Initialize();
+            CogoPointProjectStyleManager.Initialize();
+            SewerNetworkDynamicSequenceManager.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
 
         public void Terminate()
         {
             AcApplication.Idle -= OnApplicationIdle;
+            SewerNetworkDynamicSequenceManager.Terminate();
+            CogoPointProjectStyleManager.Terminate();
             ProjectStylePresetManager.Terminate();
             FloatingToolsCommands.Terminate();
             CommandUsageTracker.Terminate();
@@ -235,6 +239,8 @@ namespace CETools.Civil3D
                         Cmd("Import Source Styles", "CE_PROJECTSTYLEIMPORT ", "Import Civil 3D styles from the three supplied source drawings or another DWG/DWT."),
                         Cmd("Project Style Centre", "CE_PROJECTSTYLES ", "Select alignment, profile, corridor, point and network styles."),
                         Cmd("Project Style Information", "CE_PROJECTSTYLEINFO ", "Review stored project style selections."),
+                        Cmd("Save Project Styles for Other Drawings", "CE_PROJECTSTYLESAVE ", "Save the current discipline selections as the reusable CE project preset."),
+                        Cmd("Apply Saved Project Styles", "CE_PROJECTSTYLEAPPLY ", "Apply the reusable saved project styles to the active drawing."),
                         Cmd("Clear Project Styles", "CE_PROJECTSTYLECLEAR ", "Clear only the stored project style selections.")),
                     Menu(
                         "CE_TOOLS_UNDO_MENU",
@@ -280,10 +286,12 @@ namespace CETools.Civil3D
                         Cmd("Linked Coordinate Cross", "CE_COORDCROSS2 ", "Choose COGO point, cross, annotation and linked register output."),
                         Cmd("Create Linked Coordinate Table", "CE_COORDTABLE2 ", "Create a compact linked Y-X-Z table from selected COGO or AutoCAD points."),
                         Cmd("Refresh Linked Coordinate Table", "CE_COORDREFRESH ", "Refresh table rows from the current linked source-point coordinates."),
-                        Cmd("Polyline Vertex Linked Points", "CE_COORDPOLY2 ", "Create sequential COGO points in polyline direction and a linked Point Name, Y, X, Z table."),
+                        Cmd("Polyline Vertex Linked Points", "CE_COORDPOLY2 ", "Open the same dynamic vertex setting-out popup in vertices-only mode."),
                         Cmd("Multi-Source Vertex Setting-Out", "CE_VERTEXSETTINGOUT ", "Create dynamic COGO, MText or MLeader points from multiple polylines and feature lines, including arc centres and long-segment points."),
                         Cmd("Refresh Vertex Setting-Out", "CE_VERTEXSETTINGOUTREFRESH ", "Recalculate linked vertex points, names, coordinates, radius dimensions and table rows."),
-                        Cmd("Export Vertex Setting-Out", "CE_VERTEXSETTINGOUTEXPORT ", "Refresh and export a linked vertex setting-out table to Excel.")),
+                        Cmd("Export Vertex Setting-Out", "CE_VERTEXSETTINGOUTEXPORT ", "Refresh and export a linked vertex setting-out table to Excel."),
+                        Cmd("Synchronize COGO Project Styles", "CE_COGOPOINTSYNC ", "Apply RSA_Circle/Description Only or the saved Project Style Centre point choices to every COGO point."),
+                        Cmd("Resolve COGO Label Overlaps", "CE_COGOOVERLAPFIX ", "Move COGO labels only while keeping survey point coordinates fixed.")),
                     Menu(
                         "CE_TOOLS_SURVEY_UTILITIES_MENU",
                         "Survey\nUtilities",
@@ -532,6 +540,9 @@ namespace CETools.Civil3D
                         Cmd("Sewer Production Tools", "CE_SEWTOOLS ", "Open the complete sewer production menu."),
                         Cmd("Sequence Network", "CE_SEWSEQ ", "Sequence a complete network or selected path."),
                         Cmd("Sequence with Selected Main", "CE_SEWSEQMAIN ", "Select Branch-1 and sequence remaining branches."),
+                        Cmd("Dynamic Resequence Selected Network", "CE_SEWAUTOSEQ ", "Compact Branch/P/MH numbering after deletions or reconnections and refresh linked outputs."),
+                        Cmd("Dynamic Resequence All CE Networks", "CE_SEWAUTOSEQALL ", "Refresh all previously CE-sequenced sewer networks."),
+                        Cmd("Dynamic Resequence Settings", "CE_SEWAUTOSEQSETTINGS ", "Enable or disable automatic topology resequencing."),
                         Cmd("Create / Refresh Pipe and Structure Labels", "CE_SEWLABELS ", "Add the selected Civil 3D plan labels without duplicating existing labels."),
                         Cmd("Create / Refresh Alignments", "CE_SEWALIGN ", "Create branch alignments and labels."),
                         Cmd("Refresh Linked Alignments", "CE_SEWREFRESH ", "Refresh from linked source networks."),

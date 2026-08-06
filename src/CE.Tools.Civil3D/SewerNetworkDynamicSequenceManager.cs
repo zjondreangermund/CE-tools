@@ -288,7 +288,14 @@ namespace CETools.Civil3D
                     pipeId,
                     pipe.StartStructureId,
                     pipe.EndStructureId,
-                    Math.Max(length, 0.001));
+                    Math.Max(length, 0.001),
+                    (pipe.Name ?? string.Empty).StartsWith(
+                        "P1.",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(
+                        pipe.Description,
+                        "Branch-1",
+                        StringComparison.OrdinalIgnoreCase));
                 topology.Edges.Add(edge);
                 topology.Nodes[edge.Start].Edges.Add(edge);
                 topology.Nodes[edge.End].Edges.Add(edge);
@@ -420,43 +427,10 @@ namespace CETools.Civil3D
                     !componentSet.Contains(edge.End)) continue;
                 candidates.Add(edge);
             }
-            candidates = candidates.Where(edge =>
-            {
-                return edge != null && IsBranchOnePipe(edge.Id, topology);
-            }).ToList();
+            candidates = candidates
+                .Where(edge => edge != null && edge.IsBranchOne)
+                .ToList();
             return BuildSimplePath(topology, candidates);
-        }
-
-        private static bool IsBranchOnePipe(
-            ObjectId pipeId,
-            SewerTopology topology)
-        {
-            Database database = pipeId.Database;
-            if (database == null) return false;
-            using (Transaction transaction =
-                database.TransactionManager.StartOpenCloseTransaction())
-            {
-                CivilPipe pipe;
-                try
-                {
-                    pipe = transaction.GetObject(
-                        pipeId,
-                        OpenMode.ForRead,
-                        false) as CivilPipe;
-                }
-                catch
-                {
-                    return false;
-                }
-                return pipe != null &&
-                    ((pipe.Name ?? string.Empty).StartsWith(
-                        "P1.",
-                        StringComparison.OrdinalIgnoreCase) ||
-                     string.Equals(
-                        pipe.Description,
-                        "Branch-1",
-                        StringComparison.OrdinalIgnoreCase));
-            }
         }
 
         private static SewerBranchPath BuildSimplePath(
@@ -862,17 +836,20 @@ namespace CETools.Civil3D
             ObjectId id,
             ObjectId start,
             ObjectId end,
-            double length)
+            double length,
+            bool isBranchOne)
         {
             Id = id;
             Start = start;
             End = end;
             Length = length;
+            IsBranchOne = isBranchOne;
         }
         public ObjectId Id { get; private set; }
         public ObjectId Start { get; private set; }
         public ObjectId End { get; private set; }
         public double Length { get; private set; }
+        public bool IsBranchOne { get; private set; }
         public ObjectId Other(ObjectId node)
         {
             if (node == Start) return End;
@@ -973,6 +950,7 @@ namespace CETools.Civil3D
             if (_database == null) return;
             _database.ObjectModified += OnObjectChanged;
             _database.ObjectAppended += OnObjectChanged;
+            _database.ObjectErased += OnObjectErased;
         }
 
         private static void DetachDatabase()
@@ -981,8 +959,22 @@ namespace CETools.Civil3D
             {
                 _database.ObjectModified -= OnObjectChanged;
                 _database.ObjectAppended -= OnObjectChanged;
+                _database.ObjectErased -= OnObjectErased;
             }
             _database = null;
+        }
+
+        private static void OnObjectErased(
+            object sender,
+            ObjectErasedEventArgs eventArgs)
+        {
+            if (_busy || eventArgs == null || eventArgs.DBObject == null) return;
+            if (eventArgs.DBObject is CivilPipe ||
+                eventArgs.DBObject is CivilStructure ||
+                eventArgs.DBObject is CivilNetwork)
+            {
+                Queue();
+            }
         }
 
         private static void OnObjectChanged(object sender, ObjectEventArgs eventArgs)

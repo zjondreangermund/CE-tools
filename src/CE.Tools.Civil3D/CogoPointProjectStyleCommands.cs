@@ -182,6 +182,50 @@ namespace CETools.Civil3D
             return result;
         }
 
+        internal static void ApplyPointStyles(
+            Database database,
+            CivilDocument civilDocument,
+            Transaction transaction,
+            CivilCogoPoint point)
+        {
+            if (database == null || civilDocument == null ||
+                transaction == null || point == null)
+                return;
+            ProjectStyleSelection selection =
+                ProjectStyleCenterCommands.ReadSelection(database);
+            string requestedPoint = ReadSelection(
+                selection,
+                "Point Style",
+                "RSA_Circle");
+            string requestedLabel = ReadSelection(
+                selection,
+                "Point Label Style",
+                "Description Only");
+            string actual;
+            ObjectId pointStyleId = CivilStyleCatalogV2.ResolveStyleId(
+                database,
+                civilDocument,
+                "Point Style",
+                requestedPoint,
+                transaction,
+                out actual);
+            ObjectId labelStyleId = CivilStyleCatalogV2.ResolveStyleId(
+                database,
+                civilDocument,
+                "Point Label Style",
+                requestedLabel,
+                transaction,
+                out actual);
+            if (!pointStyleId.IsNull)
+            {
+                try { point.StyleId = pointStyleId; } catch { }
+            }
+            if (!labelStyleId.IsNull)
+            {
+                try { point.LabelStyleId = labelStyleId; } catch { }
+            }
+        }
+
         internal static int ResolveOverlaps(Document document)
         {
             if (document == null) return 0;
