@@ -630,7 +630,9 @@ namespace CETools.Civil3D
             // to Branch-3 or rebuilding a reconnected sequence.
             string token = Guid.NewGuid().ToString("N");
             int temporary = 1;
-            foreach (ObjectId pipeId in graph.Pipes.Keys.OrderBy(id => id.Handle.Value))
+            var pipeIds = new List<ObjectId>();
+            foreach (ObjectId pipeId in network.GetPipeIds()) pipeIds.Add(pipeId);
+            foreach (ObjectId pipeId in pipeIds.OrderBy(id => id.Handle.Value))
             {
                 CivilPipe pipe = transaction.GetObject(
                     pipeId,
@@ -640,7 +642,9 @@ namespace CETools.Civil3D
                     pipe.Name = "CE_TMP_PIPE_" + token + "_" +
                         (temporary++).ToString(CultureInfo.InvariantCulture);
             }
-            foreach (ObjectId structureId in graph.Structures.Keys.OrderBy(id => id.Handle.Value))
+            var structureIds = new List<ObjectId>();
+            foreach (ObjectId structureId in network.GetStructureIds()) structureIds.Add(structureId);
+            foreach (ObjectId structureId in structureIds.OrderBy(id => id.Handle.Value))
             {
                 CivilStructure structure = transaction.GetObject(
                     structureId,

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the Civil 3D 2023 compile fixes reported by the Windows build."""
+"""Validate the Civil 3D 2023 compile fixes reported by Windows builds."""
 
 from pathlib import Path
 
@@ -9,6 +9,8 @@ SRC = ROOT / "src" / "CE.Tools.Civil3D"
 cogo = (SRC / "CogoPointProjectStyleCommands.cs").read_text(encoding="utf-8")
 compat = (SRC / "Civil3D2023CompileCompatibility.cs").read_text(encoding="utf-8")
 junction = (SRC / "RoadJunctionCompletionCommands.cs").read_text(encoding="utf-8")
+runtime = (SRC / "PreBuildRuntimeCompletionCommands.cs").read_text(encoding="utf-8")
+sequence = (SRC / "SewerNetworkDynamicSequenceManager.cs").read_text(encoding="utf-8")
 
 errors = []
 
@@ -39,11 +41,32 @@ for path in [
 ]:
     text = path.read_text(encoding="utf-8")
     if ".AddDouble(" in text and "Civil3D2023CompileCompatibility.cs" not in str(path):
-        # The call is valid only because the shared extension must be present.
         if "this ProductionSettingsDialogModel model" not in compat:
             errors.append(path.name + " uses AddDouble without the compatibility extension.")
+
+# Windows build errors from the pre-build runtime completion batch.
+for forbidden, message in [
+    ("label.Database", "ConfigureLabel still accesses Database on an object reference."),
+    ("GetPipeIds()\n                .Concat", "ObjectIdCollection is still passed directly to LINQ Concat."),
+    ("graph.Pipes.Keys", "Sewer resequencing still references the removed graph.Pipes collection."),
+    ("graph.Structures.Keys", "Sewer resequencing still references the removed graph.Structures collection."),
+]:
+    if forbidden in runtime or forbidden in sequence:
+        errors.append(message)
+
+for marker, message in [
+    ("DBObject databaseObject = label as DBObject;", "DBObject cast for label database access is missing."),
+    ("var partIds = new List<ObjectId>();", "Explicit profile-view part ID list is missing."),
+    ("var pipeIds = new List<ObjectId>();", "Explicit sewer pipe ID list is missing."),
+    ("var structureIds = new List<ObjectId>();", "Explicit sewer structure ID list is missing."),
+]:
+    if marker not in runtime and marker not in sequence:
+        errors.append(message)
 
 if errors:
     raise SystemExit("\n".join(errors))
 
-print("Civil 3D 2023 compile hotfix validation passed: zero vector, numeric popup fields and angle results are compatible.")
+print(
+    "Civil 3D 2023 compile hotfix validation passed: zero vector, numeric popup fields, "
+    "angle results, DBObject database access, ObjectId collections and sewer temporary naming are compatible."
+)
