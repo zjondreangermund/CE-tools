@@ -60,6 +60,7 @@ namespace CETools.Civil3D
         private static bool _initialised;
         private static bool _pending;
         private static bool _busy;
+        private static bool _undoRedoActive;
         private static DateTime _lastChangeUtc = DateTime.MinValue;
         private static DateTime _lastRefreshUtc = DateTime.MinValue;
 
@@ -92,18 +93,31 @@ namespace CETools.Civil3D
 
         internal static void Queue()
         {
-            if (_busy) return;
+            if (_busy || _undoRedoActive) return;
             _pending = true;
             _lastChangeUtc = DateTime.UtcNow;
         }
 
         internal static UniversalRefreshResult RefreshNow(Document document)
         {
+            return RefreshNow(document, false);
+        }
+
+        private static UniversalRefreshResult RefreshNow(
+            Document document,
+            bool suppressUndoRecording)
+        {
             var result = new UniversalRefreshResult();
-            if (document == null || _busy) return result;
+            if (document == null || _busy || _undoRedoActive) return result;
+            bool undoRecordingDisabled = false;
             _busy = true;
             try
             {
+                if (suppressUndoRecording)
+                {
+                    document.Database.DisableUndoRecording(true);
+                    undoRecordingDisabled = true;
+                }
                 try
                 {
                     LinkedRefreshEngine.Refresh(document, false);
@@ -127,6 +141,11 @@ namespace CETools.Civil3D
             }
             finally
             {
+                if (undoRecordingDisabled)
+                {
+                    try { document.Database.DisableUndoRecording(false); }
+                    catch { }
+                }
                 _busy = false;
             }
             return result;
@@ -152,6 +171,8 @@ namespace CETools.Civil3D
             _database.ObjectModified += OnObjectChanged;
             _database.ObjectAppended += OnObjectChanged;
             _database.ObjectErased += OnObjectErased;
+            _document.CommandWillStart += OnCommandWillStart;
+            _document.CommandWillStart += OnCommandWillStart;
             _document.CommandEnded += OnCommandEnded;
             _document.CommandCancelled += OnCommandEnded;
             _document.CommandFailed += OnCommandEnded;
@@ -168,18 +189,40 @@ namespace CETools.Civil3D
             }
             if (_document != null)
             {
+                _document.CommandWillStart -= OnCommandWillStart;
+                _document.CommandWillStart -= OnCommandWillStart;
                 _document.CommandEnded -= OnCommandEnded;
                 _document.CommandCancelled -= OnCommandEnded;
                 _document.CommandFailed -= OnCommandEnded;
             }
             _database = null;
             _document = null;
+            _undoRedoActive = false;
+        }
+
+        private static void OnCommandWillStart(object sender, CommandEventArgs e)
+        {
+            if (_busy || e == null) return;
+            string command = NormalizeCommand(e.GlobalCommandName);
+            if (!IsUndoRedo(command)) return;
+            _undoRedoActive = true;
+            _pending = false;
         }
 
         private static void OnCommandEnded(object sender, CommandEventArgs e)
         {
             if (_busy || e == null) return;
-            string command = (e.GlobalCommandName ?? string.Empty).Trim().TrimStart('.', '_');
+            string command = NormalizeCommand(e.GlobalCommandName);
+            if (IsUndoRedo(command))
+            {
+                // Object events raised while AutoCAD is undoing must not queue a
+                // background CE refresh, otherwise the refresh becomes a new
+                // undo item immediately after the user's undo.
+                _undoRedoActive = false;
+                _pending = false;
+                _lastChangeUtc = DateTime.UtcNow;
+                return;
+            }
             if (command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
                 command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase) ||
                 command.IndexOf("GRIP", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -188,9 +231,24 @@ namespace CETools.Civil3D
                 Queue();
         }
 
+        private static string NormalizeCommand(string value)
+        {
+            return (value ?? string.Empty).Trim().TrimStart('.', '_').ToUpperInvariant();
+        }
+
+        private static bool IsUndoRedo(string command)
+        {
+            return string.Equals(command, "U", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "UNDO", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "REDO", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "MREDO", StringComparison.OrdinalIgnoreCase) ||
+                command.IndexOf("UNDO", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                command.IndexOf("REDO", StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
         private static void OnObjectChanged(object sender, ObjectEventArgs e)
         {
-            if (_busy || e == null || e.DBObject == null) return;
+            if (_busy || _undoRedoActive || e == null || e.DBObject == null) return;
             DBObject value = e.DBObject;
             if (value is Entity || value is Xrecord || value is DBDictionary ||
                 value is CogoPoint || value is Pipe || value is Structure ||
@@ -200,7 +258,7 @@ namespace CETools.Civil3D
 
         private static void OnObjectErased(object sender, ObjectErasedEventArgs e)
         {
-            if (_busy || e == null || e.DBObject == null) return;
+            if (_busy || _undoRedoActive || e == null || e.DBObject == null) return;
             Queue();
         }
 
@@ -208,12 +266,13 @@ namespace CETools.Civil3D
         {
             Document active = AcApplication.DocumentManager.MdiActiveDocument;
             Attach(active);
-            if (!Enabled || !_pending || _busy || active == null) return;
+            if (!Enabled || !_pending || _busy || _undoRedoActive || active == null) return;
             if ((DateTime.UtcNow - _lastChangeUtc).TotalSeconds < DelaySeconds) return;
             if ((DateTime.UtcNow - _lastRefreshUtc).TotalSeconds < 0.75) return;
             string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(commands)) return;
-            RefreshNow(active);
+            // Idle/background refresh must not create an undo item.
+            RefreshNow(active, true);
         }
     }
 

@@ -94,6 +94,9 @@ jobs:
       - name: Validate Civil 3D 2023 compile hotfix
         run: python3 scripts/Validate-Civil3D2023CompileHotfix.py
 
+      - name: Validate AutoCAD undo stack isolation
+        run: python3 scripts/Validate-UndoGroupPollutionHotfix.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
