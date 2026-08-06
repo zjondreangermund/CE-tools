@@ -24,7 +24,7 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Align patch with current sequence method
+      - name: Align patch with current sequence source
         run: |
           python3 - <<'PY'
           from pathlib import Path
@@ -37,6 +37,22 @@ jobs:
           text = text.replace(
               "'''            int pipes = 0;\n            int structures = 0;\n            // Civil 3D enforces unique part names immediately.",
               "'''            var namedStructures = new HashSet<ObjectId>();\n            // Civil 3D enforces unique part names immediately.",
+          )
+          text = text.replace(
+              "'''        internal static void Queue()\n        {\n            _pending = true;\n            _lastChangeUtc = DateTime.UtcNow;\n        }'''",
+              "'''        public static void Queue()\n        {\n            _pending = true;\n            _lastChangeUtc = DateTime.UtcNow;\n        }'''",
+          )
+          text = text.replace(
+              "'''        internal static void Queue()\n        {\n            _pending = true;\n            _lastChangeUtc = DateTime.UtcNow;\n            UniversalDynamicRefreshManager.Queue();\n        }'''",
+              "'''        public static void Queue()\n        {\n            _pending = true;\n            _lastChangeUtc = DateTime.UtcNow;\n            UniversalDynamicRefreshManager.Queue();\n        }'''",
+          )
+          text = text.replace(
+              "'''            if (!_pending || _busy || document == null) return;\n            if ((DateTime.UtcNow - _lastChangeUtc).TotalMilliseconds < 1200.0) return;'''",
+              "'''            if (!Enabled || !_pending || _busy || document == null) return;\n            if ((DateTime.UtcNow - _lastChangeUtc).TotalMilliseconds < 1100.0)\n                return;'''",
+          )
+          text = text.replace(
+              "'''            if (!_pending || _busy || document == null) return;\n            if (UniversalDynamicRefreshManager.Enabled)",
+              "'''            if (!Enabled || !_pending || _busy || document == null) return;\n            if (UniversalDynamicRefreshManager.Enabled)",
           )
           path.write_text(text, encoding="utf-8")
           PY
