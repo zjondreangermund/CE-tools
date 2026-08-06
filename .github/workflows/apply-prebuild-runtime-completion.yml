@@ -24,6 +24,23 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Align patch with current sequence method
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("scripts/Apply-PreBuildRuntimeCompletion.py")
+          text = path.read_text(encoding="utf-8")
+          text = text.replace(
+              "'''            int pipes = 0;\n            int structures = 0;\n            for (int branchIndex = 0; branchIndex < branches.Count; branchIndex++)'''",
+              "'''            var namedStructures = new HashSet<ObjectId>();\n            for (int branchIndex = 0; branchIndex < branches.Count; branchIndex++)'''",
+          )
+          text = text.replace(
+              "'''            int pipes = 0;\n            int structures = 0;\n            // Civil 3D enforces unique part names immediately.",
+              "'''            var namedStructures = new HashSet<ObjectId>();\n            // Civil 3D enforces unique part names immediately.",
+          )
+          path.write_text(text, encoding="utf-8")
+          PY
+
       - name: Apply final runtime integration
         run: |
           python3 scripts/Apply-PreBuildRuntimeCompletion.py
