@@ -57,7 +57,10 @@ required = {
         "ELEVHANDLE=",
         "SRC=",
         "CogoPointProjectStyleCommands.ApplyPointStyles(",
-        "leader.ArrowSymbolId = ObjectId.Null;",
+        "database.Dimblk.IsNull",
+        "? ObjectId.Null",
+        ": database.Dimblk",
+        "SetClosedFilledDimensionArrow",
         "table.Columns[1].Width",
         "CellAlignment.MiddleCenter",
     ),
@@ -132,6 +135,6 @@ if errors:
 
 print(
     "Dynamic COGO/vertex/sewer validation passed: saved point styles, point-safe "
-    "overlap, shared vertex popup, linked Z references, closed-filled leaders, "
-    "table spacing and automatic sewer branch compaction are wired."
+    "overlap, shared vertex popup, linked Z references, configured closed-filled "
+    "leaders/dimensions, table spacing and automatic sewer branch compaction are wired."
 )

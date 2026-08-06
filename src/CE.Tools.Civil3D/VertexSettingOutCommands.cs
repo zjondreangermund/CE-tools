@@ -127,6 +127,18 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "Offset", "03 Annotation", "MText/MLeader offset", 3.0,
                 "Drawing-unit offset from each setting-out point to its annotation.");
+            settings.AddChoice(
+                "CoordinateOrder", "04 Coordinate Display", "Coordinate order", "X then Y",
+                "Change only the annotation and table display order. The true drawing coordinates remain unchanged.",
+                new[] { "X then Y", "Y then X" });
+            settings.AddChoice(
+                "XSign", "04 Coordinate Display", "Displayed X sign", "Keep X sign",
+                "Keep or reverse the displayed X sign without changing the COGO point or source geometry.",
+                new[] { "Keep X sign", "Reverse X sign" });
+            settings.AddChoice(
+                "YSign", "04 Coordinate Display", "Displayed Y sign", "Keep Y sign",
+                "Keep or reverse the displayed Y sign without changing the COGO point or source geometry.",
+                new[] { "Keep Y sign", "Reverse Y sign" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             string outputType = settings.Text("Output");
@@ -137,6 +149,9 @@ namespace CETools.Civil3D
             double labelOffset = settings.Double("Offset", 3.0);
             string generationMode = settings.Text("Generation");
             string elevationMode = settings.Text("Elevation");
+            string coordinateOrder = settings.Text("CoordinateOrder");
+            string xSign = settings.Text("XSign");
+            string ySign = settings.Text("YSign");
             ObjectId elevationSourceId;
             if (!PromptElevationSource(
                     document,
@@ -201,6 +216,9 @@ namespace CETools.Civil3D
                 LabelOffset = labelOffset,
                 GenerationMode = generationMode,
                 ElevationMode = elevationMode,
+                CoordinateOrder = coordinateOrder,
+                XSign = xSign,
+                YSign = ySign,
                 ElevationSourceHandle = elevationSourceId.IsNull
                     ? string.Empty
                     : elevationSourceId.Handle.ToString(),
@@ -218,6 +236,7 @@ namespace CETools.Civil3D
                     tablePoint.Value,
                     annotation.TextHeight);
                 document.Editor.SetImpliedSelection(new[] { tableId });
+                RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);
                 document.Editor.Regen();
                 document.Editor.WriteMessage(
                     "\nCE_VERTEXSETTINGOUT complete. Sources={0}; points={1}; radius dimensions={2}; linked table handle={3}.",
@@ -248,6 +267,7 @@ namespace CETools.Civil3D
                 int points;
                 int dimensions;
                 RefreshTable(document, selected.ObjectId, out points, out dimensions);
+                RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);
                 document.Editor.Regen();
                 document.Editor.WriteMessage(
                     "\nCE_VERTEXSETTINGOUTREFRESH complete. Points={0}; radius dimensions={1}.",
@@ -360,7 +380,7 @@ namespace CETools.Civil3D
                 ObjectId tableId = modelSpace.AppendEntity(table);
                 transaction.AddNewlyCreatedDBObject(table, true);
                 WriteTableLink(table, transaction, link);
-                PopulateTable(table, records, textHeight, link.OutputType);
+                PopulateTable(table, records, textHeight, link);
                 transaction.Commit();
                 return tableId;
             }
@@ -450,7 +470,7 @@ namespace CETools.Civil3D
                 foreach (KeyValuePair<string, ObjectId> stale in dimensions)
                     if (!liveDimensionKeys.Contains(stale.Key)) EraseIfPossible(transaction, stale.Value);
 
-                PopulateTable(table, records, textHeight, link.OutputType);
+                PopulateTable(table, records, textHeight, link);
                 transaction.Commit();
                 pointCount = records.Count;
                 dimensionCount = liveDimensionKeys.Count;
@@ -510,12 +530,16 @@ namespace CETools.Civil3D
                 var leader = new MLeader();
                 leader.SetDatabaseDefaults(database);
                 leader.MLeaderStyle = database.MLeaderstyle;
-                leader.ArrowSymbolId = ObjectId.Null;
+                // ObjectId.Null is AutoCAD's native closed-filled arrow. Use the
+                // drawing's configured dimension arrow when one is available.
+                leader.ArrowSymbolId = database.Dimblk.IsNull
+                    ? ObjectId.Null
+                    : database.Dimblk;
                 leader.ContentType = ContentType.MTextContent;
                 var text = new MText();
                 text.SetDatabaseDefaults(database);
                 text.TextHeight = textHeight;
-                text.Contents = LabelText(record);
+                text.Contents = LabelText(record, link);
                 Point3d location = OutputLocation(record, link.LabelOffset);
                 text.Location = location;
                 leader.MText = text;
@@ -534,7 +558,7 @@ namespace CETools.Civil3D
             mtext.Location = OutputLocation(record, link.LabelOffset);
             mtext.Attachment = AttachmentPoint.BottomLeft;
             mtext.TextHeight = textHeight;
-            mtext.Contents = LabelText(record);
+            mtext.Contents = LabelText(record, link);
             PaperAnnotationScale.SetAnnotative(mtext);
             ObjectId textId = modelSpace.AppendEntity(mtext);
             transaction.AddNewlyCreatedDBObject(mtext, true);
@@ -579,7 +603,7 @@ namespace CETools.Civil3D
                 CaptureCurrentAnnotationOffset(transaction, id, record);
                 mtext.Location = OutputLocation(record, link.LabelOffset);
                 mtext.TextHeight = textHeight;
-                mtext.Contents = LabelText(record);
+                mtext.Contents = LabelText(record, link);
                 WriteOutputLink(
                     mtext, transaction, link.GroupId, record.Key, record.Point);
                 return true;
@@ -606,6 +630,7 @@ namespace CETools.Civil3D
                 string.Empty,
                 database.Dimstyle);
             radial.SetDatabaseDefaults(database);
+            SetClosedFilledDimensionArrow(radial, database);
             PaperAnnotationScale.SetAnnotative(radial);
             ObjectId id = modelSpace.AppendEntity(radial);
             transaction.AddNewlyCreatedDBObject(radial, true);
@@ -633,6 +658,7 @@ namespace CETools.Civil3D
             radial.Center = dimension.Center;
             radial.ChordPoint = dimension.ChordPoint;
             radial.LeaderLength = Math.Max(textHeight * 3.0, dimension.Radius * 0.15);
+            SetClosedFilledDimensionArrow(radial, radial.Database);
             return true;
         }
 
@@ -640,7 +666,7 @@ namespace CETools.Civil3D
             Table table,
             IList<VertexSettingRecord> records,
             double textHeight,
-            string outputType)
+            VertexSettingLink link)
         {
             table.SetSize(records.Count + 2, 9);
             table.SetRowHeight(Math.Max(textHeight * 1.8, 0.001));
@@ -649,11 +675,18 @@ namespace CETools.Civil3D
             table.Columns[1].Width = Math.Max(textHeight * 18.0, 0.001);
             table.Columns[2].Width = Math.Max(textHeight * 14.0, 0.001);
             table.Columns[8].Width = Math.Max(textHeight * 12.0, 0.001);
-            table.Cells[0, 0].TextString = "CE VERTEX SETTING-OUT - " + outputType.ToUpperInvariant();
+            table.Cells[0, 0].TextString = "CE VERTEX SETTING-OUT - " + (link.OutputType ?? string.Empty).ToUpperInvariant();
             table.MergeCells(CellRange.Create(table, 0, 0, 0, 8));
+            bool yFirst = string.Equals(
+                link.CoordinateOrder,
+                "Y then X",
+                StringComparison.OrdinalIgnoreCase);
             string[] headings =
             {
-                "POINT NAME", "TYPE", "SOURCE", "SEGMENT", "X", "Y", "Z", "RADIUS", "SEGMENT LENGTH"
+                "POINT NAME", "TYPE", "SOURCE", "SEGMENT",
+                yFirst ? "Y" : "X",
+                yFirst ? "X" : "Y",
+                "Z", "RADIUS", "SEGMENT LENGTH"
             };
             for (int column = 0; column < headings.Length; column++)
                 table.Cells[1, column].TextString = headings[column];
@@ -666,8 +699,12 @@ namespace CETools.Civil3D
                 table.Cells[row, 1].TextString = record.Kind;
                 table.Cells[row, 2].TextString = record.SourceName;
                 table.Cells[row, 3].TextString = record.SegmentIndex.ToString(CultureInfo.InvariantCulture);
-                table.Cells[row, 4].TextString = record.Point.X.ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[row, 5].TextString = record.Point.Y.ToString("N3", CultureInfo.CurrentCulture);
+                double displayX = DisplayX(record.Point, link);
+                double displayY = DisplayY(record.Point, link);
+                table.Cells[row, 4].TextString = (yFirst ? displayY : displayX)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+                table.Cells[row, 5].TextString = (yFirst ? displayX : displayY)
+                    .ToString("N3", CultureInfo.CurrentCulture);
                 table.Cells[row, 6].TextString = record.Point.Z.ToString("N3", CultureInfo.CurrentCulture);
                 table.Cells[row, 7].TextString = record.Radius.HasValue
                     ? record.Radius.Value.ToString("N3", CultureInfo.CurrentCulture)
@@ -686,14 +723,75 @@ namespace CETools.Civil3D
             table.GenerateLayout();
         }
 
-        private static string LabelText(VertexSettingRecord record)
+        private static string LabelText(
+            VertexSettingRecord record,
+            VertexSettingLink link)
         {
+            double displayX = DisplayX(record.Point, link);
+            double displayY = DisplayY(record.Point, link);
+            bool yFirst = string.Equals(
+                link.CoordinateOrder,
+                "Y then X",
+                StringComparison.OrdinalIgnoreCase);
+            string first = (yFirst ? "Y=" : "X=") +
+                (yFirst ? displayY : displayX)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+            string second = (yFirst ? "X=" : "Y=") +
+                (yFirst ? displayX : displayY)
+                    .ToString("N3", CultureInfo.CurrentCulture);
             return string.Join(
                 "\\P",
                 record.PointName,
-                "X=" + record.Point.X.ToString("N3", CultureInfo.CurrentCulture),
-                "Y=" + record.Point.Y.ToString("N3", CultureInfo.CurrentCulture),
+                first,
+                second,
                 "Z=" + record.Point.Z.ToString("N3", CultureInfo.CurrentCulture));
+        }
+
+        private static double DisplayX(
+            Point3d point,
+            VertexSettingLink link)
+        {
+            return string.Equals(
+                link.XSign,
+                "Reverse X sign",
+                StringComparison.OrdinalIgnoreCase)
+                ? -point.X
+                : point.X;
+        }
+
+        private static double DisplayY(
+            Point3d point,
+            VertexSettingLink link)
+        {
+            return string.Equals(
+                link.YSign,
+                "Reverse Y sign",
+                StringComparison.OrdinalIgnoreCase)
+                ? -point.Y
+                : point.Y;
+        }
+
+        private static void SetClosedFilledDimensionArrow(
+            Dimension dimension,
+            Database database)
+        {
+            if (dimension == null || database == null) return;
+            ObjectId arrow = database.Dimblk.IsNull
+                ? ObjectId.Null
+                : database.Dimblk;
+            foreach (string name in new[] { "Dimblk", "Dimblk1", "Dimblk2" })
+            {
+                try
+                {
+                    PropertyInfo property = dimension.GetType().GetProperty(
+                        name,
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (property == null || !property.CanWrite ||
+                        property.PropertyType != typeof(ObjectId)) continue;
+                    property.SetValue(dimension, arrow, null);
+                }
+                catch { }
+            }
         }
 
         private static Point3d LabelLocation(Point3d point, double offset)
@@ -707,6 +805,9 @@ namespace CETools.Civil3D
         {
             Vector3d offset = record.AnnotationOffset ??
                 new Vector3d(defaultOffset, defaultOffset, 0.0);
+            double maximum = Math.Max(defaultOffset * 5.0, defaultOffset);
+            if (offset.Length > maximum)
+                offset = offset.GetNormal() * maximum;
             return record.Point + offset;
         }
 
@@ -1011,6 +1112,15 @@ namespace CETools.Civil3D
             values.Add(new TypedValue(
                 (int)DxfCode.ExtendedDataAsciiString,
                 "ELEVHANDLE=" + (link.ElevationSourceHandle ?? string.Empty)));
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
+                "ORDER=" + (link.CoordinateOrder ?? "X then Y")));
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
+                "XSIGN=" + (link.XSign ?? "Keep X sign")));
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
+                "YSIGN=" + (link.YSign ?? "Keep Y sign")));
             foreach (string handle in link.SourceHandles)
                 values.Add(new TypedValue(
                     (int)DxfCode.ExtendedDataAsciiString,
@@ -1036,6 +1146,9 @@ namespace CETools.Civil3D
                 GenerationMode = "Engineering setting-out points",
                 ElevationMode = "Source geometry",
                 ElevationSourceHandle = string.Empty,
+                CoordinateOrder = "X then Y",
+                XSign = "Keep X sign",
+                YSign = "Keep Y sign",
                 SourceHandles = new List<string>()
             };
             for (int index = 8; index < values.Length; index++)
@@ -1048,6 +1161,12 @@ namespace CETools.Civil3D
                     link.ElevationMode = value.Substring(5);
                 else if (value.StartsWith("ELEVHANDLE=", StringComparison.OrdinalIgnoreCase))
                     link.ElevationSourceHandle = value.Substring(11);
+                else if (value.StartsWith("ORDER=", StringComparison.OrdinalIgnoreCase))
+                    link.CoordinateOrder = value.Substring(6);
+                else if (value.StartsWith("XSIGN=", StringComparison.OrdinalIgnoreCase))
+                    link.XSign = value.Substring(6);
+                else if (value.StartsWith("YSIGN=", StringComparison.OrdinalIgnoreCase))
+                    link.YSign = value.Substring(6);
                 else if (value.StartsWith("SRC=", StringComparison.OrdinalIgnoreCase))
                     link.SourceHandles.Add(value.Substring(4));
                 else
@@ -1254,6 +1373,9 @@ namespace CETools.Civil3D
             public string GenerationMode { get; set; }
             public string ElevationMode { get; set; }
             public string ElevationSourceHandle { get; set; }
+            public string CoordinateOrder { get; set; }
+            public string XSign { get; set; }
+            public string YSign { get; set; }
             public IList<string> SourceHandles { get; set; }
         }
     }

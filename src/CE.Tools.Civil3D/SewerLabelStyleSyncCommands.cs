@@ -221,6 +221,7 @@ namespace CETools.Civil3D
 
                 document.Editor.Regen();
                 result.OverlapsMoved = ResolveOverlaps(document);
+                SewerPlanLabelRuntimeManager.Apply(document);
                 document.Editor.Regen();
             }
             catch (System.Exception exception)
@@ -306,7 +307,7 @@ namespace CETools.Civil3D
                 normal = normal.GetNormal();
 
                 bool placed = false;
-                for (int attempt = 1; attempt <= 8; attempt++)
+                for (int attempt = 1; attempt <= 4; attempt++)
                 {
                     double signed = attempt % 2 == 1 ? 1.0 : -1.0;
                     int ring = (attempt + 1) / 2;
@@ -429,53 +430,10 @@ namespace CETools.Civil3D
             object label,
             Transaction transaction)
         {
-            if (label == null || transaction == null) return;
-            ObjectId featureId = ReadObjectIdProperty(
-                label,
-                "FeatureId", "PipeId", "ParentEntityId");
-            if (featureId.IsNull || featureId.IsErased) return;
-
-            CivilPipe pipe;
-            try
-            {
-                pipe = transaction.GetObject(
-                    featureId,
-                    OpenMode.ForRead,
-                    false) as CivilPipe;
-            }
-            catch
-            {
-                return;
-            }
-            if (pipe == null) return;
-
-            string description = string.IsNullOrWhiteSpace(pipe.Description)
-                ? pipe.Name
-                : pipe.Description;
-            double length = ReadDoubleProperty(
-                pipe,
-                "Length2D", "Length3D", "Length");
-            if (length <= 0.0)
-            {
-                try
-                {
-                    length = pipe.GetPointAtParam(0.0).DistanceTo(
-                        pipe.GetPointAtParam(1.0));
-                }
-                catch { }
-            }
-            double slope = ReadDoubleProperty(pipe, "Slope");
-            if (Math.Abs(slope) <= 1.0) slope *= 100.0;
-
-            string contents = (description ?? string.Empty) +
-                "\\P" + length.ToString("0.00", CultureInfo.CurrentCulture) +
-                " m\\P@ " + slope.ToString("0.00", CultureInfo.CurrentCulture) + "%";
-            List<ObjectId> components = ReadTextComponentIds(label);
-            for (int index = 0; index < components.Count; index++)
-                TrySetTextOverride(
-                    label,
-                    components[index],
-                    index == 0 ? contents : string.Empty);
+            // The selected Civil 3D label style remains authoritative. Clear old
+            // text overrides and repair dragged-state/plan-readability instead of
+            // replacing the office style with a hard-coded three-line label.
+            SewerPlanLabelRuntimeManager.ConfigureLabel(label, transaction);
         }
 
         private static List<ObjectId> ReadTextComponentIds(object label)

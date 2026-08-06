@@ -521,6 +521,7 @@ namespace CETools.Civil3D
                     out views,
                     out parts);
 
+                ProfileViewBandRuntimeManager.RefreshAll(document);
                 editor.WriteMessage(
                     "\nCE_SEWPROFILE complete. Surface profiles: {0}; profile views: {1}; network parts added where supported: {2}.",
                     profiles,
