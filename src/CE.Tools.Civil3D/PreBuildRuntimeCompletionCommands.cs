@@ -735,8 +735,10 @@ namespace CETools.Civil3D
             bool pipe = label.GetType().Name.IndexOf(
                 "PipeLabel",
                 StringComparison.OrdinalIgnoreCase) >= 0;
+            DBObject databaseObject = label as DBObject;
+            if (databaseObject == null) return;
             KeepLabelNearFeature(
-                label.Database,
+                databaseObject.Database,
                 transaction,
                 label,
                 featureId,
@@ -1826,8 +1828,10 @@ namespace CETools.Civil3D
             }
             if (network == null) return 0;
             int added = 0;
-            foreach (ObjectId id in network.GetPipeIds()
-                .Concat(network.GetStructureIds()))
+            var partIds = new List<ObjectId>();
+            foreach (ObjectId id in network.GetPipeIds()) partIds.Add(id);
+            foreach (ObjectId id in network.GetStructureIds()) partIds.Add(id);
+            foreach (ObjectId id in partIds)
             {
                 DBObject part;
                 try
