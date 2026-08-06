@@ -224,7 +224,10 @@ namespace CETools.Civil3D
                 state.StartedUtc = DateTime.MinValue;
             }
             state.Dirty = true;
-            Save(document, state);
+            // Persist routine command activity to the user profile only. Writing
+            // an Xrecord after every command creates a new AutoCAD undo item and
+            // causes the Undo dropdown to fill with "Group of commands" rows.
+            SaveUserProfile(document, state);
         }
 
         private static void FinishElapsed(CeDocumentTelemetry state)
@@ -282,8 +285,13 @@ namespace CETools.Civil3D
         private static void Save(Document document, CeDocumentTelemetry state)
         {
             if (document == null || state == null || !state.Dirty) return;
+            bool undoRecordingDisabled = false;
             try
             {
+                // Explicit telemetry persistence must never create an AutoCAD
+                // undo record. Normal CE design commands remain fully undoable.
+                document.Database.DisableUndoRecording(true);
+                undoRecordingDisabled = true;
                 using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
                 {
                     DBDictionary named = transaction.GetObject(document.Database.NamedObjectsDictionaryId, OpenMode.ForWrite, false) as DBDictionary;
@@ -310,6 +318,14 @@ namespace CETools.Civil3D
                 state.Dirty = false;
             }
             catch { }
+            finally
+            {
+                if (undoRecordingDisabled)
+                {
+                    try { document.Database.DisableUndoRecording(false); }
+                    catch { }
+                }
+            }
         }
 
         private static void SaveUserProfile(Document document, CeDocumentTelemetry state)
