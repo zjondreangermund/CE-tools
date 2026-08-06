@@ -202,22 +202,7 @@ namespace CETools.Civil3D
             Polyline lightweight = entity as Polyline;
             if (lightweight != null)
             {
-                for (int index = 0; index < lightweight.NumberOfVertices; index++)
-                {
-                    Point3d start = lightweight.GetPoint3dAt(index);
-                    AddDistinct(points, start);
-                    int next = index + 1;
-                    if (next >= lightweight.NumberOfVertices)
-                    {
-                        if (!lightweight.Closed) continue;
-                        next = 0;
-                    }
-                    if (Math.Abs(lightweight.GetBulgeAt(index)) > 1e-12)
-                    {
-                        Curve segment = lightweight.GetArcSegmentAt(index);
-                        AddSamples(segment, maximumSegment, points, false);
-                    }
-                }
+                AddSamples(lightweight, maximumSegment, points, true);
                 return points;
             }
             Curve curve = entity as Curve;

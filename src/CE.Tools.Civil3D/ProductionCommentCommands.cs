@@ -83,6 +83,8 @@ namespace CETools.Civil3D
                     new ProductionChoice("Review client-book link and revision information", "CE_CLIENTBOOKINFO "),
                     new ProductionChoice("Export client-book register to Excel", "CE_CLIENTBOOKINDEX "),
                     new ProductionChoice("Edit drawing titles and drawing register", "CE_DRAWINGREGISTEREDIT "),
+                    new ProductionChoice("Refresh project information and title blocks", "CE_PROJECTMETADATAREFRESH "),
+                    new ProductionChoice("Synchronize title-block attributes", "CE_TITLEBLOCKSYNC "),
                     new ProductionChoice("Create A4/A3 client and A1/A0 construction layouts", "CE_DRAWINGBOOK "),
                     new ProductionChoice("Export drawing-book layout register to Excel", "CE_BOOKINDEX "),
                     new ProductionChoice("Open AutoCAD Publish for batch PDF output", "CE_BATCHPUBLISH "),
@@ -99,6 +101,7 @@ namespace CETools.Civil3D
                 new List<ProductionChoice>
                 {
                     new ProductionChoice("Edit drawing titles and drawing register", "CE_DRAWINGREGISTEREDIT "),
+                    new ProductionChoice("Refresh project information and title blocks", "CE_PROJECTMETADATAREFRESH "),
                     new ProductionChoice("Create/refresh A-series drawing-book layouts", "CE_DRAWINGBOOK "),
                     new ProductionChoice("Create/refresh A4/A3 client books", "CE_CLIENTBOOK "),
                     new ProductionChoice("Refresh client-book pages", "CE_CLIENTBOOKREFRESH "),

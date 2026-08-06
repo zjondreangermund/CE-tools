@@ -28,12 +28,16 @@ namespace CETools.Civil3D
             ProjectStylePresetManager.Initialize();
             CogoPointProjectStyleManager.Initialize();
             SewerNetworkDynamicSequenceManager.Initialize();
+            CeInteractionTelemetryManager.Initialize();
+            UniversalDynamicRefreshManager.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
 
         public void Terminate()
         {
             AcApplication.Idle -= OnApplicationIdle;
+            UniversalDynamicRefreshManager.Terminate();
+            CeInteractionTelemetryManager.Terminate();
             SewerNetworkDynamicSequenceManager.Terminate();
             CogoPointProjectStyleManager.Terminate();
             ProjectStylePresetManager.Terminate();
@@ -291,7 +295,8 @@ namespace CETools.Civil3D
                         Cmd("Refresh Vertex Setting-Out", "CE_VERTEXSETTINGOUTREFRESH ", "Recalculate linked vertex points, names, coordinates, radius dimensions and table rows."),
                         Cmd("Export Vertex Setting-Out", "CE_VERTEXSETTINGOUTEXPORT ", "Refresh and export a linked vertex setting-out table to Excel."),
                         Cmd("Synchronize COGO Project Styles", "CE_COGOPOINTSYNC ", "Apply RSA_Circle/Description Only or the saved Project Style Centre point choices to every COGO point."),
-                        Cmd("Resolve COGO Label Overlaps", "CE_COGOOVERLAPFIX ", "Move COGO labels only while keeping survey point coordinates fixed.")),
+                        Cmd("Resolve COGO Label Overlaps", "CE_COGOOVERLAPFIX ", "Move COGO labels only while keeping survey point coordinates fixed."),
+                        Cmd("Convert Curves and Polylines", "CE_CURVECONVERT ", "Convert lines, arcs, circles, splines, lightweight and 3D polylines through one popup.")),
                     Menu(
                         "CE_TOOLS_SURVEY_UTILITIES_MENU",
                         "Survey\nUtilities",
@@ -640,6 +645,9 @@ namespace CETools.Civil3D
                         Cmd("Refresh All Linked Outputs", "CE_REFRESHALL ", "Refresh linked coordinate tables, setting-out schedules, parking labels, surface comparisons, BOQs, cost estimates and cross sections."),
                         Cmd("Linked Output Refresh Status", "CE_REFRESHSTATUS ", "Review linked-output counts and automatic refresh state in the active drawing."),
                         Cmd("Automatic Linked-Table Refresh", "CE_AUTOREFRESH ", "Turn deferred automatic coordinate, setting-out and BOQ table refresh on or off for the active drawing."),
+                        Cmd("Universal Dynamic Refresh", "CE_DYNAMICREFRESHALL ", "Refresh every linked CE table, leader, MText, COGO point, junction, sewer sequence and title block."),
+                        Cmd("Universal Refresh Settings", "CE_DYNAMICREFRESHSETTINGS ", "Configure deferred automatic refresh after CE commands and source edits."),
+                        Cmd("CE Click and Time Statistics", "CE_CLICKSTATS ", "Show command starts, every in-command click, right-click, undo/redo and elapsed time per DWG."),
                         Cmd("Road BOQ Excel", "CE_BOQROAD ", "Export road surfacing, layerworks, kerbs, drainage, markings and signs."),
                         Cmd("Platform BOQ Excel", "CE_BOQPLATFORM ", "Export platform, grading, layerworks and earthwork quantities."),
                         Cmd("Stormwater BOQ Excel", "CE_BOQSTORM ", "Export stormwater pipes, culverts, structures and open drainage."),

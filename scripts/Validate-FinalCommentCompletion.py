@@ -68,7 +68,7 @@ required = {
         '"J"',
         "ClockwiseKey",
         "top-left",
-        "WriteLink",
+        "TryReadLink",
     ),
     "telemetry": (
         '"CE_CLICKSTATS"',
