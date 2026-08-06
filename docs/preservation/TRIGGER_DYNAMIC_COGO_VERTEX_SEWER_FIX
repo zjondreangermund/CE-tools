@@ -1,2 +1,3 @@
 Trigger the branch-local dynamic COGO, vertex and sewer integration workflow.
 Retry after correcting temporary patch matchers.
+Retry with normalized regex fallback.
