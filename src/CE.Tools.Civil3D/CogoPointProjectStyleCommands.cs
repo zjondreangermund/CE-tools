@@ -149,10 +149,16 @@ namespace CETools.Civil3D
                             }
                         }
 
+                        if (string.IsNullOrWhiteSpace(point.RawDescription))
+                            point.RawDescription = string.IsNullOrWhiteSpace(point.PointName)
+                                ? "P" + point.PointNumber.ToString(CultureInfo.InvariantCulture)
+                                : point.PointName;
+                        TrySetLabelVisible(point);
                         Point3d anchor = PointLocation(point);
                         Vector3d stored;
                         if (TryReadOffset(point, transaction, out stored))
                         {
+                            stored = NormalizeOffset(stored, database);
                             try
                             {
                                 point.LabelLocation = anchor + stored;
@@ -224,6 +230,11 @@ namespace CETools.Civil3D
             {
                 try { point.LabelStyleId = labelStyleId; } catch { }
             }
+            if (string.IsNullOrWhiteSpace(point.RawDescription))
+                point.RawDescription = string.IsNullOrWhiteSpace(point.PointName)
+                    ? "P" + point.PointNumber.ToString(CultureInfo.InvariantCulture)
+                    : point.PointName;
+            TrySetLabelVisible(point);
         }
 
         internal static int ResolveOverlaps(Document document)
@@ -334,7 +345,7 @@ namespace CETools.Civil3D
                 current = new Vector3d(step, step, 0.0);
             candidates.Add(item.Anchor + current);
 
-            for (int ring = 1; ring <= 10; ring++)
+            for (int ring = 1; ring <= 5; ring++)
             {
                 double radius = step * ring;
                 for (int sector = 0; sector < 16; sector++)
@@ -441,7 +452,54 @@ namespace CETools.Civil3D
                 // Use the standard project offset.
             }
             double distance = PaperAnnotationScale.ModelDistance(database, 5.0);
-            return new Vector3d(distance, distance, 0.0);
+            return NormalizeOffset(
+                new Vector3d(distance, distance, 0.0),
+                database);
+        }
+
+
+        private static Vector3d NormalizeOffset(
+            Vector3d offset,
+            Database database)
+        {
+            double fallback = Math.Max(
+                PaperAnnotationScale.ModelDistance(database, 5.0),
+                0.001);
+            double maximum = Math.Max(
+                PaperAnnotationScale.ModelDistance(database, 15.0),
+                fallback * 2.0);
+            if (double.IsNaN(offset.X) || double.IsInfinity(offset.X) ||
+                double.IsNaN(offset.Y) || double.IsInfinity(offset.Y) ||
+                offset.Length < fallback * 0.1)
+                return new Vector3d(fallback, fallback, 0.0);
+            return offset.Length > maximum
+                ? offset.GetNormal() * maximum
+                : new Vector3d(offset.X, offset.Y, 0.0);
+        }
+
+        private static void TrySetLabelVisible(CivilCogoPoint point)
+        {
+            if (point == null) return;
+            foreach (string name in new[]
+            {
+                "LabelVisibility", "LabelVisible", "ShowLabel"
+            })
+            {
+                try
+                {
+                    System.Reflection.PropertyInfo property = point.GetType().GetProperty(
+                        name,
+                        System.Reflection.BindingFlags.Public |
+                        System.Reflection.BindingFlags.Instance);
+                    if (property == null || !property.CanWrite) continue;
+                    if (property.PropertyType == typeof(bool))
+                    {
+                        property.SetValue(point, true, null);
+                        return;
+                    }
+                }
+                catch { }
+            }
         }
 
         private static bool TryReadOffset(
@@ -606,6 +664,7 @@ namespace CETools.Civil3D
         public static void Queue()
         {
             _pending = true;
+            UniversalDynamicRefreshManager.Queue();
         }
 
         private static void OnIdle(object sender, EventArgs eventArgs)
@@ -622,7 +681,10 @@ namespace CETools.Civil3D
             _busy = true;
             try
             {
-                CogoPointProjectStyleCommands.ApplySelectedStyles(document, true);
+                // The universal manager owns automatic mutation. This legacy
+                // watcher only forwards the request, preventing duplicate idle
+                // transactions and crosshair flicker.
+                UniversalDynamicRefreshManager.Queue();
                 _pending = false;
                 _lastRunUtc = DateTime.UtcNow;
             }

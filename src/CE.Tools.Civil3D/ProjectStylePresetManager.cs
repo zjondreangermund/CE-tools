@@ -65,9 +65,20 @@ namespace CETools.Civil3D
             Dictionary<string, ProjectStyleSelection> presets = LoadPresets();
             presets[selection.Discipline] = Clone(selection);
             SavePresets(presets);
-            WriteDisciplineSelection(document.Database, selection);
-            SynchronizeDisciplineSettings(document.Database, selection);
-            return true;
+            try
+            {
+                using (DocumentLock documentLock = document.LockDocument())
+                {
+                    WriteDisciplineSelection(document.Database, selection);
+                    SynchronizeDisciplineSettings(document.Database, selection);
+                }
+                return true;
+            }
+            catch
+            {
+                QueueDocument(document);
+                return false;
+            }
         }
 
         internal static bool ApplySavedPreset(Document document, bool showResult)
@@ -87,10 +98,21 @@ namespace CETools.Civil3D
                     .FirstOrDefault();
             if (selected == null) return false;
 
-            WriteActiveSelection(document.Database, selected);
-            foreach (ProjectStyleSelection preset in presets.Values)
-                WriteDisciplineSelection(document.Database, preset);
-            SynchronizeDisciplineSettings(document.Database, selected);
+            try
+            {
+                using (DocumentLock documentLock = document.LockDocument())
+                {
+                    WriteActiveSelection(document.Database, selected);
+                    foreach (ProjectStyleSelection preset in presets.Values)
+                        WriteDisciplineSelection(document.Database, preset);
+                    SynchronizeDisciplineSettings(document.Database, selected);
+                }
+            }
+            catch
+            {
+                QueueDocument(document);
+                return false;
+            }
             document.Editor.Regen();
             if (showResult)
             {
@@ -133,7 +155,13 @@ namespace CETools.Civil3D
                     SavedPresetSummary());
                 AcApplication.ShowModalWindow(window);
                 if (window.Choice == ProjectStyleOpeningChoice.UseSaved)
-                    ApplySavedPreset(document, true);
+                {
+                    if (!ApplySavedPreset(document, true))
+                    {
+                        PromptedDocuments.Remove(document);
+                        QueueDocument(document);
+                    }
+                }
                 else
                     document.Editor.WriteMessage(
                         "\nCE Tools kept the project style selections already stored in this drawing.");
@@ -177,6 +205,12 @@ namespace CETools.Civil3D
             if (_showing || PendingDocuments.Count == 0 || !HasSavedPreset()) return;
             Document active = AcApplication.DocumentManager.MdiActiveDocument;
             if (active == null) return;
+            string commandNames = Convert.ToString(
+                AcApplication.GetSystemVariable("CMDNAMES"),
+                CultureInfo.InvariantCulture);
+            if (!string.IsNullOrWhiteSpace(commandNames)) return;
+            object commandActive = AcApplication.GetSystemVariable("CMDACTIVE");
+            if (Convert.ToInt32(commandActive, CultureInfo.InvariantCulture) != 0) return;
 
             int count = PendingDocuments.Count;
             while (count-- > 0)

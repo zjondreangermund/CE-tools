@@ -314,6 +314,8 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
 
+            RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);
+            UniversalDynamicRefreshManager.Queue();
             document.Editor.Regen();
             document.Editor.WriteMessage(
                 "\nCE_OVERLAPFIX complete. Moved={0}; unchanged/locked={1}. Labels were placed in the nearest clear position around their marker.",
@@ -887,6 +889,7 @@ namespace CETools.Civil3D
         public static void MarkPending()
         {
             _pending = true;
+            UniversalDynamicRefreshManager.Queue();
             LinkedTableAutoRefreshManager.Queue(
                 AcApplication.DocumentManager.MdiActiveDocument);
         }
@@ -896,6 +899,12 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             AttachDatabase(document == null ? null : document.Database);
             if (!Enabled || !_pending || _busy || document == null) return;
+            if (UniversalDynamicRefreshManager.Enabled)
+            {
+                UniversalDynamicRefreshManager.Queue();
+                _pending = false;
+                return;
+            }
             if ((DateTime.UtcNow - _lastRunUtc).TotalMilliseconds < 800.0) return;
 
             string commandNames = Convert.ToString(

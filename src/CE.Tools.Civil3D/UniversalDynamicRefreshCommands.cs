@@ -65,7 +65,7 @@ namespace CETools.Civil3D
         private static DateTime _lastRefreshUtc = DateTime.MinValue;
 
         internal static bool Enabled { get; set; } = true;
-        internal static double DelaySeconds { get; set; } = 1.2;
+        internal static double DelaySeconds { get; set; } = 1.8;
 
         internal static void Initialize()
         {
@@ -130,9 +130,15 @@ namespace CETools.Civil3D
                 catch { result.Warnings++; }
                 try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); }
                 catch { result.Warnings++; }
+                try { RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true); }
+                catch { result.Warnings++; }
                 try { SewerNetworkDynamicSequenceCommands.ResequenceAll(document, false); }
                 catch { result.Warnings++; }
                 try { result.JunctionLabels += RoadJunctionCompletionCommands.RefreshAll(document); }
+                catch { result.Warnings++; }
+                try { SewerPlanLabelRuntimeManager.Apply(document); }
+                catch { result.Warnings++; }
+                try { ProfileViewBandRuntimeManager.RefreshAll(document); }
                 catch { result.Warnings++; }
                 try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); }
                 catch { result.Warnings++; }
@@ -271,6 +277,10 @@ namespace CETools.Civil3D
             if ((DateTime.UtcNow - _lastRefreshUtc).TotalSeconds < 0.75) return;
             string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(commands)) return;
+            int commandActive = Convert.ToInt32(
+                AcApplication.GetSystemVariable("CMDACTIVE"),
+                CultureInfo.InvariantCulture);
+            if (commandActive != 0) return;
             // Idle/background refresh must not create an undo item.
             RefreshNow(active, true);
         }

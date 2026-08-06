@@ -625,6 +625,32 @@ namespace CETools.Civil3D
             SewerDynamicSequenceResult result)
         {
             var namedStructures = new HashSet<ObjectId>();
+            // Civil 3D enforces unique part names immediately. Rename every live
+            // part to a collision-safe temporary value before compacting Branch-4
+            // to Branch-3 or rebuilding a reconnected sequence.
+            string token = Guid.NewGuid().ToString("N");
+            int temporary = 1;
+            foreach (ObjectId pipeId in graph.Pipes.Keys.OrderBy(id => id.Handle.Value))
+            {
+                CivilPipe pipe = transaction.GetObject(
+                    pipeId,
+                    OpenMode.ForWrite,
+                    false) as CivilPipe;
+                if (pipe != null)
+                    pipe.Name = "CE_TMP_PIPE_" + token + "_" +
+                        (temporary++).ToString(CultureInfo.InvariantCulture);
+            }
+            foreach (ObjectId structureId in graph.Structures.Keys.OrderBy(id => id.Handle.Value))
+            {
+                CivilStructure structure = transaction.GetObject(
+                    structureId,
+                    OpenMode.ForWrite,
+                    false) as CivilStructure;
+                if (structure != null)
+                    structure.Name = "CE_TMP_MH_" + token + "_" +
+                        (temporary++).ToString(CultureInfo.InvariantCulture);
+            }
+
             for (int branchIndex = 0; branchIndex < branches.Count; branchIndex++)
             {
                 int branchNumber = branchIndex + 1;
@@ -907,6 +933,7 @@ namespace CETools.Civil3D
         {
             _pending = true;
             _lastChangeUtc = DateTime.UtcNow;
+            UniversalDynamicRefreshManager.Queue();
         }
 
         private static void OnIdle(object sender, EventArgs eventArgs)
@@ -914,8 +941,13 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             AttachDatabase(document == null ? null : document.Database);
             if (!Enabled || !_pending || _busy || document == null) return;
-            if ((DateTime.UtcNow - _lastChangeUtc).TotalMilliseconds < 1100.0)
+            if (UniversalDynamicRefreshManager.Enabled)
+            {
+                UniversalDynamicRefreshManager.Queue();
+                _pending = false;
                 return;
+            }
+            if ((DateTime.UtcNow - _lastChangeUtc).TotalMilliseconds < 1200.0) return;
             if ((DateTime.UtcNow - _lastRunUtc).TotalMilliseconds < 900.0)
                 return;
             string commandNames = Convert.ToString(

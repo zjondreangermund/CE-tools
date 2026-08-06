@@ -296,6 +296,7 @@ namespace CETools.Civil3D
                         Cmd("Export Vertex Setting-Out", "CE_VERTEXSETTINGOUTEXPORT ", "Refresh and export a linked vertex setting-out table to Excel."),
                         Cmd("Synchronize COGO Project Styles", "CE_COGOPOINTSYNC ", "Apply RSA_Circle/Description Only or the saved Project Style Centre point choices to every COGO point."),
                         Cmd("Resolve COGO Label Overlaps", "CE_COGOOVERLAPFIX ", "Move COGO labels only while keeping survey point coordinates fixed."),
+                        Cmd("Repair All Linked Annotations", "CE_ANNOTATIONLINKREPAIR ", "Refresh and re-anchor COGO, MText, MLeader, tables and radius dimensions close to their true source points."),
                         Cmd("Convert Curves and Polylines", "CE_CURVECONVERT ", "Convert lines, arcs, circles, splines, lightweight and 3D polylines through one popup.")),
                     Menu(
                         "CE_TOOLS_SURVEY_UTILITIES_MENU",
@@ -804,6 +805,10 @@ namespace CETools.Civil3D
                         "CE_TOOLS_PRODUCTION_MENU",
                         "Summary &\nDrawing Books",
                         "Generate project summary sheets and A-series client/construction drawing-book layouts.",
+                        Cmd("Finish Runtime Comments", "CE_RUNTIMEFINISH ", "Open the final annotation, sewer-label and profile-band completion centre before building."),
+                        Cmd("Apply Sewer Label Presentation", "CE_PIPELABELPRESENTATION ", "Apply selected pipe/structure label styles, flow arrows, plan readability and bounded offsets."),
+                        Cmd("Batch Profile View Band Sets", "CE_PROFILEBANDSBATCH ", "Apply and link multiple band sets across selected profile views."),
+                        Cmd("Refresh Profile View Bands", "CE_PROFILEBANDREFRESH ", "Refresh live profile/network band data at structures and manholes."),
                         Cmd("Production Tools", "CE_REPORTTOOLS ", "Open reports, summaries and drawing-book workflows."),
                         Cmd("Create Project Summary Sheet", "CE_SUMMARYSHEET ", "Create a linked project metadata, discipline and production-readiness summary."),
                         Cmd("Refresh Project Summary", "CE_SUMMARYREFRESH ", "Refresh the summary from current model, links and layouts."),
