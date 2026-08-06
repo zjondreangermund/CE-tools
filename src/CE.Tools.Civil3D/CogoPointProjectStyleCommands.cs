@@ -449,7 +449,7 @@ namespace CETools.Civil3D
             Transaction transaction,
             out Vector3d offset)
         {
-            offset = Vector3d.Zero;
+            offset = new Vector3d(0.0, 0.0, 0.0);
             if (point == null || point.ExtensionDictionary.IsNull) return false;
             DBDictionary dictionary = transaction.GetObject(
                 point.ExtensionDictionary,
