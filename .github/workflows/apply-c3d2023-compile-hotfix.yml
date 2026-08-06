@@ -1,0 +1,58 @@
+name: Apply Civil 3D 2023 Compile Hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/c3d2023-compile-20260806
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  hotfix:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out hotfix branch
+        uses: actions/checkout@v4
+        with:
+          ref: hotfix/c3d2023-compile-20260806
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply reported compile fixes
+        run: python3 scripts/Apply-Civil3D2023CompileHotfix.py
+
+      - name: Validate Civil 3D 2023 compile hotfix
+        run: python3 scripts/Validate-Civil3D2023CompileHotfix.py
+
+      - name: Validate unique command registry
+        run: python3 scripts/Validate-CommandRegistry.py
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse all Civil 3D C# source
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
+
+      - name: Validate patch formatting
+        run: git diff --check
+
+      - name: Commit source hotfix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/CE.Tools.Civil3D/CogoPointProjectStyleCommands.cs
+          if git diff --cached --quiet; then
+            echo "No source hotfix changes remain."
+            exit 0
+          fi
+          git commit -m "Fix Civil 3D 2023 compile compatibility"
+          git push origin HEAD:hotfix/c3d2023-compile-20260806
