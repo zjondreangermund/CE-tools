@@ -1015,6 +1015,9 @@ namespace CETools.Civil3D
             {
                 summary.CoordinateFollowers +=
                     PolylineDirectionCommands.RefreshLinkedArrows(document);
+                CogoPointProjectStyleCommands.ApplySelectedStyles(
+                    document,
+                    true);
             }
             catch
             {

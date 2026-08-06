@@ -85,6 +85,9 @@ jobs:
       - name: Validate project style persistence and sewer label sync
         run: python3 scripts/Validate-ProjectStylePersistenceAndSewerLabels.py
 
+      - name: Validate dynamic COGO vertex and sewer links
+        run: python3 scripts/Validate-DynamicCogoVertexSewerLinks.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:

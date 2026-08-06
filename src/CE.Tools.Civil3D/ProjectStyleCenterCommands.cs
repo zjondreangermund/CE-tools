@@ -128,6 +128,8 @@ namespace CETools.Civil3D
                 ProjectStyleSelection selection = window.BuildSelection();
                 WriteSelection(document.Database, selection);
                 ProjectStylePresetManager.SaveFromDrawing(document);
+                CogoPointProjectStyleManager.Queue();
+                CogoPointProjectStyleCommands.ApplySelectedStyles(document, true);
                 document.Editor.WriteMessage(
                     "\nCE_PROJECTSTYLES complete. Discipline={0}; stored style selections={1}.",
                     selection.Discipline,

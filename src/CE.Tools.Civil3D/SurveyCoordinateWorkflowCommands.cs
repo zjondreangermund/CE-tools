@@ -539,6 +539,14 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
+            document.Editor.WriteMessage(
+                "\nCE_COORDPOLY2 now uses the shared dynamic vertex setting-out popup. Choose 'Polyline vertices only' for the original workflow.");
+            document.SendStringToExecute(
+                "CE_VERTEXSETTINGOUT ",
+                true,
+                false,
+                true);
+            return;
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (civilDocument == null)
             {
@@ -819,6 +827,8 @@ namespace CETools.Civil3D
 
                     var leader = new MLeader();
                     leader.SetDatabaseDefaults(database);
+                    leader.MLeaderStyle = database.MLeaderstyle;
+                    leader.ArrowSymbolId = ObjectId.Null;
                     leader.ContentType = ContentType.MTextContent;
                     leader.MText = text;
                     PaperAnnotationScale.SetAnnotative(leader);
@@ -1588,23 +1598,29 @@ namespace CETools.Civil3D
             pointLabelStyleId = ObjectId.Null;
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (civilDocument == null) return;
-            ProjectStyleSelection selection = ProjectStyleCenterCommands.ReadSelection(database);
+            ProjectStyleSelection selection =
+                ProjectStyleCenterCommands.ReadSelection(database);
             string requestedPoint = ReadSelectedStyle(selection, "Point Style");
             string requestedLabel = ReadSelectedStyle(selection, "Point Label Style");
-            object styles = civilDocument.Styles;
-            object pointStyles = ReadPublicProperty(styles, "PointStyles");
-            object labelStyles = ReadPublicProperty(styles, "LabelStyles");
-            object pointLabelStyles = ReadPublicProperty(labelStyles, "PointLabelStyles");
-            pointStyleId = ResolveStyleObjectId(
-                pointStyles,
+            if (string.IsNullOrWhiteSpace(requestedPoint))
+                requestedPoint = "RSA_Circle";
+            if (string.IsNullOrWhiteSpace(requestedLabel))
+                requestedLabel = "Description Only";
+            string actual;
+            pointStyleId = CivilStyleCatalogV2.ResolveStyleId(
+                database,
+                civilDocument,
+                "Point Style",
                 requestedPoint,
                 transaction,
-                false);
-            pointLabelStyleId = ResolveStyleObjectId(
-                pointLabelStyles,
+                out actual);
+            pointLabelStyleId = CivilStyleCatalogV2.ResolveStyleId(
+                database,
+                civilDocument,
+                "Point Label Style",
                 requestedLabel,
                 transaction,
-                true);
+                out actual);
         }
 
         private static string ReadSelectedStyle(

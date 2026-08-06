@@ -1,7 +1,9 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -25,7 +27,7 @@ namespace CETools.Civil3D
     public sealed class VertexSettingOutCommands
     {
         private const string AppName = "CE_VERTEX_SETTINGOUT";
-        private const string SchemaVersion = "1";
+        private const string SchemaVersion = "2";
 
         [CommandMethod("CE_TOOLS", "CE_VERTEXSETTINGOUTTOOLS", CommandFlags.Modal)]
         public void Menu()
@@ -108,6 +110,14 @@ namespace CETools.Civil3D
                 "Output", "01 Output", "Point output", "COGO",
                 "Choose one dynamic point/annotation output for every generated setting-out location.",
                 new[] { "COGO", "MText", "MLeader" });
+            settings.AddChoice(
+                "Generation", "01 Output", "Point generation", "Engineering setting-out points",
+                "Choose the complete arc/tangent engineering rules or only the original polyline/feature-line vertices.",
+                new[] { "Engineering setting-out points", "Polyline vertices only" });
+            settings.AddChoice(
+                "Elevation", "01 Output", "XYZ elevation source", "Source geometry",
+                "Read Z from the selected source geometry, a Civil 3D surface, or a separate feature line. The reference remains linked on refresh.",
+                new[] { "Source geometry", "Select Civil 3D surface", "Select feature line" });
             settings.AddText(
                 "Prefix", "02 Numbering", "Point name prefix", "P",
                 "Names are generated as P1, P2, P3 and are resequenced when linked geometry changes.");
@@ -125,6 +135,13 @@ namespace CETools.Civil3D
                 : settings.Text("Prefix").Trim();
             int startNumber = settings.Integer("Start", 1);
             double labelOffset = settings.Double("Offset", 3.0);
+            string generationMode = settings.Text("Generation");
+            string elevationMode = settings.Text("Elevation");
+            ObjectId elevationSourceId;
+            if (!PromptElevationSource(
+                    document,
+                    elevationMode,
+                    out elevationSourceId)) return;
 
             PromptPointResult tablePoint = document.Editor.GetPoint(
                 "\nPick insertion point for the linked setting-out table: ");
@@ -144,7 +161,13 @@ namespace CETools.Civil3D
                     out geometryRejected);
             }
             rejected += geometryRejected;
-            if (sources.Count == 0)
+            ApplyGenerationMode(sources, generationMode);
+            ApplyElevationReference(
+                document.Database,
+                sources,
+                elevationMode,
+                elevationSourceId);
+            if (sources.Count == 0 || sources.All(item => item.Records.Count == 0))
             {
                 document.Editor.WriteMessage("\nCE_VERTEXSETTINGOUT cancelled. The selected objects produced no setting-out geometry.");
                 return;
@@ -176,6 +199,11 @@ namespace CETools.Civil3D
                 Prefix = prefix,
                 StartNumber = startNumber,
                 LabelOffset = labelOffset,
+                GenerationMode = generationMode,
+                ElevationMode = elevationMode,
+                ElevationSourceHandle = elevationSourceId.IsNull
+                    ? string.Empty
+                    : elevationSourceId.Handle.ToString(),
                 SourceHandles = sources.Select(item => item.Handle).ToList()
             };
 
@@ -370,7 +398,13 @@ namespace CETools.Civil3D
                     transaction,
                     sourceIds,
                     out rejected);
-                if (sources.Count == 0)
+                ApplyGenerationMode(sources, link.GenerationMode);
+                ApplyElevationReference(
+                    document.Database,
+                    sources,
+                    link.ElevationMode,
+                    ResolveHandle(document.Database, link.ElevationSourceHandle));
+                if (sources.Count == 0 || sources.All(item => item.Records.Count == 0))
                     throw new InvalidOperationException("The linked sources produced no current setting-out geometry.");
                 List<VertexSettingRecord> records = FlattenAndName(sources, link.Prefix, link.StartNumber);
 
@@ -392,6 +426,10 @@ namespace CETools.Civil3D
                     if (outputs.TryGetValue(record.Key, out existing) &&
                         UpdateOutput(transaction, existing, link, record, textHeight))
                         continue;
+                    CaptureCurrentAnnotationOffset(
+                        transaction,
+                        existing,
+                        record);
                     EraseIfPossible(transaction, existing);
                     CreateOutput(document.Database, civilDocument, transaction, modelSpace, link, record, textHeight);
                 }
@@ -457,7 +495,13 @@ namespace CETools.Civil3D
                 if (point == null) throw new InvalidOperationException("Civil 3D did not return the created COGO point.");
                 point.RawDescription = record.PointName;
                 try { point.PointName = record.PointName; } catch { }
-                WriteOutputLink(point, transaction, link.GroupId, record.Key);
+                CogoPointProjectStyleCommands.ApplyPointStyles(
+                    database,
+                    civilDocument,
+                    transaction,
+                    point);
+                WriteOutputLink(
+                    point, transaction, link.GroupId, record.Key, record.Point);
                 return id;
             }
 
@@ -465,12 +509,14 @@ namespace CETools.Civil3D
             {
                 var leader = new MLeader();
                 leader.SetDatabaseDefaults(database);
+                leader.MLeaderStyle = database.MLeaderstyle;
+                leader.ArrowSymbolId = ObjectId.Null;
                 leader.ContentType = ContentType.MTextContent;
                 var text = new MText();
                 text.SetDatabaseDefaults(database);
                 text.TextHeight = textHeight;
                 text.Contents = LabelText(record);
-                Point3d location = LabelLocation(record.Point, link.LabelOffset);
+                Point3d location = OutputLocation(record, link.LabelOffset);
                 text.Location = location;
                 leader.MText = text;
                 leader.TextLocation = location;
@@ -478,20 +524,22 @@ namespace CETools.Civil3D
                 ObjectId id = modelSpace.AppendEntity(leader);
                 transaction.AddNewlyCreatedDBObject(leader, true);
                 leader.AddLeaderLine(record.Point);
-                WriteOutputLink(leader, transaction, link.GroupId, record.Key);
+                WriteOutputLink(
+                    leader, transaction, link.GroupId, record.Key, record.Point);
                 return id;
             }
 
             var mtext = new MText();
             mtext.SetDatabaseDefaults(database);
-            mtext.Location = LabelLocation(record.Point, link.LabelOffset);
+            mtext.Location = OutputLocation(record, link.LabelOffset);
             mtext.Attachment = AttachmentPoint.BottomLeft;
             mtext.TextHeight = textHeight;
             mtext.Contents = LabelText(record);
             PaperAnnotationScale.SetAnnotative(mtext);
             ObjectId textId = modelSpace.AppendEntity(mtext);
             transaction.AddNewlyCreatedDBObject(mtext, true);
-            WriteOutputLink(mtext, transaction, link.GroupId, record.Key);
+            WriteOutputLink(
+                mtext, transaction, link.GroupId, record.Key, record.Point);
             return textId;
         }
 
@@ -515,15 +563,25 @@ namespace CETools.Civil3D
                 cogo.Elevation = record.Point.Z;
                 cogo.RawDescription = record.PointName;
                 try { cogo.PointName = record.PointName; } catch { }
+                CogoPointProjectStyleCommands.ApplyPointStyles(
+                    cogo.Database,
+                    CivilApplication.ActiveDocument,
+                    transaction,
+                    cogo);
+                WriteOutputLink(
+                    cogo, transaction, link.GroupId, record.Key, record.Point);
                 return true;
             }
 
             MText mtext = value as MText;
             if (mtext != null && string.Equals(link.OutputType, "MText", StringComparison.OrdinalIgnoreCase))
             {
-                mtext.Location = LabelLocation(record.Point, link.LabelOffset);
+                CaptureCurrentAnnotationOffset(transaction, id, record);
+                mtext.Location = OutputLocation(record, link.LabelOffset);
                 mtext.TextHeight = textHeight;
                 mtext.Contents = LabelText(record);
+                WriteOutputLink(
+                    mtext, transaction, link.GroupId, record.Key, record.Point);
                 return true;
             }
 
@@ -587,6 +645,10 @@ namespace CETools.Civil3D
             table.SetSize(records.Count + 2, 9);
             table.SetRowHeight(Math.Max(textHeight * 1.8, 0.001));
             table.SetColumnWidth(Math.Max(textHeight * 8.0, 0.001));
+            table.Columns[0].Width = Math.Max(textHeight * 9.0, 0.001);
+            table.Columns[1].Width = Math.Max(textHeight * 18.0, 0.001);
+            table.Columns[2].Width = Math.Max(textHeight * 14.0, 0.001);
+            table.Columns[8].Width = Math.Max(textHeight * 12.0, 0.001);
             table.Cells[0, 0].TextString = "CE VERTEX SETTING-OUT - " + outputType.ToUpperInvariant();
             table.MergeCells(CellRange.Create(table, 0, 0, 0, 8));
             string[] headings =
@@ -639,6 +701,263 @@ namespace CETools.Civil3D
             return point + new Vector3d(offset, offset, 0.0);
         }
 
+        private static Point3d OutputLocation(
+            VertexSettingRecord record,
+            double defaultOffset)
+        {
+            Vector3d offset = record.AnnotationOffset ??
+                new Vector3d(defaultOffset, defaultOffset, 0.0);
+            return record.Point + offset;
+        }
+
+        private static void CaptureCurrentAnnotationOffset(
+            Transaction transaction,
+            ObjectId id,
+            VertexSettingRecord record)
+        {
+            if (transaction == null || record == null || id.IsNull || id.IsErased)
+                return;
+            Entity entity;
+            try
+            {
+                entity = transaction.GetObject(
+                    id,
+                    OpenMode.ForRead,
+                    false) as Entity;
+            }
+            catch
+            {
+                return;
+            }
+            if (entity == null) return;
+            Point3d anchor;
+            if (!TryReadOutputAnchor(entity, out anchor)) return;
+            MText mtext = entity as MText;
+            if (mtext != null)
+            {
+                record.AnnotationOffset = mtext.Location - anchor;
+                return;
+            }
+            MLeader leader = entity as MLeader;
+            if (leader != null)
+            {
+                try
+                {
+                    record.AnnotationOffset = leader.TextLocation - anchor;
+                }
+                catch
+                {
+                    // Keep the default offset when a proxy leader blocks access.
+                }
+            }
+        }
+
+        private static bool TryReadOutputAnchor(
+            Entity entity,
+            out Point3d anchor)
+        {
+            anchor = Point3d.Origin;
+            if (entity == null) return false;
+            ResultBuffer buffer = entity.GetXDataForApplication(AppName);
+            if (buffer == null) return false;
+            TypedValue[] values = buffer.AsArray();
+            if (values.Length < 8) return false;
+            try
+            {
+                anchor = new Point3d(
+                    Convert.ToDouble(values[5].Value, CultureInfo.InvariantCulture),
+                    Convert.ToDouble(values[6].Value, CultureInfo.InvariantCulture),
+                    Convert.ToDouble(values[7].Value, CultureInfo.InvariantCulture));
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static void ApplyGenerationMode(
+            IList<VertexSettingSource> sources,
+            string mode)
+        {
+            if (sources == null ||
+                !string.Equals(
+                    mode,
+                    "Polyline vertices only",
+                    StringComparison.OrdinalIgnoreCase))
+                return;
+            foreach (VertexSettingSource source in sources)
+            {
+                source.Records = source.Records
+                    .Where(record => string.Equals(
+                        record.Kind,
+                        "VERTEX",
+                        StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                source.Dimensions = new List<VertexRadialDimension>();
+            }
+        }
+
+        private static bool PromptElevationSource(
+            Document document,
+            string mode,
+            out ObjectId sourceId)
+        {
+            sourceId = ObjectId.Null;
+            if (document == null || string.IsNullOrWhiteSpace(mode) ||
+                string.Equals(
+                    mode,
+                    "Source geometry",
+                    StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            var options = new PromptEntityOptions(
+                string.Equals(
+                    mode,
+                    "Select Civil 3D surface",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? "\nSelect the Civil 3D surface used for all setting-out Z values: "
+                    : "\nSelect the feature line used for all setting-out Z values: ");
+            PromptEntityResult selected = document.Editor.GetEntity(options);
+            if (selected.Status != PromptStatus.OK) return false;
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                DBObject value = transaction.GetObject(
+                    selected.ObjectId,
+                    OpenMode.ForRead,
+                    false);
+                bool valid = string.Equals(
+                    mode,
+                    "Select Civil 3D surface",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? value is Autodesk.Civil.DatabaseServices.Surface
+                    : value is Autodesk.Civil.DatabaseServices.FeatureLine;
+                if (!valid)
+                {
+                    document.Editor.WriteMessage(
+                        "\nThe selected object is not the required Civil 3D elevation source.");
+                    return false;
+                }
+            }
+            sourceId = selected.ObjectId;
+            return true;
+        }
+
+        private static void ApplyElevationReference(
+            Database database,
+            IList<VertexSettingSource> sources,
+            string mode,
+            ObjectId sourceId)
+        {
+            if (database == null || sources == null || sourceId.IsNull ||
+                string.IsNullOrWhiteSpace(mode) ||
+                string.Equals(
+                    mode,
+                    "Source geometry",
+                    StringComparison.OrdinalIgnoreCase))
+                return;
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                DBObject reference;
+                try
+                {
+                    reference = transaction.GetObject(
+                        sourceId,
+                        OpenMode.ForRead,
+                        false);
+                }
+                catch
+                {
+                    return;
+                }
+                Autodesk.Civil.DatabaseServices.Surface surface =
+                    reference as Autodesk.Civil.DatabaseServices.Surface;
+                Autodesk.Civil.DatabaseServices.FeatureLine featureLine =
+                    reference as Autodesk.Civil.DatabaseServices.FeatureLine;
+                if (surface == null && featureLine == null) return;
+
+                foreach (VertexSettingSource source in sources)
+                {
+                    foreach (VertexSettingRecord record in source.Records)
+                    {
+                        double elevation;
+                        if (TryReadReferenceElevation(
+                                surface,
+                                featureLine,
+                                record.Point,
+                                out elevation))
+                        {
+                            record.Point = new Point3d(
+                                record.Point.X,
+                                record.Point.Y,
+                                elevation);
+                        }
+                    }
+                    foreach (VertexRadialDimension dimension in source.Dimensions)
+                    {
+                        double centerElevation;
+                        if (TryReadReferenceElevation(
+                                surface,
+                                featureLine,
+                                dimension.Center,
+                                out centerElevation))
+                        {
+                            dimension.Center = new Point3d(
+                                dimension.Center.X,
+                                dimension.Center.Y,
+                                centerElevation);
+                        }
+                        double chordElevation;
+                        if (TryReadReferenceElevation(
+                                surface,
+                                featureLine,
+                                dimension.ChordPoint,
+                                out chordElevation))
+                        {
+                            dimension.ChordPoint = new Point3d(
+                                dimension.ChordPoint.X,
+                                dimension.ChordPoint.Y,
+                                chordElevation);
+                        }
+                    }
+                }
+            }
+        }
+
+        private static bool TryReadReferenceElevation(
+            Autodesk.Civil.DatabaseServices.Surface surface,
+            Autodesk.Civil.DatabaseServices.FeatureLine featureLine,
+            Point3d point,
+            out double elevation)
+        {
+            elevation = point.Z;
+            try
+            {
+                if (surface != null)
+                {
+                    elevation = surface.FindElevationAtXY(point.X, point.Y);
+                    return !double.IsNaN(elevation) &&
+                           !double.IsInfinity(elevation);
+                }
+                if (featureLine != null)
+                {
+                    Point3d closest = featureLine.GetClosestPointTo(
+                        new Point3d(point.X, point.Y, point.Z),
+                        false);
+                    elevation = closest.Z;
+                    return !double.IsNaN(elevation) &&
+                           !double.IsInfinity(elevation);
+                }
+            }
+            catch
+            {
+                return false;
+            }
+            return false;
+        }
+
         private static void InventoryGroup(
             BlockTableRecord modelSpace,
             Transaction transaction,
@@ -683,8 +1002,19 @@ namespace CETools.Civil3D
                 new TypedValue((int)DxfCode.ExtendedDataInteger32, link.StartNumber),
                 new TypedValue((int)DxfCode.ExtendedDataReal, link.LabelOffset)
             };
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
+                "GEN=" + (link.GenerationMode ?? string.Empty)));
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
+                "ELEV=" + (link.ElevationMode ?? string.Empty)));
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
+                "ELEVHANDLE=" + (link.ElevationSourceHandle ?? string.Empty)));
             foreach (string handle in link.SourceHandles)
-                values.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString, handle));
+                values.Add(new TypedValue(
+                    (int)DxfCode.ExtendedDataAsciiString,
+                    "SRC=" + handle));
             table.XData = new ResultBuffer(values.ToArray());
         }
 
@@ -703,12 +1033,25 @@ namespace CETools.Civil3D
                 Prefix = Convert.ToString(values[5].Value),
                 StartNumber = Convert.ToInt32(values[6].Value, CultureInfo.InvariantCulture),
                 LabelOffset = Convert.ToDouble(values[7].Value, CultureInfo.InvariantCulture),
+                GenerationMode = "Engineering setting-out points",
+                ElevationMode = "Source geometry",
+                ElevationSourceHandle = string.Empty,
                 SourceHandles = new List<string>()
             };
             for (int index = 8; index < values.Length; index++)
             {
-                string handle = Convert.ToString(values[index].Value);
-                if (!string.IsNullOrWhiteSpace(handle)) link.SourceHandles.Add(handle);
+                string value = Convert.ToString(values[index].Value);
+                if (string.IsNullOrWhiteSpace(value)) continue;
+                if (value.StartsWith("GEN=", StringComparison.OrdinalIgnoreCase))
+                    link.GenerationMode = value.Substring(4);
+                else if (value.StartsWith("ELEV=", StringComparison.OrdinalIgnoreCase))
+                    link.ElevationMode = value.Substring(5);
+                else if (value.StartsWith("ELEVHANDLE=", StringComparison.OrdinalIgnoreCase))
+                    link.ElevationSourceHandle = value.Substring(11);
+                else if (value.StartsWith("SRC=", StringComparison.OrdinalIgnoreCase))
+                    link.SourceHandles.Add(value.Substring(4));
+                else
+                    link.SourceHandles.Add(value);
             }
             return link;
         }
@@ -717,9 +1060,10 @@ namespace CETools.Civil3D
             Entity entity,
             Transaction transaction,
             string groupId,
-            string key)
+            string key,
+            Point3d anchor)
         {
-            entity.XData = LinkBuffer("OUTPUT", groupId, key);
+            entity.XData = LinkBuffer("OUTPUT", groupId, key, anchor);
         }
 
         private static void WriteDimensionLink(
@@ -728,17 +1072,36 @@ namespace CETools.Civil3D
             string groupId,
             string key)
         {
-            entity.XData = LinkBuffer("DIM", groupId, key);
+            entity.XData = LinkBuffer("DIM", groupId, key, null);
         }
 
-        private static ResultBuffer LinkBuffer(string type, string groupId, string key)
+        private static ResultBuffer LinkBuffer(
+            string type,
+            string groupId,
+            string key,
+            Point3d? anchor)
         {
-            return new ResultBuffer(
+            var values = new List<TypedValue>
+            {
                 new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
                 new TypedValue((int)DxfCode.ExtendedDataAsciiString, type),
                 new TypedValue((int)DxfCode.ExtendedDataAsciiString, SchemaVersion),
                 new TypedValue((int)DxfCode.ExtendedDataAsciiString, groupId),
-                new TypedValue((int)DxfCode.ExtendedDataAsciiString, key));
+                new TypedValue((int)DxfCode.ExtendedDataAsciiString, key)
+            };
+            if (anchor.HasValue)
+            {
+                values.Add(new TypedValue(
+                    (int)DxfCode.ExtendedDataReal,
+                    anchor.Value.X));
+                values.Add(new TypedValue(
+                    (int)DxfCode.ExtendedDataReal,
+                    anchor.Value.Y));
+                values.Add(new TypedValue(
+                    (int)DxfCode.ExtendedDataReal,
+                    anchor.Value.Z));
+            }
+            return new ResultBuffer(values.ToArray());
         }
 
         private static bool TryReadEntityLink(
@@ -888,6 +1251,9 @@ namespace CETools.Civil3D
             public string Prefix { get; set; }
             public int StartNumber { get; set; }
             public double LabelOffset { get; set; }
+            public string GenerationMode { get; set; }
+            public string ElevationMode { get; set; }
+            public string ElevationSourceHandle { get; set; }
             public IList<string> SourceHandles { get; set; }
         }
     }

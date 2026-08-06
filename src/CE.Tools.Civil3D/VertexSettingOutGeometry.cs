@@ -29,6 +29,7 @@ namespace CETools.Civil3D
         public double SegmentLength { get; set; }
         public double? Radius { get; set; }
         public string PointName { get; set; }
+        public Vector3d? AnnotationOffset { get; set; }
     }
 
     internal sealed class VertexRadialDimension
