@@ -23,6 +23,9 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Repair temporary patch matchers
+        run: python3 scripts/Repair-DynamicPatchRegex.py
+
       - name: Apply source integration
         run: python3 scripts/Apply-DynamicCogoVertexSewerFix.py
 
