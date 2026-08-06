@@ -172,6 +172,7 @@ namespace CETools.Civil3D
             _database.ObjectAppended += OnObjectChanged;
             _database.ObjectErased += OnObjectErased;
             _document.CommandWillStart += OnCommandWillStart;
+            _document.CommandWillStart += OnCommandWillStart;
             _document.CommandEnded += OnCommandEnded;
             _document.CommandCancelled += OnCommandEnded;
             _document.CommandFailed += OnCommandEnded;
@@ -188,6 +189,7 @@ namespace CETools.Civil3D
             }
             if (_document != null)
             {
+                _document.CommandWillStart -= OnCommandWillStart;
                 _document.CommandWillStart -= OnCommandWillStart;
                 _document.CommandEnded -= OnCommandEnded;
                 _document.CommandCancelled -= OnCommandEnded;
