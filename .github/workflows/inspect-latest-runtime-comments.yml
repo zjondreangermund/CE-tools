@@ -15,14 +15,15 @@ jobs:
       - name: Locate affected commands and implementations
         shell: bash
         run: |
-          PATTERN='CE_FLREPORTUI|CE_FLLABELX|CE_SURFSPIKEHOLEFIX|CE_BOQSEWER|CE_BOQSTORM|CE_BOQWATER|CE_NETWORKSCHEDULEBOQ|CE_ASSEMBLYCREATE|CE_ROADALIGN|CE_TOOLSPALETTE|Workflow Centre|GridReportPresenter|Profile View Band Set Style|Road-Single-Band|Road-Sinle-Band|Length2D|Length3D|NominalDiameter'
-          echo '=== MATCHES ==='
-          grep -RniE -C 3 "$PATTERN" src/CE.Tools.Civil3D || true
-          echo '=== FEATURE LINE FILES ==='
-          grep -RliE 'CE_FLREPORTUI|CE_FLLABELX|Feature Line Report' src/CE.Tools.Civil3D || true
-          echo '=== SURFACE REPAIR FILES ==='
-          grep -RliE 'CE_SURFSPIKEHOLEFIX|Spike and Hole Repair' src/CE.Tools.Civil3D || true
-          echo '=== BOQ FILES ==='
-          grep -RliE 'CE_BOQSEWER|CE_BOQSTORM|CE_BOQWATER|NominalDiameter|Length2D|Length3D' src/CE.Tools.Civil3D || true
-          echo '=== ROAD/ASSEMBLY FILES ==='
-          grep -RliE 'CE_ASSEMBLYCREATE|CE_ROADALIGN|Assembly Style|Corridor Style|Road-Single-Band' src/CE.Tools.Civil3D || true
+          echo '=== ROAD SETTINGS / BAND / ASSEMBLY ==='
+          grep -RniE -C 4 'SewerProductionSettings|CE_SEWERSETTINGS|CE_SWSETTINGS|CE_WATERSETTINGS|Profile View Band Set Style|Road-Single-Band|Road-Sinle-Band|CE_ASSEMBLYCREATE|GetAssemblyIds' src/CE.Tools.Civil3D || true
+          echo '=== SURVEY / COORDINATE SYSTEM / MAP ==='
+          grep -RniE -C 4 'Lat.*Long|Latitude|Longitude|CoordinateSystem|LO17|LO15|Google Earth|Google Maps|EPSG|UTM|Map' src/CE.Tools.Civil3D || true
+          echo '=== XREF / MASTER DRAWING ==='
+          grep -RniE -C 4 'Xref|AttachXref|OverlayXref|BindXrefs|master drawing|discipline.*drawing' src/CE.Tools.Civil3D || true
+          echo '=== PAGE SETUP / LAYOUT ==='
+          grep -RniE -C 4 'PageSetup|PlotSettings|LayoutManager|paper space|paper-space|PlotConfiguration' src/CE.Tools.Civil3D || true
+          echo '=== FEATURE/CORRIDOR DYNAMIC LABELS ==='
+          grep -RniE -C 4 'CE_FLLABELX|CE_CORLABELX|Feature Line Report|Corridor.*Table|CE_COR.*REPORT|AnnotationWriter.Create' src/CE.Tools.Civil3D || true
+          echo '=== UTILITY PLANNING / PARCELS ==='
+          grep -RniE -C 4 'Parcel|Erf|Cadastral|house connection|road reserve|manhole spacing|minimum cover|minimum slope|Water.*Demand|Sewer.*Analysis|Stormwater.*Analysis' src/CE.Tools.Civil3D || true
