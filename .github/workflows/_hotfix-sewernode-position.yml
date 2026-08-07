@@ -1,0 +1,45 @@
+name: CE Tools SewerNode Position Hotfix
+
+on:
+  push:
+    branches:
+      - hotfix/sewernode-position-c3d2023
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: hotfix/sewernode-position-c3d2023
+          fetch-depth: 0
+      - name: Apply Civil 3D 2023 SewerNode fix
+        run: python scripts/_Hotfix-SewerNodePosition.py
+      - name: Validate exact compiler regression
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p=Path('src/CE.Tools.Civil3D/SewerProductionCommands.cs')
+          t=p.read_text(encoding='utf-8')
+          bad='node = new SewerNode(id, rim);'
+          if bad in t:
+              raise SystemExit('Old 2-argument SewerNode construction still present')
+          for marker in ['new SewerNode(id, rim, structure.Position)', 'public Point3d Position { get; }', 'start.Position.DistanceTo(end.Position)']:
+              if marker not in t:
+                  raise SystemExit('Missing marker: '+marker)
+          print('Exact CS1061 regression guarded.')
+          PY
+      - name: Commit patched source
+        run: |
+          if git diff --quiet; then
+            echo "No source changes required."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/CE.Tools.Civil3D/SewerProductionCommands.cs
+          git commit -m "Fix SewerNode position fallback for Civil 3D 2023"
+          git push origin HEAD:hotfix/sewernode-position-c3d2023
