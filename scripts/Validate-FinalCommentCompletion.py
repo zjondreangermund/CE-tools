@@ -100,7 +100,7 @@ required = {
         "CreateByLayout",
         "AddDesignPvis",
         '"CE-TOP"',
-        '"CE-DATUM"',
+        '"CE-BOTTOM"',
         "ApplySurfaceTargets",
         "AddCorridorExtentsBoundary",
         "EnableSlopePatterns",
