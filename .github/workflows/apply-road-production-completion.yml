@@ -16,7 +16,7 @@ jobs:
           ref: agent/latest-runtime-design-comments
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Apply road production patch
+      - name: Apply road production patch on current head
         shell: bash
         run: |
           set +e
@@ -39,14 +39,6 @@ jobs:
                       'CivilAssemblyResolver.GetAssemblyIds(civilDocument, AcApplication.DocumentManager.MdiActiveDocument.Database)')
           p.write_text(t,encoding='utf-8')
           PY
-      - name: Show road completion markers
-        shell: bash
-        run: |
-          grep -n 'RoadProductionSettings road = RoadProductionSettings.Read' src/CE.Tools.Civil3D/RoadProductionCommentCommands.cs || true
-          grep -n 'TryCreateMissingBaselineAndRegion' src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs || true
-          grep -n 'internal string AssemblyName' src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs || true
-          grep -n 'CE_ROADSETTINGS' src/CE.Tools.Civil3D/PluginEntry.cs || true
-          grep -n 'CE_FLVERTEXLABELS' src/CE.Tools.Civil3D/PluginEntry.cs || true
       - name: Validate runtime comments
         run: python3 scripts/Validate-LatestRuntimeDesignComments.py
       - name: Validate command registry
