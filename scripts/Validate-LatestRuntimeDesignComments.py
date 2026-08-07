@@ -21,6 +21,8 @@ road_corridor=read('RoadCorridorCompletionCommands.cs')
 feature=read('FeatureProfileSurfaceCommentCommands.cs')
 coordination=read('ProjectCoordinationCommands.cs')
 utility=read('UtilityPlanningCommands.cs')
+surface=read('SurfaceSpikeHoleRepairCommands.cs')
+network_schedule=read('NetworkAssetScheduleCommands.cs')
 
 checks=[
     ('vertex closed-filled arrow', 'leader.ArrowSymbolId = ObjectId.Null;' in vertex),
@@ -54,6 +56,11 @@ checks=[
     ('utility planning workflow', 'CE_UTILITYPLANNER' in utility and 'CE_UTILITYROUTES' in utility and 'CE_UTILITYROUTESREFRESH' in utility),
     ('utility default boundary offset', '"Boundary offset (m)", 1.5' in utility),
     ('utility constraints', 'Minimum pipe slope (%)' in utility and 'Maximum pipe cover (m)' in utility and 'Warn when included pipe angle is below' in utility),
+    ('adaptive surface repair retry', 'Adaptive neighbour retry' in surface and 'neighbourRadius * 4.0' in surface),
+    ('surface refuses unchanged repair copies', 'No unchanged repair surface was created' in surface),
+    ('surface output rebuild verification', 'generatedVertexCount' in surface and 'Rebuild(generated)' in surface),
+    ('network suspicious 1m length geometry fallback', 'ReadGeometricLength' in network_schedule and 'Math.Abs(length.Value - 1.0)' in network_schedule),
+    ('network nominal millimetre fallback', 'ToNominalMillimetres' in network_schedule and ' + " mm"' in network_schedule),
 ]
 for name, ok in checks:
     if not ok: errors.append(name)
@@ -66,7 +73,6 @@ for command in [
     if command not in plugin:
         errors.append('ribbon is missing ' + command)
 
-# Old failure markers must not return.
 for name,text,marker in [
     ('vertex',vertex,'database.Dimblk.IsNull'),
     ('runtime',pre,'database.Dimblk.IsNull'),
@@ -75,4 +81,4 @@ for name,text,marker in [
 
 if errors:
     raise SystemExit('Latest runtime/design comment validation failed:\n- ' + '\n- '.join(errors))
-print('Latest runtime/design comment validation passed: runtime annotation/table fixes, sewer lengths, exact curve conversion, road-specific production, coordinated XREF/page setup/survey tools and linked cadastral utility planning are present.')
+print('Latest runtime/design comment validation passed: runtime annotation/table fixes, exact curve conversion, road production, project coordination, cadastral utility planning, adaptive surface repair and verified network length/diameter presentation are present.')
