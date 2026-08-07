@@ -76,23 +76,24 @@ jobs:
         if: steps.needed.outputs.value == 'true'
         run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
 
-      - name: Remove one-shot patch machinery
+      - name: Restore helper and workflow files before commit
         if: steps.needed.outputs.value == 'true'
         run: |
-          rm scripts/Apply-JunctionSequencePersistence.py
-          rm .github/workflows/apply-junction-sequence-persistence.yml
+          git checkout -- scripts/Apply-JunctionSequencePersistence.py
+          git checkout -- .github/workflows/core-tests.yml
+          git checkout -- .github/workflows/apply-junction-sequence-persistence.yml
 
-      - name: Validate diff
+      - name: Validate source diff
         if: steps.needed.outputs.value == 'true'
         run: |
           git diff --check
           git status --short
 
-      - name: Commit source changes
+      - name: Commit source changes only
         if: steps.needed.outputs.value == 'true'
         run: |
           git config user.name "CE Tools Agent"
           git config user.email "actions@users.noreply.github.com"
-          git add -A
+          git add src/CE.Tools.Civil3D/DisciplineWorkflowDialogs.cs src/CE.Tools.Civil3D/RoadJunctionCompletionCommands.cs src/CE.Tools.Civil3D/VertexSettingOutCommands.cs
           git commit -m "Add persistent junction and vertex sequencing [junction-sequence-applied]"
           git push origin HEAD:agent/junction-sequence-persistent-settings
