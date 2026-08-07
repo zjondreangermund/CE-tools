@@ -739,7 +739,7 @@ namespace CETools.Civil3D
             double rim = structure.RimElevation;
             if (double.IsNaN(rim) || double.IsInfinity(rim))
                 rim = structure.Position.Z;
-            node = new SewerNode(id, rim);
+            node = new SewerNode(id, rim, structure.Position);
             graph.Nodes.Add(id, node);
             return node;
         }
@@ -1575,13 +1575,20 @@ namespace CETools.Civil3D
     internal sealed class SewerNode
     {
         public SewerNode(ObjectId id, double rim)
+            : this(id, rim, Point3d.Origin)
+        {
+        }
+
+        public SewerNode(ObjectId id, double rim, Point3d position)
         {
             Id = id;
             Rim = rim;
+            Position = position;
             Edges = new List<SewerEdge>();
         }
         public ObjectId Id { get; }
         public double Rim { get; }
+        public Point3d Position { get; }
         public IList<SewerEdge> Edges { get; }
     }
 
