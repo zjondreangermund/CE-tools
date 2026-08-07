@@ -1,0 +1,63 @@
+name: Apply Junction Sequence Persistence
+
+on:
+  push:
+    branches: [ agent/junction-sequence-persistent-settings ]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ !contains(github.event.head_commit.message, '[junction-sequence-applied]') }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out branch
+        uses: actions/checkout@v4
+        with:
+          ref: agent/junction-sequence-persistent-settings
+          fetch-depth: 0
+
+      - name: Apply junction and vertex sequence changes
+        run: python3 scripts/Apply-JunctionSequencePersistence.py
+
+      - name: Validate new sequence and persistence behavior
+        run: python3 scripts/Validate-JunctionSequencePersistence.py
+
+      - name: Validate command registry
+        run: python3 scripts/Validate-CommandRegistry.py
+
+      - name: Validate dynamic COGO vertex and sewer links
+        run: python3 scripts/Validate-DynamicCogoVertexSewerLinks.py
+
+      - name: Validate final remaining comment completion
+        run: python3 scripts/Validate-FinalCommentCompletion.py
+
+      - name: Validate latest runtime and design comments
+        run: python3 scripts/Validate-LatestRuntimeDesignComments.py
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse all Civil 3D C# source
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
+
+      - name: Remove one-shot patch machinery
+        run: |
+          rm scripts/Apply-JunctionSequencePersistence.py
+          rm .github/workflows/apply-junction-sequence-persistence.yml
+
+      - name: Validate diff
+        run: |
+          git diff --check
+          git status --short
+
+      - name: Commit source changes
+        run: |
+          git config user.name "CE Tools Agent"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A
+          git commit -m "Add persistent junction and vertex sequencing [junction-sequence-applied]"
+          git push origin HEAD:agent/junction-sequence-persistent-settings
