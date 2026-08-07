@@ -1,0 +1,52 @@
+name: CE Tools Expand Namibia Towns
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'agent/expand-namibia-town-catalogue'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply source patch
+        run: python3 scripts/_Patch-ExpandNamibiaTowns.py
+
+      - name: Validate expanded Namibia town catalogue
+        run: python3 scripts/Validate-NamibiaTownCatalogue.py
+
+      - name: Validate existing Namibia map and utility planner
+        run: python3 scripts/Validate-NamibiaMapUtilityPlanner.py
+
+      - name: Validate unique command registry
+        run: python3 scripts/Validate-CommandRegistry.py
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse Civil 3D C# syntax
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
+
+      - name: Commit patched source
+        shell: bash
+        run: |
+          git config user.name "CE Tools Agent"
+          git config user.email "actions@github.com"
+          git add src/CE.Tools.Civil3D/ProjectCoordinationCommands.cs
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+          else
+            git commit -m "Expand Namibia survey town catalogue"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
