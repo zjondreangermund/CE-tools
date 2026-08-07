@@ -112,6 +112,9 @@ jobs:
       - name: Validate Namibia map and utility planner
         run: python3 scripts/Validate-NamibiaMapUtilityPlanner.py
 
+      - name: Validate expanded Namibia town catalogue
+        run: python3 scripts/Validate-NamibiaTownCatalogue.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
