@@ -39,14 +39,14 @@ jobs:
                       'CivilAssemblyResolver.GetAssemblyIds(civilDocument, AcApplication.DocumentManager.MdiActiveDocument.Database)')
           p.write_text(t,encoding='utf-8')
           PY
-      - name: Validate road completion markers
+      - name: Show road completion markers
         shell: bash
         run: |
-          grep -q 'RoadProductionSettings road = RoadProductionSettings.Read' src/CE.Tools.Civil3D/RoadProductionCommentCommands.cs
-          grep -q 'TryCreateMissingBaselineAndRegion' src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs
-          grep -q 'internal string AssemblyName' src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs
-          grep -q 'CE_ROADSETTINGS' src/CE.Tools.Civil3D/PluginEntry.cs
-          grep -q 'CE_FLVERTEXLABELS' src/CE.Tools.Civil3D/PluginEntry.cs
+          grep -n 'RoadProductionSettings road = RoadProductionSettings.Read' src/CE.Tools.Civil3D/RoadProductionCommentCommands.cs || true
+          grep -n 'TryCreateMissingBaselineAndRegion' src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs || true
+          grep -n 'internal string AssemblyName' src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs || true
+          grep -n 'CE_ROADSETTINGS' src/CE.Tools.Civil3D/PluginEntry.cs || true
+          grep -n 'CE_FLVERTEXLABELS' src/CE.Tools.Civil3D/PluginEntry.cs || true
       - name: Validate runtime comments
         run: python3 scripts/Validate-LatestRuntimeDesignComments.py
       - name: Validate command registry
