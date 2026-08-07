@@ -15,13 +15,14 @@ jobs:
       - name: Locate affected commands and implementations
         shell: bash
         run: |
-          echo '=== FEATURE LINE / SURFACE / BOQ / ROAD / WORKFLOW MATCHES ==='
-          rg -n -C 4 'CE_FLREPORTUI|CE_FLLABELX|CE_SURFSPIKEHOLEFIX|CE_BOQSEWER|CE_BOQSTORM|CE_BOQWATER|CE_NETWORKSCHEDULEBOQ|CE_ASSEMBLYCREATE|CE_ROADALIGN|CE_TOOLSPALETTE|Workflow Centre|GridReportPresenter|Profile View Band Set Style|Road-Single-Band|Road-Sinle-Band|Length2D|Length3D|NominalDiameter' src/CE.Tools.Civil3D || true
+          PATTERN='CE_FLREPORTUI|CE_FLLABELX|CE_SURFSPIKEHOLEFIX|CE_BOQSEWER|CE_BOQSTORM|CE_BOQWATER|CE_NETWORKSCHEDULEBOQ|CE_ASSEMBLYCREATE|CE_ROADALIGN|CE_TOOLSPALETTE|Workflow Centre|GridReportPresenter|Profile View Band Set Style|Road-Single-Band|Road-Sinle-Band|Length2D|Length3D|NominalDiameter'
+          echo '=== MATCHES ==='
+          grep -RniE -C 3 "$PATTERN" src/CE.Tools.Civil3D || true
           echo '=== FEATURE LINE FILES ==='
-          rg -l 'CE_FLREPORTUI|CE_FLLABELX|Feature Line Report' src/CE.Tools.Civil3D || true
+          grep -RliE 'CE_FLREPORTUI|CE_FLLABELX|Feature Line Report' src/CE.Tools.Civil3D || true
           echo '=== SURFACE REPAIR FILES ==='
-          rg -l 'CE_SURFSPIKEHOLEFIX|Spike and Hole Repair' src/CE.Tools.Civil3D || true
+          grep -RliE 'CE_SURFSPIKEHOLEFIX|Spike and Hole Repair' src/CE.Tools.Civil3D || true
           echo '=== BOQ FILES ==='
-          rg -l 'CE_BOQSEWER|CE_BOQSTORM|CE_BOQWATER|NominalDiameter|Length2D|Length3D' src/CE.Tools.Civil3D || true
+          grep -RliE 'CE_BOQSEWER|CE_BOQSTORM|CE_BOQWATER|NominalDiameter|Length2D|Length3D' src/CE.Tools.Civil3D || true
           echo '=== ROAD/ASSEMBLY FILES ==='
-          rg -l 'CE_ASSEMBLYCREATE|CE_ROADALIGN|Assembly Style|Corridor Style|Road-Single-Band' src/CE.Tools.Civil3D || true
+          grep -RliE 'CE_ASSEMBLYCREATE|CE_ROADALIGN|Assembly Style|Corridor Style|Road-Single-Band' src/CE.Tools.Civil3D || true
