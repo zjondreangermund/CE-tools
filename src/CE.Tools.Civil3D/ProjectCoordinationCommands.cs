@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Windows;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -78,16 +79,16 @@ namespace CETools.Civil3D
                 files.Add(new MasterXrefInput(discipline, path));
             }
 
-            var review = files.Select(item =>
-                new KeyValuePair<string, string>(item.Discipline, item.Path)).ToList();
-            review.Insert(0, new KeyValuePair<string, string>("Master drawing", output));
-            review.Insert(1, new KeyValuePair<string, string>("Source drawings changed", "No"));
-            review.Insert(2, new KeyValuePair<string, string>("Insertion", "0,0,0 / Overlay XREF / one layer per discipline"));
-            if (!PopupTablePresenter.ShowReview(
+            string reviewText =
+                "Create a new coordinated master drawing?\n\n" +
+                "Master: " + output + "\n" +
+                string.Join("\n", files.Select(item => item.Discipline + ": " + item.Path)) +
+                "\n\nInsertion: 0,0,0 as XREFs. Source discipline DWGs are not modified.";
+            if (MessageBox.Show(
+                    reviewText,
                     "CE Tools - Coordinated Master Drawing",
-                    "The four discipline drawings remain separate. CE Tools creates a new master DWG and references each source at the same origin so Civil 3D design objects remain in their source drawings.",
-                    review,
-                    "Create Master Drawing")) return;
+                    MessageBoxButton.OKCancel,
+                    MessageBoxImage.Question) != MessageBoxResult.OK) return;
 
             try
             {

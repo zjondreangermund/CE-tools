@@ -305,13 +305,13 @@ namespace CETools.Civil3D
                 new List<string> { "Warnings", result.Warnings.Count.ToString(CultureInfo.CurrentCulture) }
             };
             foreach (string warning in result.Warnings.Take(20)) rows.Add(new List<string> { "Warning", warning });
-            GridReportPresenter.Show(
+            GridReportPresenter.ShowReportAndOfferTable(
                 document,
                 "CE Tools - Utility Route Planning Report",
                 "Linked planning geometry only. Convert/sequence it through the Sewer, Stormwater or Water workflow using the active Civil 3D part catalogue and authority standards.",
-                new[] { "Item", "Value" },
+                new List<string> { "Item", "Value" },
                 rows,
-                false);
+                "CE TOOLS UTILITY ROUTE PLANNING");
         }
 
         private static void WriteLink(Polyline route, ObjectId sourceId, UtilityRouteSettings settings)
