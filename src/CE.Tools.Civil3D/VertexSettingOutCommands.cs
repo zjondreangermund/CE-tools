@@ -103,6 +103,9 @@ namespace CETools.Civil3D
                 return;
             }
 
+            List<string> surfaceChoices = ReadSurfaceNames(document.Database, civilDocument);
+            surfaceChoices.Insert(0, "<Pick surface in drawing>");
+
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Vertex Setting-Out Settings",
                 "All vertices are included. Arcs longer than 10 m receive a midpoint; every arc receives a centre point and radius dimension. Tangents longer than 20 m receive a midpoint, and tangents longer than 40 m receive three equally spaced points.");
@@ -118,12 +121,31 @@ namespace CETools.Civil3D
                 "Elevation", "01 Output", "XYZ elevation source", "Source geometry",
                 "Read Z from the selected source geometry, a Civil 3D surface, or a separate feature line. The reference remains linked on refresh.",
                 new[] { "Source geometry", "Select Civil 3D surface", "Select feature line" });
+            settings.AddChoice(
+                "ElevationSurface", "01 Output", "Civil 3D elevation surface", "<Pick surface in drawing>",
+                "Choose an existing surface by name or keep the pick option to select it in the drawing after saving the popup.",
+                surfaceChoices);
             settings.AddText(
                 "Prefix", "02 Numbering", "Point name prefix", "P",
                 "Names are generated as P1, P2, P3 and are resequenced when linked geometry changes.");
             settings.AddPositiveInteger(
                 "Start", "02 Numbering", "Starting number", 1,
                 "First generated point number/name.");
+            settings.AddChoice(
+                "NumberingMode", "02 Numbering", "Numbering layout", "Single sequence",
+                "Use one sequence such as P1, P2... or number each selected road/source as J1.1, J1.2... then J2.1, J2.2....",
+                new[] { "Single sequence", "Road grouped sequence" });
+            settings.AddPositiveInteger(
+                "RoadStart", "02 Numbering", "Starting road number", 1,
+                "Road grouped sequence starts with this road number, for example J1.1.");
+            settings.AddChoice(
+                "SequenceMode", "02 Numbering", "Sequence direction", "Auto by road orientation",
+                "Horizontal sources sequence left to right; vertical sources sequence top to bottom. You can force either direction or preserve source geometry order.",
+                new[] { "Auto by road orientation", "Left to right", "Top to bottom", "Source geometry order" });
+            settings.AddChoice(
+                "StartMode", "02 Numbering", "Sequence start point", "Automatic start",
+                "Pick any generated/reference point to rotate numbering so that point becomes the start of the sequence.",
+                new[] { "Automatic start", "Pick start point" });
             settings.AddPositiveDouble(
                 "Offset", "03 Annotation", "MText/MLeader offset", 3.0,
                 "Drawing-unit offset from each setting-out point to its annotation.");
@@ -139,6 +161,10 @@ namespace CETools.Civil3D
                 "YSign", "04 Coordinate Display", "Displayed Y sign", "Keep Y sign",
                 "Keep or reverse the displayed Y sign without changing the COGO point or source geometry.",
                 new[] { "Keep Y sign", "Reverse Y sign" });
+            settings.AddChoice(
+                "TableMode", "05 Linked Table", "Linked table action", "Create new linked table",
+                "Create a new table or add the selected sources to an existing CE vertex setting-out table and continue its linked sequence.",
+                new[] { "Create new linked table", "Continue existing linked table" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             string outputType = settings.Text("Output");
@@ -146,21 +172,25 @@ namespace CETools.Civil3D
                 ? "P"
                 : settings.Text("Prefix").Trim();
             int startNumber = settings.Integer("Start", 1);
+            int roadStartNumber = settings.Integer("RoadStart", 1);
             double labelOffset = settings.Double("Offset", 3.0);
             string generationMode = settings.Text("Generation");
             string elevationMode = settings.Text("Elevation");
+            string elevationSurface = settings.Text("ElevationSurface");
             string coordinateOrder = settings.Text("CoordinateOrder");
             string xSign = settings.Text("XSign");
             string ySign = settings.Text("YSign");
+            string numberingMode = settings.Text("NumberingMode");
+            string sequenceMode = settings.Text("SequenceMode");
+            string startMode = settings.Text("StartMode");
+            string tableMode = settings.Text("TableMode");
             ObjectId elevationSourceId;
             if (!PromptElevationSource(
                     document,
+                    civilDocument,
                     elevationMode,
+                    elevationSurface,
                     out elevationSourceId)) return;
-
-            PromptPointResult tablePoint = document.Editor.GetPoint(
-                "\nPick insertion point for the linked setting-out table: ");
-            if (tablePoint.Status != PromptStatus.OK) return;
 
             AnnotationOptions annotation;
             if (!AnnotationSettingsStore.Prepare(document, false, out annotation)) return;
@@ -188,13 +218,60 @@ namespace CETools.Civil3D
                 return;
             }
 
-            List<VertexSettingRecord> records = FlattenAndName(sources, prefix, startNumber);
+            string startRecordKey = string.Empty;
+            if (string.Equals(startMode, "Pick start point", StringComparison.OrdinalIgnoreCase))
+            {
+                PromptPointResult picked = document.Editor.GetPoint(
+                    "\nPick the setting-out point/location that must receive the first number: ");
+                if (picked.Status != PromptStatus.OK) return;
+                Point3d world = picked.Value.TransformBy(document.Editor.CurrentUserCoordinateSystem);
+                startRecordKey = FindNearestRecordKey(sources, world);
+            }
+
+            ObjectId existingTableId = ObjectId.Null;
+            VertexSettingLink existingLink = null;
+            Point3d tablePoint = Point3d.Origin;
+            bool continueExisting = string.Equals(
+                tableMode,
+                "Continue existing linked table",
+                StringComparison.OrdinalIgnoreCase);
+            if (continueExisting)
+            {
+                PromptEntityResult table = PromptLinkedTable(
+                    document.Editor,
+                    "\nSelect the existing CE vertex setting-out table to continue: ");
+                if (table.Status != PromptStatus.OK) return;
+                existingTableId = table.ObjectId;
+                existingLink = ReadLink(document.Database, existingTableId);
+                if (string.IsNullOrWhiteSpace(startRecordKey))
+                    startRecordKey = existingLink.StartRecordKey;
+            }
+            else
+            {
+                PromptPointResult insertion = document.Editor.GetPoint(
+                    "\nPick insertion point for the linked setting-out table: ");
+                if (insertion.Status != PromptStatus.OK) return;
+                tablePoint = insertion.Value;
+            }
+
+            List<VertexSettingRecord> records = FlattenAndName(
+                sources,
+                prefix,
+                startNumber,
+                numberingMode,
+                roadStartNumber,
+                sequenceMode,
+                startRecordKey);
             int radialDimensions = sources.Sum(item => item.Dimensions.Count);
             var review = new List<KeyValuePair<string, string>>
             {
                 new KeyValuePair<string, string>("Accepted sources", sources.Count.ToString(CultureInfo.InvariantCulture)),
                 new KeyValuePair<string, string>("Rejected selections", rejected.ToString(CultureInfo.InvariantCulture)),
                 new KeyValuePair<string, string>("Point output", outputType),
+                new KeyValuePair<string, string>("Numbering layout", numberingMode),
+                new KeyValuePair<string, string>("Sequence direction", sequenceMode),
+                new KeyValuePair<string, string>("Picked start", string.IsNullOrWhiteSpace(startRecordKey) ? "Automatic" : "Yes"),
+                new KeyValuePair<string, string>("Linked table action", tableMode),
                 new KeyValuePair<string, string>("Generated point rows", records.Count.ToString(CultureInfo.InvariantCulture)),
                 new KeyValuePair<string, string>("Radius dimensions", radialDimensions.ToString(CultureInfo.InvariantCulture)),
                 new KeyValuePair<string, string>("Automatic linked refresh", "Yes"),
@@ -202,17 +279,28 @@ namespace CETools.Civil3D
             };
             if (!PopupTablePresenter.ShowReview(
                     "CE Tools - Vertex Setting-Out Preview",
-                    "The source handles and generation rules are stored on the table. CE_REFRESHALL and the dedicated refresh command rebuild the outputs from current geometry.",
+                    "Horizontal road sources run left-to-right and vertical sources run top-to-bottom in Auto mode. Arc centres are numbered after their on-curve setting-out points. Existing linked tables can be extended without losing their group link.",
                     review,
-                    "Create Setting-Out"))
+                    continueExisting ? "Continue Setting-Out" : "Create Setting-Out"))
                 return;
 
+            IList<string> linkedHandles = existingLink == null
+                ? sources.Select(item => item.Handle).ToList()
+                : existingLink.SourceHandles
+                    .Concat(sources.Select(item => item.Handle))
+                    .Where(item => !string.IsNullOrWhiteSpace(item))
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
             var link = new VertexSettingLink
             {
-                GroupId = Guid.NewGuid().ToString("N"),
+                GroupId = existingLink == null ? Guid.NewGuid().ToString("N") : existingLink.GroupId,
                 OutputType = outputType,
                 Prefix = prefix,
                 StartNumber = startNumber,
+                RoadStartNumber = roadStartNumber,
+                NumberingMode = numberingMode,
+                SequenceMode = sequenceMode,
+                StartRecordKey = startRecordKey,
                 LabelOffset = labelOffset,
                 GenerationMode = generationMode,
                 ElevationMode = elevationMode,
@@ -222,18 +310,34 @@ namespace CETools.Civil3D
                 ElevationSourceHandle = elevationSourceId.IsNull
                     ? string.Empty
                     : elevationSourceId.Handle.ToString(),
-                SourceHandles = sources.Select(item => item.Handle).ToList()
+                SourceHandles = linkedHandles
             };
 
             try
             {
+                if (continueExisting)
+                {
+                    UpdateTableLink(document.Database, existingTableId, link);
+                    int continuedPoints;
+                    int continuedDimensions;
+                    RefreshTable(document, existingTableId, out continuedPoints, out continuedDimensions);
+                    document.Editor.SetImpliedSelection(new[] { existingTableId });
+                    RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);
+                    document.Editor.Regen();
+                    document.Editor.WriteMessage(
+                        "\nCE_VERTEXSETTINGOUT continued existing table. Total linked sources={0}; points={1}; radius dimensions={2}.",
+                        linkedHandles.Count,
+                        continuedPoints,
+                        continuedDimensions);
+                    return;
+                }
                 ObjectId tableId = CreateGroup(
                     document,
                     civilDocument,
                     link,
                     sources,
                     records,
-                    tablePoint.Value,
+                    tablePoint,
                     annotation.TextHeight);
                 document.Editor.SetImpliedSelection(new[] { tableId });
                 RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);
@@ -426,7 +530,14 @@ namespace CETools.Civil3D
                     ResolveHandle(document.Database, link.ElevationSourceHandle));
                 if (sources.Count == 0 || sources.All(item => item.Records.Count == 0))
                     throw new InvalidOperationException("The linked sources produced no current setting-out geometry.");
-                List<VertexSettingRecord> records = FlattenAndName(sources, link.Prefix, link.StartNumber);
+                List<VertexSettingRecord> records = FlattenAndName(
+                    sources,
+                    link.Prefix,
+                    link.StartNumber,
+                    link.NumberingMode,
+                    link.RoadStartNumber,
+                    link.SequenceMode,
+                    link.StartRecordKey);
 
                 EnsureRegApp(document.Database, transaction);
                 BlockTableRecord modelSpace = GetModelSpace(document.Database, transaction, OpenMode.ForWrite);
@@ -480,20 +591,133 @@ namespace CETools.Civil3D
         private static List<VertexSettingRecord> FlattenAndName(
             IEnumerable<VertexSettingSource> sources,
             string prefix,
-            int startNumber)
+            int startNumber,
+            string numberingMode,
+            int roadStartNumber,
+            string sequenceMode,
+            string startRecordKey)
         {
             var result = new List<VertexSettingRecord>();
+            List<VertexSettingSource> orderedSources = OrderSources(
+                sources,
+                sequenceMode,
+                startRecordKey);
+            bool roadGrouped = string.Equals(
+                numberingMode,
+                "Road grouped sequence",
+                StringComparison.OrdinalIgnoreCase);
             int sequence = startNumber;
-            foreach (VertexSettingSource source in sources)
+            int road = roadStartNumber;
+            foreach (VertexSettingSource source in orderedSources)
             {
-                foreach (VertexSettingRecord record in source.Records)
+                List<VertexSettingRecord> orderedRecords = OrderRecords(
+                    source,
+                    sequenceMode,
+                    startRecordKey);
+                int roadPoint = 1;
+                foreach (VertexSettingRecord record in orderedRecords)
                 {
-                    record.PointName = prefix + sequence.ToString(CultureInfo.InvariantCulture);
+                    record.PointName = roadGrouped
+                        ? prefix + road.ToString(CultureInfo.InvariantCulture) + "." + roadPoint.ToString(CultureInfo.InvariantCulture)
+                        : prefix + sequence.ToString(CultureInfo.InvariantCulture);
+                    roadPoint++;
                     sequence++;
                     result.Add(record);
                 }
+                road++;
             }
             return result;
+        }
+
+        private static List<VertexSettingSource> OrderSources(
+            IEnumerable<VertexSettingSource> sources,
+            string sequenceMode,
+            string startRecordKey)
+        {
+            var values = (sources ?? Enumerable.Empty<VertexSettingSource>()).ToList();
+            IEnumerable<VertexSettingSource> ordered;
+            if (string.Equals(sequenceMode, "Left to right", StringComparison.OrdinalIgnoreCase))
+                ordered = values.OrderBy(item => SourceCentre(item).X).ThenByDescending(item => SourceCentre(item).Y);
+            else if (string.Equals(sequenceMode, "Top to bottom", StringComparison.OrdinalIgnoreCase))
+                ordered = values.OrderByDescending(item => SourceCentre(item).Y).ThenBy(item => SourceCentre(item).X);
+            else
+                ordered = values.OrderByDescending(item => SourceCentre(item).Y).ThenBy(item => SourceCentre(item).X);
+            var result = ordered.ToList();
+            if (string.IsNullOrWhiteSpace(startRecordKey)) return result;
+            int start = result.FindIndex(item => item.Records.Any(record => string.Equals(record.Key, startRecordKey, StringComparison.OrdinalIgnoreCase)));
+            return start <= 0 ? result : result.Skip(start).Concat(result.Take(start)).ToList();
+        }
+
+        private static Point3d SourceCentre(VertexSettingSource source)
+        {
+            IList<VertexSettingRecord> records = source == null ? null : source.Records;
+            if (records == null || records.Count == 0) return Point3d.Origin;
+            return new Point3d(
+                records.Average(record => record.Point.X),
+                records.Average(record => record.Point.Y),
+                records.Average(record => record.Point.Z));
+        }
+
+        private static List<VertexSettingRecord> OrderRecords(
+            VertexSettingSource source,
+            string sequenceMode,
+            string startRecordKey)
+        {
+            var records = source == null || source.Records == null
+                ? new List<VertexSettingRecord>()
+                : source.Records.ToList();
+            var centres = records.Where(record => string.Equals(record.Kind, "ARC CENTER", StringComparison.OrdinalIgnoreCase)).ToList();
+            var onGeometry = records.Where(record => !string.Equals(record.Kind, "ARC CENTER", StringComparison.OrdinalIgnoreCase)).ToList();
+            string mode = sequenceMode ?? string.Empty;
+            if (string.Equals(mode, "Auto by road orientation", StringComparison.OrdinalIgnoreCase))
+            {
+                double width = onGeometry.Count == 0 ? 0.0 : onGeometry.Max(record => record.Point.X) - onGeometry.Min(record => record.Point.X);
+                double height = onGeometry.Count == 0 ? 0.0 : onGeometry.Max(record => record.Point.Y) - onGeometry.Min(record => record.Point.Y);
+                mode = width >= height ? "Left to right" : "Top to bottom";
+            }
+            if (string.Equals(mode, "Left to right", StringComparison.OrdinalIgnoreCase))
+                onGeometry = onGeometry.OrderBy(record => record.Point.X).ThenByDescending(record => record.Point.Y).ToList();
+            else if (string.Equals(mode, "Top to bottom", StringComparison.OrdinalIgnoreCase))
+                onGeometry = onGeometry.OrderByDescending(record => record.Point.Y).ThenBy(record => record.Point.X).ToList();
+            // Source geometry order deliberately keeps the extracted source order.
+            if (!string.IsNullOrWhiteSpace(startRecordKey))
+            {
+                int start = onGeometry.FindIndex(record => string.Equals(record.Key, startRecordKey, StringComparison.OrdinalIgnoreCase));
+                if (start > 0) onGeometry = onGeometry.Skip(start).Concat(onGeometry.Take(start)).ToList();
+            }
+
+            foreach (VertexSettingRecord centre in centres.OrderBy(item => item.SegmentIndex))
+            {
+                int segment = Math.Max(centre.SegmentIndex - 1, 0);
+                string startKey = centre.SourceHandle + "|V" + segment.ToString(CultureInfo.InvariantCulture);
+                string endKey = centre.SourceHandle + "|V" + (segment + 1).ToString(CultureInfo.InvariantCulture);
+                int insertAfter = -1;
+                for (int index = 0; index < onGeometry.Count; index++)
+                {
+                    VertexSettingRecord candidate = onGeometry[index];
+                    if (candidate.SegmentIndex == centre.SegmentIndex ||
+                        string.Equals(candidate.Key, startKey, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(candidate.Key, endKey, StringComparison.OrdinalIgnoreCase))
+                        insertAfter = Math.Max(insertAfter, index);
+                }
+                int insertion = Math.Min(Math.Max(insertAfter + 1, 0), onGeometry.Count);
+                onGeometry.Insert(insertion, centre);
+            }
+            return onGeometry;
+        }
+
+        private static string FindNearestRecordKey(
+            IEnumerable<VertexSettingSource> sources,
+            Point3d picked)
+        {
+            VertexSettingRecord nearest = null;
+            double best = double.MaxValue;
+            foreach (VertexSettingRecord record in (sources ?? Enumerable.Empty<VertexSettingSource>()).SelectMany(item => item.Records))
+            {
+                double distance = record.Point.DistanceTo(picked);
+                if (distance < best) { best = distance; nearest = record; }
+            }
+            return nearest == null ? string.Empty : nearest.Key;
         }
 
         private static ObjectId CreateOutput(
@@ -671,11 +895,11 @@ namespace CETools.Civil3D
             Vector3d direction = dimension.ChordPoint - dimension.Center;
             if (direction.Length <= 1e-8) direction = Vector3d.XAxis;
             direction = direction.GetNormal();
-            double offset = Math.Max(textHeight * 4.0, dimension.Radius * 0.20);
             try
             {
                 radial.TextPosition = dimension.Center +
-                    direction * (dimension.Radius + offset);
+                    direction * (dimension.Radius * 0.50);
+                SetDimensionTextMovementNoLeader(radial);
             }
             catch { }
         }
@@ -829,6 +1053,23 @@ namespace CETools.Civil3D
             }
         }
 
+        private static void SetDimensionTextMovementNoLeader(Dimension dimension)
+        {
+            if (dimension == null) return;
+            try
+            {
+                PropertyInfo property = dimension.GetType().GetProperty(
+                    "Dimtmove",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite) return;
+                object value = property.PropertyType.IsEnum
+                    ? Enum.ToObject(property.PropertyType, 2)
+                    : Convert.ChangeType(2, property.PropertyType, CultureInfo.InvariantCulture);
+                property.SetValue(dimension, value, null);
+            }
+            catch { }
+        }
+
         private static Point3d LabelLocation(Point3d point, double offset)
         {
             return point + new Vector3d(offset, offset, 0.0);
@@ -936,48 +1177,82 @@ namespace CETools.Civil3D
 
         private static bool PromptElevationSource(
             Document document,
+            CivilDocument civilDocument,
             string mode,
+            string surfaceName,
             out ObjectId sourceId)
         {
             sourceId = ObjectId.Null;
             if (document == null || string.IsNullOrWhiteSpace(mode) ||
-                string.Equals(
-                    mode,
-                    "Source geometry",
-                    StringComparison.OrdinalIgnoreCase))
+                string.Equals(mode, "Source geometry", StringComparison.OrdinalIgnoreCase))
                 return true;
 
+            if (string.Equals(mode, "Select Civil 3D surface", StringComparison.OrdinalIgnoreCase) &&
+                !string.IsNullOrWhiteSpace(surfaceName) &&
+                !surfaceName.StartsWith("<Pick", StringComparison.OrdinalIgnoreCase))
+            {
+                sourceId = ResolveSurfaceByName(document.Database, civilDocument, surfaceName);
+                if (!sourceId.IsNull) return true;
+            }
+
             var options = new PromptEntityOptions(
-                string.Equals(
-                    mode,
-                    "Select Civil 3D surface",
-                    StringComparison.OrdinalIgnoreCase)
+                string.Equals(mode, "Select Civil 3D surface", StringComparison.OrdinalIgnoreCase)
                     ? "\nSelect the Civil 3D surface used for all setting-out Z values: "
                     : "\nSelect the feature line used for all setting-out Z values: ");
             PromptEntityResult selected = document.Editor.GetEntity(options);
             if (selected.Status != PromptStatus.OK) return false;
-            using (Transaction transaction =
-                document.Database.TransactionManager.StartTransaction())
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                DBObject value = transaction.GetObject(
-                    selected.ObjectId,
-                    OpenMode.ForRead,
-                    false);
-                bool valid = string.Equals(
-                    mode,
-                    "Select Civil 3D surface",
-                    StringComparison.OrdinalIgnoreCase)
+                DBObject value = transaction.GetObject(selected.ObjectId, OpenMode.ForRead, false);
+                bool valid = string.Equals(mode, "Select Civil 3D surface", StringComparison.OrdinalIgnoreCase)
                     ? value is Autodesk.Civil.DatabaseServices.Surface
                     : value is Autodesk.Civil.DatabaseServices.FeatureLine;
                 if (!valid)
                 {
-                    document.Editor.WriteMessage(
-                        "\nThe selected object is not the required Civil 3D elevation source.");
+                    document.Editor.WriteMessage("\nThe selected object is not the required Civil 3D elevation source.");
                     return false;
                 }
             }
             sourceId = selected.ObjectId;
             return true;
+        }
+
+        private static List<string> ReadSurfaceNames(Database database, CivilDocument civilDocument)
+        {
+            var names = new List<string>();
+            if (database == null || civilDocument == null) return names;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in civilDocument.GetSurfaceIds())
+                {
+                    Autodesk.Civil.DatabaseServices.Surface surface;
+                    try { surface = transaction.GetObject(id, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Surface; }
+                    catch { continue; }
+                    if (surface != null && !string.IsNullOrWhiteSpace(surface.Name)) names.Add(surface.Name);
+                }
+            }
+            return names.Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(item => item, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        private static ObjectId ResolveSurfaceByName(
+            Database database,
+            CivilDocument civilDocument,
+            string name)
+        {
+            if (database == null || civilDocument == null || string.IsNullOrWhiteSpace(name)) return ObjectId.Null;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in civilDocument.GetSurfaceIds())
+                {
+                    Autodesk.Civil.DatabaseServices.Surface surface;
+                    try { surface = transaction.GetObject(id, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Surface; }
+                    catch { continue; }
+                    if (surface != null && string.Equals(surface.Name, name, StringComparison.OrdinalIgnoreCase)) return id;
+                }
+            }
+            return ObjectId.Null;
         }
 
         private static void ApplyElevationReference(
@@ -1156,6 +1431,18 @@ namespace CETools.Civil3D
             values.Add(new TypedValue(
                 (int)DxfCode.ExtendedDataAsciiString,
                 "YSIGN=" + (link.YSign ?? "Keep Y sign")));
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
+                "NUMMODE=" + (link.NumberingMode ?? "Single sequence")));
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
+                "ROADSTART=" + link.RoadStartNumber.ToString(CultureInfo.InvariantCulture)));
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
+                "SEQ=" + (link.SequenceMode ?? "Auto by road orientation")));
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
+                "STARTKEY=" + (link.StartRecordKey ?? string.Empty)));
             foreach (string handle in link.SourceHandles)
                 values.Add(new TypedValue(
                     (int)DxfCode.ExtendedDataAsciiString,
@@ -1184,6 +1471,10 @@ namespace CETools.Civil3D
                 CoordinateOrder = "X then Y",
                 XSign = "Keep X sign",
                 YSign = "Keep Y sign",
+                NumberingMode = "Single sequence",
+                RoadStartNumber = 1,
+                SequenceMode = "Auto by road orientation",
+                StartRecordKey = string.Empty,
                 SourceHandles = new List<string>()
             };
             for (int index = 8; index < values.Length; index++)
@@ -1202,12 +1493,46 @@ namespace CETools.Civil3D
                     link.XSign = value.Substring(6);
                 else if (value.StartsWith("YSIGN=", StringComparison.OrdinalIgnoreCase))
                     link.YSign = value.Substring(6);
+                else if (value.StartsWith("NUMMODE=", StringComparison.OrdinalIgnoreCase))
+                    link.NumberingMode = value.Substring(8);
+                else if (value.StartsWith("ROADSTART=", StringComparison.OrdinalIgnoreCase))
+                {
+                    int roadStart;
+                    if (int.TryParse(value.Substring(10), NumberStyles.Integer, CultureInfo.InvariantCulture, out roadStart) && roadStart > 0)
+                        link.RoadStartNumber = roadStart;
+                }
+                else if (value.StartsWith("SEQ=", StringComparison.OrdinalIgnoreCase))
+                    link.SequenceMode = value.Substring(4);
+                else if (value.StartsWith("STARTKEY=", StringComparison.OrdinalIgnoreCase))
+                    link.StartRecordKey = value.Substring(9);
                 else if (value.StartsWith("SRC=", StringComparison.OrdinalIgnoreCase))
                     link.SourceHandles.Add(value.Substring(4));
                 else
                     link.SourceHandles.Add(value);
             }
             return link;
+        }
+
+        private static VertexSettingLink ReadLink(Database database, ObjectId tableId)
+        {
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                Table table = transaction.GetObject(tableId, OpenMode.ForRead, false) as Table;
+                return ReadTableLink(table);
+            }
+        }
+
+        private static void UpdateTableLink(Database database, ObjectId tableId, VertexSettingLink link)
+        {
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                EnsureRegApp(database, transaction);
+                Table table = transaction.GetObject(tableId, OpenMode.ForWrite, false) as Table;
+                if (table == null) throw new InvalidOperationException("The selected existing table is unavailable.");
+                WriteTableLink(table, transaction, link);
+                ForceTableGraphics(table);
+                transaction.Commit();
+            }
         }
 
         private static void WriteOutputLink(
@@ -1411,6 +1736,10 @@ namespace CETools.Civil3D
             public string CoordinateOrder { get; set; }
             public string XSign { get; set; }
             public string YSign { get; set; }
+            public string NumberingMode { get; set; }
+            public int RoadStartNumber { get; set; }
+            public string SequenceMode { get; set; }
+            public string StartRecordKey { get; set; }
             public IList<string> SourceHandles { get; set; }
         }
     }

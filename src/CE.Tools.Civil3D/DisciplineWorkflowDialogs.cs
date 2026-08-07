@@ -49,8 +49,13 @@ namespace CETools.Civil3D
         public static bool EditSettings(ProductionSettingsDialogModel model)
         {
             if (model == null) return false;
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document != null)
+                ProductionSettingsPersistenceStore.Load(document.Database, model);
             var window = new ProductionSettingsWindow(model);
             AcApplication.ShowModalWindow(window);
+            if (window.Accepted && document != null)
+                ProductionSettingsPersistenceStore.Save(document.Database, model);
             return window.Accepted;
         }
 
@@ -575,6 +580,115 @@ namespace CETools.Civil3D
                 "CE Tools Settings",
                 MessageBoxButton.OK,
                 MessageBoxImage.Warning);
+        }
+    }
+
+    internal static class ProductionSettingsPersistenceStore
+    {
+        private const string RootName = "CE_TOOLS";
+        private const string StoreName = "POPUP_SETTINGS";
+
+        internal static void Load(Database database, ProductionSettingsDialogModel model)
+        {
+            if (database == null || model == null) return;
+            try
+            {
+                using (Transaction transaction = database.TransactionManager.StartTransaction())
+                {
+                    DBDictionary named = transaction.GetObject(database.NamedObjectsDictionaryId, OpenMode.ForRead, false) as DBDictionary;
+                    if (named == null || !named.Contains(RootName)) return;
+                    DBDictionary root = transaction.GetObject(named.GetAt(RootName), OpenMode.ForRead, false) as DBDictionary;
+                    if (root == null || !root.Contains(StoreName)) return;
+                    DBDictionary store = transaction.GetObject(root.GetAt(StoreName), OpenMode.ForRead, false) as DBDictionary;
+                    string key = Key(model.Title);
+                    if (store == null || !store.Contains(key)) return;
+                    Xrecord record = transaction.GetObject(store.GetAt(key), OpenMode.ForRead, false) as Xrecord;
+                    if (record == null || record.Data == null) return;
+                    var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (TypedValue item in record.Data)
+                    {
+                        if (item.TypeCode != (int)DxfCode.Text) continue;
+                        string value = Convert.ToString(item.Value, CultureInfo.InvariantCulture) ?? string.Empty;
+                        int split = value.IndexOf('\t');
+                        if (split <= 0) continue;
+                        values[value.Substring(0, split)] = value.Substring(split + 1);
+                    }
+                    foreach (ProductionSettingsField field in model.Fields)
+                    {
+                        string value;
+                        if (values.TryGetValue(field.Key, out value)) field.Value = value;
+                    }
+                }
+            }
+            catch
+            {
+                // Settings persistence must never prevent a production command from opening.
+            }
+        }
+
+        internal static void Save(Database database, ProductionSettingsDialogModel model)
+        {
+            if (database == null || model == null) return;
+            try
+            {
+                using (Transaction transaction = database.TransactionManager.StartTransaction())
+                {
+                    DBDictionary named = transaction.GetObject(database.NamedObjectsDictionaryId, OpenMode.ForWrite, false) as DBDictionary;
+                    if (named == null) return;
+                    DBDictionary root;
+                    if (named.Contains(RootName))
+                        root = transaction.GetObject(named.GetAt(RootName), OpenMode.ForWrite, false) as DBDictionary;
+                    else
+                    {
+                        root = new DBDictionary();
+                        named.SetAt(RootName, root);
+                        transaction.AddNewlyCreatedDBObject(root, true);
+                    }
+                    DBDictionary store;
+                    if (root.Contains(StoreName))
+                        store = transaction.GetObject(root.GetAt(StoreName), OpenMode.ForWrite, false) as DBDictionary;
+                    else
+                    {
+                        store = new DBDictionary();
+                        root.SetAt(StoreName, store);
+                        transaction.AddNewlyCreatedDBObject(store, true);
+                    }
+                    string key = Key(model.Title);
+                    Xrecord record;
+                    if (store.Contains(key))
+                        record = transaction.GetObject(store.GetAt(key), OpenMode.ForWrite, false) as Xrecord;
+                    else
+                    {
+                        record = new Xrecord();
+                        store.SetAt(key, record);
+                        transaction.AddNewlyCreatedDBObject(record, true);
+                    }
+                    record.Data = new ResultBuffer(model.Fields
+                        .Select(field => new TypedValue(
+                            (int)DxfCode.Text,
+                            field.Key + "\t" + (field.Value ?? string.Empty)))
+                        .ToArray());
+                    transaction.Commit();
+                }
+            }
+            catch
+            {
+                // Commands remain usable even if a read-only drawing blocks persistence.
+            }
+        }
+
+        private static string Key(string title)
+        {
+            unchecked
+            {
+                uint hash = 2166136261;
+                foreach (char value in title ?? string.Empty)
+                {
+                    hash ^= char.ToUpperInvariant(value);
+                    hash *= 16777619;
+                }
+                return "POPUP_" + hash.ToString("X8", CultureInfo.InvariantCulture);
+            }
         }
     }
 
