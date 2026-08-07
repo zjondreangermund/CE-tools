@@ -12,20 +12,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Inventory exact current implementations
+      - name: Inventory utility and surface implementations
         shell: bash
         run: |
-          echo '=== ROAD FILES ==='
-          find src/CE.Tools.Civil3D -maxdepth 1 -type f -iname '*road*' -o -iname '*corridor*' -o -iname '*assembly*' | sort
-          echo '=== ROAD SETTINGS DEFINITIONS ==='
-          grep -RnlE 'RoadProductionSettings|CE_ROADSETTINGS|ProfileViewBandSetStyleName|Road-Single-Band' src/CE.Tools.Civil3D || true
-          echo '=== FEATURE/CORRIDOR FILES ==='
-          grep -RnlE 'CE_FLREPORTUI|CE_FLLABELX|CE_CORLABELX|Feature Line Report|Corridor.*Report' src/CE.Tools.Civil3D || true
-          echo '=== SURVEY/MAP FILES ==='
-          grep -RnlE 'Latitude|Longitude|LO17|LO15|EPSG|CoordinateSystem|Google Earth|Google Maps' src/CE.Tools.Civil3D || true
-          echo '=== XREF FILES ==='
-          grep -RnlE 'AttachXref|OverlayXref|XrefGraph|XrefStatus' src/CE.Tools.Civil3D || true
-          echo '=== PAGE SETUP FILES ==='
-          grep -RnlE 'PlotSettingsValidator|PlotSettings|PageSetup|PlotConfiguration' src/CE.Tools.Civil3D || true
-          echo '=== UTILITY CREATION FILES ==='
-          grep -RnlE 'CE_SEWCREATE|CE_SWCREATE|CE_WATERCREATE|network from polylines|Network From Polylines|Parcel' src/CE.Tools.Civil3D || true
+          echo '=== NETWORK/PARCEL/SURFACE FILES ==='
+          find src/CE.Tools.Civil3D -maxdepth 1 -type f \( -iname '*network*' -o -iname '*parcel*' -o -iname '*surface*' -o -iname '*storm*' -o -iname '*water*' -o -iname '*sewer*' \) | sort
+          echo '=== NETWORK/PARCEL COMMAND METHODS ==='
+          for f in $(find src/CE.Tools.Civil3D -maxdepth 1 -type f \( -iname '*network*' -o -iname '*parcel*' -o -iname '*storm*' -o -iname '*water*' -o -iname '*sewer*' \)); do
+            echo "--- $f"; grep -nE 'CommandMethod|network from|polylines|Parcel|manhole|cover|slope|demand' "$f" | head -120 || true; done
+          echo '=== SURFACE REPAIR METHODS ==='
+          grep -nE -C 5 'CommandMethod|spike|hole|repair|triangle|Delete|Add' src/CE.Tools.Civil3D/SurfaceSpikeHoleRepairCommands.cs | head -260 || true
+          echo '=== PROJECT COORDINATION COMMANDS ==='
+          grep -nE 'CommandMethod|MASTERXREF|PAGESETUP|SURVEYLOCATION|MAPLOCATION' src/CE.Tools.Civil3D/ProjectCoordinationCommands.cs || true
