@@ -17,7 +17,36 @@ jobs:
           fetch-depth: 0
           token: ${{ secrets.GITHUB_TOKEN }}
       - name: Apply road production patch
-        run: python3 scripts/Apply-RoadProductionCompletion.py
+        shell: bash
+        run: |
+          set +e
+          output=$(python3 scripts/Apply-RoadProductionCompletion.py 2>&1)
+          status=$?
+          set -e
+          printf '%s\n' "$output"
+          if [ "$status" -ne 0 ] && ! printf '%s' "$output" | grep -q 'marker missing.*TargetSurfaceId'; then
+            exit "$status"
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs')
+          t=p.read_text(encoding='utf-8')
+          marker='        internal ObjectId TargetSurfaceId { get; set; }'
+          if 'internal string AssemblyName { get; set; }' not in t:
+              if marker not in t: raise SystemExit('Road corridor options marker missing')
+              t=t.replace(marker, marker+'\n        internal string AssemblyName { get; set; }',1)
+          t=t.replace('CivilAssemblyResolver.GetAssemblyIds(civilDocument, transaction.Database)',
+                      'CivilAssemblyResolver.GetAssemblyIds(civilDocument, AcApplication.DocumentManager.MdiActiveDocument.Database)')
+          p.write_text(t,encoding='utf-8')
+          PY
+      - name: Validate road completion markers
+        shell: bash
+        run: |
+          grep -q 'RoadProductionSettings road = RoadProductionSettings.Read' src/CE.Tools.Civil3D/RoadProductionCommentCommands.cs
+          grep -q 'TryCreateMissingBaselineAndRegion' src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs
+          grep -q 'internal string AssemblyName' src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs
+          grep -q 'CE_ROADSETTINGS' src/CE.Tools.Civil3D/PluginEntry.cs
+          grep -q 'CE_FLVERTEXLABELS' src/CE.Tools.Civil3D/PluginEntry.cs
       - name: Validate runtime comments
         run: python3 scripts/Validate-LatestRuntimeDesignComments.py
       - name: Validate command registry
