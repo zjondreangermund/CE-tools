@@ -103,6 +103,9 @@ jobs:
       - name: Validate latest runtime and design comments
         run: python3 scripts/Validate-LatestRuntimeDesignComments.py
 
+      - name: Validate junction sequencing and persistent popups
+        run: python3 scripts/Validate-JunctionSequencePersistence.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
