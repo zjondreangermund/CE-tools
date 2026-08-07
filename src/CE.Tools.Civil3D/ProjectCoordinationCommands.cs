@@ -184,11 +184,20 @@ namespace CETools.Civil3D
             Document document = ActiveDocument();
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (document == null || civilDocument == null) return;
-            var towns = new[] { "Windhoek", "Swakopmund", "Walvis Bay", "Henties Bay", "Oshakati", "Rundu", "Keetmanshoop", "Custom / use Autodesk selector" };
+            var towns = new[]
+            {
+                "Arandis", "Aranos", "Ariamsvlei", "Aus", "Bethanie", "Divundu", "Eenhana", "Gobabis",
+                "Grootfontein", "Helao Nafidi", "Henties Bay", "Kalkrand", "Kamanjab", "Karasburg", "Karibib",
+                "Katima Mulilo", "Keetmanshoop", "Khorixas", "Kongola", "Leonardville", "Lüderitz", "Maltahöhe",
+                "Mariental", "Nkurenkuru", "Noordoewer", "Okahandja", "Okahao", "Omaruru", "Omuthiya", "Ondangwa",
+                "Ongwediva", "Opuwo", "Oranjemund", "Oshakati", "Oshikuku", "Otavi", "Otjiwarongo", "Otjinene",
+                "Outjo", "Rehoboth", "Rundu", "Ruacana", "Stampriet", "Swakopmund", "Tsumeb", "Uis", "Usakos",
+                "Walvis Bay", "Windhoek", "Custom / use Autodesk selector"
+            };
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Survey Location and Coordinate System",
                 "Choose a town. CE Tools searches the coordinate systems installed with Autodesk and assigns the matching LO definition when one can be identified. Existing geometry is never transformed by this command.");
-            model.AddChoice("Town", "01 Location", "Town / project area", "Windhoek", "Windhoek prefers LO17; Swakopmund/Walvis Bay/Henties Bay prefer LO15. Other towns open the Autodesk selector if a safe preset is not defined.", towns);
+            model.AddChoice("Town", "01 Location", "Town / project area", "Windhoek", "Major Namibian towns are mapped to their preferred LO zone. Custom opens Autodesk's selector. Existing geometry is never transformed.", towns);
             model.AddChoice("Action", "02 Action", "Coordinate-system action", "Assign matching installed LO system", "Assign the installed matching definition or open Autodesk's native selector.", new[] { "Assign matching installed LO system", "Open Autodesk coordinate-system selector only" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             string town = model.Text("Town");
@@ -230,15 +239,16 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - WGS84 Latitude / Longitude Map Tools",
                 "Enter WGS84 decimal-degree latitude and longitude. CE Tools opens the point in the selected web map. This command does not alter drawing coordinates.");
-            model.AddDouble("Latitude", "01 WGS84", "Latitude", -22.5609, "Decimal degrees, south negative.");
-            model.AddDouble("Longitude", "01 WGS84", "Longitude", 17.0658, "Decimal degrees, east positive.");
+            model.AddText("Latitude", "01 WGS84", "Latitude", "-22.5609", "Decimal degrees; south is negative. Values from -90 to 90 are accepted.");
+            model.AddText("Longitude", "01 WGS84", "Longitude", "17.0658", "Decimal degrees; west is negative and east is positive. Values from -180 to 180 are accepted.");
             model.AddChoice("Provider", "02 Map", "Open in", "Google Maps", "Choose the web map opened after confirmation.", new[] { "Google Maps", "Google Earth" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
-            double latitude = model.Double("Latitude", 0.0);
-            double longitude = model.Double("Longitude", 0.0);
-            if (latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0)
+            double latitude;
+            double longitude;
+            if (!TryParseCoordinate(model.Text("Latitude"), -90.0, 90.0, out latitude) ||
+                !TryParseCoordinate(model.Text("Longitude"), -180.0, 180.0, out longitude))
             {
-                document.Editor.WriteMessage("\nCE_MAPLOCATION stopped. Latitude/longitude are outside WGS84 ranges.");
+                document.Editor.WriteMessage("\nCE_MAPLOCATION stopped. Enter valid signed WGS84 latitude (-90 to 90) and longitude (-180 to 180).");
                 return;
             }
             string lat = latitude.ToString("0.########", CultureInfo.InvariantCulture);
@@ -257,13 +267,36 @@ namespace CETools.Civil3D
             }
         }
 
+        private static readonly IDictionary<string, string> TownLoZones =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "Arandis", "LO15" }, { "Aranos", "LO19" }, { "Ariamsvlei", "LO19" }, { "Aus", "LO17" },
+                { "Bethanie", "LO17" }, { "Divundu", "LO21" }, { "Eenhana", "LO17" }, { "Gobabis", "LO19" },
+                { "Grootfontein", "LO19" }, { "Helao Nafidi", "LO17" }, { "Henties Bay", "LO15" },
+                { "Kalkrand", "LO17" }, { "Kamanjab", "LO15" }, { "Karasburg", "LO19" }, { "Karibib", "LO15" },
+                { "Katima Mulilo", "LO25" }, { "Keetmanshoop", "LO19" }, { "Khorixas", "LO15" },
+                { "Kongola", "LO23" }, { "Leonardville", "LO19" }, { "Lüderitz", "LO15" }, { "Maltahöhe", "LO17" },
+                { "Mariental", "LO17" }, { "Nkurenkuru", "LO19" }, { "Noordoewer", "LO17" },
+                { "Okahandja", "LO17" }, { "Okahao", "LO15" }, { "Omaruru", "LO15" }, { "Omuthiya", "LO17" },
+                { "Ondangwa", "LO15" }, { "Ongwediva", "LO15" }, { "Opuwo", "LO13" }, { "Oranjemund", "LO17" },
+                { "Oshakati", "LO15" }, { "Oshikuku", "LO15" }, { "Otavi", "LO17" }, { "Otjiwarongo", "LO17" },
+                { "Otjinene", "LO19" }, { "Outjo", "LO17" }, { "Rehoboth", "LO17" }, { "Rundu", "LO19" },
+                { "Ruacana", "LO15" }, { "Stampriet", "LO19" }, { "Swakopmund", "LO15" }, { "Tsumeb", "LO17" },
+                { "Uis", "LO15" }, { "Usakos", "LO15" }, { "Walvis Bay", "LO15" }, { "Windhoek", "LO17" }
+            };
+
         private static string PreferredLo(string town)
         {
-            if (string.Equals(town, "Windhoek", StringComparison.OrdinalIgnoreCase)) return "LO17";
-            if (string.Equals(town, "Swakopmund", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(town, "Walvis Bay", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(town, "Henties Bay", StringComparison.OrdinalIgnoreCase)) return "LO15";
-            return string.Empty;
+            string lo;
+            return TownLoZones.TryGetValue(town ?? string.Empty, out lo) ? lo : string.Empty;
+        }
+
+        private static bool TryParseCoordinate(string text, double minimum, double maximum, out double value)
+        {
+            if (!double.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out value) &&
+                !double.TryParse(text, NumberStyles.Float, CultureInfo.CurrentCulture, out value))
+                return false;
+            return !double.IsNaN(value) && !double.IsInfinity(value) && value >= minimum && value <= maximum;
         }
 
         private static string FindInstalledCoordinateSystem(string search)

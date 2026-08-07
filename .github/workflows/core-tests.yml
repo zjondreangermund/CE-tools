@@ -109,6 +109,9 @@ jobs:
       - name: Validate junction sequencing and persistent popups
         run: python3 scripts/Validate-JunctionSequencePersistence.py
 
+      - name: Validate Namibia map and utility planner
+        run: python3 scripts/Validate-NamibiaMapUtilityPlanner.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
