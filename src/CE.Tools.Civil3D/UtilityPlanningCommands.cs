@@ -90,7 +90,7 @@ namespace CETools.Civil3D
                 "CE Tools - Cadastral Utility Route Settings",
                 "Prepare utility routes from closed erf/cadastral boundaries. Values are design constraints and are written to each linked route for refresh and reporting.");
             model.AddDouble("Offset", "01 Route", "Boundary offset (m)", 1.5, "Typical sewer route offset from the erf boundary.");
-            model.AddChoice("RouteMode", "01 Route", "Route option", "Inside road reserve", "Use the inward cadastral offset or keep a midblock planning option for later review.", new[] { "Inside road reserve", "Midblock" });
+            model.AddChoice("RouteMode", "01 Route", "Route option", "Inside road reserve", "Inside road reserve offsets the cadastral boundary. Midblock sewer centreline creates an open centreline through the selected block/erf footprint for sewer planning.", new[] { "Inside road reserve", "Midblock sewer centreline" });
             model.AddDouble("ManholeSpacing", "02 Manholes", "Maximum manhole spacing (m)", 80.0, "Planning points are added at vertices and at this maximum spacing.");
             model.AddChoice("CornerManholes", "02 Manholes", "Place planning manholes at erf corners", "Yes", "Corner points remain planning references until converted to Civil 3D structures.", new[] { "Yes", "No" });
             model.AddDouble("MinSlope", "03 Pipe Constraints", "Minimum pipe slope (%)", 0.5, "Constraint reported to sewer/stormwater design review.");
@@ -141,7 +141,7 @@ namespace CETools.Civil3D
                         result.Warnings.Add("Skipped non-closed cadastral polyline " + sourceId.Handle);
                         continue;
                     }
-                    Polyline route = CreateInwardOffset(source, settings.Offset);
+                    Polyline route = CreatePlanningRoute(source, settings);
                     if (route == null)
                     {
                         result.Warnings.Add("Could not create a stable inward offset for cadastral polyline " + sourceId.Handle);
@@ -191,7 +191,7 @@ namespace CETools.Civil3D
                     Polyline oldRoute = transaction.GetObject(link.RouteId, OpenMode.ForWrite, false) as Polyline;
                     Polyline source = transaction.GetObject(link.SourceId, OpenMode.ForRead, false) as Polyline;
                     if (oldRoute == null || source == null) { result.Warnings.Add("A linked source or route was deleted."); continue; }
-                    Polyline rebuilt = CreateInwardOffset(source, link.Settings.Offset);
+                    Polyline rebuilt = CreatePlanningRoute(source, link.Settings);
                     if (rebuilt == null) { result.Warnings.Add("Could not refresh route " + link.RouteId.Handle); continue; }
                     oldRoute.UpgradeOpen();
                     while (oldRoute.NumberOfVertices > 0) oldRoute.RemoveVertexAt(oldRoute.NumberOfVertices - 1);
@@ -207,6 +207,51 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
             return result;
+        }
+
+        private static Polyline CreatePlanningRoute(Polyline source, UtilityRouteSettings settings)
+        {
+            if (settings != null && string.Equals(settings.RouteMode, "Midblock sewer centreline", StringComparison.OrdinalIgnoreCase))
+                return CreateMidblockRoute(source, settings.Offset);
+            return CreateInwardOffset(source, settings == null ? 0.0 : settings.Offset);
+        }
+
+        private static Polyline CreateMidblockRoute(Polyline source, double endInset)
+        {
+            if (source == null || source.NumberOfVertices < 3) return null;
+            double minX = double.PositiveInfinity;
+            double minY = double.PositiveInfinity;
+            double maxX = double.NegativeInfinity;
+            double maxY = double.NegativeInfinity;
+            for (int index = 0; index < source.NumberOfVertices; index++)
+            {
+                Point2d point = source.GetPoint2dAt(index);
+                minX = Math.Min(minX, point.X);
+                minY = Math.Min(minY, point.Y);
+                maxX = Math.Max(maxX, point.X);
+                maxY = Math.Max(maxY, point.Y);
+            }
+            if (double.IsNaN(minX) || double.IsInfinity(minX) || double.IsNaN(minY) || double.IsInfinity(minY) || double.IsNaN(maxX) || double.IsInfinity(maxX) || double.IsNaN(maxY) || double.IsInfinity(maxY)) return null;
+            double width = maxX - minX;
+            double height = maxY - minY;
+            if (width <= 1e-6 || height <= 1e-6) return null;
+            double inset = Math.Max(0.0, Math.Min(Math.Abs(endInset), 0.25 * Math.Max(width, height)));
+            var route = new Polyline(2);
+            if (width >= height)
+            {
+                double y = 0.5 * (minY + maxY);
+                route.AddVertexAt(0, new Point2d(minX + inset, y), 0.0, 0.0, 0.0);
+                route.AddVertexAt(1, new Point2d(maxX - inset, y), 0.0, 0.0, 0.0);
+            }
+            else
+            {
+                double x = 0.5 * (minX + maxX);
+                route.AddVertexAt(0, new Point2d(x, minY + inset), 0.0, 0.0, 0.0);
+                route.AddVertexAt(1, new Point2d(x, maxY - inset), 0.0, 0.0, 0.0);
+            }
+            route.Closed = false;
+            route.Elevation = source.Elevation;
+            return route;
         }
 
         private static Polyline CreateInwardOffset(Polyline source, double distance)
@@ -298,6 +343,7 @@ namespace CETools.Civil3D
                 new List<string> { "Total planning length", result.TotalLength.ToString("N2", CultureInfo.CurrentCulture) + " m" },
                 new List<string> { "Planning manhole points", result.PlanningPoints.ToString(CultureInfo.CurrentCulture) },
                 new List<string> { "Boundary offset", settings.Offset.ToString("N2", CultureInfo.CurrentCulture) + " m" },
+                new List<string> { "Route mode", settings.RouteMode ?? string.Empty },
                 new List<string> { "Manhole spacing", settings.ManholeSpacing.ToString("N1", CultureInfo.CurrentCulture) + " m" },
                 new List<string> { "Slope range", settings.MinSlope.ToString("N2", CultureInfo.CurrentCulture) + "% to " + settings.MaxSlope.ToString("N2", CultureInfo.CurrentCulture) + "%" },
                 new List<string> { "Cover range", settings.MinCover.ToString("N2", CultureInfo.CurrentCulture) + " m to " + settings.MaxCover.ToString("N2", CultureInfo.CurrentCulture) + " m" },
