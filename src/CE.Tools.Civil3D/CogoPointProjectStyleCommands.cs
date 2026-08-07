@@ -345,7 +345,7 @@ namespace CETools.Civil3D
                 current = new Vector3d(step, step, 0.0);
             candidates.Add(item.Anchor + current);
 
-            for (int ring = 1; ring <= 5; ring++)
+            for (int ring = 1; ring <= 4; ring++)
             {
                 double radius = step * ring;
                 for (int sector = 0; sector < 16; sector++)
@@ -364,7 +364,10 @@ namespace CETools.Civil3D
             {
                 Box2d box = LabelBox(candidate, item.Width, item.Height, gap);
                 if (occupied.Any(existing => existing.Intersects(box))) continue;
-                double distance = candidate.DistanceTo(item.LabelLocation);
+                // Prefer the closest clear position to the survey point itself.
+                // Original label movement is only a small tie-breaker.
+                double distance = candidate.DistanceTo(item.Anchor) +
+                    candidate.DistanceTo(item.LabelLocation) * 0.05;
                 if (distance < bestDistance)
                 {
                     best = candidate;
@@ -466,7 +469,7 @@ namespace CETools.Civil3D
                 PaperAnnotationScale.ModelDistance(database, 5.0),
                 0.001);
             double maximum = Math.Max(
-                PaperAnnotationScale.ModelDistance(database, 15.0),
+                PaperAnnotationScale.ModelDistance(database, 8.0),
                 fallback * 2.0);
             if (double.IsNaN(offset.X) || double.IsInfinity(offset.X) ||
                 double.IsNaN(offset.Y) || double.IsInfinity(offset.Y) ||

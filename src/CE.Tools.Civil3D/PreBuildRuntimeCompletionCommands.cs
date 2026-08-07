@@ -192,7 +192,7 @@ namespace CETools.Civil3D
                 PaperAnnotationScale.ModelDistance(database, 2.5),
                 0.001);
             double maximum = Math.Max(
-                PaperAnnotationScale.ModelDistance(database, 15.0),
+                PaperAnnotationScale.ModelDistance(database, 8.0),
                 minimum * 2.0);
             double overlapGap = Math.Max(
                 PaperAnnotationScale.ModelDistance(database, 1.5),
@@ -328,7 +328,7 @@ namespace CETools.Civil3D
                 new Vector2d(0.0, 1.0),
                 new Vector2d(0.0, -1.0)
             };
-            for (int ring = 1; ring <= 5; ring++)
+            for (int ring = 1; ring <= 4; ring++)
             {
                 double radius = Math.Min(
                     maximum,
@@ -446,11 +446,8 @@ namespace CETools.Civil3D
             if (leader == null) return;
             try
             {
-                // ObjectId.Null is AutoCAD's native closed-filled arrow. Use the
-                // current dimension arrow when the drawing explicitly stores one.
-                leader.ArrowSymbolId = database.Dimblk.IsNull
-                    ? ObjectId.Null
-                    : database.Dimblk;
+                // Force a closed-filled arrow even when the drawing DIMSTYLE uses ticks.
+                leader.ArrowSymbolId = ObjectId.Null;
             }
             catch { }
             TrySetDouble(leader, Math.Max(

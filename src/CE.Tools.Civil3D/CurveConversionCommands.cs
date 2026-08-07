@@ -195,6 +195,16 @@ namespace CETools.Civil3D
                 mode,
                 "Polylines to 3D polylines",
                 StringComparison.OrdinalIgnoreCase);
+            if (!to3d)
+            {
+                Arc sourceArc = source as Arc;
+                if (sourceArc != null)
+                    return CreateExactArcPolyline(sourceArc, flatten);
+                Circle sourceCircle = source as Circle;
+                if (sourceCircle != null)
+                    return CreateExactCirclePolyline(sourceCircle, flatten);
+            }
+
             List<Point3d> points = Sample(
                 source,
                 maximumSegment,
@@ -217,6 +227,54 @@ namespace CETools.Civil3D
                 polyline.AddVertexAt(index, new Point2d(points[index].X, points[index].Y), 0.0, 0.0, 0.0);
             polyline.Elevation = elevation;
             polyline.Closed = closed;
+            return polyline;
+        }
+
+        private static Polyline CreateExactArcPolyline(Arc arc, bool flatten)
+        {
+            double sweep = arc.EndAngle - arc.StartAngle;
+            while (sweep <= 0.0) sweep += Math.PI * 2.0;
+            int segments = Math.Max(1, (int)Math.Ceiling(sweep / Math.PI));
+            var polyline = new Polyline(segments + 1);
+            for (int index = 0; index <= segments; index++)
+            {
+                double angle = arc.StartAngle + sweep * index / segments;
+                Point3d point = arc.Center +
+                    new Vector3d(Math.Cos(angle), Math.Sin(angle), 0.0) * arc.Radius;
+                double bulge = index < segments
+                    ? Math.Tan((sweep / segments) / 4.0)
+                    : 0.0;
+                polyline.AddVertexAt(
+                    index,
+                    new Point2d(point.X, point.Y),
+                    bulge,
+                    0.0,
+                    0.0);
+            }
+            polyline.Elevation = flatten ? 0.0 : arc.Center.Z;
+            polyline.Closed = false;
+            return polyline;
+        }
+
+        private static Polyline CreateExactCirclePolyline(Circle circle, bool flatten)
+        {
+            const int segments = 4;
+            double bulge = Math.Tan(Math.PI / 8.0);
+            var polyline = new Polyline(segments);
+            for (int index = 0; index < segments; index++)
+            {
+                double angle = Math.PI * 2.0 * index / segments;
+                Point3d point = circle.Center +
+                    new Vector3d(Math.Cos(angle), Math.Sin(angle), 0.0) * circle.Radius;
+                polyline.AddVertexAt(
+                    index,
+                    new Point2d(point.X, point.Y),
+                    bulge,
+                    0.0,
+                    0.0);
+            }
+            polyline.Elevation = flatten ? 0.0 : circle.Center.Z;
+            polyline.Closed = true;
             return polyline;
         }
 

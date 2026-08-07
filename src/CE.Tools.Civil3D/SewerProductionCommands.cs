@@ -691,7 +691,20 @@ namespace CETools.Civil3D
                 SewerNode end = GetNode(graph, pipe.EndStructureId, transaction);
                 double length = pipe.Length3DCenterToCenter;
                 if (double.IsNaN(length) || double.IsInfinity(length) || length <= 0.0)
-                    length = 1.0;
+                {
+                    try
+                    {
+                        length = pipe.GetPointAtParam(0.0).DistanceTo(
+                            pipe.GetPointAtParam(1.0));
+                    }
+                    catch
+                    {
+                        length = start.Position.DistanceTo(end.Position);
+                    }
+                }
+                if (double.IsNaN(length) || double.IsInfinity(length) || length <= 0.0)
+                    throw new InvalidOperationException(
+                        "A sewer pipe has no readable Civil 3D or geometric length.");
                 var edge = new SewerEdge(pipeId, start.Id, end.Id, length);
                 graph.Edges.Add(edge);
                 start.Edges.Add(edge);

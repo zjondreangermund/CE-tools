@@ -867,7 +867,21 @@ namespace CETools.Civil3D
             string command,
             string toolTip)
         {
-            return new RibbonCommandDefinition(text, command, toolTip);
+            return new RibbonCommandDefinition(
+                NormalizeDisplayText(text),
+                command,
+                toolTip);
+        }
+
+        private static string NormalizeDisplayText(string text)
+        {
+            string value = (text ?? string.Empty).Trim();
+            foreach (string prefix in new[] { "CE Tools ", "CE " })
+            {
+                if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return value.Substring(prefix.Length).TrimStart();
+            }
+            return value;
         }
 
         private static RibbonMenuItem CreateCommandButton(
