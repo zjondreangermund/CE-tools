@@ -28,6 +28,20 @@ jobs:
             echo 'value=true' >> "$GITHUB_OUTPUT"
           fi
 
+      - name: Preserve literal C# escape sequences
+        if: steps.needed.outputs.value == 'true'
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('scripts/Apply-JunctionSequencePersistence.py')
+          text = path.read_text(encoding='utf-8')
+          old = 'updated, count = re.subn(pattern, replacement, text, count=1, flags=re.S)'
+          new = 'updated, count = re.subn(pattern, lambda _match: replacement, text, count=1, flags=re.S)'
+          if old not in text:
+              raise SystemExit('patcher regex helper marker not found')
+          path.write_text(text.replace(old, new, 1), encoding='utf-8')
+          PY
+
       - name: Apply junction and vertex sequence changes
         if: steps.needed.outputs.value == 'true'
         run: python3 scripts/Apply-JunctionSequencePersistence.py
