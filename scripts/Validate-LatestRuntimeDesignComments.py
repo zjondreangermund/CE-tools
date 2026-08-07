@@ -15,6 +15,12 @@ sewer=read('SewerProductionCommands.cs')
 curve=read('CurveConversionCommands.cs')
 plugin=read('PluginEntry.cs')
 universal=read('UniversalDynamicRefreshCommands.cs')
+road_settings=read('RoadProjectSettingsCommands.cs')
+road_styles=read('RoadProductionCommentCommands.cs')
+road_corridor=read('RoadCorridorCompletionCommands.cs')
+feature=read('FeatureProfileSurfaceCommentCommands.cs')
+coordination=read('ProjectCoordinationCommands.cs')
+utility=read('UtilityPlanningCommands.cs')
 
 checks=[
     ('vertex closed-filled arrow', 'leader.ArrowSymbolId = ObjectId.Null;' in vertex),
@@ -33,9 +39,32 @@ checks=[
     ('exact circle polyline', 'CreateExactCirclePolyline' in curve and 'Math.Tan(Math.PI / 8.0)' in curve),
     ('ribbon display names normalized', 'NormalizeDisplayText' in plugin),
     ('single command-start subscription', universal.count('_document.CommandWillStart += OnCommandWillStart;') == 1),
+    ('road settings command', 'CE_ROADSETTINGS' in road_settings),
+    ('road settings stored per DWG', 'ROAD_PRODUCTION_SETTINGS' in road_settings),
+    ('preferred road band set', 'Road-Single-Band Set 1-Full Grid' in road_settings),
+    ('road alignment styles use road settings', 'RoadProductionSettings road = RoadProductionSettings.Read' in road_styles and 'RoadValue(road, selection' in road_styles),
+    ('corridor can create missing baseline and region', 'TryCreateMissingBaselineAndRegion' in road_corridor and 'InvokeAddBaseline' in road_corridor and 'InvokeAddRegion' in road_corridor),
+    ('corridor uses bottom surface naming', 'CE-BOTTOM' in road_corridor),
+    ('feature-line vertex points resync COGO style', 'CogoPointProjectStyleCommands.ApplySelectedStyles(document, true)' in feature),
+    ('project coordination centre', 'CE_PROJECTCOORDINATION' in coordination),
+    ('non-destructive master xref command', 'CE_MASTERXREF' in coordination and 'AttachXref' in coordination and 'Source DWGs were not modified' in coordination),
+    ('multi-layout page setup manager', 'CE_PAGESETUPMANAGER' in coordination and 'PlotSettings(false)' in coordination),
+    ('survey town coordinate-system command', 'CE_SURVEYLOCATION' in coordination and 'LO17' in coordination and 'LO15' in coordination),
+    ('map location command', 'CE_MAPLOCATION' in coordination and 'Google Maps' in coordination and 'Google Earth' in coordination),
+    ('utility planning workflow', 'CE_UTILITYPLANNER' in utility and 'CE_UTILITYROUTES' in utility and 'CE_UTILITYROUTESREFRESH' in utility),
+    ('utility default boundary offset', '"Boundary offset (m)", 1.5' in utility),
+    ('utility constraints', 'Minimum pipe slope (%)' in utility and 'Maximum pipe cover (m)' in utility and 'Warn when included pipe angle is below' in utility),
 ]
 for name, ok in checks:
     if not ok: errors.append(name)
+
+for command in [
+    'CE_ROADSETTINGS', 'CE_PROJECTCOORDINATION', 'CE_MASTERXREF',
+    'CE_PAGESETUPMANAGER', 'CE_SURVEYLOCATION', 'CE_MAPLOCATION',
+    'CE_UTILITYPLANNER', 'CE_UTILITYROUTES', 'CE_UTILITYROUTESREFRESH'
+]:
+    if command not in plugin:
+        errors.append('ribbon is missing ' + command)
 
 # Old failure markers must not return.
 for name,text,marker in [
@@ -46,4 +75,4 @@ for name,text,marker in [
 
 if errors:
     raise SystemExit('Latest runtime/design comment validation failed:\n- ' + '\n- '.join(errors))
-print('Latest runtime/design comment validation passed: arrows, tables, coordinate labels, COGO spacing, sewer lengths, exact curve conversion and refresh subscriptions are corrected.')
+print('Latest runtime/design comment validation passed: runtime annotation/table fixes, sewer lengths, exact curve conversion, road-specific production, coordinated XREF/page setup/survey tools and linked cadastral utility planning are present.')
