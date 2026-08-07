@@ -723,6 +723,7 @@ namespace CETools.Civil3D
             CivilDocument civilDocument)
         {
             Dictionary<string, string> selection = ReadProjectStyleSelection(document.Database);
+            RoadProductionSettings road = RoadProductionSettings.Read(document.Database);
             var result = new ProjectRoadStyles
             {
                 AlignmentLayer = "CE-ROAD-ALIGNMENT",
@@ -732,31 +733,31 @@ namespace CETools.Civil3D
             result.AlignmentStyleId = ResolveStyle(
                 document.Database,
                 ReadPropertyPath(civilDocument, "Styles", "AlignmentStyles"),
-                Value(selection, "Alignment Style"),
+                RoadValue(road, selection, "Alignment Style"),
                 out actualName);
             result.AlignmentStyleName = actualName;
             result.AlignmentLabelSetId = ResolveStyle(
                 document.Database,
                 ReadPropertyPath(civilDocument, "Styles", "LabelSetStyles", "AlignmentLabelSetStyles"),
-                Value(selection, "Alignment Label Set Style"),
+                RoadValue(road, selection, "Alignment Label Set Style"),
                 out actualName);
             result.AlignmentLabelSetName = actualName;
             result.ProfileStyleId = ResolveStyle(
                 document.Database,
                 ReadPropertyPath(civilDocument, "Styles", "ProfileStyles"),
-                Value(selection, "Profile Style"),
+                RoadValue(road, selection, "Profile Style"),
                 out actualName);
             result.ProfileStyleName = actualName;
             result.ProfileLabelSetId = ResolveStyle(
                 document.Database,
                 ReadPropertyPath(civilDocument, "Styles", "LabelSetStyles", "ProfileLabelSetStyles"),
-                Value(selection, "Profile Label Set Style"),
+                RoadValue(road, selection, "Profile Label Set Style"),
                 out actualName);
             result.ProfileLabelSetName = actualName;
             result.ProfileViewStyleId = ResolveStyle(
                 document.Database,
                 ReadPropertyPath(civilDocument, "Styles", "ProfileViewStyles"),
-                Value(selection, "Profile View Style"),
+                RoadValue(road, selection, "Profile View Style"),
                 out actualName);
             result.ProfileViewStyleName = actualName;
             object bandCollection = ReadPropertyPath(civilDocument, "Styles", "BandSetStyles", "ProfileViewBandSetStyles") ??
@@ -764,10 +765,22 @@ namespace CETools.Civil3D
             result.BandSetStyleId = ResolveStyle(
                 document.Database,
                 bandCollection,
-                Value(selection, "Profile View Band Set Style"),
+                RoadValue(road, selection, "Profile View Band Set Style"),
                 out actualName);
             result.BandSetStyleName = actualName;
             return result;
+        }
+
+        private static string RoadValue(
+            RoadProductionSettings road,
+            Dictionary<string, string> project,
+            string category)
+        {
+            string roadValue = road == null ? string.Empty : road.Value(category);
+            if (!string.IsNullOrWhiteSpace(roadValue) &&
+                !string.Equals(roadValue, "<Use drawing default>", StringComparison.OrdinalIgnoreCase))
+                return roadValue;
+            return Value(project, category);
         }
 
         private static ObjectId ResolveStyle(

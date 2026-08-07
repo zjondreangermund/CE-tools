@@ -92,7 +92,7 @@ require(preset, "PromptedDocuments.Remove(document);", "failed style apply reque
 for token in (
     "TrySetLabelVisible(point)",
     "NormalizeOffset(stored, database)",
-    "ModelDistance(database, 15.0)",
+    "ModelDistance(database, 8.0)",
     "UniversalDynamicRefreshManager.Queue();",
 ):
     require(cogo, token, "COGO runtime repair")

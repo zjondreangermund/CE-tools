@@ -418,6 +418,11 @@ namespace CETools.Civil3D
                 "Length3D",
                 "Length2D",
                 "Length");
+            double? geometricLength = ReadGeometricLength(value);
+            if (geometricLength.HasValue && geometricLength.Value > 0.001 &&
+                (!length.HasValue || length.Value <= 0.0 ||
+                 (Math.Abs(length.Value - 1.0) < 0.001 && geometricLength.Value > 1.01)))
+                length = geometricLength;
             double? slope = ReadDouble(value, "Slope", "SlopePercent", "Grade");
             if (slope.HasValue && Math.Abs(slope.Value) <= 1.0 && !HasProperty(value, "SlopePercent"))
                 slope *= 100.0;
@@ -493,10 +498,42 @@ namespace CETools.Civil3D
                 "InnerDiameterOrHeight",
                 "Height");
             if (!diameter.HasValue) return string.Empty;
+            double widthMm = ToNominalMillimetres(diameter.Value);
             if (height.HasValue && Math.Abs(height.Value - diameter.Value) > 0.000001)
-                return diameter.Value.ToString("N3", CultureInfo.CurrentCulture) + " × " +
-                    height.Value.ToString("N3", CultureInfo.CurrentCulture);
-            return diameter.Value.ToString("N3", CultureInfo.CurrentCulture);
+                return widthMm.ToString("N0", CultureInfo.CurrentCulture) + " × " +
+                    ToNominalMillimetres(height.Value).ToString("N0", CultureInfo.CurrentCulture) + " mm";
+            return widthMm.ToString("N0", CultureInfo.CurrentCulture) + " mm";
+        }
+
+        private static double ToNominalMillimetres(double value)
+        {
+            double absolute = Math.Abs(value);
+            return absolute > 0.0 && absolute < 10.0 ? value * 1000.0 : value;
+        }
+
+        private static double? ReadGeometricLength(object value)
+        {
+            if (value == null) return null;
+            try
+            {
+                MethodInfo method = value.GetType().GetMethod(
+                    "GetPointAtParam",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    new[] { typeof(double) },
+                    null);
+                if (method == null) return null;
+                object first = method.Invoke(value, new object[] { 0.0 });
+                object second = method.Invoke(value, new object[] { 1.0 });
+                if (!(first is Autodesk.AutoCAD.Geometry.Point3d) ||
+                    !(second is Autodesk.AutoCAD.Geometry.Point3d)) return null;
+                return ((Autodesk.AutoCAD.Geometry.Point3d)first).DistanceTo(
+                    (Autodesk.AutoCAD.Geometry.Point3d)second);
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static ObjectId CreateLinkedTable(

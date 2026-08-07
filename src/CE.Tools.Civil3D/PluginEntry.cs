@@ -214,6 +214,8 @@ namespace CETools.Civil3D
                         "Project\nSetup",
                         "Create, review, clear and restore portable project information.",
                         Cmd("Phase 1 Utilities", "CE_PHASE1 ", "Open every original CE Tools Phase 1 utility family in one visual hub."),
+                        Cmd("Project Coordination", "CE_PROJECTCOORDINATION ", "Coordinate discipline XREFs, paper-space page setups and survey/map location tools."),
+                        Cmd("Cadastral Utility Planner", "CE_UTILITYPLANNER ", "Prepare linked cadastral utility routes, constraints, planning manhole points and downstream Sewer/SW/Water workflows."),
                         Cmd("Project Setup", "CE_PROJECTSETUP ", "Create or update project metadata and review it in a pop-up."),
                         Cmd("Project Information", "CE_PROJECTINFO ", "Review project metadata and optionally place a drawing table."),
                         Cmd("Clear Project Information", "CE_PROJECTCLEAR ", "Clear project metadata after confirmation and keep a recoverable backup."),
@@ -223,6 +225,8 @@ namespace CETools.Civil3D
                         "Coordinate\nSystems",
                         "Report, search, assign and clear the drawing coordinate system.",
                         Cmd("Coordinate System Tools", "CE_COORDSYS ", "Open the coordinate-system menu."),
+                        Cmd("Survey Location and Coordinate System", "CE_SURVEYLOCATION ", "Choose a Namibian project town and assign the matching installed Autodesk LO system when available."),
+                        Cmd("Latitude / Longitude Map Tools", "CE_MAPLOCATION ", "Open entered WGS84 latitude/longitude in Google Maps or Google Earth without changing drawing geometry."),
                         Cmd("Information", "CE_COORDSYSINFO ", "Report the current coordinate system."),
                         Cmd("Assign", "CE_COORDSYSASSIGN ", "Open Autodesk's native coordinate-system selection window."),
                         Cmd("Assign by Code", "CE_COORDSYSCODE ", "Advanced direct assignment using a validated Autodesk code."),
@@ -326,6 +330,8 @@ namespace CETools.Civil3D
                         "Drawing\nTools",
                         "AutoCAD drawing and annotation utilities.",
                         Cmd("Open Workflow Centre", "CE_TOOLSPALETTE ", "Open every ribbon workflow and searchable command in the floating window."),
+                        Cmd("Create Coordinated Master XREF Drawing", "CE_MASTERXREF ", "Create a new non-destructive master DWG referencing Roads, Stormwater, Sewer and Water source drawings at the same origin."),
+                        Cmd("Multi-Layout Page Setup Manager", "CE_PAGESETUPMANAGER ", "Copy one paper-space layout page setup to multiple layouts in a popup workflow."),
                         Cmd("Phase 1 Utilities", "CE_PHASE1 ", "Open the completed Phase 1 utility hub."),
                         Cmd("Label Utilities", "CE_LABELTOOLS ", "Open coordinate, alignment, profile, surface, feature-line, corridor and parking labels."),
                         Cmd("Viewport Tools", "CE_VIEWPORTTOOLS ", "Report, lock or unlock paper-space viewports."),
@@ -369,7 +375,8 @@ namespace CETools.Civil3D
                         "CE_TOOLS_ROADS_MENU",
                         "Road\nTools",
                         "Road geometry utilities.",
-                        Cmd("Bellmouth Densifier", "CE_BMVERT ", "Add equal-chainage vertices to bellmouth polylines.")),
+                        Cmd("Bellmouth Densifier", "CE_BMVERT ", "Add equal-chainage vertices to bellmouth polylines."),
+                        Cmd("Road Settings", "CE_ROADSETTINGS ", "Choose road-only alignment, profile, profile-view band-set, corridor, code-set and assembly styles.")),
                     Menu(
                         "CE_TOOLS_FEATURE_LINE_MENU",
                         "Feature Line\nTools",
@@ -377,6 +384,7 @@ namespace CETools.Civil3D
                         Cmd("Feature Line Tools", "CE_FLTOOLS ", "Open feature-line report and elevation workflows."),
                         Cmd("Report", "CE_FLREPORTUI ", "Show feature-line details in a pop-up and optionally place a table."),
                         Cmd("Feature Line Annotation", "CE_FLLABELX ", "Create a feature-line MLeader, MText or COGO point using shared settings."),
+                        Cmd("Dynamic Vertex Points and Table", "CE_FLVERTEXLABELS ", "Create linked feature-line vertex COGO/MText/MLeader points and an optional dynamic XYZ table."),
                         Cmd("Raise / Lower", "CE_FLRAISEX ", "Explicitly edit selected feature-line elevations after a before/after review."),
                         Cmd("Raise / Lower (Legacy)", "CE_FLRAISE ", "Run the original feature-line elevation editing command."),
                         Cmd("Set Elevation", "CE_FLSETELEV ", "Set selected feature lines to one elevation."),
@@ -528,6 +536,14 @@ namespace CETools.Civil3D
                 UtilitiesPanelId,
                 "Utilities",
                 Row(
+                    Menu(
+                        "CE_TOOLS_UTILITY_PLANNER_MENU",
+                        "Utility\nPlanning",
+                        "Cadastral route preparation, constraints and linked discipline-production handoff.",
+                        Cmd("Cadastral Utility Planner", "CE_UTILITYPLANNER ", "Open cadastral route preparation and downstream network workflows."),
+                        Cmd("Create Linked Cadastral Routes", "CE_UTILITYROUTES ", "Create inward-offset utility planning routes, manhole planning points and a constraint report."),
+                        Cmd("Refresh Linked Cadastral Routes", "CE_UTILITYROUTESREFRESH ", "Refresh utility routes from edited source erf/cadastral polylines."),
+                        Cmd("Prepare Crossings and Junctions", "CE_PLBREAKJUNCTIONS ", "Break prepared utility polylines at true crossings and T-junctions.")),
                     Menu(
                         "CE_TOOLS_STORMWATER_MENU",
                         "Stormwater\nProduction",
@@ -867,7 +883,21 @@ namespace CETools.Civil3D
             string command,
             string toolTip)
         {
-            return new RibbonCommandDefinition(text, command, toolTip);
+            return new RibbonCommandDefinition(
+                NormalizeDisplayText(text),
+                command,
+                toolTip);
+        }
+
+        private static string NormalizeDisplayText(string text)
+        {
+            string value = (text ?? string.Empty).Trim();
+            foreach (string prefix in new[] { "CE Tools ", "CE " })
+            {
+                if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
+                    return value.Substring(prefix.Length).TrimStart();
+            }
+            return value;
         }
 
         private static RibbonMenuItem CreateCommandButton(

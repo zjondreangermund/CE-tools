@@ -54,6 +54,7 @@ namespace CETools.Civil3D
             int intervals = Math.Max(model.Integer("Intervals", 8), 2);
             string suffix = string.IsNullOrWhiteSpace(model.Text("Suffix")) ? "FG" : model.Text("Suffix").Trim();
             ProjectStyleSelection project = ProjectStyleCenterCommands.ReadSelection(document.Database);
+            RoadProductionSettings road = RoadProductionSettings.Read(document.Database);
             int created = 0;
             int viewsUpdated = 0;
             var rows = new List<IList<string>>();
@@ -65,12 +66,13 @@ namespace CETools.Civil3D
                     string actualStyle;
                     ObjectId styleId = CivilStyleCatalogV2.ResolveStyleId(
                         document.Database, civilDocument, "Profile Style",
-                        ReadStyle(project, "Profile Style"), transaction, out actualStyle);
+                        RoadStyle(road, project, "Profile Style"), transaction, out actualStyle);
                     string actualLabels;
                     ObjectId labelSetId = CivilStyleCatalogV2.ResolveStyleId(
                         document.Database, civilDocument, "Profile Label Set Style",
-                        ReadStyle(project, "Profile Label Set Style"), transaction, out actualLabels);
-                    ObjectId layerId = GetOrCreateLayer(document.Database, transaction, "CE-ROAD-DESIGN-PROFILE");
+                        RoadStyle(road, project, "Profile Label Set Style"), transaction, out actualLabels);
+                    ObjectId layerId = GetOrCreateLayer(document.Database, transaction,
+                        string.IsNullOrWhiteSpace(road.ProfileLayer) ? "CE-ROAD-DESIGN-PROFILE" : road.ProfileLayer);
 
                     foreach (ObjectId alignmentId in civilDocument.GetAlignmentIds())
                     {
@@ -151,7 +153,12 @@ namespace CETools.Civil3D
                 "CE Tools - Complete Road Corridors",
                 "Repair every CE road corridor and add complete production output: baselines, regions, assemblies, targets, TOP/DATUM surfaces, boundaries, slope patterns, styles and rebuild.");
             model.AddText("TopName", "01 Corridor Surfaces", "Top surface name", "CE-TOP", "Corridor top surface name.");
-            model.AddText("BottomName", "01 Corridor Surfaces", "Bottom surface name", "CE-DATUM", "Corridor bottom/datum surface name.");
+            model.AddText("BottomName", "01 Corridor Surfaces", "Bottom surface name", "CE-BOTTOM", "Corridor bottom/datum surface name.");
+            List<string> assemblyNames = ReadAssemblyNames(document, civilDocument);
+            model.AddChoice("Assembly", "00 Baseline and Region", "Assembly for missing corridor regions",
+                assemblyNames.Count == 0 ? string.Empty : assemblyNames[0],
+                "When a CE road corridor has no baseline/region, use this existing Civil 3D assembly to create a full-length region.",
+                assemblyNames);
             model.AddText("TopCodes", "01 Corridor Surfaces", "Top link codes", "Top,Pave", "Comma-separated corridor link codes included in the top surface.");
             model.AddText("BottomCodes", "01 Corridor Surfaces", "Bottom link codes", "Datum,Subgrade", "Comma-separated corridor link codes included in the bottom surface.");
             model.AddChoice("Boundary", "02 Boundaries", "Automatic outer boundary", "Enabled", "Add a corridor-extents boundary to each generated corridor surface.", new[] { "Enabled", "Disabled" });
@@ -163,7 +170,8 @@ namespace CETools.Civil3D
             {
                 TargetSurfaceId = surfacePicker.Selected.Id,
                 TopSurfaceName = SafeName(model.Text("TopName"), "CE-TOP"),
-                BottomSurfaceName = SafeName(model.Text("BottomName"), "CE-DATUM"),
+                BottomSurfaceName = SafeName(model.Text("BottomName"), "CE-BOTTOM"),
+                AssemblyName = model.Text("Assembly"),
                 TopCodes = SplitCodes(model.Text("TopCodes"), new[] { "Top", "Pave" }),
                 BottomCodes = SplitCodes(model.Text("BottomCodes"), new[] { "Datum", "Subgrade" }),
                 AddBoundary = string.Equals(model.Text("Boundary"), "Enabled", StringComparison.OrdinalIgnoreCase),
@@ -201,13 +209,14 @@ namespace CETools.Civil3D
                 return result;
             }
             ProjectStyleSelection project = ProjectStyleCenterCommands.ReadSelection(document.Database);
+            RoadProductionSettings road = RoadProductionSettings.Read(document.Database);
 
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 string corridorStyleName;
-                ObjectId corridorStyleId = ResolveOptionalStyle(document.Database, civilDocument, project, "Corridor Style", transaction, out corridorStyleName);
+                ObjectId corridorStyleId = ResolveOptionalStyle(document.Database, civilDocument, road, project, "Corridor Style", transaction, out corridorStyleName);
                 string codeSetName;
-                ObjectId codeSetStyleId = ResolveOptionalStyle(document.Database, civilDocument, project, "Code Set Style", transaction, out codeSetName);
+                ObjectId codeSetStyleId = ResolveOptionalStyle(document.Database, civilDocument, road, project, "Code Set Style", transaction, out codeSetName);
 
                 foreach (object item in values)
                 {
@@ -230,6 +239,12 @@ namespace CETools.Civil3D
                     if (!corridorStyleId.IsNull) TrySetObjectId(corridor, corridorStyleId, "StyleId", "CorridorStyleId");
                     if (!codeSetStyleId.IsNull) TrySetObjectId(corridor, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle");
                     object baselines = ReadProperty(corridor, "Baselines");
+                    if (!CivilStyleDiscovery.Enumerate(baselines).Any())
+                    {
+                        if (!TryCreateMissingBaselineAndRegion(
+                                corridor, name, baselines, civilDocument, transaction, options, ref result))
+                            result.Warnings++;
+                    }
                     foreach (object baseline in CivilStyleDiscovery.Enumerate(baselines))
                     {
                         if (baseline == null) continue;
@@ -415,6 +430,115 @@ namespace CETools.Civil3D
             return updated;
         }
 
+        private static List<string> ReadAssemblyNames(Document document, CivilDocument civilDocument)
+        {
+            var names = new List<string>();
+            if (document == null || civilDocument == null) return names;
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in CivilAssemblyResolver.GetAssemblyIds(civilDocument, document.Database))
+                {
+                    if (id.IsNull || id.IsErased) continue;
+                    DBObject value = transaction.GetObject(id, OpenMode.ForRead, false);
+                    string name = Convert.ToString(ReadProperty(value, "Name"), CultureInfo.CurrentCulture);
+                    if (!string.IsNullOrWhiteSpace(name)) names.Add(name);
+                }
+            }
+            return names.Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(value => value, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
+
+        private static bool TryCreateMissingBaselineAndRegion(
+            object corridor, string corridorName, object baselines, CivilDocument civilDocument,
+            Transaction transaction, RoadCorridorCompletionOptions options, ref RoadCorridorCompletionResult result)
+        {
+            if (corridor == null || baselines == null || civilDocument == null) return false;
+            var candidates = new List<CivilAlignment>();
+            foreach (ObjectId id in civilDocument.GetAlignmentIds())
+            {
+                CivilAlignment alignment = transaction.GetObject(id, OpenMode.ForRead, false) as CivilAlignment;
+                if (alignment != null && IsCeRoadAlignment(alignment)) candidates.Add(alignment);
+            }
+            CivilAlignment selected = candidates.FirstOrDefault(item =>
+                !string.IsNullOrWhiteSpace(corridorName) && corridorName.IndexOf(item.Name, StringComparison.OrdinalIgnoreCase) >= 0);
+            if (selected == null && candidates.Count == 1) selected = candidates[0];
+            if (selected == null) return false;
+            CivilProfile profile = null;
+            foreach (ObjectId id in selected.GetProfileIds())
+            {
+                CivilProfile current = transaction.GetObject(id, OpenMode.ForRead, false) as CivilProfile;
+                if (current == null) continue;
+                if (profile == null) profile = current;
+                string n = current.Name ?? string.Empty;
+                if (n.EndsWith("-FG", StringComparison.OrdinalIgnoreCase) || n.IndexOf("FINAL", StringComparison.OrdinalIgnoreCase) >= 0)
+                { profile = current; break; }
+            }
+            if (profile == null) return false;
+            object baseline = InvokeAddBaseline(baselines, selected.ObjectId, profile.ObjectId, selected.Name);
+            if (baseline == null) return false;
+            result.Baselines++;
+            ObjectId assemblyId = FindAssemblyId(civilDocument, transaction, options.AssemblyName);
+            if (assemblyId.IsNull) return true;
+            object regions = ReadProperty(baseline, "BaselineRegions") ?? ReadProperty(baseline, "Regions");
+            object region = InvokeAddRegion(regions, assemblyId, selected.StartingStation, selected.EndingStation);
+            if (region != null) result.Regions++;
+            return true;
+        }
+
+        private static object InvokeAddBaseline(object collection, ObjectId alignmentId, ObjectId profileId, string name)
+        {
+            if (collection == null) return null;
+            foreach (MethodInfo method in collection.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(item => item.Name == "Add").OrderBy(item => item.GetParameters().Length))
+            {
+                ParameterInfo[] ps = method.GetParameters(); var args = new object[ps.Length]; bool ok = true; int ids = 0;
+                for (int i=0;i<ps.Length;i++)
+                {
+                    string p=(ps[i].Name ?? string.Empty).ToLowerInvariant(); Type t=ps[i].ParameterType;
+                    if (t==typeof(ObjectId)) args[i] = p.Contains("profile") ? profileId : p.Contains("alignment") ? alignmentId : (ids++==0 ? alignmentId : profileId);
+                    else if (t==typeof(string)) args[i] = string.IsNullOrWhiteSpace(name) ? "CE Road Baseline" : name;
+                    else if (t==typeof(bool)) args[i]=false; else if (ps[i].HasDefaultValue) args[i]=ps[i].DefaultValue; else { ok=false; break; }
+                }
+                if (!ok) continue;
+                try { object value=method.Invoke(collection,args); if (value!=null) return value; } catch { }
+            }
+            return CivilStyleDiscovery.Enumerate(collection).FirstOrDefault();
+        }
+
+        private static object InvokeAddRegion(object regions, ObjectId assemblyId, double start, double end)
+        {
+            if (regions == null || assemblyId.IsNull) return null;
+            foreach (MethodInfo method in regions.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(item => item.Name == "Add").OrderBy(item => item.GetParameters().Length))
+            {
+                ParameterInfo[] ps=method.GetParameters(); var args=new object[ps.Length]; bool ok=true; int doubles=0;
+                for(int i=0;i<ps.Length;i++)
+                {
+                    string p=(ps[i].Name ?? string.Empty).ToLowerInvariant(); Type t=ps[i].ParameterType;
+                    if(t==typeof(ObjectId)) args[i]=assemblyId;
+                    else if(t==typeof(double)) args[i]=p.Contains("end") ? end : p.Contains("start") ? start : (doubles++==0 ? start : end);
+                    else if(t==typeof(string)) args[i]="CE Road Region";
+                    else if(t==typeof(bool)) args[i]=true; else if(ps[i].HasDefaultValue) args[i]=ps[i].DefaultValue; else {ok=false;break;}
+                }
+                if(!ok) continue;
+                try { object value=method.Invoke(regions,args); if(value!=null) return value; } catch { }
+            }
+            return CivilStyleDiscovery.Enumerate(regions).FirstOrDefault();
+        }
+
+        private static ObjectId FindAssemblyId(CivilDocument civilDocument, Transaction transaction, string requested)
+        {
+            ObjectId first=ObjectId.Null;
+            foreach(ObjectId id in CivilAssemblyResolver.GetAssemblyIds(civilDocument, AcApplication.DocumentManager.MdiActiveDocument.Database))
+            {
+                if(id.IsNull || id.IsErased) continue; if(first.IsNull) first=id;
+                DBObject value=transaction.GetObject(id,OpenMode.ForRead,false);
+                string name=Convert.ToString(ReadProperty(value,"Name"),CultureInfo.CurrentCulture);
+                if(!string.IsNullOrWhiteSpace(requested) && string.Equals(name,requested,StringComparison.OrdinalIgnoreCase)) return id;
+            }
+            return first;
+        }
+
         private static object EnsureCorridorSurface(object collection, string name, IEnumerable<string> codes, bool boundary, ref RoadCorridorCompletionResult result)
         {
             if (collection == null) { result.Warnings++; return null; }
@@ -481,11 +605,20 @@ namespace CETools.Civil3D
                 (description ?? string.Empty).IndexOf("CE road", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-        private static ObjectId ResolveOptionalStyle(Database database, CivilDocument civilDocument, ProjectStyleSelection project, string category, Transaction transaction, out string actual)
+        private static ObjectId ResolveOptionalStyle(Database database, CivilDocument civilDocument, RoadProductionSettings road, ProjectStyleSelection project, string category, Transaction transaction, out string actual)
         {
             actual = string.Empty;
-            try { return CivilStyleCatalogV2.ResolveStyleId(database, civilDocument, category, ReadStyle(project, category), transaction, out actual); }
+            try { return CivilStyleCatalogV2.ResolveStyleId(database, civilDocument, category, RoadStyle(road, project, category), transaction, out actual); }
             catch { return ObjectId.Null; }
+        }
+
+        private static string RoadStyle(RoadProductionSettings road, ProjectStyleSelection project, string category)
+        {
+            string requested = road == null ? string.Empty : road.Value(category);
+            return !string.IsNullOrWhiteSpace(requested) &&
+                !string.Equals(requested, "<Use drawing default>", StringComparison.OrdinalIgnoreCase)
+                ? requested.Trim()
+                : ReadStyle(project, category);
         }
 
         private static string ReadStyle(ProjectStyleSelection project, string category)
@@ -622,6 +755,7 @@ namespace CETools.Civil3D
     internal sealed class RoadCorridorCompletionOptions
     {
         internal ObjectId TargetSurfaceId { get; set; }
+        internal string AssemblyName { get; set; }
         internal string TopSurfaceName { get; set; }
         internal string BottomSurfaceName { get; set; }
         internal IList<string> TopCodes { get; set; }

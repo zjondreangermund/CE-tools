@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
@@ -154,14 +155,14 @@ namespace CETools.Civil3D
                             table.Cells[tableRow, columnIndex].TextString =
                                 GetValue(rows[dataIndex], columnIndex);
                             table.Cells[tableRow, columnIndex].Alignment =
-                                CellAlignment.MiddleLeft;
+                                CellAlignment.MiddleCenter;
                             table.Cells[tableRow, columnIndex].TextHeight = textHeight;
                         }
                     }
 
-                    table.GenerateLayout();
                     currentSpace.AppendEntity(table);
                     transaction.AddNewlyCreatedDBObject(table, true);
+                    ForceTableGraphics(table);
                     transaction.Commit();
                 }
 
@@ -173,6 +174,24 @@ namespace CETools.Civil3D
                     "\nCE Tools report table creation failed. No table was committed. {0}",
                     exception.Message);
             }
+        }
+
+        private static void ForceTableGraphics(Table table)
+        {
+            if (table == null) return;
+            try { table.GenerateLayout(); } catch { }
+            try { table.RecordGraphicsModified(true); } catch { }
+            try
+            {
+                MethodInfo method = table.GetType().GetMethod(
+                    "RecomputeTableBlock",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    new[] { typeof(bool) },
+                    null);
+                if (method != null) method.Invoke(table, new object[] { true });
+            }
+            catch { }
         }
 
         private static string GetValue(IList<string> row, int columnIndex)

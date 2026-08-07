@@ -67,6 +67,13 @@ namespace CETools.Civil3D
                 4,
                 "A vertex is only screened when this many neighbours are available.");
             settings.AddChoice(
+                "AdaptiveSearch",
+                "Repair Criteria",
+                "Adaptive neighbour retry",
+                "Yes",
+                "If the first local search finds no repair candidates, retry with a wider neighbourhood before reporting no repair.",
+                new[] { "Yes", "No" });
+            settings.AddChoice(
                 "HoleHandling",
                 "Hole Handling",
                 "Internal holes",
@@ -77,6 +84,10 @@ namespace CETools.Civil3D
             spikeTolerance = settings.Double("SpikeTolerance", 1.0);
             neighbourRadius = settings.Double("NeighbourRadius", 5.0);
             minimumNeighbours = settings.Integer("MinimumNeighbours", 4);
+            bool adaptiveSearch = string.Equals(
+                settings.Text("AdaptiveSearch"),
+                "Yes",
+                StringComparison.OrdinalIgnoreCase);
             bool fillHoles = !string.Equals(
                 settings.Text("HoleHandling"),
                 "Keep internal holes",
@@ -92,12 +103,38 @@ namespace CETools.Civil3D
                     neighbourRadius,
                     minimumNeighbours,
                     fillHoles);
+                if (adaptiveSearch &&
+                    plan.Replacements.Count == 0 &&
+                    plan.HoleFillPoints.Count == 0)
+                {
+                    RepairPlan retry = BuildPlan(
+                        document.Database,
+                        sourceId,
+                        spikeTolerance,
+                        neighbourRadius * 4.0,
+                        Math.Max(2, minimumNeighbours - 2),
+                        fillHoles);
+                    if (retry.Replacements.Count > 0 || retry.HoleFillPoints.Count > 0)
+                    {
+                        plan = retry;
+                        document.Editor.WriteMessage(
+                            "\nCE_SURFSPIKEHOLEFIX: the initial local search found no candidates; adaptive search expanded the neighbour radius to {0:N2} m.",
+                            neighbourRadius * 4.0);
+                    }
+                }
             }
             catch (System.Exception exception)
             {
                 document.Editor.WriteMessage(
                     "\nCE_SURFSPIKEHOLEFIX stopped. {0}",
                     exception.Message);
+                return;
+            }
+
+            if (plan.Replacements.Count == 0 && plan.HoleFillPoints.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_SURFSPIKEHOLEFIX: no spike/low or internal-hole repair candidates were found with the selected criteria. No unchanged repair surface was created.");
                 return;
             }
 
@@ -399,6 +436,11 @@ namespace CETools.Civil3D
                     OpenMode.ForWrite,
                     false);
                 AddPoints(generated, plan.OutputPoints);
+                Rebuild(generated);
+                int generatedVertexCount = ReadVertices(generated).Count;
+                if (generatedVertexCount < 3)
+                    throw new InvalidOperationException(
+                        "The repaired TIN did not rebuild with readable vertices; no output surface will be committed.");
                 generated.XData = new ResultBuffer(
                     new TypedValue(
                         (int)DxfCode.ExtendedDataRegAppName,

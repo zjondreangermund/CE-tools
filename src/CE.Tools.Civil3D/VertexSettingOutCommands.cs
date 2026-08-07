@@ -129,7 +129,7 @@ namespace CETools.Civil3D
                 "Drawing-unit offset from each setting-out point to its annotation.");
             settings.AddChoice(
                 "CoordinateOrder", "04 Coordinate Display", "Coordinate order", "X then Y",
-                "Change only the annotation and table display order. The true drawing coordinates remain unchanged.",
+                "Swap only the displayed X/Y letters/headings. Numeric coordinate values and true drawing coordinates remain unchanged.",
                 new[] { "X then Y", "Y then X" });
             settings.AddChoice(
                 "XSign", "04 Coordinate Display", "Displayed X sign", "Keep X sign",
@@ -530,11 +530,9 @@ namespace CETools.Civil3D
                 var leader = new MLeader();
                 leader.SetDatabaseDefaults(database);
                 leader.MLeaderStyle = database.MLeaderstyle;
-                // ObjectId.Null is AutoCAD's native closed-filled arrow. Use the
-                // drawing's configured dimension arrow when one is available.
-                leader.ArrowSymbolId = database.Dimblk.IsNull
-                    ? ObjectId.Null
-                    : database.Dimblk;
+                // ObjectId.Null is AutoCAD's native closed-filled arrow. Do not
+                // inherit DIMBLK because a project DIMSTYLE may use architectural ticks.
+                leader.ArrowSymbolId = ObjectId.Null;
                 leader.ContentType = ContentType.MTextContent;
                 var text = new MText();
                 text.SetDatabaseDefaults(database);
@@ -630,6 +628,7 @@ namespace CETools.Civil3D
                 string.Empty,
                 database.Dimstyle);
             radial.SetDatabaseDefaults(database);
+            PositionRadialText(radial, dimension, textHeight);
             SetClosedFilledDimensionArrow(radial, database);
             PaperAnnotationScale.SetAnnotative(radial);
             ObjectId id = modelSpace.AppendEntity(radial);
@@ -658,8 +657,27 @@ namespace CETools.Civil3D
             radial.Center = dimension.Center;
             radial.ChordPoint = dimension.ChordPoint;
             radial.LeaderLength = Math.Max(textHeight * 3.0, dimension.Radius * 0.15);
+            PositionRadialText(radial, dimension, textHeight);
             SetClosedFilledDimensionArrow(radial, radial.Database);
             return true;
+        }
+
+        private static void PositionRadialText(
+            RadialDimension radial,
+            VertexRadialDimension dimension,
+            double textHeight)
+        {
+            if (radial == null || dimension == null) return;
+            Vector3d direction = dimension.ChordPoint - dimension.Center;
+            if (direction.Length <= 1e-8) direction = Vector3d.XAxis;
+            direction = direction.GetNormal();
+            double offset = Math.Max(textHeight * 4.0, dimension.Radius * 0.20);
+            try
+            {
+                radial.TextPosition = dimension.Center +
+                    direction * (dimension.Radius + offset);
+            }
+            catch { }
         }
 
         private static void PopulateTable(
@@ -701,9 +719,11 @@ namespace CETools.Civil3D
                 table.Cells[row, 3].TextString = record.SegmentIndex.ToString(CultureInfo.InvariantCulture);
                 double displayX = DisplayX(record.Point, link);
                 double displayY = DisplayY(record.Point, link);
-                table.Cells[row, 4].TextString = (yFirst ? displayY : displayX)
+                // Keep the numeric coordinate columns fixed and swap only their
+                // displayed X/Y headings when requested. Drawing coordinates never change.
+                table.Cells[row, 4].TextString = displayX
                     .ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[row, 5].TextString = (yFirst ? displayX : displayY)
+                table.Cells[row, 5].TextString = displayY
                     .ToString("N3", CultureInfo.CurrentCulture);
                 table.Cells[row, 6].TextString = record.Point.Z.ToString("N3", CultureInfo.CurrentCulture);
                 table.Cells[row, 7].TextString = record.Radius.HasValue
@@ -720,7 +740,25 @@ namespace CETools.Civil3D
                     table.Cells[row, column].Alignment = CellAlignment.MiddleCenter;
                     table.Cells[row, column].TextHeight = textHeight;
                 }
-            table.GenerateLayout();
+            ForceTableGraphics(table);
+        }
+
+        private static void ForceTableGraphics(Table table)
+        {
+            if (table == null) return;
+            try { table.GenerateLayout(); } catch { }
+            try { table.RecordGraphicsModified(true); } catch { }
+            try
+            {
+                MethodInfo method = table.GetType().GetMethod(
+                    "RecomputeTableBlock",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    new[] { typeof(bool) },
+                    null);
+                if (method != null) method.Invoke(table, new object[] { true });
+            }
+            catch { }
         }
 
         private static string LabelText(
@@ -734,11 +772,9 @@ namespace CETools.Civil3D
                 "Y then X",
                 StringComparison.OrdinalIgnoreCase);
             string first = (yFirst ? "Y=" : "X=") +
-                (yFirst ? displayY : displayX)
-                    .ToString("N3", CultureInfo.CurrentCulture);
+                displayX.ToString("N3", CultureInfo.CurrentCulture);
             string second = (yFirst ? "X=" : "Y=") +
-                (yFirst ? displayX : displayY)
-                    .ToString("N3", CultureInfo.CurrentCulture);
+                displayY.ToString("N3", CultureInfo.CurrentCulture);
             return string.Join(
                 "\\P",
                 record.PointName,
@@ -776,9 +812,8 @@ namespace CETools.Civil3D
             Database database)
         {
             if (dimension == null || database == null) return;
-            ObjectId arrow = database.Dimblk.IsNull
-                ? ObjectId.Null
-                : database.Dimblk;
+            // Force the AutoCAD closed-filled default independently of DIMSTYLE.
+            ObjectId arrow = ObjectId.Null;
             foreach (string name in new[] { "Dimblk", "Dimblk1", "Dimblk2" })
             {
                 try
@@ -805,7 +840,7 @@ namespace CETools.Civil3D
         {
             Vector3d offset = record.AnnotationOffset ??
                 new Vector3d(defaultOffset, defaultOffset, 0.0);
-            double maximum = Math.Max(defaultOffset * 5.0, defaultOffset);
+            double maximum = Math.Max(defaultOffset * 3.0, defaultOffset);
             if (offset.Length > maximum)
                 offset = offset.GetNormal() * maximum;
             return record.Point + offset;

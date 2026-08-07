@@ -57,9 +57,8 @@ required = {
         "ELEVHANDLE=",
         "SRC=",
         "CogoPointProjectStyleCommands.ApplyPointStyles(",
-        "database.Dimblk.IsNull",
-        "? ObjectId.Null",
-        ": database.Dimblk",
+        "leader.ArrowSymbolId = ObjectId.Null;",
+        "ObjectId arrow = ObjectId.Null;",
         "SetClosedFilledDimensionArrow",
         "table.Columns[1].Width",
         "CellAlignment.MiddleCenter",
@@ -123,7 +122,6 @@ for path in (PLUGIN, PROJECT, VERTEX, GEOMETRY, SURVEY, REFRESH, COGO, SEWER):
     if text.count("(") != text.count(")"):
         errors.append(f"Unbalanced parentheses in {path.name}")
 
-# Explicitly prevent reintroducing the invalid ObjectId.Database pattern.
 if ".Database;" in texts[SEWER] and "pipeId.Database" in texts[SEWER]:
     errors.append("Sewer dynamic manager still accesses ObjectId.Database")
 
@@ -135,6 +133,6 @@ if errors:
 
 print(
     "Dynamic COGO/vertex/sewer validation passed: saved point styles, point-safe "
-    "overlap, shared vertex popup, linked Z references, configured closed-filled "
+    "overlap, shared vertex popup, linked Z references, closed-filled "
     "leaders/dimensions, table spacing and automatic sewer branch compaction are wired."
 )
