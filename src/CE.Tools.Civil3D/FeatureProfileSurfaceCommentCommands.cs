@@ -310,6 +310,7 @@ namespace CETools.Civil3D
             }
 
             CommentAutoRefreshManager.MarkPending();
+            try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); } catch { }
 
             document.Editor.WriteMessage(
                 "\nCE_FLVERTEXLABELS complete. Dynamic annotations created={0}; rejected selections={1}; output={2}.",
