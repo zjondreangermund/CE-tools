@@ -12,29 +12,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Locate remaining implementations
+      - name: Inventory exact current implementations
         shell: bash
         run: |
-          echo '=== ROAD SETTINGS CLASS ==='
-          grep -Rnl 'RoadProductionSettings' src/CE.Tools.Civil3D || true
-          grep -RniE -C 12 'class RoadProductionSettings|CE_ROADSETTINGS|Road Settings|ProfileViewBandSetStyleName|ProfileViewBandSetStyle' src/CE.Tools.Civil3D || true
-          echo '=== ROAD PROFILE VIEW CREATE ==='
-          grep -RniE -C 12 'ProfileView.*Create|BandSetStyleId|CE_ROADPROFILEFULL|CreateRoadProfiles|Road-Single-Band' src/CE.Tools.Civil3D || true
-          echo '=== FEATURE LINE COMMANDS ==='
-          grep -RnlE 'CE_FLREPORTUI|CE_FLLABELX|Feature Line Report' src/CE.Tools.Civil3D || true
-          grep -RniE -C 10 'CE_FLREPORTUI|CE_FLLABELX|Feature Line Report' src/CE.Tools.Civil3D || true
-          echo '=== CORRIDOR LABEL/REPORT COMMANDS ==='
-          grep -RnlE 'CE_CORLABELX|CE_COR.*REPORT|Corridor.*Report|Corridor.*MText' src/CE.Tools.Civil3D || true
-          grep -RniE -C 10 'CE_CORLABELX|CE_COR.*REPORT|Corridor.*Report|Corridor.*MText' src/CE.Tools.Civil3D || true
-          echo '=== SURVEY LAT LONG COMMANDS ==='
-          grep -RnlE 'Latitude|Longitude|Lat.*Long|LO17|LO15|EPSG|CoordinateSystem' src/CE.Tools.Civil3D || true
-          grep -RniE -C 8 'Latitude|Longitude|Lat.*Long|LO17|LO15|EPSG|CoordinateSystem' src/CE.Tools.Civil3D/SurveyCoordinateWorkflowCommands.cs src/CE.Tools.Civil3D/CoordinateUtilitiesCommands.cs 2>/dev/null || true
-          echo '=== XREF ATTACH HELPERS ==='
-          grep -RnlE 'AttachXref|OverlayXref|Xref.*Attach|Xref.*Overlay' src/CE.Tools.Civil3D || true
-          grep -RniE -C 8 'AttachXref|OverlayXref|Xref.*Attach|Xref.*Overlay' src/CE.Tools.Civil3D || true
-          echo '=== PAGE SETUP API ==='
+          echo '=== ROAD FILES ==='
+          find src/CE.Tools.Civil3D -maxdepth 1 -type f -iname '*road*' -o -iname '*corridor*' -o -iname '*assembly*' | sort
+          echo '=== ROAD SETTINGS DEFINITIONS ==='
+          grep -RnlE 'RoadProductionSettings|CE_ROADSETTINGS|ProfileViewBandSetStyleName|Road-Single-Band' src/CE.Tools.Civil3D || true
+          echo '=== FEATURE/CORRIDOR FILES ==='
+          grep -RnlE 'CE_FLREPORTUI|CE_FLLABELX|CE_CORLABELX|Feature Line Report|Corridor.*Report' src/CE.Tools.Civil3D || true
+          echo '=== SURVEY/MAP FILES ==='
+          grep -RnlE 'Latitude|Longitude|LO17|LO15|EPSG|CoordinateSystem|Google Earth|Google Maps' src/CE.Tools.Civil3D || true
+          echo '=== XREF FILES ==='
+          grep -RnlE 'AttachXref|OverlayXref|XrefGraph|XrefStatus' src/CE.Tools.Civil3D || true
+          echo '=== PAGE SETUP FILES ==='
           grep -RnlE 'PlotSettingsValidator|PlotSettings|PageSetup|PlotConfiguration' src/CE.Tools.Civil3D || true
-          grep -RniE -C 8 'PlotSettingsValidator|PlotSettings|PageSetup|PlotConfiguration' src/CE.Tools.Civil3D || true
-          echo '=== UTILITY NETWORK CREATION ==='
-          grep -RnlE 'CE_SEWCREATE|CE_SWCREATE|CE_WATERCREATE|Create.*Network.*Polyline|network from polylines' src/CE.Tools.Civil3D || true
-          grep -RniE -C 8 'CE_SEWCREATE|CE_SWCREATE|CE_WATERCREATE|Create.*Network.*Polyline|network from polylines' src/CE.Tools.Civil3D || true
+          echo '=== UTILITY CREATION FILES ==='
+          grep -RnlE 'CE_SEWCREATE|CE_SWCREATE|CE_WATERCREATE|network from polylines|Network From Polylines|Parcel' src/CE.Tools.Civil3D || true
