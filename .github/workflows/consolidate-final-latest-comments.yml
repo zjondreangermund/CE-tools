@@ -1,0 +1,54 @@
+name: Consolidate Final Latest Comments
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: write
+
+jobs:
+  consolidate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/latest-runtime-design-comments
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+      - name: Apply final stable-head fixes
+        shell: bash
+        run: |
+          python3 scripts/Apply-SurfaceNetworkDataFixes.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p=Path('src/CE.Tools.Civil3D/FeatureProfileSurfaceCommentCommands.cs')
+          t=p.read_text(encoding='utf-8')
+          old='''            CommentAutoRefreshManager.MarkPending();\n\n            document.Editor.WriteMessage(\n                "\\nCE_FLVERTEXLABELS complete.'''
+          new='''            CommentAutoRefreshManager.MarkPending();\n            try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); } catch { }\n\n            document.Editor.WriteMessage(\n                "\\nCE_FLVERTEXLABELS complete.'''
+          if old not in t: raise SystemExit('Feature-line COGO style-sync marker missing')
+          p.write_text(t.replace(old,new,1),encoding='utf-8')
+          PY
+      - name: Validate latest runtime/design comments
+        run: python3 scripts/Validate-LatestRuntimeDesignComments.py
+      - name: Validate command registry
+        run: python3 scripts/Validate-CommandRegistry.py
+      - name: Validate preservation
+        run: python3 scripts/Validate-PreservedRegressionGate.py
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+      - name: Parse all Civil 3D C# source
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
+      - name: Validate diff
+        run: git diff --check
+      - name: Commit final source fixes
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/CE.Tools.Civil3D/FeatureProfileSurfaceCommentCommands.cs \
+                  src/CE.Tools.Civil3D/SurfaceSpikeHoleRepairCommands.cs \
+                  src/CE.Tools.Civil3D/NetworkAssetScheduleCommands.cs
+          git commit -m "Finish surface, feature-line and network data comments"
+          git push origin HEAD:agent/latest-runtime-design-comments
