@@ -32,7 +32,7 @@ namespace CETools.Civil3D
                 {
                     new DisciplineWorkflowAction("Create T-junction", "CE_ROADTJUNCTION", "Create two linked bellmouth returns and number them clockwise.", "01 Create"),
                     new DisciplineWorkflowAction("Create cross-junction", "CE_ROADCROSSJUNCTION", "Create four linked bellmouth returns and number them clockwise.", "01 Create"),
-                    new DisciplineWorkflowAction("Number selected junction bellmouths", "CE_JUNCTIONNUMBER", "Group junctions top-left to bottom-right and number each group clockwise.", "02 Number"),
+                    new DisciplineWorkflowAction("Number selected junction bellmouths", "CE_JUNCTIONNUMBER", "Choose left-to-right, top-to-bottom or top-left-to-bottom-right group order, with an optional picked start junction/return.", "02 Number"),
                     new DisciplineWorkflowAction("Refresh linked junctions", "CE_JUNCTIONREFRESH", "Rebuild labels and linked bellmouth geometry from saved source handles.", "03 Refresh")
                 });
         }
@@ -64,9 +64,31 @@ namespace CETools.Civil3D
             double cluster = Math.Max(model.Double("Cluster", 35.0), 0.001);
             double textPaper = Math.Max(model.Double("TextHeight", 2.5), 0.5);
             bool clockwise = !string.Equals(model.Text("Direction"), "Counter-clockwise", StringComparison.OrdinalIgnoreCase);
-            int labels = NumberSelection(document, selected.Value.GetObjectIds(), prefix, start, cluster, textPaper, clockwise);
+            string groupOrder = model.Text("GroupOrder");
+            bool pickStart = string.Equals(model.Text("StartMode"), "Pick start junction / return", StringComparison.OrdinalIgnoreCase);
+            Point3d? pickedStart = null;
+            if (pickStart)
+            {
+                PromptPointResult picked = document.Editor.GetPoint("\nPick the junction or return that must receive the first number: ");
+                if (picked.Status != PromptStatus.OK) return;
+                pickedStart = picked.Value.TransformBy(document.Editor.CurrentUserCoordinateSystem);
+            }
+            int labels = NumberSelection(
+                document,
+                selected.Value.GetObjectIds(),
+                prefix,
+                start,
+                cluster,
+                textPaper,
+                clockwise,
+                groupOrder,
+                pickedStart);
             document.Editor.Regen();
-            document.Editor.WriteMessage("\nCE_JUNCTIONNUMBER complete. Bellmouth labels created or refreshed={0}.", labels);
+            document.Editor.WriteMessage(
+                "\nCE_JUNCTIONNUMBER complete. Labels={0}; group order={1}; picked start={2}.",
+                labels,
+                groupOrder,
+                pickedStart.HasValue ? "Yes" : "No");
         }
 
         [CommandMethod("CE_TOOLS", "CE_JUNCTIONREFRESH", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -186,7 +208,16 @@ namespace CETools.Civil3D
             return refreshed;
         }
 
-        private static int NumberSelection(Document document, IEnumerable<ObjectId> ids, string prefix, int start, double clusterDistance, double textPaper, bool clockwise)
+        private static int NumberSelection(
+            Document document,
+            IEnumerable<ObjectId> ids,
+            string prefix,
+            int start,
+            double clusterDistance,
+            double textPaper,
+            bool clockwise,
+            string groupOrder,
+            Point3d? pickedStart)
         {
             var items = new List<JunctionCurveItem>();
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
@@ -205,10 +236,11 @@ namespace CETools.Civil3D
             }
             if (items.Count == 0) return 0;
 
-            List<List<JunctionCurveItem>> groups = Cluster(items, clusterDistance)
-                .OrderByDescending(group => group.Average(item => item.Anchor.Y))
-                .ThenBy(group => group.Average(item => item.Anchor.X))
-                .ToList();
+            List<List<JunctionCurveItem>> groups = OrderGroups(
+                Cluster(items, clusterDistance),
+                groupOrder,
+                clusterDistance,
+                pickedStart);
             int created = 0;
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
@@ -216,12 +248,17 @@ namespace CETools.Civil3D
                 ObjectId layerId = GetOrCreateLayer(document.Database, transaction);
                 BlockTableRecord space = transaction.GetObject(document.Database.CurrentSpaceId, OpenMode.ForWrite, false) as BlockTableRecord;
                 if (space == null) return 0;
+                EraseExistingLabels(transaction, space, new HashSet<ObjectId>(items.Select(item => item.Id)));
                 for (int groupIndex = 0; groupIndex < groups.Count; groupIndex++)
                 {
                     List<JunctionCurveItem> group = groups[groupIndex];
-                    Point3d centre = new Point3d(group.Average(item => item.Anchor.X), group.Average(item => item.Anchor.Y), group.Average(item => item.Anchor.Z));
-                    IEnumerable<JunctionCurveItem> ordered = group.OrderBy(item => ClockwiseKey(item.Anchor, centre));
-                    if (!clockwise) ordered = ordered.Reverse();
+                    Point3d centre = GroupCentre(group);
+                    List<JunctionCurveItem> ordered = group
+                        .OrderBy(item => ClockwiseKey(item.Anchor, centre))
+                        .ToList();
+                    if (!clockwise) ordered.Reverse();
+                    if (pickedStart.HasValue && groupIndex == 0)
+                        ordered = RotateToNearest(ordered, pickedStart.Value);
                     int returnIndex = 1;
                     foreach (JunctionCurveItem item in ordered)
                     {
@@ -234,6 +271,83 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
             return created;
+        }
+
+        private static List<List<JunctionCurveItem>> OrderGroups(
+            IList<List<JunctionCurveItem>> groups,
+            string order,
+            double clusterDistance,
+            Point3d? pickedStart)
+        {
+            double rowBand = Math.Max(clusterDistance * 0.50, 0.001);
+            IEnumerable<List<JunctionCurveItem>> ordered;
+            if (string.Equals(order, "Left to right", StringComparison.OrdinalIgnoreCase))
+            {
+                ordered = groups.OrderBy(group => GroupCentre(group).X)
+                    .ThenByDescending(group => GroupCentre(group).Y);
+            }
+            else if (string.Equals(order, "Top to bottom", StringComparison.OrdinalIgnoreCase))
+            {
+                ordered = groups.OrderByDescending(group => GroupCentre(group).Y)
+                    .ThenBy(group => GroupCentre(group).X);
+            }
+            else
+            {
+                ordered = groups
+                    .OrderByDescending(group => Math.Round(GroupCentre(group).Y / rowBand))
+                    .ThenBy(group => GroupCentre(group).X)
+                    .ThenByDescending(group => GroupCentre(group).Y);
+            }
+            var result = ordered.ToList();
+            if (!pickedStart.HasValue || result.Count < 2) return result;
+            int startIndex = 0;
+            double best = double.MaxValue;
+            for (int index = 0; index < result.Count; index++)
+            {
+                double distance = GroupCentre(result[index]).DistanceTo(pickedStart.Value);
+                if (distance < best) { best = distance; startIndex = index; }
+            }
+            return result.Skip(startIndex).Concat(result.Take(startIndex)).ToList();
+        }
+
+        private static Point3d GroupCentre(IList<JunctionCurveItem> group)
+        {
+            return new Point3d(
+                group.Average(item => item.Anchor.X),
+                group.Average(item => item.Anchor.Y),
+                group.Average(item => item.Anchor.Z));
+        }
+
+        private static List<JunctionCurveItem> RotateToNearest(
+            IList<JunctionCurveItem> items,
+            Point3d picked)
+        {
+            if (items == null || items.Count == 0) return new List<JunctionCurveItem>();
+            int start = 0;
+            double best = double.MaxValue;
+            for (int index = 0; index < items.Count; index++)
+            {
+                double distance = items[index].Anchor.DistanceTo(picked);
+                if (distance < best) { best = distance; start = index; }
+            }
+            return items.Skip(start).Concat(items.Take(start)).ToList();
+        }
+
+        private static void EraseExistingLabels(
+            Transaction transaction,
+            BlockTableRecord space,
+            ISet<ObjectId> sourceIds)
+        {
+            foreach (ObjectId id in space.Cast<ObjectId>().ToList())
+            {
+                MText label;
+                try { label = transaction.GetObject(id, OpenMode.ForWrite, false) as MText; }
+                catch { continue; }
+                if (label == null) continue;
+                JunctionLink link;
+                if (!TryReadLink(label, space.Database, out link) || !sourceIds.Contains(link.SourceId)) continue;
+                try { label.Erase(); } catch { }
+            }
         }
 
         private static List<List<JunctionCurveItem>> Cluster(IList<JunctionCurveItem> items, double distance)
@@ -327,10 +441,14 @@ namespace CETools.Civil3D
 
         private static ProductionSettingsDialogModel NumberingSettings()
         {
-            var model = new ProductionSettingsDialogModel("CE Tools - Junction Bellmouth Numbering", "Junction groups are sorted from top-left to bottom-right. Within each junction, numbering starts at the top-left return and continues clockwise.");
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - Junction Bellmouth Numbering",
+                "Choose the junction sequence explicitly. Top-left to bottom-right is the default; horizontal roads can run left to right and vertical roads can run top to bottom. A picked start rotates the sequence to the selected junction/return.");
             model.AddText("Prefix", "01 Numbering", "Junction prefix", "J", "J creates J1.1, J1.2, J2.1...");
             model.AddPositiveInteger("Start", "01 Numbering", "Starting junction number", 1, "First automatic junction group number.");
-            model.AddChoice("Direction", "01 Numbering", "Return direction", "Clockwise", "Number around each junction.", new[] { "Clockwise", "Counter-clockwise" });
+            model.AddChoice("GroupOrder", "01 Numbering", "Junction group direction", "Top-left to bottom-right", "Use left-to-right for horizontal roads and top-to-bottom for vertical roads.", new[] { "Top-left to bottom-right", "Left to right", "Top to bottom" });
+            model.AddChoice("StartMode", "01 Numbering", "Sequence start", "Automatic start", "Pick a junction/return when numbering must start from a specific existing point.", new[] { "Automatic start", "Pick start junction / return" });
+            model.AddChoice("Direction", "01 Numbering", "Return direction inside each junction", "Clockwise", "The automatic corner is top-left; a picked first return overrides the first junction start.", new[] { "Clockwise", "Counter-clockwise" });
             model.AddDouble("Cluster", "02 Grouping", "Junction grouping distance", 35.0, "Bellmouth midpoints within this distance are treated as one junction.");
             model.AddDouble("TextHeight", "03 Annotation", "Paper text height", 2.5, "Annotative label paper height.");
             return model;
