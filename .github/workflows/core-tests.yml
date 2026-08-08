@@ -115,6 +115,9 @@ jobs:
       - name: Validate expanded Namibia town catalogue
         run: python3 scripts/Validate-NamibiaTownCatalogue.py
 
+      - name: Validate coordinate levels BOQ and surface repair
+        run: python3 scripts/Validate-CoordinateLevelsBoqSurface.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
