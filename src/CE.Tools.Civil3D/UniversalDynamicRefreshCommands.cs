@@ -142,6 +142,8 @@ namespace CETools.Civil3D
                 catch { result.Warnings++; }
                 try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); }
                 catch { result.Warnings++; }
+                try { CeTablePresentationManager.CenterCeTables(document); }
+                catch { result.Warnings++; }
                 _pending = false;
                 _lastRefreshUtc = DateTime.UtcNow;
             }

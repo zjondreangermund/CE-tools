@@ -418,7 +418,7 @@ namespace CETools.Civil3D
                 "Length3D",
                 "Length2D",
                 "Length");
-            double? geometricLength = ReadGeometricLength(value);
+            double? geometricLength = ReadGeometricLength(value, transaction);
             if (geometricLength.HasValue && geometricLength.Value > 0.001 &&
                 (!length.HasValue || length.Value <= 0.0 ||
                  (Math.Abs(length.Value - 1.0) < 0.001 && geometricLength.Value > 1.01)))
@@ -508,12 +508,40 @@ namespace CETools.Civil3D
         private static double ToNominalMillimetres(double value)
         {
             double absolute = Math.Abs(value);
-            return absolute > 0.0 && absolute < 10.0 ? value * 1000.0 : value;
+            double millimetres = absolute > 0.0 && absolute < 10.0 ? absolute * 1000.0 : absolute;
+            double[] nominal = { 20, 25, 32, 40, 50, 63, 75, 90, 110, 125, 140, 160, 180, 200, 225, 250, 280, 300, 315, 355, 400, 450, 500, 560, 600, 630, 710, 800, 900, 1000, 1200, 1500, 1800, 2000 };
+            foreach (double candidate in nominal)
+                if (millimetres <= candidate + 0.5) return candidate;
+            return Math.Round(millimetres, 0);
         }
 
-        private static double? ReadGeometricLength(object value)
+        private static double? ReadGeometricLength(object value, Transaction transaction)
         {
             if (value == null) return null;
+            Autodesk.AutoCAD.Geometry.Point3d firstPoint;
+            Autodesk.AutoCAD.Geometry.Point3d secondPoint;
+            if (TryReadPointProperty(value, "StartPoint", out firstPoint) &&
+                TryReadPointProperty(value, "EndPoint", out secondPoint))
+                return firstPoint.DistanceTo(secondPoint);
+            try
+            {
+                PropertyInfo startProperty = value.GetType().GetProperty("StartStructureId", BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo endProperty = value.GetType().GetProperty("EndStructureId", BindingFlags.Public | BindingFlags.Instance);
+                if (transaction != null && startProperty != null && endProperty != null)
+                {
+                    object startRaw = startProperty.GetValue(value, null);
+                    object endRaw = endProperty.GetValue(value, null);
+                    if (startRaw is ObjectId && endRaw is ObjectId)
+                    {
+                        DBObject start = transaction.GetObject((ObjectId)startRaw, OpenMode.ForRead, false);
+                        DBObject end = transaction.GetObject((ObjectId)endRaw, OpenMode.ForRead, false);
+                        if ((TryReadPointProperty(start, "Position", out firstPoint) || TryReadPointProperty(start, "Location", out firstPoint)) &&
+                            (TryReadPointProperty(end, "Position", out secondPoint) || TryReadPointProperty(end, "Location", out secondPoint)))
+                            return firstPoint.DistanceTo(secondPoint);
+                    }
+                }
+            }
+            catch { }
             try
             {
                 MethodInfo method = value.GetType().GetMethod(
@@ -525,15 +553,24 @@ namespace CETools.Civil3D
                 if (method == null) return null;
                 object first = method.Invoke(value, new object[] { 0.0 });
                 object second = method.Invoke(value, new object[] { 1.0 });
-                if (!(first is Autodesk.AutoCAD.Geometry.Point3d) ||
-                    !(second is Autodesk.AutoCAD.Geometry.Point3d)) return null;
-                return ((Autodesk.AutoCAD.Geometry.Point3d)first).DistanceTo(
-                    (Autodesk.AutoCAD.Geometry.Point3d)second);
+                if (!(first is Autodesk.AutoCAD.Geometry.Point3d) || !(second is Autodesk.AutoCAD.Geometry.Point3d)) return null;
+                return ((Autodesk.AutoCAD.Geometry.Point3d)first).DistanceTo((Autodesk.AutoCAD.Geometry.Point3d)second);
             }
-            catch
+            catch { return null; }
+        }
+
+        private static bool TryReadPointProperty(object value, string name, out Autodesk.AutoCAD.Geometry.Point3d point)
+        {
+            point = Autodesk.AutoCAD.Geometry.Point3d.Origin;
+            if (value == null) return false;
+            try
             {
-                return null;
+                PropertyInfo property = value.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                object raw = property == null ? null : property.GetValue(value, null);
+                if (raw is Autodesk.AutoCAD.Geometry.Point3d) { point = (Autodesk.AutoCAD.Geometry.Point3d)raw; return true; }
             }
+            catch { }
+            return false;
         }
 
         private static ObjectId CreateLinkedTable(

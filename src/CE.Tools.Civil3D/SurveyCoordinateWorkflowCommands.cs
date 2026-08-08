@@ -804,12 +804,12 @@ namespace CETools.Civil3D
                 {
                     var text = new MText();
                     text.SetDatabaseDefaults(database);
-                    text.Location = labelPoint;
-                    text.Attachment = AttachmentPoint.MiddleLeft;
+                    text.Location = target;
+                    text.Attachment = CoordinateAttachment(target, labelPoint);
                     text.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(
                         database,
                         settings.TextHeight);
-                    text.Contents = contents;
+                    text.Contents = AnchoredCoordinateText(contents);
                     PaperAnnotationScale.SetAnnotative(text);
                     ObjectId textId = currentSpace.AppendEntity(text);
                     transaction.AddNewlyCreatedDBObject(text, true);
@@ -1022,6 +1022,17 @@ namespace CETools.Civil3D
             double textHeight,
             string title)
         {
+            return CreateLinkedLevelTable(database, insertionPoint, sourceIds, textHeight, title, ObjectId.Null);
+        }
+
+        internal static ObjectId CreateLinkedLevelTable(
+            Database database,
+            Point3d insertionPoint,
+            IList<ObjectId> sourceIds,
+            double textHeight,
+            string title,
+            ObjectId ngSurfaceId)
+        {
             if (sourceIds == null || sourceIds.Count == 0)
             {
                 throw new InvalidOperationException(
@@ -1039,9 +1050,9 @@ namespace CETools.Civil3D
                 ObjectId tableId = currentSpace.AppendEntity(table);
                 transaction.AddNewlyCreatedDBObject(table, true);
 
-                WriteLinkRecord(table, transaction, sourceIds);
+                WriteLinkRecord(table, transaction, sourceIds, ngSurfaceId);
                 int missing;
-                List<CoordinateRow> rows = ReadRows(transaction, sourceIds, out missing);
+                List<CoordinateRow> rows = ReadRows(transaction, sourceIds, ngSurfaceId, out missing);
                 PopulateTable(
                     table,
                     rows,
@@ -1080,9 +1091,10 @@ namespace CETools.Civil3D
                         "The selected table has no usable linked point sources.");
                 }
 
-                WriteLinkRecord(table, transaction, links);
+                ObjectId ngSurfaceId = ReadNgSurfaceId(database, table, transaction);
+                WriteLinkRecord(table, transaction, links, ngSurfaceId);
                 int missing;
-                List<CoordinateRow> rows = ReadRows(transaction, links, out missing);
+                List<CoordinateRow> rows = ReadRows(transaction, links, ngSurfaceId, out missing);
                 PopulateTable(
                     table,
                     rows,
@@ -1116,7 +1128,8 @@ namespace CETools.Civil3D
                         "This table is not a CE Tools linked coordinate register.");
                 }
 
-                List<CoordinateRow> rows = ReadRows(transaction, links, out missing);
+                ObjectId ngSurfaceId = ReadNgSurfaceId(database, table, transaction);
+                List<CoordinateRow> rows = ReadRows(transaction, links, ngSurfaceId, out missing);
                 active = rows.Count;
                 if (active == 0)
                 {
@@ -1142,9 +1155,16 @@ namespace CETools.Civil3D
         private static List<CoordinateRow> ReadRows(
             Transaction transaction,
             IList<ObjectId> sourceIds,
+            ObjectId ngSurfaceId,
             out int missing)
         {
             var rows = new List<CoordinateRow>();
+            CivilSurface ngSurface = null;
+            if (!ngSurfaceId.IsNull && !ngSurfaceId.IsErased)
+            {
+                try { ngSurface = transaction.GetObject(ngSurfaceId, OpenMode.ForRead, false) as CivilSurface; }
+                catch { ngSurface = null; }
+            }
             missing = 0;
             int fallbackNumber = 1;
             foreach (ObjectId id in sourceIds)
@@ -1181,12 +1201,14 @@ namespace CETools.Civil3D
                         pointName = "P" + cogo.PointNumber.ToString(CultureInfo.InvariantCulture);
                     }
 
+                    double? ng = SampleLevel(ngSurface, cogo.Easting, cogo.Northing);
                     rows.Add(new CoordinateRow(
                         cogo.PointNumber.ToString(CultureInfo.InvariantCulture),
                         pointName,
                         cogo.Northing,
                         cogo.Easting,
-                        cogo.Elevation));
+                        cogo.Elevation,
+                        ng));
                     continue;
                 }
 
@@ -1197,12 +1219,14 @@ namespace CETools.Civil3D
                         point,
                         transaction,
                         "P" + fallbackNumber.ToString(CultureInfo.InvariantCulture));
+                    double? ng = SampleLevel(ngSurface, point.Position.X, point.Position.Y);
                     rows.Add(new CoordinateRow(
                         fallbackNumber.ToString(CultureInfo.InvariantCulture),
                         pointName,
                         point.Position.Y,
                         point.Position.X,
-                        point.Position.Z));
+                        point.Position.Z,
+                        ng));
                     fallbackNumber++;
                     continue;
                 }
@@ -1225,7 +1249,7 @@ namespace CETools.Civil3D
                     "A coordinate table cannot be populated with zero rows.");
             }
 
-            const int columns = 4;
+            const int columns = 7;
             table.SetSize(rows.Count + 2, columns);
             double height = NormalizeHeight(textHeight);
             table.SetRowHeight(Math.Max(height * 2.4, 5.0));
@@ -1239,7 +1263,10 @@ namespace CETools.Civil3D
                 "POINT NAME",
                 "X",
                 "Y",
-                "Z"
+                "Z",
+                "NG LEVEL",
+                "DESIGN LEVEL",
+                "DIFFERENCE"
             };
             for (int column = 0; column < headings.Length; column++)
             {
@@ -1260,7 +1287,10 @@ namespace CETools.Civil3D
                     row.PointName,
                     row.X.ToString("N3", CultureInfo.CurrentCulture),
                     row.Y.ToString("N3", CultureInfo.CurrentCulture),
-                    row.Z.ToString("N3", CultureInfo.CurrentCulture)
+                    row.Z.ToString("N3", CultureInfo.CurrentCulture),
+                    row.NgLevel.HasValue ? row.NgLevel.Value.ToString("N3", CultureInfo.CurrentCulture) : string.Empty,
+                    row.Z.ToString("N3", CultureInfo.CurrentCulture),
+                    row.NgLevel.HasValue ? (row.Z - row.NgLevel.Value).ToString("+0.000;-0.000;0.000", CultureInfo.CurrentCulture) : string.Empty
                 };
                 for (int column = 0; column < values.Length; column++)
                 {
@@ -1277,6 +1307,15 @@ namespace CETools.Civil3D
             Table table,
             Transaction transaction,
             IList<ObjectId> sourceIds)
+        {
+            WriteLinkRecord(table, transaction, sourceIds, ObjectId.Null);
+        }
+
+        private static void WriteLinkRecord(
+            Table table,
+            Transaction transaction,
+            IList<ObjectId> sourceIds,
+            ObjectId ngSurfaceId)
         {
             if (table.ExtensionDictionary.IsNull)
             {
@@ -1306,6 +1345,8 @@ namespace CETools.Civil3D
             {
                 new TypedValue((int)DxfCode.Text, "Schema=" + SchemaVersion)
             };
+            if (!ngSurfaceId.IsNull && !ngSurfaceId.IsErased)
+                values.Add(new TypedValue((int)DxfCode.Text, "NgSurface=" + ngSurfaceId.Handle));
             foreach (ObjectId id in sourceIds)
             {
                 if (!id.IsNull)
@@ -1317,6 +1358,36 @@ namespace CETools.Civil3D
             }
 
             record.Data = new ResultBuffer(values.ToArray());
+        }
+
+        private static ObjectId ReadNgSurfaceId(Database database, Table table, Transaction transaction)
+        {
+            if (table == null || table.ExtensionDictionary.IsNull) return ObjectId.Null;
+            DBDictionary dictionary = transaction.GetObject(table.ExtensionDictionary, OpenMode.ForRead, false) as DBDictionary;
+            if (dictionary == null || !dictionary.Contains(LinkRecordName)) return ObjectId.Null;
+            Xrecord record = transaction.GetObject(dictionary.GetAt(LinkRecordName), OpenMode.ForRead, false) as Xrecord;
+            if (record == null || record.Data == null) return ObjectId.Null;
+            foreach (TypedValue value in record.Data)
+            {
+                string text = value.Value as string;
+                if (string.IsNullOrWhiteSpace(text) || !text.StartsWith("NgSurface=", StringComparison.OrdinalIgnoreCase)) continue;
+                long handle;
+                if (!long.TryParse(text.Substring(10), NumberStyles.HexNumber, CultureInfo.InvariantCulture, out handle)) return ObjectId.Null;
+                try { return database.GetObjectId(false, new Handle(handle), 0); }
+                catch { return ObjectId.Null; }
+            }
+            return ObjectId.Null;
+        }
+
+        private static double? SampleLevel(CivilSurface surface, double x, double y)
+        {
+            if (surface == null) return null;
+            try
+            {
+                double value = surface.FindElevationAtXY(x, y);
+                return double.IsNaN(value) || double.IsInfinity(value) ? (double?)null : value;
+            }
+            catch { return null; }
         }
 
         private static List<ObjectId> ReadLinkRecord(
@@ -1743,6 +1814,22 @@ namespace CETools.Civil3D
             }
         }
 
+        private static AttachmentPoint CoordinateAttachment(Point3d target, Point3d labelPoint)
+        {
+            double dx = labelPoint.X - target.X;
+            double dy = labelPoint.Y - target.Y;
+            if (dx < 0.0 && dy >= 0.0) return AttachmentPoint.BottomRight;
+            if (dx < 0.0 && dy < 0.0) return AttachmentPoint.TopRight;
+            if (dx >= 0.0 && dy < 0.0) return AttachmentPoint.TopLeft;
+            return AttachmentPoint.BottomLeft;
+        }
+
+        private static string AnchoredCoordinateText(string contents)
+        {
+            string pad = "\\~\\~";
+            return pad + (contents ?? string.Empty).Replace("\\P", "\\P" + pad);
+        }
+
         private static string BuildMTextCoordinate(Point3d point)
         {
             return string.Join(
@@ -1787,9 +1874,22 @@ namespace CETools.Civil3D
             return result == System.Windows.MessageBoxResult.Yes;
         }
 
+        internal static bool PromptOptionalNgSurface(Document document, out ObjectId surfaceId)
+        {
+            return PromptOptionalSurface(document, out surfaceId, "Select an existing-ground surface for NG Level and Difference columns");
+        }
+
         private static bool PromptOptionalSurface(
             Document document,
             out ObjectId surfaceId)
+        {
+            return PromptOptionalSurface(document, out surfaceId, "Link point Z values dynamically to a Civil 3D surface");
+        }
+
+        private static bool PromptOptionalSurface(
+            Document document,
+            out ObjectId surfaceId,
+            string question)
         {
             surfaceId = ObjectId.Null;
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
@@ -1842,7 +1942,7 @@ namespace CETools.Civil3D
             if (choices.Count == 0) return true;
             if (!PromptYesNo(
                 document.Editor,
-                "Link point Z values dynamically to a Civil 3D surface",
+                question,
                 true))
             {
                 return true;
@@ -1966,13 +2066,14 @@ namespace CETools.Civil3D
 
         private sealed class CoordinateRow
         {
-            public CoordinateRow(string point, string pointName, double y, double x, double z)
+            public CoordinateRow(string point, string pointName, double y, double x, double z, double? ngLevel)
             {
                 Point = point;
                 PointName = pointName;
                 Y = y;
                 X = x;
                 Z = z;
+                NgLevel = ngLevel;
             }
 
             public string Point { get; }
@@ -1980,6 +2081,7 @@ namespace CETools.Civil3D
             public double Y { get; }
             public double X { get; }
             public double Z { get; }
+            public double? NgLevel { get; }
         }
 
         private enum CoordinateRegisterMode

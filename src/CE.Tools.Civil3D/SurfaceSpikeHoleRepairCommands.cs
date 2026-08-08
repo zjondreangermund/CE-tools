@@ -12,6 +12,7 @@ using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
+using CivilTinSurface = Autodesk.Civil.DatabaseServices.TinSurface;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.SurfaceSpikeHoleRepairCommands))]
 
@@ -196,10 +197,13 @@ namespace CETools.Civil3D
                     throw new InvalidOperationException(
                         "The selected object is not a Civil 3D surface.");
 
+                List<TriangleRecord> triangles = ReadTriangles(source);
                 List<Point3d> vertices = ReadVertices(source);
+                if (vertices.Count < 3 && triangles.Count > 0)
+                    vertices = UniqueTriangleVertices(triangles);
                 if (vertices.Count < 3)
                     throw new InvalidOperationException(
-                        "The selected surface exposes fewer than three readable vertices.");
+                        "The selected TIN exposes fewer than three readable vertices. Rebuild the source surface and retry.");
                 if (vertices.Count > MaximumVertices)
                     throw new InvalidOperationException(
                         "The selected surface exposes " +
@@ -208,7 +212,6 @@ namespace CETools.Civil3D
                         MaximumVertices.ToString(CultureInfo.InvariantCulture) +
                         " vertices per run.");
 
-                List<TriangleRecord> triangles = ReadTriangles(source);
                 Dictionary<int, double> replacements = FindSpikeReplacements(
                     vertices,
                     spikeTolerance,
@@ -498,7 +501,14 @@ namespace CETools.Civil3D
 
         private static List<TriangleRecord> ReadTriangles(object surface)
         {
-            object raw = InvokeWithOptionalBoolean(surface, "GetTriangles") ??
+            object raw = null;
+            CivilTinSurface tin = surface as CivilTinSurface;
+            if (tin != null)
+            {
+                try { raw = tin.GetTriangles(false); }
+                catch { raw = null; }
+            }
+            raw = raw ?? InvokeWithOptionalBoolean(surface, "GetTriangles") ??
                          ReadProperty(surface, "Triangles");
             IEnumerable values = raw as IEnumerable;
             var result = new List<TriangleRecord>();
@@ -533,6 +543,20 @@ namespace CETools.Civil3D
             return TryReadPoint(first, out a) &&
                    TryReadPoint(second, out b) &&
                    TryReadPoint(third, out c);
+        }
+
+        private static List<Point3d> UniqueTriangleVertices(IEnumerable<TriangleRecord> triangles)
+        {
+            var result = new List<Point3d>();
+            foreach (TriangleRecord triangle in triangles ?? Enumerable.Empty<TriangleRecord>())
+            {
+                foreach (Point3d point in new[] { triangle.A, triangle.B, triangle.C })
+                {
+                    if (!result.Any(existing => PlanDistanceSquared(existing, point) <= GeometryTolerance && Math.Abs(existing.Z - point.Z) <= 0.000001))
+                        result.Add(point);
+                }
+            }
+            return result;
         }
 
         private static ObjectId CreateTinSurface(
@@ -650,6 +674,13 @@ namespace CETools.Civil3D
             DBObject surface,
             IReadOnlyList<Point3d> points)
         {
+            CivilTinSurface tin = surface as CivilTinSurface;
+            if (tin != null)
+            {
+                tin.AddVertices(new Point3dCollection(points.ToArray()));
+                tin.Rebuild();
+                return;
+            }
             object definition = ReadProperty(surface, "Definition");
             if (definition == null)
                 throw new MissingMemberException(

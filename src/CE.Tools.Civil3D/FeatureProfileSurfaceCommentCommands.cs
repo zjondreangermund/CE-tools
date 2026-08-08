@@ -162,6 +162,9 @@ namespace CETools.Civil3D
                 "\nSelect Civil 3D feature lines to annotate at every vertex: ");
             if (selection.Status != PromptStatus.OK) return;
 
+            ObjectId ngSurfaceId;
+            if (!SurveyCoordinateWorkflowCommands.PromptOptionalNgSurface(document, out ngSurfaceId)) return;
+
             int created = 0;
             int rejected = 0;
             var work = new List<FeatureVertexWork>();
@@ -299,13 +302,14 @@ namespace CETools.Civil3D
                     "\nPick the feature-line point table insertion point: ");
                 if (insertion.Status == PromptStatus.OK)
                 {
-                    SurveyCoordinateWorkflowCommands.CreateLinkedTable(
+                    SurveyCoordinateWorkflowCommands.CreateLinkedLevelTable(
                         document.Database,
                         insertion.Value.TransformBy(
                             document.Editor.CurrentUserCoordinateSystem),
                         linkedPointIds,
                         settings.TextHeight,
-                        "FEATURE LINE POINTS");
+                        "FEATURE LINE POINTS",
+                        ngSurfaceId);
                 }
             }
 
