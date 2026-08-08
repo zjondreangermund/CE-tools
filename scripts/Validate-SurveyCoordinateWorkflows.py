@@ -56,7 +56,10 @@ required_markers = [
     '"X"',
     '"Y"',
     '"Z"',
-    "const int columns = 4;",
+    '"NG LEVEL"',
+    '"DESIGN LEVEL"',
+    '"DIFFERENCE"',
+    "const int columns = 7;",
     "table.Cells[tableRow, column].Alignment = CellAlignment.MiddleCenter;",
     "ReadPolylineVertices",
     "Select one or more lightweight, 2D or 3D polylines",
@@ -74,7 +77,7 @@ for marker in required_markers:
 for forbidden in ('"Y / NORTHING"', '"X / EASTING"', '"Z / ELEVATION"'):
     if forbidden in source or forbidden in legacy_poly:
         errors.append(
-            "Coordinate-table wording regressed; use only X, Y and Z: " + forbidden
+            "Coordinate-table wording regressed; use only X, Y and Z plus explicit level columns: " + forbidden
         )
 
 for marker in (
