@@ -226,6 +226,14 @@ namespace CETools.Civil3D
 
                     Point3d location;
                     if (!TryReadAnnotationLocation(entity, out location)) continue;
+                    MText anchoredText = entity as MText;
+                    if (anchoredText != null)
+                    {
+                        if (anchoredText.Location.DistanceTo(anchor) > 1e-8)
+                            anchoredText.Location = anchor;
+                        EnsureVisible(anchoredText);
+                        continue;
+                    }
                     Vector3d offset = location - anchor;
                     if (!IsFinite(offset) || offset.Length < minimum * 0.2)
                         offset = new Vector3d(minimum, minimum, 0.0);

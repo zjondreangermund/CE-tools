@@ -565,10 +565,7 @@ namespace CETools.Civil3D
 
                 for (int column = 0; column < ColumnCount; column++)
                 {
-                    table.Cells[row, column].Alignment =
-                        column == 3 || column == 9
-                            ? CellAlignment.MiddleLeft
-                            : CellAlignment.MiddleCenter;
+                    table.Cells[row, column].Alignment = CellAlignment.MiddleCenter;
                     table.Cells[row, column].TextHeight = height;
                 }
             }
@@ -675,7 +672,7 @@ namespace CETools.Civil3D
                 unit = "m²";
                 quantity = raw / Math.Pow(unitsPerMetre, 2.0);
             }
-            else if (preferred == QuantityKind.Length && TryGetLength(databaseObject, out raw))
+            else if (preferred == QuantityKind.Length && TryGetLength(databaseObject, transaction, out raw))
             {
                 unit = "m";
                 quantity = raw / unitsPerMetre;
@@ -690,7 +687,7 @@ namespace CETools.Civil3D
                 unit = "m²";
                 quantity = raw / Math.Pow(unitsPerMetre, 2.0);
             }
-            else if (TryGetLength(databaseObject, out raw))
+            else if (TryGetLength(databaseObject, transaction, out raw))
             {
                 unit = "m";
                 quantity = raw / unitsPerMetre;
@@ -901,9 +898,19 @@ namespace CETools.Civil3D
             return description;
         }
 
-        private static bool TryGetLength(DBObject databaseObject, out double length)
+        private static bool TryGetLength(DBObject databaseObject, Transaction transaction, out double length)
         {
             length = 0.0;
+            Point3d startPoint;
+            Point3d endPoint;
+            if (TryReadPointProperty(databaseObject, "StartPoint", out startPoint) &&
+                TryReadPointProperty(databaseObject, "EndPoint", out endPoint))
+            {
+                length = startPoint.DistanceTo(endPoint);
+                if (IsFinitePositive(length)) return true;
+            }
+            if (TryReadConnectedStructureLength(databaseObject, transaction, out length) && IsFinitePositive(length))
+                return true;
 
             var curve = databaseObject as Curve;
             if (curve != null)
@@ -915,20 +922,71 @@ namespace CETools.Civil3D
                     length = Math.Abs(end - start);
                     if (IsFinitePositive(length)) return true;
                 }
-                catch
-                {
-                    // Continue to reflection-based Civil 3D properties.
-                }
+                catch { }
             }
 
-            return TryReadDoubleProperty(
-                databaseObject,
-                out length,
-                "Length3DCenterToCenter",
-                "Length2DCenterToCenter",
-                "Length3D",
-                "Length2D",
-                "Length");
+            if (TryReadDoubleProperty(
+                    databaseObject,
+                    out length,
+                    "Length3DCenterToCenter",
+                    "Length2DCenterToCenter",
+                    "Length3D",
+                    "Length2D",
+                    "Length") &&
+                IsFinitePositive(length))
+                return true;
+            return false;
+        }
+
+        private static bool TryReadConnectedStructureLength(DBObject value, Transaction transaction, out double length)
+        {
+            length = 0.0;
+            if (value == null || transaction == null) return false;
+            ObjectId startId;
+            ObjectId endId;
+            if (!TryReadObjectIdProperty(value, "StartStructureId", out startId) ||
+                !TryReadObjectIdProperty(value, "EndStructureId", out endId) ||
+                startId.IsNull || endId.IsNull) return false;
+            try
+            {
+                DBObject start = transaction.GetObject(startId, OpenMode.ForRead, false);
+                DBObject end = transaction.GetObject(endId, OpenMode.ForRead, false);
+                Point3d a;
+                Point3d b;
+                if (!TryReadPointProperty(start, "Position", out a) && !TryReadPointProperty(start, "Location", out a)) return false;
+                if (!TryReadPointProperty(end, "Position", out b) && !TryReadPointProperty(end, "Location", out b)) return false;
+                length = a.DistanceTo(b);
+                return IsFinitePositive(length);
+            }
+            catch { return false; }
+        }
+
+        private static bool TryReadObjectIdProperty(object value, string name, out ObjectId id)
+        {
+            id = ObjectId.Null;
+            if (value == null) return false;
+            try
+            {
+                PropertyInfo property = value.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                object raw = property == null ? null : property.GetValue(value, null);
+                if (raw is ObjectId) { id = (ObjectId)raw; return !id.IsNull; }
+            }
+            catch { }
+            return false;
+        }
+
+        private static bool TryReadPointProperty(object value, string name, out Point3d point)
+        {
+            point = Point3d.Origin;
+            if (value == null) return false;
+            try
+            {
+                PropertyInfo property = value.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                object raw = property == null ? null : property.GetValue(value, null);
+                if (raw is Point3d) { point = (Point3d)raw; return true; }
+            }
+            catch { }
+            return false;
         }
 
         private static bool TryGetArea(Entity entity, out double area)
@@ -1041,9 +1099,21 @@ namespace CETools.Civil3D
 
             double metres = raw / unitsPerMetre;
             if (!IsFinitePositive(metres)) return string.Empty;
-            return metres < 2.0
-                ? (metres * 1000.0).ToString("N0", CultureInfo.CurrentCulture) + " mm"
-                : metres.ToString("N3", CultureInfo.CurrentCulture) + " m";
+            if (metres < 2.0)
+            {
+                double millimetres = SnapNominalDiameter(metres * 1000.0);
+                return millimetres.ToString("N0", CultureInfo.CurrentCulture) + " mm";
+            }
+            return metres.ToString("N3", CultureInfo.CurrentCulture) + " m";
+        }
+
+        private static double SnapNominalDiameter(double millimetres)
+        {
+            double value = Math.Abs(millimetres);
+            double[] nominal = { 20, 25, 32, 40, 50, 63, 75, 90, 110, 125, 140, 160, 180, 200, 225, 250, 280, 300, 315, 355, 400, 450, 500, 560, 600, 630, 710, 800, 900, 1000, 1200, 1500, 1800, 2000 };
+            foreach (double candidate in nominal)
+                if (value <= candidate + 0.5) return candidate;
+            return Math.Round(value, 0);
         }
 
         private static string GetObjectName(DBObject databaseObject, Transaction transaction)

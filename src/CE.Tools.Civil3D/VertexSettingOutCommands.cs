@@ -105,6 +105,8 @@ namespace CETools.Civil3D
 
             List<string> surfaceChoices = ReadSurfaceNames(document.Database, civilDocument);
             surfaceChoices.Insert(0, "<Pick surface in drawing>");
+            var ngSurfaceChoices = new List<string> { "<None>" };
+            ngSurfaceChoices.AddRange(surfaceChoices);
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Vertex Setting-Out Settings",
@@ -125,6 +127,10 @@ namespace CETools.Civil3D
                 "ElevationSurface", "01 Output", "Civil 3D elevation surface", "<Pick surface in drawing>",
                 "Choose an existing surface by name or keep the pick option to select it in the drawing after saving the popup.",
                 surfaceChoices);
+            settings.AddChoice(
+                "NGSurface", "01 Output", "Existing / NG level surface", "<None>",
+                "Optional existing-ground surface used for NG Level and Difference columns. It does not change X/Y or the design point elevation.",
+                ngSurfaceChoices);
             settings.AddText(
                 "Prefix", "02 Numbering", "Point name prefix", "P",
                 "Names are generated as P1, P2, P3 and are resequenced when linked geometry changes.");
@@ -177,6 +183,7 @@ namespace CETools.Civil3D
             string generationMode = settings.Text("Generation");
             string elevationMode = settings.Text("Elevation");
             string elevationSurface = settings.Text("ElevationSurface");
+            string ngSurface = settings.Text("NGSurface");
             string coordinateOrder = settings.Text("CoordinateOrder");
             string xSign = settings.Text("XSign");
             string ySign = settings.Text("YSign");
@@ -191,6 +198,16 @@ namespace CETools.Civil3D
                     elevationMode,
                     elevationSurface,
                     out elevationSourceId)) return;
+            ObjectId ngSurfaceId = ObjectId.Null;
+            if (!string.IsNullOrWhiteSpace(ngSurface) && !string.Equals(ngSurface, "<None>", StringComparison.OrdinalIgnoreCase))
+            {
+                if (!PromptElevationSource(
+                        document,
+                        civilDocument,
+                        "Select Civil 3D surface",
+                        ngSurface,
+                        out ngSurfaceId)) return;
+            }
 
             AnnotationOptions annotation;
             if (!AnnotationSettingsStore.Prepare(document, false, out annotation)) return;
@@ -212,6 +229,7 @@ namespace CETools.Civil3D
                 sources,
                 elevationMode,
                 elevationSourceId);
+            ApplyLevelReferences(document.Database, sources, ngSurfaceId);
             if (sources.Count == 0 || sources.All(item => item.Records.Count == 0))
             {
                 document.Editor.WriteMessage("\nCE_VERTEXSETTINGOUT cancelled. The selected objects produced no setting-out geometry.");
@@ -310,6 +328,9 @@ namespace CETools.Civil3D
                 ElevationSourceHandle = elevationSourceId.IsNull
                     ? string.Empty
                     : elevationSourceId.Handle.ToString(),
+                NgSurfaceHandle = ngSurfaceId.IsNull
+                    ? string.Empty
+                    : ngSurfaceId.Handle.ToString(),
                 SourceHandles = linkedHandles
             };
 
@@ -528,6 +549,10 @@ namespace CETools.Civil3D
                     sources,
                     link.ElevationMode,
                     ResolveHandle(document.Database, link.ElevationSourceHandle));
+                ApplyLevelReferences(
+                    document.Database,
+                    sources,
+                    ResolveHandle(document.Database, link.NgSurfaceHandle));
                 if (sources.Count == 0 || sources.All(item => item.Records.Count == 0))
                     throw new InvalidOperationException("The linked sources produced no current setting-out geometry.");
                 List<VertexSettingRecord> records = FlattenAndName(
@@ -777,10 +802,10 @@ namespace CETools.Civil3D
 
             var mtext = new MText();
             mtext.SetDatabaseDefaults(database);
-            mtext.Location = OutputLocation(record, link.LabelOffset);
-            mtext.Attachment = AttachmentPoint.BottomLeft;
+            mtext.Location = record.Point;
+            mtext.Attachment = AnchoredAttachment(record, link.LabelOffset);
             mtext.TextHeight = textHeight;
-            mtext.Contents = LabelText(record, link);
+            mtext.Contents = AnchoredMText(LabelText(record, link));
             PaperAnnotationScale.SetAnnotative(mtext);
             ObjectId textId = modelSpace.AppendEntity(mtext);
             transaction.AddNewlyCreatedDBObject(mtext, true);
@@ -823,9 +848,10 @@ namespace CETools.Civil3D
             if (mtext != null && string.Equals(link.OutputType, "MText", StringComparison.OrdinalIgnoreCase))
             {
                 CaptureCurrentAnnotationOffset(transaction, id, record);
-                mtext.Location = OutputLocation(record, link.LabelOffset);
+                mtext.Location = record.Point;
+                mtext.Attachment = AnchoredAttachment(record, link.LabelOffset);
                 mtext.TextHeight = textHeight;
-                mtext.Contents = LabelText(record, link);
+                mtext.Contents = AnchoredMText(LabelText(record, link));
                 WriteOutputLink(
                     mtext, transaction, link.GroupId, record.Key, record.Point);
                 return true;
@@ -910,15 +936,16 @@ namespace CETools.Civil3D
             double textHeight,
             VertexSettingLink link)
         {
-            table.SetSize(records.Count + 2, 9);
+            table.SetSize(records.Count + 2, 12);
             table.SetRowHeight(Math.Max(textHeight * 1.8, 0.001));
             table.SetColumnWidth(Math.Max(textHeight * 8.0, 0.001));
             table.Columns[0].Width = Math.Max(textHeight * 9.0, 0.001);
             table.Columns[1].Width = Math.Max(textHeight * 18.0, 0.001);
             table.Columns[2].Width = Math.Max(textHeight * 14.0, 0.001);
-            table.Columns[8].Width = Math.Max(textHeight * 12.0, 0.001);
+            table.Columns[9].Width = Math.Max(textHeight * 11.0, 0.001);
+            table.Columns[11].Width = Math.Max(textHeight * 12.0, 0.001);
             table.Cells[0, 0].TextString = "CE VERTEX SETTING-OUT - " + (link.OutputType ?? string.Empty).ToUpperInvariant();
-            table.MergeCells(CellRange.Create(table, 0, 0, 0, 8));
+            table.MergeCells(CellRange.Create(table, 0, 0, 0, 11));
             bool yFirst = string.Equals(
                 link.CoordinateOrder,
                 "Y then X",
@@ -928,7 +955,7 @@ namespace CETools.Civil3D
                 "POINT NAME", "TYPE", "SOURCE", "SEGMENT",
                 yFirst ? "Y" : "X",
                 yFirst ? "X" : "Y",
-                "Z", "RADIUS", "SEGMENT LENGTH"
+                "Z", "NG LEVEL", "DESIGN LEVEL", "DIFFERENCE", "RADIUS", "SEGMENT LENGTH"
             };
             for (int column = 0; column < headings.Length; column++)
                 table.Cells[1, column].TextString = headings[column];
@@ -950,10 +977,19 @@ namespace CETools.Civil3D
                 table.Cells[row, 5].TextString = displayY
                     .ToString("N3", CultureInfo.CurrentCulture);
                 table.Cells[row, 6].TextString = record.Point.Z.ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[row, 7].TextString = record.Radius.HasValue
+                table.Cells[row, 7].TextString = record.NgLevel.HasValue
+                    ? record.NgLevel.Value.ToString("N3", CultureInfo.CurrentCulture)
+                    : string.Empty;
+                table.Cells[row, 8].TextString = record.DesignLevel.HasValue
+                    ? record.DesignLevel.Value.ToString("N3", CultureInfo.CurrentCulture)
+                    : record.Point.Z.ToString("N3", CultureInfo.CurrentCulture);
+                table.Cells[row, 9].TextString = record.NgLevel.HasValue
+                    ? ((record.DesignLevel ?? record.Point.Z) - record.NgLevel.Value).ToString("+0.000;-0.000;0.000", CultureInfo.CurrentCulture)
+                    : string.Empty;
+                table.Cells[row, 10].TextString = record.Radius.HasValue
                     ? record.Radius.Value.ToString("N3", CultureInfo.CurrentCulture)
                     : string.Empty;
-                table.Cells[row, 8].TextString = record.SegmentLength > 0.0
+                table.Cells[row, 11].TextString = record.SegmentLength > 0.0
                     ? record.SegmentLength.ToString("N3", CultureInfo.CurrentCulture)
                     : string.Empty;
             }
@@ -1369,6 +1405,52 @@ namespace CETools.Civil3D
             return false;
         }
 
+        private static void ApplyLevelReferences(
+            Database database,
+            IList<VertexSettingSource> sources,
+            ObjectId ngSurfaceId)
+        {
+            if (sources == null) return;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                Autodesk.Civil.DatabaseServices.Surface ng = null;
+                if (!ngSurfaceId.IsNull && !ngSurfaceId.IsErased)
+                {
+                    try { ng = transaction.GetObject(ngSurfaceId, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Surface; }
+                    catch { ng = null; }
+                }
+                foreach (VertexSettingRecord record in sources.SelectMany(item => item.Records))
+                {
+                    record.DesignLevel = record.Point.Z;
+                    record.NgLevel = null;
+                    if (ng == null) continue;
+                    try
+                    {
+                        double value = ng.FindElevationAtXY(record.Point.X, record.Point.Y);
+                        if (!double.IsNaN(value) && !double.IsInfinity(value)) record.NgLevel = value;
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        private static AttachmentPoint AnchoredAttachment(VertexSettingRecord record, double offset)
+        {
+            Vector3d direction = record != null && record.AnnotationOffset.HasValue
+                ? record.AnnotationOffset.Value
+                : new Vector3d(offset, offset, 0.0);
+            if (direction.X < 0.0 && direction.Y >= 0.0) return AttachmentPoint.BottomRight;
+            if (direction.X < 0.0 && direction.Y < 0.0) return AttachmentPoint.TopRight;
+            if (direction.X >= 0.0 && direction.Y < 0.0) return AttachmentPoint.TopLeft;
+            return AttachmentPoint.BottomLeft;
+        }
+
+        private static string AnchoredMText(string contents)
+        {
+            string pad = "\\~\\~";
+            return pad + (contents ?? string.Empty).Replace("\\P", "\\P" + pad);
+        }
+
         private static void InventoryGroup(
             BlockTableRecord modelSpace,
             Transaction transaction,
@@ -1424,6 +1506,9 @@ namespace CETools.Civil3D
                 "ELEVHANDLE=" + (link.ElevationSourceHandle ?? string.Empty)));
             values.Add(new TypedValue(
                 (int)DxfCode.ExtendedDataAsciiString,
+                "NGHANDLE=" + (link.NgSurfaceHandle ?? string.Empty)));
+            values.Add(new TypedValue(
+                (int)DxfCode.ExtendedDataAsciiString,
                 "ORDER=" + (link.CoordinateOrder ?? "X then Y")));
             values.Add(new TypedValue(
                 (int)DxfCode.ExtendedDataAsciiString,
@@ -1468,6 +1553,7 @@ namespace CETools.Civil3D
                 GenerationMode = "Engineering setting-out points",
                 ElevationMode = "Source geometry",
                 ElevationSourceHandle = string.Empty,
+                NgSurfaceHandle = string.Empty,
                 CoordinateOrder = "X then Y",
                 XSign = "Keep X sign",
                 YSign = "Keep Y sign",
@@ -1487,6 +1573,8 @@ namespace CETools.Civil3D
                     link.ElevationMode = value.Substring(5);
                 else if (value.StartsWith("ELEVHANDLE=", StringComparison.OrdinalIgnoreCase))
                     link.ElevationSourceHandle = value.Substring(11);
+                else if (value.StartsWith("NGHANDLE=", StringComparison.OrdinalIgnoreCase))
+                    link.NgSurfaceHandle = value.Substring(9);
                 else if (value.StartsWith("ORDER=", StringComparison.OrdinalIgnoreCase))
                     link.CoordinateOrder = value.Substring(6);
                 else if (value.StartsWith("XSIGN=", StringComparison.OrdinalIgnoreCase))
@@ -1733,6 +1821,7 @@ namespace CETools.Civil3D
             public string GenerationMode { get; set; }
             public string ElevationMode { get; set; }
             public string ElevationSourceHandle { get; set; }
+            public string NgSurfaceHandle { get; set; }
             public string CoordinateOrder { get; set; }
             public string XSign { get; set; }
             public string YSign { get; set; }

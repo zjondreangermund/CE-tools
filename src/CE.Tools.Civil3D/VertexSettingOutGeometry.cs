@@ -28,6 +28,8 @@ namespace CETools.Civil3D
         public Point3d Point { get; set; }
         public double SegmentLength { get; set; }
         public double? Radius { get; set; }
+        public double? NgLevel { get; set; }
+        public double? DesignLevel { get; set; }
         public string PointName { get; set; }
         public Vector3d? AnnotationOffset { get; set; }
     }

@@ -256,8 +256,33 @@ namespace CETools.Civil3D
                 "Enter WGS84 decimal-degree latitude and longitude. CE Tools opens the point in the selected web map. This command does not alter drawing coordinates.");
             model.AddText("Latitude", "01 WGS84", "Latitude", "-22.5609", "Decimal degrees; south is negative. Values from -90 to 90 are accepted.");
             model.AddText("Longitude", "01 WGS84", "Longitude", "17.0658", "Decimal degrees; west is negative and east is positive. Values from -180 to 180 are accepted.");
-            model.AddChoice("Provider", "02 Map", "Open in", "Google Maps", "Choose the web map opened after confirmation.", new[] { "Google Maps", "Google Earth" });
+            model.AddText("Northing", "02 NE / YX", "Northing (N / Y)", "0.000", "Survey Northing maps directly to drawing Y. Signed values are accepted.");
+            model.AddText("Easting", "02 NE / YX", "Easting (E / X)", "0.000", "Survey Easting maps directly to drawing X. Signed values are accepted.");
+            model.AddText("X", "02 NE / YX", "Drawing X / Easting", "0.000", "Drawing X is the Easting convention used by CE Tools.");
+            model.AddText("Y", "02 NE / YX", "Drawing Y / Northing", "0.000", "Drawing Y is the Northing convention used by CE Tools.");
+            model.AddChoice("Action", "03 Action", "Action", "Open WGS84 in map", "Open the WGS84 point or convert the survey/drawing coordinate labels without changing geometry.", new[] { "Open WGS84 in map", "Northing / Easting -> Y / X", "Y / X -> Northing / Easting" });
+            model.AddChoice("Provider", "03 Action", "Open in", "Google Maps", "Choose the web map opened for the WGS84 action.", new[] { "Google Maps", "Google Earth" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+            string action = model.Text("Action");
+            if (!string.Equals(action, "Open WGS84 in map", StringComparison.OrdinalIgnoreCase))
+            {
+                double first;
+                double second;
+                bool neToYx = action.StartsWith("Northing", StringComparison.OrdinalIgnoreCase);
+                string firstKey = neToYx ? "Northing" : "Y";
+                string secondKey = neToYx ? "Easting" : "X";
+                if (!TryParseSignedNumber(model.Text(firstKey), out first) || !TryParseSignedNumber(model.Text(secondKey), out second))
+                {
+                    document.Editor.WriteMessage("\nCE_MAPLOCATION stopped. Enter valid signed coordinate values for the selected conversion.");
+                    return;
+                }
+                string result = neToYx
+                    ? string.Format(CultureInfo.CurrentCulture, "Northing {0:N3} -> Y {0:N3}\nEasting {1:N3} -> X {1:N3}", first, second)
+                    : string.Format(CultureInfo.CurrentCulture, "Y {0:N3} -> Northing {0:N3}\nX {1:N3} -> Easting {1:N3}", first, second);
+                MessageBox.Show(result, "CE Tools - NE / YX Conversion", MessageBoxButton.OK, MessageBoxImage.Information);
+                document.Editor.WriteMessage("\nCE_MAPLOCATION coordinate conversion: {0}", result.Replace("\n", "; "));
+                return;
+            }
             double latitude;
             double longitude;
             if (!TryParseCoordinate(model.Text("Latitude"), -90.0, 90.0, out latitude) ||
@@ -316,6 +341,13 @@ namespace CETools.Civil3D
         {
             string lo;
             return TownLoZones.TryGetValue(town ?? string.Empty, out lo) ? lo : string.Empty;
+        }
+
+        private static bool TryParseSignedNumber(string text, out double value)
+        {
+            return (double.TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.InvariantCulture, out value) ||
+                    double.TryParse(text, NumberStyles.Float | NumberStyles.AllowThousands, CultureInfo.CurrentCulture, out value)) &&
+                   !double.IsNaN(value) && !double.IsInfinity(value);
         }
 
         private static bool TryParseCoordinate(string text, double minimum, double maximum, out double value)
