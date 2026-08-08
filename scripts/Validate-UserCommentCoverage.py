@@ -10,11 +10,14 @@ CIVIL = ROOT / "src" / "CE.Tools.Civil3D"
 requirements = {
     "SurveyCoordinateWorkflowCommands.cs": [
         "Select one or more lightweight, 2D or 3D polylines",
-        "const int columns = 4;",
+        "const int columns = 7;",
         '"POINT NAME"',
         '"X"',
         '"Y"',
         '"Z"',
+        '"NG LEVEL"',
+        '"DESIGN LEVEL"',
+        '"DIFFERENCE"',
         "CellAlignment.MiddleCenter",
         "SetRawDescription",
         "DynamicCoordinateLinkStore.LinkPolylineVertices(",
@@ -146,7 +149,7 @@ survey_text = (CIVIL / "SurveyCoordinateWorkflowCommands.cs").read_text(
 )
 for forbidden in ('"X / EASTING"', '"Y / NORTHING"', '"Z / ELEVATION"'):
     if forbidden in survey_text:
-        errors.append(f"Survey wording must use only X, Y and Z: {forbidden}")
+        errors.append(f"Survey wording must keep explicit X/Y/Z coordinate columns: {forbidden}")
 
 installer = ROOT / "scripts" / "Install-VerifiedCivil3D2023Bundle.ps1"
 if not installer.exists():
