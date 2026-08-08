@@ -1,0 +1,68 @@
+name: CE Tools Coordinate Levels BOQ Surface Patch
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.head_ref == 'agent/coordinate-levels-boq-surface-fixes'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref }}
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply runtime source patch
+        run: |
+          python3 scripts/_Patch-CoordinateLevelsBoqSurface.py
+          sed -i 's/+N3;-N3;0.000/+0.000;-0.000;0.000/g' src/CE.Tools.Civil3D/VertexSettingOutCommands.cs src/CE.Tools.Civil3D/SurveyCoordinateWorkflowCommands.cs
+
+      - name: Validate latest runtime batch
+        run: python3 scripts/Validate-CoordinateLevelsBoqSurface.py
+
+      - name: Validate existing linked BOQ
+        run: python3 scripts/Validate-BillOfQuantities.py
+
+      - name: Validate existing runtime comments
+        run: python3 scripts/Validate-LatestRuntimeDesignComments.py
+
+      - name: Validate unique command registry
+        run: python3 scripts/Validate-CommandRegistry.py
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse Civil 3D C# syntax
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
+
+      - name: Commit patched source
+        shell: bash
+        run: |
+          git config user.name "CE Tools Agent"
+          git config user.email "actions@github.com"
+          git add \
+            src/CE.Tools.Civil3D/ProjectCoordinationCommands.cs \
+            src/CE.Tools.Civil3D/VertexSettingOutGeometry.cs \
+            src/CE.Tools.Civil3D/VertexSettingOutCommands.cs \
+            src/CE.Tools.Civil3D/SurveyCoordinateWorkflowCommands.cs \
+            src/CE.Tools.Civil3D/FeatureProfileSurfaceCommentCommands.cs \
+            src/CE.Tools.Civil3D/PreBuildRuntimeCompletionCommands.cs \
+            src/CE.Tools.Civil3D/BillOfQuantitiesCommands.cs \
+            src/CE.Tools.Civil3D/NetworkAssetScheduleCommands.cs \
+            src/CE.Tools.Civil3D/SurfaceSpikeHoleRepairCommands.cs \
+            src/CE.Tools.Civil3D/CeTablePresentationCommands.cs \
+            src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs
+          if git diff --cached --quiet; then
+            echo "No source changes to commit."
+          else
+            git commit -m "Fix coordinate levels pipe quantities and surface repair"
+            git push origin HEAD:${{ github.head_ref }}
+          fi
