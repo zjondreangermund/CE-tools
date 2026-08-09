@@ -632,6 +632,11 @@ namespace CETools.Civil3D
                 pointCount = records.Count;
                 dimensionCount = liveDimensionKeys.Count;
             }
+            if (string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))
+            {
+                try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, false); }
+                catch { }
+            }
         }
 
         private static List<VertexSettingRecord> FlattenAndName(
@@ -711,7 +716,7 @@ namespace CETools.Civil3D
         {
             var records = source == null || source.Records == null
                 ? new List<VertexSettingRecord>()
-                : source.Records.ToList();
+                : RemoveDuplicateClosingVertices(source.Records);
             var centres = records.Where(record => string.Equals(record.Kind, "ARC CENTER", StringComparison.OrdinalIgnoreCase)).ToList();
             var onGeometry = records.Where(record => !string.Equals(record.Kind, "ARC CENTER", StringComparison.OrdinalIgnoreCase)).ToList();
             string mode = sequenceMode ?? string.Empty;
@@ -752,6 +757,22 @@ namespace CETools.Civil3D
             return onGeometry;
         }
 
+        private static List<VertexSettingRecord> RemoveDuplicateClosingVertices(
+            IEnumerable<VertexSettingRecord> values)
+        {
+            var result = new List<VertexSettingRecord>();
+            foreach (VertexSettingRecord record in values ?? Enumerable.Empty<VertexSettingRecord>())
+            {
+                if (string.Equals(record.Kind, "VERTEX", StringComparison.OrdinalIgnoreCase) &&
+                    result.Any(existing =>
+                        string.Equals(existing.Kind, "VERTEX", StringComparison.OrdinalIgnoreCase) &&
+                        existing.Point.DistanceTo(record.Point) <= 1e-7))
+                    continue;
+                result.Add(record);
+            }
+            return result;
+        }
+
         private static string FindNearestRecordKey(
             IEnumerable<VertexSettingSource> sources,
             Point3d picked)
@@ -785,11 +806,6 @@ namespace CETools.Civil3D
                 if (point == null) throw new InvalidOperationException("Civil 3D did not return the created COGO point.");
                 point.RawDescription = record.PointName;
                 try { point.PointName = record.PointName; } catch { }
-                CogoPointProjectStyleCommands.ApplyPointStyles(
-                    database,
-                    civilDocument,
-                    transaction,
-                    point);
                 WriteOutputLink(
                     point, transaction, link.GroupId, record.Key, record.Point);
                 return id;
@@ -807,6 +823,7 @@ namespace CETools.Civil3D
                 var text = new MText();
                 text.SetDatabaseDefaults(database);
                 text.TextHeight = textHeight;
+                text.Attachment = AttachmentPoint.BottomLeft;
                 text.Contents = LabelText(record, link);
                 Point3d location = OutputLocation(record, link.LabelOffset);
                 text.Location = location;
@@ -855,11 +872,6 @@ namespace CETools.Civil3D
                 cogo.Elevation = record.Point.Z;
                 cogo.RawDescription = record.PointName;
                 try { cogo.PointName = record.PointName; } catch { }
-                CogoPointProjectStyleCommands.ApplyPointStyles(
-                    cogo.Database,
-                    CivilApplication.ActiveDocument,
-                    transaction,
-                    cogo);
                 WriteOutputLink(
                     cogo, transaction, link.GroupId, record.Key, record.Point);
                 return true;

@@ -48,8 +48,8 @@ namespace CETools.Civil3D
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction("Choose production styles", "CE_SEWSETTINGS", "Choose alignment/profile styles, alignment/profile label sets, profile-view style, band set, and pipe/structure labels before production starts.", "0 — Production setup"),
-                    new DisciplineWorkflowAction("Automatic network sequence", "CE_SEWSEQ", "Sequence and number the complete connected sewer network.", "1 — Network"),
-                    new DisciplineWorkflowAction("Sequence with selected main", "CE_SEWSEQMAIN", "Select the intended main route before branch numbering.", "1 — Network"),
+                    new DisciplineWorkflowAction("Automatic network sequence + options", "CE_SEWSEQWORKFLOW", "Sequence and number the complete connected sewer network.", "1 — Network"),
+                    new DisciplineWorkflowAction("Sequence with selected main + options", "CE_SEWSEQMAINWORKFLOW", "Select the intended main route before branch numbering.", "1 — Network"),
                     new DisciplineWorkflowAction("Create / refresh Civil labels", "CE_SEWLABELS", "Add the selected Civil 3D pipe and structure plan labels without duplicating existing labels.", "1 — Network"),
                     new DisciplineWorkflowAction("Create sewer alignments", "CE_SEWALIGN", "Create linked branch alignments from the sequenced network.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Refresh alignments", "CE_SEWREFRESH", "Rebuild generated sewer alignments from their live network sources.", "2 — Alignments"),

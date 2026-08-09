@@ -554,7 +554,8 @@ namespace CETools.Civil3D
                         Cmd("Prepare Crossings and Junctions", "CE_PLBREAKJUNCTIONS ", "Break prepared utility polylines at true crossings and T-junctions."),
                         Cmd("Network Creation Hub", "CE_NETWORKCREATEHUB ", "Create Sewer/SW/Water/Bulk Water networks from line/polyline/feature-line objects and connect parts."),
                         Cmd("Create Network from Object", "CE_NETWORKFROMPOLYLINES ", "Choose discipline and launch the Civil 3D native network-from-object workflow."),
-                        Cmd("Connect Pipe / Structure Parts", "CE_NETWORKCONNECT ", "Launch Civil 3D Connect Network Part To for selected network parts.")),
+                        Cmd("Connect Pipe / Structure Parts", "CE_NETWORKCONNECT ", "Launch Civil 3D Connect Network Part To for selected network parts."),
+                        Cmd("Auto Connect Open Pipe Ends", "CE_NETWORKCONNECTALL ", "Connect open gravity-pipe ends to nearby structures in the same network within a chosen tolerance.")),
                     Menu(
                         "CE_TOOLS_STORMWATER_MENU",
                         "Stormwater\nProduction",
@@ -571,8 +572,8 @@ namespace CETools.Civil3D
                         "Sewer Network\nProduction",
                         "Sequence sewer networks, format alignments and create profiles.",
                         Cmd("Sewer Production Tools", "CE_SEWTOOLS ", "Open the complete sewer production menu."),
-                        Cmd("Sequence Network", "CE_SEWSEQ ", "Sequence a complete network or selected path."),
-                        Cmd("Sequence with Selected Main", "CE_SEWSEQMAIN ", "Select Branch-1 and sequence remaining branches."),
+                        Cmd("Sequence Network + Production Options", "CE_SEWSEQWORKFLOW ", "Sequence a complete network or selected path."),
+                        Cmd("Sequence Selected Main + Production Options", "CE_SEWSEQMAINWORKFLOW ", "Select Branch-1 and sequence remaining branches."),
                         Cmd("Dynamic Resequence Selected Network", "CE_SEWAUTOSEQ ", "Compact Branch/P/MH numbering after deletions or reconnections and refresh linked outputs."),
                         Cmd("Dynamic Resequence All CE Networks", "CE_SEWAUTOSEQALL ", "Refresh all previously CE-sequenced sewer networks."),
                         Cmd("Dynamic Resequence Settings", "CE_SEWAUTOSEQSETTINGS ", "Enable or disable automatic topology resequencing."),
@@ -862,7 +863,9 @@ namespace CETools.Civil3D
             var source = new RibbonPanelSource
             {
                 Id = panelId,
-                Title = title.ToUpperInvariant()
+                Title = title.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
+                    ? title.ToUpperInvariant()
+                    : "CE-" + title.ToUpperInvariant()
             };
             foreach (RibbonRow row in rows) source.Rows.Add(row);
             tab.Panels.Add(new RibbonPanel { Source = source });
@@ -877,7 +880,9 @@ namespace CETools.Civil3D
             var menu = new RibbonMenuButton
             {
                 Id = id,
-                Text = text,
+                Text = text.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
+                    ? text
+                    : "CE-" + text,
                 ShowText = true,
                 ShowImage = true,
                 Size = RibbonItemSize.Large,

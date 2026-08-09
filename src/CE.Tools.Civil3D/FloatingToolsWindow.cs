@@ -92,9 +92,17 @@ namespace CETools.Civil3D
         private static void OnGlobalPreProcessInput(object sender, PreProcessInputEventArgs args)
         {
             KeyEventArgs key = args == null ? null : args.StagingItem.Input as KeyEventArgs;
-            if (key == null || !key.IsDown || key.Key != Key.F ||
-                (Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
+            if (key == null || !key.IsDown) return;
+            ModifierKeys modifiers = Keyboard.Modifiers;
+            if (key.Key == Key.M &&
+                (modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
+                (modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+            {
+                key.Handled = true;
+                AcApplication.DocumentManager.MdiActiveDocument?.SendStringToExecute("CE_MOSTUSEDOVERALL ", true, false, true);
                 return;
+            }
+            if (key.Key != Key.F || (modifiers & ModifierKeys.Control) != ModifierKeys.Control) return;
             key.Handled = true;
             ShowWindow();
         }
