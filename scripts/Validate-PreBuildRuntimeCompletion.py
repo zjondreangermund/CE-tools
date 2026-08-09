@@ -88,11 +88,12 @@ require(preset, 'GetSystemVariable("CMDNAMES")', "project style command-state gu
 require(preset, 'GetSystemVariable("CMDACTIVE")', "project style active-command guard")
 require(preset, "PromptedDocuments.Remove(document);", "failed style apply requeue")
 
-# Point labels remain visible and close to their true COGO anchor.
+# Point labels remain visible and close to their true COGO anchor. The final
+# runtime batch tightened the bound from eight to six paper millimetres.
 for token in (
     "TrySetLabelVisible(point)",
     "NormalizeOffset(stored, database)",
-    "ModelDistance(database, 8.0)",
+    "ModelDistance(database, 6.0)",
     "UniversalDynamicRefreshManager.Queue();",
 ):
     require(cogo, token, "COGO runtime repair")
