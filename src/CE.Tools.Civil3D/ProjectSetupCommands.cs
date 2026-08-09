@@ -155,7 +155,17 @@ namespace CETools.Civil3D
 
             var proposed = new ProjectMetadata();
             foreach (string field in FieldOrder)
-                proposed.Set(field, window.GetValue(field));
+            {
+                string value = window.GetValue(field);
+                if (string.Equals(field, "Coordinate System", StringComparison.OrdinalIgnoreCase) &&
+                    string.IsNullOrWhiteSpace(value))
+                {
+                    string preferred = NamibiaCoordinateSystemCatalog.PreferredLoName(
+                        window.GetValue("Town"));
+                    if (!string.IsNullOrWhiteSpace(preferred)) value = preferred;
+                }
+                proposed.Set(field, value);
+            }
 
             if (!PopupTablePresenter.ShowReview(
                 "CE Tools - Project Setup",

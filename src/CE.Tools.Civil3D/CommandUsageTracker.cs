@@ -126,6 +126,39 @@ namespace CETools.Civil3D
             }
         }
 
+        public static IList<CommandUsageRecord> MostUsedOverall(int maximum)
+        {
+            lock (SyncRoot)
+            {
+                var aggregate = new Dictionary<string, CommandUsageRecord>(StringComparer.OrdinalIgnoreCase);
+                foreach (ProjectUsageRecord project in ProjectsByKey.Values)
+                {
+                    foreach (CommandUsageRecord source in project.Commands.Values)
+                    {
+                        CommandUsageRecord target;
+                        if (!aggregate.TryGetValue(source.Command, out target))
+                        {
+                            target = new CommandUsageRecord { Command = source.Command };
+                            aggregate[source.Command] = target;
+                        }
+                        target.Clicks += source.Clicks;
+                        target.TotalSeconds += source.TotalSeconds;
+                        target.EstimatedClicksSaved += source.EstimatedClicksSaved;
+                        target.EstimatedSecondsSaved += source.EstimatedSecondsSaved;
+                        target.IsFavorite = target.IsFavorite || source.IsFavorite;
+                        if (source.LastUsedUtc > target.LastUsedUtc) target.LastUsedUtc = source.LastUsedUtc;
+                    }
+                }
+                return aggregate.Values
+                    .Where(item => item.Clicks > 0)
+                    .OrderByDescending(item => item.Clicks)
+                    .ThenByDescending(item => item.TotalSeconds)
+                    .Take(Math.Max(1, maximum))
+                    .Select(item => item.Clone())
+                    .ToList();
+            }
+        }
+
         public static IList<CommandUsageRecord> Recent(string projectKey, int maximum)
         {
             lock (SyncRoot)

@@ -388,29 +388,9 @@ namespace CETools.Civil3D
         private static bool TryGetLength(object value, out double length)
         {
             length = 0.0;
-            Curve curve = value as Curve;
-            if (curve != null)
-            {
-                try
-                {
-                    length = Math.Abs(
-                        curve.GetDistanceAtParameter(curve.EndParam) -
-                        curve.GetDistanceAtParameter(curve.StartParam));
-                    if (Positive(length)) return true;
-                }
-                catch { }
-            }
-            if (TryReadNumber(
-                value,
-                out length,
-                "Length3DCenterToCenter",
-                "Length2DCenterToCenter",
-                "Length3D",
-                "Length2D",
-                "Length"))
-            {
-                return Positive(length);
-            }
+            // Civil 3D network objects can expose a stale 1.000 length. Prefer
+            // actual endpoint geometry first so excavation and BOQs use the
+            // physical pipe distance.
             string[,] pairs =
             {
                 { "StartPoint", "EndPoint" },
@@ -424,11 +404,51 @@ namespace CETools.Civil3D
                 if (TryReadPoint(value, pairs[index, 0], out start) &&
                     TryReadPoint(value, pairs[index, 1], out end))
                 {
+                    double endpointLength = start.DistanceTo(end);
+                    if (Positive(endpointLength) && Math.Abs(endpointLength - 1.0) > 0.0001)
+                    {
+                        length = endpointLength;
+                        return true;
+                    }
+                }
+            }
+            Curve curve = value as Curve;
+            if (curve != null)
+            {
+                try
+                {
+                    length = Math.Abs(
+                        curve.GetDistanceAtParameter(curve.EndParam) -
+                        curve.GetDistanceAtParameter(curve.StartParam));
+                    if (Positive(length) && Math.Abs(length - 1.0) > 0.0001) return true;
+                }
+                catch { }
+            }
+            if (TryReadNumber(
+                value,
+                out length,
+                "Length3DCenterToCenter",
+                "Length2DCenterToCenter",
+                "Length3D",
+                "Length2D",
+                "Length"))
+            {
+                if (Positive(length) && Math.Abs(length - 1.0) > 0.0001) return true;
+            }
+            // Final fallback: accept any positive endpoint length rather than
+            // silently forcing every network part to exactly 1 m.
+            for (int index = 0; index < pairs.GetLength(0); index++)
+            {
+                Point3d start;
+                Point3d end;
+                if (TryReadPoint(value, pairs[index, 0], out start) &&
+                    TryReadPoint(value, pairs[index, 1], out end))
+                {
                     length = start.DistanceTo(end);
                     if (Positive(length)) return true;
                 }
             }
-            return false;
+            return Positive(length);
         }
 
         private static bool LooksLikePipe(object value)
@@ -460,6 +480,9 @@ namespace CETools.Civil3D
                 table.TableStyle = database.Tablestyle;
                 table.Position = position;
                 PopulateTable(database, table, rows, settings);
+                table.GenerateLayout();
+                table.RecordGraphicsModified(true);
+                try { table.RecomputeTableBlock(true); } catch { }
                 ObjectId tableId = currentSpace.AppendEntity(table);
                 transaction.AddNewlyCreatedDBObject(table, true);
                 table.CreateExtensionDictionary();
@@ -468,6 +491,13 @@ namespace CETools.Civil3D
                 transaction.Commit();
                 return tableId;
             }
+        }
+
+        private static int NominalDiameterMm(double diameterMetres)
+        {
+            double millimetres = diameterMetres > 10.0 ? diameterMetres : diameterMetres * 1000.0;
+            int[] nominal = { 50, 63, 75, 90, 100, 110, 125, 140, 160, 180, 200, 225, 250, 280, 300, 315, 355, 400, 450, 500, 560, 600, 630, 710, 800, 900, 1000, 1200, 1500 };
+            return nominal.OrderBy(value => Math.Abs(value - millimetres)).First();
         }
 
         private static void PopulateTable(
@@ -496,7 +526,7 @@ namespace CETools.Civil3D
             table.Cells[0, 0].TextHeight = height * 1.15;
             string[] headings =
             {
-                "PIPE", "LAYER", "LENGTH m", "DIAMETER m", "AVG COVER m",
+                "PIPE", "LAYER", "LENGTH m", "NOMINAL Ø mm", "AVG COVER m",
                 "WIDTH m", "DEPTH m", "EXCAVATION m³", "BEDDING m³", "BACKFILL m³"
             };
             for (int column = 0; column < headings.Length; column++)
@@ -515,7 +545,7 @@ namespace CETools.Civil3D
                     row.Name,
                     row.Layer,
                     row.Length.ToString("N3", CultureInfo.CurrentCulture),
-                    row.Diameter.ToString("N3", CultureInfo.CurrentCulture),
+                    NominalDiameterMm(row.Diameter).ToString(CultureInfo.CurrentCulture),
                     row.AverageCover.ToString("N3", CultureInfo.CurrentCulture),
                     row.TrenchWidth.ToString("N3", CultureInfo.CurrentCulture),
                     row.TrenchDepth.ToString("N3", CultureInfo.CurrentCulture),
@@ -527,9 +557,7 @@ namespace CETools.Civil3D
                 {
                     table.Cells[tableRow, column].TextString = values[column];
                     table.Cells[tableRow, column].TextHeight = height;
-                    table.Cells[tableRow, column].Alignment = column < 2
-                        ? CellAlignment.MiddleLeft
-                        : CellAlignment.MiddleCenter;
+                    table.Cells[tableRow, column].Alignment = CellAlignment.MiddleCenter;
                 }
             }
 

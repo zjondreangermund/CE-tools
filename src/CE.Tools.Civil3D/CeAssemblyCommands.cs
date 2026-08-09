@@ -104,11 +104,18 @@ namespace CETools.Civil3D
                 "Create the Civil 3D assembly container used by Road Production. Subassemblies can then be added from the Civil 3D Tool Palettes.");
             model.AddText("Name", "Assembly", "Assembly name", "CE-ROAD-ASSEMBLY", "The name is made unique when an assembly with the same name already exists.");
             model.AddChoice(
+                "Preset",
+                "Assembly",
+                "Road assembly preset / use",
+                "Urban kerbed road",
+                "Choose the intended road assembly use. CE Tools creates the Civil assembly container and opens Civil 3D Tool Palettes for the compatible lane/kerb/shoulder/daylight subassemblies.",
+                new[] { "Urban kerbed road", "Primary crowned road", "Secondary road", "Rural shoulder road", "Divided road", "Planar road", "Custom" });
+            model.AddChoice(
                 "Type",
                 "Assembly",
-                "Road assembly type",
+                "Civil 3D assembly classification",
                 "UndividedCrownedRoad",
-                "Choose the Civil 3D assembly classification.",
+                "Choose the supported Civil 3D assembly classification. Roadway subassemblies are selected from Autodesk Tool Palettes after creation.",
                 new[] { "UndividedCrownedRoad", "UndividedPlanarRoad", "Other" });
             model.AddChoice(
                 "AssemblyStyle",
