@@ -65,10 +65,14 @@ namespace CETools.Civil3D
                 template = open.Filename;
             }
 
+            string outputExtension = string.Equals(
+                Path.GetExtension(template),
+                ".xlsm",
+                StringComparison.OrdinalIgnoreCase) ? "xlsm" : "xlsx";
             var save = new SaveFileDialog(
                 "Create linked water and sewer cost estimate",
-                DefaultOutputPath(document),
-                "xlsx",
+                DefaultOutputPath(document, outputExtension),
+                outputExtension,
                 "CE_WSCOSTCREATE",
                 SaveFileDialog.SaveFileDialogFlags.DoNotTransferRemoteFiles);
             if (save.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
@@ -229,6 +233,9 @@ namespace CETools.Civil3D
 
         private static string FindInstalledTemplate()
         {
+            string selectedTemplate = CostEstimateTemplateStore.Read();
+            if (!string.IsNullOrWhiteSpace(selectedTemplate) && File.Exists(selectedTemplate))
+                return selectedTemplate;
             string assembly = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
             string[] candidates =
             {
@@ -240,7 +247,7 @@ namespace CETools.Civil3D
             return candidates.Select(Path.GetFullPath).FirstOrDefault(File.Exists);
         }
 
-        private static string DefaultOutputPath(Document document)
+        private static string DefaultOutputPath(Document document, string extension)
         {
             string drawing = document == null ? string.Empty : document.Name;
             string folder = string.IsNullOrWhiteSpace(drawing)
@@ -248,9 +255,10 @@ namespace CETools.Civil3D
                 : Path.GetDirectoryName(drawing);
             if (string.IsNullOrWhiteSpace(folder))
                 folder = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+            string suffix = string.Equals(extension, "xlsm", StringComparison.OrdinalIgnoreCase) ? ".xlsm" : ".xlsx";
             string name = string.IsNullOrWhiteSpace(drawing)
-                ? "CE Tools - Water & Sewer Cost Estimate.xlsx"
-                : Path.GetFileNameWithoutExtension(drawing) + " - Water & Sewer Cost Estimate.xlsx";
+                ? "CE Tools - Water & Sewer Cost Estimate" + suffix
+                : Path.GetFileNameWithoutExtension(drawing) + " - Water & Sewer Cost Estimate" + suffix;
             return Path.Combine(folder, name);
         }
 

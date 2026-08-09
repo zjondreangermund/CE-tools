@@ -398,6 +398,7 @@ namespace CETools.Civil3D
                         Cmd("Constant Grade Between Endpoints", "CE_FLCONSTGRADE ", "Set all existing points to a constant grade between each feature line's endpoint elevations."),
                         Cmd("Create and Point Edit", "CE_FLEDIT ", "Open creation, surface and point-edit tools."),
                         Cmd("Create from Object", "CE_FLCREATE ", "Create feature lines from supported curves."),
+                        Cmd("Add Feature Lines as Surface Breaklines", "CE_FLBREAKLINE ", "Add selected feature lines/3D curves to a Civil 3D TIN surface as standard breaklines."),
                         Cmd("Elevations from Surface", "CE_FLSURFACEUI ", "Select a Civil 3D surface from a pop-up and assign feature-line elevations."),
                         Cmd("Elevations from Surface (Legacy)", "CE_FLSURFACE ", "Run the original command-line surface assignment workflow."),
                         Cmd("Insert Elevation Point", "CE_FLINSERT ", "Insert an elevation point."),
@@ -550,7 +551,10 @@ namespace CETools.Civil3D
                         Cmd("Cadastral Utility Planner", "CE_UTILITYPLANNER ", "Open cadastral route preparation and downstream network workflows."),
                         Cmd("Create Linked Cadastral Routes", "CE_UTILITYROUTES ", "Create inward-offset utility planning routes, manhole planning points and a constraint report."),
                         Cmd("Refresh Linked Cadastral Routes", "CE_UTILITYROUTESREFRESH ", "Refresh utility routes from edited source erf/cadastral polylines."),
-                        Cmd("Prepare Crossings and Junctions", "CE_PLBREAKJUNCTIONS ", "Break prepared utility polylines at true crossings and T-junctions.")),
+                        Cmd("Prepare Crossings and Junctions", "CE_PLBREAKJUNCTIONS ", "Break prepared utility polylines at true crossings and T-junctions."),
+                        Cmd("Network Creation Hub", "CE_NETWORKCREATEHUB ", "Create Sewer/SW/Water/Bulk Water networks from line/polyline/feature-line objects and connect parts."),
+                        Cmd("Create Network from Object", "CE_NETWORKFROMPOLYLINES ", "Choose discipline and launch the Civil 3D native network-from-object workflow."),
+                        Cmd("Connect Pipe / Structure Parts", "CE_NETWORKCONNECT ", "Launch Civil 3D Connect Network Part To for selected network parts.")),
                     Menu(
                         "CE_TOOLS_STORMWATER_MENU",
                         "Stormwater\nProduction",
@@ -688,7 +692,9 @@ namespace CETools.Civil3D
                         Cmd("Create Linked Cost Estimate", "CE_WSCOSTCREATE ", "Create a linked estimate from the installed or selected Excel template."),
                         Cmd("Refresh Cost Estimate", "CE_WSCOSTREFRESH ", "Update model-derived quantities without replacing workbook rates or formatting."),
                         Cmd("Cost Estimate Information", "CE_WSCOSTINFO ", "Review workbook path, link status, unit scale, asset counts and automatic-refresh state."),
-                        Cmd("Automatic Cost Refresh", "CE_WSCOSTAUTO ", "Turn deferred refresh after drawing commands on or off.")),
+                        Cmd("Automatic Cost Refresh", "CE_WSCOSTAUTO ", "Turn deferred refresh after drawing commands on or off."),
+                        Cmd("Select Approved Cost Template", "CE_COSTTEMPLATESELECT ", "Select an XLSX/XLSM template such as the approved Annexure-A structure for future linked estimates."),
+                        Cmd("Cost Template Information", "CE_COSTTEMPLATEINFO ", "Review the active cross-drawing cost-estimate template.")),
                     Menu(
                         "CE_TOOLS_DESIGN_REPORT_MENU",
                         "Design\nReports",
@@ -917,7 +923,9 @@ namespace CETools.Civil3D
                 Id = (menuId ?? "CE_TOOLS_MENU") + "_COMMAND_" +
                     commandIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) +
                     "_" + definition.Command.Trim().Replace(' ', '_'),
-                Text = definition.Text,
+                Text = definition.Text.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
+                    ? definition.Text
+                    : "CE-" + definition.Text,
                 ShowText = true,
                 ShowImage = true,
                 Image = RibbonVisuals.CommandSmall(definition.Command),

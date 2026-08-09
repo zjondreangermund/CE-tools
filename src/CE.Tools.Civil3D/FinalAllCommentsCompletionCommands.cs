@@ -395,7 +395,7 @@ namespace CETools.Civil3D
         internal static List<IList<string>> Read(string path)
         {
             string extension = Path.GetExtension(path).ToLowerInvariant();
-            return extension == ".xlsx" ? ReadXlsx(path) : ReadDelimited(path);
+            return extension == ".xlsx" || extension == ".xlsm" ? ReadXlsx(path) : ReadDelimited(path);
         }
 
         private static List<IList<string>> ReadDelimited(string path)
