@@ -197,7 +197,29 @@ $newLinkRead = @'
 '@
 Replace-RequiredText -Path $vertexPath -Old $oldLinkRead -New $newLinkRead -Description 'capture linked COGO output mode before leaving transaction scope'
 
-Replace-RequiredText -Path $vertexPath -Old '            if (string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))' -New '            if (applyCogoStyles)' -Description 'use retained COGO output mode after the transaction'
+# Replace only the RefreshTable tail. A global replacement of the COGO condition
+# also changes CreateOutput(), where applyCogoStyles is intentionally not in scope.
+$oldRefreshTail = @'
+                dimensionCount = liveDimensionKeys.Count;
+            }
+            if (string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))
+            {
+                try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, false); }
+                catch { }
+            }
+        }
+'@
+$newRefreshTail = @'
+                dimensionCount = liveDimensionKeys.Count;
+            }
+            if (applyCogoStyles)
+            {
+                try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, false); }
+                catch { }
+            }
+        }
+'@
+Replace-RequiredText -Path $vertexPath -Old $oldRefreshTail -New $newRefreshTail -Description 'use retained COGO output mode only after the RefreshTable transaction'
 
 $oldLevelMethod = @'
         private static void ApplyLevelReferences(
@@ -241,11 +263,20 @@ foreach ($requiredVertexMarker in @(
     'bool applyCogoStyles = false;',
     'applyCogoStyles = string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase);',
     'if (applyCogoStyles)',
-    'private static double SampleSurfaceLevel('
+    'private static double SampleSurfaceLevel(',
+    'private static ObjectId CreateOutput(',
+    'if (string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))'
 )) {
     if (-not $vertexText.Contains($requiredVertexMarker)) {
         throw "Civil 3D 2023 repair verification failed: missing vertex marker: $requiredVertexMarker"
     }
+}
+
+# There must be only one applyCogoStyles conditional: the post-transaction
+# RefreshTable condition. CreateOutput must continue to inspect link.OutputType.
+$applyCogoConditionalCount = ([regex]::Matches($vertexText, 'if \(applyCogoStyles\)')).Count
+if ($applyCogoConditionalCount -ne 1) {
+    throw "Civil 3D 2023 repair verification failed: expected one applyCogoStyles conditional, found $applyCogoConditionalCount."
 }
 
 Write-Host 'Civil 3D 2023 compatibility repairs completed.' -ForegroundColor Cyan
