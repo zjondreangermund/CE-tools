@@ -118,6 +118,9 @@ jobs:
       - name: Validate coordinate levels BOQ and surface repair
         run: python3 scripts/Validate-CoordinateLevelsBoqSurface.py
 
+      - name: Validate final all-comments completion
+        run: python3 scripts/Validate-FinalAllCommentsCompletion.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
