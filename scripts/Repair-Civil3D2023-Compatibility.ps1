@@ -94,57 +94,36 @@ Replace-RequiredText -Path $roadPath -Old $oldRoadCall -New $newRoadCall -Descri
 
 Replace-RequiredText -Path (Join-Path $src 'SurveyCoordinateWorkflowCommands.cs') -Old '        private static ObjectId CreateLinkedTable(' -New '        internal static ObjectId CreateLinkedTable(' -Description 'expose linked coordinate-table creation inside the CE Tools assembly'
 
+# Civil 3D 2023 does not expose the RibbonRow API used by newer Autodesk ribbon
+# assemblies. Keep this repair deliberately granular so unrelated UI changes
+# (for example CE- title prefixes) cannot make the compatibility pass fail.
 $pluginPath = Join-Path $src 'PluginEntry.cs'
-$oldRibbonRows = @'
+$oldRowFactory = @'
         private static RibbonRow Row(params RibbonItem[] items)
         {
             var row = new RibbonRow();
             foreach (RibbonItem item in items) row.RowItems.Add(item);
             return row;
         }
-
-        private static void AddPanel(
-            RibbonTab tab,
-            string panelId,
-            string title,
-            params RibbonRow[] rows)
-        {
-            var source = new RibbonPanelSource
-            {
-                Id = panelId,
-                Title = title.ToUpperInvariant()
-            };
-            foreach (RibbonRow row in rows) source.Rows.Add(row);
-            tab.Panels.Add(new RibbonPanel { Source = source });
-        }
 '@
-$newRibbonRows = @'
+$newRowFactory = @'
         private static RibbonItem[] Row(params RibbonItem[] items)
         {
             return items;
         }
+'@
+Replace-RequiredText -Path $pluginPath -Old $oldRowFactory -New $newRowFactory -Description 'replace unsupported RibbonRow factory for Civil 3D 2023'
 
-        private static void AddPanel(
-            RibbonTab tab,
-            string panelId,
-            string title,
-            params RibbonItem[][] rows)
-        {
-            var source = new RibbonPanelSource
-            {
-                Id = panelId,
-                Title = title.ToUpperInvariant()
-            };
+Replace-RequiredText -Path $pluginPath -Old '            params RibbonRow[] rows)' -New '            params RibbonItem[][] rows)' -Description 'use RibbonItem arrays for Civil 3D 2023 panel rows'
 
+$oldPanelRows = '            foreach (RibbonRow row in rows) source.Rows.Add(row);'
+$newPanelRows = @'
             foreach (RibbonItem[] row in rows)
             {
                 foreach (RibbonItem item in row)
                     source.Items.Add(item);
             }
-
-            tab.Panels.Add(new RibbonPanel { Source = source });
-        }
 '@
-Replace-RequiredText -Path $pluginPath -Old $oldRibbonRows -New $newRibbonRows -Description 'remove unsupported RibbonRow and add panel items directly for Civil 3D 2023'
+Replace-RequiredText -Path $pluginPath -Old $oldPanelRows -New $newPanelRows -Description 'add panel items directly for Civil 3D 2023'
 
 Write-Host 'Civil 3D 2023 compatibility repairs completed.' -ForegroundColor Cyan
