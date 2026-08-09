@@ -16,6 +16,24 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
+      - name: Validate Civil 3D 2023 compatibility repair script
+        shell: pwsh
+        run: |
+          $temp = Join-Path $env:RUNNER_TEMP 'ce-tools-c3d2023-repair'
+          New-Item -ItemType Directory -Force -Path $temp | Out-Null
+          Copy-Item -Path scripts -Destination $temp -Recurse -Force
+          Copy-Item -Path src -Destination $temp -Recurse -Force
+          $repair = Join-Path $temp 'scripts/Repair-Civil3D2023-Compatibility.ps1'
+          & $repair -RepoRoot $temp
+          & $repair -RepoRoot $temp
+          $plugin = Get-Content -LiteralPath (Join-Path $temp 'src/CE.Tools.Civil3D/PluginEntry.cs') -Raw
+          if ($plugin -match '\bRibbonRow\b') {
+            throw 'Civil 3D 2023 repaired PluginEntry.cs still contains RibbonRow.'
+          }
+          if ($plugin -notmatch 'params RibbonItem\[\]\[\] rows' -or $plugin -notmatch 'source\.Items\.Add\(item\)') {
+            throw 'Civil 3D 2023 repaired PluginEntry.cs does not use direct panel items.'
+          }
+
       - name: Validate report presentation source
         run: python3 scripts/Validate-ReportPresentation.py
 
