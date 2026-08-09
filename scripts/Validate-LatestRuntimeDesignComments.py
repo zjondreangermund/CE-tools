@@ -29,7 +29,7 @@ checks=[
     ('radial closed-filled arrow', 'ObjectId arrow = ObjectId.Null;' in vertex),
     ('runtime closed-filled arrow', 'leader.ArrowSymbolId = ObjectId.Null;' in pre),
     ('bounded runtime annotations', 'ModelDistance(database, 8.0)' in pre),
-    ('bounded COGO labels', 'ModelDistance(database, 8.0)' in cogo),
+    ('bounded COGO labels', 'ModelDistance(database, 6.0)' in cogo),
     ('COGO prefers anchor distance', 'candidate.DistanceTo(item.Anchor)' in cogo),
     ('vertex table immediate graphics', 'RecomputeTableBlock' in vertex),
     ('global tables immediate graphics', 'RecomputeTableBlock' in grid),
