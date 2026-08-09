@@ -126,4 +126,126 @@ $newPanelRows = @'
 '@
 Replace-RequiredText -Path $pluginPath -Old $oldPanelRows -New $newPanelRows -Description 'add panel items directly for Civil 3D 2023'
 
+# Latest Windows Civil 3D 2023 compile findings. These are kept here because the
+# installer deliberately repairs the downloaded source tree before invoking MSBuild.
+$cogoPath = Join-Path $src 'CogoPointProjectStyleCommands.cs'
+$oldCogoUsings = @'
+using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.Geometry;
+'@
+$newCogoUsings = @'
+using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.EditorInput;
+using Autodesk.AutoCAD.Geometry;
+'@
+Replace-RequiredText -Path $cogoPath -Old $oldCogoUsings -New $newCogoUsings -Description 'import AutoCAD EditorInput types used by COGO overlap selection'
+
+$usagePath = Join-Path $src 'CommandUsageTracker.cs'
+$oldUsageAggregate = @'
+                        target.Clicks += source.Clicks;
+                        target.TotalSeconds += source.TotalSeconds;
+                        target.EstimatedClicksSaved += source.EstimatedClicksSaved;
+                        target.EstimatedSecondsSaved += source.EstimatedSecondsSaved;
+                        target.IsFavorite = target.IsFavorite || source.IsFavorite;
+'@
+$newUsageAggregate = @'
+                        target.Clicks += source.Clicks;
+                        target.TotalSeconds += source.TotalSeconds;
+                        // Estimated savings are derived from the aggregated Clicks value.
+                        target.IsFavorite = target.IsFavorite || source.IsFavorite;
+'@
+Replace-RequiredText -Path $usagePath -Old $oldUsageAggregate -New $newUsageAggregate -Description 'avoid assigning derived read-only command usage savings properties'
+
+$vertexPath = Join-Path $src 'VertexSettingOutCommands.cs'
+$oldRefreshHeader = @'
+        private static void RefreshTable(
+            Document document,
+            ObjectId tableId,
+            out int pointCount,
+            out int dimensionCount)
+        {
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (civilDocument == null)
+                throw new InvalidOperationException("No active Civil 3D document is available.");
+
+            using (DocumentLock documentLock = document.LockDocument())
+'@
+$newRefreshHeader = @'
+        private static void RefreshTable(
+            Document document,
+            ObjectId tableId,
+            out int pointCount,
+            out int dimensionCount)
+        {
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (civilDocument == null)
+                throw new InvalidOperationException("No active Civil 3D document is available.");
+            bool applyCogoStyles = false;
+
+            using (DocumentLock documentLock = document.LockDocument())
+'@
+Replace-RequiredText -Path $vertexPath -Old $oldRefreshHeader -New $newRefreshHeader -Description 'retain COGO style refresh state outside the table transaction'
+
+$oldLinkRead = @'
+                VertexSettingLink link = ReadTableLink(table);
+                List<ObjectId> sourceIds = link.SourceHandles
+'@
+$newLinkRead = @'
+                VertexSettingLink link = ReadTableLink(table);
+                applyCogoStyles = string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase);
+                List<ObjectId> sourceIds = link.SourceHandles
+'@
+Replace-RequiredText -Path $vertexPath -Old $oldLinkRead -New $newLinkRead -Description 'capture linked COGO output mode before leaving transaction scope'
+
+Replace-RequiredText -Path $vertexPath -Old '            if (string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))' -New '            if (applyCogoStyles)' -Description 'use retained COGO output mode after the transaction'
+
+$oldLevelMethod = @'
+        private static void ApplyLevelReferences(
+            Database database,
+'@
+$newLevelMethod = @'
+        private static double SampleSurfaceLevel(
+            Autodesk.Civil.DatabaseServices.Surface surface,
+            Point3d point)
+        {
+            if (surface == null) return double.NaN;
+            try
+            {
+                double elevation = surface.FindElevationAtXY(point.X, point.Y);
+                return double.IsNaN(elevation) || double.IsInfinity(elevation)
+                    ? double.NaN
+                    : elevation;
+            }
+            catch
+            {
+                return double.NaN;
+            }
+        }
+
+        private static void ApplyLevelReferences(
+            Database database,
+'@
+Replace-RequiredText -Path $vertexPath -Old $oldLevelMethod -New $newLevelMethod -Description 'restore safe Civil surface level sampling helper'
+
+# Fail early if a future source edit prevents any of the compile repairs above.
+$cogoText = [System.IO.File]::ReadAllText($cogoPath)
+if (-not $cogoText.Contains('using Autodesk.AutoCAD.EditorInput;')) {
+    throw 'Civil 3D 2023 repair verification failed: COGO EditorInput import is missing.'
+}
+$usageText = [System.IO.File]::ReadAllText($usagePath)
+if ($usageText.Contains('target.EstimatedClicksSaved +=') -or $usageText.Contains('target.EstimatedSecondsSaved +=')) {
+    throw 'Civil 3D 2023 repair verification failed: derived usage properties are still assigned.'
+}
+$vertexText = [System.IO.File]::ReadAllText($vertexPath)
+foreach ($requiredVertexMarker in @(
+    'bool applyCogoStyles = false;',
+    'applyCogoStyles = string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase);',
+    'if (applyCogoStyles)',
+    'private static double SampleSurfaceLevel('
+)) {
+    if (-not $vertexText.Contains($requiredVertexMarker)) {
+        throw "Civil 3D 2023 repair verification failed: missing vertex marker: $requiredVertexMarker"
+    }
+}
+
 Write-Host 'Civil 3D 2023 compatibility repairs completed.' -ForegroundColor Cyan
