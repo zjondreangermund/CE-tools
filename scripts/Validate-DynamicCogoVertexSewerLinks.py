@@ -56,7 +56,8 @@ required = {
         "GEN=",
         "ELEVHANDLE=",
         "SRC=",
-        "CogoPointProjectStyleCommands.ApplyPointStyles(",
+        "CogoPointProjectStyleCommands.ApplySelectedStyles(document, false);",
+        "RemoveDuplicateClosingVertices",
         "leader.ArrowSymbolId = ObjectId.Null;",
         "ObjectId arrow = ObjectId.Null;",
         "SetClosedFilledDimensionArrow",
@@ -132,7 +133,7 @@ if errors:
     raise SystemExit(1)
 
 print(
-    "Dynamic COGO/vertex/sewer validation passed: saved point styles, point-safe "
-    "overlap, shared vertex popup, linked Z references, closed-filled "
-    "leaders/dimensions, table spacing and automatic sewer branch compaction are wired."
+    "Dynamic COGO/vertex/sewer validation passed: saved point styles, bulk point-style sync, "
+    "closed-polyline deduplication, point-safe overlap, shared vertex popup, linked Z references, "
+    "closed-filled leaders/dimensions, table spacing and automatic sewer branch compaction are wired."
 )

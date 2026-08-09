@@ -260,10 +260,74 @@ namespace CETools.Civil3D
             model.AddText("Easting", "02 NE / YX", "Easting (E / X)", "0.000", "Survey Easting maps directly to drawing X. Signed values are accepted.");
             model.AddText("X", "02 NE / YX", "Drawing X / Easting", "0.000", "Drawing X is the Easting convention used by CE Tools.");
             model.AddText("Y", "02 NE / YX", "Drawing Y / Northing", "0.000", "Drawing Y is the Northing convention used by CE Tools.");
-            model.AddChoice("Action", "03 Action", "Action", "Open WGS84 in map", "Open the WGS84 point or convert the survey/drawing coordinate labels without changing geometry.", new[] { "Open WGS84 in map", "Northing / Easting -> Y / X", "Y / X -> Northing / Easting" });
+            model.AddChoice("Action", "03 Action", "Action", "Open WGS84 in map", "Open the WGS84 point, convert survey/drawing labels, or transform between drawing XY and WGS84 using the GeoLocationData stored in this DWG.", new[] { "Open WGS84 in map", "Northing / Easting -> Y / X", "Y / X -> Northing / Easting", "Drawing X / Y -> WGS84 Lat / Long", "WGS84 Lat / Long -> Drawing X / Y" });
             model.AddChoice("Provider", "03 Action", "Open in", "Google Maps", "Choose the web map opened for the WGS84 action.", new[] { "Google Maps", "Google Earth" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             string action = model.Text("Action");
+            if (string.Equals(action, "Drawing X / Y -> WGS84 Lat / Long", StringComparison.OrdinalIgnoreCase))
+            {
+                double xValue;
+                double yValue;
+                if (!TryParseSignedNumber(model.Text("X"), out xValue) ||
+                    !TryParseSignedNumber(model.Text("Y"), out yValue))
+                {
+                    document.Editor.WriteMessage("\nCE_MAPLOCATION stopped. Enter valid Drawing X and Y values.");
+                    return;
+                }
+                Point3d geo;
+                string transformError;
+                if (!GeoCoordinateTransform.TryDrawingToWgs84(
+                        document.Database,
+                        new Point3d(xValue, yValue, 0.0),
+                        out geo,
+                        out transformError))
+                {
+                    document.Editor.WriteMessage("\nCE_MAPLOCATION transformation stopped. {0}", transformError);
+                    return;
+                }
+                string result = string.Format(
+                    CultureInfo.CurrentCulture,
+                    "Drawing X {0:N3} / Y {1:N3}\nLatitude {2:0.00000000}\nLongitude {3:0.00000000}",
+                    xValue,
+                    yValue,
+                    geo.Y,
+                    geo.X);
+                MessageBox.Show(result, "CE Tools - Drawing XY / WGS84", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
+            if (string.Equals(action, "WGS84 Lat / Long -> Drawing X / Y", StringComparison.OrdinalIgnoreCase))
+            {
+                double transformLatitude;
+                double transformLongitude;
+                if (!TryParseCoordinate(model.Text("Latitude"), -90.0, 90.0, out transformLatitude) ||
+                    !TryParseCoordinate(model.Text("Longitude"), -180.0, 180.0, out transformLongitude))
+                {
+                    document.Editor.WriteMessage("\nCE_MAPLOCATION stopped. Enter valid WGS84 latitude/longitude.");
+                    return;
+                }
+                Point3d drawingPoint;
+                string transformError;
+                if (!GeoCoordinateTransform.TryWgs84ToDrawing(
+                        document.Database,
+                        transformLatitude,
+                        transformLongitude,
+                        0.0,
+                        out drawingPoint,
+                        out transformError))
+                {
+                    document.Editor.WriteMessage("\nCE_MAPLOCATION transformation stopped. {0}", transformError);
+                    return;
+                }
+                string result = string.Format(
+                    CultureInfo.CurrentCulture,
+                    "Latitude {0:0.00000000} / Longitude {1:0.00000000}\nDrawing X {2:N3}\nDrawing Y {3:N3}",
+                    transformLatitude,
+                    transformLongitude,
+                    drawingPoint.X,
+                    drawingPoint.Y);
+                MessageBox.Show(result, "CE Tools - WGS84 / Drawing XY", MessageBoxButton.OK, MessageBoxImage.Information);
+                return;
+            }
             if (!string.Equals(action, "Open WGS84 in map", StringComparison.OrdinalIgnoreCase))
             {
                 double first;

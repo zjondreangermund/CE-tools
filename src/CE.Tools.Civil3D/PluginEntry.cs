@@ -219,14 +219,18 @@ namespace CETools.Civil3D
                         Cmd("Project Setup", "CE_PROJECTSETUP ", "Create or update project metadata and review it in a pop-up."),
                         Cmd("Project Information", "CE_PROJECTINFO ", "Review project metadata and optionally place a drawing table."),
                         Cmd("Clear Project Information", "CE_PROJECTCLEAR ", "Clear project metadata after confirmation and keep a recoverable backup."),
-                        Cmd("Restore Cleared Information", "CE_PROJECTRESTORE ", "Restore the values saved before the last project clear.")),
+                        Cmd("Restore Cleared Information", "CE_PROJECTRESTORE ", "Restore the values saved before the last project clear."),
+                        Cmd("Drawing and Client Books", "CE_BOOKTOOLS ", "Open drawing-book/client-book production from any discipline."),
+                        Cmd("PDF to DWG", "CE_PDFTODWG ", "Create a new DWG from a selected PDF page using AutoCAD native PDFIMPORT.")),
                     Menu(
                         "CE_TOOLS_COORDSYS_MENU",
                         "Coordinate\nSystems",
                         "Report, search, assign and clear the drawing coordinate system.",
                         Cmd("Coordinate System Tools", "CE_COORDSYS ", "Open the coordinate-system menu."),
                         Cmd("Survey Location and Coordinate System", "CE_SURVEYLOCATION ", "Choose a Namibian project town and assign the matching installed Autodesk LO system when available."),
-                        Cmd("Latitude / Longitude Map Tools", "CE_MAPLOCATION ", "Open entered WGS84 latitude/longitude in Google Maps or Google Earth without changing drawing geometry."),
+                        Cmd("Latitude / Longitude Map Tools", "CE_MAPLOCATION ", "Open/convert WGS84 and drawing coordinates without changing drawing geometry."),
+                        Cmd("Coordinate Transformation", "CE_COORDTRANSFORM ", "Transform drawing XY to WGS84 latitude/longitude and vice versa through the DWG geographic transformation."),
+                        Cmd("Bulk Coordinate Conversion", "CE_COORDTRANSFORMBULK ", "Convert CSV/XLSX survey coordinate lists to/from WGS84 using the active DWG."),
                         Cmd("Information", "CE_COORDSYSINFO ", "Report the current coordinate system."),
                         Cmd("Assign", "CE_COORDSYSASSIGN ", "Open Autodesk's native coordinate-system selection window."),
                         Cmd("Assign by Code", "CE_COORDSYSCODE ", "Advanced direct assignment using a validated Autodesk code."),
@@ -313,6 +317,9 @@ namespace CETools.Civil3D
                         Cmd("Presentation and Dynamic Refresh", "CE_PRESENTATIONTOOLS ", "Open shared annotation, overlap and rebuild workflows."),
                         Cmd("Survey Cleanup", "CE_SURVEYCLEANUP ", "Review correction surfaces, coordinate links and controlled cleanup workflows."),
                         Cmd("Coordinate Utilities", "CE_COORDINATE ", "Open coordinate labels, crosses and tables."),
+                        Cmd("Point / Circle Conversion", "CE_POINTCIRCLE ", "Convert survey points to circles or circle centres to styled COGO points."),
+                        Cmd("Grid Setting-Out", "CE_GRIDSETTINGOUT ", "Create unique perimeter/full-grid COGO setting-out points."),
+                        Cmd("Annotation Scale Sync", "CE_ANNOTATIONSCALESYNC ", "Synchronize CE annotation objects/tables to the current annotation scale."),
                         Cmd("Picked Coordinate Annotation (Legacy)", "CE_COORDPICKX ", "Create the Batch 3 coordinate annotation workflow."),
                         Cmd("Coordinate Cross + Annotation (Legacy)", "CE_COORDCROSSX ", "Create the Batch 3 cross and annotation workflow."),
                         Cmd("Polyline Vertex COGO Points (Legacy)", "CE_COORDPOLY ", "Run the original sequential COGO point and XYZ table workflow."))));
@@ -391,6 +398,7 @@ namespace CETools.Civil3D
                         Cmd("Constant Grade Between Endpoints", "CE_FLCONSTGRADE ", "Set all existing points to a constant grade between each feature line's endpoint elevations."),
                         Cmd("Create and Point Edit", "CE_FLEDIT ", "Open creation, surface and point-edit tools."),
                         Cmd("Create from Object", "CE_FLCREATE ", "Create feature lines from supported curves."),
+                        Cmd("Add Feature Lines as Surface Breaklines", "CE_FLBREAKLINE ", "Add selected feature lines/3D curves to a Civil 3D TIN surface as standard breaklines."),
                         Cmd("Elevations from Surface", "CE_FLSURFACEUI ", "Select a Civil 3D surface from a pop-up and assign feature-line elevations."),
                         Cmd("Elevations from Surface (Legacy)", "CE_FLSURFACE ", "Run the original command-line surface assignment workflow."),
                         Cmd("Insert Elevation Point", "CE_FLINSERT ", "Insert an elevation point."),
@@ -543,7 +551,11 @@ namespace CETools.Civil3D
                         Cmd("Cadastral Utility Planner", "CE_UTILITYPLANNER ", "Open cadastral route preparation and downstream network workflows."),
                         Cmd("Create Linked Cadastral Routes", "CE_UTILITYROUTES ", "Create inward-offset utility planning routes, manhole planning points and a constraint report."),
                         Cmd("Refresh Linked Cadastral Routes", "CE_UTILITYROUTESREFRESH ", "Refresh utility routes from edited source erf/cadastral polylines."),
-                        Cmd("Prepare Crossings and Junctions", "CE_PLBREAKJUNCTIONS ", "Break prepared utility polylines at true crossings and T-junctions.")),
+                        Cmd("Prepare Crossings and Junctions", "CE_PLBREAKJUNCTIONS ", "Break prepared utility polylines at true crossings and T-junctions."),
+                        Cmd("Network Creation Hub", "CE_NETWORKCREATEHUB ", "Create Sewer/SW/Water/Bulk Water networks from line/polyline/feature-line objects and connect parts."),
+                        Cmd("Create Network from Object", "CE_NETWORKFROMPOLYLINES ", "Choose discipline and launch the Civil 3D native network-from-object workflow."),
+                        Cmd("Connect Pipe / Structure Parts", "CE_NETWORKCONNECT ", "Launch Civil 3D Connect Network Part To for selected network parts."),
+                        Cmd("Auto Connect Open Pipe Ends", "CE_NETWORKCONNECTALL ", "Connect open gravity-pipe ends to nearby structures in the same network within a chosen tolerance.")),
                     Menu(
                         "CE_TOOLS_STORMWATER_MENU",
                         "Stormwater\nProduction",
@@ -560,8 +572,8 @@ namespace CETools.Civil3D
                         "Sewer Network\nProduction",
                         "Sequence sewer networks, format alignments and create profiles.",
                         Cmd("Sewer Production Tools", "CE_SEWTOOLS ", "Open the complete sewer production menu."),
-                        Cmd("Sequence Network", "CE_SEWSEQ ", "Sequence a complete network or selected path."),
-                        Cmd("Sequence with Selected Main", "CE_SEWSEQMAIN ", "Select Branch-1 and sequence remaining branches."),
+                        Cmd("Sequence Network + Production Options", "CE_SEWSEQWORKFLOW ", "Sequence a complete network or selected path."),
+                        Cmd("Sequence Selected Main + Production Options", "CE_SEWSEQMAINWORKFLOW ", "Select Branch-1 and sequence remaining branches."),
                         Cmd("Dynamic Resequence Selected Network", "CE_SEWAUTOSEQ ", "Compact Branch/P/MH numbering after deletions or reconnections and refresh linked outputs."),
                         Cmd("Dynamic Resequence All CE Networks", "CE_SEWAUTOSEQALL ", "Refresh all previously CE-sequenced sewer networks."),
                         Cmd("Dynamic Resequence Settings", "CE_SEWAUTOSEQSETTINGS ", "Enable or disable automatic topology resequencing."),
@@ -681,7 +693,9 @@ namespace CETools.Civil3D
                         Cmd("Create Linked Cost Estimate", "CE_WSCOSTCREATE ", "Create a linked estimate from the installed or selected Excel template."),
                         Cmd("Refresh Cost Estimate", "CE_WSCOSTREFRESH ", "Update model-derived quantities without replacing workbook rates or formatting."),
                         Cmd("Cost Estimate Information", "CE_WSCOSTINFO ", "Review workbook path, link status, unit scale, asset counts and automatic-refresh state."),
-                        Cmd("Automatic Cost Refresh", "CE_WSCOSTAUTO ", "Turn deferred refresh after drawing commands on or off.")),
+                        Cmd("Automatic Cost Refresh", "CE_WSCOSTAUTO ", "Turn deferred refresh after drawing commands on or off."),
+                        Cmd("Select Approved Cost Template", "CE_COSTTEMPLATESELECT ", "Select an XLSX/XLSM template such as the approved Annexure-A structure for future linked estimates."),
+                        Cmd("Cost Template Information", "CE_COSTTEMPLATEINFO ", "Review the active cross-drawing cost-estimate template.")),
                     Menu(
                         "CE_TOOLS_DESIGN_REPORT_MENU",
                         "Design\nReports",
@@ -849,7 +863,9 @@ namespace CETools.Civil3D
             var source = new RibbonPanelSource
             {
                 Id = panelId,
-                Title = title.ToUpperInvariant()
+                Title = title.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
+                    ? title.ToUpperInvariant()
+                    : "CE-" + title.ToUpperInvariant()
             };
             foreach (RibbonRow row in rows) source.Rows.Add(row);
             tab.Panels.Add(new RibbonPanel { Source = source });
@@ -864,7 +880,9 @@ namespace CETools.Civil3D
             var menu = new RibbonMenuButton
             {
                 Id = id,
-                Text = text,
+                Text = text.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
+                    ? text
+                    : "CE-" + text,
                 ShowText = true,
                 ShowImage = true,
                 Size = RibbonItemSize.Large,
@@ -910,7 +928,9 @@ namespace CETools.Civil3D
                 Id = (menuId ?? "CE_TOOLS_MENU") + "_COMMAND_" +
                     commandIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) +
                     "_" + definition.Command.Trim().Replace(' ', '_'),
-                Text = definition.Text,
+                Text = definition.Text.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
+                    ? definition.Text
+                    : "CE-" + definition.Text,
                 ShowText = true,
                 ShowImage = true,
                 Image = RibbonVisuals.CommandSmall(definition.Command),

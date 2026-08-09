@@ -50,12 +50,20 @@ namespace CETools.Civil3D
         {
             if (model == null) return false;
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            // User-local defaults are loaded first so Road/Sewer/SW/Water/Bulk
+            // Water settings remain available when another DWG is opened.
+            CrossDrawingProductionSettingsStore.Load(model);
+            // A drawing can still keep its own override of the shared defaults.
             if (document != null)
                 ProductionSettingsPersistenceStore.Load(document.Database, model);
             var window = new ProductionSettingsWindow(model);
             AcApplication.ShowModalWindow(window);
-            if (window.Accepted && document != null)
-                ProductionSettingsPersistenceStore.Save(document.Database, model);
+            if (window.Accepted)
+            {
+                if (document != null)
+                    ProductionSettingsPersistenceStore.Save(document.Database, model);
+                CrossDrawingProductionSettingsStore.Save(model);
+            }
             return window.Accepted;
         }
 

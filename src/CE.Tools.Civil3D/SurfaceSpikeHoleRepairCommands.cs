@@ -273,7 +273,15 @@ namespace CETools.Civil3D
                     grid,
                     index,
                     radius);
-                if (neighbours.Count < minimumNeighbours) continue;
+                if (neighbours.Count < minimumNeighbours)
+                {
+                    neighbours = Enumerable.Range(0, vertices.Count)
+                        .Where(item => item != index)
+                        .OrderBy(item => PlanDistanceSquared(vertices[index], vertices[item]))
+                        .Take(Math.Max(minimumNeighbours, 8))
+                        .ToList();
+                }
+                if (neighbours.Count < Math.Min(3, minimumNeighbours)) continue;
                 double median = Median(neighbours.Select(item => vertices[item].Z));
                 if (double.IsNaN(median) || double.IsInfinity(median)) continue;
                 if (Math.Abs(vertices[index].Z - median) >= tolerance)

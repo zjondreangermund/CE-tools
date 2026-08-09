@@ -157,9 +157,15 @@ namespace CETools.Civil3D
                 for (int index = 0; index < count; index++)
                 {
                     double angle = quadrants[index];
-                    Point3d arcCentre = centre + new Vector3d(Math.Cos(angle), Math.Sin(angle), 0.0) * (width + radius);
-                    double startAngle = angle - Math.PI * 0.25;
-                    double endAngle = angle + Math.PI * 0.25;
+                    double sx = Math.Cos(angle) >= 0.0 ? 1.0 : -1.0;
+                    double sy = Math.Sin(angle) >= 0.0 ? 1.0 : -1.0;
+                    Point3d arcCentre = centre + new Vector3d(sx * (width + radius), sy * (width + radius), 0.0);
+                    double startAngle;
+                    double endAngle;
+                    if (sx > 0.0 && sy > 0.0) { startAngle = Math.PI; endAngle = Math.PI * 1.5; }
+                    else if (sx < 0.0 && sy > 0.0) { startAngle = Math.PI * 1.5; endAngle = Math.PI * 2.0; }
+                    else if (sx < 0.0 && sy < 0.0) { startAngle = 0.0; endAngle = Math.PI * 0.5; }
+                    else { startAngle = Math.PI * 0.5; endAngle = Math.PI; }
                     var arc = new Arc(arcCentre, Vector3d.ZAxis, radius, startAngle, endAngle);
                     arc.SetDatabaseDefaults(document.Database);
                     arc.LayerId = layerId;

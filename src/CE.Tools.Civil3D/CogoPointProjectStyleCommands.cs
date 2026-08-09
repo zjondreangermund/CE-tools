@@ -42,16 +42,33 @@ namespace CETools.Civil3D
                 string.IsNullOrWhiteSpace(result.Warning) ? string.Empty : " " + result.Warning);
         }
 
-        [CommandMethod("CE_TOOLS", "CE_COGOOVERLAPFIX", CommandFlags.Modal | CommandFlags.Redraw)]
+        [CommandMethod("CE_TOOLS", "CE_COGOOVERLAPFIX", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void ResolvePointLabelOverlaps()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-            CogoPointStyleResult result = ApplySelectedStyles(document, true);
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Resolve COGO Label Overlaps",
+                "Keep all survey point coordinates fixed. Choose all COGO labels or only selected points; only labels that actually conflict are repositioned and they remain close to their reference point.");
+            settings.AddChoice("Scope", "Overlap", "COGO points", "All overlapping COGO labels", "Choose all COGO labels or manually select only the points you want CE Tools to resolve.", new[] { "All overlapping COGO labels", "Select COGO points" });
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+
+            ISet<ObjectId> restricted = null;
+            if (string.Equals(settings.Text("Scope"), "Select COGO points", StringComparison.OrdinalIgnoreCase))
+            {
+                PromptSelectionResult selection = document.Editor.GetSelection(
+                    new PromptSelectionOptions { MessageForAdding = "\nSelect COGO points whose labels may move: ", AllowDuplicates = false });
+                if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+                restricted = new HashSet<ObjectId>(selection.Value.GetObjectIds());
+            }
+
+            CogoPointStyleResult result = ApplySelectedStyles(document, false);
+            result.OverlapsMoved = ResolveOverlaps(document, restricted);
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_COGOOVERLAPFIX complete. COGO labels moved={0}; point coordinates unchanged.",
-                result.OverlapsMoved);
+                "\nCE_COGOOVERLAPFIX complete. COGO labels moved={0}; point coordinates unchanged; scope={1}.",
+                result.OverlapsMoved,
+                restricted == null ? "all" : "selected");
         }
 
         internal static CogoPointStyleResult ApplySelectedStyles(
@@ -237,7 +254,7 @@ namespace CETools.Civil3D
             TrySetLabelVisible(point);
         }
 
-        internal static int ResolveOverlaps(Document document)
+        internal static int ResolveOverlaps(Document document, ISet<ObjectId> restrictedPointIds = null)
         {
             if (document == null) return 0;
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
@@ -284,6 +301,11 @@ namespace CETools.Civil3D
                         textHeight * 2.8,
                         Math.Max(1, (text ?? string.Empty).Length) * textHeight * 0.72);
                     double height = Math.Max(textHeight * 1.8, 0.001);
+                    if (restrictedPointIds != null && !restrictedPointIds.Contains(pointId))
+                    {
+                        occupied.Add(LabelBox(location, width, height, gap));
+                        continue;
+                    }
                     items.Add(new CogoLabelItem(
                         point,
                         anchor,
@@ -469,7 +491,7 @@ namespace CETools.Civil3D
                 PaperAnnotationScale.ModelDistance(database, 5.0),
                 0.001);
             double maximum = Math.Max(
-                PaperAnnotationScale.ModelDistance(database, 8.0),
+                PaperAnnotationScale.ModelDistance(database, 6.0),
                 fallback * 2.0);
             if (double.IsNaN(offset.X) || double.IsInfinity(offset.X) ||
                 double.IsNaN(offset.Y) || double.IsInfinity(offset.Y) ||

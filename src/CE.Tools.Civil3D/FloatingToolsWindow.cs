@@ -74,6 +74,7 @@ namespace CETools.Civil3D
                 return;
 
             _shortcutTarget.PreviewKeyDown += OnApplicationPreviewKeyDown;
+            try { InputManager.Current.PreProcessInput += OnGlobalPreProcessInput; } catch { }
             _shortcutAttached = true;
         }
 
@@ -83,8 +84,27 @@ namespace CETools.Civil3D
                 return;
 
             _shortcutTarget.PreviewKeyDown -= OnApplicationPreviewKeyDown;
+            try { InputManager.Current.PreProcessInput -= OnGlobalPreProcessInput; } catch { }
             _shortcutTarget = null;
             _shortcutAttached = false;
+        }
+
+        private static void OnGlobalPreProcessInput(object sender, PreProcessInputEventArgs args)
+        {
+            KeyEventArgs key = args == null ? null : args.StagingItem.Input as KeyEventArgs;
+            if (key == null || !key.IsDown) return;
+            ModifierKeys modifiers = Keyboard.Modifiers;
+            if (key.Key == Key.M &&
+                (modifiers & ModifierKeys.Control) == ModifierKeys.Control &&
+                (modifiers & ModifierKeys.Shift) == ModifierKeys.Shift)
+            {
+                key.Handled = true;
+                AcApplication.DocumentManager.MdiActiveDocument?.SendStringToExecute("CE_MOSTUSEDOVERALL ", true, false, true);
+                return;
+            }
+            if (key.Key != Key.F || (modifiers & ModifierKeys.Control) != ModifierKeys.Control) return;
+            key.Handled = true;
+            ShowWindow();
         }
 
         private static void OnApplicationPreviewKeyDown(object sender, KeyEventArgs args)
@@ -449,7 +469,8 @@ namespace CETools.Civil3D
             root.Children.Add(_tabs);
 
             AddUsageTab("favorites", "⭐ Favorites");
-            AddUsageTab("mostused", "🔥 Most Used");
+            AddUsageTab("overallmostused", "🔥 Overall Most Used");
+            AddUsageTab("mostused", "🔥 Drawing Most Used");
             AddUsageTab("recent", "🕒 Recent");
             foreach (WorkflowDefinition workflow in WorkflowCatalog.Create(_tools))
                 _tabs.Items.Add(CreateWorkflowTab(workflow));
@@ -594,10 +615,13 @@ namespace CETools.Civil3D
             string projectKey = SelectedProjectKey();
             _buttons.RemoveAll(item =>
                 string.Equals(item.WorkflowKey, "favorites", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(item.WorkflowKey, "overallmostused", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(item.WorkflowKey, "mostused", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(item.WorkflowKey, "recent", StringComparison.OrdinalIgnoreCase));
             BuildUsageTab("favorites", CommandUsageTracker.Favorites(projectKey),
                 "Right-click any command and choose Add to Favorites.");
+            BuildUsageTab("overallmostused", CommandUsageTracker.MostUsedOverall(36),
+                "Commands ranked across every saved CE Tools drawing in this user profile.");
             BuildUsageTab("mostused", CommandUsageTracker.MostUsed(projectKey, 24),
                 "Commands ranked automatically by completed executions.");
             BuildUsageTab("recent", CommandUsageTracker.Recent(projectKey, 24),
@@ -807,7 +831,9 @@ namespace CETools.Civil3D
             var labels = new StackPanel();
             labels.Children.Add(new TextBlock
             {
-                Text = definition.Text,
+                Text = definition.Text.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
+                    ? definition.Text
+                    : "CE-" + definition.Text,
                 FontWeight = FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap
             });
@@ -1208,6 +1234,14 @@ namespace CETools.Civil3D
             var requiredCommands = new HashSet<string>(
                 steps.Select(step => step.Command),
                 StringComparer.OrdinalIgnoreCase);
+            if (!string.Equals(key, "all", StringComparison.OrdinalIgnoreCase))
+            {
+                requiredCommands.UnionWith(new[]
+                {
+                    "CE_BOOKTOOLS", "CE_DRAWINGBOOK", "CE_BOOKINDEX",
+                    "CE_CLIENTBOOK", "CE_CLIENTBOOKREFRESH", "CE_CLIENTBOOKINDEX"
+                });
+            }
             selected = selected.Concat(allTools.Where(tool =>
                 requiredCommands.Contains(tool.Command.Trim())));
 
