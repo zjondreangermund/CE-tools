@@ -54,10 +54,12 @@ $finalRepair = Join-Path $stageRoot 'scripts\Repair-V60-RemainingCompatibility.p
 $productionExpansion = Join-Path $stageRoot 'scripts\Inject-ProductionExpansion-Civil3D2023.ps1'
 $augustBehavior = Join-Path $stageRoot 'scripts\Inject-August10BehaviorFixes-Civil3D2023.ps1'
 $finalAnnotation = Join-Path $stageRoot 'scripts\Inject-FinalAnnotationReview2-Civil3D2023.ps1'
+$finalUtilityWorkflow = Join-Path $stageRoot 'scripts\Inject-FinalUtilityWorkflow-Civil3D2023.ps1'
 $cogoOverlapRepair = Join-Path $stageRoot 'scripts\Repair-CogoOverlap-Civil3D2023.ps1'
 $roadStyleRepair = Join-Path $stageRoot 'scripts\Repair-RoadStyleFallback-Civil3D2023.ps1'
 $branchLabelRepair = Join-Path $stageRoot 'scripts\Repair-BranchLabelRefresh-Civil3D2023.ps1'
 $midblockRepair = Join-Path $stageRoot 'scripts\Repair-MidblockRoutePlanner-Civil3D2023.ps1'
+$profileStyleAutoImport = Join-Path $stageRoot 'scripts\Repair-ProfileStyleAutoImport-Civil3D2023.ps1'
 $utilityProfileIsolation = Join-Path $stageRoot 'scripts\Repair-UtilityProfileIsolation-Civil3D2023.ps1'
 $closureValidation = Join-Path $stageRoot 'scripts\Validate-August10CommentClosure.ps1'
 $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
@@ -71,10 +73,12 @@ foreach ($required in @(
     $productionExpansion,
     $augustBehavior,
     $finalAnnotation,
+    $finalUtilityWorkflow,
     $cogoOverlapRepair,
     $roadStyleRepair,
     $branchLabelRepair,
     $midblockRepair,
+    $profileStyleAutoImport,
     $utilityProfileIsolation,
     $closureValidation,
     $sanitize,
@@ -108,6 +112,10 @@ Write-Host "`nExposing final annotation/table review workflows..." -ForegroundCo
 & $finalAnnotation -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
+Write-Host "`nExposing final Sewer, Midblock and profile-style workflows..." -ForegroundColor Cyan
+& $finalUtilityWorkflow -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
 Write-Host "`nRepairing COGO overlap movement bounds..." -ForegroundColor Cyan
 & $cogoOverlapRepair -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
@@ -122,6 +130,10 @@ $global:LASTEXITCODE = 0
 
 Write-Host "`nCompleting Midblock sewer route + visible offset handoff..." -ForegroundColor Cyan
 & $midblockRepair -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nAuto-importing bundled profile/band styles when the drawing library is missing..." -ForegroundColor Cyan
+& $profileStyleAutoImport -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nIsolating Sewer / Stormwater / Water profile creation per alignment..." -ForegroundColor Cyan
