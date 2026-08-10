@@ -26,7 +26,7 @@ namespace CETools.Civil3D
             if (document == null) return;
             int imported;
             string message;
-            bool changed = ProfileStyleAutoImportRuntime.EnsureBundledProfileStyles(document, out imported, out message);
+            ProfileStyleAutoImportRuntime.EnsureBundledProfileStyles(document, out imported, out message);
             document.Editor.Regen();
             document.Editor.WriteMessage(
                 "\nCE_PROFILESTYLEAUTOIMPORT: {0} Source styles processed={1}.",
@@ -52,7 +52,7 @@ namespace CETools.Civil3D
 
             if (HasExpectedBandLibrary(document.Database, CivilApplication.ActiveDocument))
             {
-                message = "Profile/band style library already present; no import required.";
+                message = "The requested Road-Single-Band Set 1-Full Grid library is already present; no import required.";
                 return false;
             }
 
@@ -120,7 +120,7 @@ namespace CETools.Civil3D
 
                 message = HasExpectedBandLibrary(document.Database, CivilApplication.ActiveDocument)
                     ? "Missing profile/band styles were imported automatically from the supplied CE style sources."
-                    : "Bundled styles were processed, but the expected road band-set name is still not present; the command will continue with the best available project/drawing style.";
+                    : "Bundled styles were processed, but Road-Single-Band Set 1-Full Grid is still not present; the command will continue with the best available project/drawing style and report that fallback.";
                 return imported > 0;
             }
             catch (TargetInvocationException exception)
@@ -146,7 +146,6 @@ namespace CETools.Civil3D
             if (values == null || values.Count == 0) return false;
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
-                int usable = 0;
                 foreach (object item in values)
                 {
                     if (!(item is ObjectId)) continue;
@@ -156,14 +155,10 @@ namespace CETools.Civil3D
                     try { style = transaction.GetObject(id, OpenMode.ForRead, false); }
                     catch { continue; }
                     string name = ReadStringProperty(style, "Name");
-                    if (string.IsNullOrWhiteSpace(name)) continue;
-                    usable++;
                     if (string.Equals(name, RoadDefaultBandSet, StringComparison.OrdinalIgnoreCase)) return true;
                 }
-                // A substantial user/project band library is also considered
-                // available even if it intentionally renamed the road default.
-                return usable >= 8;
             }
+            return false;
         }
 
         private static string ReadStringProperty(object target, string name)
