@@ -57,12 +57,29 @@ $finalAnnotation = Join-Path $stageRoot 'scripts\Inject-FinalAnnotationReview2-C
 $cogoOverlapRepair = Join-Path $stageRoot 'scripts\Repair-CogoOverlap-Civil3D2023.ps1'
 $roadStyleRepair = Join-Path $stageRoot 'scripts\Repair-RoadStyleFallback-Civil3D2023.ps1'
 $branchLabelRepair = Join-Path $stageRoot 'scripts\Repair-BranchLabelRefresh-Civil3D2023.ps1'
+$midblockRepair = Join-Path $stageRoot 'scripts\Repair-MidblockRoutePlanner-Civil3D2023.ps1'
+$utilityProfileIsolation = Join-Path $stageRoot 'scripts\Repair-UtilityProfileIsolation-Civil3D2023.ps1'
 $closureValidation = Join-Path $stageRoot 'scripts\Validate-August10CommentClosure.ps1'
 $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
 $diagnose = Join-Path $stageRoot 'scripts\Diagnose-RoslynSourceCrash.ps1'
 $build = Join-Path $stageRoot 'scripts\Build-Install-Civil3D2023-DotNet.ps1'
 
-foreach ($required in @($restore, $repair, $finalRepair, $productionExpansion, $augustBehavior, $finalAnnotation, $cogoOverlapRepair, $roadStyleRepair, $branchLabelRepair, $closureValidation, $sanitize, $diagnose, $build)) {
+foreach ($required in @(
+    $restore,
+    $repair,
+    $finalRepair,
+    $productionExpansion,
+    $augustBehavior,
+    $finalAnnotation,
+    $cogoOverlapRepair,
+    $roadStyleRepair,
+    $branchLabelRepair,
+    $midblockRepair,
+    $utilityProfileIsolation,
+    $closureValidation,
+    $sanitize,
+    $diagnose,
+    $build)) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Required staged script was not found: $required"
     }
@@ -101,6 +118,14 @@ $global:LASTEXITCODE = 0
 
 Write-Host "`nIntegrating dedicated branch-label layer refresh..." -ForegroundColor Cyan
 & $branchLabelRepair -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nCompleting Midblock sewer route + visible offset handoff..." -ForegroundColor Cyan
+& $midblockRepair -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nIsolating Sewer / Stormwater / Water profile creation per alignment..." -ForegroundColor Cyan
+& $utilityProfileIsolation -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nValidating complete comment closure before compilation..." -ForegroundColor Cyan
