@@ -9,7 +9,12 @@ $path = Join-Path $root 'src\CE.Tools.Civil3D\RoadProductionCommentCommands.cs'
 if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Road production source missing: $path" }
 $text = [System.IO.File]::ReadAllText($path)
 
-if (-not $text.Contains('AugustRoadStyleDefaults.Resolve(database, collection, preferred, "Road", out actualName)')) {
+# The resolver call is intentionally formatted across multiple lines in C#.
+# Verify it with a whitespace-tolerant regex rather than an impossible one-line
+# string match. This also keeps the repair idempotent on subsequent builds.
+$verificationPattern = '(?s)AugustRoadStyleDefaults\.Resolve\(\s*database,\s*collection,\s*preferred,\s*"Road",\s*out actualName\s*\)'
+
+if (-not [regex]::IsMatch($text, $verificationPattern)) {
     $pattern = '(?s)        private static ObjectId ResolveStyle\(\s*Database database,\s*object collection,\s*string preferred,\s*out string actualName\)\s*\{.*?\n        \}\n\n        private static Dictionary<string, string> ReadProjectStyleSelection'
     $matches = [regex]::Matches($text, $pattern)
     if ($matches.Count -ne 1) { throw "Could not isolate road ResolveStyle fallback. Matches=$($matches.Count)" }
@@ -40,8 +45,9 @@ else {
     Write-Host 'Road style fallback is already repaired.' -ForegroundColor DarkGreen
 }
 
-if (-not $text.Contains('AugustRoadStyleDefaults.Resolve(database, collection, preferred, "Road", out actualName)')) {
+if (-not [regex]::IsMatch($text, $verificationPattern)) {
     throw 'Road style fallback repair verification failed.'
 }
+
 [System.IO.File]::WriteAllText($path, $text, [System.Text.UTF8Encoding]::new($false))
 Write-Host 'Road style fallback compatibility repair passed.' -ForegroundColor Cyan
