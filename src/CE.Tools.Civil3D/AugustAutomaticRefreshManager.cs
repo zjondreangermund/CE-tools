@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
@@ -67,10 +68,29 @@ namespace CETools.Civil3D
 
         private static void OnCommandEnded(object sender, CommandEventArgs args)
         {
-            string name = args == null ? string.Empty : (args.GlobalCommandName ?? string.Empty);
+            string name = ReadCommandName(args);
             if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
             UniversalDynamicRefreshManager.Queue();
             PlatformDynamicRefreshManager.Queue();
+        }
+
+        private static string ReadCommandName(CommandEventArgs args)
+        {
+            if (args == null) return string.Empty;
+            foreach (string propertyName in new[] { "GlobalCommandName", "CommandName" })
+            {
+                try
+                {
+                    PropertyInfo property = args.GetType().GetProperty(
+                        propertyName,
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (property == null || !property.CanRead) continue;
+                    string value = Convert.ToString(property.GetValue(args, null));
+                    if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
+                }
+                catch { }
+            }
+            return string.Empty;
         }
     }
 }
