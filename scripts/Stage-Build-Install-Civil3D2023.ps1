@@ -61,6 +61,7 @@ $branchLabelRepair = Join-Path $stageRoot 'scripts\Repair-BranchLabelRefresh-Civ
 $midblockRepair = Join-Path $stageRoot 'scripts\Repair-MidblockRoutePlanner-Civil3D2023.ps1'
 $profileStyleAutoImport = Join-Path $stageRoot 'scripts\Repair-ProfileStyleAutoImport-Civil3D2023.ps1'
 $utilityProfileIsolation = Join-Path $stageRoot 'scripts\Repair-UtilityProfileIsolation-Civil3D2023.ps1'
+$augustCompilerRepair = Join-Path $stageRoot 'scripts\Repair-August10-CompilerErrors-Civil3D2023.ps1'
 $closureValidation = Join-Path $stageRoot 'scripts\Validate-August10CommentClosure.ps1'
 $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
 $diagnose = Join-Path $stageRoot 'scripts\Diagnose-RoslynSourceCrash.ps1'
@@ -80,6 +81,7 @@ foreach ($required in @(
     $midblockRepair,
     $profileStyleAutoImport,
     $utilityProfileIsolation,
+    $augustCompilerRepair,
     $closureValidation,
     $sanitize,
     $diagnose,
@@ -138,6 +140,10 @@ $global:LASTEXITCODE = 0
 
 Write-Host "`nIsolating Sewer / Stormwater / Water profile creation per alignment..." -ForegroundColor Cyan
 & $utilityProfileIsolation -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nApplying final Civil 3D 2023 compiler compatibility fixes..." -ForegroundColor Cyan
+& $augustCompilerRepair -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nValidating complete comment closure before compilation..." -ForegroundColor Cyan
