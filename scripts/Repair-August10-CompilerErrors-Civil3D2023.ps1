@@ -57,29 +57,50 @@ if ([regex]::IsMatch($profileText, '(?m)(?<![A-Za-z0-9_.])Exception\s+inner\s*='
 }
 Write-Host 'Qualified System.Exception references in profile style auto-import runtime.' -ForegroundColor Green
 
-# Avoid a host/reference overload-resolution quirk seen on Civil 3D 2023 where
-# Math.Max(double,double) at the Table cell TextHeight call binds incorrectly.
-# A direct comparison is equivalent and version-safe.
+# AutoCAD/Civil 3D 2023 exposes Table cell TextHeight as Nullable<double>.
+# Accept both the original Math.Max form and the first non-nullable repair form,
+# then normalize them to nullable-safe handling before MSBuild.
 $table = Read-Required 'TablePresentationRepairCommands.cs'
 $tableText = [System.IO.File]::ReadAllText($table)
-$oldTable = 'try { value = Math.Max(value, table.Cells[row, column].TextHeight); }'
-if ($tableText.Contains($oldTable)) {
-    $newTable = @'
+$oldMathMax = 'try { value = Math.Max(value, table.Cells[row, column].TextHeight); }'
+$oldNonNullable = @'
 try
                     {
                         double cellTextHeight = table.Cells[row, column].TextHeight;
                         if (cellTextHeight > value) value = cellTextHeight;
                     }
 '@
-    $tableText = $tableText.Replace($oldTable, $newTable.TrimEnd("`r", "`n"))
+$nullableSafe = @'
+try
+                    {
+                        double? cellTextHeight = table.Cells[row, column].TextHeight;
+                        if (cellTextHeight.HasValue && cellTextHeight.Value > value)
+                            value = cellTextHeight.Value;
+                    }
+'@
+
+$replacement = $nullableSafe.TrimEnd("`r", "`n")
+$changedTableText = $false
+if ($tableText.Contains($oldMathMax)) {
+    $tableText = $tableText.Replace($oldMathMax, $replacement)
+    $changedTableText = $true
+}
+$oldNonNullableValue = $oldNonNullable.TrimEnd("`r", "`n")
+if ($tableText.Contains($oldNonNullableValue)) {
+    $tableText = $tableText.Replace($oldNonNullableValue, $replacement)
+    $changedTableText = $true
+}
+if ($changedTableText) {
     [System.IO.File]::WriteAllText($table, $tableText, [System.Text.UTF8Encoding]::new($false))
-    Write-Host 'Replaced Table TextHeight Math.Max call with a Civil 3D 2023-safe comparison.' -ForegroundColor Green
+    Write-Host 'Repaired nullable Table TextHeight handling for Civil 3D 2023.' -ForegroundColor Green
 }
 else {
-    Write-Host 'Table TextHeight compatibility repair is already applied.' -ForegroundColor DarkGreen
+    Write-Host 'Nullable Table TextHeight compatibility repair is already applied.' -ForegroundColor DarkGreen
 }
-if ($tableText.Contains($oldTable)) {
-    throw 'Table TextHeight compatibility repair verification failed.'
+if (-not $tableText.Contains('double? cellTextHeight = table.Cells[row, column].TextHeight;') -or
+    -not $tableText.Contains('cellTextHeight.HasValue') -or
+    -not $tableText.Contains('cellTextHeight.Value')) {
+    throw 'Nullable Table TextHeight compatibility repair verification failed.'
 }
 
 Write-Host 'Final August Civil 3D 2023 compiler compatibility repair passed.' -ForegroundColor Cyan
