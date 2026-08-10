@@ -54,12 +54,13 @@ $finalRepair = Join-Path $stageRoot 'scripts\Repair-V60-RemainingCompatibility.p
 $productionExpansion = Join-Path $stageRoot 'scripts\Inject-ProductionExpansion-Civil3D2023.ps1'
 $augustBehavior = Join-Path $stageRoot 'scripts\Inject-August10BehaviorFixes-Civil3D2023.ps1'
 $cogoOverlapRepair = Join-Path $stageRoot 'scripts\Repair-CogoOverlap-Civil3D2023.ps1'
+$roadStyleRepair = Join-Path $stageRoot 'scripts\Repair-RoadStyleFallback-Civil3D2023.ps1'
 $closureValidation = Join-Path $stageRoot 'scripts\Validate-August10CommentClosure.ps1'
 $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
 $diagnose = Join-Path $stageRoot 'scripts\Diagnose-RoslynSourceCrash.ps1'
 $build = Join-Path $stageRoot 'scripts\Build-Install-Civil3D2023-DotNet.ps1'
 
-foreach ($required in @($restore, $repair, $finalRepair, $productionExpansion, $augustBehavior, $cogoOverlapRepair, $closureValidation, $sanitize, $diagnose, $build)) {
+foreach ($required in @($restore, $repair, $finalRepair, $productionExpansion, $augustBehavior, $cogoOverlapRepair, $roadStyleRepair, $closureValidation, $sanitize, $diagnose, $build)) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Required staged script was not found: $required"
     }
@@ -86,6 +87,10 @@ $global:LASTEXITCODE = 0
 
 Write-Host "`nRepairing COGO overlap movement bounds..." -ForegroundColor Cyan
 & $cogoOverlapRepair -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nRepairing road style fallback selection..." -ForegroundColor Cyan
+& $roadStyleRepair -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nValidating complete comment closure before compilation..." -ForegroundColor Cyan
