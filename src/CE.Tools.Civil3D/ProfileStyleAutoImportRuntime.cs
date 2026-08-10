@@ -125,11 +125,11 @@ namespace CETools.Civil3D
             }
             catch (TargetInvocationException exception)
             {
-                Exception inner = exception.InnerException ?? exception;
+                System.Exception inner = exception.InnerException ?? exception;
                 message = "Automatic style import warning: " + inner.Message;
                 return false;
             }
-            catch (Exception exception)
+            catch (System.Exception exception)
             {
                 message = "Automatic style import warning: " + exception.Message;
                 return false;
