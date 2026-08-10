@@ -133,8 +133,9 @@ namespace CETools.Civil3D
                 {
                     try
                     {
-                        double cellTextHeight = table.Cells[row, column].TextHeight;
-                        if (cellTextHeight > value) value = cellTextHeight;
+                        double? cellTextHeight = table.Cells[row, column].TextHeight;
+                        if (cellTextHeight.HasValue && cellTextHeight.Value > value)
+                            value = cellTextHeight.Value;
                     }
                     catch { }
                 }
