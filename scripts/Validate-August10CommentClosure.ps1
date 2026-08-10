@@ -32,6 +32,8 @@ $namibia = Read-Source 'NamibiaCoordinateRuntimeCommands.cs'
 $route = Read-Source 'RoutePlannerExpansionCommands.cs'
 $midblock = Read-Source 'MidblockSewerLayoutCommands.cs'
 $behavior = Read-Source 'AugustBehaviorCompletionCommands.cs'
+$sewerSequenceAuto = Read-Source 'SewerSequenceAutoProductionCommands.cs'
+$profileAutoImport = Read-Source 'ProfileStyleAutoImportRuntime.cs'
 $automatic = Read-Source 'AugustAutomaticRefreshManager.cs'
 $tableCell = Read-Source 'TableCellNavigationCommands.cs'
 $tablePresentation = Read-Source 'TablePresentationRepairCommands.cs'
@@ -57,16 +59,16 @@ $sewerExcavation = Read-Source 'SewerExcavationCommentCommands.cs'
 $requiredCommands = @(
     'CE_COMMENTCLOSURE','CE_ANNOTATIONREVIEW','CE_OVERLAPSMART','CE_ANNOTATIONRESTORE','CE_ANNOTATIONMASK','CE_ANNOTATIONDRAWORDER','CE_MLEADERTEXTABOVE','CE_BRANCHLABELLAYER',
     'CE_TABLESOURCEZOOM','CE_TABLECELLZOOM','CE_TABLEPRESENTATIONFIX','CE_FLANNOTREFRESH','CE_FLANNOTREFRESHSELECTED','CE_LANDXMLTOOLS','CE_LANDXMLIMPORT','CE_LANDXMLEXPORT','CE_EXPORTCADCOPY',
-    'CE_NETWORKMULTI','CE_SETTINGSMODE','CE_PROFILEBATCHSAFE','CE_COMMENTREFRESHALL',
+    'CE_NETWORKMULTI','CE_SETTINGSMODE','CE_PROFILEBATCHSAFE','CE_PROFILESTYLEAUTOIMPORT','CE_COMMENTREFRESHALL',
     'CE_NAMIBIALO','CE_COORDPICKMAP','CE_ROUTEPLANNER','CE_UTILITYFROMROADRESERVE','CE_MIDBLOCKSEWERLAYOUT',
-    'CE_JUNCTIONRETURNTYPE','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION','CE_ASSEMBLYMARKERS',
+    'CE_JUNCTIONRETURNTYPE','CE_SEWSEQPRODUCTION','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION','CE_ASSEMBLYMARKERS',
     'CE_ROADLAYOUTTOOLS','CE_ROADRESERVECENTERLINES','CE_ROADEDGES','CE_ROADSHOULDERS','CE_ROADJUNCTIONBULK','CE_ROADJUNCTIONTRIM',
     'CE_ROADNAMES','CE_ROADDIMENSIONS','CE_ROADJUNCTIONSETTINGOUT','CE_ROADLAYOUTREFRESH',
     'CE_PLATFORMTOOLS','CE_PLATFORMSLOPE','CE_PLATFORMSTEPOFFSETS','CE_PLATFORMDRAPE','CE_PLATFORMSURFACE',
     'CE_PLATFORMSETTINGOUT','CE_PLATFORMNAMES','CE_PLATFORMTABLE','CE_PLATFORMCUTFILL','CE_PLATFORMDRAWINGS','CE_PLATFORMREFRESH',
     'CE_BOUNDARYEDITTOOLS','CE_TRIMOUTSIDEMULTI','CE_TRIMINSIDEMULTI','CE_TRIMDELETEOUTSIDEMULTI','CE_TRIMDELETEINSIDEMULTI','CE_EXTENDOUTSIDEMULTI','CE_EXTENDINSIDEMULTI'
 )
-$combinedNew = $closure + "`n" + $namibia + "`n" + $route + "`n" + $midblock + "`n" + $behavior + "`n" + $automatic + "`n" + $tableCell + "`n" + $tablePresentation + "`n" + $selectedFeatureRefresh + "`n" + $leaderPlacement + "`n" + $branchLabels + "`n" + $annotationReview + "`n" + $platform + "`n" + $road + "`n" + $drawing
+$combinedNew = $closure + "`n" + $namibia + "`n" + $route + "`n" + $midblock + "`n" + $behavior + "`n" + $sewerSequenceAuto + "`n" + $profileAutoImport + "`n" + $automatic + "`n" + $tableCell + "`n" + $tablePresentation + "`n" + $selectedFeatureRefresh + "`n" + $leaderPlacement + "`n" + $branchLabels + "`n" + $annotationReview + "`n" + $platform + "`n" + $road + "`n" + $drawing
 foreach ($command in $requiredCommands) { Require $combinedNew ('"' + $command + '"') ('command ' + $command) }
 
 # Critical annotation behaviour.
@@ -95,10 +97,21 @@ foreach ($token in @('CE-SEWER-MIDBLOCK-CENTER','CE-SEWER-MIDBLOCK-OFFSET','Side
 
 # Road / assembly / utility behaviour.
 foreach ($token in @('CopyExtensionRecords','CE_ASSEMBLY_VISIBLE_MARKER','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION')) { Require $behavior $token 'junction/assembly/utility behaviour' }
+foreach ($token in @('CE_SEWSEQPRODUCTION queued','CE_SEWALIGN','Select main first')) { Require $sewerSequenceAuto $token 'sewer automatic sequence-to-alignment workflow' }
 Require $road 'model.Text("Geometry")' 'junction Arc/Polyline output choice'
 Require $roadProduction 'AugustRoadProfileDefaults.PreferredBandSet' 'requested default road profile band set'
 Require $roadProduction 'AugustRoadStyleDefaults.Resolve(' 'road-only style fallback'
 foreach ($token in @('text.Contains("pipe")','text.Contains("sewer")','text.Contains("water")','DefaultBandSet')) { Require $roadStyleDefaults $token 'road style preference/utility-style rejection' }
+
+# Missing bundled profile/band styles must import automatically before profile creation.
+foreach ($token in @('Road-Single-Band Set 1-Full Grid','FindBundledStyleSources','ExportStylesFromSource','StyleConflictResolverType.Rename','HasExpectedBandLibrary')) { Require $profileAutoImport $token 'automatic profile/band style import runtime' }
+foreach ($sourceCheck in @(
+    @{ Text=$roadProduction; Name='road' },
+    @{ Text=$sewerProduction; Name='sewer' },
+    @{ Text=$stormwaterProduction; Name='stormwater' },
+    @{ Text=$waterProduction; Name='water' })) {
+    Require $sourceCheck.Text 'ProfileStyleAutoImportRuntime.EnsureBundledProfileStyles' ($sourceCheck.Name + ' profile auto-import hook')
+}
 
 # Utility profiles must be isolated per alignment/branch so one bad object cannot roll back the whole batch.
 foreach ($token in @('CE_SEWPROFILE skipped {0}: {1}','new List<SewerAlignmentRecord> { record }','skipped branches: {3}')) { Require $sewerProduction $token 'sewer per-branch profile isolation' }
@@ -116,7 +129,8 @@ Require $universal 'BranchLabelLayerRuntime.Apply(document);' 'automatic branch-
 foreach ($token in @(
     'AugustGlobalShortcutManager.Initialize();','AugustAutomaticRefreshManager.Initialize();',
     'CE_COMMENTCLOSURE','CE_ANNOTATIONREVIEW','CE_MLEADERTEXTABOVE','CE_TABLEPRESENTATIONFIX','CE_TABLECELLZOOM','CE_FLANNOTREFRESHSELECTED','CE_BRANCHLABELLAYER',
-    'CE_NAMIBIALO','CE_ROUTEPLANNER','CE_NETWORKMULTI','CE_SETTINGSMODE','CE_PROFILEBATCHSAFE','CE_ASSEMBLYMARKERS','CE_JUNCTIONRETURNTYPE','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION')) {
+    'CE_NAMIBIALO','CE_ROUTEPLANNER','CE_MIDBLOCKSEWERLAYOUT','CE_NETWORKMULTI','CE_SETTINGSMODE','CE_PROFILESTYLEAUTOIMPORT','CE_PROFILEBATCHSAFE',
+    'CE_ASSEMBLYMARKERS','CE_JUNCTIONRETURNTYPE','CE_SEWSEQPRODUCTION','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION')) {
     Require $plugin $token 'staged ribbon/startup integration'
 }
 Require $dialogs '!CrossDrawingSettingsPreference.UseSavedProjectSettings' 'saved-vs-drawing settings priority'
@@ -131,10 +145,12 @@ foreach ($token in @(
     'Inject-ProductionExpansion-Civil3D2023.ps1',
     'Inject-August10BehaviorFixes-Civil3D2023.ps1',
     'Inject-FinalAnnotationReview2-Civil3D2023.ps1',
+    'Inject-FinalUtilityWorkflow-Civil3D2023.ps1',
     'Repair-CogoOverlap-Civil3D2023.ps1',
     'Repair-RoadStyleFallback-Civil3D2023.ps1',
     'Repair-BranchLabelRefresh-Civil3D2023.ps1',
     'Repair-MidblockRoutePlanner-Civil3D2023.ps1',
+    'Repair-ProfileStyleAutoImport-Civil3D2023.ps1',
     'Repair-UtilityProfileIsolation-Civil3D2023.ps1',
     'Validate-August10CommentClosure.ps1')) {
     Require $stage $token 'Civil 3D 2023 stage build gate'
@@ -143,8 +159,9 @@ foreach ($token in @(
 # Command declarations in the final command classes must remain unique.
 $newCommandFiles = @(
     'August10CommentClosureCommands.cs','NamibiaCoordinateRuntimeCommands.cs','RoutePlannerExpansionCommands.cs','MidblockSewerLayoutCommands.cs',
-    'AugustBehaviorCompletionCommands.cs','TableCellNavigationCommands.cs','TablePresentationRepairCommands.cs',
-    'SelectedFeatureLineRefreshCommands.cs','AnnotationLeaderPlacementCommands.cs','BranchLabelLayerCommands.cs','FinalAnnotationReviewCommands.cs',
+    'AugustBehaviorCompletionCommands.cs','SewerSequenceAutoProductionCommands.cs','ProfileStyleAutoImportRuntime.cs',
+    'TableCellNavigationCommands.cs','TablePresentationRepairCommands.cs','SelectedFeatureLineRefreshCommands.cs',
+    'AnnotationLeaderPlacementCommands.cs','BranchLabelLayerCommands.cs','FinalAnnotationReviewCommands.cs',
     'RoadLayoutProductionCommands.cs','PlatformProductionCommands.cs','MultiBoundaryEditCommands.cs'
 )
 $declarations = @{}
