@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -62,29 +63,7 @@ namespace CETools.Civil3D
                         for (int column = 0; column < table.Columns.Count; column++)
                         {
                             if (centre) table.Cells[row, column].Alignment = CellAlignment.MiddleCenter;
-                            if (showGrid)
-                            {
-                                try
-                                {
-                                    table.SetGridVisibility(
-                                        row,
-                                        column,
-                                        GridLineType.AllGridLines,
-                                        Autodesk.AutoCAD.DatabaseServices.Visibility.Visible);
-                                }
-                                catch
-                                {
-                                    // The cell-based overload is present on 2023, but keep a
-                                    // second safe route for drawings carrying older table data.
-                                    try
-                                    {
-#pragma warning disable 618
-                                        table.SetGridVisibility(true, (int)GridLineType.AllGridLines, (int)(RowType.DataRow | RowType.HeaderRow | RowType.TitleRow));
-#pragma warning restore 618
-                                    }
-                                    catch { }
-                                }
-                            }
+                            if (showGrid) SetCellGridVisible(table, row, column);
                         }
                     }
                     for (int column = 0; column < table.Columns.Count; column++)
@@ -97,6 +76,52 @@ namespace CETools.Civil3D
             }
             document.Editor.Regen();
             document.Editor.WriteMessage("\nCE_TABLEPRESENTATIONFIX complete. Tables repaired={0}.", changed);
+        }
+
+        private static void SetCellGridVisible(Table table, int row, int column)
+        {
+            if (table == null) return;
+            try
+            {
+                // Some AutoCAD releases expose the modern FormattedTableData-like
+                // cell overload directly on Table; discover it at runtime so the
+                // Civil 3D 2023 compiler is not tied to that overload.
+                MethodInfo method = table.GetType().GetMethod(
+                    "SetGridVisibility",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    new[]
+                    {
+                        typeof(int),
+                        typeof(int),
+                        typeof(GridLineType),
+                        typeof(Autodesk.AutoCAD.DatabaseServices.Visibility)
+                    },
+                    null);
+                if (method != null)
+                {
+                    method.Invoke(table, new object[]
+                    {
+                        row,
+                        column,
+                        GridLineType.AllGridLines,
+                        Autodesk.AutoCAD.DatabaseServices.Visibility.Visible
+                    });
+                    return;
+                }
+            }
+            catch { }
+
+            try
+            {
+#pragma warning disable 618
+                table.SetGridVisibility(
+                    true,
+                    (int)GridLineType.AllGridLines,
+                    (int)(RowType.DataRow | RowType.HeaderRow | RowType.TitleRow));
+#pragma warning restore 618
+            }
+            catch { }
         }
 
         private static double ReadRepresentativeTextHeight(Table table)
