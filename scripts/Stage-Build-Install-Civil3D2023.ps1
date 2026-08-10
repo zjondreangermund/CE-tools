@@ -52,11 +52,12 @@ $restore = Join-Path $stageRoot 'scripts\Restore-V60-ChunkedSources.ps1'
 $repair = Join-Path $stageRoot 'scripts\Repair-Civil3D2023-Compatibility.ps1'
 $finalRepair = Join-Path $stageRoot 'scripts\Repair-V60-RemainingCompatibility.ps1'
 $productionExpansion = Join-Path $stageRoot 'scripts\Inject-ProductionExpansion-Civil3D2023.ps1'
+$augustBehavior = Join-Path $stageRoot 'scripts\Inject-August10BehaviorFixes-Civil3D2023.ps1'
 $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
 $diagnose = Join-Path $stageRoot 'scripts\Diagnose-RoslynSourceCrash.ps1'
 $build = Join-Path $stageRoot 'scripts\Build-Install-Civil3D2023-DotNet.ps1'
 
-foreach ($required in @($restore, $repair, $finalRepair, $productionExpansion, $sanitize, $diagnose, $build)) {
+foreach ($required in @($restore, $repair, $finalRepair, $productionExpansion, $augustBehavior, $sanitize, $diagnose, $build)) {
     if (-not (Test-Path -LiteralPath $required)) {
         throw "Required staged script was not found: $required"
     }
@@ -73,8 +74,12 @@ $global:LASTEXITCODE = 0
 & $finalRepair -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
-Write-Host "`nIntegrating road, platform and multi-boundary production workflows..." -ForegroundColor Cyan
+Write-Host "`nIntegrating road, platform, route-planner and final comment workflows..." -ForegroundColor Cyan
 & $productionExpansion -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nIntegrating final August runtime behavior fixes..." -ForegroundColor Cyan
+& $augustBehavior -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nSanitizing recovered C# source encoding and hidden characters..." -ForegroundColor Cyan
