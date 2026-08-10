@@ -28,6 +28,7 @@ $namibia = Read-Source 'NamibiaCoordinateRuntimeCommands.cs'
 $route = Read-Source 'RoutePlannerExpansionCommands.cs'
 $behavior = Read-Source 'AugustBehaviorCompletionCommands.cs'
 $automatic = Read-Source 'AugustAutomaticRefreshManager.cs'
+$tableCell = Read-Source 'TableCellNavigationCommands.cs'
 $platform = Read-Source 'PlatformProductionCommands.cs'
 $road = Read-Source 'RoadLayoutProductionCommands.cs'
 $drawing = Read-Source 'MultiBoundaryEditCommands.cs'
@@ -38,7 +39,7 @@ $roadProduction = Read-Source 'RoadProductionCommentCommands.cs'
 
 $requiredCommands = @(
     'CE_COMMENTCLOSURE','CE_OVERLAPSMART','CE_ANNOTATIONRESTORE','CE_ANNOTATIONMASK','CE_ANNOTATIONDRAWORDER',
-    'CE_TABLESOURCEZOOM','CE_FLANNOTREFRESH','CE_LANDXMLTOOLS','CE_LANDXMLIMPORT','CE_LANDXMLEXPORT','CE_EXPORTCADCOPY',
+    'CE_TABLESOURCEZOOM','CE_TABLECELLZOOM','CE_FLANNOTREFRESH','CE_LANDXMLTOOLS','CE_LANDXMLIMPORT','CE_LANDXMLEXPORT','CE_EXPORTCADCOPY',
     'CE_NETWORKMULTI','CE_SETTINGSMODE','CE_PROFILEBATCHSAFE','CE_COMMENTREFRESHALL',
     'CE_NAMIBIALO','CE_COORDPICKMAP','CE_ROUTEPLANNER','CE_UTILITYFROMROADRESERVE',
     'CE_JUNCTIONRETURNTYPE','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION','CE_ASSEMBLYMARKERS',
@@ -48,7 +49,7 @@ $requiredCommands = @(
     'CE_PLATFORMSETTINGOUT','CE_PLATFORMNAMES','CE_PLATFORMTABLE','CE_PLATFORMCUTFILL','CE_PLATFORMDRAWINGS','CE_PLATFORMREFRESH',
     'CE_BOUNDARYEDITTOOLS','CE_TRIMOUTSIDEMULTI','CE_TRIMINSIDEMULTI','CE_TRIMDELETEOUTSIDEMULTI','CE_TRIMDELETEINSIDEMULTI','CE_EXTENDOUTSIDEMULTI','CE_EXTENDINSIDEMULTI'
 )
-$combinedNew = $closure + "`n" + $namibia + "`n" + $route + "`n" + $behavior + "`n" + $platform + "`n" + $road + "`n" + $drawing
+$combinedNew = $closure + "`n" + $namibia + "`n" + $route + "`n" + $behavior + "`n" + $automatic + "`n" + $tableCell + "`n" + $platform + "`n" + $road + "`n" + $drawing
 foreach ($command in $requiredCommands) { Require $combinedNew ('"' + $command + '"') ('command ' + $command) }
 
 # Critical behaviour markers.
@@ -57,6 +58,7 @@ foreach ($token in @('SchwarzeckA = 6377483.86528042','SchwarzeckInvF = 299.1528
 foreach ($token in @('CE-ROAD-CENTERLINE','CE-SEWER-ROUTE','CE-SW-ROUTE','CE-WATER-ROUTE','CE-BULK-WATER-ROUTE','Signed lateral offset')) { Require $route $token 'route planner road-reserve handoff' }
 foreach ($token in @('CopyExtensionRecords','CE_ASSEMBLY_VISIBLE_MARKER','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION')) { Require $behavior $token 'junction/assembly/utility behaviour' }
 foreach ($token in @('Document.CommandEnded += OnCommandEnded','UniversalDynamicRefreshManager.Queue()','PlatformDynamicRefreshManager.Queue()','ReadCommandName(args)')) { Require $automatic $token 'automatic linked refresh' }
+foreach ($token in @('table.HitTest(picked.PickedPoint','hit.Row','hit.Column','LinkedTableSourceNavigator.Discover')) { Require $tableCell $token 'linked table cell source navigation' }
 
 # The staged source must have the integration edits before this validator runs.
 foreach ($token in @('AugustGlobalShortcutManager.Initialize();','AugustAutomaticRefreshManager.Initialize();','CE_COMMENTCLOSURE','CE_NAMIBIALO','CE_ROUTEPLANNER','CE_NETWORKMULTI','CE_SETTINGSMODE','CE_PROFILEBATCHSAFE','CE_ASSEMBLYMARKERS','CE_JUNCTIONRETURNTYPE','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION')) { Require $plugin $token 'staged ribbon/startup integration' }
@@ -76,7 +78,7 @@ foreach ($token in @('Inject-ProductionExpansion-Civil3D2023.ps1','Inject-August
 # intentionally look for the grouped CommandMethod form, not ribbon/menu strings.
 $newCommandFiles = @(
     'August10CommentClosureCommands.cs','NamibiaCoordinateRuntimeCommands.cs','RoutePlannerExpansionCommands.cs',
-    'AugustBehaviorCompletionCommands.cs','RoadLayoutProductionCommands.cs','PlatformProductionCommands.cs','MultiBoundaryEditCommands.cs'
+    'AugustBehaviorCompletionCommands.cs','TableCellNavigationCommands.cs','RoadLayoutProductionCommands.cs','PlatformProductionCommands.cs','MultiBoundaryEditCommands.cs'
 )
 $declarations = @{}
 foreach ($name in $newCommandFiles) {
