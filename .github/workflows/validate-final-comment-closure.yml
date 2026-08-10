@@ -1,0 +1,61 @@
+name: Validate Final Comment Closure
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - 'src/CE.Tools.Civil3D/**'
+      - 'scripts/Inject-ProductionExpansion-Civil3D2023.ps1'
+      - 'scripts/Inject-August10BehaviorFixes-Civil3D2023.ps1'
+      - 'scripts/Inject-FinalAnnotationReview2-Civil3D2023.ps1'
+      - 'scripts/Inject-FinalUtilityWorkflow-Civil3D2023.ps1'
+      - 'scripts/Repair-CogoOverlap-Civil3D2023.ps1'
+      - 'scripts/Repair-RoadStyleFallback-Civil3D2023.ps1'
+      - 'scripts/Repair-BranchLabelRefresh-Civil3D2023.ps1'
+      - 'scripts/Repair-MidblockRoutePlanner-Civil3D2023.ps1'
+      - 'scripts/Repair-ProfileStyleAutoImport-Civil3D2023.ps1'
+      - 'scripts/Repair-UtilityProfileIsolation-Civil3D2023.ps1'
+      - 'scripts/Validate-August10CommentClosure.ps1'
+      - 'scripts/Stage-Build-Install-Civil3D2023.ps1'
+      - '.github/workflows/validate-final-comment-closure.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  validate-staged-source:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Run Civil 3D 2023 staging closure transforms
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $root = (Resolve-Path '.').ProviderPath
+
+          & (Join-Path $root 'scripts\Inject-ProductionExpansion-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Inject-August10BehaviorFixes-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Inject-FinalAnnotationReview2-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Inject-FinalUtilityWorkflow-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Repair-CogoOverlap-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Repair-RoadStyleFallback-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Repair-BranchLabelRefresh-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Repair-MidblockRoutePlanner-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Repair-ProfileStyleAutoImport-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Repair-UtilityProfileIsolation-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Validate-August10CommentClosure.ps1') -RepoRoot $root
+
+      - name: Check transformed source for conflict markers
+        shell: pwsh
+        run: |
+          $bad = Get-ChildItem 'src\CE.Tools.Civil3D' -Filter '*.cs' -File |
+            Select-String -Pattern '^(<<<<<<<|=======|>>>>>>>)' -List
+          if ($bad) {
+            $bad | ForEach-Object { Write-Host $_.Path }
+            throw 'Conflict markers remain in staged source.'
+          }
+          Write-Host 'Staged-source closure validation completed without conflict markers.' -ForegroundColor Green
