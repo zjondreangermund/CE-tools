@@ -131,7 +131,11 @@ namespace CETools.Civil3D
             for (int row = 0; row < table.Rows.Count; row++)
                 for (int column = 0; column < table.Columns.Count; column++)
                 {
-                    try { value = Math.Max(value, table.Cells[row, column].TextHeight); }
+                    try
+                    {
+                        double cellTextHeight = table.Cells[row, column].TextHeight;
+                        if (cellTextHeight > value) value = cellTextHeight;
+                    }
                     catch { }
                 }
             return value > 1e-9 ? value : 1.0;
