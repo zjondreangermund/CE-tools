@@ -80,20 +80,27 @@ namespace CETools.Civil3D
 
         private static List<ObjectId> FindTablesLinkedToSources(Database database, ISet<ObjectId> sources)
         {
-            var result = new List<ObjectId>();
+            var tableIds = new List<ObjectId>();
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
                 BlockTableRecord space = transaction.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(database), OpenMode.ForRead, false) as BlockTableRecord;
-                if (space == null) return result;
+                if (space == null) return tableIds;
                 foreach (ObjectId id in space)
                 {
-                    Table table;
-                    try { table = transaction.GetObject(id, OpenMode.ForRead, false) as Table; }
-                    catch { continue; }
-                    if (table == null) continue;
-                    List<ObjectId> discovered = LinkedTableSourceNavigator.Discover(database, id);
-                    if (discovered.Any(source => sources.Contains(source))) result.Add(id);
+                    try
+                    {
+                        if (transaction.GetObject(id, OpenMode.ForRead, false) is Table)
+                            tableIds.Add(id);
+                    }
+                    catch { }
                 }
+            }
+
+            var result = new List<ObjectId>();
+            foreach (ObjectId id in tableIds)
+            {
+                List<ObjectId> discovered = LinkedTableSourceNavigator.Discover(database, id);
+                if (discovered.Any(source => sources.Contains(source))) result.Add(id);
             }
             return result;
         }
