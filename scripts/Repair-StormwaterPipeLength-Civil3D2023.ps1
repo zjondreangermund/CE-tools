@@ -18,7 +18,7 @@ $newCall = '                double length = ReadPipeLength(pipe, start.Position,
 if ($text.Contains($oldCall)) {
     $text = $text.Replace($oldCall,$newCall)
 }
-elif (-not $text.Contains($newCall)) {
+elseif (-not $text.Contains($newCall)) {
     throw 'Stormwater ReadPipeLength call marker was not found.'
 }
 
