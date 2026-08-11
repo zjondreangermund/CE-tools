@@ -90,10 +90,11 @@ foreach ($token in @('FindTablesLinkedToSources','BindingFlags.NonPublic | Bindi
 # Namibia survey-grid transformation.
 foreach ($token in @('SchwarzeckA = 6377483.86528042','SchwarzeckInvF = 299.1528128','Dx = 616.0','Dy = 97.0','Dz = -251.0','LatitudeOriginDegrees = -22.0','GermanLegalMetre = 1.0000135965','TryParseAngle','FormatDms')) { Require $namibia $token 'Namibia LO transformation' }
 
-# Route-planner behaviour: road-reserve option and explicit Midblock centre + visible side offsets.
+# Route-planner behaviour: the legacy Midblock command remains available, while
+# Route Planner Option 2 must now hand off to the continuous production engine.
 foreach ($token in @('CE-ROAD-CENTERLINE','CE-SEWER-ROUTE','CE-SW-ROUTE','CE-WATER-ROUTE','CE-BULK-WATER-ROUTE','Signed lateral offset')) { Require $route $token 'route planner road-reserve handoff' }
-Require $route '"CE_MIDBLOCKSEWERLAYOUT"' 'Route Planner Option 2 Midblock final handoff'
-foreach ($token in @('CE-SEWER-MIDBLOCK-CENTER','CE-SEWER-MIDBLOCK-OFFSET','SideOffset','GetOffsetCurves','visible side offsets')) { Require $midblock $token 'Midblock sewer centre and parallel offset output' }
+Require $route '"CE_MIDBLOCKSEWERPRODUCTION"' 'Route Planner Option 2 continuous Midblock production handoff'
+foreach ($token in @('CE-SEWER-MIDBLOCK-CENTER','CE-SEWER-MIDBLOCK-OFFSET','SideOffset','GetOffsetCurves','visible side offsets')) { Require $midblock $token 'legacy Midblock sewer centre and parallel offset output remains available'
 
 # Road / assembly / utility behaviour.
 foreach ($token in @('CopyExtensionRecords','CE_ASSEMBLY_VISIBLE_MARKER','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION')) { Require $behavior $token 'junction/assembly/utility behaviour' }
