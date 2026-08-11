@@ -52,7 +52,7 @@ if ($text.Contains($oldDisciplinesValue)) {
     $text = $text.Replace($oldDisciplinesValue,$newDisciplines.TrimEnd("`r","`n"))
     Write-Host 'Expanded Project Style Centre to all production style disciplines.' -ForegroundColor Green
 }
-elif ($text.Contains('"Bulk Water"') -and $text.Contains('"Parking"') -and $text.Contains('"Flood"')) {
+elseif ($text.Contains('"Bulk Water"') -and $text.Contains('"Parking"') -and $text.Contains('"Flood"')) {
     Write-Host 'Project Style Centre discipline list is already complete.' -ForegroundColor DarkGreen
 }
 else { throw 'Project Style Centre discipline-list marker was not found.' }
@@ -117,7 +117,7 @@ if ($text.Contains($oldProfileFull)) {
     $text = $text.Replace($oldProfileFull,$newProfileFull)
     Write-Host 'Integrated automatic PVI parabolic vertical curves into CE_ROADPROFILEFULL.' -ForegroundColor Green
 }
-elif ($text.Contains($newProfileFull)) { Write-Host 'CE_ROADPROFILEFULL already includes vertical curves.' -ForegroundColor DarkGreen }
+elseif ($text.Contains($newProfileFull)) { Write-Host 'CE_ROADPROFILEFULL already includes vertical curves.' -ForegroundColor DarkGreen }
 else { throw 'CE_ROADPROFILEFULL command sequence marker not found.' }
 
 # Existing corridors can exist in Prospector while their display remains hidden.
