@@ -83,6 +83,37 @@ if (-not $text.Contains('                IsCancel = false,') -or -not $text.Cont
 }
 Write-Host 'Workflow/Production Centres now ignore Escape and close only from the explicit Close button.' -ForegroundColor Green
 
+# Every shared CE settings popup must use the same user-global defaults. Load the
+# global values last so the user's most recently saved settings win in every DWG;
+# still save the drawing-local copy for project portability.
+$text = ReadText $dialogs
+$loadAnchor = @'
+            if (document != null)
+                ProductionSettingsPersistenceStore.Load(document.Database, model);
+'@.TrimEnd("`r","`n")
+$loadReplacement = @'
+            if (document != null)
+                ProductionSettingsPersistenceStore.Load(document.Database, model);
+            // Latest user-global values intentionally win over drawing-local popup values.
+            CeGlobalProductionSettingsStore.Load(model);
+'@.TrimEnd("`r","`n")
+if (-not $text.Contains('            CeGlobalProductionSettingsStore.Load(model);')) {
+    if (-not $text.Contains($loadAnchor)) { throw 'Shared settings global-load marker was not found.' }
+    $text = $text.Replace($loadAnchor,$loadReplacement)
+}
+$saveAnchor = '                CrossDrawingProductionSettingsStore.Save(model);'
+if (-not $text.Contains('                CeGlobalProductionSettingsStore.Save(model);')) {
+    if (-not $text.Contains($saveAnchor)) { throw 'Shared settings global-save marker was not found.' }
+    $text = $text.Replace($saveAnchor,$saveAnchor + "`r`n                CeGlobalProductionSettingsStore.Save(model);")
+}
+WriteText $dialogs $text
+$text = ReadText $dialogs
+if (-not $text.Contains('CeGlobalProductionSettingsStore.Load(model);') -or
+    -not $text.Contains('CeGlobalProductionSettingsStore.Save(model);')) {
+    throw 'All-discipline cross-drawing settings persistence wiring failed.'
+}
+Write-Host 'All shared discipline settings now save and restore user-global values across drawings and Civil 3D sessions.' -ForegroundColor Green
+
 # Make the Project Style Centre expose every production discipline directly.
 $styleCentre = Required 'ProjectStyleCenterCommands.cs'
 $text = ReadText $styleCentre
@@ -188,11 +219,18 @@ if (-not $text.Contains('CeGlobalDisciplineStyleDefaults.Save(selection);') -or
     -not $text.Contains('CeGlobalDisciplineStyleDefaults.Read(discipline)')) {
     throw 'Global discipline style persistence validation failed.'
 }
+$text = ReadText $dialogs
+if (-not $text.Contains('CeGlobalProductionSettingsStore.Load(model);') -or
+    -not $text.Contains('CeGlobalProductionSettingsStore.Save(model);')) {
+    throw 'Global production settings persistence validation failed.'
+}
 $themeSource = ReadText (Required 'CeInterfaceTheme.cs')
-if (-not $themeSource.Contains('Keyboard.PreviewKeyDownEvent') -or
+if (-not $themeSource.Contains('using System.Windows.Controls.Primitives;') -or
+    -not $themeSource.Contains('Keyboard.PreviewKeyDownEvent') -or
     -not $themeSource.Contains('window is FloatingToolsWindow || window is DisciplineWorkflowWindow')) {
-    throw 'Global CE Escape protection validation failed.'
+    throw 'Global CE theme / Escape / DataGrid compatibility validation failed.'
 }
 if (-not (Test-Path -LiteralPath (Required 'CeGlobalDisciplineStyleDefaults.cs'))) { throw 'Global discipline style defaults source missing.' }
+if (-not (Test-Path -LiteralPath (Required 'CeGlobalProductionSettingsStore.cs'))) { throw 'Global production settings source missing.' }
 
-Write-Host 'Global CE interface theme / persistent Workflow Centre / cross-drawing style repair passed.' -ForegroundColor Cyan
+Write-Host 'Global CE interface theme / persistent Workflow Centre / all-discipline cross-drawing settings repair passed.' -ForegroundColor Cyan
