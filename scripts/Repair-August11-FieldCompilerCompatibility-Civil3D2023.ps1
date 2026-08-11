@@ -54,18 +54,15 @@ if ($text.Contains('hit != null && hit.Type == TableHitTestType.Cell')) {
     Write-Host 'Normalized TableHitTestInfo value-type handling.' -ForegroundColor Green
 }
 
-# Autodesk/Civil command registries are case-insensitive. Validate that the new
-# source itself no longer declares a duplicate CE_NETWORKMULTI command.
-$allAugust11 = @(
-    'August11ProductionCentreCommands.cs',
-    'August11NetworkBatchCommands.cs',
-    'August11MidblockSewerProductionCommands.cs',
-    'August11RoadCompletionCommands.cs',
-    'August11SurveyRuntimeCommands.cs'
-) | ForEach-Object { ReadText (Required $_) }
-$combined = $allAugust11 -join "`n"
-if ([regex]::Matches($combined,'"CE_NETWORKMULTI"',[System.Text.RegularExpressions.RegexOptions]::IgnoreCase).Count -gt 0) {
-    throw 'August11 source still declares/references the colliding CE_NETWORKMULTI command name unexpectedly.'
+# Verify the August11 batch source itself no longer DECLARES CE_NETWORKMULTI.
+# Other production-centre source may legitimately reference the established hub.
+$text = ReadText $network
+$duplicateDeclaration = '[CommandMethod("CE_TOOLS", "CE_NETWORKMULTI", CommandFlags.Modal)]'
+if ($text.Contains($duplicateDeclaration)) {
+    throw 'August11 network batch source still declares colliding CE_NETWORKMULTI CommandMethod.'
+}
+if (-not $text.Contains('[CommandMethod("CE_TOOLS", "CE_NETWORKBATCHTOOLS", CommandFlags.Modal)]')) {
+    throw 'August11 collision-safe CE_NETWORKBATCHTOOLS declaration is missing.'
 }
 
 Write-Host 'August 11 Civil 3D 2023 compiler compatibility guard passed.' -ForegroundColor Cyan
