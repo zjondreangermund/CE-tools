@@ -6,12 +6,8 @@ on:
     branches: [ main ]
     paths:
       - 'src/CE.Tools.Civil3D/**'
-      - 'scripts/*August11*.ps1'
+      - 'scripts/*.ps1'
       - 'scripts/Validate-CECommandWiring.py'
-      - 'scripts/Validate-CECommandWiring.ps1'
-      - 'scripts/Repair-StormwaterPipeLength-Civil3D2023.ps1'
-      - 'scripts/Repair-August10-CompilerErrors-Civil3D2023.ps1'
-      - 'scripts/Repair-CogoOverlap-Civil3D2023.ps1'
       - '.github/workflows/august11-field-completion-validation.yml'
 
 jobs:
@@ -32,19 +28,20 @@ jobs:
           $global:LASTEXITCODE = 0
           "CE_STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Parse all audit PowerShell
+      - name: Parse every CE Tools PowerShell helper
         shell: pwsh
         run: |
-          $auditScripts = Get-ChildItem -LiteralPath (Join-Path $env:CE_STAGE 'scripts') -Filter '*August11*.ps1' -File
-          $auditScripts += Get-Item -LiteralPath (Join-Path $env:CE_STAGE 'scripts/Validate-CECommandWiring.ps1')
-          $auditScripts += Get-Item -LiteralPath (Join-Path $env:CE_STAGE 'scripts/Repair-StormwaterPipeLength-Civil3D2023.ps1')
-          $auditScripts | Sort-Object FullName -Unique | ForEach-Object {
+          Get-ChildItem -LiteralPath (Join-Path $env:CE_STAGE 'scripts') -Filter '*.ps1' -File | ForEach-Object {
             $errors = $null
             $tokens = $null
             [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors) | Out-Null
             if ($errors -and $errors.Count -gt 0) {
-              $message = ($errors | ForEach-Object { $_.Message }) -join ' | '
+              $message = ($errors | ForEach-Object { "line $($_.Extent.StartLineNumber): $($_.Message)" }) -join ' | '
               throw "PowerShell parse error in $($_.Name): $message"
+            }
+            $text = [System.IO.File]::ReadAllText($_.FullName)
+            if ([regex]::IsMatch($text,'(?im)^\s*elif\s*\(')) {
+              throw "Invalid Python-style 'elif' found in PowerShell file $($_.Name)."
             }
           }
 
