@@ -60,6 +60,95 @@ elseif ($text.Contains('CeInterfaceTheme.RefreshOpenWindows();')) {
 }
 else { throw 'CE theme persistence Write marker was not found.' }
 
+# Keep the two welcome cards aligned even when the Engineering Intelligence title
+# wraps to two lines. A StackPanel lets the longer content push the button below
+# the card and WPF clips it on common 125%/150% display scales. Use fixed title,
+# flexible description and bottom button rows instead.
+$text = ReadText $production
+$oldCard = @'
+        private Border BuildCard(string title, string description, string command, Brush card, Brush foreground, Brush muted, Brush accent, int column)
+        {
+            var border = new Border { Background = card, CornerRadius = new CornerRadius(7), Margin = new Thickness(column == 0 ? 0 : 10, 0, column == 0 ? 10 : 0, 0), Padding = new Thickness(24), BorderBrush = accent, BorderThickness = new Thickness(1) };
+            var panel = new StackPanel();
+            panel.Children.Add(new TextBlock { Text = title, FontSize = 18, FontWeight = FontWeights.Bold, Foreground = foreground, TextWrapping = TextWrapping.Wrap });
+            panel.Children.Add(new TextBlock { Text = description, FontSize = 13, Foreground = muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 18, 0, 24), MinHeight = 82 });
+            var button = new Button { Content = "OPEN CENTRE  ›", Padding = new Thickness(14, 9, 14, 9), FontWeight = FontWeights.SemiBold };
+            button.Click += delegate { SelectedCommand = command; DialogResult = true; };
+            panel.Children.Add(button);
+            border.Child = panel;
+            Grid.SetColumn(border, column);
+            return border;
+        }
+'@.TrimEnd("`r","`n")
+$newCard = @'
+        private Border BuildCard(string title, string description, string command, Brush card, Brush foreground, Brush muted, Brush accent, int column)
+        {
+            var border = new Border
+            {
+                Background = card,
+                CornerRadius = new CornerRadius(7),
+                Margin = new Thickness(column == 0 ? 0 : 10, 0, column == 0 ? 10 : 0, 0),
+                Padding = new Thickness(24),
+                BorderBrush = accent,
+                BorderThickness = new Thickness(1)
+            };
+            var panel = new Grid();
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            panel.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+            panel.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+            var titleText = new TextBlock
+            {
+                Text = title,
+                FontSize = 18,
+                FontWeight = FontWeights.Bold,
+                Foreground = foreground,
+                TextWrapping = TextWrapping.Wrap,
+                MinHeight = 48,
+                VerticalAlignment = VerticalAlignment.Top
+            };
+            Grid.SetRow(titleText, 0);
+            panel.Children.Add(titleText);
+
+            var descriptionText = new TextBlock
+            {
+                Text = description,
+                FontSize = 13,
+                Foreground = muted,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 12, 0, 16),
+                VerticalAlignment = VerticalAlignment.Top
+            };
+            Grid.SetRow(descriptionText, 1);
+            panel.Children.Add(descriptionText);
+
+            var button = new Button
+            {
+                Content = "OPEN CENTRE  ›",
+                Padding = new Thickness(14, 8, 14, 8),
+                MinHeight = 42,
+                FontWeight = FontWeights.SemiBold,
+                VerticalContentAlignment = VerticalAlignment.Center,
+                HorizontalContentAlignment = HorizontalAlignment.Center
+            };
+            button.Click += delegate { SelectedCommand = command; DialogResult = true; };
+            Grid.SetRow(button, 2);
+            panel.Children.Add(button);
+            border.Child = panel;
+            Grid.SetColumn(border, column);
+            return border;
+        }
+'@.TrimEnd("`r","`n")
+if ($text.Contains($oldCard)) {
+    $text = $text.Replace($oldCard,$newCard)
+    WriteText $production $text
+    Write-Host 'Welcome cards now keep both OPEN CENTRE buttons fully visible and aligned.' -ForegroundColor Green
+}
+elseif ($text.Contains('            Grid.SetRow(button, 2);') -and $text.Contains('                MinHeight = 48,')) {
+    Write-Host 'Scaled-display welcome card layout repair is already present.' -ForegroundColor DarkGreen
+}
+else { throw 'CE welcome BuildCard layout marker was not found.' }
+
 # Workflow/Production Centres must stay open on Escape. Do not use WPF's
 # IsCancel behavior on their explicit Close button; only a real button click closes it.
 $dialogs = Required 'DisciplineWorkflowDialogs.cs'
@@ -214,6 +303,9 @@ $text = ReadText $plugin
 if (-not $text.Contains('CeInterfaceTheme.Initialize();')) { throw 'Global CE theme startup hook validation failed.' }
 $text = ReadText $production
 if (-not $text.Contains('CeInterfaceTheme.RefreshOpenWindows();')) { throw 'Global CE theme refresh validation failed.' }
+if (-not $text.Contains('            Grid.SetRow(button, 2);') -or -not $text.Contains('                MinHeight = 48,')) {
+    throw 'Welcome scaled-display card layout validation failed.'
+}
 $text = ReadText $discipline
 if (-not $text.Contains('CeGlobalDisciplineStyleDefaults.Save(selection);') -or
     -not $text.Contains('CeGlobalDisciplineStyleDefaults.Read(discipline)')) {
@@ -233,4 +325,4 @@ if (-not $themeSource.Contains('using System.Windows.Controls.Primitives;') -or
 if (-not (Test-Path -LiteralPath (Required 'CeGlobalDisciplineStyleDefaults.cs'))) { throw 'Global discipline style defaults source missing.' }
 if (-not (Test-Path -LiteralPath (Required 'CeGlobalProductionSettingsStore.cs'))) { throw 'Global production settings source missing.' }
 
-Write-Host 'Global CE interface theme / persistent Workflow Centre / all-discipline cross-drawing settings repair passed.' -ForegroundColor Cyan
+Write-Host 'Global CE interface theme / persistent Workflow Centre / all-discipline cross-drawing settings / welcome layout repair passed.' -ForegroundColor Cyan
