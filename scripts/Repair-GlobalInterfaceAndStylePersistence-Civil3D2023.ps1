@@ -61,25 +61,9 @@ elseif ($text.Contains('CeInterfaceTheme.RefreshOpenWindows();')) {
 else { throw 'CE theme persistence Write marker was not found.' }
 
 # Keep the two welcome cards aligned even when the Engineering Intelligence title
-# wraps to two lines. A StackPanel lets the longer content push the button below
-# the card and WPF clips it on common 125%/150% display scales. Use fixed title,
-# flexible description and bottom button rows instead.
+# wraps to two lines. Match the whole BuildCard method structurally instead of
+# relying on one exact old implementation/newline style from a previous stage.
 $text = ReadText $production
-$oldCard = @'
-        private Border BuildCard(string title, string description, string command, Brush card, Brush foreground, Brush muted, Brush accent, int column)
-        {
-            var border = new Border { Background = card, CornerRadius = new CornerRadius(7), Margin = new Thickness(column == 0 ? 0 : 10, 0, column == 0 ? 10 : 0, 0), Padding = new Thickness(24), BorderBrush = accent, BorderThickness = new Thickness(1) };
-            var panel = new StackPanel();
-            panel.Children.Add(new TextBlock { Text = title, FontSize = 18, FontWeight = FontWeights.Bold, Foreground = foreground, TextWrapping = TextWrapping.Wrap });
-            panel.Children.Add(new TextBlock { Text = description, FontSize = 13, Foreground = muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 18, 0, 24), MinHeight = 82 });
-            var button = new Button { Content = "OPEN CENTRE  ›", Padding = new Thickness(14, 9, 14, 9), FontWeight = FontWeights.SemiBold };
-            button.Click += delegate { SelectedCommand = command; DialogResult = true; };
-            panel.Children.Add(button);
-            border.Child = panel;
-            Grid.SetColumn(border, column);
-            return border;
-        }
-'@.TrimEnd("`r","`n")
 $newCard = @'
         private Border BuildCard(string title, string description, string command, Brush card, Brush foreground, Brush muted, Brush accent, int column)
         {
@@ -139,15 +123,27 @@ $newCard = @'
             return border;
         }
 '@.TrimEnd("`r","`n")
-if ($text.Contains($oldCard)) {
-    $text = $text.Replace($oldCard,$newCard)
+if ($text.Contains('            Grid.SetRow(button, 2);') -and
+    $text.Contains('                MinHeight = 48,') -and
+    $text.Contains('            var panel = new Grid();')) {
+    Write-Host 'Scaled-display welcome card layout repair is already present.' -ForegroundColor DarkGreen
+}
+else {
+    $cardPattern = '(?s)        private Border BuildCard\(string title, string description, string command, Brush card, Brush foreground, Brush muted, Brush accent, int column\)\s*\{.*?\r?\n        \}(?=\r?\n    \})'
+    $cardRegex = [regex]::new($cardPattern,[System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if (-not $cardRegex.IsMatch($text)) {
+        throw 'CE welcome BuildCard method could not be isolated for layout repair.'
+    }
+    $text = $cardRegex.Replace($text,$newCard,1)
     WriteText $production $text
     Write-Host 'Welcome cards now keep both OPEN CENTRE buttons fully visible and aligned.' -ForegroundColor Green
 }
-elseif ($text.Contains('            Grid.SetRow(button, 2);') -and $text.Contains('                MinHeight = 48,')) {
-    Write-Host 'Scaled-display welcome card layout repair is already present.' -ForegroundColor DarkGreen
+$text = ReadText $production
+if (-not $text.Contains('            Grid.SetRow(button, 2);') -or
+    -not $text.Contains('                MinHeight = 48,') -or
+    -not $text.Contains('            var panel = new Grid();')) {
+    throw 'CE welcome BuildCard layout repair verification failed.'
 }
-else { throw 'CE welcome BuildCard layout marker was not found.' }
 
 # Workflow/Production Centres must stay open on Escape. Do not use WPF's
 # IsCancel behavior on their explicit Close button; only a real button click closes it.
