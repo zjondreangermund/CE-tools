@@ -62,7 +62,10 @@ $midblockRepair = Join-Path $stageRoot 'scripts\Repair-MidblockRoutePlanner-Civi
 $profileStyleAutoImport = Join-Path $stageRoot 'scripts\Repair-ProfileStyleAutoImport-Civil3D2023.ps1'
 $utilityProfileIsolation = Join-Path $stageRoot 'scripts\Repair-UtilityProfileIsolation-Civil3D2023.ps1'
 $augustCompilerRepair = Join-Path $stageRoot 'scripts\Repair-August10-CompilerErrors-Civil3D2023.ps1'
+$august11FieldIntegration = Join-Path $stageRoot 'scripts\Inject-August11FieldCompletion-Civil3D2023.ps1'
+$august11CompilerRepair = Join-Path $stageRoot 'scripts\Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1'
 $closureValidation = Join-Path $stageRoot 'scripts\Validate-August10CommentClosure.ps1'
+$august11Validation = Join-Path $stageRoot 'scripts\Validate-August11FieldCompletion.ps1'
 $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
 $diagnose = Join-Path $stageRoot 'scripts\Diagnose-RoslynSourceCrash.ps1'
 $build = Join-Path $stageRoot 'scripts\Build-Install-Civil3D2023-DotNet.ps1'
@@ -82,7 +85,10 @@ foreach ($required in @(
     $profileStyleAutoImport,
     $utilityProfileIsolation,
     $augustCompilerRepair,
+    $august11FieldIntegration,
+    $august11CompilerRepair,
     $closureValidation,
+    $august11Validation,
     $sanitize,
     $diagnose,
     $build)) {
@@ -146,8 +152,20 @@ Write-Host "`nApplying final Civil 3D 2023 compiler compatibility fixes..." -For
 & $augustCompilerRepair -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
-Write-Host "`nValidating complete comment closure before compilation..." -ForegroundColor Cyan
+Write-Host "`nIntegrating August 11 field-test production, network, road, survey and table completion..." -ForegroundColor Cyan
+& $august11FieldIntegration -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nApplying August 11 Civil 3D 2023 compiler compatibility guard..." -ForegroundColor Cyan
+& $august11CompilerRepair -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nValidating previous comment closure before compilation..." -ForegroundColor Cyan
 & $closureValidation -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nValidating August 11 field-test comment closure before compilation..." -ForegroundColor Cyan
+& $august11Validation -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nSanitizing recovered C# source encoding and hidden characters..." -ForegroundColor Cyan
