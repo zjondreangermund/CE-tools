@@ -17,7 +17,10 @@ function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText
 
 # Run the field-completion mapping passes here so the existing one-click
 # Stage-Build script does not need another orchestration layer.
-foreach ($completionName in @('Inject-August11FieldCompletion2-Civil3D2023.ps1','Inject-August11FieldCompletion3-Civil3D2023.ps1')) {
+foreach ($completionName in @(
+    'Inject-August11FieldCompletion2-Civil3D2023.ps1',
+    'Inject-August11FieldCompletion3-Civil3D2023.ps1',
+    'Inject-August11FieldCompletion4-Civil3D2023.ps1')) {
     $completion = Join-Path $root ('scripts\' + $completionName)
     if (-not (Test-Path -LiteralPath $completion -PathType Leaf)) {
         throw "August 11 completion pass was not found: $completion"
