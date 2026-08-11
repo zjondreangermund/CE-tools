@@ -105,13 +105,16 @@ if (-not $text.Contains('[CommandMethod("CE_TOOLS", "CE_NETWORKBATCHTOOLS", Comm
     throw 'August11 collision-safe CE_NETWORKBATCHTOOLS declaration is missing.'
 }
 
-# Focused final validation covers PowerShell parsing plus final behavioral hooks.
-$finalValidator = Join-Path $root 'scripts\Validate-August11FieldCompletion2.ps1'
-if (-not (Test-Path -LiteralPath $finalValidator -PathType Leaf)) {
-    throw "August 11 focused final validator was not found: $finalValidator"
+# Focused field validator and generic PowerShell command/behavior validator are
+# both required on the user's one-click build path before MSBuild.
+foreach ($validatorName in @('Validate-August11FieldCompletion2.ps1','Validate-CECommandWiring.ps1')) {
+    $validator = Join-Path $root ('scripts\' + $validatorName)
+    if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) {
+        throw "August 11 validator was not found: $validator"
+    }
+    Unblock-File -LiteralPath $validator -ErrorAction SilentlyContinue
+    & $validator -RepoRoot $root
+    $global:LASTEXITCODE = 0
 }
-Unblock-File -LiteralPath $finalValidator -ErrorAction SilentlyContinue
-& $finalValidator -RepoRoot $root
-$global:LASTEXITCODE = 0
 
-Write-Host 'August 11 Civil 3D 2023 compiler compatibility guard passed.' -ForegroundColor Cyan
+Write-Host 'August 11 Civil 3D 2023 compiler compatibility and wiring guard passed.' -ForegroundColor Cyan
