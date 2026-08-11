@@ -60,6 +60,28 @@ elseif ($text.Contains('CeInterfaceTheme.RefreshOpenWindows();')) {
 }
 else { throw 'CE theme persistence Write marker was not found.' }
 
+# Workflow/Production Centres must stay open on Escape. Do not use WPF's
+# IsCancel behavior on their explicit Close button; only a real button click closes it.
+$dialogs = Required 'DisciplineWorkflowDialogs.cs'
+$text = ReadText $dialogs
+if ($text.Contains('                Content = "Close",`r`n                IsCancel = true,')) {
+    $text = $text.Replace('                Content = "Close",`r`n                IsCancel = true,','                Content = "Close",`r`n                IsCancel = false,')
+}
+elseif ($text.Contains("                Content = \"Close\",`n                IsCancel = true,")) {
+    $text = $text.Replace("                Content = \"Close\",`n                IsCancel = true,","                Content = \"Close\",`n                IsCancel = false,")
+}
+if (-not $text.Contains('            close.Click += delegate { Close(); };')) {
+    $closeAnchor = '            Grid.SetRow(close, 3);'
+    if (-not $text.Contains($closeAnchor)) { throw 'Workflow Centre explicit Close button marker was not found.' }
+    $text = $text.Replace($closeAnchor,'            close.Click += delegate { Close(); };' + "`r`n" + $closeAnchor)
+}
+WriteText $dialogs $text
+$text = ReadText $dialogs
+if (-not $text.Contains('                IsCancel = false,') -or -not $text.Contains('            close.Click += delegate { Close(); };')) {
+    throw 'Persistent Workflow Centre Escape/Close repair validation failed.'
+}
+Write-Host 'Workflow/Production Centres now ignore Escape and close only from the explicit Close button.' -ForegroundColor Green
+
 # Make the Project Style Centre expose every production discipline directly.
 $styleCentre = Required 'ProjectStyleCenterCommands.cs'
 $text = ReadText $styleCentre
@@ -165,7 +187,11 @@ if (-not $text.Contains('CeGlobalDisciplineStyleDefaults.Save(selection);') -or
     -not $text.Contains('CeGlobalDisciplineStyleDefaults.Read(discipline)')) {
     throw 'Global discipline style persistence validation failed.'
 }
-if (-not (Test-Path -LiteralPath (Required 'CeInterfaceTheme.cs'))) { throw 'Global CE interface theme source missing.' }
+$themeSource = ReadText (Required 'CeInterfaceTheme.cs')
+if (-not $themeSource.Contains('Keyboard.PreviewKeyDownEvent') -or
+    -not $themeSource.Contains('window is FloatingToolsWindow || window is DisciplineWorkflowWindow')) {
+    throw 'Global CE Escape protection validation failed.'
+}
 if (-not (Test-Path -LiteralPath (Required 'CeGlobalDisciplineStyleDefaults.cs'))) { throw 'Global discipline style defaults source missing.' }
 
 Write-Host 'Global CE interface theme / persistent Workflow Centre / cross-drawing style repair passed.' -ForegroundColor Cyan
