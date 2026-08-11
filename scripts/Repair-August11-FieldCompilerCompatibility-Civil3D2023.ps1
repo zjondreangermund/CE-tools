@@ -15,13 +15,14 @@ function Required([string]$name) {
 function ReadText([string]$path) { [System.IO.File]::ReadAllText($path) }
 function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false)) }
 
-# Run all field-completion and audit-repair passes here so the existing one-click
-# Stage-Build script gets the same fully audited source before MSBuild.
+# Run all field-completion, behavioral-audit and command-sequencing passes here
+# so the existing one-click Stage-Build script gets the same audited source.
 foreach ($completionName in @(
     'Inject-August11FieldCompletion2-Civil3D2023.ps1',
     'Inject-August11FieldCompletion3-Civil3D2023.ps1',
     'Inject-August11FieldCompletion4-Civil3D2023.ps1',
-    'Inject-August11AuditRepairs-Civil3D2023.ps1')) {
+    'Inject-August11AuditRepairs-Civil3D2023.ps1',
+    'Inject-August11CommandSequenceRepair-Civil3D2023.ps1')) {
     $completion = Join-Path $root ('scripts\' + $completionName)
     if (-not (Test-Path -LiteralPath $completion -PathType Leaf)) {
         throw "August 11 completion/audit pass was not found: $completion"
