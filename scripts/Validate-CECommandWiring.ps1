@@ -102,6 +102,12 @@ Need ($sewer.Contains('pipe.Length3DCenterToCenter')) 'Sewer sequence does not u
 Need ($sewer.Contains('int nodeSequence = 1;')) 'Sewer manhole sequence does not start at 1'
 Need ($sewer.Contains('structure.Name = "MH"')) 'Sewer manhole naming marker is missing'
 
+$vertex = Text 'VertexSettingOutCommands.cs'
+Need ($vertex.Contains('table.Cells[row, 4].TextString = (yFirst ? displayY : displayX)')) 'Y-first table heading/value mapping is incorrect'
+Need ($vertex.Contains('table.Cells[row, 5].TextString = (yFirst ? displayX : displayY)')) 'Y-first second table coordinate mapping is incorrect'
+Need ($vertex.Contains('(yFirst ? displayY : displayX)') -and $vertex.Contains('(yFirst ? displayX : displayY)')) 'Y-first MText/MLeader value mapping is incorrect'
+Need (-not $vertex.Contains('table.Cells[row, 4].TextString = displayX')) 'old fixed-X first table column mapping remains'
+
 $platform = Text 'PlatformProductionCommands.cs'
 Need (-not $platform.Contains('else featureLine.SetPointElevation(index, elevation);')) 'unsafe Platform AllPoints numeric-index setter remains'
 Need (-not $platform.Contains('child.SetPointElevation(index, sourcePoint.Z + dz);')) 'unsafe Platform stepped-offset numeric-index setter remains'
