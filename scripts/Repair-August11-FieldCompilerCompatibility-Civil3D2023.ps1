@@ -103,4 +103,15 @@ if (-not $text.Contains('[CommandMethod("CE_TOOLS", "CE_NETWORKBATCHTOOLS", Comm
     throw 'August11 collision-safe CE_NETWORKBATCHTOOLS declaration is missing.'
 }
 
+# Focused final validation covers PowerShell parsing plus the final bellmouth,
+# initial COGO restore, main-ribbon home/preset/profile hooks and corridor/profile
+# completion that were added after the first large closure validator.
+$finalValidator = Join-Path $root 'scripts\Validate-August11FieldCompletion2.ps1'
+if (-not (Test-Path -LiteralPath $finalValidator -PathType Leaf)) {
+    throw "August 11 focused final validator was not found: $finalValidator"
+}
+Unblock-File -LiteralPath $finalValidator -ErrorAction SilentlyContinue
+& $finalValidator -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 Write-Host 'August 11 Civil 3D 2023 compiler compatibility guard passed.' -ForegroundColor Cyan
