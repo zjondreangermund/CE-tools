@@ -20,17 +20,55 @@ $production = Need 'August11ProductionCentreCommands.cs'
 $roadCorridor = Need 'RoadCorridorCompletionCommands.cs'
 $vertical = Need 'August11RoadVerticalCurveCommands.cs'
 
-# Every Project Style Centre save now snapshots that discipline separately.
+# Project Style Centre must expose every discipline that owns a production-style
+# preset. This lets Bulk Water, Parking and Flood save directly rather than only
+# through the copy-preset helper.
 $text = ReadText $styleCentre
+$oldDisciplines = @'
+        private static readonly string[] Disciplines =
+        {
+            "Roads",
+            "Stormwater",
+            "Sewer",
+            "Water",
+            "Platforms"
+        };
+'@
+$newDisciplines = @'
+        private static readonly string[] Disciplines =
+        {
+            "Roads",
+            "Stormwater",
+            "Sewer",
+            "Water",
+            "Platforms",
+            "Bulk Water",
+            "Parking",
+            "Flood"
+        };
+'@
+$oldDisciplinesValue = $oldDisciplines.TrimEnd("`r","`n")
+if ($text.Contains($oldDisciplinesValue)) {
+    $text = $text.Replace($oldDisciplinesValue,$newDisciplines.TrimEnd("`r","`n"))
+    Write-Host 'Expanded Project Style Centre to all production style disciplines.' -ForegroundColor Green
+}
+elif ($text.Contains('"Bulk Water"') -and $text.Contains('"Parking"') -and $text.Contains('"Flood"')) {
+    Write-Host 'Project Style Centre discipline list is already complete.' -ForegroundColor DarkGreen
+}
+else { throw 'Project Style Centre discipline-list marker was not found.' }
+
+# Every Project Style Centre save now snapshots that discipline separately.
 $saveMarker = '                WriteSelection(document.Database, selection);'
 if (-not $text.Contains('August11DisciplineStylePresetManager.SavePreset(document.Database, selection);')) {
     if (-not $text.Contains($saveMarker)) { throw 'Project Style Centre save marker not found.' }
     $text = $text.Replace($saveMarker,$saveMarker + "`r`n                August11DisciplineStylePresetManager.SavePreset(document.Database, selection);")
-    WriteText $styleCentre $text
     Write-Host 'Integrated automatic per-discipline style-preset snapshot on CE_PROJECTSTYLES save.' -ForegroundColor Green
 }
+WriteText $styleCentre $text
 
-# Activating a Production Centre also activates its discipline's stored preset.
+# Activating a Production Centre must never inherit the previous discipline when
+# the target preset has not yet been saved. ActivateForProduction loads the saved
+# preset or deliberately switches the active selection to clean drawing defaults.
 $text = ReadText $production
 $activations = [ordered]@{
     'RunCentre("PLATFORM PRODUCTION"' = 'Platforms'
@@ -45,22 +83,28 @@ $activations = [ordered]@{
 foreach ($pair in $activations.GetEnumerator()) {
     $marker = $pair.Key
     $discipline = $pair.Value
-    $activation = 'August11DisciplineStylePresetManager.Activate(Active() == null ? null : Active().Database, "' + $discipline + '");'
+    $activation = 'August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "' + $discipline + '");'
     if ($text.Contains($activation)) { continue }
+    $legacyActivation = 'August11DisciplineStylePresetManager.Activate(Active() == null ? null : Active().Database, "' + $discipline + '");'
+    if ($text.Contains($legacyActivation)) {
+        $text = $text.Replace($legacyActivation,$activation)
+        Write-Host "Upgraded production style activation for $discipline." -ForegroundColor Green
+        continue
+    }
     $index = $text.IndexOf($marker,[System.StringComparison]::Ordinal)
     if ($index -lt 0) { throw "Production Centre marker not found for discipline $discipline" }
     $lineStart = $text.LastIndexOf("`n",$index)
     if ($lineStart -lt 0) { $lineStart = 0 } else { $lineStart++ }
     $indent = $text.Substring($lineStart,$index-$lineStart)
     $text = $text.Insert($lineStart,$indent + $activation + "`r`n")
-    Write-Host "Integrated style-preset activation for $discipline production." -ForegroundColor Green
+    Write-Host "Integrated safe style-preset activation for $discipline production." -ForegroundColor Green
 }
 
 # Expose preset review/copy next to the central style picker.
 $settingsAnchor = '                Action("Project Style Centre", "CE_PROJECTSTYLES", "Select shared discipline Civil 3D styles.", "01 SETTINGS"),'
 if (-not $text.Contains('Action("Discipline Style Presets", "CE_DISCIPLINESTYLEPRESETS"')) {
     if (-not $text.Contains($settingsAnchor)) { throw 'Project Production style-settings marker not found.' }
-    $presetAction = '                Action("Discipline Style Presets", "CE_DISCIPLINESTYLEPRESETS", "Review, copy or activate independent Roads/SW/Sewer/Water/Platform style selections from the shared style library.", "01 SETTINGS"),'
+    $presetAction = '                Action("Discipline Style Presets", "CE_DISCIPLINESTYLEPRESETS", "Review, copy or activate independent Roads/SW/Sewer/Water/Platform/Bulk Water/Parking/Flood selections from the shared style library.", "01 SETTINGS"),'
     $text = $text.Replace($settingsAnchor,$settingsAnchor + "`r`n" + $presetAction)
 }
 WriteText $production $text
