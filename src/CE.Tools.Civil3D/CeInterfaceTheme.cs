@@ -1,6 +1,7 @@
 using System;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Input;
 using System.Windows.Media;
 
 namespace CETools.Civil3D
@@ -26,6 +27,11 @@ namespace CETools.Civil3D
                     FrameworkElement.LoadedEvent,
                     new RoutedEventHandler(OnWindowLoaded),
                     true);
+                EventManager.RegisterClassHandler(
+                    typeof(Window),
+                    Keyboard.PreviewKeyDownEvent,
+                    new KeyEventHandler(OnWindowPreviewKeyDown),
+                    true);
             }
             catch { }
         }
@@ -36,8 +42,8 @@ namespace CETools.Civil3D
             Initialize();
             if (!IsCeWindow(window)) return;
 
-            // The welcome screen has its own card layout but reads the exact same
-            // persisted theme. Do not flatten its intentionally branded colours.
+            // The welcome screen has its own branded card layout but reads the
+            // exact same persisted theme. Do not flatten those custom cards.
             if (window is CeWelcomeWindow) return;
 
             bool light = string.Equals(CeThemeStore.Read(), "Light", StringComparison.OrdinalIgnoreCase);
@@ -87,6 +93,19 @@ namespace CETools.Civil3D
         private static void OnWindowLoaded(object sender, RoutedEventArgs args)
         {
             Apply(sender as Window);
+        }
+
+        private static void OnWindowPreviewKeyDown(object sender, KeyEventArgs args)
+        {
+            if (args == null || args.Key != Key.Escape) return;
+            Window window = sender as Window;
+            if (window == null) return;
+
+            // Workflow and production centres are persistent navigation windows.
+            // Escape must never dismiss them accidentally. Settings dialogs keep
+            // their normal Escape/Cancel behaviour.
+            if (window is FloatingToolsWindow || window is DisciplineWorkflowWindow)
+                args.Handled = true;
         }
 
         private static bool IsCeWindow(Window window)
