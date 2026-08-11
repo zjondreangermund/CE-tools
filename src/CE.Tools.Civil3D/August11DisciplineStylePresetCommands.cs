@@ -25,7 +25,7 @@ namespace CETools.Civil3D
             if (document == null) return;
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Discipline Style Presets",
-                "The Civil 3D style catalogue is shared by the project, but each discipline stores its own selected style names. CE_PROJECTSTYLES automatically snapshots Roads/Stormwater/Sewer/Water/Platforms when saved; this window can also copy/apply/review presets explicitly.");
+                "The Civil 3D style catalogue is shared by the project, but each discipline stores its own selected style names. CE_PROJECTSTYLES automatically snapshots the selected discipline when saved; this window can also copy/apply/review presets explicitly.");
             model.AddChoice("Discipline", "01 Preset", "Discipline", "Roads", "Choose the discipline preset.", Disciplines);
             model.AddChoice("Action", "02 Action", "Action", "Review preset", "Review, activate, or copy the current Project Style Centre selection into the chosen discipline preset.", new[] { "Review preset", "Activate preset", "Copy current Project Style selection to preset" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
@@ -147,6 +147,29 @@ namespace CETools.Civil3D
             if (!preset.Exists) return false;
             WriteRecord(database, ActiveRecordName, preset);
             return true;
+        }
+
+        internal static bool ActivateForProduction(Database database, string discipline)
+        {
+            if (database == null) return false;
+            ProjectStyleSelection preset = ReadPreset(database, discipline);
+            if (preset.Exists)
+            {
+                WriteRecord(database, ActiveRecordName, preset);
+                return true;
+            }
+
+            // Never let a previously active Roads/Sewer/etc. selection leak into
+            // a different production discipline. Until this discipline has its
+            // own saved preset, activate an empty selection so downstream style
+            // resolvers use their drawing/discipline defaults.
+            var clean = new ProjectStyleSelection
+            {
+                Exists = true,
+                Discipline = string.IsNullOrWhiteSpace(discipline) ? "Roads" : discipline.Trim()
+            };
+            WriteRecord(database, ActiveRecordName, clean);
+            return false;
         }
 
         private static void WriteRecord(Database database, string recordName, ProjectStyleSelection selection)
