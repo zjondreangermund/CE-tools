@@ -128,10 +128,14 @@ Require ($closure.Contains('August11SurveyRuntimeCommands.CaptureCogoInitialOffs
 Require ($cogo.Contains('August11SurveyRuntimeCommands.CaptureCogoInitialOffsets(document);')) 'COGO overlap does not preserve initial label position'
 Require ($universal.Contains('August11SurveyRuntimeCommands.RefreshMultiSurfaceTables(document);')) 'multi-surface tables are not part of universal refresh'
 
-# Robust table navigation.
-foreach ($token in @('CE_TABLECELLZOOM','Table Source Navigation','All linked source objects','FeatureLine','Handle')) {
+# Robust table source navigation: source type is discovered dynamically from the live Entity,
+# so validation must not require a hard-coded Civil class token such as "FeatureLine".
+foreach ($token in @('CE_TABLECELLZOOM','Table Source Navigation','All linked source objects','Handle')) {
     Require ($table.Contains($token)) "table source navigation token '$token' missing"
 }
+Require ($table.Contains('pipe, structure, feature line, alignment, profile')) 'table source navigator does not advertise feature-line/design-object support'
+Require ($table.Contains('entity.GetType().Name')) 'table source navigator does not identify source types dynamically'
+Require ($table.Contains('Describe(entity, index + 1)')) 'table source popup does not build per-source descriptions'
 Require (-not $table.Contains('hit != null &&')) 'TableHitTestInfo still treated as nullable/reference type'
 Require ($closure.Contains('new TableCellNavigationCommands().TableCellZoom();')) 'legacy table-source zoom is not routed to robust source navigation'
 
