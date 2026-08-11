@@ -1,0 +1,61 @@
+name: August 11 Field Completion Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/**'
+      - 'scripts/*August11*.ps1'
+      - 'scripts/Repair-August10-CompilerErrors-Civil3D2023.ps1'
+      - 'scripts/Repair-CogoOverlap-Civil3D2023.ps1'
+      - '.github/workflows/august11-field-completion-validation.yml'
+
+jobs:
+  staged-source-validation:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Copy repository to disposable staging folder
+        shell: pwsh
+        run: |
+          $stage = Join-Path $env:RUNNER_TEMP 'CE-Tools-August11-Validation'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Path $stage -Force | Out-Null
+          robocopy $env:GITHUB_WORKSPACE $stage /E /XD .git .vs bin obj artifacts /NFL /NDL /NJH /NJS /NP | Out-Null
+          if ($LASTEXITCODE -ge 8) { throw "Robocopy failed: $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0
+          "CE_STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Parse all August 11 PowerShell
+        shell: pwsh
+        run: |
+          Get-ChildItem -LiteralPath (Join-Path $env:CE_STAGE 'scripts') -Filter '*August11*.ps1' -File | ForEach-Object {
+            $errors = $null
+            $tokens = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              $message = ($errors | ForEach-Object { $_.Message }) -join ' | '
+              throw "PowerShell parse error in $($_.Name): $message"
+            }
+          }
+
+      - name: Apply prerequisite Civil 3D 2023 source repairs
+        shell: pwsh
+        run: |
+          & (Join-Path $env:CE_STAGE 'scripts/Repair-CogoOverlap-Civil3D2023.ps1') -RepoRoot $env:CE_STAGE
+          & (Join-Path $env:CE_STAGE 'scripts/Repair-August10-CompilerErrors-Civil3D2023.ps1') -RepoRoot $env:CE_STAGE
+
+      - name: Apply August 11 staged integrations
+        shell: pwsh
+        run: |
+          & (Join-Path $env:CE_STAGE 'scripts/Inject-August11FieldCompletion-Civil3D2023.ps1') -RepoRoot $env:CE_STAGE
+          & (Join-Path $env:CE_STAGE 'scripts/Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1') -RepoRoot $env:CE_STAGE
+
+      - name: Validate complete August 11 staged source
+        shell: pwsh
+        run: |
+          & (Join-Path $env:CE_STAGE 'scripts/Validate-August11FieldCompletion.ps1') -RepoRoot $env:CE_STAGE
+          & (Join-Path $env:CE_STAGE 'scripts/Validate-August11FieldCompletion2.ps1') -RepoRoot $env:CE_STAGE
