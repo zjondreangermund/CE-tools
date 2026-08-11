@@ -77,11 +77,31 @@ $bellmouth = Text 'August11BellmouthTrimCommands.cs'
 foreach ($token in @('TryReadStoredJunctionGroup','RoadLayoutRecordKey','exact.TryGetValue(storedGroup')) { Need ($bellmouth.Contains($token)) ('bellmouth exact group wiring missing ' + $token) }
 $network = Text 'August11NetworkBatchCommands.cs'
 foreach ($token in @('NetworkSourceMarker.Mark(_document, _current, _discipline)','internal static void Mark(Document document, ObjectId id, string discipline)','internal static int Clear(Document document, IEnumerable<ObjectId> ids)')) { Need ($network.Contains($token)) ('network exact-document marker wiring missing ' + $token) }
+
 $sequence = Text 'CeSequentialCommandRunner.cs'
 foreach ($token in @('CommandEnded += OnCommandEnded','CommandCancelled += OnCommandCancelled','CommandFailed += OnCommandFailed','AcApplication.Idle += OnIdle')) { Need ($sequence.Contains($token)) ('safe sequential command runner missing ' + $token) }
 $roadCorridor = Text 'RoadCorridorCompletionCommands.cs'
 Need ($roadCorridor.Contains('new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" }')) 'complete road-profile command sequence missing'
 Need ($roadCorridor.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }')) 'complete corridor command sequence missing'
+$sewerAuto = Text 'SewerSequenceAutoProductionCommands.cs'
+Need ($sewerAuto.Contains('CeSequentialCommandRunner.Start')) 'Sewer sequence+production still bypasses safe sequential runner'
+Need ($sewerAuto.Contains('new List<string> { sequence, "CE_SEWALIGN" }')) 'Sewer sequence+production steps are incomplete'
+$utilityBehavior = Text 'AugustBehaviorCompletionCommands.cs'
+Need ($utilityBehavior.Contains('CeSequentialCommandRunner.Start')) 'Stormwater/Water sequence+production still bypasses safe sequential runner'
+Need ($utilityBehavior.Contains('CivilAssemblyResolver.GetAssemblyIds(civil, document.Database)')) 'assembly visibility command bypasses robust assembly discovery'
+
+$stormwater = Text 'StormwaterSequenceCommands.cs'
+Need ($stormwater.Contains('pipe.Length3DCenterToCenter')) 'Stormwater sequence does not use Civil centre-to-centre pipe length'
+Need ($stormwater.Contains('startStructure.DistanceTo(endStructure)')) 'Stormwater pipe length has no connected-structure geometry fallback'
+Need (-not $stormwater.Contains('return 1.0;')) 'Stormwater one-metre pipe-length placeholder remains'
+Need ($stormwater.Contains('"SW-MAIN"')) 'Stormwater main branch prefix is not SW-MAIN'
+Need ($stormwater.Contains('"SW-B"')) 'Stormwater side branch prefix is not SW-B'
+
+$sewer = Text 'SewerProductionCommands.cs'
+Need ($sewer.Contains('pipe.Length3DCenterToCenter')) 'Sewer sequence does not use Civil centre-to-centre pipe length'
+Need ($sewer.Contains('int nodeSequence = 1;')) 'Sewer manhole sequence does not start at 1'
+Need ($sewer.Contains('structure.Name = "MH"')) 'Sewer manhole naming marker is missing'
+
 $platform = Text 'PlatformProductionCommands.cs'
 Need (-not $platform.Contains('else featureLine.SetPointElevation(index, elevation);')) 'unsafe Platform AllPoints numeric-index setter remains'
 Need (-not $platform.Contains('child.SetPointElevation(index, sourcePoint.Z + dz);')) 'unsafe Platform stepped-offset numeric-index setter remains'
