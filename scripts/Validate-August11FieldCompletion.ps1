@@ -17,6 +17,7 @@ $production = Text 'August11ProductionCentreCommands.cs'
 $network = Text 'August11NetworkBatchCommands.cs'
 $midblock = Text 'August11MidblockSewerProductionCommands.cs'
 $road = Text 'August11RoadCompletionCommands.cs'
+$roadExtra = Text 'August11RoadNamingCurveCommands.cs'
 $survey = Text 'August11SurveyRuntimeCommands.cs'
 $table = Text 'TableCellNavigationCommands.cs'
 $plugin = Text 'PluginEntry.cs'
@@ -43,6 +44,10 @@ Require ($production.Contains('CE_TOOLS_PRODUCTION_WORKFLOW_TAB')) 'dedicated CE
 Require ($production.Contains('CE-PRODUCTION CENTRE') -and $production.Contains('CE-ENGINEERING INTELLIGENCE CENTRE')) 'two-centre welcome screen missing'
 Require ($production.Contains('Dark') -and $production.Contains('Light')) 'CE dark/light preference missing'
 Require ($plugin.Contains('ProductionWorkflowRibbonBuilder.EnsureCreated()')) 'dedicated Production ribbon is not wired into PluginEntry'
+Require (-not $production.Contains('bool? accepted = AcApplication.ShowModalWindow')) 'welcome screen still depends on host-specific modal return signature'
+foreach ($obsoleteAlias in @('CE_BOQSTORMWATER','CE_REPORTSTORMWATER','CE_PARKGRADINGTOOLS','CE_PARKQTYTOOLS','CE_STANDARDS','CE_HYDROLOGYREVIEW','CE_FLOODQUICK')) {
+    Require (-not $production.Contains($obsoleteAlias)) "obsolete Production Centre command alias remains: $obsoleteAlias"
+}
 
 # Network batch / duplicate prevention / legacy handoff.
 foreach ($command in @('CE_NETWORKFROMPOLYLINESBATCH','CE_NETWORKCONNECTSELECTED','CE_NETWORKBATCHTOOLS','CE_NETWORKSOURCEMARKERSCLEAR')) {
@@ -52,6 +57,11 @@ Require ($network.Contains('CE_NETWORK_SOURCE_CREATED')) 'network duplicate sour
 Require ($network.Contains('Queue<ObjectId>')) 'network-from-object batch queue missing'
 Require ($legacyNetwork.Contains('new August11NetworkBatchCommands().CreateNetworksBatch();')) 'legacy CE_NETWORKFROMPOLYLINES is not routed to batch source selection'
 Require ($legacyNetwork.Contains('new August11NetworkBatchCommands().ConnectSelectedParts();')) 'legacy CE_NETWORKCONNECT is not routed to selected multi-part workflow'
+Require ($roadExtra.Contains('CE_CLOSEPIPESONLY')) 'separate Close Pipes Only command missing'
+Require ($roadExtra.Contains('never calls CE_BOQREFRESH')) 'Close Pipes Only does not explicitly separate itself from BOQ refresh'
+$allSourceText = (Get-ChildItem -LiteralPath $src -Filter '*.cs' -File | ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) }) -join "`n"
+$badClosePattern = '(?is)"[^"\r\n]*Close\s+Pipe(?:s|\s+Ends)?[^"\r\n]*"\s*,\s*"CE_BOQREFRESH'
+Require (-not [regex]::IsMatch($allSourceText,$badClosePattern)) 'a Close Pipes action is still mapped to CE_BOQREFRESH'
 
 # Continuous midblock sewer production.
 foreach ($token in @('CE_MIDBLOCKSEWERPRODUCTION','Automatic low side from surface','60 m','80 m','Planning manhole diameter','1.2','Preferred offset from erf corner','ClusterRows','BuildManholeStations')) {
@@ -63,11 +73,23 @@ Require ($routePlanner.Contains('CE_MIDBLOCKSEWERPRODUCTION')) 'Route Planner Op
 foreach ($command in @('CE_ROADCONTINUITYFIX','CE_ROADOUTSIDEOFFSET','CE_JUNCTIONTRIMBOUNDARIES','CE_JUNCTIONSETTINGOUT4','CE_ROUTEANNOTATIONSTYLE','CE_ROUTESHIFTANNOTATION','CE_POLYLINEARCS')) {
     Require ($road.Contains($command)) "$command missing from road completion source"
 }
+foreach ($command in @('CE_ROUTEHORIZONTALCURVES','CE_ROADNAMESYNC','CE_UTILITYROUTEOFFSET','CE_CLOSEPIPESONLY')) {
+    Require ($roadExtra.Contains($command)) "$command missing from final road/network field source"
+}
 Require ($road.Contains('IsPlottable = plottable')) 'junction trim non-plot layer control missing'
 Require ($road.Contains('CE_TRIMINSIDEMULTI')) 'junction trim boundary workflow is not handed to multi-boundary Trim Inside'
 Require ($road.Contains('1.8') -and $road.Contains('2.0') -and $road.Contains('2.5') -and $road.Contains('3.5') -and $road.Contains('5.0')) 'route annotation paper text choices incomplete'
 Require ($road.Contains('Show metre suffix')) 'route dimensions do not expose metre display'
 Require ($road.Contains('PaperAnnotationScale.ModelDistance')) 'route arrow-size paper scaling missing'
+Require ($roadExtra.Contains('Horizontal curve radius') -and $roadExtra.Contains('BuildFilletedPolyline')) 'multiple route horizontal curves/radii implementation missing'
+Require ($roadExtra.Contains('CE_ROAD_NAME_LINK') -and $roadExtra.Contains('SyncRoadNames')) 'ROAD-n name linkage engine missing'
+Require ($roadExtra.Contains('Stormwater') -and $roadExtra.Contains('Sewer') -and $roadExtra.Contains('Water') -and $roadExtra.Contains('Bulk Water')) 'utility route offsets are not discipline-aware'
+Require ($universal.Contains('August11RoadNamingCurveCommands.SyncRoadNames(document, false);')) 'ROAD-n names are not dynamically synchronized in universal refresh'
+Require ($plugin.Contains('Cmd("Create / Rebuild Baselines and Regions", "CE_ROADCORRIDORCOMPLETE ')) 'Corridor Baselines/Regions still points to a report instead of production'
+Require ($plugin.Contains('Cmd("Baseline / Region Report", "CE_CORBASEUI ')) 'Corridor baseline/region report was not preserved separately'
+Require ($plugin.Contains('CE_NETWORKFROMPOLYLINESBATCH') -and $plugin.Contains('CE_UTILITYROUTEOFFSET') -and $plugin.Contains('CE_CLOSEPIPESONLY')) 'new field network/utility tools are not exposed in Utilities ribbon'
+Require ($production.Contains('CE_ROUTEHORIZONTALCURVES') -and $production.Contains('CE_ROADNAMESYNC')) 'Road Production Centre does not expose horizontal curves and road-name sync'
+Require ($production.Contains('CE_UTILITYROUTEOFFSET')) 'guided utility production still lacks explicit erf/reserve offset workflow'
 
 # Survey / COGO / linked table dynamics.
 foreach ($command in @('CE_COGOLABELRESTOREINITIAL','CE_COORDMULTISURFACETABLE','CE_COORDMULTISURFACEREFRESH')) {
