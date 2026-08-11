@@ -107,9 +107,12 @@ if (-not $text.Contains('[CommandMethod("CE_TOOLS", "CE_NETWORKBATCHTOOLS", Comm
     throw 'August11 collision-safe CE_NETWORKBATCHTOOLS declaration is missing.'
 }
 
-# Focused field validator and generic PowerShell command/behavior validator are
-# both required on the user's one-click build path before MSBuild.
-foreach ($validatorName in @('Validate-August11FieldCompletion2.ps1','Validate-CECommandWiring.ps1')) {
+# Aggregate command ownership first so one build reports every dead CE workflow
+# reference at once. Then run the focused behavior validators.
+foreach ($validatorName in @(
+    'Validate-CECommandOwnersAggregate.ps1',
+    'Validate-August11FieldCompletion2.ps1',
+    'Validate-CECommandWiring.ps1')) {
     $validator = Join-Path $root ('scripts\' + $validatorName)
     if (-not (Test-Path -LiteralPath $validator -PathType Leaf)) {
         throw "August 11 validator was not found: $validator"
