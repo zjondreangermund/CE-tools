@@ -87,3 +87,13 @@ foreach ($required in @(
 }
 
 Write-Host 'Vertex setting-out coordinate-order repair passed.' -ForegroundColor Cyan
+
+# Global UI/theme/style persistence belongs to the audited Civil 3D 2023 staging
+# chain as well. Run it here so every one-click build receives the same behavior.
+$globalUiRepair = Join-Path $root 'scripts\Repair-GlobalInterfaceAndStylePersistence-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $globalUiRepair -PathType Leaf)) {
+    throw "Global CE interface/style persistence repair was not found: $globalUiRepair"
+}
+Unblock-File -LiteralPath $globalUiRepair -ErrorAction SilentlyContinue
+& $globalUiRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
