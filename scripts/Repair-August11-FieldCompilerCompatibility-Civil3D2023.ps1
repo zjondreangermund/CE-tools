@@ -63,6 +63,22 @@ if ($text.Contains($old)) {
 elseif ($text.Contains($new)) { Write-Host 'Project-location metadata refresh is already using universal refresh.' -ForegroundColor DarkGreen }
 else { throw 'Project-location metadata refresh marker was not found.' }
 
+# AutoCAD 2023's Vector3d does not expose the newer static Zero property used by
+# the restored survey runtime source. Use an explicit zero vector instead.
+$text = ReadText $survey
+if ($text.Contains('Vector3d.Zero')) {
+    $text = $text.Replace('Vector3d.Zero','new Vector3d(0.0, 0.0, 0.0)')
+    WriteText $survey $text
+    Write-Host 'Normalized Vector3d zero initialization for Civil 3D 2023.' -ForegroundColor Green
+}
+$text = ReadText $survey
+if ($text.Contains('Vector3d.Zero')) {
+    throw 'Civil 3D 2023 Vector3d.Zero compatibility repair did not remove all usages.'
+}
+if (-not $text.Contains('new Vector3d(0.0, 0.0, 0.0)')) {
+    throw 'Civil 3D 2023 zero-vector compatibility marker is missing.'
+}
+
 # Match the proven CE Tools modal-window call pattern used elsewhere in the repo.
 # Do not depend on a host-version-specific ShowModalWindow return signature.
 $production = Required 'August11ProductionCentreCommands.cs'
