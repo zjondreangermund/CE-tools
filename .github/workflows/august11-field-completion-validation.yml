@@ -7,6 +7,7 @@ on:
     paths:
       - 'src/CE.Tools.Civil3D/**'
       - 'scripts/*August11*.ps1'
+      - 'scripts/Validate-CECommandWiring.py'
       - 'scripts/Repair-August10-CompilerErrors-Civil3D2023.ps1'
       - 'scripts/Repair-CogoOverlap-Civil3D2023.ps1'
       - '.github/workflows/august11-field-completion-validation.yml'
@@ -59,3 +60,8 @@ jobs:
         run: |
           & (Join-Path $env:CE_STAGE 'scripts/Validate-August11FieldCompletion.ps1') -RepoRoot $env:CE_STAGE
           & (Join-Path $env:CE_STAGE 'scripts/Validate-August11FieldCompletion2.ps1') -RepoRoot $env:CE_STAGE
+
+      - name: Audit CE command declarations and wiring
+        shell: pwsh
+        run: |
+          python (Join-Path $env:CE_STAGE 'scripts/Validate-CECommandWiring.py') $env:CE_STAGE
