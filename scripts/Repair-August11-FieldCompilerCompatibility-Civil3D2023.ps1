@@ -15,6 +15,16 @@ function Required([string]$name) {
 function ReadText([string]$path) { [System.IO.File]::ReadAllText($path) }
 function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false)) }
 
+# Run the second field-completion mapping pass here so the existing one-click
+# Stage-Build script does not need another orchestration layer.
+$completion2 = Join-Path $root 'scripts\Inject-August11FieldCompletion2-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $completion2 -PathType Leaf)) {
+    throw "August 11 completion pass 2 was not found: $completion2"
+}
+Unblock-File -LiteralPath $completion2 -ErrorAction SilentlyContinue
+& $completion2 -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # CE_NETWORKMULTI already belongs to the permanent final-closure command hub.
 # Keep that public command stable; expose this new source's optional hub under a
 # different command so AutoCAD never receives duplicate CommandMethod names.
@@ -43,6 +53,29 @@ if ($text.Contains($old)) {
 }
 elseif ($text.Contains($new)) { Write-Host 'Project-location metadata refresh is already using universal refresh.' -ForegroundColor DarkGreen }
 else { throw 'Project-location metadata refresh marker was not found.' }
+
+# Match the proven CE Tools modal-window call pattern used elsewhere in the repo.
+# Do not depend on a host-version-specific ShowModalWindow return signature.
+$production = Required 'August11ProductionCentreCommands.cs'
+$text = ReadText $production
+$oldWelcome = @'
+            bool? accepted = AcApplication.ShowModalWindow(window);
+            if (accepted != true || string.IsNullOrWhiteSpace(window.SelectedCommand)) return;
+'@
+$newWelcome = @'
+            AcApplication.ShowModalWindow(window);
+            if (string.IsNullOrWhiteSpace(window.SelectedCommand)) return;
+'@
+$oldWelcomeValue = $oldWelcome.TrimEnd("`r","`n")
+if ($text.Contains($oldWelcomeValue)) {
+    $text = $text.Replace($oldWelcomeValue,$newWelcome.TrimEnd("`r","`n"))
+    WriteText $production $text
+    Write-Host 'Normalized CE welcome modal call for Civil 3D 2023.' -ForegroundColor Green
+}
+elseif ($text.Contains('AcApplication.ShowModalWindow(window);') -and -not $text.Contains('bool? accepted =')) {
+    Write-Host 'CE welcome modal call is already host-compatible.' -ForegroundColor DarkGreen
+}
+else { throw 'CE welcome modal call marker was not found.' }
 
 # TableHitTestInfo is a value type in the 2023 managed API. The permanent source
 # is already fixed, but normalize any restored/stale copy before compilation.
