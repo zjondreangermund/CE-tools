@@ -82,7 +82,7 @@ Require ($legacyNetwork.Contains('new August11NetworkBatchCommands().ConnectSele
 Require ($roadExtra.Contains('CE_CLOSEPIPESONLY')) 'separate Close Pipes Only command missing'
 
 # Continuous Midblock sewer production.
-foreach ($token in @('CE_MIDBLOCKSEWERPRODUCTION','Automatic low side from surface','60 m','80 m','Planning manhole diameter','1.2','Preferred offset from erf corner','ClusterRows','BuildManholeStations')) {
+foreach ($token in @('CE_MIDBLOCKSEWERPRODUCTION','Automatic low side from surface','60 m','80 m','Planning manhole diameter','1.2','Preferred offset from erf corner','1.5','ClusterRows','BuildManholeStations')) {
     Require ($midblock.Contains($token)) "midblock production token '$token' missing"
 }
 Require ($routePlanner.Contains('CE_MIDBLOCKSEWERPRODUCTION')) 'Route Planner Option 2 does not use continuous Midblock Sewer Production'
@@ -144,7 +144,14 @@ Require ($universal.Contains('FinalFeatureLineReportCommands.RefreshAll(document
 Require ($universal.Contains('CogoPointProjectStyleCommands.ApplySelectedStyles')) 'COGO styles are not universally synchronized'
 Require ($cogo.Contains('restrictedPointIds') -or $cogo.Contains('restricted')) 'selected COGO overlap scope missing'
 Require (-not $cogo.Contains('return bestDistance == double.MaxValue ? candidates.Last() : best;')) 'old farthest-candidate COGO overlap fallback remains'
-Require (-not $platform.Contains('else featureLine.SetPointElevation(index, elevation);')) 'Platform slope still uses unsafe numeric AllPoints index setter'
-Require (-not $platform.Contains('child.SetPointElevation(index, sourcePoint.Z + dz);')) 'Platform stepped-offset transfer still uses unsafe numeric point index'
+
+# Platform levels must support ordinary absolute feature lines without a surface,
+# while still handling genuinely surface-relative lines and closed-loop duplicate
+# points safely. SetPointRelativeElevation is only allowed when RelativeSurfaceId
+# exists; absolute lines use PointsCount-bounded SetPointElevation.
+Require ($platform.Contains('relativeSurfaceId = featureLine.RelativeSurfaceId;')) 'Platform slope does not distinguish surface-relative feature lines'
+Require ($platform.Contains('pointCount = featureLine.PointsCount;')) 'Platform slope does not bound absolute point indices with PointsCount'
+Require ($platform.Contains('SetAbsoluteElevation(child, point, index, sourcePoint.Z + dz);')) 'Platform stepped-offset transfer does not use the safe elevation helper'
+Require (-not $platform.Contains('child.SetPointRelativeElevation(point, false, sourcePoint.Z + dz);')) 'Platform stepped-offset transfer still forces a relative-surface API on ordinary feature lines'
 
 Write-Host 'August 11 field completion validation passed.' -ForegroundColor Green
