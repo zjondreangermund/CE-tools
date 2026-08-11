@@ -96,6 +96,46 @@ if ($text.Contains('hit != null && hit.Type == TableHitTestType.Cell')) {
     Write-Host 'Normalized TableHitTestInfo value-type handling.' -ForegroundColor Green
 }
 
+# AutoCAD and Civil 3D both expose a type named Surface. Midblock sewer routing
+# must always use the Civil 3D surface because it calls FindElevationAtXY().
+# Qualify every use explicitly so Civil 3D 2023 never sees CS0104 ambiguity.
+$midblock = Required 'August11MidblockSewerProductionCommands.cs'
+$text = ReadText $midblock
+$surfaceReplacements = @(
+    @('                Surface surface = null;','                Autodesk.Civil.DatabaseServices.Surface surface = null;'),
+    @(' as Surface;',' as Autodesk.Civil.DatabaseServices.Surface;'),
+    @('typeof(Surface)','typeof(Autodesk.Civil.DatabaseServices.Surface)'),
+    @('string sideChoice, Surface surface, out RowGeometry geometry)','string sideChoice, Autodesk.Civil.DatabaseServices.Surface surface, out RowGeometry geometry)'),
+    @('AverageSurface(Surface surface, IEnumerable<Point2d> points)','AverageSurface(Autodesk.Civil.DatabaseServices.Surface surface, IEnumerable<Point2d> points)')
+)
+$surfaceChanges = 0
+foreach ($pair in $surfaceReplacements) {
+    $oldSurface = [string]$pair[0]
+    $newSurface = [string]$pair[1]
+    if ($text.Contains($oldSurface)) {
+        $text = $text.Replace($oldSurface,$newSurface)
+        $surfaceChanges++
+    }
+}
+WriteText $midblock $text
+$text = ReadText $midblock
+$ambiguousPatterns = @(
+    '                Surface surface = null;',
+    ' as Surface;',
+    'typeof(Surface)',
+    'string sideChoice, Surface surface, out RowGeometry geometry)',
+    'AverageSurface(Surface surface, IEnumerable<Point2d> points)'
+)
+foreach ($pattern in $ambiguousPatterns) {
+    if ($text.Contains($pattern)) {
+        throw "Midblock Civil surface ambiguity remains after compatibility repair: $pattern"
+    }
+}
+if (-not $text.Contains('Autodesk.Civil.DatabaseServices.Surface')) {
+    throw 'Midblock Civil surface compatibility repair did not produce any qualified Civil surface type.'
+}
+Write-Host "Qualified Civil 3D Surface references in Midblock Sewer Production. Replacements=$surfaceChanges." -ForegroundColor Green
+
 # Verify the August11 batch source itself no longer DECLARES CE_NETWORKMULTI.
 # Other production-centre source may legitimately reference the established hub.
 $text = ReadText $network
