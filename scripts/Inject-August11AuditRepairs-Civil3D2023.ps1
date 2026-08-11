@@ -240,7 +240,7 @@ $newMarkHeader = @'
 if ($text.Contains($oldMarkHeader.TrimEnd("`r","`n"))) {
     $text = $text.Replace($oldMarkHeader.TrimEnd("`r","`n"),$newMarkHeader.TrimEnd("`r","`n"))
 }
-elif (-not $text.Contains('internal static void Mark(Document document, ObjectId id, string discipline)')) {
+elseif (-not $text.Contains('internal static void Mark(Document document, ObjectId id, string discipline)')) {
     throw 'Network source-marker Mark method was not found for exact-document repair.'
 }
 
@@ -262,7 +262,7 @@ $newClearHeader = @'
 if ($text.Contains($oldClearHeader.TrimEnd("`r","`n"))) {
     $text = $text.Replace($oldClearHeader.TrimEnd("`r","`n"),$newClearHeader.TrimEnd("`r","`n"))
 }
-elif (-not $text.Contains('internal static int Clear(Document document, IEnumerable<ObjectId> ids)')) {
+elseif (-not $text.Contains('internal static int Clear(Document document, IEnumerable<ObjectId> ids)')) {
     throw 'Network source-marker Clear method was not found for exact-document repair.'
 }
 WriteText $network $text
