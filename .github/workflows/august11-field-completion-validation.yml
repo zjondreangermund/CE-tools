@@ -8,6 +8,8 @@ on:
       - 'src/CE.Tools.Civil3D/**'
       - 'scripts/*August11*.ps1'
       - 'scripts/Validate-CECommandWiring.py'
+      - 'scripts/Validate-CECommandWiring.ps1'
+      - 'scripts/Repair-StormwaterPipeLength-Civil3D2023.ps1'
       - 'scripts/Repair-August10-CompilerErrors-Civil3D2023.ps1'
       - 'scripts/Repair-CogoOverlap-Civil3D2023.ps1'
       - '.github/workflows/august11-field-completion-validation.yml'
@@ -30,10 +32,13 @@ jobs:
           $global:LASTEXITCODE = 0
           "CE_STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Append
 
-      - name: Parse all August 11 PowerShell
+      - name: Parse all audit PowerShell
         shell: pwsh
         run: |
-          Get-ChildItem -LiteralPath (Join-Path $env:CE_STAGE 'scripts') -Filter '*August11*.ps1' -File | ForEach-Object {
+          $auditScripts = Get-ChildItem -LiteralPath (Join-Path $env:CE_STAGE 'scripts') -Filter '*August11*.ps1' -File
+          $auditScripts += Get-Item -LiteralPath (Join-Path $env:CE_STAGE 'scripts/Validate-CECommandWiring.ps1')
+          $auditScripts += Get-Item -LiteralPath (Join-Path $env:CE_STAGE 'scripts/Repair-StormwaterPipeLength-Civil3D2023.ps1')
+          $auditScripts | Sort-Object FullName -Unique | ForEach-Object {
             $errors = $null
             $tokens = $null
             [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors) | Out-Null
@@ -60,6 +65,7 @@ jobs:
         run: |
           & (Join-Path $env:CE_STAGE 'scripts/Validate-August11FieldCompletion.ps1') -RepoRoot $env:CE_STAGE
           & (Join-Path $env:CE_STAGE 'scripts/Validate-August11FieldCompletion2.ps1') -RepoRoot $env:CE_STAGE
+          & (Join-Path $env:CE_STAGE 'scripts/Validate-CECommandWiring.ps1') -RepoRoot $env:CE_STAGE
 
       - name: Audit CE command declarations and wiring
         shell: pwsh
