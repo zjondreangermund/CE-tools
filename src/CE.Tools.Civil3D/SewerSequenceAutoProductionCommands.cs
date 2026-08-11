@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.Runtime;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
@@ -27,22 +28,26 @@ namespace CETools.Civil3D
             model.AddChoice(
                 "Profiles",
                 "02 Production",
-                "Queue sewer profiles after alignments",
+                "Create sewer profiles after alignments",
                 "No",
-                "When Yes, CE_SEWPROFILE is queued after the alignment command and will request the profile-view insertion point.",
+                "When Yes, CE_SEWPROFILE starts only after the alignment command finishes and will then request its normal surface/insertion inputs.",
                 new[] { "No", "Yes" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             string sequence = string.Equals(model.Text("Sequence"), "Select main first", StringComparison.OrdinalIgnoreCase)
-                ? "CE_SEWSEQMAIN "
-                : "CE_SEWSEQ ";
-            string commands = sequence + "CE_SEWALIGN ";
+                ? "CE_SEWSEQMAIN"
+                : "CE_SEWSEQ";
+            var commands = new List<string> { sequence, "CE_SEWALIGN" };
             if (string.Equals(model.Text("Profiles"), "Yes", StringComparison.OrdinalIgnoreCase))
-                commands += "CE_SEWPROFILE ";
+                commands.Add("CE_SEWPROFILE");
+
             document.Editor.WriteMessage(
-                "\nCE_SEWSEQPRODUCTION queued: sequence -> sewer alignments{0}.",
-                string.Equals(model.Text("Profiles"), "Yes", StringComparison.OrdinalIgnoreCase) ? " -> profiles" : string.Empty);
-            document.SendStringToExecute(commands, true, false, true);
+                "\nCE_SEWSEQPRODUCTION queued safely: sequence -> sewer alignments{0}.",
+                commands.Count > 2 ? " -> profiles" : string.Empty);
+            CeSequentialCommandRunner.Start(
+                document,
+                commands,
+                "CE Tools - Sewer sequence + production");
         }
     }
 }
