@@ -121,13 +121,15 @@ $text = ReadText $plugin
 $projectAnchor = '                        Cmd("Phase 1 Utilities", "CE_PHASE1 ", "Open every original CE Tools Phase 1 utility family in one visual hub."),'
 if (-not $text.Contains('Cmd("CE Tools Home", "CE_WELCOME ')) {
     if (-not $text.Contains($projectAnchor)) { throw 'Main Project menu Phase 1 marker not found.' }
-    $text = $text.Replace($projectAnchor,'                        Cmd("CE Tools Home", "CE_WELCOME ", "Open the CE Tools welcome screen with Production Centre and Engineering Intelligence Centre."),' + "`r`n" + $projectAnchor)
+    $homeCommand = '                        Cmd("CE Tools Home", "CE_WELCOME ", "Open the CE Tools welcome screen with Production Centre and Engineering Intelligence Centre."),'
+    $text = $text.Replace($projectAnchor,$homeCommand + "`r`n" + $projectAnchor)
     Write-Host 'Added CE Tools Home / welcome button to main ribbon.' -ForegroundColor Green
 }
 $stylesAnchor = '                        Cmd("Project Style Centre", "CE_PROJECTSTYLES ", "Select alignment, profile, corridor, point and network styles."),'
 if (-not $text.Contains('Cmd("Discipline Style Presets", "CE_DISCIPLINESTYLEPRESETS ')) {
     if (-not $text.Contains($stylesAnchor)) { throw 'Project Styles menu marker not found.' }
-    $text = $text.Replace($stylesAnchor,$stylesAnchor + "`r`n                        Cmd(\"Discipline Style Presets\", \"CE_DISCIPLINESTYLEPRESETS \", \"Store and activate independent Roads/SW/Sewer/Water/Platform style selections from the shared style library.\"),")
+    $presetCommand = '                        Cmd("Discipline Style Presets", "CE_DISCIPLINESTYLEPRESETS ", "Store and activate independent Roads/SW/Sewer/Water/Platform style selections from the shared style library."),'
+    $text = $text.Replace($stylesAnchor,$stylesAnchor + "`r`n" + $presetCommand)
 }
 $roadProfileAnchor = '                        Cmd("Create Road Profiles", "CE_ROADPROFILES ", "Create existing-ground profiles and ordered profile views."),'
 if (-not $text.Contains('Cmd("Complete Final Road Profile", "CE_ROADPROFILEFULL ')) {
