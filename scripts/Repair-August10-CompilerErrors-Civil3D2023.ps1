@@ -38,6 +38,56 @@ if ([regex]::IsMatch($platformVerify, $platformPattern)) {
     throw 'Platform FeatureLinePointType compatibility repair verification failed.'
 }
 
+# Civil 3D feature lines can expose PI points, elevation points and a closing
+# point through FeatureLinePointType.AllPoints. Using that collection index as
+# the SetPointElevation(index, ...) index can throw ArgumentOutOfRangeException.
+# Normalize platform elevation edits to the point-based API instead.
+$platformText = [System.IO.File]::ReadAllText($platform)
+$oldAbsoluteElevation = @'
+        private static void SetAbsoluteElevation(CivilFeatureLine featureLine, Point3d point, int index, double elevation)
+        {
+            if (featureLine.IsElevationRelativeToSurface(point)) featureLine.SetPointRelativeElevation(point, false, elevation);
+            else featureLine.SetPointElevation(index, elevation);
+        }
+'@
+$newAbsoluteElevation = @'
+        private static void SetAbsoluteElevation(CivilFeatureLine featureLine, Point3d point, int index, double elevation)
+        {
+            if (featureLine == null) return;
+            // Use the point-based setter for PI, elevation and closing points.
+            // This also intentionally converts a surface-relative point to an
+            // absolute elevation when a production level/slope is applied.
+            featureLine.SetPointRelativeElevation(point, false, elevation);
+        }
+'@
+$oldAbsoluteElevationValue = $oldAbsoluteElevation.TrimEnd("`r", "`n")
+$newAbsoluteElevationValue = $newAbsoluteElevation.TrimEnd("`r", "`n")
+$platformRuntimeChanged = $false
+if ($platformText.Contains($oldAbsoluteElevationValue)) {
+    $platformText = $platformText.Replace($oldAbsoluteElevationValue, $newAbsoluteElevationValue)
+    $platformRuntimeChanged = $true
+}
+
+$oldChildElevation = '                child.SetPointElevation(index, sourcePoint.Z + dz);'
+$newChildElevation = '                child.SetPointRelativeElevation(point, false, sourcePoint.Z + dz);'
+if ($platformText.Contains($oldChildElevation)) {
+    $platformText = $platformText.Replace($oldChildElevation, $newChildElevation)
+    $platformRuntimeChanged = $true
+}
+
+if ($platformRuntimeChanged) {
+    [System.IO.File]::WriteAllText($platform, $platformText, [System.Text.UTF8Encoding]::new($false))
+    Write-Host 'Repaired platform FeatureLine elevation updates to avoid AllPoints index errors.' -ForegroundColor Green
+}
+else {
+    Write-Host 'Platform point-based elevation runtime repair is already applied.' -ForegroundColor DarkGreen
+}
+$platformVerify = [System.IO.File]::ReadAllText($platform)
+if ($platformVerify.Contains('else featureLine.SetPointElevation(index, elevation);') -or
+    $platformVerify.Contains('child.SetPointElevation(index, sourcePoint.Z + dz);')) {
+    throw 'Platform point-based elevation runtime repair verification failed.'
+}
+
 # Autodesk.AutoCAD.Runtime also defines Exception. Keep the runtime namespace
 # for CommandMethod/CommandFlags but explicitly use System.Exception here.
 $profile = Read-Required 'ProfileStyleAutoImportRuntime.cs'
