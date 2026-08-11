@@ -15,15 +15,17 @@ function Required([string]$name) {
 function ReadText([string]$path) { [System.IO.File]::ReadAllText($path) }
 function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false)) }
 
-# Run the second field-completion mapping pass here so the existing one-click
+# Run the field-completion mapping passes here so the existing one-click
 # Stage-Build script does not need another orchestration layer.
-$completion2 = Join-Path $root 'scripts\Inject-August11FieldCompletion2-Civil3D2023.ps1'
-if (-not (Test-Path -LiteralPath $completion2 -PathType Leaf)) {
-    throw "August 11 completion pass 2 was not found: $completion2"
+foreach ($completionName in @('Inject-August11FieldCompletion2-Civil3D2023.ps1','Inject-August11FieldCompletion3-Civil3D2023.ps1')) {
+    $completion = Join-Path $root ('scripts\' + $completionName)
+    if (-not (Test-Path -LiteralPath $completion -PathType Leaf)) {
+        throw "August 11 completion pass was not found: $completion"
+    }
+    Unblock-File -LiteralPath $completion -ErrorAction SilentlyContinue
+    & $completion -RepoRoot $root
+    $global:LASTEXITCODE = 0
 }
-Unblock-File -LiteralPath $completion2 -ErrorAction SilentlyContinue
-& $completion2 -RepoRoot $root
-$global:LASTEXITCODE = 0
 
 # CE_NETWORKMULTI already belongs to the permanent final-closure command hub.
 # Keep that public command stable; expose this new source's optional hub under a
