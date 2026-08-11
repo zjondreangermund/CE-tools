@@ -15,15 +15,16 @@ function Required([string]$name) {
 function ReadText([string]$path) { [System.IO.File]::ReadAllText($path) }
 function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false)) }
 
-# Run the field-completion mapping passes here so the existing one-click
-# Stage-Build script does not need another orchestration layer.
+# Run all field-completion and audit-repair passes here so the existing one-click
+# Stage-Build script gets the same fully audited source before MSBuild.
 foreach ($completionName in @(
     'Inject-August11FieldCompletion2-Civil3D2023.ps1',
     'Inject-August11FieldCompletion3-Civil3D2023.ps1',
-    'Inject-August11FieldCompletion4-Civil3D2023.ps1')) {
+    'Inject-August11FieldCompletion4-Civil3D2023.ps1',
+    'Inject-August11AuditRepairs-Civil3D2023.ps1')) {
     $completion = Join-Path $root ('scripts\' + $completionName)
     if (-not (Test-Path -LiteralPath $completion -PathType Leaf)) {
-        throw "August 11 completion pass was not found: $completion"
+        throw "August 11 completion/audit pass was not found: $completion"
     }
     Unblock-File -LiteralPath $completion -ErrorAction SilentlyContinue
     & $completion -RepoRoot $root
@@ -103,9 +104,7 @@ if (-not $text.Contains('[CommandMethod("CE_TOOLS", "CE_NETWORKBATCHTOOLS", Comm
     throw 'August11 collision-safe CE_NETWORKBATCHTOOLS declaration is missing.'
 }
 
-# Focused final validation covers PowerShell parsing plus the final bellmouth,
-# initial COGO restore, main-ribbon home/preset/profile hooks and corridor/profile
-# completion that were added after the first large closure validator.
+# Focused final validation covers PowerShell parsing plus final behavioral hooks.
 $finalValidator = Join-Path $root 'scripts\Validate-August11FieldCompletion2.ps1'
 if (-not (Test-Path -LiteralPath $finalValidator -PathType Leaf)) {
     throw "August 11 focused final validator was not found: $finalValidator"
