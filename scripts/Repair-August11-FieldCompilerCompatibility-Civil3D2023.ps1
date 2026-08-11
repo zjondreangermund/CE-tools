@@ -23,7 +23,8 @@ foreach ($completionName in @(
     'Inject-August11FieldCompletion4-Civil3D2023.ps1',
     'Inject-August11AuditRepairs-Civil3D2023.ps1',
     'Inject-August11CommandSequenceRepair-Civil3D2023.ps1',
-    'Repair-StormwaterPipeLength-Civil3D2023.ps1')) {
+    'Repair-StormwaterPipeLength-Civil3D2023.ps1',
+    'Repair-VertexCoordinateOrder-Civil3D2023.ps1')) {
     $completion = Join-Path $root ('scripts\' + $completionName)
     if (-not (Test-Path -LiteralPath $completion -PathType Leaf)) {
         throw "August 11 completion/audit pass was not found: $completion"
