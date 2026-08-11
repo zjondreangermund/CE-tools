@@ -2,8 +2,8 @@
 """Audit CE Tools command and behavioral wiring in a staged source tree.
 
 Run this after all Civil 3D 2023 staging injectors. It discovers CE CommandMethod
-owners, checks UI/workflow/SendString targets, and guards the behavioral wiring
-that field testing showed can look connected while still acting incorrectly.
+owners, checks UI/workflow/SendString targets, rejects unsafe interactive command
+chains, and guards behavior that can look connected while still act incorrectly.
 """
 
 from __future__ import annotations
@@ -60,6 +60,7 @@ def main() -> int:
     declarations: dict[str, list[tuple[pathlib.Path, int]]] = collections.defaultdict(list)
     references: dict[str, list[tuple[pathlib.Path, int, str]]] = collections.defaultdict(list)
     texts: dict[pathlib.Path, str] = {}
+    unsafe_send_chains: list[str] = []
 
     for path in files:
         text = path.read_text(encoding="utf-8-sig")
@@ -74,10 +75,14 @@ def main() -> int:
                 )
 
         for match in send_re.finditer(text):
-            # CE command tokens themselves never require C# escape decoding.
-            for token in ce_token_re.findall(match.group("body")):
-                references[token.upper()].append(
+            tokens = [token.upper() for token in ce_token_re.findall(match.group("body"))]
+            for token in tokens:
+                references[token].append(
                     (path, line_number(text, match.start()), "SendStringToExecute")
+                )
+            if len(tokens) > 1:
+                unsafe_send_chains.append(
+                    f"{path.name}:{line_number(text, match.start())}: {' -> '.join(tokens)}"
                 )
 
     errors: list[str] = []
@@ -98,8 +103,12 @@ def main() -> int:
             more = "" if len(refs) <= 8 else f" +{len(refs) - 8} more"
             errors.append(f"Referenced CE command has no CommandMethod owner: {cmd}: {locations}{more}")
 
-    # Discipline style isolation: opening a discipline with no saved preset must
-    # reset to its own drawing defaults rather than inherit the previous one.
+    for chain in unsafe_send_chains:
+        errors.append(
+            "Unsafe multi-CE-command SendStringToExecute chain; use CeSequentialCommandRunner: " + chain
+        )
+
+    # Discipline style isolation.
     production_path = source / "August11ProductionCentreCommands.cs"
     preset_path = source / "August11DisciplineStylePresetCommands.cs"
     production = read(texts, production_path)
@@ -125,16 +134,14 @@ def main() -> int:
     survey = read(texts, source / "August11SurveyRuntimeCommands.cs")
     if "if (space == null || !space.IsLayout) continue;" not in survey:
         errors.append("Multi-surface coordinate refresh still scans only the current space")
-    if "document.Database.CurrentSpaceId" in re.search(
+    refresh_match = re.search(
         r"(?s)internal static int RefreshMultiSurfaceTables\(Document document\).*?(?=private static Table BuildMultiSurfaceTable)",
         survey,
-    ).group(0) if re.search(
-        r"(?s)internal static int RefreshMultiSurfaceTables\(Document document\).*?(?=private static Table BuildMultiSurfaceTable)",
-        survey,
-    ) else "":
+    )
+    if refresh_match and "document.Database.CurrentSpaceId" in refresh_match.group(0):
         errors.append("RefreshMultiSurfaceTables still depends on CurrentSpaceId")
 
-    # Road names should use CE source-handle metadata before any spatial fallback.
+    # Road names should use CE source-handle metadata before spatial fallback.
     road_names = read(texts, source / "August11RoadNamingCurveCommands.cs")
     for marker in (
         "ReadRoadProductionSource(entity)",
@@ -144,7 +151,7 @@ def main() -> int:
         if marker not in road_names:
             errors.append(f"ROAD-n metadata-first synchronization is missing: {marker}")
 
-    # Midblock automatic direction must consider the row spread, not sum lot sizes.
+    # Midblock automatic direction must consider row spread, not sum lot sizes.
     midblock = read(texts, source / "August11MidblockSewerProductionCommands.cs")
     if "double centreSpanX = parcels.Max(item => item.Center.X)" not in midblock:
         errors.append("Midblock automatic row orientation is not parcel-spread based")
@@ -157,7 +164,7 @@ def main() -> int:
         if marker not in bellmouth:
             errors.append(f"Bellmouth exact stored-group trimming is missing: {marker}")
 
-    # Async network source markers must use the exact document that launched the batch.
+    # Async network source markers must use the exact launching document.
     network = read(texts, source / "August11NetworkBatchCommands.cs")
     for marker in (
         "NetworkSourceMarker.Mark(_document, _current, _discipline)",
@@ -167,6 +174,23 @@ def main() -> int:
     ):
         if marker not in network:
             errors.append(f"Network batch exact-document source-marker wiring is missing: {marker}")
+
+    # Safe interactive road profile/corridor sequencing.
+    runner = read(texts, source / "CeSequentialCommandRunner.cs")
+    for marker in (
+        "internal static class CeSequentialCommandRunner",
+        "CommandEnded += OnCommandEnded",
+        "CommandCancelled += OnCommandCancelled",
+        "CommandFailed += OnCommandFailed",
+        "AcApplication.Idle += OnIdle",
+    ):
+        if marker not in runner:
+            errors.append(f"Sequential CE command runner is incomplete: {marker}")
+    road_corridor = read(texts, source / "RoadCorridorCompletionCommands.cs")
+    if 'new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" }' not in road_corridor:
+        errors.append("CE_ROADPROFILEFULL is not using the safe complete-road-profile sequence")
+    if 'new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }' not in road_corridor:
+        errors.append("CE_ROADCORRIDORFULL is not using the safe complete-corridor sequence")
 
     # Guard already-proven platform point-based elevation repair.
     platform = read(texts, source / "PlatformProductionCommands.cs")
@@ -189,8 +213,8 @@ def main() -> int:
         "CE command/behavior wiring audit passed: "
         f"{len(declarations)} unique CE CommandMethod declarations, "
         f"{len(references)} referenced CE commands, {len(files)} Civil3D source files; "
-        "no duplicate/missing command targets and the audited style, table, road-name, "
-        "midblock, bellmouth, network-marker and platform behaviors are wired."
+        "no duplicate/missing command targets, no unsafe multi-command input chains, and the "
+        "audited style, table, road-name, midblock, bellmouth, network, road-sequence and platform behaviors are wired."
     )
     return 0
 
