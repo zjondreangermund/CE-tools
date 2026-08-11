@@ -50,7 +50,7 @@ namespace CETools.Civil3D
                     using (ViewTableRecord view = document.Editor.GetCurrentView())
                     {
                         TableHitTestInfo hit = table.HitTest(picked.PickedPoint, view.ViewDirection);
-                        if (hit != null && hit.Type == TableHitTestType.Cell)
+                        if (hit.Type == TableHitTestType.Cell)
                         {
                             row = hit.Row;
                             column = hit.Column;
