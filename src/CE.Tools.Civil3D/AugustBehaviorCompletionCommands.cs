@@ -40,10 +40,10 @@ namespace CETools.Civil3D
         }
 
         [CommandMethod("CE_TOOLS", "CE_SWSEQPRODUCTION", CommandFlags.Modal)]
-        public void StormwaterSequenceProduction() { QueueUtilityProduction("Stormwater", "CE_SWSEQ ", "CE_SWALIGN ", "CE_SWPROFILE "); }
+        public void StormwaterSequenceProduction() { QueueUtilityProduction("Stormwater", "CE_SWSEQ", "CE_SWALIGN", "CE_SWPROFILE"); }
 
         [CommandMethod("CE_TOOLS", "CE_WATERSEQPRODUCTION", CommandFlags.Modal)]
-        public void WaterSequenceProduction() { QueueUtilityProduction("Water", "CE_WATERSEQ ", "CE_WATERALIGN ", "CE_WATERPROFILE "); }
+        public void WaterSequenceProduction() { QueueUtilityProduction("Water", "CE_WATERSEQ", "CE_WATERALIGN", "CE_WATERPROFILE"); }
 
         [CommandMethod("CE_TOOLS", "CE_ASSEMBLYMARKERS", CommandFlags.Modal | CommandFlags.Redraw)]
         public void AssemblyMarkers()
@@ -62,13 +62,17 @@ namespace CETools.Civil3D
             if (document == null) return;
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - " + discipline + " Sequence + Production",
-                "Sequence the network and automatically continue into alignment production. Profile creation is optional because profile-view placement may still require a drawing pick.");
-            model.AddChoice("Profiles", "Production", "Create profiles after alignments", "No", "Queue the discipline profile command after sequencing/alignment.", new[] { "No", "Yes" });
+                "Sequence the network and automatically continue into alignment production. Profile creation is optional and starts only after the previous interactive step has finished.");
+            model.AddChoice("Profiles", "Production", "Create profiles after alignments", "No", "When Yes, the discipline profile command starts after sequencing and alignment complete, then asks for its normal profile-view inputs.", new[] { "No", "Yes" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
-            string command = sequence + align;
-            if (string.Equals(model.Text("Profiles"), "Yes", StringComparison.OrdinalIgnoreCase)) command += profile;
-            document.Editor.WriteMessage("\nCE {0} production queued: sequence -> alignments{1}.", discipline, model.Text("Profiles") == "Yes" ? " -> profiles" : string.Empty);
-            document.SendStringToExecute(command, true, false, true);
+
+            var commands = new List<string> { sequence, align };
+            if (string.Equals(model.Text("Profiles"), "Yes", StringComparison.OrdinalIgnoreCase)) commands.Add(profile);
+            document.Editor.WriteMessage("\nCE {0} production queued safely: sequence -> alignments{1}.", discipline, commands.Count > 2 ? " -> profiles" : string.Empty);
+            CeSequentialCommandRunner.Start(
+                document,
+                commands,
+                "CE Tools - " + discipline + " sequence + production");
         }
 
         private static Document ActiveDocument() { return AcApplication.DocumentManager.MdiActiveDocument; }
