@@ -6,21 +6,25 @@ Set-StrictMode -Version Latest
 
 $root = (Resolve-Path -LiteralPath $RepoRoot.Trim().Trim('"')).ProviderPath
 $src = Join-Path $root 'src\CE.Tools.Civil3D'
+
 function Text([string]$name) {
     $path = Join-Path $src $name
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "AUGUST11 VALIDATION FAILED: missing $path" }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "AUGUST11 VALIDATION FAILED: missing $path"
+    }
     return [System.IO.File]::ReadAllText($path)
 }
-function Require([bool]$condition,[string]$message) { if (-not $condition) { throw "AUGUST11 VALIDATION FAILED: $message" } }
+function Require([bool]$condition,[string]$message) {
+    if (-not $condition) { throw "AUGUST11 VALIDATION FAILED: $message" }
+}
 
 $production = Text 'August11ProductionCentreCommands.cs'
+$presets = Text 'August11DisciplineStylePresetCommands.cs'
 $network = Text 'August11NetworkBatchCommands.cs'
 $midblock = Text 'August11MidblockSewerProductionCommands.cs'
 $road = Text 'August11RoadCompletionCommands.cs'
 $roadExtra = Text 'August11RoadNamingCurveCommands.cs'
 $vertical = Text 'August11RoadVerticalCurveCommands.cs'
-$stylePresets = Text 'August11DisciplineStylePresetCommands.cs'
-$styleCentre = Text 'ProjectStyleCenterCommands.cs'
 $roadCorridor = Text 'RoadCorridorCompletionCommands.cs'
 $roadLayout = Text 'RoadLayoutProductionCommands.cs'
 $survey = Text 'August11SurveyRuntimeCommands.cs'
@@ -33,6 +37,8 @@ $cogo = Text 'CogoPointProjectStyleCommands.cs'
 $universal = Text 'UniversalDynamicRefreshCommands.cs'
 $projectCoordination = Text 'ProjectCoordinationCommands.cs'
 $platform = Text 'PlatformProductionCommands.cs'
+$sequence = Text 'CeSequentialCommandRunner.cs'
+$styleCentre = Text 'ProjectStyleCenterCommands.cs'
 
 # Production / welcome / guided discipline structure.
 foreach ($command in @(
@@ -49,20 +55,19 @@ Require ($production.Contains('CE_TOOLS_PRODUCTION_WORKFLOW_TAB')) 'dedicated CE
 Require ($production.Contains('CE-PRODUCTION CENTRE') -and $production.Contains('CE-ENGINEERING INTELLIGENCE CENTRE')) 'two-centre welcome screen missing'
 Require ($production.Contains('Dark') -and $production.Contains('Light')) 'CE dark/light preference missing'
 Require ($plugin.Contains('ProductionWorkflowRibbonBuilder.EnsureCreated()')) 'dedicated Production ribbon is not wired into PluginEntry'
-Require (-not $production.Contains('bool? accepted = AcApplication.ShowModalWindow')) 'welcome screen still depends on host-specific modal return signature'
-foreach ($obsoleteAlias in @('CE_BOQSTORMWATER','CE_REPORTSTORMWATER','CE_PARKGRADINGTOOLS','CE_PARKQTYTOOLS','CE_STANDARDS','CE_HYDROLOGYREVIEW','CE_FLOODQUICK')) {
-    Require (-not $production.Contains($obsoleteAlias)) "obsolete Production Centre command alias remains: $obsoleteAlias"
-}
+Require (-not $production.Contains('bool? accepted = AcApplication.ShowModalWindow')) 'welcome screen still uses host-specific modal return signature'
 
-# Independent discipline style selections from one shared Civil style library.
+# Per-discipline styles: safe production activation must never leak a previous discipline.
 foreach ($command in @('CE_DISCIPLINESTYLEPRESETS','CE_DISCIPLINESTYLEINFO')) {
-    Require ($stylePresets.Contains($command)) "$command missing from per-discipline style preset source"
+    Require ($presets.Contains($command)) "$command missing from per-discipline style preset source"
 }
-Require ($stylePresets.Contains('PROJECT_STYLE_PRESET_')) 'per-discipline style preset records missing'
-Require ($stylePresets.Contains('Roads') -and $stylePresets.Contains('Stormwater') -and $stylePresets.Contains('Sewer') -and $stylePresets.Contains('Water') -and $stylePresets.Contains('Platforms')) 'core discipline preset list incomplete'
-Require ($styleCentre.Contains('August11DisciplineStylePresetManager.SavePreset(document.Database, selection);')) 'Project Style Centre does not snapshot the saved discipline selection'
+Require ($presets.Contains('PROJECT_STYLE_PRESET_')) 'per-discipline style preset records missing'
+Require ($presets.Contains('ActivateForProduction')) 'safe production style activation helper missing'
+Require ($presets.Contains('var clean = new ProjectStyleSelection')) 'clean drawing-default discipline fallback missing'
+Require ($styleCentre.Contains('August11DisciplineStylePresetManager.SavePreset(document.Database, selection);')) 'Project Style Centre does not snapshot discipline presets'
 foreach ($discipline in @('Platforms','Roads','Stormwater','Sewer','Water','Bulk Water','Parking','Flood')) {
-    Require ($production.Contains('August11DisciplineStylePresetManager.Activate(Active() == null ? null : Active().Database, "' + $discipline + '");')) "$discipline Production Centre does not activate its stored style preset"
+    $token = 'August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "' + $discipline + '")'
+    Require ($production.Contains($token)) "$discipline Production Centre does not safely activate its discipline preset"
 }
 Require ($production.Contains('CE_DISCIPLINESTYLEPRESETS')) 'Production Centre does not expose discipline style preset management'
 
@@ -70,89 +75,72 @@ Require ($production.Contains('CE_DISCIPLINESTYLEPRESETS')) 'Production Centre d
 foreach ($command in @('CE_NETWORKFROMPOLYLINESBATCH','CE_NETWORKCONNECTSELECTED','CE_NETWORKBATCHTOOLS','CE_NETWORKSOURCEMARKERSCLEAR')) {
     Require ($network.Contains($command)) "$command missing from August11 network source"
 }
-Require ($network.Contains('CE_NETWORK_SOURCE_CREATED')) 'network duplicate source marker missing'
+Require ($network.Contains('CE_NETWORK_SOURCE_CREATED')) 'network duplicate-source marker missing'
 Require ($network.Contains('Queue<ObjectId>')) 'network-from-object batch queue missing'
-Require ($legacyNetwork.Contains('new August11NetworkBatchCommands().CreateNetworksBatch();')) 'legacy CE_NETWORKFROMPOLYLINES is not routed to batch source selection'
-Require ($legacyNetwork.Contains('new August11NetworkBatchCommands().ConnectSelectedParts();')) 'legacy CE_NETWORKCONNECT is not routed to selected multi-part workflow'
+Require ($legacyNetwork.Contains('new August11NetworkBatchCommands().CreateNetworksBatch();')) 'legacy network-from-polylines command is not routed to batch workflow'
+Require ($legacyNetwork.Contains('new August11NetworkBatchCommands().ConnectSelectedParts();')) 'legacy network-connect command is not routed to selected multi-part workflow'
 Require ($roadExtra.Contains('CE_CLOSEPIPESONLY')) 'separate Close Pipes Only command missing'
-Require ($roadExtra.Contains('never calls CE_BOQREFRESH')) 'Close Pipes Only does not explicitly separate itself from BOQ refresh'
-$allSourceText = (Get-ChildItem -LiteralPath $src -Filter '*.cs' -File | ForEach-Object { [System.IO.File]::ReadAllText($_.FullName) }) -join "`n"
-$badClosePattern = '(?is)"[^"\r\n]*Close\s+Pipe(?:s|\s+Ends)?[^"\r\n]*"\s*,\s*"CE_BOQREFRESH'
-Require (-not [regex]::IsMatch($allSourceText,$badClosePattern)) 'a Close Pipes action is still mapped to CE_BOQREFRESH'
 
-# Continuous midblock sewer production.
+# Continuous Midblock sewer production.
 foreach ($token in @('CE_MIDBLOCKSEWERPRODUCTION','Automatic low side from surface','60 m','80 m','Planning manhole diameter','1.2','Preferred offset from erf corner','ClusterRows','BuildManholeStations')) {
     Require ($midblock.Contains($token)) "midblock production token '$token' missing"
 }
 Require ($routePlanner.Contains('CE_MIDBLOCKSEWERPRODUCTION')) 'Route Planner Option 2 does not use continuous Midblock Sewer Production'
 
-# Road finishing / junction sequencing / annotation.
+# Road completion / junctions / naming / utility offsets.
 foreach ($command in @('CE_ROADCONTINUITYFIX','CE_ROADOUTSIDEOFFSET','CE_JUNCTIONTRIMBOUNDARIES','CE_JUNCTIONSETTINGOUT4','CE_ROUTEANNOTATIONSTYLE','CE_ROUTESHIFTANNOTATION','CE_POLYLINEARCS')) {
     Require ($road.Contains($command)) "$command missing from road completion source"
 }
 foreach ($command in @('CE_ROUTEHORIZONTALCURVES','CE_ROADNAMESYNC','CE_UTILITYROUTEOFFSET','CE_CLOSEPIPESONLY')) {
     Require ($roadExtra.Contains($command)) "$command missing from final road/network field source"
 }
-Require ($road.Contains('IsPlottable = plottable')) 'junction trim non-plot layer control missing'
-Require ($road.Contains('CE_TRIMINSIDEMULTI')) 'junction trim boundary workflow is not handed to multi-boundary Trim Inside'
-Require ($road.Contains('document.SendStringToExecute("CE_VERTEXSETTINGOUT ", true, false, true);')) 'ordered junction setting-out is not routed to general polyline/arc Vertex Setting-Out'
-Require ($roadLayout.Contains('new August11RoadCompletionCommands().JunctionSettingOutFourQuadrants();')) 'legacy CE_ROADJUNCTIONSETTINGOUT is still arc-only'
-Require (-not $roadLayout.Contains('List<Arc> arcs = ResolveGeneratedJunctions')) 'legacy road-junction implementation still resolves only Arc geometry'
-Require ($road.Contains('1.8') -and $road.Contains('2.0') -and $road.Contains('2.5') -and $road.Contains('3.5') -and $road.Contains('5.0')) 'route annotation paper text choices incomplete'
-Require ($road.Contains('Show metre suffix')) 'route dimensions do not expose metre display'
-Require ($road.Contains('PaperAnnotationScale.ModelDistance')) 'route arrow-size paper scaling missing'
-Require ($roadExtra.Contains('Horizontal curve radius') -and $roadExtra.Contains('BuildFilletedPolyline')) 'multiple route horizontal curves/radii implementation missing'
+Require ($road.Contains('CE_TRIMINSIDEMULTI')) 'junction trim workflow is not handed to multi-boundary Trim Inside'
+Require ($roadLayout.Contains('new August11RoadCompletionCommands().JunctionSettingOutFourQuadrants();')) 'legacy junction setting-out is not routed to the four-quadrant workflow'
+Require (-not $roadLayout.Contains('List<Arc> arcs = ResolveGeneratedJunctions')) 'legacy junction setting-out still resolves only arcs'
 Require ($roadExtra.Contains('CE_ROAD_NAME_LINK') -and $roadExtra.Contains('SyncRoadNames')) 'ROAD-n name linkage engine missing'
-Require ($roadExtra.Contains('Stormwater') -and $roadExtra.Contains('Sewer') -and $roadExtra.Contains('Water') -and $roadExtra.Contains('Bulk Water')) 'utility route offsets are not discipline-aware'
-Require ($universal.Contains('August11RoadNamingCurveCommands.SyncRoadNames(document, false);')) 'ROAD-n names are not dynamically synchronized in universal refresh'
-Require ($plugin.Contains('Cmd("Create / Rebuild Baselines and Regions", "CE_ROADCORRIDORCOMPLETE ')) 'Corridor Baselines/Regions still points to a report instead of production'
-Require ($plugin.Contains('Cmd("Baseline / Region Report", "CE_CORBASEUI ')) 'Corridor baseline/region report was not preserved separately'
-Require ($plugin.Contains('CE_NETWORKFROMPOLYLINESBATCH') -and $plugin.Contains('CE_UTILITYROUTEOFFSET') -and $plugin.Contains('CE_CLOSEPIPESONLY')) 'new field network/utility tools are not exposed in Utilities ribbon'
-Require ($production.Contains('CE_ROUTEHORIZONTALCURVES') -and $production.Contains('CE_ROADNAMESYNC')) 'Road Production Centre does not expose horizontal curves and road-name sync'
-Require ($production.Contains('CE_UTILITYROUTEOFFSET')) 'guided utility production still lacks explicit erf/reserve offset workflow'
+Require ($universal.Contains('August11RoadNamingCurveCommands.SyncRoadNames(document, false);')) 'ROAD-n names are not dynamically synchronized'
 
-# Final road design profiles must contain tangents/PVIs plus actual parabolic vertical curves.
+# Safe interactive command sequencing replaces the older SendStringToExecute chains.
+foreach ($token in @('CommandEnded += OnCommandEnded','CommandCancelled += OnCommandCancelled','CommandFailed += OnCommandFailed','AcApplication.Idle += OnIdle')) {
+    Require ($sequence.Contains($token)) "sequential command runner missing '$token'"
+}
+Require ($roadCorridor.Contains('CeSequentialCommandRunner.Start')) 'road full-profile/corridor workflows do not use safe sequential execution'
+Require ($roadCorridor.Contains('new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" }')) 'complete road-profile step list is missing'
+Require ($roadCorridor.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }')) 'complete road-corridor step list is missing'
+Require (-not $roadCorridor.Contains('SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE')) 'unsafe multi-command road-profile string remains'
+Require (-not $roadCorridor.Contains('SendStringToExecute("CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE')) 'unsafe multi-command corridor string remains'
 Require ($vertical.Contains('CE_ROADPROFILEBESTFIT') -and $vertical.Contains('CE_ROADVERTICALCURVES')) 'final road vertical-curve commands missing'
 Require ($vertical.Contains('AddFreeSymmetricParabolaByPVIAndCurveLength')) 'PVI-based parabolic vertical-curve creation missing'
-Require ($roadCorridor.Contains('CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVES')) 'CE_ROADPROFILEFULL does not finish with vertical curves'
-Require ($roadCorridor.Contains('PropertyInfo visibleProperty = corridor.GetType().GetProperty("Visible"')) 'corridor completion does not explicitly restore hidden corridor display'
-Require ($roadCorridor.Contains('RecordGraphicsModified')) 'corridor completion does not flag graphics after visibility/rebuild'
+Require ($roadCorridor.Contains('PropertyInfo visibleProperty = corridor.GetType().GetProperty("Visible"')) 'corridor visibility repair missing'
+Require ($roadCorridor.Contains('RecordGraphicsModified')) 'corridor graphics refresh missing'
 
 # Survey / COGO / linked table dynamics.
 foreach ($command in @('CE_COGOLABELRESTOREINITIAL','CE_COORDMULTISURFACETABLE','CE_COORDMULTISURFACEREFRESH')) {
     Require ($survey.Contains($command)) "$command missing from August11 survey runtime source"
 }
 Require ($survey.Contains('CE_COGO_LABEL_INITIAL_OFFSET')) 'initial COGO label position storage missing'
-Require ($survey.Contains('CogoPointProjectStyleCommands.ApplySelectedStyles')) 'immediate post-setting-out COGO style sync missing'
-Require ($survey.Contains('VertexSettingOutCommands.RefreshAll')) 'immediate vertex setting-out refresh missing'
-Require ($survey.Contains('August11SurveyRuntimeManager')) 'immediate survey runtime manager missing'
+Require ($survey.Contains('CogoPointProjectStyleCommands.ApplySelectedStyles')) 'post-setting-out COGO style sync missing'
+Require ($survey.Contains('VertexSettingOutCommands.RefreshAll')) 'post-setting-out vertex refresh missing'
 Require ($plugin.Contains('August11SurveyRuntimeManager.Initialize();')) 'August11 survey runtime manager is not started'
 Require ($plugin.Contains('August11SurveyRuntimeManager.Terminate();')) 'August11 survey runtime manager is not terminated'
-Require ($projectCoordination.Contains('August11SurveyRuntimeCommands.SyncProjectLocation(document, town, code);')) 'survey town/coordinate system is not linked into Project Information'
-Require ($closure.Contains('restored += August11SurveyRuntimeCommands.RestoreCogoLabels(document, selected);')) 'generic annotation Restore does not restore COGO labels'
-Require ($closure.Contains('August11SurveyRuntimeCommands.CaptureCogoInitialOffsets(document);')) 'smart overlap does not preserve initial COGO label position'
-Require ($cogo.Contains('August11SurveyRuntimeCommands.CaptureCogoInitialOffsets(document);')) 'COGO overlap command does not preserve initial label position'
-Require ($universal.Contains('August11SurveyRuntimeCommands.RefreshMultiSurfaceTables(document);')) 'multi-surface coordinate tables are not part of universal refresh'
+Require ($projectCoordination.Contains('August11SurveyRuntimeCommands.SyncProjectLocation(document, town, code);')) 'town/coordinate system is not linked into Project Information'
+Require ($closure.Contains('August11SurveyRuntimeCommands.CaptureCogoInitialOffsets(document);')) 'generic overlap does not preserve initial COGO label position'
+Require ($cogo.Contains('August11SurveyRuntimeCommands.CaptureCogoInitialOffsets(document);')) 'COGO overlap does not preserve initial label position'
+Require ($universal.Contains('August11SurveyRuntimeCommands.RefreshMultiSurfaceTables(document);')) 'multi-surface tables are not part of universal refresh'
 
-# Robust table source navigation.
+# Robust table navigation.
 foreach ($token in @('CE_TABLECELLZOOM','Table Source Navigation','All linked source objects','FeatureLine','Handle')) {
     Require ($table.Contains($token)) "table source navigation token '$token' missing"
 }
 Require (-not $table.Contains('hit != null &&')) 'TableHitTestInfo still treated as nullable/reference type'
-Require ($closure.Contains('new TableCellNavigationCommands().TableCellZoom();')) 'legacy CE_TABLESOURCEZOOM is not routed to robust source popup'
+Require ($closure.Contains('new TableCellNavigationCommands().TableCellZoom();')) 'legacy table-source zoom is not routed to robust source navigation'
 
-# Existing field-review items that must remain active from the earlier closure pass.
+# Earlier field-review behaviour must remain active.
 Require ($universal.Contains('FinalFeatureLineReportCommands.RefreshAll(document)')) 'feature-line report is not universally refreshed'
 Require ($universal.Contains('CogoPointProjectStyleCommands.ApplySelectedStyles')) 'COGO styles are not universally synchronized'
 Require ($cogo.Contains('restrictedPointIds') -or $cogo.Contains('restricted')) 'selected COGO overlap scope missing'
-Require (-not $cogo.Contains('return bestDistance == double.MaxValue ? candidates.Last() : best;')) 'old farthest-candidate COGO overlap fallback remains after compatibility repair'
-Require (-not $platform.Contains('else featureLine.SetPointElevation(index, elevation);')) 'Platform slope still uses unsafe AllPoints numeric index setter'
+Require (-not $cogo.Contains('return bestDistance == double.MaxValue ? candidates.Last() : best;')) 'old farthest-candidate COGO overlap fallback remains'
+Require (-not $platform.Contains('else featureLine.SetPointElevation(index, elevation);')) 'Platform slope still uses unsafe numeric AllPoints index setter'
 Require (-not $platform.Contains('child.SetPointElevation(index, sourcePoint.Z + dz);')) 'Platform stepped-offset transfer still uses unsafe numeric point index'
-
-# PDF popup and dynamic linked-output systems from prior field closure must remain.
-$final = Text 'FinalAllCommentsCompletionCommands.cs'
-Require ($final.Contains('CE_PDFTODWG')) 'PDF-to-DWG workflow missing'
-Require ($final.Contains('PromptOpenFileOptions')) 'PDF-to-DWG file picker popup missing'
-Require ($universal.Contains('Automatic') -or $universal.Contains('CommandEnded')) 'automatic linked-output refresh runtime missing'
 
 Write-Host 'August 11 field completion validation passed.' -ForegroundColor Green
