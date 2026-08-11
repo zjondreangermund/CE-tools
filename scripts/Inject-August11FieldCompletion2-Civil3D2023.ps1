@@ -17,6 +17,7 @@ function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText
 $production = Need 'August11ProductionCentreCommands.cs'
 $roadHub = Need 'August11RoadCompletionCommands.cs'
 $roadExtra = Need 'August11RoadNamingCurveCommands.cs'
+$roadLayout = Need 'RoadLayoutProductionCommands.cs'
 $plugin = Need 'PluginEntry.cs'
 $universal = Need 'UniversalDynamicRefreshCommands.cs'
 
@@ -56,8 +57,35 @@ if (-not $text.Contains('"CE_ROUTEHORIZONTALCURVES"')) {
                     new DisciplineWorkflowAction("Utility offsets from erf / road-reserve geometry", "CE_UTILITYROUTEOFFSET", "Create Stormwater/Sewer/Water/Bulk-Water route strings at selected offsets from erf, reserve-edge or road-centre geometry.", "02 Geometry"),
 '@
     $text = $text.Replace($anchor,$insert.TrimEnd("`r","`n") + "`r`n" + $anchor)
-    WriteText $roadHub $text
     Write-Host 'Added horizontal curves, road-name sync and utility-route offsets to Road Completion.' -ForegroundColor Green
+}
+# Ordered junction selection must go directly to the general vertex engine; it
+# accepts polylines as well as arcs. Do not send it back through the legacy
+# arc-only CE_ROADJUNCTIONSETTINGOUT command.
+if ($text.Contains('document.SendStringToExecute("CE_ROADJUNCTIONSETTINGOUT ", true, false, true);')) {
+    $text = $text.Replace('document.SendStringToExecute("CE_ROADJUNCTIONSETTINGOUT ", true, false, true);','document.SendStringToExecute("CE_VERTEXSETTINGOUT ", true, false, true);')
+    Write-Host 'Routed ordered junction setting-out directly to polyline/arc-capable Vertex Setting-Out.' -ForegroundColor Green
+}
+WriteText $roadHub $text
+
+# The legacy road-junction command itself was hard-coded to JUNCTION_ARC and an
+# Arc cast. Keep its public command name, but delegate to the ordered all-Curve
+# workflow so old ribbon buttons also support polylines.
+$text = ReadText $roadLayout
+$junctionPattern = '(?s)        \[CommandMethod\("CE_TOOLS", "CE_ROADJUNCTIONSETTINGOUT".*?\)\]\s*        public void JunctionSettingOut\(\)\s*        \{.*?\n        \}\s*(?=\n        \[CommandMethod\("CE_TOOLS", "CE_ROADLAYOUTREFRESH")'
+$junctionReplacement = @'
+        [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONSETTINGOUT", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void JunctionSettingOut()
+        {
+            new August11RoadCompletionCommands().JunctionSettingOutFourQuadrants();
+        }
+'@
+if (-not $text.Contains('new August11RoadCompletionCommands().JunctionSettingOutFourQuadrants();')) {
+    $regex = [regex]::new($junctionPattern,[System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if (-not $regex.IsMatch($text)) { throw 'Legacy arc-only CE_ROADJUNCTIONSETTINGOUT method could not be located.' }
+    $text = $regex.Replace($text,$junctionReplacement.TrimEnd("`r","`n"),1)
+    WriteText $roadLayout $text
+    Write-Host 'Replaced legacy arc-only CE_ROADJUNCTIONSETTINGOUT with all-Curve ordered setting-out.' -ForegroundColor Green
 }
 
 # Guided Road/Sewer/Bulk-Water centres should expose these explicit field tools.
@@ -71,7 +99,6 @@ if (-not $text.Contains('Action("Horizontal Centreline Curves", "CE_ROUTEHORIZON
 '@
     $text = $text.Replace($anchor,$anchor + "`r`n" + $insert.TrimEnd("`r","`n"))
 }
-$text = $text.Replace('Action("PREPARE - Midblock / Road-Reserve Route", "CE_MIDBLOCKSEWERPRODUCTION",','Action("PREPARE - Midblock / Road-Reserve Route", "CE_MIDBLOCKSEWERPRODUCTION",')
 $text = $text.Replace('Action("PREPARE - Utility Route from Road Reserve", "CE_UTILITYFROMROADRESERVE", "Create bulk-water planning routes at selected offsets.", "02 PREPARE"),','Action("PREPARE - Utility Route from Erf / Road Reserve", "CE_UTILITYROUTEOFFSET", "Create bulk-water planning routes at selected offsets from erf, reserve-edge or road-centre geometry.", "02 PREPARE"),')
 # Shared SW/Water utility workflow uses explicit configurable offset command.
 $text = $text.Replace('Action("PREPARE - Utility Route Planner", "CE_UTILITYFROMROADRESERVE", "Create a preliminary route from road-reserve geometry.", "02 PREPARE"),','Action("PREPARE - Utility Route Planner", "CE_UTILITYROUTEOFFSET", "Create a preliminary route from erf, reserve-edge or road-centre geometry at a selected offset.", "02 PREPARE"),')
@@ -128,7 +155,6 @@ else { Write-Host 'No remaining Close Pipes -> BOQ refresh mapping was found.' -
 
 # Dynamically keep names consistent after relevant road/name geometry changes.
 $text = ReadText $universal
-$roadNameRefresh = '                try { August11RoadNamingCurveCommands.SyncRoadNames(document, false); }`r`n                catch { result.Warnings++; }'
 if (-not $text.Contains('August11RoadNamingCurveCommands.SyncRoadNames(document, false);')) {
     $anchor = '                try { result.JunctionLabels += RoadJunctionCompletionCommands.RefreshAll(document); }`r`n                catch { result.Warnings++; }'
     if (-not $text.Contains($anchor)) {
