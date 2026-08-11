@@ -1,4 +1,4 @@
-[CmdletBinding()]
+[CmdletBinding()
 param([Parameter(Mandatory=$true)][string]$RepoRoot)
 
 $ErrorActionPreference = 'Stop'
@@ -126,6 +126,39 @@ if ($platformVerify.Contains('child.SetPointRelativeElevation(point, false, sour
     throw 'Unsafe surface-relative stepped-offset elevation call remains after repair.'
 }
 Write-Host 'Repaired platform elevations for both absolute and surface-relative feature lines without closing-point index errors.' -ForegroundColor Green
+
+# Pre-wire the user-global settings bridge with single-line anchors. The later
+# global UI/style repair performs richer validation, but must not depend on one
+# exact CRLF/LF two-line block in DisciplineWorkflowDialogs.cs.
+$dialogs = Read-Required 'DisciplineWorkflowDialogs.cs'
+$dialogsText = [System.IO.File]::ReadAllText($dialogs)
+$globalLoad = '            CeGlobalProductionSettingsStore.Load(model);'
+$globalSave = '                CeGlobalProductionSettingsStore.Save(model);'
+$localLoadLine = '                ProductionSettingsPersistenceStore.Load(document.Database, model);'
+$crossSaveLine = '                CrossDrawingProductionSettingsStore.Save(model);'
+
+if (-not $dialogsText.Contains($globalLoad)) {
+    if (-not $dialogsText.Contains($localLoadLine)) {
+        throw 'Shared settings single-line local-load marker was not found.'
+    }
+    $dialogsText = $dialogsText.Replace(
+        $localLoadLine,
+        $localLoadLine + "`r`n            // Latest user-global values intentionally win over drawing-local popup values.`r`n" + $globalLoad)
+}
+if (-not $dialogsText.Contains($globalSave)) {
+    if (-not $dialogsText.Contains($crossSaveLine)) {
+        throw 'Shared settings single-line cross-drawing save marker was not found.'
+    }
+    $dialogsText = $dialogsText.Replace(
+        $crossSaveLine,
+        $crossSaveLine + "`r`n" + $globalSave)
+}
+[System.IO.File]::WriteAllText($dialogs, $dialogsText, [System.Text.UTF8Encoding]::new($false))
+$dialogsVerify = [System.IO.File]::ReadAllText($dialogs)
+if (-not $dialogsVerify.Contains($globalLoad) -or -not $dialogsVerify.Contains($globalSave)) {
+    throw 'All-discipline global settings pre-wire verification failed.'
+}
+Write-Host 'Pre-wired all-discipline global settings hooks with newline-tolerant anchors.' -ForegroundColor Green
 
 # Autodesk.AutoCAD.Runtime also defines Exception. Keep the runtime namespace
 # for CommandMethod/CommandFlags but explicitly use System.Exception here.
