@@ -20,5 +20,13 @@ namespace CETools.Civil3D
             if (document == null) return;
             document.SendStringToExecute("CE_SFTOOLS ", true, false, true);
         }
+
+        [CommandMethod("CE_TOOLS", "CE_BULKWATERTOOLS", CommandFlags.Modal)]
+        public void BulkWaterToolsAlias()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+            document.SendStringToExecute("CE_BULKWATERPRODUCTIONCENTRE ", true, false, true);
+        }
     }
 }
