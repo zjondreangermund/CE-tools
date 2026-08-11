@@ -60,7 +60,8 @@ foreach ($pair in $activations.GetEnumerator()) {
 $settingsAnchor = '                Action("Project Style Centre", "CE_PROJECTSTYLES", "Select shared discipline Civil 3D styles.", "01 SETTINGS"),'
 if (-not $text.Contains('Action("Discipline Style Presets", "CE_DISCIPLINESTYLEPRESETS"')) {
     if (-not $text.Contains($settingsAnchor)) { throw 'Project Production style-settings marker not found.' }
-    $text = $text.Replace($settingsAnchor,$settingsAnchor + "`r`n                Action(\"Discipline Style Presets\", \"CE_DISCIPLINESTYLEPRESETS\", \"Review, copy or activate independent Roads/SW/Sewer/Water/Platform style selections from the shared style library.\", \"01 SETTINGS\"),")
+    $presetAction = '                Action("Discipline Style Presets", "CE_DISCIPLINESTYLEPRESETS", "Review, copy or activate independent Roads/SW/Sewer/Water/Platform style selections from the shared style library.", "01 SETTINGS"),'
+    $text = $text.Replace($settingsAnchor,$settingsAnchor + "`r`n" + $presetAction)
 }
 WriteText $production $text
 
