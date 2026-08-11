@@ -9,21 +9,29 @@ $src = Join-Path $root 'src\CE.Tools.Civil3D'
 
 function Read-Source([string]$name) {
     $path = Join-Path $src $name
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing required source: $path" }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Missing required source: $path"
+    }
     return [System.IO.File]::ReadAllText($path)
 }
 
 function Require([string]$text,[string]$token,[string]$label) {
-    if (-not $text.Contains($token)) { throw "Final comment validation failed: missing $label -> $token" }
+    if (-not $text.Contains($token)) {
+        throw "Final comment validation failed: missing $label -> $token"
+    }
 }
 
 function Forbid([string]$text,[string]$token,[string]$label) {
-    if ($text.Contains($token)) { throw "Final comment validation failed: forbidden $label remains -> $token" }
+    if ($text.Contains($token)) {
+        throw "Final comment validation failed: forbidden $label remains -> $token"
+    }
 }
 
 function Require-File([string]$relative) {
     $path = Join-Path $root $relative
-    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Final comment validation failed: missing file $relative" }
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Final comment validation failed: missing file $relative"
+    }
     return [System.IO.File]::ReadAllText($path)
 }
 
@@ -68,96 +76,127 @@ $requiredCommands = @(
     'CE_PLATFORMSETTINGOUT','CE_PLATFORMNAMES','CE_PLATFORMTABLE','CE_PLATFORMCUTFILL','CE_PLATFORMDRAWINGS','CE_PLATFORMREFRESH',
     'CE_BOUNDARYEDITTOOLS','CE_TRIMOUTSIDEMULTI','CE_TRIMINSIDEMULTI','CE_TRIMDELETEOUTSIDEMULTI','CE_TRIMDELETEINSIDEMULTI','CE_EXTENDOUTSIDEMULTI','CE_EXTENDINSIDEMULTI'
 )
-$combinedNew = $closure + "`n" + $namibia + "`n" + $route + "`n" + $midblock + "`n" + $behavior + "`n" + $sewerSequenceAuto + "`n" + $profileAutoImport + "`n" + $automatic + "`n" + $tableCell + "`n" + $tablePresentation + "`n" + $selectedFeatureRefresh + "`n" + $leaderPlacement + "`n" + $branchLabels + "`n" + $annotationReview + "`n" + $platform + "`n" + $road + "`n" + $drawing
-foreach ($command in $requiredCommands) { Require $combinedNew ('"' + $command + '"') ('command ' + $command) }
 
-# Critical annotation behaviour.
-foreach ($token in @('CE_OVERLAP_ORIGINAL','ResolveOverlaps(document, restricted)','MoveToTop(ids)','MoveToBottom(ids)','BackgroundFill','UseBackgroundColor')) { Require $closure $token 'selective/restorable annotation behaviour' }
-foreach ($token in @('GetLastVertex','TextLocation','CE_OVERLAP_ORIGINAL','leader/reference vertices unchanged')) { Require $leaderPlacement $token 'MLeader text-above-leader behaviour' }
-foreach ($token in @('CE-BRANCH-LABELS','LooksLikeBranchLabel','ContainsBranch')) { Require $branchLabels $token 'dedicated branch-label layer' }
-foreach ($token in @('CE_MLEADERTEXTABOVE','CE_TABLEPRESENTATIONFIX','CE_TABLECELLZOOM','CE_FLANNOTREFRESHSELECTED','CE_BRANCHLABELLAYER')) { Require $annotationReview $token 'final annotation review workflow' }
+$combinedNew = @(
+    $closure,$namibia,$route,$midblock,$behavior,$sewerSequenceAuto,$profileAutoImport,
+    $automatic,$tableCell,$tablePresentation,$selectedFeatureRefresh,$leaderPlacement,
+    $branchLabels,$annotationReview,$platform,$road,$drawing
+) -join "`n"
 
-# Staged COGO resolver must now preserve clear labels and never use the old far candidate fallback.
+foreach ($command in $requiredCommands) {
+    Require $combinedNew ('"' + $command + '"') ('command ' + $command)
+}
+
+foreach ($token in @('CE_OVERLAP_ORIGINAL','ResolveOverlaps(document, restricted)','MoveToTop(ids)','MoveToBottom(ids)','BackgroundFill','UseBackgroundColor')) {
+    Require $closure $token 'selective/restorable annotation behaviour'
+}
+foreach ($token in @('GetLastVertex','TextLocation','CE_OVERLAP_ORIGINAL','leader/reference vertices unchanged')) {
+    Require $leaderPlacement $token 'MLeader text-above-leader behaviour'
+}
+foreach ($token in @('CE-BRANCH-LABELS','LooksLikeBranchLabel','ContainsBranch')) {
+    Require $branchLabels $token 'dedicated branch-label layer'
+}
+foreach ($token in @('CE_MLEADERTEXTABOVE','CE_TABLEPRESENTATIONFIX','CE_TABLECELLZOOM','CE_FLANNOTREFRESHSELECTED','CE_BRANCHLABELLAYER')) {
+    Require $annotationReview $token 'final annotation review workflow'
+}
+
 Require $cogo 'if (!occupied.Any(existing => existing.Intersects(currentBox)))' 'COGO non-overlap keep-position guard'
 Require $cogo 'return bestDistance == double.MaxValue ? item.LabelLocation : best;' 'COGO bounded safe fallback'
 Forbid $cogo 'return bestDistance == double.MaxValue ? candidates.Last() : best;' 'COGO farthest-candidate fallback'
 
-# Table behaviour.
-foreach ($token in @('table.HitTest(picked.PickedPoint','hit.Row','hit.Column','LinkedTableSourceNavigator.Discover')) { Require $tableCell $token 'linked table cell source navigation' }
-foreach ($token in @('SetCellGridVisible','GridLineType.AllGridLines','CellAlignment.MiddleCenter','GenerateLayout')) { Require $tablePresentation $token 'table grid/spacing presentation repair' }
-foreach ($token in @('FindTablesLinkedToSources','BindingFlags.NonPublic | BindingFlags.Static','CE_FLRELUPDATEMULTI')) { Require $selectedFeatureRefresh $token 'true selected feature-line linked refresh' }
+foreach ($token in @('table.HitTest(picked.PickedPoint','hit.Row','hit.Column','LinkedTableSourceNavigator.Discover')) {
+    Require $tableCell $token 'linked table cell source navigation'
+}
+foreach ($token in @('SetCellGridVisible','GridLineType.AllGridLines','CellAlignment.MiddleCenter','GenerateLayout')) {
+    Require $tablePresentation $token 'table grid/spacing presentation repair'
+}
+foreach ($token in @('FindTablesLinkedToSources','BindingFlags.NonPublic | BindingFlags.Static','CE_FLRELUPDATEMULTI')) {
+    Require $selectedFeatureRefresh $token 'true selected feature-line linked refresh'
+}
 
-# Namibia survey-grid transformation.
-foreach ($token in @('SchwarzeckA = 6377483.86528042','SchwarzeckInvF = 299.1528128','Dx = 616.0','Dy = 97.0','Dz = -251.0','LatitudeOriginDegrees = -22.0','GermanLegalMetre = 1.0000135965','TryParseAngle','FormatDms')) { Require $namibia $token 'Namibia LO transformation' }
+foreach ($token in @('SchwarzeckA = 6377483.86528042','SchwarzeckInvF = 299.1528128','Dx = 616.0','Dy = 97.0','Dz = -251.0','LatitudeOriginDegrees = -22.0','GermanLegalMetre = 1.0000135965','TryParseAngle','FormatDms')) {
+    Require $namibia $token 'Namibia LO transformation'
+}
 
-# Route-planner behaviour: the legacy Midblock command remains available, while
-# Route Planner Option 2 must now hand off to the continuous production engine.
-foreach ($token in @('CE-ROAD-CENTERLINE','CE-SEWER-ROUTE','CE-SW-ROUTE','CE-WATER-ROUTE','CE-BULK-WATER-ROUTE','Signed lateral offset')) { Require $route $token 'route planner road-reserve handoff' }
+foreach ($token in @('CE-ROAD-CENTERLINE','CE-SEWER-ROUTE','CE-SW-ROUTE','CE-WATER-ROUTE','CE-BULK-WATER-ROUTE','Signed lateral offset')) {
+    Require $route $token 'route planner road-reserve handoff'
+}
 Require $route '"CE_MIDBLOCKSEWERPRODUCTION"' 'Route Planner Option 2 continuous Midblock production handoff'
-foreach ($token in @('CE-SEWER-MIDBLOCK-CENTER','CE-SEWER-MIDBLOCK-OFFSET','SideOffset','GetOffsetCurves','visible side offsets')) { Require $midblock $token 'legacy Midblock sewer centre and parallel offset output remains available'
+foreach ($token in @('CE-SEWER-MIDBLOCK-CENTER','CE-SEWER-MIDBLOCK-OFFSET','SideOffset','GetOffsetCurves','visible side offsets')) {
+    Require $midblock $token 'legacy Midblock sewer centre and parallel offset output remains available'
+}
 
-# Road / assembly / utility behaviour.
-foreach ($token in @('CopyExtensionRecords','CE_ASSEMBLY_VISIBLE_MARKER','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION')) { Require $behavior $token 'junction/assembly/utility behaviour' }
-foreach ($token in @('CE_SEWSEQPRODUCTION queued','CE_SEWALIGN','Select main first')) { Require $sewerSequenceAuto $token 'sewer automatic sequence-to-alignment workflow' }
+foreach ($token in @('CopyExtensionRecords','CE_ASSEMBLY_VISIBLE_MARKER','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION')) {
+    Require $behavior $token 'junction/assembly/utility behaviour'
+}
+foreach ($token in @('CE_SEWSEQPRODUCTION queued','CE_SEWALIGN','Select main first')) {
+    Require $sewerSequenceAuto $token 'sewer automatic sequence-to-alignment workflow'
+}
 Require $road 'model.Text("Geometry")' 'junction Arc/Polyline output choice'
 Require $roadProduction 'AugustRoadProfileDefaults.PreferredBandSet' 'requested default road profile band set'
 Require $roadProduction 'AugustRoadStyleDefaults.Resolve(' 'road-only style fallback'
-foreach ($token in @('text.Contains("pipe")','text.Contains("sewer")','text.Contains("water")','DefaultBandSet')) { Require $roadStyleDefaults $token 'road style preference/utility-style rejection' }
-
-# Missing bundled profile/band styles must import automatically before profile creation.
-foreach ($token in @('Road-Single-Band Set 1-Full Grid','FindBundledStyleSources','ExportStylesFromSource','StyleConflictResolverType.Rename','HasExpectedBandLibrary')) { Require $profileAutoImport $token 'automatic profile/band style import runtime' }
-foreach ($sourceCheck in @(
-    @{ Text=$roadProduction; Name='road' },
-    @{ Text=$sewerProduction; Name='sewer' },
-    @{ Text=$stormwaterProduction; Name='stormwater' },
-    @{ Text=$waterProduction; Name='water' })) {
-    Require $sourceCheck.Text 'ProfileStyleAutoImportRuntime.EnsureBundledProfileStyles' ($sourceCheck.Name + ' profile auto-import hook')
+foreach ($token in @('text.Contains("pipe")','text.Contains("sewer")','text.Contains("water")','DefaultBandSet')) {
+    Require $roadStyleDefaults $token 'road style preference/utility-style rejection'
 }
 
-# Utility profiles must be isolated per alignment/branch so one bad object cannot roll back the whole batch.
-foreach ($token in @('CE_SEWPROFILE skipped {0}: {1}','new List<SewerAlignmentRecord> { record }','skipped branches: {3}')) { Require $sewerProduction $token 'sewer per-branch profile isolation' }
-foreach ($token in @('new List<StormwaterAlignmentRecord> { record }','skipped alignments: {3}','CE_SWPROFILE band refresh warning')) { Require $stormwaterProduction $token 'stormwater per-alignment profile isolation' }
-foreach ($token in @('CE_WATERPROFILE skipped {0}: {1}','skipped alignments: {2}','CE_WATERPROFILE band refresh warning')) { Require $waterProduction $token 'water per-alignment profile isolation' }
+foreach ($token in @('Road-Single-Band Set 1-Full Grid','FindBundledStyleSources','ExportStylesFromSource','StyleConflictResolverType.Rename','HasExpectedBandLibrary')) {
+    Require $profileAutoImport $token 'automatic profile/band style import runtime'
+}
+Require $roadProduction 'ProfileStyleAutoImportRuntime.EnsureBundledProfileStyles' 'road profile auto-import hook'
+Require $sewerProduction 'ProfileStyleAutoImportRuntime.EnsureBundledProfileStyles' 'sewer profile auto-import hook'
+Require $stormwaterProduction 'ProfileStyleAutoImportRuntime.EnsureBundledProfileStyles' 'stormwater profile auto-import hook'
+Require $waterProduction 'ProfileStyleAutoImportRuntime.EnsureBundledProfileStyles' 'water profile auto-import hook'
 
-# Sewer excavation must display standard nominal pipe diameters rather than raw host values.
-foreach ($token in @('110','160','200','250','300','OrderBy(value => Math.Abs(value - millimetres)).First()')) { Require $sewerExcavation $token 'sewer nominal diameter normalization' }
+foreach ($token in @('CE_SEWPROFILE skipped {0}: {1}','new List<SewerAlignmentRecord> { record }','skipped branches: {3}')) {
+    Require $sewerProduction $token 'sewer per-branch profile isolation'
+}
+foreach ($token in @('new List<StormwaterAlignmentRecord> { record }','skipped alignments: {3}','CE_SWPROFILE band refresh warning')) {
+    Require $stormwaterProduction $token 'stormwater per-alignment profile isolation'
+}
+foreach ($token in @('CE_WATERPROFILE skipped {0}: {1}','skipped alignments: {2}','CE_WATERPROFILE band refresh warning')) {
+    Require $waterProduction $token 'water per-alignment profile isolation'
+}
 
-# Automatic linked refresh and branch label enforcement.
-foreach ($token in @('document.CommandEnded += OnCommandEnded','UniversalDynamicRefreshManager.Queue()','PlatformDynamicRefreshManager.Queue()','ReadCommandName(args)')) { Require $automatic $token 'automatic linked refresh' }
+foreach ($token in @('110','160','200','250','300','OrderBy(value => Math.Abs(value - millimetres)).First()')) {
+    Require $sewerExcavation $token 'sewer nominal diameter normalization'
+}
+
+foreach ($token in @('document.CommandEnded += OnCommandEnded','UniversalDynamicRefreshManager.Queue()','PlatformDynamicRefreshManager.Queue()','ReadCommandName(args)')) {
+    Require $automatic $token 'automatic linked refresh'
+}
 Require $universal 'BranchLabelLayerRuntime.Apply(document);' 'automatic branch-label layer refresh'
 
-# The staged source must have all startup/ribbon integrations before validation runs.
-foreach ($token in @(
+$pluginTokens = @(
     'AugustGlobalShortcutManager.Initialize();','AugustAutomaticRefreshManager.Initialize();',
-    'CE_COMMENTCLOSURE','CE_ANNOTATIONREVIEW','CE_MLEADERTEXTABOVE','CE_TABLEPRESENTATIONFIX','CE_TABLECELLZOOM','CE_FLANNOTREFRESHSELECTED','CE_BRANCHLABELLAYER',
-    'CE_NAMIBIALO','CE_ROUTEPLANNER','CE_MIDBLOCKSEWERLAYOUT','CE_NETWORKMULTI','CE_SETTINGSMODE','CE_PROFILESTYLEAUTOIMPORT','CE_PROFILEBATCHSAFE',
-    'CE_ASSEMBLYMARKERS','CE_JUNCTIONRETURNTYPE','CE_SEWSEQPRODUCTION','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION')) {
+    'CE_COMMENTCLOSURE','CE_ANNOTATIONREVIEW','CE_MLEADERTEXTABOVE','CE_TABLEPRESENTATIONFIX',
+    'CE_TABLECELLZOOM','CE_FLANNOTREFRESHSELECTED','CE_BRANCHLABELLAYER','CE_NAMIBIALO',
+    'CE_ROUTEPLANNER','CE_MIDBLOCKSEWERLAYOUT','CE_NETWORKMULTI','CE_SETTINGSMODE',
+    'CE_PROFILESTYLEAUTOIMPORT','CE_PROFILEBATCHSAFE','CE_ASSEMBLYMARKERS','CE_JUNCTIONRETURNTYPE',
+    'CE_SEWSEQPRODUCTION','CE_SWSEQPRODUCTION','CE_WATERSEQPRODUCTION'
+)
+foreach ($token in $pluginTokens) {
     Require $plugin $token 'staged ribbon/startup integration'
 }
 Require $dialogs '!CrossDrawingSettingsPreference.UseSavedProjectSettings' 'saved-vs-drawing settings priority'
 Require $surface 'Internal holes only' 'surface internal-holes-only mode'
 
-# Native Civil 3D interoperability command names requested by comments.
-foreach ($token in @('_LANDXMLIN','_LANDXMLOUT','_EXPORTC3DDRAWING')) { Require $closure $token 'native Civil 3D interoperability command' }
+foreach ($token in @('_LANDXMLIN','_LANDXMLOUT','_EXPORTC3DDRAWING')) {
+    Require $closure $token 'native Civil 3D interoperability command'
+}
 
-# Verify the one-click build runs every closure injector/repair before this validator.
 $stage = Require-File 'scripts\Stage-Build-Install-Civil3D2023.ps1'
-foreach ($token in @(
-    'Inject-ProductionExpansion-Civil3D2023.ps1',
-    'Inject-August10BehaviorFixes-Civil3D2023.ps1',
-    'Inject-FinalAnnotationReview2-Civil3D2023.ps1',
-    'Inject-FinalUtilityWorkflow-Civil3D2023.ps1',
-    'Repair-CogoOverlap-Civil3D2023.ps1',
-    'Repair-RoadStyleFallback-Civil3D2023.ps1',
-    'Repair-BranchLabelRefresh-Civil3D2023.ps1',
-    'Repair-MidblockRoutePlanner-Civil3D2023.ps1',
-    'Repair-ProfileStyleAutoImport-Civil3D2023.ps1',
-    'Repair-UtilityProfileIsolation-Civil3D2023.ps1',
-    'Validate-August10CommentClosure.ps1')) {
+$stageTokens = @(
+    'Inject-ProductionExpansion-Civil3D2023.ps1','Inject-August10BehaviorFixes-Civil3D2023.ps1',
+    'Inject-FinalAnnotationReview2-Civil3D2023.ps1','Inject-FinalUtilityWorkflow-Civil3D2023.ps1',
+    'Repair-CogoOverlap-Civil3D2023.ps1','Repair-RoadStyleFallback-Civil3D2023.ps1',
+    'Repair-BranchLabelRefresh-Civil3D2023.ps1','Repair-MidblockRoutePlanner-Civil3D2023.ps1',
+    'Repair-ProfileStyleAutoImport-Civil3D2023.ps1','Repair-UtilityProfileIsolation-Civil3D2023.ps1',
+    'Validate-August10CommentClosure.ps1'
+)
+foreach ($token in $stageTokens) {
     Require $stage $token 'Civil 3D 2023 stage build gate'
 }
 
-# Command declarations in the final command classes must remain unique.
 $newCommandFiles = @(
     'August10CommentClosureCommands.cs','NamibiaCoordinateRuntimeCommands.cs','RoutePlannerExpansionCommands.cs','MidblockSewerLayoutCommands.cs',
     'AugustBehaviorCompletionCommands.cs','SewerSequenceAutoProductionCommands.cs','ProfileStyleAutoImportRuntime.cs',
@@ -165,18 +204,27 @@ $newCommandFiles = @(
     'AnnotationLeaderPlacementCommands.cs','BranchLabelLayerCommands.cs','FinalAnnotationReviewCommands.cs',
     'RoadLayoutProductionCommands.cs','PlatformProductionCommands.cs','MultiBoundaryEditCommands.cs'
 )
+
 $declarations = @{}
 foreach ($name in $newCommandFiles) {
-    $text = Read-Source $name
-    foreach ($match in [regex]::Matches($text, '\[CommandMethod\(\s*"CE_TOOLS"\s*,\s*"(?<name>CE_[A-Z0-9_]+)"')) {
-        $command = $match.Groups['name'].Value
-        if (-not $declarations.ContainsKey($command)) { $declarations[$command] = @() }
-        $declarations[$command] += $name
+    $sourceText = Read-Source $name
+    $matches = [regex]::Matches($sourceText, '\[CommandMethod\(\s*"CE_TOOLS"\s*,\s*"(?<name>CE_[A-Z0-9_]+)"')
+    foreach ($match in $matches) {
+        $commandName = $match.Groups['name'].Value
+        if (-not $declarations.ContainsKey($commandName)) {
+            $declarations[$commandName] = @()
+        }
+        $declarations[$commandName] += $name
     }
 }
+
 foreach ($command in $requiredCommands) {
-    if (-not $declarations.ContainsKey($command)) { throw "Final comment validation failed: no CommandMethod declaration for $command" }
-    if ($declarations[$command].Count -ne 1) { throw "Final comment validation failed: duplicate CommandMethod declaration for $command in $($declarations[$command] -join ', ')" }
+    if (-not $declarations.ContainsKey($command)) {
+        throw "Final comment validation failed: no CommandMethod declaration for $command"
+    }
+    if ($declarations[$command].Count -ne 1) {
+        throw "Final comment validation failed: duplicate CommandMethod declaration for $command in $($declarations[$command] -join ', ')"
+    }
 }
 
 Write-Host 'Final CE Tools comment closure validation passed.' -ForegroundColor Green
