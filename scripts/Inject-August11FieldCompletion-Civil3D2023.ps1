@@ -180,15 +180,30 @@ if (-not $closureText.Contains('new TableCellNavigationCommands().TableCellZoom(
 }
 WriteText $closure $closureText
 
-# The universal refresh now also updates linked multi-surface coordinate tables.
+# The universal refresh also updates linked multi-surface coordinate tables.
+# IMPORTANT: insert only after the complete SurveyCoordinateWorkflow try/catch
+# pair. Inserting between try and catch creates CS1524 (Expected catch or finally).
 $universalText = ReadText $universal
 if (-not $universalText.Contains('August11SurveyRuntimeCommands.RefreshMultiSurfaceTables(document);')) {
-    $old = '                try { SurveyCoordinateWorkflowCommands.RefreshAll(document); }'
-    if (-not $universalText.Contains($old)) { throw 'Universal survey refresh marker not found.' }
-    $new = $old + "`r`n                try { August11SurveyRuntimeCommands.RefreshMultiSurfaceTables(document); }`r`n                catch { result.Warnings++; }"
-    $universalText = $universalText.Replace($old,$new)
+    $surveyTry = '                try { SurveyCoordinateWorkflowCommands.RefreshAll(document); }'
+    $surveyCatch = '                catch { result.Warnings++; }'
+    $oldCrLf = $surveyTry + "`r`n" + $surveyCatch
+    $oldLf = $surveyTry + "`n" + $surveyCatch
+    $lineBreak = "`r`n"
+    $oldBlock = $oldCrLf
+    if (-not $universalText.Contains($oldBlock)) {
+        $oldBlock = $oldLf
+        $lineBreak = "`n"
+    }
+    if (-not $universalText.Contains($oldBlock)) {
+        throw 'Universal survey refresh try/catch pair was not found.'
+    }
+    $added = '                try { August11SurveyRuntimeCommands.RefreshMultiSurfaceTables(document); }' + $lineBreak +
+             '                catch { result.Warnings++; }'
+    $newBlock = $oldBlock + $lineBreak + $added
+    $universalText = $universalText.Replace($oldBlock,$newBlock)
     WriteText $universal $universalText
-    Write-Host 'Integrated linked multi-surface coordinate tables into universal refresh.' -ForegroundColor Green
+    Write-Host 'Integrated linked multi-surface coordinate tables after the complete universal survey refresh try/catch.' -ForegroundColor Green
 }
 
 Write-Host 'August 11 field completion integration is ready for Civil 3D 2023 validation.' -ForegroundColor Cyan
