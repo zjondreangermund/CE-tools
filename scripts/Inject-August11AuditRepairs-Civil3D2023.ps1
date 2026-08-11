@@ -268,4 +268,41 @@ elif (-not $text.Contains('internal static int Clear(Document document, IEnumera
 WriteText $network $text
 Write-Host 'Repaired network batch completion markers to use the exact launching Document.' -ForegroundColor Green
 
+# -----------------------------------------------------------------------------
+# 5. Assembly-facing commands must all use the same Civil 3D 2023/2024 resolver.
+#    The visibility-marker command previously bypassed the robust fallback chain.
+# -----------------------------------------------------------------------------
+$behavior = Need 'AugustBehaviorCompletionCommands.cs'
+$text = ReadText $behavior
+if (-not $text.Contains('CivilAssemblyResolver.GetAssemblyIds(civil, document.Database)')) {
+    $pattern = '(?s)        internal static int EnsureAllMarkers\(Document document, CivilDocument civil\)\s*        \{.*?\n        \}\s*(?=\n        private static bool MarkerExists)'
+    $replacement = @'
+        internal static int EnsureAllMarkers(Document document, CivilDocument civil)
+        {
+            if (document == null || civil == null) return 0;
+            IList<ObjectId> ids = CivilAssemblyResolver.GetAssemblyIds(civil, document.Database);
+            int count = 0;
+            foreach (ObjectId id in ids.Where(value => !value.IsNull && !value.IsErased))
+            {
+                Point3d point = Point3d.Origin;
+                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                {
+                    DBObject assembly;
+                    try { assembly = transaction.GetObject(id, OpenMode.ForRead, false); } catch { continue; }
+                    point = ReadPoint(assembly, "Location", "InsertionPoint", "Origin");
+                }
+                EnsureMarker(document, id, point);
+                count++;
+            }
+            return count;
+        }
+'@
+    $regex = [regex]::new($pattern,[System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if (-not $regex.IsMatch($text)) { throw 'Assembly visibility-marker discovery method could not be isolated.' }
+    $text = $regex.Replace($text,$replacement.TrimEnd("`r","`n"),1)
+    WriteText $behavior $text
+    Write-Host 'Unified assembly visibility markers with CivilAssemblyResolver.' -ForegroundColor Green
+}
+else { Write-Host 'Assembly visibility markers already use CivilAssemblyResolver.' -ForegroundColor DarkGreen }
+
 Write-Host 'August 11 behavioral audit repairs are staged.' -ForegroundColor Cyan
