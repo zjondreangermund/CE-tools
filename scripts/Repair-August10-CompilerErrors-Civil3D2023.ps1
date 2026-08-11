@@ -38,55 +38,94 @@ if ([regex]::IsMatch($platformVerify, $platformPattern)) {
     throw 'Platform FeatureLinePointType compatibility repair verification failed.'
 }
 
-# Civil 3D feature lines can expose PI points, elevation points and a closing
-# point through FeatureLinePointType.AllPoints. Using that collection index as
-# the SetPointElevation(index, ...) index can throw ArgumentOutOfRangeException.
-# Normalize platform elevation edits to the point-based API instead.
+# Platform production must support BOTH ordinary absolute feature lines and
+# feature lines that are genuinely relative to a Civil surface. Autodesk's
+# SetPointRelativeElevation(point, false, elevation) throws when no relative
+# surface exists, while SetPointElevation(index, elevation) is the correct API
+# for normal absolute feature points. Closed AllPoints collections may also
+# expose a duplicate closing point after PointsCount, so map that duplicate back
+# to the matching real feature point instead of passing an invalid index.
 $platformText = [System.IO.File]::ReadAllText($platform)
-$oldAbsoluteElevation = @'
-        private static void SetAbsoluteElevation(CivilFeatureLine featureLine, Point3d point, int index, double elevation)
-        {
-            if (featureLine.IsElevationRelativeToSurface(point)) featureLine.SetPointRelativeElevation(point, false, elevation);
-            else featureLine.SetPointElevation(index, elevation);
-        }
-'@
-$newAbsoluteElevation = @'
+$helperPattern = '(?s)        private static void SetAbsoluteElevation\(CivilFeatureLine featureLine, Point3d point, int index, double elevation\)\s*        \{.*?\n        \}\s*(?=\n        private static void WriteStep)'
+$safeHelper = @'
         private static void SetAbsoluteElevation(CivilFeatureLine featureLine, Point3d point, int index, double elevation)
         {
             if (featureLine == null) return;
-            // Use the point-based setter for PI, elevation and closing points.
-            // This also intentionally converts a surface-relative point to an
-            // absolute elevation when a production level/slope is applied.
-            featureLine.SetPointRelativeElevation(point, false, elevation);
+
+            ObjectId relativeSurfaceId = ObjectId.Null;
+            try { relativeSurfaceId = featureLine.RelativeSurfaceId; } catch { }
+
+            if (!relativeSurfaceId.IsNull)
+            {
+                try
+                {
+                    // This is only valid when Civil 3D confirms the feature line
+                    // actually has a relative surface. Setting relative=false
+                    // intentionally converts the edited point to an absolute level.
+                    featureLine.SetPointRelativeElevation(point, false, elevation);
+                    return;
+                }
+                catch
+                {
+                    // Fall back to the indexed absolute API below. Civil 3D can
+                    // reject geometrically equivalent closing points here.
+                }
+            }
+
+            int pointCount = 0;
+            try { pointCount = featureLine.PointsCount; } catch { }
+
+            if (index >= 0 && index < pointCount)
+            {
+                featureLine.SetPointElevation(index, elevation);
+                return;
+            }
+
+            // A closed FeatureLinePointType.AllPoints collection can expose the
+            // closing point after PointsCount. Map that point to the matching
+            // real feature point (normally the first vertex) instead of throwing.
+            Point3dCollection allPoints = featureLine.GetPoints(Autodesk.Civil.FeatureLinePointType.AllPoints);
+            int limit = Math.Min(pointCount, allPoints == null ? 0 : allPoints.Count);
+            for (int candidate = 0; candidate < limit; candidate++)
+            {
+                Point3d existing = allPoints[candidate];
+                double dx = existing.X - point.X;
+                double dy = existing.Y - point.Y;
+                if (Math.Sqrt(dx * dx + dy * dy) <= Tol)
+                {
+                    featureLine.SetPointElevation(candidate, elevation);
+                    return;
+                }
+            }
         }
 '@
-$oldAbsoluteElevationValue = $oldAbsoluteElevation.TrimEnd("`r", "`n")
-$newAbsoluteElevationValue = $newAbsoluteElevation.TrimEnd("`r", "`n")
-$platformRuntimeChanged = $false
-if ($platformText.Contains($oldAbsoluteElevationValue)) {
-    $platformText = $platformText.Replace($oldAbsoluteElevationValue, $newAbsoluteElevationValue)
-    $platformRuntimeChanged = $true
+$helperRegex = [regex]::new($helperPattern,[System.Text.RegularExpressions.RegexOptions]::Singleline)
+if (-not $helperRegex.IsMatch($platformText)) {
+    throw 'Platform SetAbsoluteElevation helper could not be isolated for runtime repair.'
 }
+$platformText = $helperRegex.Replace($platformText,$safeHelper.TrimEnd("`r","`n"),1)
 
-$oldChildElevation = '                child.SetPointElevation(index, sourcePoint.Z + dz);'
-$newChildElevation = '                child.SetPointRelativeElevation(point, false, sourcePoint.Z + dz);'
-if ($platformText.Contains($oldChildElevation)) {
-    $platformText = $platformText.Replace($oldChildElevation, $newChildElevation)
-    $platformRuntimeChanged = $true
-}
+# Reuse the same safe helper for new stepped-offset feature lines. Historical
+# repairs changed this to SetPointRelativeElevation unconditionally and caused
+# the same "Featureline is not associated with surface" runtime exception.
+$platformText = $platformText.Replace(
+    '                child.SetPointRelativeElevation(point, false, sourcePoint.Z + dz);',
+    '                SetAbsoluteElevation(child, point, index, sourcePoint.Z + dz);')
+$platformText = $platformText.Replace(
+    '                child.SetPointElevation(index, sourcePoint.Z + dz);',
+    '                SetAbsoluteElevation(child, point, index, sourcePoint.Z + dz);')
 
-if ($platformRuntimeChanged) {
-    [System.IO.File]::WriteAllText($platform, $platformText, [System.Text.UTF8Encoding]::new($false))
-    Write-Host 'Repaired platform FeatureLine elevation updates to avoid AllPoints index errors.' -ForegroundColor Green
-}
-else {
-    Write-Host 'Platform point-based elevation runtime repair is already applied.' -ForegroundColor DarkGreen
-}
+[System.IO.File]::WriteAllText($platform, $platformText, [System.Text.UTF8Encoding]::new($false))
 $platformVerify = [System.IO.File]::ReadAllText($platform)
-if ($platformVerify.Contains('else featureLine.SetPointElevation(index, elevation);') -or
-    $platformVerify.Contains('child.SetPointElevation(index, sourcePoint.Z + dz);')) {
-    throw 'Platform point-based elevation runtime repair verification failed.'
+if (-not $platformVerify.Contains('relativeSurfaceId = featureLine.RelativeSurfaceId;') -or
+    -not $platformVerify.Contains('pointCount = featureLine.PointsCount;') -or
+    -not $platformVerify.Contains('SetAbsoluteElevation(child, point, index, sourcePoint.Z + dz);')) {
+    throw 'Platform absolute/relative elevation runtime repair verification failed.'
 }
+if ($platformVerify.Contains('child.SetPointRelativeElevation(point, false, sourcePoint.Z + dz);')) {
+    throw 'Unsafe surface-relative stepped-offset elevation call remains after repair.'
+}
+Write-Host 'Repaired platform elevations for both absolute and surface-relative feature lines without closing-point index errors.' -ForegroundColor Green
 
 # Autodesk.AutoCAD.Runtime also defines Exception. Keep the runtime namespace
 # for CommandMethod/CommandFlags but explicitly use System.Exception here.
