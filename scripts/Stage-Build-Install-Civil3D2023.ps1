@@ -48,6 +48,31 @@ if ($copyExitCode -ge 8) {
 }
 $global:LASTEXITCODE = 0
 
+# Parse every PowerShell helper before any staged repair is executed. This makes
+# script syntax a first-class build gate instead of discovering an invalid helper
+# halfway through a long Civil 3D source-repair chain.
+Write-Host "`nPreflighting all CE Tools PowerShell scripts..." -ForegroundColor Cyan
+$scriptFolder = Join-Path $stageRoot 'scripts'
+foreach ($scriptFile in Get-ChildItem -LiteralPath $scriptFolder -Filter '*.ps1' -File) {
+    $tokens = $null
+    $parseErrors = $null
+    [System.Management.Automation.Language.Parser]::ParseFile(
+        $scriptFile.FullName,
+        [ref]$tokens,
+        [ref]$parseErrors) | Out-Null
+    if ($parseErrors -and $parseErrors.Count -gt 0) {
+        $details = ($parseErrors | ForEach-Object {
+            'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message
+        }) -join ' | '
+        throw "PowerShell syntax error in $($scriptFile.Name): $details"
+    }
+    $scriptText = [System.IO.File]::ReadAllText($scriptFile.FullName)
+    if ([regex]::IsMatch($scriptText,'(?im)^\s*elif\s*\(')) {
+        throw "Invalid Python-style 'elif' found in PowerShell script: $($scriptFile.Name). Use 'elseif'."
+    }
+}
+Write-Host 'All staged PowerShell scripts passed syntax preflight.' -ForegroundColor Green
+
 $restore = Join-Path $stageRoot 'scripts\Restore-V60-ChunkedSources.ps1'
 $repair = Join-Path $stageRoot 'scripts\Repair-Civil3D2023-Compatibility.ps1'
 $finalRepair = Join-Path $stageRoot 'scripts\Repair-V60-RemainingCompatibility.ps1'
@@ -156,7 +181,7 @@ Write-Host "`nIntegrating August 11 field-test production, network, road, survey
 & $august11FieldIntegration -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
-Write-Host "`nApplying August 11 Civil 3D 2023 compiler compatibility guard..." -ForegroundColor Cyan
+Write-Host "`nApplying August 11 Civil 3D 2023 compiler compatibility and wiring guard..." -ForegroundColor Cyan
 & $august11CompilerRepair -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
