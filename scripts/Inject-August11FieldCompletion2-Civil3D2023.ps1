@@ -117,7 +117,7 @@ if ($text.Contains($old)) {
     $text = $text.Replace($old,$new.TrimEnd("`r","`n"))
     Write-Host 'Corrected Corridors Baselines/Regions action to production command.' -ForegroundColor Green
 }
-elif ($text.Contains('Create / Rebuild Baselines and Regions')) { Write-Host 'Corridor Baselines/Regions production mapping is already corrected.' -ForegroundColor DarkGreen }
+elseif ($text.Contains('Create / Rebuild Baselines and Regions')) { Write-Host 'Corridor Baselines/Regions production mapping is already corrected.' -ForegroundColor DarkGreen }
 else { throw 'Corridor Baselines and Regions ribbon marker was not found.' }
 
 # Add field-test network/route tools to Utilities without removing the existing
