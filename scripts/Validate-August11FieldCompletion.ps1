@@ -18,6 +18,11 @@ $network = Text 'August11NetworkBatchCommands.cs'
 $midblock = Text 'August11MidblockSewerProductionCommands.cs'
 $road = Text 'August11RoadCompletionCommands.cs'
 $roadExtra = Text 'August11RoadNamingCurveCommands.cs'
+$vertical = Text 'August11RoadVerticalCurveCommands.cs'
+$stylePresets = Text 'August11DisciplineStylePresetCommands.cs'
+$styleCentre = Text 'ProjectStyleCenterCommands.cs'
+$roadCorridor = Text 'RoadCorridorCompletionCommands.cs'
+$roadLayout = Text 'RoadLayoutProductionCommands.cs'
 $survey = Text 'August11SurveyRuntimeCommands.cs'
 $table = Text 'TableCellNavigationCommands.cs'
 $plugin = Text 'PluginEntry.cs'
@@ -49,6 +54,18 @@ foreach ($obsoleteAlias in @('CE_BOQSTORMWATER','CE_REPORTSTORMWATER','CE_PARKGR
     Require (-not $production.Contains($obsoleteAlias)) "obsolete Production Centre command alias remains: $obsoleteAlias"
 }
 
+# Independent discipline style selections from one shared Civil style library.
+foreach ($command in @('CE_DISCIPLINESTYLEPRESETS','CE_DISCIPLINESTYLEINFO')) {
+    Require ($stylePresets.Contains($command)) "$command missing from per-discipline style preset source"
+}
+Require ($stylePresets.Contains('PROJECT_STYLE_PRESET_')) 'per-discipline style preset records missing'
+Require ($stylePresets.Contains('Roads') -and $stylePresets.Contains('Stormwater') -and $stylePresets.Contains('Sewer') -and $stylePresets.Contains('Water') -and $stylePresets.Contains('Platforms')) 'core discipline preset list incomplete'
+Require ($styleCentre.Contains('August11DisciplineStylePresetManager.SavePreset(document.Database, selection);')) 'Project Style Centre does not snapshot the saved discipline selection'
+foreach ($discipline in @('Platforms','Roads','Stormwater','Sewer','Water','Bulk Water','Parking','Flood')) {
+    Require ($production.Contains('August11DisciplineStylePresetManager.Activate(Active() == null ? null : Active().Database, "' + $discipline + '");')) "$discipline Production Centre does not activate its stored style preset"
+}
+Require ($production.Contains('CE_DISCIPLINESTYLEPRESETS')) 'Production Centre does not expose discipline style preset management'
+
 # Network batch / duplicate prevention / legacy handoff.
 foreach ($command in @('CE_NETWORKFROMPOLYLINESBATCH','CE_NETWORKCONNECTSELECTED','CE_NETWORKBATCHTOOLS','CE_NETWORKSOURCEMARKERSCLEAR')) {
     Require ($network.Contains($command)) "$command missing from August11 network source"
@@ -78,6 +95,9 @@ foreach ($command in @('CE_ROUTEHORIZONTALCURVES','CE_ROADNAMESYNC','CE_UTILITYR
 }
 Require ($road.Contains('IsPlottable = plottable')) 'junction trim non-plot layer control missing'
 Require ($road.Contains('CE_TRIMINSIDEMULTI')) 'junction trim boundary workflow is not handed to multi-boundary Trim Inside'
+Require ($road.Contains('document.SendStringToExecute("CE_VERTEXSETTINGOUT ", true, false, true);')) 'ordered junction setting-out is not routed to general polyline/arc Vertex Setting-Out'
+Require ($roadLayout.Contains('new August11RoadCompletionCommands().JunctionSettingOutFourQuadrants();')) 'legacy CE_ROADJUNCTIONSETTINGOUT is still arc-only'
+Require (-not $roadLayout.Contains('List<Arc> arcs = ResolveGeneratedJunctions')) 'legacy road-junction implementation still resolves only Arc geometry'
 Require ($road.Contains('1.8') -and $road.Contains('2.0') -and $road.Contains('2.5') -and $road.Contains('3.5') -and $road.Contains('5.0')) 'route annotation paper text choices incomplete'
 Require ($road.Contains('Show metre suffix')) 'route dimensions do not expose metre display'
 Require ($road.Contains('PaperAnnotationScale.ModelDistance')) 'route arrow-size paper scaling missing'
@@ -90,6 +110,13 @@ Require ($plugin.Contains('Cmd("Baseline / Region Report", "CE_CORBASEUI ')) 'Co
 Require ($plugin.Contains('CE_NETWORKFROMPOLYLINESBATCH') -and $plugin.Contains('CE_UTILITYROUTEOFFSET') -and $plugin.Contains('CE_CLOSEPIPESONLY')) 'new field network/utility tools are not exposed in Utilities ribbon'
 Require ($production.Contains('CE_ROUTEHORIZONTALCURVES') -and $production.Contains('CE_ROADNAMESYNC')) 'Road Production Centre does not expose horizontal curves and road-name sync'
 Require ($production.Contains('CE_UTILITYROUTEOFFSET')) 'guided utility production still lacks explicit erf/reserve offset workflow'
+
+# Final road design profiles must contain tangents/PVIs plus actual parabolic vertical curves.
+Require ($vertical.Contains('CE_ROADPROFILEBESTFIT') -and $vertical.Contains('CE_ROADVERTICALCURVES')) 'final road vertical-curve commands missing'
+Require ($vertical.Contains('AddFreeSymmetricParabolaByPVIAndCurveLength')) 'PVI-based parabolic vertical-curve creation missing'
+Require ($roadCorridor.Contains('CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVES')) 'CE_ROADPROFILEFULL does not finish with vertical curves'
+Require ($roadCorridor.Contains('PropertyInfo visibleProperty = corridor.GetType().GetProperty("Visible"')) 'corridor completion does not explicitly restore hidden corridor display'
+Require ($roadCorridor.Contains('RecordGraphicsModified')) 'corridor completion does not flag graphics after visibility/rebuild'
 
 # Survey / COGO / linked table dynamics.
 foreach ($command in @('CE_COGOLABELRESTOREINITIAL','CE_COORDMULTISURFACETABLE','CE_COORDMULTISURFACEREFRESH')) {
