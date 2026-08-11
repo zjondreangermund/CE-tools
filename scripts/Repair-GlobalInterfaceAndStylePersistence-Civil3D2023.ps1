@@ -64,11 +64,12 @@ else { throw 'CE theme persistence Write marker was not found.' }
 # IsCancel behavior on their explicit Close button; only a real button click closes it.
 $dialogs = Required 'DisciplineWorkflowDialogs.cs'
 $text = ReadText $dialogs
-if ($text.Contains('                Content = "Close",`r`n                IsCancel = true,')) {
-    $text = $text.Replace('                Content = "Close",`r`n                IsCancel = true,','                Content = "Close",`r`n                IsCancel = false,')
-}
-elseif ($text.Contains("                Content = \"Close\",`n                IsCancel = true,")) {
-    $text = $text.Replace("                Content = \"Close\",`n                IsCancel = true,","                Content = \"Close\",`n                IsCancel = false,")
+if ($text -match 'Content\s*=\s*"Close",\s*IsCancel\s*=\s*true,') {
+    $text = [regex]::Replace(
+        $text,
+        'Content\s*=\s*"Close",\s*IsCancel\s*=\s*true,',
+        "Content = `"Close`",`r`n                IsCancel = false,",
+        1)
 }
 if (-not $text.Contains('            close.Click += delegate { Close(); };')) {
     $closeAnchor = '            Grid.SetRow(close, 3);'
