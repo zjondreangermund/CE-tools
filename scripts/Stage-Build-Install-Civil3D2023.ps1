@@ -48,9 +48,6 @@ if ($copyExitCode -ge 8) {
 }
 $global:LASTEXITCODE = 0
 
-# Parse every PowerShell helper before any staged repair is executed. This makes
-# script syntax a first-class build gate instead of discovering an invalid helper
-# halfway through a long Civil 3D source-repair chain.
 Write-Host "`nPreflighting all CE Tools PowerShell scripts..." -ForegroundColor Cyan
 $scriptFolder = Join-Path $stageRoot 'scripts'
 foreach ($scriptFile in Get-ChildItem -LiteralPath $scriptFolder -Filter '*.ps1' -File) {
@@ -90,6 +87,7 @@ $augustCompilerRepair = Join-Path $stageRoot 'scripts\Repair-August10-CompilerEr
 $august11FieldIntegration = Join-Path $stageRoot 'scripts\Inject-August11FieldCompletion-Civil3D2023.ps1'
 $august11CompilerRepair = Join-Path $stageRoot 'scripts\Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1'
 $globalInterfaceSettingsRepair = Join-Path $stageRoot 'scripts\Repair-GlobalInterfaceAndStylePersistence-Civil3D2023.ps1'
+$august12PersistentUi = Join-Path $stageRoot 'scripts\Repair-August12PersistentProductionUi-Civil3D2023.ps1'
 $closureValidation = Join-Path $stageRoot 'scripts\Validate-August10CommentClosure.ps1'
 $august11Validation = Join-Path $stageRoot 'scripts\Validate-August11FieldCompletion.ps1'
 $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
@@ -114,6 +112,7 @@ foreach ($required in @(
     $august11FieldIntegration,
     $august11CompilerRepair,
     $globalInterfaceSettingsRepair,
+    $august12PersistentUi,
     $closureValidation,
     $august11Validation,
     $sanitize,
@@ -189,6 +188,10 @@ $global:LASTEXITCODE = 0
 
 Write-Host "`nApplying global CE theme, persistent workflow and all-discipline settings defaults..." -ForegroundColor Cyan
 & $globalInterfaceSettingsRepair -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nKeeping Production Centres open and isolating discipline style centres..." -ForegroundColor Cyan
+& $august12PersistentUi -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nValidating previous comment closure before compilation..." -ForegroundColor Cyan
