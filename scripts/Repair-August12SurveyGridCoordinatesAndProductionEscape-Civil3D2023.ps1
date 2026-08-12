@@ -244,11 +244,52 @@ $rootOnlySelect = @'
             AcApplication.ShowModalWindow(window);
             if (string.IsNullOrWhiteSpace(window.SelectedCommand))
                 return;
+
+            string discipline = ResolveModalStyleDiscipline(title);
+            if (!string.IsNullOrWhiteSpace(discipline))
+            {
+                try
+                {
+                    using (DocumentLock documentLock = document.LockDocument())
+                    {
+                        August11DisciplineStylePresetManager.ActivateForProduction(
+                            document.Database,
+                            discipline);
+                    }
+                }
+                catch (System.Exception presetException)
+                {
+                    try
+                    {
+                        document.Editor.WriteMessage(
+                            "\nCE Tools: {0} style preset could not be pre-activated; the command will still run. {1}",
+                            discipline,
+                            presetException.Message);
+                    }
+                    catch { }
+                }
+            }
+
             document.SendStringToExecute(
                 window.SelectedCommand.Trim() + " ",
                 true,
                 false,
                 true);
+        }
+
+        private static string ResolveModalStyleDiscipline(string title)
+        {
+            string value = (title ?? string.Empty).ToUpperInvariant();
+            if (value.Contains("BULK WATER")) return "Bulk Water";
+            if (value.Contains("STORMWATER")) return "Stormwater";
+            if (value.Contains("SEWER")) return "Sewer";
+            if (value.Contains("PLATFORM")) return "Platforms";
+            if (value.Contains("PARKING")) return "Parking";
+            if (value.Contains("FLOOD")) return "Flood";
+            if (value.Contains("SURVEY")) return "Survey";
+            if (value.Contains("ROAD")) return "Roads";
+            if (value.Contains("WATER")) return "Water";
+            return string.Empty;
         }
 '@
 $text = ReplaceOnce $text $persistentSelect $rootOnlySelect 'root-only persistent Production Centre behavior'
@@ -304,6 +345,8 @@ foreach ($marker in @(
     'KeepOpenOnAction = keepProductionCentreOpen',
     'AcApplication.ShowModelessWindow(window);',
     'AcApplication.ShowModalWindow(window);',
+    'ResolveModalStyleDiscipline(title)',
+    'August11DisciplineStylePresetManager.ActivateForProduction(',
     'PreviewKeyDown += OnWorkflowPreviewKeyDown;',
     'if (!KeepOpenOnAction) return;',
     'window.SelectedCommand.Trim() + " "')) {
@@ -315,3 +358,4 @@ foreach ($marker in @(
 Write-Host 'Survey Site Grid reverse mode now displays Y=-drawing X and X=-drawing Y.' -ForegroundColor Green
 Write-Host 'Survey Site Grid corner labels are independently shifted inward to prevent overlap.' -ForegroundColor Green
 Write-Host 'Only CE-PRODUCTION CENTRE remains persistent; child workflow windows close on Escape.' -ForegroundColor Green
+Write-Host 'Modal discipline children still reactivate their saved style preset before command dispatch.' -ForegroundColor Green
