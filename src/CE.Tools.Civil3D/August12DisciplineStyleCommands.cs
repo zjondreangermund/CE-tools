@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Windows.Controls;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.Runtime;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
@@ -126,6 +127,7 @@ namespace CETools.Civil3D
                 catalogue,
                 existing);
             window.Title = "CE Tools - " + discipline + " Style Centre";
+            CustomizeHeading(window, discipline);
             AcApplication.ShowModalWindow(window);
 
             if (window.ImportRequested)
@@ -145,6 +147,18 @@ namespace CETools.Civil3D
                 "\nCE Tools {0} styles saved independently. Stored choices={1}.",
                 discipline,
                 selection.Values.Count.ToString(CultureInfo.InvariantCulture));
+        }
+
+        private static void CustomizeHeading(ProjectStyleCenterWindow window, string discipline)
+        {
+            DockPanel root = window == null ? null : window.Content as DockPanel;
+            if (root == null) return;
+            List<TextBlock> text = root.Children.OfType<TextBlock>().ToList();
+            if (text.Count > 0)
+                text[0].Text = discipline + " Civil 3D Styles";
+            if (text.Count > 1)
+                text[1].Text = "Choose only the Civil 3D styles used by " + discipline +
+                    ". These selections are saved independently and will not change another discipline's style settings.";
         }
     }
 }
