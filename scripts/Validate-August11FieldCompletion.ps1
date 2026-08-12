@@ -39,6 +39,9 @@ $projectCoordination = Text 'ProjectCoordinationCommands.cs'
 $platform = Text 'PlatformProductionCommands.cs'
 $sequence = Text 'CeSequentialCommandRunner.cs'
 $styleCentre = Text 'ProjectStyleCenterCommands.cs'
+$disciplineStyles = Text 'August12DisciplineStyleCommands.cs'
+$workflowDialogs = Text 'DisciplineWorkflowDialogs.cs'
+$theme = Text 'CeInterfaceTheme.cs'
 
 # Production / welcome / guided discipline structure.
 foreach ($command in @(
@@ -52,10 +55,18 @@ foreach ($stage in @('01 SETTINGS','02 PREPARE','03 CREATE','04 DESIGN','05 COMP
     Require ($production.Contains($stage)) "guided production stage '$stage' missing"
 }
 Require ($production.Contains('CE_TOOLS_PRODUCTION_WORKFLOW_TAB')) 'dedicated CE PRODUCTION ribbon tab missing'
-Require ($production.Contains('CE-PRODUCTION CENTRE') -and $production.Contains('CE-ENGINEERING INTELLIGENCE CENTRE')) 'two-centre welcome screen missing'
+Require ($production.Contains('CE-PRODUCTION CENTRE') -and $production.Contains('CE-ENGINEERING CENTRE')) 'two-centre welcome screen missing'
+Require (-not $production.Contains('OPEN CENTRE  ›')) 'welcome OPEN CENTRE glyph cleanup missing'
 Require ($production.Contains('Dark') -and $production.Contains('Light')) 'CE dark/light preference missing'
 Require ($plugin.Contains('ProductionWorkflowRibbonBuilder.EnsureCreated()')) 'dedicated Production ribbon is not wired into PluginEntry'
 Require (-not $production.Contains('bool? accepted = AcApplication.ShowModalWindow')) 'welcome screen still uses host-specific modal return signature'
+
+# Persistent production navigation and complete dark dropdown theming.
+Require ($workflowDialogs.Contains('KeepOpenOnAction = true')) 'Production Centre is not modeless/persistent'
+Require ($workflowDialogs.Contains('AcApplication.ShowModelessWindow(window);')) 'Production Centre does not stay open while commands run'
+Require ($workflowDialogs.Contains('ResolveStyleDiscipline(Title)')) 'persistent discipline windows do not reactivate their own style preset before commands'
+Require ($theme.Contains('ComboBox.DropDownOpenedEvent')) 'dark/light theme does not theme ComboBox popup trees'
+Require ($theme.Contains('ComboBoxItem.IsHighlightedProperty')) 'ComboBox dropdown highlight/readability theme missing'
 
 # Per-discipline styles: safe production activation must never leak a previous discipline.
 foreach ($command in @('CE_DISCIPLINESTYLEPRESETS','CE_DISCIPLINESTYLEINFO')) {
@@ -69,6 +80,11 @@ foreach ($discipline in @('Platforms','Roads','Stormwater','Sewer','Water','Bulk
     $token = 'August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "' + $discipline + '")'
     Require ($production.Contains($token)) "$discipline Production Centre does not safely activate its discipline preset"
 }
+foreach ($command in @('CE_SURVEYSTYLES','CE_PLATFORMSTYLES','CE_ROADSTYLES','CE_SWSTYLES','CE_SEWERSTYLES','CE_WATERSTYLES','CE_BULKWATERSTYLES','CE_PARKINGSTYLES','CE_FLOODSTYLES')) {
+    Require ($disciplineStyles.Contains($command)) "$command missing from independent discipline style centres"
+}
+Require ($disciplineStyles.Contains('SavePreset(document.Database, selection);')) 'discipline style centres do not save separate drawing presets'
+Require ($disciplineStyles.Contains('CeGlobalDisciplineStyleDefaults.Save(selection);')) 'discipline style centres do not retain their own cross-drawing defaults'
 Require ($production.Contains('CE_DISCIPLINESTYLEPRESETS')) 'Production Centre does not expose discipline style preset management'
 
 # Network batch / duplicate prevention / legacy handoff.
