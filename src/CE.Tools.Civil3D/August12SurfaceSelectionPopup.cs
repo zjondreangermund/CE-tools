@@ -17,6 +17,56 @@ namespace CETools.Civil3D
     /// </summary>
     internal static class August12SurfaceSelectionPopup
     {
+        internal static bool TrySelectOne(
+            Document document,
+            string title,
+            string note,
+            string label,
+            out ObjectId surfaceId)
+        {
+            surfaceId = ObjectId.Null;
+            if (document == null) return false;
+
+            List<SurfaceChoice> choices = ReadSurfaceChoices(document);
+            if (choices.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE Tools: no Civil 3D surfaces were found in the active drawing.");
+                return false;
+            }
+
+            var labels = choices.Select(item => item.Label).ToList();
+            var model = new ProductionSettingsDialogModel(
+                string.IsNullOrWhiteSpace(title)
+                    ? "CE Tools - Select Surface"
+                    : title,
+                string.IsNullOrWhiteSpace(note)
+                    ? "Choose a Civil 3D surface from the active drawing."
+                    : note);
+            model.AddChoice(
+                "Surface",
+                "01 Surface",
+                string.IsNullOrWhiteSpace(label) ? "Surface" : label,
+                labels[0],
+                "Select from the Civil 3D surfaces in this drawing.",
+                labels);
+
+            var window = new ProductionSettingsWindow(model);
+            AcApplication.ShowModalWindow(window);
+            if (!window.Accepted) return false;
+
+            SurfaceChoice selected = FindChoice(choices, model.Text("Surface"));
+            if (selected == null)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE Tools: the selected surface is no longer available.");
+                return false;
+            }
+
+            surfaceId = selected.ObjectId;
+            return true;
+        }
+
         internal static bool TrySelectPair(
             Document document,
             string title,
@@ -111,9 +161,6 @@ namespace CETools.Civil3D
                 }
             }
 
-            // Civil 3D normally enforces unique surface names, but keep the UI
-            // unambiguous even for restored/legacy drawings by appending handles
-            // only when duplicate display names are encountered.
             foreach (IGrouping<string, SurfaceChoice> duplicate in
                 result.GroupBy(item => item.Label, StringComparer.OrdinalIgnoreCase)
                       .Where(group => group.Count() > 1))
