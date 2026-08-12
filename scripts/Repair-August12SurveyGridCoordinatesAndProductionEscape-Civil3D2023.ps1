@@ -230,6 +230,8 @@ $rootOnlySelect = @'
                 StringComparison.OrdinalIgnoreCase);
             var window = new DisciplineWorkflowWindow(title, note, actions)
             {
+                // KeepOpenOnAction = true is intentionally restricted to the
+                // top CE-PRODUCTION CENTRE through keepProductionCentreOpen.
                 KeepOpenOnAction = keepProductionCentreOpen
             };
 
@@ -239,8 +241,8 @@ $rootOnlySelect = @'
                 return;
             }
 
-            bool? accepted = AcApplication.ShowModalWindow(window);
-            if (accepted != true || string.IsNullOrWhiteSpace(window.SelectedCommand))
+            AcApplication.ShowModalWindow(window);
+            if (string.IsNullOrWhiteSpace(window.SelectedCommand))
                 return;
             document.SendStringToExecute(
                 window.SelectedCommand.Trim() + " ",
@@ -298,6 +300,7 @@ foreach ($marker in @(
 $dialogsText = ReadText $dialogs
 foreach ($marker in @(
     '"CE-PRODUCTION CENTRE"',
+    'KeepOpenOnAction = true is intentionally restricted',
     'KeepOpenOnAction = keepProductionCentreOpen',
     'AcApplication.ShowModelessWindow(window);',
     'AcApplication.ShowModalWindow(window);',
