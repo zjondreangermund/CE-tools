@@ -33,11 +33,6 @@ namespace CETools.Civil3D
                     Keyboard.PreviewKeyDownEvent,
                     new KeyEventHandler(OnWindowPreviewKeyDown),
                     true);
-                EventManager.RegisterClassHandler(
-                    typeof(ComboBox),
-                    ComboBox.DropDownOpenedEvent,
-                    new EventHandler(OnComboBoxDropDownOpened),
-                    true);
             }
             catch { }
         }
@@ -53,7 +48,6 @@ namespace CETools.Civil3D
             if (window is CeWelcomeWindow) return;
 
             ThemePalette palette = CurrentPalette();
-
             try
             {
                 window.Background = palette.Window;
@@ -114,10 +108,22 @@ namespace CETools.Civil3D
             if (window == null) return;
 
             // Workflow and production centres are persistent navigation windows.
-            // Escape must never dismiss them accidentally. Settings dialogs keep
-            // their normal Escape/Cancel behaviour.
             if (window is FloatingToolsWindow || window is DisciplineWorkflowWindow)
                 args.Handled = true;
+        }
+
+        private static void HookComboBox(ComboBox combo)
+        {
+            if (combo == null) return;
+            try
+            {
+                // Civil 3D 2023 targets the .NET Framework WPF API where
+                // ComboBox.DropDownOpenedEvent is not exposed as a routed-event
+                // identifier. Hook the supported instance event instead.
+                combo.DropDownOpened -= OnComboBoxDropDownOpened;
+                combo.DropDownOpened += OnComboBoxDropDownOpened;
+            }
+            catch { }
         }
 
         private static void OnComboBoxDropDownOpened(object sender, EventArgs args)
@@ -297,7 +303,14 @@ namespace CETools.Civil3D
                     control.Foreground = palette.Foreground;
                     control.BorderBrush = palette.Border;
                 }
-                else if (control is TextBox || control is ComboBox || control is ListBox || control is ListView || control is DataGrid || control is ScrollViewer)
+                else if (control is ComboBox)
+                {
+                    HookComboBox((ComboBox)control);
+                    control.Background = palette.Input;
+                    control.Foreground = palette.Foreground;
+                    control.BorderBrush = palette.Border;
+                }
+                else if (control is TextBox || control is ListBox || control is ListView || control is DataGrid || control is ScrollViewer)
                 {
                     control.Background = palette.Input;
                     control.Foreground = palette.Foreground;
