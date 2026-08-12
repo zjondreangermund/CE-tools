@@ -28,10 +28,7 @@ namespace CETools.Civil3D
         public void SurfaceTools()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document == null)
-            {
-                return;
-            }
+            if (document == null) return;
 
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
@@ -40,9 +37,9 @@ namespace CETools.Civil3D
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction("Surface report", "CE_SFREPORT", "Report selected surface properties and statistics.", "01 Review"),
-                    new DisciplineWorkflowAction("Surface elevation", "CE_SFELEV", "Query the selected surface at a picked point.", "01 Review"),
-                    new DisciplineWorkflowAction("Elevation label", "CE_SFLABEL", "Place a surface elevation annotation.", "02 Annotation"),
-                    new DisciplineWorkflowAction("Compare surfaces", "CE_SFCOMPARE", "Create a point cut/fill comparison between two surfaces.", "03 Comparison")
+                    new DisciplineWorkflowAction("Surface elevation", "CE_SFELEV", "Choose a surface from a popup and query its elevation at a picked point.", "01 Review"),
+                    new DisciplineWorkflowAction("Elevation label", "CE_SFLABEL", "Choose a surface from a popup and place a surface elevation annotation.", "02 Annotation"),
+                    new DisciplineWorkflowAction("Compare surfaces", "CE_SFCOMPARE", "Choose base and comparison surfaces from popup dropdowns and create a point cut/fill comparison.", "03 Comparison")
                 });
         }
 
@@ -53,10 +50,7 @@ namespace CETools.Civil3D
         public void SurfaceReport()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document != null)
-            {
-                ReportSurfaces(document);
-            }
+            if (document != null) ReportSurfaces(document);
         }
 
         [CommandMethod(
@@ -66,10 +60,7 @@ namespace CETools.Civil3D
         public void SurfaceElevation()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document != null)
-            {
-                ReportElevation(document);
-            }
+            if (document != null) ReportElevation(document);
         }
 
         [CommandMethod(
@@ -79,10 +70,7 @@ namespace CETools.Civil3D
         public void SurfaceElevationLabel()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document != null)
-            {
-                PlaceElevationLabel(document);
-            }
+            if (document != null) PlaceElevationLabel(document);
         }
 
         [CommandMethod(
@@ -92,10 +80,7 @@ namespace CETools.Civil3D
         public void SurfaceComparison()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document != null)
-            {
-                CompareSurfaces(document);
-            }
+            if (document != null) CompareSurfaces(document);
         }
 
         private static void ReportSurfaces(Document document)
@@ -104,10 +89,7 @@ namespace CETools.Civil3D
             PromptSelectionResult selection = GetSurfaceSelection(
                 editor,
                 "\nSelect Civil 3D surfaces to report: ");
-            if (selection.Status != PromptStatus.OK)
-            {
-                return;
-            }
+            if (selection.Status != PromptStatus.OK) return;
 
             int counted = 0;
             int skipped = 0;
@@ -172,20 +154,20 @@ namespace CETools.Civil3D
         private static void ReportElevation(Document document)
         {
             Editor editor = document.Editor;
-            PromptEntityResult surfaceResult = PromptForSurface(
-                editor,
-                "\nSelect Civil 3D surface: ");
-            if (surfaceResult.Status != PromptStatus.OK)
+            ObjectId surfaceId;
+            if (!August12SurfaceSelectionPopup.TrySelectOne(
+                    document,
+                    "CE Tools - Surface Elevation",
+                    "Choose the Civil 3D surface from the popup, then pick the point to query.",
+                    "Surface",
+                    out surfaceId))
             {
                 return;
             }
 
             PromptPointResult pointResult = editor.GetPoint(
                 "\nPick point for surface elevation: ");
-            if (pointResult.Status != PromptStatus.OK)
-            {
-                return;
-            }
+            if (pointResult.Status != PromptStatus.OK) return;
 
             Point3d point = ToWorld(editor, pointResult.Value);
 
@@ -193,7 +175,7 @@ namespace CETools.Civil3D
             {
                 SurfacePointResult result = ReadSurfacePoint(
                     document.Database,
-                    surfaceResult.ObjectId,
+                    surfaceId,
                     point);
 
                 editor.WriteMessage(
@@ -217,20 +199,20 @@ namespace CETools.Civil3D
         private static void PlaceElevationLabel(Document document)
         {
             Editor editor = document.Editor;
-            PromptEntityResult surfaceResult = PromptForSurface(
-                editor,
-                "\nSelect Civil 3D surface: ");
-            if (surfaceResult.Status != PromptStatus.OK)
+            ObjectId surfaceId;
+            if (!August12SurfaceSelectionPopup.TrySelectOne(
+                    document,
+                    "CE Tools - Surface Elevation Label",
+                    "Choose the Civil 3D surface from the popup, then pick the target and label position.",
+                    "Surface",
+                    out surfaceId))
             {
                 return;
             }
 
             PromptPointResult targetResult = editor.GetPoint(
                 "\nPick point for surface elevation label: ");
-            if (targetResult.Status != PromptStatus.OK)
-            {
-                return;
-            }
+            if (targetResult.Status != PromptStatus.OK) return;
 
             Point3d pickedPoint = ToWorld(editor, targetResult.Value);
             SurfacePointResult result;
@@ -239,7 +221,7 @@ namespace CETools.Civil3D
             {
                 result = ReadSurfacePoint(
                     document.Database,
-                    surfaceResult.ObjectId,
+                    surfaceId,
                     pickedPoint);
             }
             catch (Autodesk.Civil.PointNotOnEntityException)
@@ -261,10 +243,7 @@ namespace CETools.Civil3D
                 UseDashedLine = true
             };
             PromptPointResult labelResult = editor.GetPoint(labelOptions);
-            if (labelResult.Status != PromptStatus.OK)
-            {
-                return;
-            }
+            if (labelResult.Status != PromptStatus.OK) return;
 
             Point3d target = new Point3d(pickedPoint.X, pickedPoint.Y, 0.0);
             Point3d label = ToWorld(editor, labelResult.Value);
@@ -301,34 +280,23 @@ namespace CETools.Civil3D
         private static void CompareSurfaces(Document document)
         {
             Editor editor = document.Editor;
-            PromptEntityResult existingResult = PromptForSurface(
-                editor,
-                "\nSelect existing/base surface: ");
-            if (existingResult.Status != PromptStatus.OK)
+            ObjectId existingSurfaceId;
+            ObjectId proposedSurfaceId;
+            if (!August12SurfaceSelectionPopup.TrySelectPair(
+                    document,
+                    "CE Tools - Compare Surfaces",
+                    "Select the base/existing and proposed/comparison Civil 3D surfaces from this drawing, then pick the point to compare.",
+                    "Existing / Base surface",
+                    "Proposed / Comparison surface",
+                    out existingSurfaceId,
+                    out proposedSurfaceId))
             {
-                return;
-            }
-
-            PromptEntityResult proposedResult = PromptForSurface(
-                editor,
-                "\nSelect proposed/comparison surface: ");
-            if (proposedResult.Status != PromptStatus.OK)
-            {
-                return;
-            }
-
-            if (existingResult.ObjectId == proposedResult.ObjectId)
-            {
-                editor.WriteMessage("\nSelect two different surfaces for comparison.");
                 return;
             }
 
             PromptPointResult pointResult = editor.GetPoint(
                 "\nPick comparison point: ");
-            if (pointResult.Status != PromptStatus.OK)
-            {
-                return;
-            }
+            if (pointResult.Status != PromptStatus.OK) return;
 
             Point3d point = ToWorld(editor, pointResult.Value);
 
@@ -336,11 +304,11 @@ namespace CETools.Civil3D
             {
                 SurfacePointResult existing = ReadSurfacePoint(
                     document.Database,
-                    existingResult.ObjectId,
+                    existingSurfaceId,
                     point);
                 SurfacePointResult proposed = ReadSurfacePoint(
                     document.Database,
-                    proposedResult.ObjectId,
+                    proposedSurfaceId,
                     point);
 
                 double difference = proposed.Elevation - existing.Elevation;
@@ -371,16 +339,8 @@ namespace CETools.Civil3D
 
         private static string ClassifyDifference(double difference)
         {
-            if (difference > DifferenceTolerance)
-            {
-                return "Fill";
-            }
-
-            if (difference < -DifferenceTolerance)
-            {
-                return "Cut";
-            }
-
+            if (difference > DifferenceTolerance) return "Fill";
+            if (difference < -DifferenceTolerance) return "Cut";
             return "Level";
         }
 
@@ -393,21 +353,11 @@ namespace CETools.Civil3D
             {
                 CivilSurface surface = OpenSurface(transaction, surfaceId);
                 if (surface == null)
-                {
                     throw new InvalidOperationException("The selected object is not a Civil 3D surface.");
-                }
 
                 double elevation = surface.FindElevationAtXY(point.X, point.Y);
                 return new SurfacePointResult(surface.Name, elevation);
             }
-        }
-
-        private static PromptEntityResult PromptForSurface(Editor editor, string message)
-        {
-            var options = new PromptEntityOptions(message);
-            options.SetRejectMessage("\nSelect a Civil 3D surface.");
-            options.AddAllowedClass(typeof(CivilSurface), false);
-            return editor.GetEntity(options);
         }
 
         private static PromptSelectionResult GetSurfaceSelection(Editor editor, string message)
@@ -430,11 +380,7 @@ namespace CETools.Civil3D
 
         private static CivilSurface OpenSurface(Transaction transaction, ObjectId objectId)
         {
-            if (objectId.IsNull)
-            {
-                return null;
-            }
-
+            if (objectId.IsNull) return null;
             return transaction.GetObject(
                 objectId,
                 OpenMode.ForRead,
@@ -497,7 +443,6 @@ namespace CETools.Civil3D
             }
 
             public string SurfaceName { get; }
-
             public double Elevation { get; }
         }
     }
