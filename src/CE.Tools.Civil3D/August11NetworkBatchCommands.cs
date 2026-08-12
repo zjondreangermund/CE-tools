@@ -14,9 +14,9 @@ namespace CETools.Civil3D
 {
     /// <summary>
     /// Civil 3D's native Network From Object command accepts one source object per
-    /// invocation.  This manager lets the user select the complete source set once,
+    /// invocation. This manager lets the user select the complete source set once,
     /// then safely queues one native creation operation at a time and resumes only
-    /// after the previous native command has ended.  Completed source objects are
+    /// after the previous native command has ended. Completed source objects are
     /// tagged so rerunning the production step does not silently duplicate a network.
     /// </summary>
     public sealed class August11NetworkBatchCommands
@@ -34,17 +34,52 @@ namespace CETools.Civil3D
 
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Multiple Networks from Polylines",
-                "Select all source polylines/lines/feature lines once. CE Tools feeds them to Civil 3D's native network-from-object command one at a time, preserving the native parts-list/diameter controls while preventing accidental duplicate source runs.");
-            model.AddChoice("Discipline", "01 Network", "Discipline", "Sewer", "Choose gravity or pressure network production.", new[] { "Sewer", "Stormwater", "Water", "Bulk Water" });
-            model.AddChoice("Duplicate", "02 Safety", "Previously completed CE source", "Skip previously completed", "Skip sources already marked as completed for the selected discipline, or intentionally process them again.", new[] { "Skip previously completed", "Process again" });
+                "Select the COMPLETE source set in one AutoCAD selection. Window/crossing selection and multiple picks are supported. CE Tools then feeds each selected source to Civil 3D's native network-from-object workflow in sequence.");
+            model.AddChoice(
+                "Discipline",
+                "01 Network",
+                "Discipline",
+                "Sewer",
+                "Choose gravity or pressure network production.",
+                new[] { "Sewer", "Stormwater", "Water", "Bulk Water" });
+            model.AddChoice(
+                "Duplicate",
+                "02 Safety",
+                "Previously completed CE source",
+                "Skip previously completed",
+                "Skip sources already marked as completed for the selected discipline, or intentionally process them again.",
+                new[] { "Skip previously completed", "Process again" });
+            model.AddChoice(
+                "SelectionMode",
+                "03 Sources",
+                "Source selection",
+                "Select multiple now",
+                "Select all source polylines/lines/feature lines now, or deliberately use an existing PickFirst selection.",
+                new[] { "Select multiple now", "Use current preselection" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
-            PromptSelectionResult selected = document.Editor.SelectImplied();
-            if (selected.Status != PromptStatus.OK || selected.Value == null || selected.Value.Count == 0)
+            PromptSelectionResult selected = null;
+            bool usePreselection = string.Equals(
+                model.Text("SelectionMode"),
+                "Use current preselection",
+                StringComparison.OrdinalIgnoreCase);
+
+            if (usePreselection)
+                selected = document.Editor.SelectImplied();
+
+            if (selected == null ||
+                selected.Status != PromptStatus.OK ||
+                selected.Value == null ||
+                selected.Value.Count == 0)
             {
+                // A stale one-object PickFirst selection used to make this command
+                // behave as if it only supported one source at a time. Clear it and
+                // always open a real AutoCAD multi-selection prompt by default.
+                document.Editor.SetImpliedSelection(new ObjectId[0]);
                 selected = document.Editor.GetSelection(new PromptSelectionOptions
                 {
-                    MessageForAdding = "\nSelect multiple line/polyline/feature-line network sources: ",
+                    MessageForAdding = "\nSelect ALL line/polyline/feature-line network sources: ",
+                    MessageForRemoval = "\nRemove network source objects: ",
                     AllowDuplicates = false,
                     RejectObjectsFromNonCurrentSpace = true
                 });
@@ -52,17 +87,31 @@ namespace CETools.Civil3D
             if (selected.Status != PromptStatus.OK || selected.Value == null) return;
 
             string discipline = model.Text("Discipline");
-            bool skipCompleted = string.Equals(model.Text("Duplicate"), "Skip previously completed", StringComparison.OrdinalIgnoreCase);
-            List<ObjectId> sources = FilterSources(document.Database, selected.Value.GetObjectIds());
-            if (skipCompleted) sources = sources.Where(id => !NetworkSourceMarker.IsCompleted(document.Database, id, discipline)).ToList();
+            bool skipCompleted = string.Equals(
+                model.Text("Duplicate"),
+                "Skip previously completed",
+                StringComparison.OrdinalIgnoreCase);
+            List<ObjectId> sources = FilterSources(
+                document.Database,
+                selected.Value.GetObjectIds());
+            if (skipCompleted)
+                sources = sources
+                    .Where(id => !NetworkSourceMarker.IsCompleted(document.Database, id, discipline))
+                    .ToList();
+
             if (sources.Count == 0)
             {
-                document.Editor.WriteMessage("\nCE_NETWORKFROMPOLYLINESBATCH: no new supported source objects remain for {0}.", discipline);
+                document.Editor.WriteMessage(
+                    "\nCE_NETWORKFROMPOLYLINESBATCH: no new supported source objects remain for {0}.",
+                    discipline);
                 return;
             }
 
             NetworkFromObjectBatchManager.Start(document, sources, discipline);
-            document.Editor.WriteMessage("\nCE_NETWORKFROMPOLYLINESBATCH started. Sources queued={0}; discipline={1}. Complete each Civil 3D native network dialog normally; CE Tools will advance to the next source automatically.", sources.Count, discipline);
+            document.Editor.WriteMessage(
+                "\nCE_NETWORKFROMPOLYLINESBATCH started. Sources queued={0}; discipline={1}. Complete each Civil 3D native network dialog normally; CE Tools will advance through the complete selected source set automatically.",
+                sources.Count,
+                discipline);
         }
 
         [CommandMethod("CE_TOOLS", "CE_NETWORKCONNECTSELECTED", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
