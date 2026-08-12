@@ -33,6 +33,11 @@ namespace CETools.Civil3D
                     Keyboard.PreviewKeyDownEvent,
                     new KeyEventHandler(OnWindowPreviewKeyDown),
                     true);
+                EventManager.RegisterClassHandler(
+                    typeof(ComboBox),
+                    ComboBox.DropDownOpenedEvent,
+                    new EventHandler(OnComboBoxDropDownOpened),
+                    true);
             }
             catch { }
         }
@@ -47,8 +52,7 @@ namespace CETools.Civil3D
             // exact same persisted theme. Do not flatten those custom cards.
             if (window is CeWelcomeWindow) return;
 
-            bool light = string.Equals(CeThemeStore.Read(), "Light", StringComparison.OrdinalIgnoreCase);
-            ThemePalette palette = light ? ThemePalette.Light() : ThemePalette.Dark();
+            ThemePalette palette = CurrentPalette();
 
             try
             {
@@ -91,6 +95,13 @@ namespace CETools.Civil3D
                 : new SolidColorBrush(Color.FromRgb(184, 194, 207));
         }
 
+        private static ThemePalette CurrentPalette()
+        {
+            return string.Equals(CeThemeStore.Read(), "Light", StringComparison.OrdinalIgnoreCase)
+                ? ThemePalette.Light()
+                : ThemePalette.Dark();
+        }
+
         private static void OnWindowLoaded(object sender, RoutedEventArgs args)
         {
             Apply(sender as Window);
@@ -107,6 +118,34 @@ namespace CETools.Civil3D
             // their normal Escape/Cancel behaviour.
             if (window is FloatingToolsWindow || window is DisciplineWorkflowWindow)
                 args.Handled = true;
+        }
+
+        private static void OnComboBoxDropDownOpened(object sender, EventArgs args)
+        {
+            ComboBox combo = sender as ComboBox;
+            if (combo == null) return;
+            Window owner = Window.GetWindow(combo);
+            if (owner == null || !IsCeWindow(owner)) return;
+
+            ThemePalette palette = CurrentPalette();
+            try
+            {
+                // ComboBox dropdowns are hosted in a separate Popup visual tree,
+                // so normal Window resource inheritance is not sufficient.
+                Popup popup = combo.Template == null
+                    ? null
+                    : combo.Template.FindName("PART_Popup", combo) as Popup;
+                if (popup != null && popup.Child is DependencyObject)
+                    ApplyTree((DependencyObject)popup.Child, palette);
+
+                foreach (object item in combo.Items)
+                {
+                    ComboBoxItem container = combo.ItemContainerGenerator.ContainerFromItem(item) as ComboBoxItem;
+                    if (container == null) continue;
+                    ApplyComboItem(container, palette);
+                }
+            }
+            catch { }
         }
 
         private static bool IsCeWindow(Window window)
@@ -142,10 +181,14 @@ namespace CETools.Civil3D
                 new Setter(Control.BackgroundProperty, palette.Input),
                 new Setter(Control.ForegroundProperty, palette.Foreground),
                 new Setter(Control.BorderBrushProperty, palette.Border));
+            SetComboBoxItemStyle(window, palette);
             SetStyle(window, typeof(ListBox),
                 new Setter(Control.BackgroundProperty, palette.Input),
                 new Setter(Control.ForegroundProperty, palette.Foreground),
                 new Setter(Control.BorderBrushProperty, palette.Border));
+            SetStyle(window, typeof(ListBoxItem),
+                new Setter(Control.BackgroundProperty, palette.Input),
+                new Setter(Control.ForegroundProperty, palette.Foreground));
             SetStyle(window, typeof(ListView),
                 new Setter(Control.BackgroundProperty, palette.Input),
                 new Setter(Control.ForegroundProperty, palette.Foreground),
@@ -173,6 +216,38 @@ namespace CETools.Civil3D
                 new Setter(Control.BorderBrushProperty, palette.Border));
         }
 
+        private static void SetComboBoxItemStyle(Window window, ThemePalette palette)
+        {
+            try
+            {
+                var style = new Style(typeof(ComboBoxItem));
+                style.Setters.Add(new Setter(Control.BackgroundProperty, palette.Input));
+                style.Setters.Add(new Setter(Control.ForegroundProperty, palette.Foreground));
+                style.Setters.Add(new Setter(Control.BorderBrushProperty, palette.Border));
+                style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(6, 4, 6, 4)));
+
+                var highlighted = new Trigger
+                {
+                    Property = ComboBoxItem.IsHighlightedProperty,
+                    Value = true
+                };
+                highlighted.Setters.Add(new Setter(Control.BackgroundProperty, palette.Accent));
+                highlighted.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.White));
+                style.Triggers.Add(highlighted);
+
+                var selected = new Trigger
+                {
+                    Property = ComboBoxItem.IsSelectedProperty,
+                    Value = true
+                };
+                selected.Setters.Add(new Setter(Control.BackgroundProperty, palette.Accent));
+                selected.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.White));
+                style.Triggers.Add(selected);
+                window.Resources[typeof(ComboBoxItem)] = style;
+            }
+            catch { }
+        }
+
         private static void SetStyle(Window window, Type type, params Setter[] setters)
         {
             try
@@ -182,6 +257,14 @@ namespace CETools.Civil3D
                 window.Resources[type] = style;
             }
             catch { }
+        }
+
+        private static void ApplyComboItem(ComboBoxItem item, ThemePalette palette)
+        {
+            if (item == null) return;
+            item.Background = item.IsHighlighted || item.IsSelected ? palette.Accent : palette.Input;
+            item.Foreground = item.IsHighlighted || item.IsSelected ? Brushes.White : palette.Foreground;
+            item.BorderBrush = palette.Border;
         }
 
         private static void ApplyTree(DependencyObject value, ThemePalette palette)
@@ -204,7 +287,17 @@ namespace CETools.Civil3D
                     control.Foreground = palette.Foreground;
                     control.BorderBrush = palette.Border;
                 }
-                else if (control is TextBox || control is ComboBox || control is ListBox || control is ListView || control is DataGrid)
+                else if (control is ComboBoxItem)
+                {
+                    ApplyComboItem((ComboBoxItem)control, palette);
+                }
+                else if (control is ListBoxItem)
+                {
+                    control.Background = palette.Input;
+                    control.Foreground = palette.Foreground;
+                    control.BorderBrush = palette.Border;
+                }
+                else if (control is TextBox || control is ComboBox || control is ListBox || control is ListView || control is DataGrid || control is ScrollViewer)
                 {
                     control.Background = palette.Input;
                     control.Foreground = palette.Foreground;
