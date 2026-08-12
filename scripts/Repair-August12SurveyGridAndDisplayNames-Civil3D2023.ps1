@@ -156,7 +156,17 @@ if (-not (Test-Path -LiteralPath $surfacePopupRepair -PathType Leaf)) {
 & $surfacePopupRepair -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Final August 12 field pass: dedicated Sewer multi-polyline network selection
+# and single-surface dropdowns for the remaining surface query/label workflows.
+$sewerSurfaceExpansion = Join-Path $root 'scripts\Repair-August12SewerBatchAndSurfacePopupExpansion-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $sewerSurfaceExpansion -PathType Leaf)) {
+    throw "August 12 sewer/surface popup expansion was not found: $sewerSurfaceExpansion"
+}
+& $sewerSurfaceExpansion -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 Write-Host 'CE- prefixes now cover Production ribbon buttons, guided workflow actions and Workflow Centre steps.' -ForegroundColor Green
 Write-Host 'Survey Site Grid is wired into Survey Production and the main Survey ribbon.' -ForegroundColor Green
 Write-Host 'Site Grid uses linked polyline grid lines, reversible X/Y labels, spacing/text-height settings and deferred auto-refresh.' -ForegroundColor Green
-Write-Host 'Surface comparison commands now choose Civil 3D surfaces from CE popup dropdowns.' -ForegroundColor Green
+Write-Host 'Surface comparison/elevation commands now choose Civil 3D surfaces from CE popup dropdowns.' -ForegroundColor Green
+Write-Host 'Sewer Production now offers a dedicated multiple-polyline network batch command.' -ForegroundColor Green
