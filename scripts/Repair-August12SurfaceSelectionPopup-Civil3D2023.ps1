@@ -196,5 +196,15 @@ if (-not $surveyText.Contains('"Original / Base surface"') -or
     throw 'Survey comparison popup surface-selection validation failed.'
 }
 
+# Continue with the same-build survey-grid coordinate correction and production
+# window Escape/lifetime behavior.
+$gridWindowRepair = Join-Path $root 'scripts\Repair-August12SurveyGridCoordinatesAndProductionEscape-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $gridWindowRepair -PathType Leaf)) {
+    throw "August 12 grid/window repair was not found: $gridWindowRepair"
+}
+& $gridWindowRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 Write-Host 'CE-Compare Surfaces now selects base and comparison surfaces from a CE popup.' -ForegroundColor Green
 Write-Host 'Survey Correction Comparison now uses the same drawing-local surface selector popup.' -ForegroundColor Green
+Write-Host 'Survey grid coordinate reversal and persistent Production Centre behavior are applied.' -ForegroundColor Green
