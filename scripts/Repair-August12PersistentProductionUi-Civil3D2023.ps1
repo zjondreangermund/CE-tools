@@ -159,6 +159,16 @@ if (-not $styleSource.Contains('SavePreset(document.Database, selection);') -or
     throw 'Independent discipline style persistence source validation failed.'
 }
 
+# Chain the same-build August 12 Survey Site Grid and display-name pass. The main
+# stage script already executes this UI repair, so the one-click installer needs
+# no additional entry point.
+$surveyGridRepair = Join-Path $root 'scripts\Repair-August12SurveyGridAndDisplayNames-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $surveyGridRepair -PathType Leaf)) {
+    throw "August 12 Survey Site Grid repair was not found: $surveyGridRepair"
+}
+& $surveyGridRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 Write-Host 'Production centres now stay open while commands run and remain available on the placed monitor.' -ForegroundColor Green
 Write-Host 'Dark/Light dropdown rendering is handled by the global CE interface theme.' -ForegroundColor Green
 Write-Host 'Each production discipline now opens and saves an independent Civil 3D style centre.' -ForegroundColor Green
