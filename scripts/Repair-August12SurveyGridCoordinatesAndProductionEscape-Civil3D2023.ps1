@@ -30,11 +30,11 @@ function ReplaceOnce([string]$text,[string]$old,[string]$new,[string]$descriptio
 
 # -----------------------------------------------------------------------------
 # Survey Site Grid
-# Reverse means an actual survey-coordinate display conversion:
+# Reverse is an actual survey-coordinate display conversion:
 #   drawing X -> displayed Y with opposite sign
 #   drawing Y -> displayed X with opposite sign
 # Geometry remains untouched. Corner labels are independently pulled inward so
-# the bottom and right annotations cannot occupy the same corner space.
+# bottom/right annotations do not overlap at the frame corners.
 # -----------------------------------------------------------------------------
 $siteGrid = Required 'August12SurveySiteGridCommands.cs'
 $text = ReadText $siteGrid
@@ -185,8 +185,10 @@ WriteText $siteGrid $text
 
 # -----------------------------------------------------------------------------
 # Production-window lifetime
-# CE-PRODUCTION CENTRE is the persistent home window. Child discipline/workflow
-# windows close on Escape and the home window remains available behind them.
+# This pass runs AFTER Repair-August12PersistentProductionUi. That earlier pass
+# intentionally made all workflow centres modeless/persistent. The field request
+# is narrower: keep ONLY CE-PRODUCTION CENTRE open. Discipline centres are modal
+# children again, close after choosing a command, and close when Escape is used.
 # -----------------------------------------------------------------------------
 $dialogs = Required 'DisciplineWorkflowDialogs.cs'
 $text = ReadText $dialogs
@@ -198,16 +200,23 @@ if (-not $text.Contains('using System.Windows.Input;')) {
         'WPF keyboard input import'
 }
 
-$staticAnchor = @'
-    internal static class DisciplineWorkflowDialogs
-    {
+$persistentSelect = @'
+        public static void SelectAndRun(
+            Document document,
+            string title,
+            string note,
+            IList<DisciplineWorkflowAction> actions)
+        {
+            if (document == null) return;
+            var window = new DisciplineWorkflowWindow(title, note, actions)
+            {
+                KeepOpenOnAction = true
+            };
+            AcApplication.ShowModelessWindow(window);
+        }
 '@
-$staticInsert = @'
-    internal static class DisciplineWorkflowDialogs
-    {
-        private static DisciplineWorkflowWindow _persistentProductionWindow;
-
-        public static void ShowPersistentProductionCentre(
+$rootOnlySelect = @'
+        public static void SelectAndRun(
             Document document,
             string title,
             string note,
@@ -215,221 +224,65 @@ $staticInsert = @'
         {
             if (document == null) return;
 
-            if (_persistentProductionWindow != null)
-            {
-                try
-                {
-                    if (_persistentProductionWindow.IsVisible)
-                    {
-                        _persistentProductionWindow.Activate();
-                        return;
-                    }
-                }
-                catch { }
-            }
-
-            var window = new DisciplineWorkflowWindow(
+            bool keepProductionCentreOpen = string.Equals(
                 title,
-                note,
-                actions,
+                "CE-PRODUCTION CENTRE",
+                StringComparison.OrdinalIgnoreCase);
+            var window = new DisciplineWorkflowWindow(title, note, actions)
+            {
+                KeepOpenOnAction = keepProductionCentreOpen
+            };
+
+            if (keepProductionCentreOpen)
+            {
+                AcApplication.ShowModelessWindow(window);
+                return;
+            }
+
+            bool? accepted = AcApplication.ShowModalWindow(window);
+            if (accepted != true || string.IsNullOrWhiteSpace(window.SelectedCommand))
+                return;
+            document.SendStringToExecute(
+                window.SelectedCommand.Trim() + " ",
+                true,
+                false,
                 true);
-            _persistentProductionWindow = window;
-            window.Closed += delegate
-            {
-                if (ReferenceEquals(_persistentProductionWindow, window))
-                    _persistentProductionWindow = null;
-            };
-            AcApplication.ShowModelessWindow(window);
         }
-
 '@
-$text = ReplaceOnce $text $staticAnchor $staticInsert 'persistent CE-Production Centre host'
+$text = ReplaceOnce $text $persistentSelect $rootOnlySelect 'root-only persistent Production Centre behavior'
 
-$oldWindowHeader = @'
-    internal sealed class DisciplineWorkflowWindow : Window
-    {
-        public DisciplineWorkflowWindow(
-            string title,
-            string note,
-            IList<DisciplineWorkflowAction> actions)
-        {
-            Title = title ?? "CE Tools Workflow";
-'@
-$newWindowHeader = @'
-    internal sealed class DisciplineWorkflowWindow : Window
-    {
-        private readonly bool _persistentCommandHost;
-
-        public DisciplineWorkflowWindow(
-            string title,
-            string note,
-            IList<DisciplineWorkflowAction> actions,
-            bool persistentCommandHost = false)
-        {
-            _persistentCommandHost = persistentCommandHost;
-            Title = title ?? "CE Tools Workflow";
-'@
-$text = ReplaceOnce $text $oldWindowHeader $newWindowHeader 'persistent workflow-window mode'
-
-$oldBackground = '            Background = new SolidColorBrush(Color.FromRgb(244, 247, 249));'
-$newBackground = @'
-            Background = new SolidColorBrush(Color.FromRgb(244, 247, 249));
-            PreviewKeyDown += OnPreviewKeyDown;
-'@.TrimEnd("`r","`n")
-# Replace only the first occurrence; the ProductionSettingsWindow gets its own
-# Escape handler below.
-if (-not $text.Contains('PreviewKeyDown += OnPreviewKeyDown;')) {
-    $index = $text.IndexOf($oldBackground, [StringComparison]::Ordinal)
-    if ($index -lt 0) { throw 'Could not wire workflow-window Escape handling.' }
-    $text = $text.Substring(0,$index) + $newBackground + $text.Substring($index + $oldBackground.Length)
+# The persistent root must ignore Escape. Child workflow windows leave Escape
+# unhandled so their existing IsCancel Close button closes them normally.
+if (-not $text.Contains('PreviewKeyDown += OnWorkflowPreviewKeyDown;')) {
+    $classIndex = $text.IndexOf('internal sealed class DisciplineWorkflowWindow : Window', [StringComparison]::Ordinal)
+    if ($classIndex -lt 0) { throw 'DisciplineWorkflowWindow class was not found.' }
+    $showMarker = '            ShowInTaskbar = false;'
+    $showIndex = $text.IndexOf($showMarker, $classIndex, [StringComparison]::Ordinal)
+    if ($showIndex -lt 0) { throw 'DisciplineWorkflowWindow ShowInTaskbar marker was not found.' }
+    $insertAt = $showIndex + $showMarker.Length
+    $text = $text.Substring(0,$insertAt) + "`r`n            PreviewKeyDown += OnWorkflowPreviewKeyDown;" + $text.Substring($insertAt)
 }
 
-$oldClose = @'
-            var close = new Button
-            {
-                Content = "Close",
-                IsCancel = true,
-                MinWidth = 100,
-                Padding = new Thickness(14, 7, 14, 7),
-                Margin = new Thickness(0, 12, 0, 0),
-                HorizontalAlignment = HorizontalAlignment.Right
-            };
-'@
-$newClose = @'
-            var close = new Button
-            {
-                Content = "Close",
-                IsCancel = !_persistentCommandHost,
-                MinWidth = 100,
-                Padding = new Thickness(14, 7, 14, 7),
-                Margin = new Thickness(0, 12, 0, 0),
-                HorizontalAlignment = HorizontalAlignment.Right
-            };
-            close.Click += OnCloseClick;
-'@
-$text = ReplaceOnce $text $oldClose $newClose 'persistent Production Centre Close/Escape behavior'
-
-$oldActionClick = @'
-        private void OnActionClick(object sender, RoutedEventArgs args)
-        {
-            var button = sender as Button;
-            var action = button == null ? null : button.Tag as DisciplineWorkflowAction;
-            if (action == null || string.IsNullOrWhiteSpace(action.Command)) return;
-            SelectedCommand = action.Command;
-            DialogResult = true;
-            Close();
-        }
-'@
-$newActionClick = @'
-        private void OnActionClick(object sender, RoutedEventArgs args)
-        {
-            var button = sender as Button;
-            var action = button == null ? null : button.Tag as DisciplineWorkflowAction;
-            if (action == null || string.IsNullOrWhiteSpace(action.Command)) return;
-
-            if (_persistentCommandHost)
-            {
-                Document document = AcApplication.DocumentManager.MdiActiveDocument;
-                if (document != null)
-                {
-                    document.SendStringToExecute(
-                        action.Command.Trim() + " ",
-                        true,
-                        false,
-                        true);
-                }
-                return;
-            }
-
-            SelectedCommand = action.Command;
-            DialogResult = true;
-            Close();
-        }
-
-        private void OnPreviewKeyDown(object sender, KeyEventArgs args)
+$actionAnchor = '        private void OnActionClick(object sender, RoutedEventArgs args)'
+$escapeMethod = @'
+        private void OnWorkflowPreviewKeyDown(object sender, KeyEventArgs args)
         {
             if (args.Key != Key.Escape) return;
+            if (!KeepOpenOnAction) return;
+
+            // CE-PRODUCTION CENTRE is the navigation home. Escape is reserved
+            // for cancelling/closing the child window or active Civil 3D prompt.
             args.Handled = true;
-            if (_persistentCommandHost)
-                return;
-            DialogResult = false;
-            Close();
         }
 
-        private void OnCloseClick(object sender, RoutedEventArgs args)
-        {
-            if (_persistentCommandHost)
-            {
-                Close();
-                return;
-            }
-            DialogResult = false;
-            Close();
-        }
 '@
-$text = ReplaceOnce $text $oldActionClick $newActionClick 'workflow action and Escape behavior'
-
-# ProductionSettingsWindow already has a Cancel button, but handle Escape
-# explicitly so every production child/settings window closes consistently.
-$settingsCtorMarker = @'
-            ShowInTaskbar = false;
-            Background = new SolidColorBrush(Color.FromRgb(244, 247, 249));
-
-            var root = new Grid { Margin = new Thickness(18) };
-'@
-$settingsCtorNew = @'
-            ShowInTaskbar = false;
-            Background = new SolidColorBrush(Color.FromRgb(244, 247, 249));
-            PreviewKeyDown += OnSettingsPreviewKeyDown;
-
-            var root = new Grid { Margin = new Thickness(18) };
-'@
-# There are two similar constructors; patch the one inside ProductionSettingsWindow
-# by searching after the class declaration.
-if (-not $text.Contains('PreviewKeyDown += OnSettingsPreviewKeyDown;')) {
-    $settingsClass = $text.IndexOf('internal sealed class ProductionSettingsWindow : Window', [StringComparison]::Ordinal)
-    if ($settingsClass -lt 0) { throw 'ProductionSettingsWindow class not found.' }
-    $ctorIndex = $text.IndexOf($settingsCtorMarker, $settingsClass, [StringComparison]::Ordinal)
-    if ($ctorIndex -lt 0) { throw 'ProductionSettingsWindow constructor marker not found.' }
-    $text = $text.Substring(0,$ctorIndex) + $settingsCtorNew + $text.Substring($ctorIndex + $settingsCtorMarker.Length)
+if (-not $text.Contains('private void OnWorkflowPreviewKeyDown(')) {
+    if (-not $text.Contains($actionAnchor)) {
+        throw 'OnActionClick marker for Production Centre Escape handling was not found.'
+    }
+    $text = $text.Replace($actionAnchor,$escapeMethod + $actionAnchor)
 }
-
-$settingsMethodAnchor = @'
-        private static void ShowValidation(string field, string message)
-        {
-'@
-$settingsMethodInsert = @'
-        private void OnSettingsPreviewKeyDown(object sender, KeyEventArgs args)
-        {
-            if (args.Key != Key.Escape) return;
-            args.Handled = true;
-            Accepted = false;
-            DialogResult = false;
-            Close();
-        }
-
-        private static void ShowValidation(string field, string message)
-        {
-'@
-$text = ReplaceOnce $text $settingsMethodAnchor $settingsMethodInsert 'settings-window Escape behavior'
 WriteText $dialogs $text
-
-# Make only the top CE-PRODUCTION CENTRE persistent. Discipline centres continue
-# using the normal modal SelectAndRun path and therefore close on Escape.
-$production = Required 'August11ProductionCentreCommands.cs'
-$text = ReadText $production
-$oldProductionCall = @'
-            DisciplineWorkflowDialogs.SelectAndRun(
-                document,
-                "CE-PRODUCTION CENTRE",
-'@
-$newProductionCall = @'
-            DisciplineWorkflowDialogs.ShowPersistentProductionCentre(
-                document,
-                "CE-PRODUCTION CENTRE",
-'@
-$text = ReplaceOnce $text $oldProductionCall $newProductionCall 'persistent CE-PRODUCTION CENTRE launch'
-WriteText $production $text
 
 # Same-build guards.
 $gridText = ReadText $siteGrid
@@ -444,20 +297,18 @@ foreach ($marker in @(
 }
 $dialogsText = ReadText $dialogs
 foreach ($marker in @(
-    'ShowPersistentProductionCentre(',
+    '"CE-PRODUCTION CENTRE"',
+    'KeepOpenOnAction = keepProductionCentreOpen',
     'AcApplication.ShowModelessWindow(window);',
-    'if (_persistentCommandHost)',
-    'args.Key != Key.Escape',
-    'PreviewKeyDown += OnSettingsPreviewKeyDown;')) {
+    'AcApplication.ShowModalWindow(window);',
+    'PreviewKeyDown += OnWorkflowPreviewKeyDown;',
+    'if (!KeepOpenOnAction) return;',
+    'window.SelectedCommand.Trim() + " "')) {
     if (-not $dialogsText.Contains($marker)) {
         throw "Production-window behavior marker missing: $marker"
     }
 }
-$productionText = ReadText $production
-if (-not $productionText.Contains('DisciplineWorkflowDialogs.ShowPersistentProductionCentre(')) {
-    throw 'CE-PRODUCTION CENTRE is not using the persistent host.'
-}
 
 Write-Host 'Survey Site Grid reverse mode now displays Y=-drawing X and X=-drawing Y.' -ForegroundColor Green
 Write-Host 'Survey Site Grid corner labels are independently shifted inward to prevent overlap.' -ForegroundColor Green
-Write-Host 'CE-PRODUCTION CENTRE remains open; Escape closes child workflow/settings windows.' -ForegroundColor Green
+Write-Host 'Only CE-PRODUCTION CENTRE remains persistent; child workflow windows close on Escape.' -ForegroundColor Green
