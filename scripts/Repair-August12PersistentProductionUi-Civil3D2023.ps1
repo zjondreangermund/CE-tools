@@ -48,6 +48,12 @@ if (-not $text.Contains('        public bool KeepOpenOnAction { get; set; }')) {
     $text = $text.Replace($anchor,$anchor + "`r`n        public bool KeepOpenOnAction { get; set; }")
 }
 
+# IMPORTANT: A modeless WPF click is not an AutoCAD command context. Earlier
+# code activated the discipline preset directly from the click handler without a
+# document lock. Any managed database exception escaped WPF and could terminate
+# Civil 3D with 0xe0434352. Defer the dispatch until the click returns, lock the
+# document only around preset activation, contain every activation/dispatch
+# exception, and then queue the requested CE command normally.
 $clickPattern = '(?s)        private void OnActionClick\(object sender, RoutedEventArgs args\)\s*\{.*?\r?\n        \}(?=\r?\n    \}\r?\n\r?\n    internal enum ProductionSettingsFieldKind)'
 $clickReplacement = @'
         private void OnActionClick(object sender, RoutedEventArgs args)
@@ -59,14 +65,62 @@ $clickReplacement = @'
 
             if (KeepOpenOnAction)
             {
-                Document document = AcApplication.DocumentManager.MdiActiveDocument;
-                if (document != null)
+                string queuedCommand = action.Command.Trim() + " ";
+                string discipline = ResolveStyleDiscipline(Title);
+
+                // Return from the modeless WPF click before touching the DWG or
+                // starting another Civil 3D command. This prevents re-entrant
+                // command/database work inside the button event.
+                Dispatcher.BeginInvoke(new Action(delegate
                 {
-                    string discipline = ResolveStyleDiscipline(Title);
-                    if (!string.IsNullOrWhiteSpace(discipline))
-                        August11DisciplineStylePresetManager.ActivateForProduction(document.Database, discipline);
-                    document.SendStringToExecute(action.Command.Trim() + " ", true, false, true);
-                }
+                    Document document = null;
+                    try
+                    {
+                        document = AcApplication.DocumentManager.MdiActiveDocument;
+                        if (document == null) return;
+
+                        if (!string.IsNullOrWhiteSpace(discipline))
+                        {
+                            try
+                            {
+                                using (DocumentLock documentLock = document.LockDocument())
+                                {
+                                    August11DisciplineStylePresetManager.ActivateForProduction(
+                                        document.Database,
+                                        discipline);
+                                }
+                            }
+                            catch (System.Exception presetException)
+                            {
+                                try
+                                {
+                                    document.Editor.WriteMessage(
+                                        "\nCE Tools: {0} style preset could not be pre-activated; the command will still run. {1}",
+                                        discipline,
+                                        presetException.Message);
+                                }
+                                catch { }
+                            }
+                        }
+
+                        document.SendStringToExecute(
+                            queuedCommand,
+                            true,
+                            false,
+                            true);
+                    }
+                    catch (System.Exception dispatchException)
+                    {
+                        try
+                        {
+                            if (document != null)
+                                document.Editor.WriteMessage(
+                                    "\nCE Tools production command could not be queued safely. {0}",
+                                    dispatchException.Message);
+                        }
+                        catch { }
+                    }
+                }));
                 return;
             }
 
@@ -93,8 +147,8 @@ $clickRegex = [regex]::new($clickPattern,[System.Text.RegularExpressions.RegexOp
 if ($clickRegex.IsMatch($text)) {
     $text = $clickRegex.Replace($text,$clickReplacement,1)
 }
-elseif (-not $text.Contains('ResolveStyleDiscipline(Title)')) {
-    throw 'Persistent production action-click method could not be isolated.'
+elseif (-not $text.Contains('queuedCommand = action.Command.Trim() + " "')) {
+    throw 'Safe persistent production action-click method could not be isolated.'
 }
 WriteText $dialogs $text
 
@@ -135,13 +189,17 @@ if ($text.Contains($utilityAnchor) -and -not $text.Contains('disciplineStyleComm
 }
 WriteText $production $text
 
-# Validate the user-visible and persistence-critical wiring.
+# Validate user-visible, persistence and crash-safety wiring.
 $text = ReadText $dialogs
 foreach ($marker in @(
     'KeepOpenOnAction = true',
     'public bool KeepOpenOnAction { get; set; }',
     'ResolveStyleDiscipline(Title)',
-    'AcApplication.ShowModelessWindow(window);')) {
+    'AcApplication.ShowModelessWindow(window);',
+    'Dispatcher.BeginInvoke(new Action(delegate',
+    'using (DocumentLock documentLock = document.LockDocument())',
+    'style preset could not be pre-activated; the command will still run',
+    'document.SendStringToExecute(')) {
     if (-not $text.Contains($marker)) { throw "Persistent Production Centre marker missing: $marker" }
 }
 $text = ReadText $production
@@ -170,6 +228,7 @@ if (-not (Test-Path -LiteralPath $surveyGridRepair -PathType Leaf)) {
 $global:LASTEXITCODE = 0
 
 Write-Host 'Production centres now stay open while commands run and remain available on the placed monitor.' -ForegroundColor Green
+Write-Host 'Production command dispatch is deferred, document-locked for preset activation and exception-contained.' -ForegroundColor Green
 Write-Host 'Dark/Light dropdown rendering is handled by the global CE interface theme.' -ForegroundColor Green
 Write-Host 'Each production discipline now opens and saves an independent Civil 3D style centre.' -ForegroundColor Green
 Write-Host 'Removed the marked Engineering Intelligence wording and OPEN CENTRE glyphs from the welcome UI.' -ForegroundColor Green
