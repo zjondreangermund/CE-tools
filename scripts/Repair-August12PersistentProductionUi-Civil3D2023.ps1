@@ -150,6 +150,82 @@ if ($clickRegex.IsMatch($text)) {
 elseif (-not $text.Contains('queuedCommand = action.Command.Trim() + " "')) {
     throw 'Safe persistent production action-click method could not be isolated.'
 }
+
+# Normalize spacing for every guided Production/Workflow action row. The old
+# 210px first column let long CE-* titles visually run into the description.
+# Use a wider title/command column, a dedicated gutter and wrapped text. This is
+# shared by Project, Survey, Platform, Road, SW, Sewer, Water, Bulk Water,
+# Parking and Flood, so one repair fixes every workflow window consistently.
+$actionPattern = '(?s)        private static UIElement BuildActionContent\(DisciplineWorkflowAction action\)\s*\{.*?\r?\n        \}(?=\r?\n\r?\n        private void OnActionClick)'
+$actionReplacement = @'
+        private static UIElement BuildActionContent(DisciplineWorkflowAction action)
+        {
+            var grid = new Grid
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            grid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(330),
+                MinWidth = 300
+            });
+            grid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(28)
+            });
+            grid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star),
+                MinWidth = 220
+            });
+
+            var title = new StackPanel
+            {
+                Margin = new Thickness(0, 1, 0, 1),
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            title.Children.Add(new TextBlock
+            {
+                Text = action.Title,
+                FontWeight = FontWeights.SemiBold,
+                FontSize = 14,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 3)
+            });
+            title.Children.Add(new TextBlock
+            {
+                Text = action.Command,
+                FontFamily = new FontFamily("Consolas"),
+                Foreground = Brushes.DimGray,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 11.5
+            });
+            Grid.SetColumn(title, 0);
+            grid.Children.Add(title);
+
+            var description = new TextBlock
+            {
+                Text = action.Description,
+                TextWrapping = TextWrapping.Wrap,
+                VerticalAlignment = VerticalAlignment.Center,
+                Foreground = Brushes.DimGray,
+                LineHeight = 18
+            };
+            Grid.SetColumn(description, 2);
+            grid.Children.Add(description);
+            return grid;
+        }
+'@.TrimEnd("`r","`n")
+$actionRegex = [regex]::new($actionPattern,[System.Text.RegularExpressions.RegexOptions]::Singleline)
+if ($actionRegex.IsMatch($text)) {
+    $text = $actionRegex.Replace($text,$actionReplacement,1)
+}
+elseif (-not ($text.Contains('Width = new GridLength(330)') -and $text.Contains('Width = new GridLength(28)'))) {
+    throw 'Shared Production/Workflow action spacing method could not be isolated.'
+}
+
+# Give the cards a little more vertical breathing room without wasting space.
+$text = $text.Replace('Padding = new Thickness(12, 9, 12, 9),','Padding = new Thickness(14, 11, 14, 11),')
 WriteText $dialogs $text
 
 # Production Centre labels and discipline style entry points.
@@ -189,7 +265,7 @@ if ($text.Contains($utilityAnchor) -and -not $text.Contains('disciplineStyleComm
 }
 WriteText $production $text
 
-# Validate user-visible, persistence and crash-safety wiring.
+# Validate user-visible, persistence, spacing and crash-safety wiring.
 $text = ReadText $dialogs
 foreach ($marker in @(
     'KeepOpenOnAction = true',
@@ -199,7 +275,11 @@ foreach ($marker in @(
     'Dispatcher.BeginInvoke(new Action(delegate',
     'using (DocumentLock documentLock = document.LockDocument())',
     'style preset could not be pre-activated; the command will still run',
-    'document.SendStringToExecute(')) {
+    'document.SendStringToExecute(',
+    'Width = new GridLength(330)',
+    'Width = new GridLength(28)',
+    'Grid.SetColumn(description, 2)',
+    'TextWrapping = TextWrapping.Wrap')) {
     if (-not $text.Contains($marker)) { throw "Persistent Production Centre marker missing: $marker" }
 }
 $text = ReadText $production
@@ -229,6 +309,7 @@ $global:LASTEXITCODE = 0
 
 Write-Host 'Production centres now stay open while commands run and remain available on the placed monitor.' -ForegroundColor Green
 Write-Host 'Production command dispatch is deferred, document-locked for preset activation and exception-contained.' -ForegroundColor Green
+Write-Host 'Production/Workflow action rows now use a 330px title column, 28px gutter and wrapped text to prevent overlaps.' -ForegroundColor Green
 Write-Host 'Dark/Light dropdown rendering is handled by the global CE interface theme.' -ForegroundColor Green
 Write-Host 'Each production discipline now opens and saves an independent Civil 3D style centre.' -ForegroundColor Green
 Write-Host 'Removed the marked Engineering Intelligence wording and OPEN CENTRE glyphs from the welcome UI.' -ForegroundColor Green
