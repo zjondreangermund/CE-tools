@@ -33,6 +33,24 @@ if errorlevel 1 (
   exit /b 1
 )
 
+findstr /C:"\"LXT\"" "%CD%\scripts\Repair-August12SurveyGridCoordinatesAndProductionEscape-Civil3D2023.ps1" >nul
+if errorlevel 1 (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The four-side Survey Site Grid repair is missing.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+
+findstr /C:"Repair-August12SurveyGridCoordinatesAndProductionEscape-Civil3D2023.ps1" "%CD%\scripts\Repair-August12SurveyGridAndDisplayNames-Civil3D2023.ps1" >nul
+if errorlevel 1 (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The final Survey Site Grid coordinate repair is not chained into the build.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+
 if exist "%CD%\.git" (
   for /f "delims=" %%i in ('git -C "%CD%" rev-parse HEAD 2^>nul') do set "CE_SOURCE_COMMIT=%%i"
   if defined CE_SOURCE_COMMIT echo Source commit: %CE_SOURCE_COMMIT%
