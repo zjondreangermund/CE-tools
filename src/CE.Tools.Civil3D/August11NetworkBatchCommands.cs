@@ -140,7 +140,7 @@ namespace CETools.Civil3D
             document.SendStringToExecute("CE_NETWORKCONNECTALL ", true, false, true);
         }
 
-        [CommandMethod("CE_TOOLS", "CE_NETWORKMULTI", CommandFlags.Modal)]
+        [CommandMethod("CE_TOOLS", "CE_NETWORKMULTIBATCH", CommandFlags.Modal)]
         public void NetworkMultiTools()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
