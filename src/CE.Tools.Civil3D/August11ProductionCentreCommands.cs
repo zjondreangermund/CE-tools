@@ -136,6 +136,7 @@ namespace CETools.Civil3D
         {
             Document document = Active();
             if (document == null) return;
+            August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Roads");
             document.SendStringToExecute("CE_ROADPRODUCTIONV2 ", true, false, true);
         }
 
