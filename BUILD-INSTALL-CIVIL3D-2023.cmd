@@ -64,6 +64,22 @@ if errorlevel 1 (
   exit /b 1
 )
 
+if not exist "%CD%\src\CE.Tools.Civil3D\August13RoadOutsideOffsetResolver.cs" (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The parent-linked outside road offset resolver is missing.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+findstr /C:"ResolveParentCentreline" "%CD%\src\CE.Tools.Civil3D\August13RoadOutsideOffsetResolver.cs" >nul
+if errorlevel 1 (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The outside road offset parent-centreline fix is missing.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+
 findstr /C:"TrySelectOne" "%CD%\src\CE.Tools.Civil3D\August12SurfaceSelectionPopup.cs" >nul
 if errorlevel 1 (
   echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
