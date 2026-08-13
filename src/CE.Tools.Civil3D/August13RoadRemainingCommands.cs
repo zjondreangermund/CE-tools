@@ -28,7 +28,6 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-
             List<ObjectId> corridorIds = SelectCorridors(document);
             if (corridorIds.Count == 0)
             {
