@@ -40,6 +40,30 @@ if errorlevel 1 (
   exit /b 1
 )
 
+if not exist "%CD%\src\CE.Tools.Civil3D\August13RoadProfileCorridorOutputFixCommands.cs" (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The latest road profile/corridor output fix is missing.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+findstr /C:"CE_ROADCORRIDOROUTPUTFIX" "%CD%\src\CE.Tools.Civil3D\August13RoadProfileCorridorOutputFixCommands.cs" >nul
+if errorlevel 1 (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The CE-TOP/CE-BOTTOM corridor output finalizer is missing.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+findstr /C:"OverhangCorrectionType.TopLinks" "%CD%\src\CE.Tools.Civil3D\August13RoadProfileCorridorOutputFixCommands.cs" >nul
+if errorlevel 1 (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The road corridor Top/Bottom overhang correction source is missing.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+
 findstr /C:"TrySelectOne" "%CD%\src\CE.Tools.Civil3D\August12SurfaceSelectionPopup.cs" >nul
 if errorlevel 1 (
   echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
@@ -71,6 +95,15 @@ findstr /C:"Repair-August13TrueSewerMultiSource-Civil3D2023.ps1" "%CD%\scripts\R
 if errorlevel 1 (
   echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
   echo The true multi-source sewer repair is not chained into the build.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+
+findstr /C:"Repair-August13RoadProfileCorridorOutput-Civil3D2023.ps1" "%CD%\scripts\Repair-August13TrueSewerMultiSource-Civil3D2023.ps1" >nul
+if errorlevel 1 (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The final road profile/corridor output repair is not chained into the build.
   echo Download/extract the latest GitHub main before building.
   pause
   exit /b 1
