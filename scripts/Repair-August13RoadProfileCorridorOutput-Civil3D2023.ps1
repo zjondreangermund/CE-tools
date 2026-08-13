@@ -81,7 +81,6 @@ foreach ($marker in @(
     }
 }
 
-# Outside road/sidewalk offsets must use the CE-generated parent-handle chain.
 $outsideResolver = Required 'August13RoadOutsideOffsetResolver.cs'
 $outsideResolverText = ReadText $outsideResolver
 foreach ($marker in @(
@@ -109,7 +108,6 @@ WriteText $roadCompletion $text
 $roadCorridor = Required 'RoadCorridorCompletionCommands.cs'
 $text = ReadText $roadCorridor
 
-# Complete Road Profile: NGL/profile -> editable design -> vertical curves -> exact road profile-view style/bands.
 $profileTarget = 'document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVESFINAL CE_ROADPROFILEVIEWFINAL ", true, false, true);'
 $profileVariants = @(
     'document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE ", true, false, true);',
@@ -119,7 +117,6 @@ $profileVariants = @(
 )
 foreach ($variant in $profileVariants) { $text = $text.Replace($variant, $profileTarget) }
 
-# Complete Corridor uses the typed finalizer after the existing baseline/target pass.
 $corridorTarget = 'document.SendStringToExecute("CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE CE_ROADCORRIDOROUTPUTFIX ", true, false, true);'
 $corridorVariants = @(
     'document.SendStringToExecute("CE_ROADCORRIDORS CE_ROADDESIGNPROFILE ", true, false, true);',
@@ -127,7 +124,6 @@ $corridorVariants = @(
 )
 foreach ($variant in $corridorVariants) { $text = $text.Replace($variant, $corridorTarget) }
 
-# Match requested corridor surface definitions exactly.
 $text = $text.Replace(
     'model.AddText("TopCodes", "01 Corridor Surfaces", "Top link codes", "Top,Pave", "Comma-separated corridor link codes included in the top surface.");',
     'model.AddText("TopCodes", "01 Corridor Surfaces", "Top link codes", "Top", "CE-TOP uses the Top link code. The finalizer also sets Top Links overhang correction and builds the surface.");')
@@ -145,7 +141,6 @@ $text = $text.Replace(
     'public string Name { get; private set; }')
 WriteText $roadCorridor $text
 
-# Production Centre: use Road-only settings, expose junction construction, and use corridor construction BOQ.
 $production = Required 'August11ProductionCentreCommands.cs'
 $text = ReadText $production
 $text = $text.Replace(
@@ -154,7 +149,7 @@ $text = $text.Replace(
 $text = $text.Replace(
     'Action("Complete Corridor", "CE_ROADCORRIDORCOMPLETE", "Create/rebuild baselines, regions, targets and corridor surfaces.", "04 DESIGN"),',
     'Action("CE-Complete Corridor", "CE_ROADCORRIDORFULL", "Create/rebuild road corridors, apply target surface, build CE-TOP/CE-BOTTOM and add slope patterns.", "04 DESIGN"),')
-$junctionAction = '                Action("CE-Junction Construction", "CE_ROADJUNCTIONCONSTRUCTIONTOOLS", "Create/finish multiple T/cross junctions and split/exclude through-road corridor regions at bellmouth limits.", "04 DESIGN"),`r`n'
+$junctionAction = '                Action("CE-Junction Construction", "CE_ROADJUNCTIONCONSTRUCTIONTOOLS", "Create/finish multiple T/cross junctions and split/exclude through-road corridor regions at bellmouth limits.", "04 DESIGN"), '
 if (-not $text.Contains('"CE_ROADJUNCTIONCONSTRUCTIONTOOLS"')) {
     $text = $text.Replace(
         '                Action("COMPLETE - Junction Setting-Out", "CE_JUNCTIONSETTINGOUT4", "Complete one full T/cross junction before continuing to the next.", "05 COMPLETE"),',
@@ -165,7 +160,6 @@ $text = $text.Replace(
     'Action("CE-Road Construction BOQ", "CE_ROADBOQCONSTRUCTION", "Cut/fill to datum, layerwork volumes, kerb lengths, road/sidewalk and side-slope areas from the live corridor model.", "05 COMPLETE"),')
 WriteText $production $text
 
-# Full road workflow receives the same Road-only settings and construction commands.
 $roadProduction = Required 'RoadProductionCommentCommands.cs'
 $text = ReadText $roadProduction
 $text = $text.Replace(
@@ -174,14 +168,13 @@ $text = $text.Replace(
 if (-not $text.Contains('"CE_ROADJUNCTIONCONSTRUCTIONTOOLS"')) {
     $text = $text.Replace(
         '                    RoadAction("Refresh linked junctions", "CE_JUNCTIONREFRESH", "Refresh linked bellmouth labels after road edits.", "5 — Intersections"),',
-        '                    RoadAction("Finalize junction corridors", "CE_ROADJUNCTIONCONSTRUCTIONTOOLS", "Split/exclude multiple corridor junction regions at bellmouth limits and finish construction outputs.", "5 — Intersections"),`r`n                    RoadAction("Refresh linked junctions", "CE_JUNCTIONREFRESH", "Refresh linked bellmouth labels after road edits.", "5 — Intersections"),')
+        '                    RoadAction("Finalize junction corridors", "CE_ROADJUNCTIONCONSTRUCTIONTOOLS", "Split/exclude multiple corridor junction regions at bellmouth limits and finish construction outputs.", "5 — Intersections"),                    RoadAction("Refresh linked junctions", "CE_JUNCTIONREFRESH", "Refresh linked bellmouth labels after road edits.", "5 — Intersections"),')
 }
 $text = $text.Replace(
     'RoadAction("Road BOQ", "CE_BOQROAD", "Create the road bill of quantities in Excel format.", "8 — Production"),',
     'RoadAction("Road construction BOQ", "CE_ROADBOQCONSTRUCTION", "Cut/fill to datum, assembly layerwork, kerbs, road/sidewalk and side-slope quantities from live corridors.", "8 — Production"),')
 WriteText $roadProduction $text
 
-# Same-build guards. Fail before compilation if an old/partial road source is staged.
 $roadCompletionText = ReadText $roadCompletion
 if (-not $roadCompletionText.Contains('August13RoadOutsideOffsetResolver.ChooseOutsideOffset(source, distance, transaction, document.Database, centres)')) {
     throw 'CE_ROADOUTSIDEOFFSET is not routed through the linked-parent outside-offset resolver.'
