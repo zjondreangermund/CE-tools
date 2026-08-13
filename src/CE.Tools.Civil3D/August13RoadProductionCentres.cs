@@ -10,6 +10,9 @@ namespace CETools.Civil3D
   [CommandMethod("CE_TOOLS","CE_ROADPRODUCTIONV2",CommandFlags.Modal)]
   public void RoadProduction()
   {
+   Document d=AcApplication.DocumentManager.MdiActiveDocument;
+   if(d==null)return;
+   August11DisciplineStylePresetManager.ActivateForProduction(d.Database,"Roads");
    Run("CE-ROAD PRODUCTION","Choose Road Settings, Road Layout Production or Road Design Production.",new List<DisciplineWorkflowAction>
    {
     A("CE-Road Settings","CE_ROADSETTINGSCENTRE","Road-only project and Civil 3D settings.","01 Road Production"),
@@ -36,11 +39,13 @@ namespace CETools.Civil3D
     A("CE-Closed Polylines for All Plots","CE_ROADRESERVECLOSE","Close plot/reserve source polylines.","01 Source"),
     A("CE-Road Reserve Centrelines","CE_ROADOVERLAY","Create road reserve centrelines.","02 Centrelines"),
     A("CE-Join Continuous Road Reserve Centrelines","CE_ROADCONTINUITYFIX","Join continuous centreline strings.","02 Centrelines"),
-    A("CE-Multiple Horizontal Centreline Curves","CE_ROADCURVE","Create multiple horizontal centreline curves.","03 Geometry"),
+    A("CE-Multiple Horizontal Centreline Curves","CE_ROUTEHORIZONTALCURVES","Apply specified tangent curve radii to multiple road/route centreline polylines.","03 Geometry"),
     A("CE-Road Offsets","CE_ROADOFFSET","Create road offsets.","03 Geometry"),
     A("CE-Multiple T/Cross Junction Bellmouths","CE_ROADJUNCTIONBULK","Create T/cross-junction bellmouths.","04 Junctions"),
     A("CE-Multiple Junction Trim","CE_ROADJUNCTIONTRIM","Trim multiple junctions.","04 Junctions"),
+    A("CE-Bellmouth Tangent Trim","CE_BELLMOUTHTRIMEDGES","Trim road and sidewalk/shoulder edges exactly to generated bellmouth tangent stations.","04 Junctions"),
     A("CE-Road Names","CE_ROADNAME","Create/update road names.","05 Annotation"),
+    A("CE-Synchronize Road Names","CE_ROADNAMESYNC","Synchronize ROAD-n names across alignments, profiles, corridors, sections and assemblies.","05 Annotation"),
     A("CE-Annotation Presentation","CE_ROUTEANNOTATIONSTYLE","Apply annotation presentation settings.","05 Annotation"),
     A("CE-Shift Annotations","CE_ROUTESHIFTANNOTATION","Shift selected annotations together.","05 Annotation"),
     A("CE-Road Dimensions","CE_ROADDIM","Create/update road dimensions.","05 Annotation"),
