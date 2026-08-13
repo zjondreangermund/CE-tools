@@ -191,9 +191,19 @@ if (-not (Test-Path -LiteralPath $sewerSurfaceExpansion -PathType Leaf)) {
 & $sewerSurfaceExpansion -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# August 13: the old sewer batch only queued Civil 3D's native single-object
+# CreateNetworkFromObject command. Redirect the visible Sewer Production action
+# and the legacy command name to CE's direct multi-source gravity-network engine.
+$trueSewerMultiSource = Join-Path $root 'scripts\Repair-August13TrueSewerMultiSource-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $trueSewerMultiSource -PathType Leaf)) {
+    throw "August 13 true sewer multi-source repair was not found: $trueSewerMultiSource"
+}
+& $trueSewerMultiSource -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 Write-Host 'CE- prefixes now cover Production ribbon buttons, guided workflow actions and Workflow Centre steps.' -ForegroundColor Green
 Write-Host 'Survey Site Grid is wired into Survey Production and the main Survey ribbon.' -ForegroundColor Green
 Write-Host 'Survey Site Grid final coordinate pass is now chained and verified during every one-click build.' -ForegroundColor Green
 Write-Host 'Site Grid now produces coordinate text on bottom, top, left and right, with X horizontal / Y vertical and reverse-sign conversion.' -ForegroundColor Green
 Write-Host 'Surface comparison/elevation commands now choose Civil 3D surfaces from CE popup dropdowns.' -ForegroundColor Green
-Write-Host 'Sewer Production now offers a dedicated multiple-polyline network batch command.' -ForegroundColor Green
+Write-Host 'Sewer Production now creates one gravity sewer network directly from the complete selected source set; native single-object CreateNetworkFromObject is bypassed.' -ForegroundColor Green
