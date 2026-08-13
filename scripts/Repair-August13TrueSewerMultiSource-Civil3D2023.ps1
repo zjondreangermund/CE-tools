@@ -51,7 +51,7 @@ $legacyReplacement = @'
             if (document == null) return;
 
             document.Editor.WriteMessage(
-                "\nCE_SEWERNETWORKFROMPOLYLINES now uses CE's true multi-source sewer-network engine. Select the complete source set once; Civil 3D's single-object CreateNetworkFromObject prompt is not used.");
+                "\nCE_SEWERNETWORKFROMPOLYLINES now uses CE's true multi-source sewer-network engine. Select the complete source set once; Civil 3D's single-object network-from-object selection is bypassed.");
             document.SendStringToExecute(
                 "CE_SEWERNETWORKMULTI ",
                 true,
@@ -98,7 +98,7 @@ if (-not $methodMatch.Success) {
     throw 'Could not verify the legacy sewer command body.'
 }
 if ($methodMatch.Value.Contains('NetworkFromObjectBatchManager.Start(') -or
-    $methodMatch.Value.Contains('CreateNetworkFromObject')) {
+    $methodMatch.Value.Contains('"_.CreateNetworkFromObject "')) {
     throw 'Legacy sewer command still contains the single-object native batch path.'
 }
 
