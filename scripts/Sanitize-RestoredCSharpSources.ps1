@@ -52,3 +52,14 @@ if ($changed.Count -eq 0) {
 else {
     Write-Host "Sanitized $($changed.Count) restored C# source file(s)." -ForegroundColor Cyan
 }
+
+# Run the user-requested August 13 integration as the final staged source repair,
+# after all earlier inject/compatibility passes and immediately before the
+# Roslyn source diagnosis/build step.
+$requestedRepair = Join-Path $root 'scripts\Repair-August13RequestedProductionFeatures-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $requestedRepair -PathType Leaf)) {
+    throw "August 13 requested production repair was not found: $requestedRepair"
+}
+Unblock-File -LiteralPath $requestedRepair -ErrorAction SilentlyContinue
+& $requestedRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
