@@ -33,7 +33,7 @@ if errorlevel 1 (
   exit /b 1
 )
 
-findstr /C:"\"LXT\"" "%CD%\scripts\Repair-August12SurveyGridCoordinatesAndProductionEscape-Civil3D2023.ps1" >nul
+findstr /C:"LXT" "%CD%\scripts\Repair-August12SurveyGridCoordinatesAndProductionEscape-Civil3D2023.ps1" >nul
 if errorlevel 1 (
   echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
   echo The four-side Survey Site Grid repair is missing.
