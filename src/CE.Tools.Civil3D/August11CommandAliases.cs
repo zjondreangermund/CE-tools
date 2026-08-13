@@ -28,5 +28,13 @@ namespace CETools.Civil3D
             if (document == null) return;
             document.SendStringToExecute("CE_BULKWATERPRODUCTIONCENTRE ", true, false, true);
         }
+
+        [CommandMethod("CE_TOOLS", "CE_FLOFFSET", CommandFlags.Modal)]
+        public void FeatureLineOffsetAlias()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+            document.SendStringToExecute("CE_FLRELCREATE ", true, false, true);
+        }
     }
 }
