@@ -16,10 +16,9 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 namespace CETools.Civil3D
 {
     /// <summary>
-    /// Friendly front door for the production workflows requested during the
-    /// 11-August field review.  The complete command inventory remains in the
-    /// existing Engineering Intelligence / Workflow Centre; this centre exposes
-    /// only the shortest discipline production path.
+    /// Friendly front door for CE Tools discipline production. Each discipline is
+    /// staged so the user sees the important production commands instead of the
+    /// complete engineering command inventory.
     /// </summary>
     public sealed class August11ProductionCentreCommands
     {
@@ -55,13 +54,13 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE-PRODUCTION CENTRE",
-                "Choose a discipline. Each production centre contains Settings first, then Prepare, Create, Design, Complete and Deliver. Use CE-ENGINEERING INTELLIGENCE CENTRE when you need the full command library.",
+                "Choose a discipline. Each production centre keeps Settings first, then preparation/design/production and delivery. Use CE-ENGINEERING INTELLIGENCE CENTRE for the full command library.",
                 new List<DisciplineWorkflowAction>
                 {
                     Action("PROJECT PRODUCTION", "CE_PROJECTPRODUCTIONCENTRE", "Project setup, standards, styles, registers and coordinated delivery.", "01 Disciplines"),
                     Action("SURVEY PRODUCTION", "CE_SURVEYPRODUCTIONCENTRE", "Coordinate system, survey data, surfaces and setting-out.", "01 Disciplines"),
                     Action("PLATFORM PRODUCTION", "CE_PLATFORMPRODUCTIONCENTRE", "Platforms, levels, grading, setting-out, quantities and drawings.", "01 Disciplines"),
-                    Action("ROAD PRODUCTION", "CE_ROADPRODUCTIONCENTRE", "Cadastral road layout through alignments, profiles and corridors.", "01 Disciplines"),
+                    Action("ROAD PRODUCTION", "CE_ROADPRODUCTIONCENTRE", "Road Settings → Road Layout Production → Road Design Production.", "01 Disciplines"),
                     Action("STORMWATER PRODUCTION", "CE_SWPRODUCTIONCENTRE", "Routes, networks, branches, profiles, quantities and drawings.", "01 Disciplines"),
                     Action("SEWER PRODUCTION", "CE_SEWERPRODUCTIONCENTRE", "Midblock/road-reserve routing through network, profiles, setting-out and BOQ.", "01 Disciplines"),
                     Action("WATER PRODUCTION", "CE_WATERPRODUCTIONCENTRE", "Water routes, pressure network production, profiles and assets.", "01 Disciplines"),
@@ -135,19 +134,9 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_ROADPRODUCTIONCENTRE", CommandFlags.Modal)]
         public void RoadProduction()
         {
-            RunCentre("ROAD PRODUCTION", "Cadastral/reserve geometry → road layout → alignment/profile → corridor → setting-out/BOQ → drawings.", new[]
-            {
-                Action("SETTINGS - Project Road Styles", "CE_PROJECTSTYLES", "Select road alignment/profile/profile-view/band/corridor styles.", "01 SETTINGS"),
-                Action("PREPARE - Road Layout Production", "CE_ROADLAYOUTTOOLS", "Reserve centrelines, edges, shoulders, junctions, road names and dimensions.", "02 PREPARE"),
-                Action("Road Continuity / Junction Finish", "CE_ROADAUG11TOOLS", "Join reserve centrelines, outside offsets, junction trim boundaries and route annotation.", "02 PREPARE"),
-                Action("CREATE - Alignments", "CE_ROADALIGN", "Create linked road alignments.", "03 CREATE"),
-                Action("DESIGN - Complete Road Profile", "CE_ROADPROFILEFULL", "Existing ground plus final editable design profile with profile view/bands.", "04 DESIGN"),
-                Action("Complete Corridor", "CE_ROADCORRIDORCOMPLETE", "Create/rebuild baselines, regions, targets and corridor surfaces.", "04 DESIGN"),
-                Action("COMPLETE - Junction Setting-Out", "CE_JUNCTIONSETTINGOUT4", "Complete one full T/cross junction before continuing to the next.", "05 COMPLETE"),
-                Action("Road BOQ", "CE_BOQROAD", "Create linked road quantities.", "05 COMPLETE"),
-                Action("DELIVER - Road Report", "CE_REPORTROAD", "Generate the road design report.", "06 DELIVER"),
-                Action("▶ RUN COMPLETE ROAD PRODUCTION", "CE_ROADPRODUCTION", "Open the ordered complete road-production workflow.", "99 RUN COMPLETE")
-            });
+            Document document = Active();
+            if (document == null) return;
+            document.SendStringToExecute("CE_ROADPRODUCTIONV2 ", true, false, true);
         }
 
         [CommandMethod("CE_TOOLS", "CE_SWPRODUCTIONCENTRE", CommandFlags.Modal)]
@@ -304,7 +293,8 @@ namespace CETools.Civil3D
             Width = 760;
             Height = 470;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
-            ResizeMode = ResizeMode.NoResize;
+            WindowState = WindowState.Maximized;
+            ResizeMode = ResizeMode.CanResizeWithGrip;
             ShowInTaskbar = false;
 
             bool light = string.Equals(theme, "Light", StringComparison.OrdinalIgnoreCase);
@@ -328,7 +318,7 @@ namespace CETools.Civil3D
             var cards = new Grid { Margin = new Thickness(34, 8, 34, 20) };
             cards.ColumnDefinitions.Add(new ColumnDefinition());
             cards.ColumnDefinitions.Add(new ColumnDefinition());
-            cards.Children.Add(BuildCard("CE-PRODUCTION CENTRE", "Important commands only. Guided Prepare → Create → Design → Complete → Deliver workflows for every discipline.", "CE_PRODUCTIONCENTRE", card, foreground, muted, accent, 0));
+            cards.Children.Add(BuildCard("CE-PRODUCTION CENTRE", "Important commands only. Guided discipline production workflows, with Roads split into Settings, Layout Production and Design Production.", "CE_PRODUCTIONCENTRE", card, foreground, muted, accent, 0));
             cards.Children.Add(BuildCard("CE-ENGINEERING INTELLIGENCE CENTRE", "The complete CE Tools command library, utilities, reports, repair tools and advanced engineering workflows.", "CE_ENGINEERINGINTELLIGENCECENTRE", card, foreground, muted, accent, 1));
             Grid.SetRow(cards, 1);
             root.Children.Add(cards);
@@ -354,7 +344,15 @@ namespace CETools.Civil3D
 
         private Border BuildCard(string title, string description, string command, Brush card, Brush foreground, Brush muted, Brush accent, int column)
         {
-            var border = new Border { Background = card, CornerRadius = new CornerRadius(7), Margin = new Thickness(column == 0 ? 0 : 10, 0, column == 0 ? 10 : 0, 0), Padding = new Thickness(24), BorderBrush = accent, BorderThickness = new Thickness(1) };
+            var border = new Border
+            {
+                Background = card,
+                CornerRadius = new CornerRadius(7),
+                Margin = new Thickness(column == 0 ? 0 : 10, 0, column == 0 ? 10 : 0, 0),
+                Padding = new Thickness(24),
+                BorderBrush = accent,
+                BorderThickness = new Thickness(1)
+            };
             var panel = new StackPanel();
             panel.Children.Add(new TextBlock { Text = title, FontSize = 18, FontWeight = FontWeights.Bold, Foreground = foreground, TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(new TextBlock { Text = description, FontSize = 13, Foreground = muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 18, 0, 24), MinHeight = 82 });
@@ -368,8 +366,8 @@ namespace CETools.Civil3D
     }
 
     /// <summary>
-    /// Dedicated production ribbon. It intentionally uses direct panel Items only,
-    /// so it remains compatible with Civil 3D 2023 where RibbonRow is unavailable.
+    /// Dedicated production ribbon. Direct panel Items are used so the ribbon remains
+    /// compatible with Civil 3D 2023 where RibbonRow is unavailable.
     /// </summary>
     internal static class ProductionWorkflowRibbonBuilder
     {
