@@ -15,6 +15,38 @@ function Required([string]$name) {
 function ReadText([string]$path) { [System.IO.File]::ReadAllText($path) }
 function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false)) }
 
+# Road Production moved to August13RoadProductionCentres.cs. Older field-completion
+# passes still look for the former Road Continuity / Junction Finish array entry in
+# August11ProductionCentreCommands.cs. Add a staging-only compatibility template so
+# those historical injectors can remain idempotent without taking ownership back
+# from CE_ROADPRODUCTIONV2. The template is never called at runtime.
+$productionCompat = Required 'August11ProductionCentreCommands.cs'
+$roadV2 = Join-Path $src 'August13RoadProductionCentres.cs'
+$legacyRoadAnchor = '                Action("Road Continuity / Junction Finish", "CE_ROADAUG11TOOLS", "Join reserve centrelines, outside offsets, junction trim boundaries and route annotation.", "02 PREPARE"),'
+if ((Test-Path -LiteralPath $roadV2 -PathType Leaf)) {
+    $productionText = ReadText $productionCompat
+    $roadV2Text = ReadText $roadV2
+    if ($roadV2Text.Contains('CE_ROADPRODUCTIONV2') -and -not $productionText.Contains($legacyRoadAnchor)) {
+        $nextDiscipline = '        [CommandMethod("CE_TOOLS", "CE_SWPRODUCTIONCENTRE", CommandFlags.Modal)]'
+        if (-not $productionText.Contains($nextDiscipline)) { throw 'Road Production V2 staging bridge could not find the Stormwater Production marker.' }
+        $template = @'
+        // Staging compatibility template for legacy August 11 road injectors.
+        // CE_ROADPRODUCTIONV2 remains the live Road Production owner.
+        private void LegacyRoadProductionStagingTemplate()
+        {
+            RunCentre("ROAD PRODUCTION", "Staging compatibility template only.", new[]
+            {
+                Action("Road Continuity / Junction Finish", "CE_ROADAUG11TOOLS", "Join reserve centrelines, outside offsets, junction trim boundaries and route annotation.", "02 PREPARE"),
+            });
+        }
+
+'@
+        $productionText = $productionText.Replace($nextDiscipline,$template + $nextDiscipline)
+        WriteText $productionCompat $productionText
+        Write-Host 'Added staging-only Road Production V2 compatibility template for historical August 11 injectors.' -ForegroundColor DarkGreen
+    }
+}
+
 # Run all field-completion, behavioral-audit and command-sequencing passes here
 # so the existing one-click Stage-Build script gets the same audited source.
 foreach ($completionName in @(
@@ -34,20 +66,21 @@ foreach ($completionName in @(
     $global:LASTEXITCODE = 0
 }
 
-# CE_NETWORKMULTI already belongs to the permanent final-closure command hub.
-# Keep that public command stable; expose this new source's optional hub under a
-# different command so AutoCAD never receives duplicate CommandMethod names.
+# CE_NETWORKMULTI belongs to the established final-closure command hub. Keep it
+# stable and accept either collision-safe name used by the newer batch launcher.
 $network = Required 'August11NetworkBatchCommands.cs'
 $text = ReadText $network
 $old = '[CommandMethod("CE_TOOLS", "CE_NETWORKMULTI", CommandFlags.Modal)]'
-$new = '[CommandMethod("CE_TOOLS", "CE_NETWORKBATCHTOOLS", CommandFlags.Modal)]'
+$currentSafe = '[CommandMethod("CE_TOOLS", "CE_NETWORKMULTIBATCH", CommandFlags.Modal)]'
+$legacySafe = '[CommandMethod("CE_TOOLS", "CE_NETWORKBATCHTOOLS", CommandFlags.Modal)]'
 if ($text.Contains($old)) {
-    $text = $text.Replace($old,$new)
+    $text = $text.Replace($old,$currentSafe)
     WriteText $network $text
-    Write-Host 'Renamed August11 network hub to CE_NETWORKBATCHTOOLS; retained established CE_NETWORKMULTI owner.' -ForegroundColor Green
+    Write-Host 'Renamed August11 network hub to CE_NETWORKMULTIBATCH; retained established CE_NETWORKMULTI owner.' -ForegroundColor Green
 }
-elseif ($text.Contains($new)) { Write-Host 'August11 network hub command name is already collision-safe.' -ForegroundColor DarkGreen }
-else { throw 'August11 network hub CommandMethod marker was not found.' }
+elseif ($text.Contains($currentSafe)) { Write-Host 'August11 network hub already uses CE_NETWORKMULTIBATCH.' -ForegroundColor DarkGreen }
+elseif ($text.Contains($legacySafe)) { Write-Host 'August11 network hub already uses legacy collision-safe CE_NETWORKBATCHTOOLS.' -ForegroundColor DarkGreen }
+else { throw 'August11 network hub collision-safe CommandMethod marker was not found.' }
 
 # Project metadata propagation only needs to queue the already-proven universal
 # metadata refresh. Avoid a compile-time dependency on a private manager method.
@@ -152,15 +185,14 @@ if (-not $text.Contains('Autodesk.Civil.DatabaseServices.Surface')) {
 }
 Write-Host "Qualified Civil 3D Surface references in Midblock Sewer Production. Replacements=$surfaceChanges." -ForegroundColor Green
 
-# Verify the August11 batch source itself no longer DECLARES CE_NETWORKMULTI.
-# Other production-centre source may legitimately reference the established hub.
+# Verify the August11 batch source no longer DECLARES CE_NETWORKMULTI.
 $text = ReadText $network
 $duplicateDeclaration = '[CommandMethod("CE_TOOLS", "CE_NETWORKMULTI", CommandFlags.Modal)]'
 if ($text.Contains($duplicateDeclaration)) {
     throw 'August11 network batch source still declares colliding CE_NETWORKMULTI CommandMethod.'
 }
-if (-not $text.Contains('[CommandMethod("CE_TOOLS", "CE_NETWORKBATCHTOOLS", CommandFlags.Modal)]')) {
-    throw 'August11 collision-safe CE_NETWORKBATCHTOOLS declaration is missing.'
+if (-not $text.Contains($currentSafe) -and -not $text.Contains($legacySafe)) {
+    throw 'August11 collision-safe network batch declaration is missing.'
 }
 
 # Aggregate command ownership first so one build reports every dead CE workflow
