@@ -68,18 +68,23 @@ WriteText $roadCompletion $text
 $roadCorridor = Required 'RoadCorridorCompletionCommands.cs'
 $text = ReadText $roadCorridor
 
-# The complete road profile must finish with the robust final vertical-curve pass.
-$text = $text.Replace(
+# The complete road profile must always finish with the robust final vertical-curve pass.
+# Accept the older source variants so downloaded/staged copies are repaired consistently.
+$profileTarget = 'document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVESFINAL ", true, false, true);'
+$profileVariants = @(
     'document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE ", true, false, true);',
-    'document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVESFINAL ", true, false, true);')
-$text = $text.Replace(
     'document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVES ", true, false, true);',
-    'document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVESFINAL ", true, false, true);')
+    'document.SendStringToExecute("CE_ROADPROFILES CE_ROADVERTICALCURVES CE_ROADDESIGNPROFILE ", true, false, true);'
+)
+foreach ($variant in $profileVariants) { $text = $text.Replace($variant, $profileTarget) }
 
 # Complete Corridor uses the typed finalizer after the existing baseline/target pass.
-$text = $text.Replace(
-    'document.SendStringToExecute("CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE ", true, false, true);',
-    'document.SendStringToExecute("CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE CE_ROADCORRIDOROUTPUTFIX ", true, false, true);')
+$corridorTarget = 'document.SendStringToExecute("CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE CE_ROADCORRIDOROUTPUTFIX ", true, false, true);'
+$corridorVariants = @(
+    'document.SendStringToExecute("CE_ROADCORRIDORS CE_ROADDESIGNPROFILE ", true, false, true);',
+    'document.SendStringToExecute("CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE ", true, false, true);'
+)
+foreach ($variant in $corridorVariants) { $text = $text.Replace($variant, $corridorTarget) }
 
 # Match the requested Civil 3D surface definitions exactly.
 $text = $text.Replace(
@@ -109,24 +114,30 @@ $text = $text.Replace(
     'Action("Complete Corridor", "CE_ROADCORRIDORFULL", "Create/rebuild the road corridor, apply the selected target surface, build CE-TOP/CE-BOTTOM and add corridor slope patterns.", "04 DESIGN"),')
 WriteText $production $text
 
-# Same-build guards. Fail before compilation if an old/partial road source is staged.
+# Same-build guards. Validate each marker in the file that actually owns it.
 $roadCompletionText = ReadText $roadCompletion
 if (-not $roadCompletionText.Contains('August13RoadOutsideOffsetResolver.ChooseOutsideOffset(source, distance, transaction, document.Database, centres)')) {
     throw 'CE_ROADOUTSIDEOFFSET is not routed through the linked-parent outside-offset resolver.'
 }
 
 $roadText = ReadText $roadCorridor
-$productionText = ReadText $production
 foreach ($marker in @(
     'CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVESFINAL',
-    'CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE CE_ROADCORRIDOROUTPUTFIX',
+    'CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE CE_ROADCORRIDOROUTPUTFIX')) {
+    if (-not $roadText.Contains($marker)) {
+        throw "Road profile/corridor command-chain marker missing in RoadCorridorCompletionCommands.cs: $marker"
+    }
+}
+foreach ($marker in @(
     '"Top link codes", "Top"',
     '"Bottom link codes", "Datum"',
     'public string Name { get; private set; }')) {
     if (-not $roadText.Contains($marker)) {
-        throw "Road profile/corridor integration marker missing: $marker"
+        throw "Road profile/corridor source marker missing in RoadCorridorCompletionCommands.cs: $marker"
     }
 }
+
+$productionText = ReadText $production
 if (-not $productionText.Contains('Action("Complete Corridor", "CE_ROADCORRIDORFULL"')) {
     throw 'Road Production Complete Corridor is not routed through CE_ROADCORRIDORFULL.'
 }
