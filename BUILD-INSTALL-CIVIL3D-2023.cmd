@@ -18,7 +18,23 @@ if not exist "%CD%\src\CE.Tools.Civil3D\August11NetworkBatchCommands.cs" (
 findstr /C:"Select multiple now" "%CD%\src\CE.Tools.Civil3D\August11NetworkBatchCommands.cs" >nul
 if errorlevel 1 (
   echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
-  echo The sewer/network true multi-selection source is missing.
+  echo The sewer/network multi-selection source is missing.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+
+if not exist "%CD%\src\CE.Tools.Civil3D\August13SewerMultiSourceNetworkCommands.cs" (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The true multi-source sewer network engine is missing.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+findstr /C:"CE_SEWERNETWORKMULTI" "%CD%\src\CE.Tools.Civil3D\August13SewerMultiSourceNetworkCommands.cs" >nul
+if errorlevel 1 (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The true multi-source sewer command marker is missing.
   echo Download/extract the latest GitHub main before building.
   pause
   exit /b 1
@@ -46,6 +62,15 @@ findstr /C:"Repair-August12SurveyGridCoordinatesAndProductionEscape-Civil3D2023.
 if errorlevel 1 (
   echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
   echo The final Survey Site Grid coordinate repair is not chained into the build.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+
+findstr /C:"Repair-August13TrueSewerMultiSource-Civil3D2023.ps1" "%CD%\scripts\Repair-August12SurveyGridAndDisplayNames-Civil3D2023.ps1" >nul
+if errorlevel 1 (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The true multi-source sewer repair is not chained into the build.
   echo Download/extract the latest GitHub main before building.
   pause
   exit /b 1
