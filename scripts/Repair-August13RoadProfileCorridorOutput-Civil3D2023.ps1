@@ -32,7 +32,7 @@ foreach ($marker in @(
     'OverhangCorrectionType.BottomLinks',
     'surface.IsBuild = true;',
     'SetLinkCodeAsBreakLine',
-    'corridor.SlopePatterns.Add',
+    'CorridorSlopePattern pattern = patterns.Add(',
     'FeatureLineCollectionMap')) {
     if (-not $finalizerText.Contains($marker)) {
         throw "Road profile/corridor finalizer marker missing: $marker"
@@ -70,13 +70,11 @@ $text = $text.Replace(
     'BottomCodes = SplitCodes(model.Text("BottomCodes"), new[] { "Datum" }),')
 
 # CivilChoice is bound through WPF DisplayMemberPath. The display property must
-# be public; internal properties produce the blank rows seen in Corridor Target Surface.
+# be public; an internal Name property produces the blank rows seen in the user's
+# Corridor Target Surface popup even though the ObjectIds are present.
 $text = $text.Replace(
-    '        internal ObjectId Id { get; private set; }`r`n        internal string Name { get; private set; }',
-    '        internal ObjectId Id { get; private set; }`r`n        public string Name { get; private set; }')
-$text = $text.Replace(
-    "        internal ObjectId Id { get; private set; }`n        internal string Name { get; private set; }",
-    "        internal ObjectId Id { get; private set; }`n        public string Name { get; private set; }")
+    'internal string Name { get; private set; }',
+    'public string Name { get; private set; }')
 WriteText $roadCorridor $text
 
 $production = Required 'August11ProductionCentreCommands.cs'
