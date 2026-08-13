@@ -15,6 +15,7 @@ function ReadText([string]$path) { [System.IO.File]::ReadAllText($path) }
 function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false)) }
 
 $production = Need 'August11ProductionCentreCommands.cs'
+$roadProductionV2 = Need 'August13RoadProductionCentres.cs'
 $roadHub = Need 'August11RoadCompletionCommands.cs'
 $roadExtra = Need 'August11RoadNamingCurveCommands.cs'
 $roadLayout = Need 'RoadLayoutProductionCommands.cs'
@@ -89,15 +90,25 @@ if (-not $text.Contains('new August11RoadCompletionCommands().JunctionSettingOut
 }
 
 # Guided Road/Sewer/Bulk-Water centres should expose these explicit field tools.
+# The August 13 Road Production V2 owns the Road actions now, so do not require
+# the removed legacy Road Continuity / Junction Finish anchor.
 $text = ReadText $production
 if (-not $text.Contains('Action("Horizontal Centreline Curves", "CE_ROUTEHORIZONTALCURVES"')) {
     $anchor = '                Action("Road Continuity / Junction Finish", "CE_ROADAUG11TOOLS", "Join reserve centrelines, outside offsets, junction trim boundaries and route annotation.", "02 PREPARE"),'
-    if (-not $text.Contains($anchor)) { throw 'Road Production Centre prepare marker was not found.' }
-    $insert = @'
+    if ($text.Contains($anchor)) {
+        $insert = @'
                 Action("Horizontal Centreline Curves", "CE_ROUTEHORIZONTALCURVES", "Apply specified tangent curve radii to multiple road/route centreline polylines.", "02 PREPARE"),
                 Action("Synchronize Road Names", "CE_ROADNAMESYNC", "Make ROAD-n naming consistent across alignments, profiles, corridors, sections and assemblies.", "02 PREPARE"),
 '@
-    $text = $text.Replace($anchor,$anchor + "`r`n" + $insert.TrimEnd("`r","`n"))
+        $text = $text.Replace($anchor,$anchor + "`r`n" + $insert.TrimEnd("`r","`n"))
+    }
+    else {
+        $roadV2Text = ReadText $roadProductionV2
+        if (-not $roadV2Text.Contains('"CE_ROUTEHORIZONTALCURVES"') -or -not $roadV2Text.Contains('"CE_ROADNAMESYNC"')) {
+            throw 'Road Production V2 is present but its horizontal-curve / road-name-sync field actions are missing.'
+        }
+        Write-Host 'Road Production V2 detected; legacy Road prepare marker is no longer required.' -ForegroundColor DarkGreen
+    }
 }
 $text = $text.Replace('Action("PREPARE - Utility Route from Road Reserve", "CE_UTILITYFROMROADRESERVE", "Create bulk-water planning routes at selected offsets.", "02 PREPARE"),','Action("PREPARE - Utility Route from Erf / Road Reserve", "CE_UTILITYROUTEOFFSET", "Create bulk-water planning routes at selected offsets from erf, reserve-edge or road-centre geometry.", "02 PREPARE"),')
 # Shared SW/Water utility workflow uses explicit configurable offset command.
