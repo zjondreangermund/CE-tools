@@ -39,6 +39,32 @@ foreach ($marker in @(
     }
 }
 
+# Outside road/sidewalk offsets must use the CE-generated parent-handle chain
+# instead of whichever centreline happens to be nearest after an offset is made.
+$outsideResolver = Required 'August13RoadOutsideOffsetResolver.cs'
+$outsideResolverText = ReadText $outsideResolver
+foreach ($marker in @(
+    'CE_ROAD_LAYOUT',
+    'ResolveParentCentreline',
+    'ReadParentHandle',
+    'AverageDistanceToCentre',
+    'SameSideFraction',
+    'gain > minimumGain')) {
+    if (-not $outsideResolverText.Contains($marker)) {
+        throw "Outside-road-offset resolver marker missing: $marker"
+    }
+}
+
+$roadCompletion = Required 'August11RoadCompletionCommands.cs'
+$text = ReadText $roadCompletion
+$text = $text.Replace(
+    'Curve best = ChooseOutsideOffset(source, distance, centres);',
+    'Curve best = August13RoadOutsideOffsetResolver.ChooseOutsideOffset(source, distance, transaction, document.Database, centres);')
+$text = $text.Replace(
+    '"Create only the offset side that is farther away from the nearest CE road centreline. This removes the need to guess Positive or Negative offset direction.");',
+    '"Create only the offset side that is farther away from the linked parent CE road centreline. Road edges and shoulder/sidewalk edges follow their stored CE parent chain so both sides always move away from the carriageway.");')
+WriteText $roadCompletion $text
+
 $roadCorridor = Required 'RoadCorridorCompletionCommands.cs'
 $text = ReadText $roadCorridor
 
@@ -70,8 +96,7 @@ $text = $text.Replace(
     'BottomCodes = SplitCodes(model.Text("BottomCodes"), new[] { "Datum" }),')
 
 # CivilChoice is bound through WPF DisplayMemberPath. The display property must
-# be public; an internal Name property produces the blank rows seen in the user's
-# Corridor Target Surface popup even though the ObjectIds are present.
+# be public; an internal Name property produces blank rows even when the IDs exist.
 $text = $text.Replace(
     'internal string Name { get; private set; }',
     'public string Name { get; private set; }')
@@ -85,6 +110,11 @@ $text = $text.Replace(
 WriteText $production $text
 
 # Same-build guards. Fail before compilation if an old/partial road source is staged.
+$roadCompletionText = ReadText $roadCompletion
+if (-not $roadCompletionText.Contains('August13RoadOutsideOffsetResolver.ChooseOutsideOffset(source, distance, transaction, document.Database, centres)')) {
+    throw 'CE_ROADOUTSIDEOFFSET is not routed through the linked-parent outside-offset resolver.'
+}
+
 $roadText = ReadText $roadCorridor
 $productionText = ReadText $production
 foreach ($marker in @(
@@ -101,6 +131,7 @@ if (-not $productionText.Contains('Action("Complete Corridor", "CE_ROADCORRIDORF
     throw 'Road Production Complete Corridor is not routed through CE_ROADCORRIDORFULL.'
 }
 
+Write-Host 'Outside road/sidewalk offsets now follow the stored CE parent chain and always move away from their road centreline.' -ForegroundColor Green
 Write-Host 'Road final profile now runs the robust vertical-curve pass automatically.' -ForegroundColor Green
 Write-Host 'Corridor Target Surface popup now displays Civil 3D surface names.' -ForegroundColor Green
 Write-Host 'CE-TOP is Top links/breaklines with Top Links overhang correction and IsBuild enabled.' -ForegroundColor Green
