@@ -17,6 +17,7 @@ function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText
 $styleCentre = Need 'ProjectStyleCenterCommands.cs'
 $stylePresets = Need 'August11DisciplineStylePresetCommands.cs'
 $production = Need 'August11ProductionCentreCommands.cs'
+$roadProductionV2 = Need 'August13RoadProductionCentres.cs'
 $roadCorridor = Need 'RoadCorridorCompletionCommands.cs'
 $vertical = Need 'August11RoadVerticalCurveCommands.cs'
 
@@ -66,13 +67,20 @@ if (-not $text.Contains('August11DisciplineStylePresetManager.SavePreset(documen
 }
 WriteText $styleCentre $text
 
-# Activating a Production Centre must never inherit the previous discipline when
-# the target preset has not yet been saved. ActivateForProduction loads the saved
+# Road Production moved to the August 13 V2 centre. Its style activation lives
+# in that owner now; all remaining legacy production centres are patched below.
+$roadV2Text = ReadText $roadProductionV2
+if (-not $roadV2Text.Contains('August11DisciplineStylePresetManager.ActivateForProduction(d.Database,"Roads");')) {
+    throw 'Road Production V2 style-preset activation marker was not found.'
+}
+Write-Host 'Road Production V2 owns safe Roads style-preset activation.' -ForegroundColor DarkGreen
+
+# Activating a legacy Production Centre must never inherit the previous discipline
+# when the target preset has not yet been saved. ActivateForProduction loads the saved
 # preset or deliberately switches the active selection to clean drawing defaults.
 $text = ReadText $production
 $activations = [ordered]@{
     'RunCentre("PLATFORM PRODUCTION"' = 'Platforms'
-    'RunCentre("ROAD PRODUCTION"' = 'Roads'
     'RunCentre("STORMWATER PRODUCTION"' = 'Stormwater'
     'RunCentre("SEWER PRODUCTION"' = 'Sewer'
     'RunCentre("WATER PRODUCTION"' = 'Water'
