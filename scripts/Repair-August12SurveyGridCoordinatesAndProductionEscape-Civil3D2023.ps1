@@ -33,8 +33,16 @@ function ReplaceOnce([string]$text,[string]$old,[string]$new,[string]$descriptio
 # Reverse is an actual survey-coordinate display conversion:
 #   drawing X -> displayed Y with opposite sign
 #   drawing Y -> displayed X with opposite sign
-# Geometry remains untouched. Corner labels are independently pulled inward so
-# bottom/right annotations do not overlap at the frame corners.
+# Geometry remains untouched.
+#
+# Coordinate labels are shown on ALL FOUR SIDES and remain inside the frame:
+#   bottom + top use the X-derived coordinate
+#   left + right use the Y-derived coordinate
+# Rotation follows the DISPLAYED coordinate name, not the physical edge:
+#   displayed X = horizontal text
+#   displayed Y = vertical text
+# This means reverse mode correctly makes bottom/top Y text vertical and
+# left/right X text horizontal.
 # -----------------------------------------------------------------------------
 $siteGrid = Required 'August12SurveySiteGridCommands.cs'
 $text = ReadText $siteGrid
@@ -42,6 +50,10 @@ $text = ReadText $siteGrid
 $oldDescription = '                "Normal: vertical lines show X and horizontal lines show Y. Reverse swaps the X/Y label convention without changing geometry.",'
 $newDescription = '                "Normal: vertical lines show X and horizontal lines show Y. Reverse uses survey display: drawing X becomes Y with the opposite sign, and drawing Y becomes X with the opposite sign. Geometry does not move.",'
 $text = ReplaceOnce $text $oldDescription $newDescription 'survey-grid reverse-coordinate description'
+
+$oldTextHeightDescription = '                "Coordinate values are placed just inside the bottom and right frame edges.",'
+$newTextHeightDescription = '                "Coordinate values are placed just inside all four frame edges: bottom, top, left and right.",'
+$text = ReplaceOnce $text $oldTextHeightDescription $newTextHeightDescription 'survey-grid four-side annotation description'
 
 $oldLabels = @'
             double modelTextHeight = ModelTextHeight(
@@ -97,6 +109,7 @@ $oldLabels = @'
                 created++;
             }
 '@
+
 $newLabels = @'
             double modelTextHeight = ModelTextHeight(
                 database,
@@ -106,12 +119,18 @@ $newLabels = @'
                 modelTextHeight * 4.0,
                 insideOffset * 2.0);
 
+            // X-derived coordinates are repeated along the BOTTOM and TOP.
+            // Normal mode displays X horizontally. Reverse mode displays
+            // Y=-drawing X vertically, as requested for survey presentation.
             for (int xIndex = 0; xIndex < xValues.Count; xIndex++)
             {
                 string prefix = settings.ReverseXY ? "Y: " : "X: ";
                 double displayedCoordinate = settings.ReverseXY
                     ? -xValues[xIndex]
                     : xValues[xIndex];
+                double rotation = settings.ReverseXY
+                    ? Math.PI / 2.0
+                    : 0.0;
                 double labelX = xValues[xIndex];
                 if (xIndex == 0)
                     labelX = Math.Min(
@@ -122,33 +141,63 @@ $newLabels = @'
                         bounds.MinX + insideOffset,
                         labelX - cornerClearance);
 
-                MText label = CreateLabel(
+                string contents = prefix + displayedCoordinate.ToString(
+                    "0.###",
+                    CultureInfo.InvariantCulture);
+
+                MText bottomLabel = CreateLabel(
                     database,
                     boundary,
-                    prefix + displayedCoordinate.ToString("0.###", CultureInfo.InvariantCulture),
+                    contents,
                     new Point3d(
                         labelX,
                         bounds.MinY + insideOffset,
                         bounds.Elevation),
                     modelTextHeight,
-                    0.0);
-                Append(modelSpace, transaction, label);
+                    rotation);
+                Append(modelSpace, transaction, bottomLabel);
                 WriteChildLink(
-                    label,
+                    bottomLabel,
                     transaction,
                     parentHandle,
-                    "LX",
+                    "LXB",
+                    xIndex,
+                    -1);
+                created++;
+
+                MText topLabel = CreateLabel(
+                    database,
+                    boundary,
+                    contents,
+                    new Point3d(
+                        labelX,
+                        bounds.MaxY - insideOffset,
+                        bounds.Elevation),
+                    modelTextHeight,
+                    rotation);
+                Append(modelSpace, transaction, topLabel);
+                WriteChildLink(
+                    topLabel,
+                    transaction,
+                    parentHandle,
+                    "LXT",
                     xIndex,
                     -1);
                 created++;
             }
 
+            // Y-derived coordinates are repeated along the LEFT and RIGHT.
+            // Normal mode displays Y vertically. Reverse mode displays
+            // X=-drawing Y horizontally.
             for (int yIndex = 0; yIndex < yValues.Count; yIndex++)
             {
                 string prefix = settings.ReverseXY ? "X: " : "Y: ";
                 double displayedCoordinate = settings.ReverseXY
                     ? -yValues[yIndex]
                     : yValues[yIndex];
+                double rotation = settings.ReverseXY
+                    ? 0.0
+                    : Math.PI / 2.0;
                 double labelY = yValues[yIndex];
                 if (yIndex == 0)
                     labelY = Math.Min(
@@ -159,28 +208,53 @@ $newLabels = @'
                         bounds.MinY + insideOffset,
                         labelY - cornerClearance);
 
-                MText label = CreateLabel(
+                string contents = prefix + displayedCoordinate.ToString(
+                    "0.###",
+                    CultureInfo.InvariantCulture);
+
+                MText leftLabel = CreateLabel(
                     database,
                     boundary,
-                    prefix + displayedCoordinate.ToString("0.###", CultureInfo.InvariantCulture),
+                    contents,
+                    new Point3d(
+                        bounds.MinX + insideOffset,
+                        labelY,
+                        bounds.Elevation),
+                    modelTextHeight,
+                    rotation);
+                Append(modelSpace, transaction, leftLabel);
+                WriteChildLink(
+                    leftLabel,
+                    transaction,
+                    parentHandle,
+                    "LYL",
+                    -1,
+                    yIndex);
+                created++;
+
+                MText rightLabel = CreateLabel(
+                    database,
+                    boundary,
+                    contents,
                     new Point3d(
                         bounds.MaxX - insideOffset,
                         labelY,
                         bounds.Elevation),
                     modelTextHeight,
-                    Math.PI / 2.0);
-                Append(modelSpace, transaction, label);
+                    rotation);
+                Append(modelSpace, transaction, rightLabel);
                 WriteChildLink(
-                    label,
+                    rightLabel,
                     transaction,
                     parentHandle,
-                    "LY",
+                    "LYR",
                     -1,
                     yIndex);
                 created++;
             }
 '@
-$text = ReplaceOnce $text $oldLabels $newLabels 'survey-grid coordinate reversal and corner-label clearance'
+
+$text = ReplaceOnce $text $oldLabels $newLabels 'four-sided survey-grid coordinate labels, reversal, rotation and corner clearance'
 WriteText $siteGrid $text
 
 # -----------------------------------------------------------------------------
@@ -333,7 +407,15 @@ foreach ($marker in @(
     '? -xValues[xIndex]',
     '? -yValues[yIndex]',
     'double cornerClearance = Math.Max(',
-    'drawing X becomes Y with the opposite sign')) {
+    'bounds.MaxY - insideOffset',
+    'bounds.MinX + insideOffset',
+    '"LXB"',
+    '"LXT"',
+    '"LYL"',
+    '"LYR"',
+    'double rotation = settings.ReverseXY',
+    'drawing X becomes Y with the opposite sign',
+    'all four frame edges')) {
     if (-not $gridText.Contains($marker)) {
         throw "Survey-grid correction marker missing: $marker"
     }
@@ -355,7 +437,9 @@ foreach ($marker in @(
     }
 }
 
-Write-Host 'Survey Site Grid reverse mode now displays Y=-drawing X and X=-drawing Y.' -ForegroundColor Green
-Write-Host 'Survey Site Grid corner labels are independently shifted inward to prevent overlap.' -ForegroundColor Green
+Write-Host 'Survey Site Grid now labels bottom, top, left and right edges.' -ForegroundColor Green
+Write-Host 'Reverse mode displays Y=-drawing X and X=-drawing Y.' -ForegroundColor Green
+Write-Host 'Displayed X text is horizontal and displayed Y text is vertical.' -ForegroundColor Green
+Write-Host 'All coordinate text stays inside the grid with corner clearance.' -ForegroundColor Green
 Write-Host 'Only CE-PRODUCTION CENTRE remains persistent; child workflow windows close on Escape.' -ForegroundColor Green
 Write-Host 'Modal discipline children still reactivate their saved style preset before command dispatch.' -ForegroundColor Green
