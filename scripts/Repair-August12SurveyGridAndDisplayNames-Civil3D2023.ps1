@@ -147,6 +147,32 @@ foreach ($marker in @(
     }
 }
 
+# IMPORTANT: run the final Survey Site Grid coordinate/orientation/window pass.
+# This used to exist in the repository but was not chained into the one-click
+# installer, so bottom/right-only labels and the old Escape behavior could remain.
+$gridCoordinateRepair = Join-Path $root 'scripts\Repair-August12SurveyGridCoordinatesAndProductionEscape-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $gridCoordinateRepair -PathType Leaf)) {
+    throw "August 12 survey-grid coordinate/Escape repair was not found: $gridCoordinateRepair"
+}
+& $gridCoordinateRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
+# Verify the four-sided output after the repair actually ran.
+$siteGrid = ReadText (Required 'August12SurveySiteGridCommands.cs')
+foreach ($marker in @(
+    '"LXB"',
+    '"LXT"',
+    '"LYL"',
+    '"LYR"',
+    'bounds.MaxY - insideOffset',
+    'bounds.MinX + insideOffset',
+    '? -xValues[xIndex]',
+    '? -yValues[yIndex]')) {
+    if (-not $siteGrid.Contains($marker)) {
+        throw "Four-side Survey Site Grid marker missing after chained repair: $marker"
+    }
+}
+
 # Surface comparison workflows use one drawing-local CE popup instead of asking
 # the operator to click both Civil 3D surfaces one-by-one in model space.
 $surfacePopupRepair = Join-Path $root 'scripts\Repair-August12SurfaceSelectionPopup-Civil3D2023.ps1'
@@ -167,6 +193,7 @@ $global:LASTEXITCODE = 0
 
 Write-Host 'CE- prefixes now cover Production ribbon buttons, guided workflow actions and Workflow Centre steps.' -ForegroundColor Green
 Write-Host 'Survey Site Grid is wired into Survey Production and the main Survey ribbon.' -ForegroundColor Green
-Write-Host 'Site Grid uses linked polyline grid lines, reversible X/Y labels, spacing/text-height settings and deferred auto-refresh.' -ForegroundColor Green
+Write-Host 'Survey Site Grid final coordinate pass is now chained and verified during every one-click build.' -ForegroundColor Green
+Write-Host 'Site Grid now produces coordinate text on bottom, top, left and right, with X horizontal / Y vertical and reverse-sign conversion.' -ForegroundColor Green
 Write-Host 'Surface comparison/elevation commands now choose Civil 3D surfaces from CE popup dropdowns.' -ForegroundColor Green
 Write-Host 'Sewer Production now offers a dedicated multiple-polyline network batch command.' -ForegroundColor Green
