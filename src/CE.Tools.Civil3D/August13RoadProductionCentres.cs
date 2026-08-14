@@ -26,7 +26,7 @@ namespace CETools.Civil3D
    Run("CE-Road Settings","Road-only production settings.",new List<DisciplineWorkflowAction>
    {
     A("CE-Road Settings","CE_ROADSETTINGS","Road alignment/profile/profile-view/band/corridor/assembly settings.","01 Settings"),
-    A("CE-Project Style Centre","CE_PROJECTSTYLES","Shared Civil 3D project styles.","01 Settings"),
+    A("CE-Road Styles","CE_ROADSTYLES","Civil 3D styles used only by Road production.","01 Settings"),
     A("CE-Vertex / Setting-Out Options","CE_VERTEXSETTINGOUTTOOLS","Point, table, elevation and coordinate display settings.","02 Setting-Out"),
     A("CE-Swap X/Y Values","CE_SETTINGOUTSWAPXY","Exchange displayed X and Y numeric values in selected setting-out tables.","02 Setting-Out")
    });
