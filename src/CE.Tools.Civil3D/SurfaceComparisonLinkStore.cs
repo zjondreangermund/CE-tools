@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
@@ -10,25 +11,52 @@ using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
 namespace CETools.Civil3D
 {
     /// <summary>
-    /// Persists base/comparison surface point relationships in the DWG. Linked
-    /// annotations and tables are recalculated after either surface rebuilds.
+    /// Persists base/comparison surface point relationships in the DWG. A linked
+    /// DBPoint is the live XY anchor when present. Text/leaders retain one stored
+    /// relative offset from that anchor while values are resampled from both
+    /// surfaces on every CE refresh.
     /// </summary>
     internal static class SurfaceComparisonLinkStore
     {
         private const string RecordName = "CE_SURFACE_COMPARISON_LINK";
-        private const string SchemaVersion = "1";
+        private const string SchemaVersion = "2";
         private const double Tolerance = 0.0000001;
 
         public static void LinkEntities(Database database, ObjectId baseSurfaceId, ObjectId comparisonSurfaceId, Point3d point, IEnumerable<ObjectId> entityIds)
         {
             if (database == null || entityIds == null) return;
+            List<ObjectId> ids = entityIds.Where(id => !id.IsNull && !id.IsErased).Distinct().ToList();
+            if (ids.Count == 0) return;
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
-                foreach (ObjectId entityId in entityIds)
+                ObjectId anchorId = ObjectId.Null;
+                Point3d anchorPoint = point;
+                foreach (ObjectId id in ids)
                 {
-                    if (entityId.IsNull || entityId.IsErased) continue;
+                    DBPoint dbPoint;
+                    try { dbPoint = transaction.GetObject(id, OpenMode.ForRead, false) as DBPoint; }
+                    catch { dbPoint = null; }
+                    if (dbPoint == null) continue;
+                    anchorId = id;
+                    anchorPoint = dbPoint.Position;
+                    break;
+                }
+
+                foreach (ObjectId entityId in ids)
+                {
                     DBObject value = transaction.GetObject(entityId, OpenMode.ForWrite, false);
-                    WriteRecord(value, transaction, baseSurfaceId, comparisonSurfaceId, point);
+                    Point3d reference;
+                    Vector3d offset = TryReadReferencePoint(value, out reference)
+                        ? reference - anchorPoint
+                        : Vector3d.Zero;
+                    WriteRecord(
+                        value,
+                        transaction,
+                        baseSurfaceId,
+                        comparisonSurfaceId,
+                        anchorPoint,
+                        anchorId,
+                        offset);
                 }
                 transaction.Commit();
             }
@@ -46,8 +74,9 @@ namespace CETools.Civil3D
                 table.Position = insertionPoint;
                 ObjectId tableId = space.AppendEntity(table);
                 transaction.AddNewlyCreatedDBObject(table, true);
-                WriteRecord(table, transaction, baseSurfaceId, comparisonSurfaceId, point);
+                WriteRecord(table, transaction, baseSurfaceId, comparisonSurfaceId, point, ObjectId.Null, Vector3d.Zero);
                 PopulateTable(table, ReadResult(database, transaction, baseSurfaceId, comparisonSurfaceId, point), Math.Max(textHeight, 0.001));
+                PaperAnnotationScale.SetAnnotative(table);
                 transaction.Commit();
                 return tableId;
             }
@@ -67,18 +96,64 @@ namespace CETools.Civil3D
                     catch { continue; }
                     LinkData link;
                     if (!TryReadRecord(database, value, transaction, out link)) continue;
-                    ComparisonResult result;
-                    try { result = ReadResult(database, transaction, link.BaseSurfaceId, link.ComparisonSurfaceId, link.Point); }
-                    catch { continue; }
-                    Entity entity = value as Entity;
-                    if (entity != null && !(entity is Table) && Math.Abs(result.ComparisonZ - link.Point.Z) > Tolerance)
+
+                    Point3d livePoint = link.Point;
+                    if (!link.AnchorId.IsNull && !link.AnchorId.IsErased)
                     {
-                        try { entity.TransformBy(Matrix3d.Displacement(new Vector3d(0.0, 0.0, result.ComparisonZ - link.Point.Z))); }
-                        catch { }
+                        DBPoint anchor;
+                        try { anchor = transaction.GetObject(link.AnchorId, OpenMode.ForWrite, false) as DBPoint; }
+                        catch { anchor = null; }
+                        if (anchor != null)
+                            livePoint = new Point3d(anchor.Position.X, anchor.Position.Y, anchor.Position.Z);
                     }
-                    bool updated = UpdateEntity(value, result);
-                    WriteRecord(value, transaction, link.BaseSurfaceId, link.ComparisonSurfaceId, new Point3d(link.Point.X, link.Point.Y, result.ComparisonZ));
-                    if (updated) changed++;
+                    else
+                    {
+                        DBPoint self = value as DBPoint;
+                        if (self != null)
+                        {
+                            livePoint = self.Position;
+                            link.AnchorId = self.ObjectId;
+                            link.Offset = Vector3d.Zero;
+                        }
+                    }
+
+                    ComparisonResult result;
+                    try
+                    {
+                        result = ReadResult(
+                            database,
+                            transaction,
+                            link.BaseSurfaceId,
+                            link.ComparisonSurfaceId,
+                            new Point3d(livePoint.X, livePoint.Y, livePoint.Z));
+                    }
+                    catch { continue; }
+
+                    DBPoint sourcePoint = value as DBPoint;
+                    if (sourcePoint != null &&
+                        (link.AnchorId.IsNull || sourcePoint.ObjectId == link.AnchorId))
+                    {
+                        Point3d desired = new Point3d(result.Point.X, result.Point.Y, result.ComparisonZ);
+                        if (sourcePoint.Position.DistanceTo(desired) > Tolerance)
+                        {
+                            sourcePoint.Position = desired;
+                            changed++;
+                        }
+                    }
+                    else if (UpdateEntityPosition(value, result.Point, link.Offset))
+                    {
+                        changed++;
+                    }
+
+                    if (UpdateEntityContents(value, result)) changed++;
+                    WriteRecord(
+                        value,
+                        transaction,
+                        link.BaseSurfaceId,
+                        link.ComparisonSurfaceId,
+                        result.Point,
+                        link.AnchorId,
+                        link.Offset);
                 }
                 transaction.Commit();
             }
@@ -103,31 +178,72 @@ namespace CETools.Civil3D
             return count;
         }
 
-        private static bool UpdateEntity(DBObject value, ComparisonResult result)
+        private static bool UpdateEntityPosition(DBObject value, Point3d anchor, Vector3d offset)
+        {
+            Point3d desired = anchor + offset;
+            var text = value as MText;
+            if (text != null)
+            {
+                if (text.Location.DistanceTo(desired) <= Tolerance) return false;
+                text.Location = desired;
+                return true;
+            }
+
+            var leader = value as MLeader;
+            if (leader != null)
+            {
+                try
+                {
+                    Point3d current = leader.TextLocation;
+                    Vector3d delta = desired - current;
+                    if (delta.Length <= Tolerance) return false;
+                    leader.TransformBy(Matrix3d.Displacement(delta));
+                    return true;
+                }
+                catch { return false; }
+            }
+            return false;
+        }
+
+        private static bool UpdateEntityContents(DBObject value, ComparisonResult result)
         {
             string contents = BuildContents(result);
             var text = value as MText;
             if (text != null)
             {
-                if (string.Equals(text.Contents, contents, StringComparison.Ordinal)) return false;
-                text.Contents = contents;
-                return true;
+                bool changed = !string.Equals(text.Contents, contents, StringComparison.Ordinal);
+                if (changed) text.Contents = contents;
+                try { PaperAnnotationScale.SetAnnotative(text); } catch { }
+                return changed;
             }
             var leader = value as MLeader;
             if (leader != null && leader.ContentType == ContentType.MTextContent)
             {
                 MText leaderText = leader.MText;
                 if (leaderText == null) return false;
-                if (string.Equals(leaderText.Contents, contents, StringComparison.Ordinal)) return false;
-                leaderText.Contents = contents;
-                leader.MText = leaderText;
-                return true;
+                bool changed = !string.Equals(leaderText.Contents, contents, StringComparison.Ordinal);
+                if (changed)
+                {
+                    leaderText.Contents = contents;
+                    leader.MText = leaderText;
+                }
+                try { PaperAnnotationScale.SetAnnotative(leader); } catch { }
+                return changed;
             }
             var table = value as Table;
             if (table != null)
             {
-                double height = table.Rows.Count > 0 && table.Columns.Count > 0 ? Math.Max(table.Cells[0, 0].TextHeight ?? 2.5, 0.001) : 2.5;
+                // Use a non-title data cell as the baseline. Reading the title
+                // cell and multiplying it by 1.15 on each refresh caused growth.
+                double height = 2.0;
+                try
+                {
+                    if (table.Rows.Count > 1 && table.Columns.Count > 0)
+                        height = Math.Max(table.Cells[1, 0].TextHeight ?? height, 0.001);
+                }
+                catch { }
                 PopulateTable(table, result, height);
+                try { PaperAnnotationScale.SetAnnotative(table); } catch { }
                 return true;
             }
             return false;
@@ -168,10 +284,26 @@ namespace CETools.Civil3D
 
         private static string BuildContents(ComparisonResult result)
         {
-            return string.Join("\\P", result.BaseName + " → " + result.ComparisonName, "BASE Z: " + result.BaseZ.ToString("N3", CultureInfo.CurrentCulture), "COMPARISON Z: " + result.ComparisonZ.ToString("N3", CultureInfo.CurrentCulture), "DIFF: " + result.Difference.ToString("N3", CultureInfo.CurrentCulture), result.Classification);
+            return string.Join("\\P", result.BaseName + " → " + result.ComparisonName, "X: " + result.Point.X.ToString("N3", CultureInfo.CurrentCulture), "Y: " + result.Point.Y.ToString("N3", CultureInfo.CurrentCulture), "BASE Z: " + result.BaseZ.ToString("N3", CultureInfo.CurrentCulture), "COMPARISON Z: " + result.ComparisonZ.ToString("N3", CultureInfo.CurrentCulture), "DIFF: " + result.Difference.ToString("N3", CultureInfo.CurrentCulture), result.Classification);
         }
 
-        private static void WriteRecord(DBObject target, Transaction transaction, ObjectId baseSurfaceId, ObjectId comparisonSurfaceId, Point3d point)
+        private static bool TryReadReferencePoint(DBObject value, out Point3d point)
+        {
+            point = Point3d.Origin;
+            DBPoint dbPoint = value as DBPoint;
+            if (dbPoint != null) { point = dbPoint.Position; return true; }
+            MText text = value as MText;
+            if (text != null) { point = text.Location; return true; }
+            MLeader leader = value as MLeader;
+            if (leader != null)
+            {
+                try { point = leader.TextLocation; return true; }
+                catch { }
+            }
+            return false;
+        }
+
+        private static void WriteRecord(DBObject target, Transaction transaction, ObjectId baseSurfaceId, ObjectId comparisonSurfaceId, Point3d point, ObjectId anchorId, Vector3d offset)
         {
             if (target.ExtensionDictionary.IsNull) target.CreateExtensionDictionary();
             DBDictionary dictionary = transaction.GetObject(target.ExtensionDictionary, OpenMode.ForWrite, false) as DBDictionary;
@@ -180,7 +312,17 @@ namespace CETools.Civil3D
             if (dictionary.Contains(RecordName)) record = transaction.GetObject(dictionary.GetAt(RecordName), OpenMode.ForWrite, false) as Xrecord;
             else { record = new Xrecord(); dictionary.SetAt(RecordName, record); transaction.AddNewlyCreatedDBObject(record, true); }
             if (record == null) return;
-            record.Data = new ResultBuffer(new TypedValue((int)DxfCode.Text, "Schema=" + SchemaVersion), new TypedValue((int)DxfCode.Text, "Base=" + baseSurfaceId.Handle), new TypedValue((int)DxfCode.Text, "Comparison=" + comparisonSurfaceId.Handle), new TypedValue((int)DxfCode.Text, "X=" + point.X.ToString("R", CultureInfo.InvariantCulture)), new TypedValue((int)DxfCode.Text, "Y=" + point.Y.ToString("R", CultureInfo.InvariantCulture)), new TypedValue((int)DxfCode.Text, "Z=" + point.Z.ToString("R", CultureInfo.InvariantCulture)));
+            record.Data = new ResultBuffer(
+                new TypedValue((int)DxfCode.Text, "Schema=" + SchemaVersion),
+                new TypedValue((int)DxfCode.Text, "Base=" + baseSurfaceId.Handle),
+                new TypedValue((int)DxfCode.Text, "Comparison=" + comparisonSurfaceId.Handle),
+                new TypedValue((int)DxfCode.Text, "Anchor=" + (anchorId.IsNull ? string.Empty : anchorId.Handle.ToString())),
+                new TypedValue((int)DxfCode.Text, "X=" + point.X.ToString("R", CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "Y=" + point.Y.ToString("R", CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "Z=" + point.Z.ToString("R", CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "DX=" + offset.X.ToString("R", CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "DY=" + offset.Y.ToString("R", CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "DZ=" + offset.Z.ToString("R", CultureInfo.InvariantCulture)));
         }
 
         private static bool TryReadRecord(Database database, DBObject target, Transaction transaction, out LinkData link)
@@ -198,9 +340,19 @@ namespace CETools.Civil3D
                 int equals = string.IsNullOrWhiteSpace(text) ? -1 : text.IndexOf('=');
                 if (equals > 0) values[text.Substring(0, equals)] = text.Substring(equals + 1);
             }
-            ObjectId baseId; ObjectId comparisonId; double x; double y; double z;
-            if (!Resolve(database, Read(values, "Base"), out baseId) || !Resolve(database, Read(values, "Comparison"), out comparisonId) || !double.TryParse(Read(values, "X"), NumberStyles.Float, CultureInfo.InvariantCulture, out x) || !double.TryParse(Read(values, "Y"), NumberStyles.Float, CultureInfo.InvariantCulture, out y) || !double.TryParse(Read(values, "Z"), NumberStyles.Float, CultureInfo.InvariantCulture, out z)) return false;
-            link = new LinkData(baseId, comparisonId, new Point3d(x, y, z));
+            ObjectId baseId; ObjectId comparisonId; ObjectId anchorId = ObjectId.Null;
+            double x, y, z, dx = 0.0, dy = 0.0, dz = 0.0;
+            if (!Resolve(database, Read(values, "Base"), out baseId) ||
+                !Resolve(database, Read(values, "Comparison"), out comparisonId) ||
+                !double.TryParse(Read(values, "X"), NumberStyles.Float, CultureInfo.InvariantCulture, out x) ||
+                !double.TryParse(Read(values, "Y"), NumberStyles.Float, CultureInfo.InvariantCulture, out y) ||
+                !double.TryParse(Read(values, "Z"), NumberStyles.Float, CultureInfo.InvariantCulture, out z)) return false;
+            string anchor = Read(values, "Anchor");
+            if (!string.IsNullOrWhiteSpace(anchor)) Resolve(database, anchor, out anchorId);
+            double.TryParse(Read(values, "DX"), NumberStyles.Float, CultureInfo.InvariantCulture, out dx);
+            double.TryParse(Read(values, "DY"), NumberStyles.Float, CultureInfo.InvariantCulture, out dy);
+            double.TryParse(Read(values, "DZ"), NumberStyles.Float, CultureInfo.InvariantCulture, out dz);
+            link = new LinkData(baseId, comparisonId, new Point3d(x, y, z), anchorId, new Vector3d(dx, dy, dz));
             return true;
         }
 
@@ -233,10 +385,19 @@ namespace CETools.Civil3D
 
         private sealed class LinkData
         {
-            public LinkData(ObjectId baseId, ObjectId comparisonId, Point3d point) { BaseSurfaceId = baseId; ComparisonSurfaceId = comparisonId; Point = point; }
+            public LinkData(ObjectId baseId, ObjectId comparisonId, Point3d point, ObjectId anchorId, Vector3d offset)
+            {
+                BaseSurfaceId = baseId;
+                ComparisonSurfaceId = comparisonId;
+                Point = point;
+                AnchorId = anchorId;
+                Offset = offset;
+            }
             public ObjectId BaseSurfaceId { get; private set; }
             public ObjectId ComparisonSurfaceId { get; private set; }
             public Point3d Point { get; private set; }
+            public ObjectId AnchorId { get; set; }
+            public Vector3d Offset { get; set; }
         }
 
         private sealed class ComparisonResult
