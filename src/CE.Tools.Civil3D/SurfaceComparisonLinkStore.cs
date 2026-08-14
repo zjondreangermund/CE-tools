@@ -49,17 +49,42 @@ namespace CETools.Civil3D
                     Vector3d offset = TryReadReferencePoint(value, out reference)
                         ? reference - anchorPoint
                         : Vector3d.Zero;
-                    WriteRecord(
-                        value,
-                        transaction,
-                        baseSurfaceId,
-                        comparisonSurfaceId,
-                        anchorPoint,
-                        anchorId,
-                        offset);
+                    WriteRecord(value, transaction, baseSurfaceId, comparisonSurfaceId, point, anchorId, offset);
                 }
                 transaction.Commit();
             }
+        }
+
+        internal static bool TryResolveLiveAnchor(Database database, ObjectId baseSurfaceId, ObjectId comparisonSurfaceId, double originalX, double originalY, out Point3d point)
+        {
+            point = Point3d.Origin;
+            if (database == null) return false;
+            double best = double.MaxValue;
+            Point3d candidate = Point3d.Origin;
+            bool found = false;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId entityId in ReadEntityIds(database, transaction))
+                {
+                    DBPoint dbPoint;
+                    try { dbPoint = transaction.GetObject(entityId, OpenMode.ForRead, false) as DBPoint; }
+                    catch { continue; }
+                    if (dbPoint == null) continue;
+                    LinkData link;
+                    if (!TryReadRecord(database, dbPoint, transaction, out link)) continue;
+                    if (link.BaseSurfaceId != baseSurfaceId || link.ComparisonSurfaceId != comparisonSurfaceId) continue;
+                    double dx = link.Point.X - originalX;
+                    double dy = link.Point.Y - originalY;
+                    double distance = dx * dx + dy * dy;
+                    if (distance >= best) continue;
+                    best = distance;
+                    candidate = dbPoint.Position;
+                    found = true;
+                }
+            }
+            if (!found || best > 0.000001) return false;
+            point = candidate;
+            return true;
         }
 
         public static ObjectId CreateLinkedTable(Database database, Point3d insertionPoint, ObjectId baseSurfaceId, ObjectId comparisonSurfaceId, Point3d point, double textHeight)
@@ -104,7 +129,7 @@ namespace CETools.Civil3D
                         try { anchor = transaction.GetObject(link.AnchorId, OpenMode.ForWrite, false) as DBPoint; }
                         catch { anchor = null; }
                         if (anchor != null)
-                            livePoint = new Point3d(anchor.Position.X, anchor.Position.Y, anchor.Position.Z);
+                            livePoint = anchor.Position;
                     }
                     else
                     {
@@ -120,18 +145,12 @@ namespace CETools.Civil3D
                     ComparisonResult result;
                     try
                     {
-                        result = ReadResult(
-                            database,
-                            transaction,
-                            link.BaseSurfaceId,
-                            link.ComparisonSurfaceId,
-                            new Point3d(livePoint.X, livePoint.Y, livePoint.Z));
+                        result = ReadResult(database, transaction, link.BaseSurfaceId, link.ComparisonSurfaceId, livePoint);
                     }
                     catch { continue; }
 
                     DBPoint sourcePoint = value as DBPoint;
-                    if (sourcePoint != null &&
-                        (link.AnchorId.IsNull || sourcePoint.ObjectId == link.AnchorId))
+                    if (sourcePoint != null && (link.AnchorId.IsNull || sourcePoint.ObjectId == link.AnchorId))
                     {
                         Point3d desired = new Point3d(result.Point.X, result.Point.Y, result.ComparisonZ);
                         if (sourcePoint.Position.DistanceTo(desired) > Tolerance)
@@ -146,14 +165,10 @@ namespace CETools.Civil3D
                     }
 
                     if (UpdateEntityContents(value, result)) changed++;
-                    WriteRecord(
-                        value,
-                        transaction,
-                        link.BaseSurfaceId,
-                        link.ComparisonSurfaceId,
-                        result.Point,
-                        link.AnchorId,
-                        link.Offset);
+                    // Keep link.Point as the ORIGINAL XY identity. The live anchor
+                    // is stored separately and may move; linked tables use the
+                    // original XY to resolve that same anchor on later refreshes.
+                    WriteRecord(value, transaction, link.BaseSurfaceId, link.ComparisonSurfaceId, link.Point, link.AnchorId, link.Offset);
                 }
                 transaction.Commit();
             }
@@ -207,10 +222,10 @@ namespace CETools.Civil3D
 
         private static bool UpdateEntityContents(DBObject value, ComparisonResult result)
         {
-            string contents = BuildContents(result);
             var text = value as MText;
             if (text != null)
             {
+                string contents = BuildContents(result, ReadFirstLine(text.Contents));
                 bool changed = !string.Equals(text.Contents, contents, StringComparison.Ordinal);
                 if (changed) text.Contents = contents;
                 try { PaperAnnotationScale.SetAnnotative(text); } catch { }
@@ -221,6 +236,7 @@ namespace CETools.Civil3D
             {
                 MText leaderText = leader.MText;
                 if (leaderText == null) return false;
+                string contents = BuildContents(result, ReadFirstLine(leaderText.Contents));
                 bool changed = !string.Equals(leaderText.Contents, contents, StringComparison.Ordinal);
                 if (changed)
                 {
@@ -233,8 +249,6 @@ namespace CETools.Civil3D
             var table = value as Table;
             if (table != null)
             {
-                // Use a non-title data cell as the baseline. Reading the title
-                // cell and multiplying it by 1.15 on each refresh caused growth.
                 double height = 2.0;
                 try
                 {
@@ -282,9 +296,28 @@ namespace CETools.Civil3D
             return new ComparisonResult(baseSurface.Name, comparisonSurface.Name, new Point3d(point.X, point.Y, comparisonZ), baseZ, comparisonZ);
         }
 
-        private static string BuildContents(ComparisonResult result)
+        private static string BuildContents(ComparisonResult result, string firstLine)
         {
-            return string.Join("\\P", result.BaseName + " → " + result.ComparisonName, "X: " + result.Point.X.ToString("N3", CultureInfo.CurrentCulture), "Y: " + result.Point.Y.ToString("N3", CultureInfo.CurrentCulture), "BASE Z: " + result.BaseZ.ToString("N3", CultureInfo.CurrentCulture), "COMPARISON Z: " + result.ComparisonZ.ToString("N3", CultureInfo.CurrentCulture), "DIFF: " + result.Difference.ToString("N3", CultureInfo.CurrentCulture), result.Classification);
+            var lines = new List<string>();
+            if (!string.IsNullOrWhiteSpace(firstLine) &&
+                !firstLine.Contains("→") &&
+                !firstLine.StartsWith("BASE Z", StringComparison.OrdinalIgnoreCase))
+                lines.Add(firstLine.Trim());
+            lines.Add(result.BaseName + " → " + result.ComparisonName);
+            lines.Add("X: " + result.Point.X.ToString("N3", CultureInfo.CurrentCulture));
+            lines.Add("Y: " + result.Point.Y.ToString("N3", CultureInfo.CurrentCulture));
+            lines.Add("BASE Z: " + result.BaseZ.ToString("N3", CultureInfo.CurrentCulture));
+            lines.Add("COMPARISON Z: " + result.ComparisonZ.ToString("N3", CultureInfo.CurrentCulture));
+            lines.Add("DIFF: " + result.Difference.ToString("N3", CultureInfo.CurrentCulture));
+            lines.Add(result.Classification);
+            return string.Join("\\P", lines);
+        }
+
+        private static string ReadFirstLine(string contents)
+        {
+            if (string.IsNullOrWhiteSpace(contents)) return string.Empty;
+            int index = contents.IndexOf("\\P", StringComparison.Ordinal);
+            return (index < 0 ? contents : contents.Substring(0, index)).Trim();
         }
 
         private static bool TryReadReferencePoint(DBObject value, out Point3d point)
@@ -404,7 +437,12 @@ namespace CETools.Civil3D
         {
             public ComparisonResult(string baseName, string comparisonName, Point3d point, double baseZ, double comparisonZ)
             {
-                BaseName = baseName ?? string.Empty; ComparisonName = comparisonName ?? string.Empty; Point = point; BaseZ = baseZ; ComparisonZ = comparisonZ; Difference = comparisonZ - baseZ;
+                BaseName = baseName ?? string.Empty;
+                ComparisonName = comparisonName ?? string.Empty;
+                Point = point;
+                BaseZ = baseZ;
+                ComparisonZ = comparisonZ;
+                Difference = comparisonZ - baseZ;
                 Classification = Difference > 0.0005 ? "Fill / raise" : Difference < -0.0005 ? "Cut / lower" : "No material difference";
             }
             public string BaseName { get; private set; }
