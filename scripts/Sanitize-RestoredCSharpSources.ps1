@@ -81,6 +81,17 @@ Unblock-File -LiteralPath $runtimeFieldRepair -ErrorAction SilentlyContinue
 & $runtimeFieldRepair -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Small 2023 API-shape/idempotency follow-up for the field-test pass. Keep the
+# table's original anchor identity, normalize Point3dCollection and avoid relying
+# on a Vector3d.Zero convenience member in older AutoCAD geometry assemblies.
+$runtimeFollowup = Join-Path $root 'scripts\Repair-August14-RuntimeFieldTestFollowup-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $runtimeFollowup -PathType Leaf)) {
+    throw "Survey runtime field-test follow-up was not found: $runtimeFollowup"
+}
+Unblock-File -LiteralPath $runtimeFollowup -ErrorAction SilentlyContinue
+& $runtimeFollowup -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # This is intentionally the final compatibility pass in the staged 2023 build.
 # Earlier August injectors can change API-facing method signatures/source shapes;
 # repair those final staged sources immediately before sanitizing and compiling.
