@@ -102,6 +102,17 @@ if ($methodMatch.Value.Contains('NetworkFromObjectBatchManager.Start(') -or
     throw 'Legacy sewer command still contains the single-object native batch path.'
 }
 
+# Normalize the Road profile/corridor queues BEFORE the older August 13 pass.
+# Earlier staging repairs are allowed to change whitespace or add commands; the
+# guard repairs by CE command pattern so the August 13 validation cannot fail
+# merely because an exact historic line no longer matches.
+$roadStagingGuard = Join-Path $root 'scripts\Repair-August14RoadProfileCorridorStagingGuard-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $roadStagingGuard -PathType Leaf)) {
+    throw "Road profile/corridor staging guard was not found: $roadStagingGuard"
+}
+& $roadStagingGuard -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # August 13 road field pass. Run it from this already-chained final repair so the
 # one-click installer cannot finish without the vertical-curve/corridor output fixes.
 $roadOutputRepair = Join-Path $root 'scripts\Repair-August13RoadProfileCorridorOutput-Civil3D2023.ps1'
@@ -114,4 +125,5 @@ $global:LASTEXITCODE = 0
 Write-Host 'CE Sewer Network from Multiple Polylines now creates one gravity network directly from the complete selected set.' -ForegroundColor Green
 Write-Host 'Legacy CE_SEWERNETWORKFROMPOLYLINES redirects to CE_SEWERNETWORKMULTI; native single-object CreateNetworkFromObject is bypassed.' -ForegroundColor Green
 Write-Host 'Sewer Production Centre is wired directly to the true multi-source sewer command.' -ForegroundColor Green
+Write-Host 'Road profile/corridor staging is normalized before the August 13 field repair.' -ForegroundColor Green
 Write-Host 'Road final-profile vertical curves, CE-TOP/CE-BOTTOM corridor surfaces and slope-pattern creation are chained into this one-click build.' -ForegroundColor Green
