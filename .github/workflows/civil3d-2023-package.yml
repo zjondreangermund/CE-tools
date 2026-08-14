@@ -18,13 +18,19 @@ jobs:
       - name: Check out source
         uses: actions/checkout@v4
 
-      - name: Run source regression gates
+      # Do not run every Validate-*.py file here. Several of the August field
+      # validators intentionally describe the post-injection Civil 3D 2023
+      # staging state. The Windows stage below applies those injectors/repairs
+      # first and then executes its staged PowerShell validation gates.
+      - name: Validate release pipeline metadata
+        run: python3 scripts/Validate-ReleasePipeline.py
+
+      - name: Validate stable source presentation gates
         shell: bash
         run: |
           set -euo pipefail
-          for validator in scripts/Validate-*.py; do
-            python3 "$validator"
-          done
+          python3 scripts/Validate-AnnotationCommands.py
+          python3 scripts/Validate-ReportPresentation.py
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
@@ -48,13 +54,14 @@ jobs:
         with:
           dotnet-version: 8.0.423
 
-      - name: Build Civil 3D 2023 without installation
+      - name: Stage, repair, validate, build and install Civil 3D 2023
         shell: powershell
         run: |
-          .\scripts\Build-Install-Civil3D2023-DotNet.ps1 `
-            -Clean `
-            -SkipInstall `
-            -SourceCommit $env:GITHUB_SHA
+          # This is deliberately the same staging path used by
+          # BUILD-INSTALL-CIVIL3D-2023.cmd on field PCs. It applies the August
+          # injectors/compatibility repairs before the real Autodesk compile,
+          # avoiding false failures from validating pre-injection source.
+          .\scripts\Stage-Build-Install-Civil3D2023.ps1 -SourceRoot $PWD
 
       - name: Recreate exact versioned release package
         shell: powershell
