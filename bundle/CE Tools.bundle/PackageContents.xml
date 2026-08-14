@@ -4,7 +4,7 @@
   AutodeskProduct="AutoCAD"
   ProductType="Application"
   Name="CE Tools"
-  AppVersion="0.61.0.0"
+  AppVersion="0.62.0.0"
   Description="Civil engineering productivity tools for Autodesk Civil 3D."
   Author="Zjondre Angermund"
   ProductCode="{D08277E7-BED7-4B39-A9F9-1EF84D240925}"
@@ -27,6 +27,33 @@
       AppName="CE Tools 2024"
       AppDescription="CE Tools Civil 3D productivity commands"
       ModuleName="./Contents/Windows/2024/CE.Tools.Civil3D.dll"
+      LoadReasons="LoadOnAutoCADStartup" />
+  </Components>
+
+  <Components Description="CE Tools for Civil 3D 2025">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R25.0" SeriesMax="R25.0" />
+    <ComponentEntry
+      AppName="CE Tools 2025"
+      AppDescription="CE Tools Civil 3D productivity commands (.NET 8 adapter)"
+      ModuleName="./Contents/Windows/2025/CE.Tools.Civil3D.dll"
+      LoadReasons="LoadOnAutoCADStartup" />
+  </Components>
+
+  <Components Description="CE Tools for Civil 3D 2026">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R25.1" SeriesMax="R25.1" />
+    <ComponentEntry
+      AppName="CE Tools 2026"
+      AppDescription="CE Tools Civil 3D productivity commands (.NET 8 adapter)"
+      ModuleName="./Contents/Windows/2026/CE.Tools.Civil3D.dll"
+      LoadReasons="LoadOnAutoCADStartup" />
+  </Components>
+
+  <Components Description="CE Tools for Civil 3D 2027">
+    <RuntimeRequirements OS="Win64" Platform="Civil3D" SeriesMin="R26.0" SeriesMax="R26.0" />
+    <ComponentEntry
+      AppName="CE Tools 2027"
+      AppDescription="CE Tools Civil 3D productivity commands (.NET 10 adapter)"
+      ModuleName="./Contents/Windows/2027/CE.Tools.Civil3D.dll"
       LoadReasons="LoadOnAutoCADStartup" />
   </Components>
 </ApplicationPackage>
