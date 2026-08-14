@@ -68,6 +68,19 @@ Unblock-File -LiteralPath $projectSurveyRepair -ErrorAction SilentlyContinue
 & $projectSurveyRepair -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Final field-test behaviour pass: keep Town/CRS shared, route old surface
+# commands to popup workflows, use original source-point borders, enforce true
+# displayed XY swapping, keep COGO labels on one absolute offset and make
+# comparison tables follow moved linked points. Run this after the older Project
+# and Survey repairs so they cannot put the field-tested behaviour back.
+$runtimeFieldRepair = Join-Path $root 'scripts\Repair-August14-ProjectSurveyRuntimeFieldTest-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $runtimeFieldRepair -PathType Leaf)) {
+    throw "Project/Survey runtime field-test repair was not found: $runtimeFieldRepair"
+}
+Unblock-File -LiteralPath $runtimeFieldRepair -ErrorAction SilentlyContinue
+& $runtimeFieldRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # This is intentionally the final compatibility pass in the staged 2023 build.
 # Earlier August injectors can change API-facing method signatures/source shapes;
 # repair those final staged sources immediately before sanitizing and compiling.
