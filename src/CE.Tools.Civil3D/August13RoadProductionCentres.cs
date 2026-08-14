@@ -61,19 +61,19 @@ namespace CETools.Civil3D
    Run("CE-Road Design Production","Civil 3D road design production after the layout is complete.",new List<DisciplineWorkflowAction>
    {
     A("CE-Create Road Alignments","CE_ROADALIGN","Create linked road alignments.","01 Alignment"),
-    A("CE-NGL and Final Road Profiles","CE_ROADPROFILEFULL","Create NGL and final road profiles.","02 Profiles"),
+    A("CE-NGL and Final Road Profiles","CE_ROADPROFILEFULL","Create NGL and final road profiles, vertical curves and final profile-view styling.","02 Profiles"),
     A("CE-Split Road Profile Views","CE_ROADPROFILEVIEWSPLIT","Create 750 m station-section profile views or a specified section length.","02 Profiles"),
     A("CE-Road Assemblies","CE_ASSEMBLYTOOLS","Create/select road assemblies.","03 Corridors"),
-    A("CE-Road Corridors","CE_ROADCORRIDORFULL","Create/complete road corridors.","03 Corridors"),
+    A("CE-Road Corridors","CE_ROADCORRIDORFULL","Create/complete road corridors and final CE-TOP/CE-BOTTOM outputs.","03 Corridors"),
     A("CE-Split Corridors","CE_CORSPLIT","Split corridor regions at specified stations.","03 Corridors"),
     A("CE-Rebuild Corridors","CE_CORREBUILD","Rebuild corridor model data.","03 Corridors"),
-    A("CE-Road Junction Design","CE_ROADJUNCTIONCONSTRUCT","Create/update road junction design.","04 Junction Design"),
+    A("CE-Road Junction Design","CE_ROADJUNCTIONCONSTRUCTIONTOOLS","Create/finalize junction geometry, corridor regions and outputs.","04 Junction Design"),
     A("CE-Junction Stepped Offset Fallback","CE_JUNCTIONSTEPPEDOFFSETWORKFLOW","Use feature-line stepped offsets when corridor junction design is unreliable.","04 Junction Design"),
     A("CE-Refresh All Linked Model Data","CE_REFRESHALL","Refresh linked model data.","05 Refresh"),
     A("CE-Road Production Information","CE_ROADPRODUCTIONINFO","Open road production information.","06 Reports"),
     A("CE-Road Profile Report","CE_ROADPROFILEREPORT","Report road profile views and station ranges.","06 Reports"),
     A("CE-Road Corridor Report","CE_CORREPORT","Generate corridor report.","06 Reports"),
-    A("CE-Road Bill of Quantities","CE_BOQROAD","Create/update linked road quantities.","07 Deliver"),
+    A("CE-Road Construction Bill of Quantities","CE_ROADBOQCONSTRUCTION","Create/update live corridor construction quantities.","07 Deliver"),
     A("CE-Detail Road Design Report","CE_REPORTROAD","Generate detailed road design report.","07 Deliver"),
     A("CE-Road Drawing Production","CE_DRAWINGBOOKROAD","Create road drawing production output.","07 Deliver")
    });
