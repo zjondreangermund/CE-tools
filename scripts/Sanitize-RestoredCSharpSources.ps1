@@ -35,6 +35,17 @@ Unblock-File -LiteralPath $structuredProductionRepair -ErrorAction SilentlyConti
 & $structuredProductionRepair -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Apply the latest Project + Survey field-review comments after every older
+# production/UI repair, so Project Info remains the single metadata source and
+# Survey dynamic/annotation behaviour cannot be restored to an older version.
+$projectSurveyRepair = Join-Path $root 'scripts\Repair-August14-ProjectSurveyFieldComments-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $projectSurveyRepair -PathType Leaf)) {
+    throw "Project/Survey field-comment repair was not found: $projectSurveyRepair"
+}
+Unblock-File -LiteralPath $projectSurveyRepair -ErrorAction SilentlyContinue
+& $projectSurveyRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # This is intentionally the final compatibility pass in the staged 2023 build.
 # Earlier August injectors can change API-facing method signatures/source shapes;
 # repair those final staged sources immediately before sanitizing and compiling.
