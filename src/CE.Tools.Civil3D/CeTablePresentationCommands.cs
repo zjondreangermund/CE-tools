@@ -17,7 +17,7 @@ namespace CETools.Civil3D
             if (document == null) return;
             int changed = CeTablePresentationManager.CenterCeTables(document);
             document.Editor.Regen();
-            document.Editor.WriteMessage("\nCE_TABLECENTERALL complete. CE tables centered={0}.", changed);
+            document.Editor.WriteMessage("\nCE_TABLECENTERALL complete. CE tables centred and normalized={0}.", changed);
         }
     }
 
@@ -27,6 +27,12 @@ namespace CETools.Civil3D
         {
             if (document == null) return 0;
             int changed = 0;
+            double baseTextHeight = ResolveStableTableTextHeight(document.Database);
+            double titleTextHeight = baseTextHeight * 1.15;
+            double normalRowHeight = Math.Max(baseTextHeight * 2.2, 0.001);
+            double titleRowHeight = Math.Max(baseTextHeight * 2.5, normalRowHeight);
+            double minimumColumnWidth = Math.Max(baseTextHeight * 7.5, 0.001);
+
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
@@ -45,9 +51,31 @@ namespace CETools.Civil3D
                         catch { continue; }
                         if (table == null || !IsCeTable(table)) continue;
                         table.UpgradeOpen();
+
+                        // Reapply an absolute paper-derived size on every refresh.
+                        // Never derive the next size from the current title cell,
+                        // otherwise a title factor such as 1.15 compounds forever.
                         for (int row = 0; row < table.Rows.Count; row++)
+                        {
+                            try { table.Rows[row].Height = row == 0 ? titleRowHeight : normalRowHeight; }
+                            catch { }
                             for (int column = 0; column < table.Columns.Count; column++)
+                            {
                                 table.Cells[row, column].Alignment = CellAlignment.MiddleCenter;
+                                try { table.Cells[row, column].TextHeight = row == 0 ? titleTextHeight : baseTextHeight; }
+                                catch { }
+                            }
+                        }
+                        for (int column = 0; column < table.Columns.Count; column++)
+                        {
+                            try
+                            {
+                                if (table.Columns[column].Width < minimumColumnWidth)
+                                    table.Columns[column].Width = minimumColumnWidth;
+                            }
+                            catch { }
+                        }
+                        try { PaperAnnotationScale.SetAnnotative(table); } catch { }
                         try { table.GenerateLayout(); } catch { }
                         try { table.RecordGraphicsModified(true); } catch { }
                         changed++;
@@ -56,6 +84,26 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
             return changed;
+        }
+
+        private static double ResolveStableTableTextHeight(Database database)
+        {
+            double paperHeight = 2.0;
+            try
+            {
+                AnnotationOptions settings = AnnotationSettingsStore.Read(database);
+                if (settings != null)
+                    paperHeight = Math.Min(2.0, Math.Max(1.8, settings.TextHeight));
+            }
+            catch { }
+            try
+            {
+                return Math.Max(PaperAnnotationScale.ModelTextHeight(database, paperHeight), 0.001);
+            }
+            catch
+            {
+                return Math.Max(paperHeight, 0.001);
+            }
         }
 
         private static bool IsCeTable(Table table)
