@@ -71,21 +71,19 @@ function ReplaceCommandMethodBody([string]$commandName,[string]$newBody) {
 $profileBody = @'
             Document document = ActiveDocument();
             if (document == null) return;
-            document.SendStringToExecute(
-                "CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVESFINAL CE_ROADPROFILEVIEWFINAL ",
-                true,
-                false,
-                true);
+            CeSequentialCommandRunner.Start(
+                document,
+                new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVESFINAL", "CE_ROADPROFILEVIEWFINAL" },
+                "CE road profile production");
 '@
 
 $corridorBody = @'
             Document document = ActiveDocument();
             if (document == null) return;
-            document.SendStringToExecute(
-                "CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE CE_ROADCORRIDOROUTPUTFIX ",
-                true,
-                false,
-                true);
+            CeSequentialCommandRunner.Start(
+                document,
+                new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE", "CE_ROADCORRIDOROUTPUTFIX" },
+                "CE road corridor production");
 '@
 
 $profileOwner = ReplaceCommandMethodBody 'CE_ROADPROFILEFULL' $profileBody
@@ -118,11 +116,17 @@ if (Test-Path -LiteralPath $roadCorridor -PathType Leaf) {
 
 $profileVerify = ReadText $profileOwner
 $corridorVerify = ReadText $corridorOwner
-if (-not $profileVerify.Contains('CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVESFINAL CE_ROADPROFILEVIEWFINAL')) {
-    throw 'CE_ROADPROFILEFULL final Road profile sequence was not established.'
+if (-not $profileVerify.Contains('CeSequentialCommandRunner.Start') -or
+    -not $profileVerify.Contains('new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVESFINAL", "CE_ROADPROFILEVIEWFINAL" }')) {
+    throw 'CE_ROADPROFILEFULL final sequential Road profile sequence was not established.'
 }
-if (-not $corridorVerify.Contains('CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE CE_ROADCORRIDOROUTPUTFIX')) {
-    throw 'CE_ROADCORRIDORFULL final Road corridor sequence was not established.'
+if (-not $corridorVerify.Contains('CeSequentialCommandRunner.Start') -or
+    -not $corridorVerify.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE", "CE_ROADCORRIDOROUTPUTFIX" }')) {
+    throw 'CE_ROADCORRIDORFULL final sequential Road corridor sequence was not established.'
+}
+if ($profileVerify.Contains('SendStringToExecute("CE_ROADPROFILES') -or
+    $corridorVerify.Contains('SendStringToExecute("CE_ROADCORRIDORS')) {
+    throw 'Unsafe multi-command Road SendStringToExecute queue remains after staging repair.'
 }
 
 $finalizer = FindCommandOwnerFile 'CE_ROADVERTICALCURVESFINAL'
@@ -139,6 +143,6 @@ foreach ($pair in @(
 
 Write-Host ('CE_ROADPROFILEFULL owner repaired: ' + [System.IO.Path]::GetFileName($profileOwner)) -ForegroundColor Green
 Write-Host ('CE_ROADCORRIDORFULL owner repaired: ' + [System.IO.Path]::GetFileName($corridorOwner)) -ForegroundColor Green
-Write-Host 'Road profile/corridor staging is now command-owner aware and no longer depends on historic file placement or exact queue text.' -ForegroundColor Green
-Write-Host 'CE_ROADPROFILEFULL includes design profile, final vertical curves and final profile-view styling.' -ForegroundColor Green
-Write-Host 'CE_ROADCORRIDORFULL includes corridor completion and the final CE-TOP/CE-BOTTOM output pass.' -ForegroundColor Green
+Write-Host 'Road profile/corridor staging is command-owner aware and uses the safe sequential command runner.' -ForegroundColor Green
+Write-Host 'CE_ROADPROFILEFULL runs profiles, final design, final vertical curves and final profile-view styling one step at a time.' -ForegroundColor Green
+Write-Host 'CE_ROADCORRIDORFULL runs corridor creation, completion and the final CE-TOP/CE-BOTTOM output pass one step at a time.' -ForegroundColor Green
