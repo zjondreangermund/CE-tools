@@ -229,7 +229,11 @@ $text = $text.Replace('Padding = new Thickness(12, 9, 12, 9),','Padding = new Th
 WriteText $dialogs $text
 
 # Production Centre labels and discipline style entry points.
+# Roads moved to the August 13 V2 centre, so legacy and V2 sources are both
+# validated. The V2 centre owns the user-visible CE_ROADSTYLES action while the
+# legacy CE_ROADPRODUCTION bridge only activates the Roads preset and forwards.
 $production = Required 'August11ProductionCentreCommands.cs'
+$roadProductionV2 = Required 'August13RoadProductionCentres.cs'
 $text = ReadText $production
 $text = $text.Replace('CE-ENGINEERING INTELLIGENCE CENTRE','CE-ENGINEERING CENTRE')
 $text = $text.Replace('Content = "OPEN CENTRE  ›"','Content = "OPEN CENTRE"')
@@ -284,17 +288,26 @@ foreach ($marker in @(
 }
 $text = ReadText $production
 foreach ($marker in @(
-    'CE_PLATFORMSTYLES', 'CE_ROADSTYLES', 'CE_SURVEYSTYLES', 'CE_SWSTYLES',
+    'CE_PLATFORMSTYLES', 'CE_SURVEYSTYLES', 'CE_SWSTYLES',
     'CE_SEWERSTYLES', 'CE_WATERSTYLES', 'CE_BULKWATERSTYLES', 'CE_PARKINGSTYLES', 'CE_FLOODSTYLES')) {
     if (-not $text.Contains($marker)) { throw "Discipline style command wiring missing: $marker" }
 }
+
+$roadV2Text = ReadText $roadProductionV2
+if (-not $roadV2Text.Contains('CE_ROADPRODUCTIONV2') -or
+    -not $roadV2Text.Contains('CE_ROADSETTINGSCENTRE') -or
+    -not $roadV2Text.Contains('CE_ROADSTYLES')) {
+    throw 'Road V2 discipline style command wiring missing: CE_ROADSTYLES'
+}
+
 if ($text.Contains('OPEN CENTRE  ›') -or $text.Contains('CE-ENGINEERING INTELLIGENCE CENTRE')) {
     throw 'Welcome orange-marked wording/glyph cleanup failed.'
 }
 $styleSource = ReadText (Required 'August12DisciplineStyleCommands.cs')
-if (-not $styleSource.Contains('SavePreset(document.Database, selection);') -or
+if (-not $styleSource.Contains('[CommandMethod("CE_TOOLS", "CE_ROADSTYLES"') -or
+    -not $styleSource.Contains('SavePreset(document.Database, selection);') -or
     -not $styleSource.Contains('CeGlobalDisciplineStyleDefaults.Save(selection);')) {
-    throw 'Independent discipline style persistence source validation failed.'
+    throw 'Independent discipline style persistence/source command validation failed.'
 }
 
 # Chain the same-build August 12 Survey Site Grid and display-name pass. The main
@@ -312,4 +325,5 @@ Write-Host 'Production command dispatch is deferred, document-locked for preset 
 Write-Host 'Production/Workflow action rows now use a 330px title column, 28px gutter and wrapped text to prevent overlaps.' -ForegroundColor Green
 Write-Host 'Dark/Light dropdown rendering is handled by the global CE interface theme.' -ForegroundColor Green
 Write-Host 'Each production discipline now opens and saves an independent Civil 3D style centre.' -ForegroundColor Green
+Write-Host 'Road V2 settings now expose and validate the dedicated CE_ROADSTYLES centre.' -ForegroundColor Green
 Write-Host 'Removed the marked Engineering Intelligence wording and OPEN CENTRE glyphs from the welcome UI.' -ForegroundColor Green
