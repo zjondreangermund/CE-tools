@@ -141,6 +141,9 @@ $text = $text.Replace(
     'public string Name { get; private set; }')
 WriteText $roadCorridor $text
 
+# Keep the legacy production centre compatible for older launchers, but do not
+# use its historic action text as the authoritative validation target. Road V2
+# is the live production centre and owns separate Settings and Styles actions.
 $production = Required 'August11ProductionCentreCommands.cs'
 $text = ReadText $production
 $text = $text.Replace(
@@ -192,14 +195,20 @@ foreach ($marker in @(
     }
 }
 
-$productionText = ReadText $production
+# Validate the live Road V2 production centre, not the retired August 11 action
+# wording. Settings and Civil 3D Styles are intentionally separate commands.
+$roadV2 = Required 'August13RoadProductionCentres.cs'
+$roadV2Text = ReadText $roadV2
 foreach ($marker in @(
-    'Action("CE-SETTINGS - Road Styles", "CE_ROADSETTINGS"',
-    '"CE_ROADCORRIDORFULL"',
-    '"CE_ROADJUNCTIONCONSTRUCTIONTOOLS"',
-    '"CE_ROADBOQCONSTRUCTION"')) {
-    if (-not $productionText.Contains($marker)) {
-        throw "Road Production Centre integration marker missing: $marker"
+    '"CE_ROADPRODUCTIONV2"',
+    'A("CE-Road Settings","CE_ROADSETTINGS"',
+    'A("CE-Road Styles","CE_ROADSTYLES"',
+    'A("CE-NGL and Final Road Profiles","CE_ROADPROFILEFULL"',
+    'A("CE-Road Corridors","CE_ROADCORRIDORFULL"',
+    'A("CE-Road Junction Design","CE_ROADJUNCTIONCONSTRUCTIONTOOLS"',
+    'A("CE-Road Construction Bill of Quantities","CE_ROADBOQCONSTRUCTION"')) {
+    if (-not $roadV2Text.Contains($marker)) {
+        throw "Road V2 Production Centre integration marker missing: $marker"
     }
 }
 
@@ -208,5 +217,5 @@ Write-Host 'Road profiles finish with robust vertical curves plus the saved Road
 Write-Host 'Corridor Target Surface popup displays Civil 3D surface names.' -ForegroundColor Green
 Write-Host 'CE-TOP uses Top links/breaklines with Top Links overhang correction and IsBuild enabled.' -ForegroundColor Green
 Write-Host 'CE-BOTTOM uses Datum links/breaklines with Bottom Links overhang correction and IsBuild enabled.' -ForegroundColor Green
-Write-Host 'Road Junction Construction can split/exclude multiple corridor junction regions at bellmouth/feature-line limits.' -ForegroundColor Green
+Write-Host 'Road V2 exposes separate Road Settings / Road Styles plus current corridor, junction-construction and live construction-BOQ commands.' -ForegroundColor Green
 Write-Host 'Road Construction BOQ reads cut/fill-to-datum, layerwork, kerbs, surfacing, sidewalks and side slopes from live corridors.' -ForegroundColor Green
