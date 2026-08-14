@@ -13,6 +13,17 @@ if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) {
     throw "Civil 3D source folder was not found: $sourceRoot"
 }
 
+# This is intentionally the final compatibility pass in the staged 2023 build.
+# Earlier August injectors can change API-facing method signatures/source shapes;
+# repair those final staged sources immediately before sanitizing and compiling.
+$finalCompileRepair = Join-Path $root 'scripts\Repair-August14-Civil3D2023-CompileErrors.ps1'
+if (-not (Test-Path -LiteralPath $finalCompileRepair -PathType Leaf)) {
+    throw "Final Civil 3D 2023 compiler repair was not found: $finalCompileRepair"
+}
+Unblock-File -LiteralPath $finalCompileRepair -ErrorAction SilentlyContinue
+& $finalCompileRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $changed = New-Object System.Collections.Generic.List[string]
 
