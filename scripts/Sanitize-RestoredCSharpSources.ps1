@@ -24,6 +24,17 @@ Unblock-File -LiteralPath $projectSetupRepair -ErrorAction SilentlyContinue
 & $projectSetupRepair -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Keep the approved Road hierarchy unchanged and route every other discipline to
+# the same progressive Production Centre pattern only after older staging passes
+# have finished editing August11ProductionCentreCommands.cs.
+$structuredProductionRepair = Join-Path $root 'scripts\Repair-August14-StructuredDisciplineProduction-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $structuredProductionRepair -PathType Leaf)) {
+    throw "Structured discipline Production Centre repair was not found: $structuredProductionRepair"
+}
+Unblock-File -LiteralPath $structuredProductionRepair -ErrorAction SilentlyContinue
+& $structuredProductionRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # This is intentionally the final compatibility pass in the staged 2023 build.
 # Earlier August injectors can change API-facing method signatures/source shapes;
 # repair those final staged sources immediately before sanitizing and compiling.
