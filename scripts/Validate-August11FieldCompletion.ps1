@@ -88,7 +88,9 @@ Require ($disciplineStyles.Contains('CeGlobalDisciplineStyleDefaults.Save(select
 Require ($production.Contains('CE_DISCIPLINESTYLEPRESETS')) 'Production Centre does not expose discipline style preset management'
 
 # Network batch / duplicate prevention / legacy handoff.
-foreach ($command in @('CE_NETWORKFROMPOLYLINESBATCH','CE_NETWORKCONNECTSELECTED','CE_NETWORKBATCHTOOLS','CE_NETWORKSOURCEMARKERSCLEAR')) {
+# CE_NETWORKBATCHTOOLS was retired when the duplicate CE_NETWORKMULTI registration
+# was resolved. CE_NETWORKMULTIBATCH is the current visible multi-network launcher.
+foreach ($command in @('CE_NETWORKFROMPOLYLINESBATCH','CE_NETWORKCONNECTSELECTED','CE_NETWORKMULTIBATCH','CE_NETWORKSOURCEMARKERSCLEAR')) {
     Require ($network.Contains($command)) "$command missing from August11 network source"
 }
 Require ($network.Contains('CE_NETWORK_SOURCE_CREATED')) 'network duplicate-source marker missing'
@@ -121,10 +123,10 @@ foreach ($token in @('CommandEnded += OnCommandEnded','CommandCancelled += OnCom
     Require ($sequence.Contains($token)) "sequential command runner missing '$token'"
 }
 Require ($roadCorridor.Contains('CeSequentialCommandRunner.Start')) 'road full-profile/corridor workflows do not use safe sequential execution'
-Require ($roadCorridor.Contains('new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" }')) 'complete road-profile step list is missing'
-Require ($roadCorridor.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }')) 'complete road-corridor step list is missing'
-Require (-not $roadCorridor.Contains('SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE')) 'unsafe multi-command road-profile string remains'
-Require (-not $roadCorridor.Contains('SendStringToExecute("CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE')) 'unsafe multi-command corridor string remains'
+Require ($roadCorridor.Contains('new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVESFINAL", "CE_ROADPROFILEVIEWFINAL" }')) 'final road-profile step list is missing'
+Require ($roadCorridor.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE", "CE_ROADCORRIDOROUTPUTFIX" }')) 'final road-corridor step list is missing'
+Require (-not $roadCorridor.Contains('SendStringToExecute("CE_ROADPROFILES')) 'unsafe multi-command road-profile string remains'
+Require (-not $roadCorridor.Contains('SendStringToExecute("CE_ROADCORRIDORS')) 'unsafe multi-command corridor string remains'
 Require ($vertical.Contains('CE_ROADPROFILEBESTFIT') -and $vertical.Contains('CE_ROADVERTICALCURVES')) 'final road vertical-curve commands missing'
 Require ($vertical.Contains('AddFreeSymmetricParabolaByPVIAndCurveLength')) 'PVI-based parabolic vertical-curve creation missing'
 Require ($roadCorridor.Contains('PropertyInfo visibleProperty = corridor.GetType().GetProperty("Visible"')) 'corridor visibility repair missing'
