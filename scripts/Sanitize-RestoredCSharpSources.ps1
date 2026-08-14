@@ -35,6 +35,17 @@ Unblock-File -LiteralPath $structuredProductionRepair -ErrorAction SilentlyConti
 & $structuredProductionRepair -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Earlier staging passes can reformat or partially rewrite RefreshNow(), so make
+# the required Survey hooks present before the larger Project/Survey final repair.
+# This deliberately avoids relying on one historical multi-line text anchor.
+$surveyHookRepair = Join-Path $root 'scripts\Repair-August14-UniversalDynamicSurveyHooks-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $surveyHookRepair -PathType Leaf)) {
+    throw "Universal Dynamic Survey hook repair was not found: $surveyHookRepair"
+}
+Unblock-File -LiteralPath $surveyHookRepair -ErrorAction SilentlyContinue
+& $surveyHookRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # Apply the latest Project + Survey field-review comments after every older
 # production/UI repair, so Project Info remains the single metadata source and
 # Survey dynamic/annotation behaviour cannot be restored to an older version.
