@@ -88,6 +88,7 @@ namespace CETools.Civil3D
             var help = new TextBlock
             {
                 Text = "Enter or update all project values in one window. " +
+                       "Town automatically updates the preferred Namibia LO coordinate system. " +
                        "After saving, CE Tools will show the complete result and offer to place a drawing table.",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0.0, 0.0, 0.0, 14.0)
@@ -144,6 +145,8 @@ namespace CETools.Civil3D
                 row++;
             }
 
+            WireTownCoordinateSystem();
+
             var scroll = new ScrollViewer
             {
                 VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
@@ -154,6 +157,7 @@ namespace CETools.Civil3D
 
             Loaded += delegate
             {
+                RefreshCoordinateSystemFromTown(false);
                 foreach (KeyValuePair<string, TextBox> item in _editors)
                 {
                     item.Value.Focus();
@@ -186,6 +190,41 @@ namespace CETools.Civil3D
             }
 
             return (editor.Text ?? string.Empty).Trim();
+        }
+
+        private void WireTownCoordinateSystem()
+        {
+            TextBox town;
+            TextBox coordinateSystem;
+            if (!_editors.TryGetValue("Town", out town) || town == null ||
+                !_editors.TryGetValue("Coordinate System", out coordinateSystem) || coordinateSystem == null)
+                return;
+
+            town.TextChanged += delegate
+            {
+                RefreshCoordinateSystemFromTown(true);
+            };
+        }
+
+        private void RefreshCoordinateSystemFromTown(bool townChanged)
+        {
+            TextBox town;
+            TextBox coordinateSystem;
+            if (!_editors.TryGetValue("Town", out town) || town == null ||
+                !_editors.TryGetValue("Coordinate System", out coordinateSystem) || coordinateSystem == null)
+                return;
+
+            string preferred = NamibiaCoordinateSystemCatalog.PreferredLoName(
+                (town.Text ?? string.Empty).Trim());
+            if (string.IsNullOrWhiteSpace(preferred))
+            {
+                if (townChanged)
+                    coordinateSystem.Text = string.Empty;
+                return;
+            }
+
+            if (townChanged || string.IsNullOrWhiteSpace(coordinateSystem.Text))
+                coordinateSystem.Text = preferred;
         }
     }
 }
