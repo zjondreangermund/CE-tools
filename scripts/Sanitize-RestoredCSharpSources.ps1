@@ -13,6 +13,17 @@ if (-not (Test-Path -LiteralPath $sourceRoot -PathType Container)) {
     throw "Civil 3D source folder was not found: $sourceRoot"
 }
 
+# This is intentionally late in the staged 2023 build. The normal Project
+# Production centre is generated/restored by earlier compatibility passes, so
+# route it to the Last Saved / Standard Blank workflow only after those passes.
+$projectSetupRepair = Join-Path $root 'scripts\Repair-August14ProjectSetupPersistence-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $projectSetupRepair -PathType Leaf)) {
+    throw "Project Setup persistence repair was not found: $projectSetupRepair"
+}
+Unblock-File -LiteralPath $projectSetupRepair -ErrorAction SilentlyContinue
+& $projectSetupRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # This is intentionally the final compatibility pass in the staged 2023 build.
 # Earlier August injectors can change API-facing method signatures/source shapes;
 # repair those final staged sources immediately before sanitizing and compiling.
