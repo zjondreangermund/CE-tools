@@ -1,11 +1,20 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
-    <TargetFramework>net48</TargetFramework>
     <AssemblyName>CE.Tools.Civil3D</AssemblyName>
     <RootNamespace>CETools.Civil3D</RootNamespace>
     <PlatformTarget>x64</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
     <AutoCADVersion Condition="'$(AutoCADVersion)' == ''">2023</AutoCADVersion>
+
+    <!-- Civil 3D / AutoCAD runtime matrix:
+         2023-2024: .NET Framework 4.8
+         2025-2026: .NET 8
+         2027:      .NET 10
+         CE.Tools.Core remains netstandard2.0 and is shared by every adapter build. -->
+    <TargetFramework Condition="'$(AutoCADVersion)' == '2023' or '$(AutoCADVersion)' == '2024'">net48</TargetFramework>
+    <TargetFramework Condition="'$(AutoCADVersion)' == '2025' or '$(AutoCADVersion)' == '2026'">net8.0-windows</TargetFramework>
+    <TargetFramework Condition="'$(AutoCADVersion)' == '2027'">net10.0-windows</TargetFramework>
+
     <AutoCADRoot Condition="'$(AutoCADRoot)' == ''">C:\Program Files\Autodesk\AutoCAD $(AutoCADVersion)</AutoCADRoot>
     <Civil3DRoot Condition="'$(Civil3DRoot)' == '' and Exists('$(AutoCADRoot)\AeccDbMgd.dll')">$(AutoCADRoot)</Civil3DRoot>
     <Civil3DRoot Condition="'$(Civil3DRoot)' == '' and Exists('$(AutoCADRoot)\C3D\AeccDbMgd.dll')">$(AutoCADRoot)\C3D</Civil3DRoot>
@@ -15,6 +24,8 @@
     <AppendTargetFrameworkToOutputPath>false</AppendTargetFrameworkToOutputPath>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
     <UseWindowsForms>true</UseWindowsForms>
+    <UseWPF Condition="'$(AutoCADVersion)' == '2025' or '$(AutoCADVersion)' == '2026' or '$(AutoCADVersion)' == '2027'">true</UseWPF>
+    <EnableWindowsTargeting Condition="'$(AutoCADVersion)' == '2025' or '$(AutoCADVersion)' == '2026' or '$(AutoCADVersion)' == '2027'">true</EnableWindowsTargeting>
   </PropertyGroup>
 
   <ItemGroup>
@@ -50,6 +61,11 @@
       <HintPath>$(Civil3DRoot)\AeccDbMgd.dll</HintPath>
       <Private>false</Private>
     </Reference>
+  </ItemGroup>
+
+  <!-- .NET Framework builds need explicit desktop framework references. Modern
+       .NET 8/10 builds receive WPF/WinForms references from UseWPF/UseWindowsForms. -->
+  <ItemGroup Condition="'$(TargetFramework)' == 'net48'">
     <Reference Include="PresentationCore" />
     <Reference Include="PresentationFramework" />
     <Reference Include="System.IO.Compression" />
@@ -58,6 +74,13 @@
     <Reference Include="System.Xaml" />
     <Reference Include="WindowsBase" />
   </ItemGroup>
+
+  <Target Name="ValidateAutoCADVersion" BeforeTargets="PrepareForBuild">
+    <Error Condition="'$(AutoCADVersion)' != '2023' and '$(AutoCADVersion)' != '2024' and '$(AutoCADVersion)' != '2025' and '$(AutoCADVersion)' != '2026' and '$(AutoCADVersion)' != '2027'"
+           Text="CE Tools supports AutoCAD/Civil 3D versions 2023, 2024, 2025, 2026 or 2027. Pass /p:AutoCADVersion=&quot;2023..2027&quot;." />
+    <Error Condition="'$(TargetFramework)' == ''"
+           Text="No CE Tools TargetFramework was resolved for AutoCADVersion=$(AutoCADVersion)." />
+  </Target>
 
   <Target Name="ValidateAutoCADReferences" BeforeTargets="ResolveReferences">
     <Error Condition="!Exists('$(AutoCADRoot)\AcMgd.dll')"
@@ -68,8 +91,6 @@
            Text="The Civil 3D managed assembly AeccDbMgd.dll was not found. Pass /p:Civil3DRoot=&quot;the folder containing AeccDbMgd.dll&quot;." />
     <Error Condition="'$(AecRoot)' == '' or !Exists('$(AecRoot)\AecBaseMgd.dll')"
            Text="The AEC managed assembly AecBaseMgd.dll was not found. Pass /p:AecRoot=&quot;the folder containing AecBaseMgd.dll&quot;." />
-    <Error Condition="'$(AutoCADVersion)' != '2023' and '$(AutoCADVersion)' != '2024'"
-           Text="This alpha build supports AutoCADVersion 2023 or 2024." />
   </Target>
 
   <Target Name="CopyToApplicationBundle" AfterTargets="Build">
