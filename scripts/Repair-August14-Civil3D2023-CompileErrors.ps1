@@ -66,16 +66,22 @@ WriteText $field $text
 # ---------------------------------------------------------------------------
 # 3. ProductionStyleCatalog.ReadNames returns List<string> in the 2023 build.
 #    The August 14 safe-production dialog code stores those results as arrays.
+#    Restrict each match to the first closing parenthesis so rerunning this pass
+#    can never produce .ToArray().ToArray().
 # ---------------------------------------------------------------------------
 $safe = Required 'August14SafeProductionCommands.cs'
 $text = ReadText $safe
-$readNamesPattern = 'ProductionStyleCatalog\.ReadNames\((?<args>[\s\S]*?)\);'
-$readNamesRegex = [regex]::new($readNamesPattern)
-$readNamesMatches = $readNamesRegex.Matches($text)
-if ($readNamesMatches.Count -lt 6) {
-    throw "Expected at least six ProductionStyleCatalog.ReadNames calls in August14SafeProductionCommands.cs; found $($readNamesMatches.Count)."
+$totalReadNames = [regex]::Matches($text, 'ProductionStyleCatalog\.ReadNames\(').Count
+if ($totalReadNames -lt 6) {
+    throw "Expected at least six ProductionStyleCatalog.ReadNames calls in August14SafeProductionCommands.cs; found $totalReadNames."
 }
-$text = $readNamesRegex.Replace($text, 'ProductionStyleCatalog.ReadNames(${args}).ToArray();')
+$unconvertedReadNamesPattern = 'ProductionStyleCatalog\.ReadNames\((?<args>[^)]*)\)(?!\.ToArray\(\));'
+$unconvertedReadNamesRegex = [regex]::new($unconvertedReadNamesPattern)
+if ($unconvertedReadNamesRegex.IsMatch($text)) {
+    $text = $unconvertedReadNamesRegex.Replace(
+        $text,
+        'ProductionStyleCatalog.ReadNames(${args}).ToArray();')
+}
 WriteText $safe $text
 
 # ---------------------------------------------------------------------------
@@ -142,9 +148,9 @@ if (-not $fieldVerify.Contains('ParkingNumberLinkCommands.Refresh(document, fals
 $safeVerify = ReadText $safe
 $unconverted = [regex]::Matches(
     $safeVerify,
-    'string\[\]\s+\w+\s*=\s*ProductionStyleCatalog\.ReadNames\([\s\S]*?\);')
+    'ProductionStyleCatalog\.ReadNames\((?<args>[^)]*)\)(?!\.ToArray\(\));')
 if ($unconverted.Count -gt 0) {
-    throw "Safe-production List<string>-to-array conversion remains in $($unconverted.Count) assignment(s)."
+    throw "Safe-production List<string>-to-array conversion remains in $($unconverted.Count) call(s)."
 }
 
 $sewerVerify = ReadText $sewer
