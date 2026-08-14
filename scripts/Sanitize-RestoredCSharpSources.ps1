@@ -46,6 +46,17 @@ Unblock-File -LiteralPath $surveyHookRepair -ErrorAction SilentlyContinue
 & $surveyHookRepair -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Survey Site Grid is touched by several older staging passes. Normalize its
+# label loops by structure before the final Project/Survey field repair so a
+# formatting or edge-label expansion cannot break an exact historical anchor.
+$siteGridCompatRepair = Join-Path $root 'scripts\Repair-August14-SiteGridLabelAnchorCompat-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $siteGridCompatRepair -PathType Leaf)) {
+    throw "Survey Site Grid structural compatibility repair was not found: $siteGridCompatRepair"
+}
+Unblock-File -LiteralPath $siteGridCompatRepair -ErrorAction SilentlyContinue
+& $siteGridCompatRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # Apply the latest Project + Survey field-review comments after every older
 # production/UI repair, so Project Info remains the single metadata source and
 # Survey dynamic/annotation behaviour cannot be restored to an older version.
