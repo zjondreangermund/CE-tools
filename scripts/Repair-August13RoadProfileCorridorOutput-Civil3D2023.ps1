@@ -108,6 +108,9 @@ WriteText $roadCompletion $text
 $roadCorridor = Required 'RoadCorridorCompletionCommands.cs'
 $text = ReadText $roadCorridor
 
+# Historical SendStringToExecute variants are retained only as compatibility
+# transforms for older source snapshots. The August 14 staging guard now owns
+# the live final command bodies and uses CeSequentialCommandRunner.
 $profileTarget = 'document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVESFINAL CE_ROADPROFILEVIEWFINAL ", true, false, true);'
 $profileVariants = @(
     'document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE ", true, false, true);',
@@ -185,14 +188,19 @@ if (-not $roadCompletionText.Contains('August13RoadOutsideOffsetResolver.ChooseO
 
 $roadText = ReadText $roadCorridor
 foreach ($marker in @(
-    'CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVESFINAL CE_ROADPROFILEVIEWFINAL',
-    'CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE CE_ROADCORRIDOROUTPUTFIX',
+    'CeSequentialCommandRunner.Start',
+    'new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVESFINAL", "CE_ROADPROFILEVIEWFINAL" }',
+    'new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE", "CE_ROADCORRIDOROUTPUTFIX" }',
     '"Top link codes", "Top"',
     '"Bottom link codes", "Datum"',
     'public string Name { get; private set; }')) {
     if (-not $roadText.Contains($marker)) {
         throw "Road profile/corridor integration marker missing in RoadCorridorCompletionCommands.cs: $marker"
     }
+}
+if ($roadText.Contains('SendStringToExecute("CE_ROADPROFILES') -or
+    $roadText.Contains('SendStringToExecute("CE_ROADCORRIDORS')) {
+    throw 'Unsafe multi-command Road SendStringToExecute queue remains after final Road repair.'
 }
 
 # Validate the live Road V2 production centre, not the retired August 11 action
@@ -213,7 +221,7 @@ foreach ($marker in @(
 }
 
 Write-Host 'Outside road/sidewalk offsets follow the stored CE parent chain and move away from the road centreline.' -ForegroundColor Green
-Write-Host 'Road profiles finish with robust vertical curves plus the saved Road-only profile-view style and band set.' -ForegroundColor Green
+Write-Host 'Road profiles use safe sequential execution and finish with robust vertical curves plus the saved Road-only profile-view style and band set.' -ForegroundColor Green
 Write-Host 'Corridor Target Surface popup displays Civil 3D surface names.' -ForegroundColor Green
 Write-Host 'CE-TOP uses Top links/breaklines with Top Links overhang correction and IsBuild enabled.' -ForegroundColor Green
 Write-Host 'CE-BOTTOM uses Datum links/breaklines with Bottom Links overhang correction and IsBuild enabled.' -ForegroundColor Green
