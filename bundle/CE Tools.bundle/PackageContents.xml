@@ -4,7 +4,7 @@
   AutodeskProduct="AutoCAD"
   ProductType="Application"
   Name="CE Tools"
-  AppVersion="0.62.0.0"
+  AppVersion="0.61.0.0"
   Description="Civil engineering productivity tools for Autodesk Civil 3D."
   Author="Zjondre Angermund"
   ProductCode="{D08277E7-BED7-4B39-A9F9-1EF84D240925}"
