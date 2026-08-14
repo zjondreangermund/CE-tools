@@ -25,10 +25,12 @@ function Replace-CommandMethodBody {
         [Parameter(Mandatory=$true)][string]$MethodCall
     )
 
-    $marker = '"' + $Command + '"'
+    # Search the actual command declaration, not menu/ribbon references to the
+    # same command string elsewhere in the source file.
+    $marker = '[CommandMethod("CE_TOOLS", "' + $Command + '"'
     $markerIndex = $text.IndexOf($marker, [StringComparison]::Ordinal)
     if ($markerIndex -lt 0) {
-        throw "Production command marker was not found: $Command"
+        throw "Production CommandMethod declaration was not found: $Command"
     }
 
     $methodStart = $text.IndexOf('public void ', $markerIndex, [StringComparison]::Ordinal)
@@ -77,10 +79,6 @@ $routes = @(
 foreach ($route in $routes) {
     $command = [string]$route[0]
     $method = [string]$route[1]
-    if (-not $structuredText.Contains('"' + ($command.Replace('PRODUCTIONCENTRE','PRODUCTIONSTRUCTURED')) + '"')) {
-        # Command-name transformation is only a safety hint; the definitive check
-        # below verifies that the structured public method exists.
-    }
     if (-not $structuredText.Contains('public void ' + $method + '()')) {
         throw "Structured discipline public method is missing: $method"
     }
