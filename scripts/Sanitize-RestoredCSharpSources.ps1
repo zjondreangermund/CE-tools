@@ -68,6 +68,17 @@ Unblock-File -LiteralPath $projectSurveyRepair -ErrorAction SilentlyContinue
 & $projectSurveyRepair -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# GitHub ZIP/source checkouts may preserve LF-only line endings. The late field
+# repair intentionally uses exact multi-line anchors, so normalize all staged C#
+# files to Windows CRLF before that repair runs.
+$runtimeLineEndingRepair = Join-Path $root 'scripts\Normalize-August14-RuntimeFieldTestSourceLineEndings-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $runtimeLineEndingRepair -PathType Leaf)) {
+    throw "Runtime field-test line-ending normalizer was not found: $runtimeLineEndingRepair"
+}
+Unblock-File -LiteralPath $runtimeLineEndingRepair -ErrorAction SilentlyContinue
+& $runtimeLineEndingRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # Final field-test behaviour pass: keep Town/CRS shared, route old surface
 # commands to popup workflows, use original source-point borders, enforce true
 # displayed XY swapping, keep COGO labels on one absolute offset and make
