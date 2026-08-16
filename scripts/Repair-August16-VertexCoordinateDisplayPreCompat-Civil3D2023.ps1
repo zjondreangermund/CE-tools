@@ -17,7 +17,10 @@ $single = [System.Text.RegularExpressions.RegexOptions]::Singleline
 
 # Earlier injectors can reformat the old comment and assignment block. Upgrade
 # by the actual table assignments instead of one historical multi-line string.
-if (-not $text.Contains('double firstCoordinate = yFirst ? displayY : displayX;')) {
+# IMPORTANT: these are PowerShell single-quoted regex strings, so regex escapes
+# use ONE backslash (\.), not the C#/JSON-style doubled form (\\.).
+$tableMarker = 'double firstCoordinate = yFirst ? displayY : displayX;'
+if (-not $text.Contains($tableMarker)) {
     $tablePattern = 'table\.Cells\[row,\s*4\]\.TextString\s*=\s*displayX\s*\.ToString\("N3",\s*CultureInfo\.CurrentCulture\)\s*;\s*table\.Cells\[row,\s*5\]\.TextString\s*=\s*displayY\s*\.ToString\("N3",\s*CultureInfo\.CurrentCulture\)\s*;'
     $tableReplacement = @'
                 double firstCoordinate = yFirst ? displayY : displayX;
@@ -27,15 +30,35 @@ if (-not $text.Contains('double firstCoordinate = yFirst ? displayY : displayX;'
                 table.Cells[row, 5].TextString = secondCoordinate
                     .ToString("N3", CultureInfo.CurrentCulture);
 '@
-    if (-not [regex]::IsMatch($text, $tablePattern, $single)) {
-        throw 'Vertex table coordinate assignments could not be located structurally.'
+
+    if ([regex]::IsMatch($text, $tablePattern, $single)) {
+        $text = [regex]::Replace(
+            $text,
+            $tablePattern,
+            ($tableReplacement -replace "`r?`n","`r`n").TrimEnd(),
+            $single)
     }
-    $text = [regex]::Replace($text, $tablePattern, ($tableReplacement -replace "`r?`n","`r`n").TrimEnd(), $single)
+    else {
+        # Fallback for harmless formatting differences: locate each old value
+        # assignment independently and replace the complete pair between them.
+        $firstPattern = 'table\.Cells\[row,\s*4\]\.TextString\s*=\s*displayX\s*\.ToString\("N3",\s*CultureInfo\.CurrentCulture\)\s*;'
+        $secondPattern = 'table\.Cells\[row,\s*5\]\.TextString\s*=\s*displayY\s*\.ToString\("N3",\s*CultureInfo\.CurrentCulture\)\s*;'
+        $firstMatch = [regex]::Match($text, $firstPattern, $single)
+        $secondMatch = [regex]::Match($text, $secondPattern, $single)
+        if ($firstMatch.Success -and $secondMatch.Success -and $secondMatch.Index -gt $firstMatch.Index) {
+            $betweenStart = $firstMatch.Index
+            $betweenLength = ($secondMatch.Index + $secondMatch.Length) - $betweenStart
+            $text = $text.Remove($betweenStart, $betweenLength).Insert(
+                $betweenStart,
+                ($tableReplacement -replace "`r?`n","`r`n").TrimEnd())
+        }
+    }
 }
 
 # Upgrade LabelText independently. Do not let the table marker cause this second
 # conversion to be skipped: both the table and annotation must swap real values.
-if (-not $text.Contains('double firstLabelCoordinate = yFirst ? displayY : displayX;')) {
+$labelMarker = 'double firstLabelCoordinate = yFirst ? displayY : displayX;'
+if (-not $text.Contains($labelMarker)) {
     $labelPattern = 'string\s+first\s*=\s*\(yFirst\s*\?\s*"Y="\s*:\s*"X="\)\s*\+\s*displayX\.ToString\("N3",\s*CultureInfo\.CurrentCulture\)\s*;\s*string\s+second\s*=\s*\(yFirst\s*\?\s*"X="\s*:\s*"Y="\)\s*\+\s*displayY\.ToString\("N3",\s*CultureInfo\.CurrentCulture\)\s*;'
     $labelReplacement = @'
             double firstLabelCoordinate = yFirst ? displayY : displayX;
@@ -46,12 +69,18 @@ if (-not $text.Contains('double firstLabelCoordinate = yFirst ? displayY : displ
                 secondLabelCoordinate.ToString("N3", CultureInfo.CurrentCulture);
 '@
     if ([regex]::IsMatch($text, $labelPattern, $single)) {
-        $text = [regex]::Replace($text, $labelPattern, ($labelReplacement -replace "`r?`n","`r`n").TrimEnd(), $single)
+        $text = [regex]::Replace(
+            $text,
+            $labelPattern,
+            ($labelReplacement -replace "`r?`n","`r`n").TrimEnd(),
+            $single)
     }
 }
 
-if (-not $text.Contains('double firstCoordinate = yFirst ? displayY : displayX;')) {
-    throw 'Vertex table true X/Y display swap was not established.'
+# This marker is deliberately the same marker consumed by the older August 14
+# runtime-field repair. Establishing it here makes that older repair idempotent.
+if (-not $text.Contains($tableMarker)) {
+    throw 'Vertex table true X/Y display swap was not established. Current source did not contain the old displayX/displayY assignments or the upgraded marker.'
 }
 
 if ($text -ne $original) {
