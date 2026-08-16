@@ -35,6 +35,17 @@ Unblock-File -LiteralPath $structuredProductionRepair -ErrorAction SilentlyConti
 & $structuredProductionRepair -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Road V2 existed before several Road command names were finalized. Force its
+# buttons onto the current CommandMethod owners after all older production-centre
+# injectors have run so field builds cannot dispatch retired CE_* aliases.
+$roadLiveWiringRepair = Join-Path $root 'scripts\Repair-August16-RoadProductionLiveWiring-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $roadLiveWiringRepair -PathType Leaf)) {
+    throw "Road Production live-command wiring repair was not found: $roadLiveWiringRepair"
+}
+Unblock-File -LiteralPath $roadLiveWiringRepair -ErrorAction SilentlyContinue
+& $roadLiveWiringRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # Earlier staging passes can reformat or partially rewrite RefreshNow(), so make
 # the required Survey hooks present before the larger Project/Survey final repair.
 # This deliberately avoids relying on one historical multi-line text anchor.
@@ -77,6 +88,18 @@ if (-not (Test-Path -LiteralPath $runtimeLineEndingRepair -PathType Leaf)) {
 }
 Unblock-File -LiteralPath $runtimeLineEndingRepair -ErrorAction SilentlyContinue
 & $runtimeLineEndingRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
+# Normalize the Vertex X/Y display block before the older August14 runtime repair.
+# That repair used an exact historical block and could stop when an earlier pass
+# merely reformatted the same assignments. This structural pre-pass establishes
+# the final marker and upgrades both table values and annotation values.
+$vertexCoordinateRepair = Join-Path $root 'scripts\Repair-August16-VertexCoordinateDisplayPreCompat-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $vertexCoordinateRepair -PathType Leaf)) {
+    throw "Vertex coordinate-display precompat repair was not found: $vertexCoordinateRepair"
+}
+Unblock-File -LiteralPath $vertexCoordinateRepair -ErrorAction SilentlyContinue
+& $vertexCoordinateRepair -RepoRoot $root
 $global:LASTEXITCODE = 0
 
 # Final field-test behaviour pass: keep Town/CRS shared, route old surface
