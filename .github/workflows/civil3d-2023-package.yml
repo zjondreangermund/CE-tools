@@ -31,6 +31,7 @@ jobs:
           set -euo pipefail
           python3 scripts/Validate-AnnotationCommands.py
           python3 scripts/Validate-ReportPresentation.py
+          python3 scripts/Validate-ProductionCentreCommandTargets.py
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
