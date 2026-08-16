@@ -36,23 +36,23 @@ namespace CETools.Civil3D
   {
    Run("CE-Road Layout Production","Complete road layout before Civil 3D design.",new List<DisciplineWorkflowAction>
    {
-    A("CE-Closed Polylines for All Plots","CE_ROADRESERVECLOSE","Close plot/reserve source polylines.","01 Source"),
-    A("CE-Road Reserve Centrelines","CE_ROADOVERLAY","Create road reserve centrelines.","02 Centrelines"),
+    A("CE-Closed Polylines for All Plots","CE_ROADRESERVECLOSE","Close selected/all open plot or reserve polylines with controlled endpoint-gap handling.","01 Source"),
+    A("CE-Road Reserve Centrelines","CE_ROADRESERVECENTERLINES","Create road reserve centrelines from opposing closed cadastral/reserve boundaries.","02 Centrelines"),
     A("CE-Join Continuous Road Reserve Centrelines","CE_ROADCONTINUITYFIX","Join continuous centreline strings.","02 Centrelines"),
     A("CE-Multiple Horizontal Centreline Curves","CE_ROUTEHORIZONTALCURVES","Apply specified tangent curve radii to multiple road/route centreline polylines.","03 Geometry"),
     A("CE-Road Offsets","CE_ROADOFFSET","Create road offsets.","03 Geometry"),
     A("CE-Multiple T/Cross Junction Bellmouths","CE_ROADJUNCTIONBULK","Create T/cross-junction bellmouths.","04 Junctions"),
     A("CE-Multiple Junction Trim","CE_ROADJUNCTIONTRIM","Trim multiple junctions.","04 Junctions"),
     A("CE-Bellmouth Tangent Trim","CE_BELLMOUTHTRIMEDGES","Trim road and sidewalk/shoulder edges exactly to generated bellmouth tangent stations.","04 Junctions"),
-    A("CE-Road Names","CE_ROADNAME","Create/update road names.","05 Annotation"),
+    A("CE-Road Names","CE_ROADNAMES","Create/update linked road names.","05 Annotation"),
     A("CE-Synchronize Road Names","CE_ROADNAMESYNC","Synchronize ROAD-n names across alignments, profiles, corridors, sections and assemblies.","05 Annotation"),
     A("CE-Annotation Presentation","CE_ROUTEANNOTATIONSTYLE","Apply annotation presentation settings.","05 Annotation"),
     A("CE-Shift Annotations","CE_ROUTESHIFTANNOTATION","Shift selected annotations together.","05 Annotation"),
-    A("CE-Road Dimensions","CE_ROADDIM","Create/update road dimensions.","05 Annotation"),
-    A("CE-Multiple Junction Bellmouth Setting-out","CE_JUNCTIONSETTINGOUT4FIX","Complete four return curves per junction before continuing.","06 Setting-Out"),
+    A("CE-Road Dimensions","CE_ROADDIMENSIONS","Create/update linked road dimensions.","05 Annotation"),
+    A("CE-Multiple Junction Bellmouth Setting-out","CE_JUNCTIONSETTINGOUT4","Complete four return curves per junction before continuing.","06 Setting-Out"),
     A("CE-Select Polylines Shorter Than Length","CE_SELECTPOLYSHORTER","Select current-space polylines shorter than a specified length.","07 Selection"),
     A("CE-Select Polylines With Same Length","CE_SELECTPOLYSAMELENGTH","Select polylines matching a reference length.","07 Selection"),
-    A("CE-Refresh Linked Road Layout","CE_ROADREFRESH","Refresh linked road layout data.","08 Refresh")
+    A("CE-Refresh Linked Road Layout","CE_ROADLAYOUTREFRESH","Refresh linked road layout data.","08 Refresh")
    });
   }
   [CommandMethod("CE_TOOLS","CE_ROADDESIGNPRODUCTIONCENTRE",CommandFlags.Modal)]
