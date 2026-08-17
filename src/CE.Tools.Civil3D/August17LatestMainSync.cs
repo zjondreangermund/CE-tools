@@ -7,12 +7,14 @@ namespace CETools.Civil3D
     /// </summary>
     internal static class August17LatestMainSync
     {
-        internal const string SyncId = "2026-08-17-project-survey-production-comments-2";
+        internal const string SyncId = "2026-08-17-project-survey-frontdoor-3";
         internal const bool ProjectProductionIncludesSurveyLocation = false;
         internal const bool ProjectProductionIncludesNamibiaLo = false;
         internal const bool SurveyProductionOwnsSurveyLocationAndNamibiaLo = true;
         internal const bool DisciplineStylePresetsBeforeProjectStyleCentre = true;
         internal const bool TownAndCrsDriveLoCentralMeridian = true;
         internal const bool DrawingAndClientBooksUseRegisteredTitleBlockSource = true;
+        internal const bool ProjectFrontDoorRoutesToStructuredPage = true;
+        internal const bool SurveyFrontDoorRoutesToStructuredPage = true;
     }
 }
