@@ -46,4 +46,16 @@ if (-not $surface.Contains('Point3dCollection points)')) { throw 'Survey source-
 $field = [System.IO.File]::ReadAllText((Join-Path $src 'August14SurveyFieldReviewCommands.cs'))
 if (-not $field.Contains('WriteLink(table, transaction, baseId, comparisonId, stored);')) { throw 'Surface comparison table did not preserve its original point identity.' }
 
-Write-Host 'Final Survey runtime field-test compatibility follow-up passed.' -ForegroundColor Cyan
+# Older August14 compatibility passes run late from Sanitize-RestoredCSharpSources.ps1
+# and can recreate the retired Project/Survey Production menus. Reapply the final
+# August17 page/front-door contract here, after those legacy passes, so the staged
+# source that reaches the compiler is always the approved one-page implementation.
+$finalProjectSurvey = Join-Path $root 'scripts\Repair-August17-ProjectProductionComments-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $finalProjectSurvey -PathType Leaf)) {
+    throw "Final August17 Project/Survey consolidation repair was not found: $finalProjectSurvey"
+}
+Unblock-File -LiteralPath $finalProjectSurvey -ErrorAction SilentlyContinue
+& $finalProjectSurvey -RepoRoot $root
+$global:LASTEXITCODE = 0
+
+Write-Host 'Final Survey runtime field-test compatibility follow-up passed; August17 Project/Survey contract reapplied last.' -ForegroundColor Cyan
