@@ -58,4 +58,28 @@ Unblock-File -LiteralPath $finalProjectSurvey -ErrorAction SilentlyContinue
 & $finalProjectSurvey -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Final Survey PREPARE addition: background cleanup and verified scale correction.
+# Do this after the August17 one-page replacement because that replacement owns the
+# final SurveyProduction() body and would otherwise remove later menu insertions.
+$centresPath = Join-Path $src 'August14StructuredDisciplineProductionCentres.cs'
+$centres = [System.IO.File]::ReadAllText($centresPath)
+if (-not $centres.Contains('"CE_BACKGROUNDTOOLS"')) {
+    $landXml = '                    A("CE-LandXML Import / Export", "CE_LANDXMLTOOLS", "Import/export Civil survey data.", "02 PREPARE"),'
+    $background = '                    A("CE-Background Tools", "CE_BACKGROUNDTOOLS", "Burst/clean background DWGs, colour 250, freeze hatches/dimensions and verify scale to metres.", "02 PREPARE"),'
+    if (-not $centres.Contains($landXml)) { throw 'Survey PREPARE LandXML anchor was not found for CE-Background Tools.' }
+    $centres = $centres.Replace($landXml, $background + "`r`n" + $landXml)
+    [System.IO.File]::WriteAllText($centresPath,($centres -replace "`r?`n","`r`n"),$utf8)
+}
+$centresCheck = [System.IO.File]::ReadAllText($centresPath)
+if (-not $centresCheck.Contains('A("CE-Background Tools", "CE_BACKGROUNDTOOLS"')) {
+    throw 'CE-Background Tools is not exposed under Survey Production PREPARE.'
+}
+$backgroundSource = Join-Path $src 'BackgroundPreparationCommands.cs'
+if (-not (Test-Path -LiteralPath $backgroundSource -PathType Leaf)) { throw 'BackgroundPreparationCommands.cs is missing.' }
+$backgroundText = [System.IO.File]::ReadAllText($backgroundSource)
+foreach ($command in @('CE_BACKGROUNDTOOLS','CE_BGBURSTALL','CE_BGCOLOR250','CE_BGCLEAN','CE_BGFREEZESOLIDHATCH','CE_BGFREEZEDIMS','CE_BGSCALECORRECTION')) {
+    if (-not $backgroundText.Contains($command)) { throw "Background command is missing: $command" }
+}
+
 Write-Host 'Final Survey runtime field-test compatibility follow-up passed; August17 Project/Survey contract reapplied last.' -ForegroundColor Cyan
+Write-Host 'CE-Background Tools is exposed under Survey Production - 02 PREPARE.' -ForegroundColor Green
