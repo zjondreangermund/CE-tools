@@ -33,6 +33,12 @@ function Replace-MethodBody {
     if ($close -lt 0) { throw "August 17 closing brace was not found for: $Signature" }
     return $Text.Substring(0,$open) + "{`r`n" + $Body.TrimEnd() + "`r`n        }" + $Text.Substring($close+1)
 }
+function Replace-FirstRegex {
+    param([string]$Text,[string]$Pattern,[string]$Replacement,[string]$Failure)
+    $rx = New-Object System.Text.RegularExpressions.Regex($Pattern)
+    if (-not $rx.IsMatch($Text)) { throw $Failure }
+    return $rx.Replace($Text, $Replacement, 1)
+}
 
 # ---------------------------------------------------------------------------
 # PROJECT + SURVEY: one-page production centres.
@@ -85,66 +91,46 @@ $surveyBody = @'
 $centres = Replace-MethodBody -Text $centres -Signature 'public void ProjectProduction()' -Body $projectBody
 $centres = Replace-MethodBody -Text $centres -Signature 'public void SurveyProduction()' -Body $surveyBody
 
-# Platform: add the requested multi-polyline slope feature-line generator.
+# Platform: insert relative to the live CE_FLCREATE owner, independent of label text.
 if (-not $centres.Contains('"CE_PLATFORMFEATURELINESLOPE"')) {
-    $anchor = '                    A("CE-Create Feature Lines", "CE_FLCREATE", "Create multiple feature lines from selected source polylines.", "02 PREPARE"),'
-    if (-not $centres.Contains($anchor)) { throw 'Platform feature-line insertion anchor was not found.' }
-    $centres = $centres.Replace($anchor, $anchor + "`r`n" + '                    A("CE-Platform Feature Lines at Fixed / Minimum Slope", "CE_PLATFORMFEATURELINESLOPE", "Create individual feature lines from multiple platform polylines at a fixed or minimum slope toward/away from a selected reference feature line.", "02 PREPARE"),')
+    $platformInsert = '                    A("CE-Platform Feature Lines at Fixed / Minimum Slope", "CE_PLATFORMFEATURELINESLOPE", "Create individual feature lines from multiple platform polylines at a fixed or minimum slope toward/away from a selected reference feature line.", "02 PREPARE"),'
+    $pattern = '(?m)^(\s*A\([^\r\n]*"CE_FLCREATE"[^\r\n]*\),)\r?$'
+    $centres = Replace-FirstRegex -Text $centres -Pattern $pattern -Replacement ('$1' + "`r`n" + $platformInsert) -Failure 'Platform live CE_FLCREATE action could not be located structurally.'
 }
 Write-Text $centresPath $centres
 
-# Road: add selective corridor feature-line extraction beside corridor production.
+# Road: insert relative to the live CE_ROADCORRIDORFULL owner. In current main
+# this is permanent source, so this branch normally becomes a no-op.
 $roadPath = Join-Path $src 'August13RoadProductionCentres.cs'
 $road = Read-Text $roadPath
 if (-not $road.Contains('"CE_CORRIDORFEATURELINES"')) {
-    $anchor = '                    A("CE-Road Corridors", "CE_ROADCORRIDORFULL", "Create, rebuild and finalize corridor outputs.", "03 CORRIDORS"),'
-    if (-not $road.Contains($anchor)) { throw 'Road corridor feature-line insertion anchor was not found.' }
-    $road = $road.Replace($anchor, $anchor + "`r`n" + '                    A("CE-Corridor Feature Lines", "CE_CORRIDORFEATURELINES", "Create individual feature lines from selected corridor centreline/edge/kerb/sidewalk/shoulder/toe codes or all corridor feature lines.", "03 CORRIDORS"),')
+    $roadInsert = '    A("CE-Corridor Feature Lines", "CE_CORRIDORFEATURELINES", "Create individual feature lines from selected corridor centreline/edge/kerb/sidewalk/shoulder/toe codes or all corridor feature lines.", "03 Corridors"),'
+    $pattern = '(?m)^(\s*A\([^\r\n]*"CE_ROADCORRIDORFULL"[^\r\n]*\),)\r?$'
+    $road = Replace-FirstRegex -Text $road -Pattern $pattern -Replacement ('$1' + "`r`n" + $roadInsert) -Failure 'Road live CE_ROADCORRIDORFULL action could not be located structurally.'
 }
 Write-Text $roadPath $road
 
 # ---------------------------------------------------------------------------
-# PROJECT TOWN -> NAMIBIA LO: the conversion popup must start on the project LO.
+# PROJECT TOWN -> NAMIBIA LO: connect the live CE_NAMIBIALO command directly
+# to the Project Town/Coordinate-System source. Match the method structurally,
+# not one historical whitespace layout.
 # ---------------------------------------------------------------------------
 $namibiaPath = Join-Path $src 'NamibiaCoordinateRuntimeCommands.cs'
 $namibia = Read-Text $namibiaPath
-$oldLo = @'
-            int inferred;
-            NamibiaCoordinateRuntime.TryInferLoZone(out inferred);
-            if (inferred <= 0) inferred = 17;
-            var model = new NamibiaCoordinateSettings(inferred);
-'@
-$newLo = @'
-            int inferred = August17ProjectRuntime.PreferredLoCentralMeridian(document);
-            var model = new NamibiaCoordinateSettings(inferred);
-'@
-if ($namibia.Contains(($oldLo -replace "`n","`r`n"))) {
-    $namibia = $namibia.Replace(($oldLo -replace "`n","`r`n"), ($newLo -replace "`n","`r`n"))
-}
-elseif (-not $namibia.Contains('August17ProjectRuntime.PreferredLoCentralMeridian(document)')) {
-    throw 'Namibia LO conversion initialization could not be linked to Project Town/CRS.'
+if (-not $namibia.Contains('August17ProjectRuntime.PreferredLoCentralMeridian(document)')) {
+    $pattern = '(?ms)(Document\s+document\s*=\s*AcApplication\.DocumentManager\.MdiActiveDocument;\s*if\s*\(document\s*==\s*null\)\s*return;\s*)int\s+inferred\s*;\s*NamibiaCoordinateRuntime\.TryInferLoZone\(out\s+inferred\)\s*;\s*if\s*\(inferred\s*<=\s*0\)\s*inferred\s*=\s*17\s*;'
+    $replacement = '$1int inferred = August17ProjectRuntime.PreferredLoCentralMeridian(document);'
+    $namibia = Replace-FirstRegex -Text $namibia -Pattern $pattern -Replacement $replacement -Failure 'Namibia LO command owner was found, but its initial-zone block could not be upgraded structurally.'
 }
 Write-Text $namibiaPath $namibia
 
 # ---------------------------------------------------------------------------
-# CLIENT BOOK: use the Drawing Register Title Block Source first, fallback only
-# when the configured source cannot be inserted.
+# CLIENT BOOK: use Drawing Register Title Block Source first. Match the internal
+# BuildTitleBlock fallback structurally so formatting changes do not stop staging.
 # ---------------------------------------------------------------------------
 $bookPath = Join-Path $src 'ClientBookCommands.cs'
 $book = Read-Text $bookPath
 if (-not $book.Contains('August17ProjectRuntime.TryInsertRegisteredClientBookTitleBlock')) {
-    $oldBlock = @'
-                Table titleBlock = BuildTitleBlock(
-                    database,
-                    new Point3d(margin, margin + titleBlockHeight, 0.0),
-                    page,
-                    stage,
-                    revision,
-                    snapshot,
-                    bodyText);
-                AddGenerated(transaction, paperSpace, titleBlock, generated);
-                titleBlock.GenerateLayout();
-'@
     $newBlock = @'
                 string registeredTitleBlockDiagnostic;
                 bool usedRegisteredTitleBlock = August17ProjectRuntime.TryInsertRegisteredClientBookTitleBlock(
@@ -173,14 +159,12 @@ if (-not $book.Contains('August17ProjectRuntime.TryInsertRegisteredClientBookTit
                     titleBlock.GenerateLayout();
                 }
 '@
-    $normalizedOld = $oldBlock -replace "`n","`r`n"
-    if (-not $book.Contains($normalizedOld)) { throw 'Client Book internal title-block block was not found structurally.' }
-    $book = $book.Replace($normalizedOld, ($newBlock -replace "`n","`r`n"))
+    $pattern = '(?ms)^\s*Table\s+titleBlock\s*=\s*BuildTitleBlock\(\s*database,\s*new\s+Point3d\(margin,\s*margin\s*\+\s*titleBlockHeight,\s*0\.0\),\s*page,\s*stage,\s*revision,\s*snapshot,\s*bodyText\s*\);\s*AddGenerated\(transaction,\s*paperSpace,\s*titleBlock,\s*generated\);\s*titleBlock\.GenerateLayout\(\);'
+    $book = Replace-FirstRegex -Text $book -Pattern $pattern -Replacement ($newBlock -replace "`n","`r`n") -Failure 'Client Book fallback title-block block could not be located structurally.'
 }
 Write-Text $bookPath $book
 
-# Final wiring guard. Do not validate historical menu text; validate the final
-# commands and the required runtime links that operators will actually use.
+# Final wiring guard validates the final live architecture, not historical text.
 $featurePath = Join-Path $src 'August17ProductionFeatureLineCommands.cs'
 $feature = Read-Text $featurePath
 foreach ($marker in @(
@@ -204,6 +188,6 @@ $book = Read-Text $bookPath
 if (-not $book.Contains('August17ProjectRuntime.TryInsertRegisteredClientBookTitleBlock')) { throw 'August 17 Client Book does not use the registered Title Block Source.' }
 
 Write-Host 'August 17 Project and Survey Production are one-page centres.' -ForegroundColor Green
-Write-Host 'Project Production now uses Namibia LO/WGS84 instead of the old map-tool route; project Town/CRS drives the LO central meridian.' -ForegroundColor Green
-Write-Host 'Client Books now use the Drawing Register Title Block Source with the CE internal title block only as fallback.' -ForegroundColor Green
-Write-Host 'Road Production now exposes selective Corridor Feature Lines; Platform Production exposes fixed/minimum slope feature lines.' -ForegroundColor Green
+Write-Host 'Project Production uses Namibia LO/WGS84; Project Town/CRS drives the LO central meridian.' -ForegroundColor Green
+Write-Host 'Client Books use the Drawing Register Title Block Source with the CE internal title block only as fallback.' -ForegroundColor Green
+Write-Host 'Road Production exposes selective Corridor Feature Lines; Platform Production exposes fixed/minimum slope feature lines.' -ForegroundColor Green
