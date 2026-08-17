@@ -62,3 +62,13 @@ if ($text -ne $original) {
 }
 
 Write-Host 'Road Production V2 now dispatches live Road command owners; retired August aliases are removed from the staged menu.' -ForegroundColor Green
+
+# August 17 field-review pass runs after the older production/menu repair chain so
+# Project/Survey stay on the requested one-page layouts and the new Road/Platform
+# feature-line commands cannot be overwritten by historical staging scripts.
+$august17 = Join-Path $root 'scripts\Repair-August17-ProductionPagesAndFeatureLines-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $august17 -PathType Leaf)) {
+    throw "August 17 production integration repair was not found: $august17"
+}
+& $august17 -RepoRoot $root
+$global:LASTEXITCODE = 0
