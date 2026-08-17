@@ -30,9 +30,6 @@ Patch 'August14SurveySurfaceCommands.cs' {
 
 Patch 'August14SurveyFieldReviewCommands.cs' {
     param($text)
-    # Keep the original XY identity in the table link. PopulateModel receives the
-    # live moved XY, but the stored identity must still resolve the same DBPoint
-    # on the following refresh.
     $text = $text.Replace(
         'WriteLink(table, transaction, baseId, comparisonId, refreshed);',
         'WriteLink(table, transaction, baseId, comparisonId, stored);')
@@ -46,10 +43,6 @@ if (-not $surface.Contains('Point3dCollection points)')) { throw 'Survey source-
 $field = [System.IO.File]::ReadAllText((Join-Path $src 'August14SurveyFieldReviewCommands.cs'))
 if (-not $field.Contains('WriteLink(table, transaction, baseId, comparisonId, stored);')) { throw 'Surface comparison table did not preserve its original point identity.' }
 
-# Older August14 compatibility passes run late from Sanitize-RestoredCSharpSources.ps1
-# and can recreate the retired Project/Survey Production menus. Reapply the final
-# August17 page/front-door contract here, after those legacy passes, so the staged
-# source that reaches the compiler is always the approved one-page implementation.
 $finalProjectSurvey = Join-Path $root 'scripts\Repair-August17-ProjectProductionComments-Civil3D2023.ps1'
 if (-not (Test-Path -LiteralPath $finalProjectSurvey -PathType Leaf)) {
     throw "Final August17 Project/Survey consolidation repair was not found: $finalProjectSurvey"
@@ -58,9 +51,6 @@ Unblock-File -LiteralPath $finalProjectSurvey -ErrorAction SilentlyContinue
 & $finalProjectSurvey -RepoRoot $root
 $global:LASTEXITCODE = 0
 
-# Final Survey PREPARE addition: background cleanup and verified scale correction.
-# Do this after the August17 one-page replacement because that replacement owns the
-# final SurveyProduction() body and would otherwise remove later menu insertions.
 $centresPath = Join-Path $src 'August14StructuredDisciplineProductionCentres.cs'
 $centres = [System.IO.File]::ReadAllText($centresPath)
 if (-not $centres.Contains('"CE_BACKGROUNDTOOLS"')) {
