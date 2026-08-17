@@ -483,7 +483,7 @@ namespace CETools.Civil3D
                 if (generated != null) generated.Add(inserted.Handle.ToString());
                 return true;
             }
-            catch (Exception ex)
+            catch (System.Exception ex)
             {
                 diagnostic = ex.Message;
                 return false;
