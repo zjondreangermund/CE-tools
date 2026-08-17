@@ -51,6 +51,17 @@ Unblock-File -LiteralPath $finalProjectSurvey -ErrorAction SilentlyContinue
 & $finalProjectSurvey -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Apply this after the older Project/Survey repair because that pass can restore
+# the Project-linked LO resolver. The final fix makes recognized Town authoritative
+# and prevents persisted popup Zone values from replacing the live project zone.
+$namibiaProjectZoneRepair = Join-Path $root 'scripts\Repair-August17-NamibiaProjectZonePersistence-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $namibiaProjectZoneRepair -PathType Leaf)) {
+    throw "Final Namibia project-zone persistence repair was not found: $namibiaProjectZoneRepair"
+}
+Unblock-File -LiteralPath $namibiaProjectZoneRepair -ErrorAction SilentlyContinue
+& $namibiaProjectZoneRepair -RepoRoot $root
+$global:LASTEXITCODE = 0
+
 # Final Survey PREPARE addition. The established CE_BACKGROUNDTOOLS command remains
 # the existing Background/XREF manager. CE_BACKGROUNDPREPTOOLS is the new Survey
 # preparation launcher and includes a handoff to that established manager.
@@ -80,4 +91,5 @@ if (-not $existingText.Contains('"CE_BACKGROUNDTOOLS"')) { throw 'Existing CE_BA
 if (-not $backgroundText.Contains('"CE_BACKGROUNDTOOLS"')) { throw 'Survey background preparation launcher does not hand off to existing Background/XREF utilities.' }
 
 Write-Host 'Final Survey runtime field-test compatibility follow-up passed; August17 Project/Survey contract reapplied last.' -ForegroundColor Cyan
+Write-Host 'Namibia Town/CRS zone persistence fix is applied after older Project/Survey staging.' -ForegroundColor Green
 Write-Host 'CE-Background Tools preparation is exposed under Survey Production - 02 PREPARE without duplicating the existing XREF manager.' -ForegroundColor Green
