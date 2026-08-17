@@ -30,15 +30,30 @@ if not exist "%CD%\src\CE.Tools.Civil3D\August17LatestMainSync.cs" (
   pause
   exit /b 1
 )
-findstr /C:"2026-08-17-project-survey-frontdoor-3" "%CD%\src\CE.Tools.Civil3D\August17LatestMainSync.cs" >nul
+findstr /C:"2026-08-17-background-consolidation-4" "%CD%\src\CE.Tools.Civil3D\August17LatestMainSync.cs" >nul
 if errorlevel 1 (
   echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
-  echo The August 17 Project/Survey front-door sync ID is not current.
+  echo The August 17 Background/Project/Survey consolidation sync ID is not current.
   echo Download a fresh ZIP from GitHub main, extract to a NEW folder and run again.
   pause
   exit /b 1
 )
-echo Latest August 17 Project/Survey front-door sync: PASSED
+if not exist "%CD%\src\CE.Tools.Civil3D\BackgroundPreparationCommands.cs" (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo CE-Background Tools source is missing.
+  echo Download a fresh ZIP from GitHub main, extract to a NEW folder and run again.
+  pause
+  exit /b 1
+)
+findstr /C:"CE_BACKGROUNDTOOLS" "%CD%\src\CE.Tools.Civil3D\BackgroundPreparationCommands.cs" >nul
+if errorlevel 1 (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo CE-Background Tools command marker is missing.
+  echo Download a fresh ZIP from GitHub main, extract to a NEW folder and run again.
+  pause
+  exit /b 1
+)
+echo Latest August 17 Background/Project/Survey consolidation sync: PASSED
 
 findstr /C:"Select multiple now" "%CD%\src\CE.Tools.Civil3D\August11NetworkBatchCommands.cs" >nul
 if errorlevel 1 (
