@@ -48,7 +48,6 @@ for command in (
 require('"CE_BACKGROUNDTOOLS"' in prep,
         "Survey Background preparation launcher does not hand off to existing Background/XREF utilities")
 
-# User-requested operations must remain explicit in source.
 for token in (
     "Blocks burst",
     "Color.FromColorIndex(ColorMethod.ByAci, 250)",
@@ -66,11 +65,14 @@ for token in (
 ):
     require(token in prep, f"Background requirement token missing: {token}")
 
-# The final Project/Survey repair must continue to enforce the requested one-page
-# page ownership and style order after older August repairs.
-require("Project Production still exposes Survey Location or Namibia LO/WGS84" in final_repair,
-        "final Project Production exclusion guard is missing")
-require("Discipline Style Presets is not above Project Style Centre" in final_repair,
+# Verify the actual structural guards used by the final one-page Project/Survey repair.
+require("$projectSection.Contains('CE_SURVEYLOCATION')" in final_repair and
+        "$projectSection.Contains('CE_NAMIBIALO')" in final_repair and
+        "Project Production still contains Survey Location or Namibia LO/WGS84" in final_repair,
+        "final Project Production Survey/LO exclusion guard is missing")
+require("$projectSection.IndexOf('CE_DISCIPLINESTYLEPRESETS')" in final_repair and
+        "$projectSection.IndexOf('CE_PROJECTSTYLES')" in final_repair and
+        "Project Production style preset order is incorrect" in final_repair,
         "Project style-order guard is missing")
 require("CE_PROJECTPRODUCTIONSTRUCTURED" in final_repair and "CE_SURVEYPRODUCTIONSTRUCTURED" in final_repair,
         "Project/Survey structured front-door repair is missing")
