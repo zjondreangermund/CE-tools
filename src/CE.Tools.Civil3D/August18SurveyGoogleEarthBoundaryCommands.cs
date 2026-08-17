@@ -38,14 +38,10 @@ namespace CETools.Civil3D
                 selection.Value == null ||
                 selection.Value.Count == 0)
             {
-                selection = editor.GetSelection(
-                    new PromptSelectionOptions
-                    {
-                        MessageForAdding =
-                            "\nSelect one or more CLOSED polyline boundaries to plot in Google Earth: ",
-                        AllowDuplicates = false,
-                        RejectObjectsFromNonCurrentSpace = true
-                    });
+                var selectionOptions = new PromptSelectionOptions();
+                selectionOptions.MessageForAdding =
+                    "\nSelect one or more CLOSED polyline boundaries to plot in Google Earth: ";
+                selection = editor.GetSelection(selectionOptions);
             }
             if (selection.Status != PromptStatus.OK || selection.Value == null)
                 return;
