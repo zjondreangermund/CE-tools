@@ -1,0 +1,12 @@
+CE Tools latest-main staging sync
+Sync ID: 2026-08-17-project-survey-production-comments-2
+
+Required final staging repair:
+Repair-August17-ProjectProductionComments-Civil3D2023.ps1
+
+Expected behavior:
+- Project Production excludes Survey Location and Namibia LO/WGS84.
+- Survey Production owns Survey Location and Namibia LO/WGS84.
+- Discipline Style Presets appears before Project Style Centre.
+- Project Town/CRS initializes the LO central meridian.
+- Drawing Book and Client Book use the registered Title Block Source.
