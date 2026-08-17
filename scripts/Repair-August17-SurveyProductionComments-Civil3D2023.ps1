@@ -83,12 +83,14 @@ $centres = ReplaceMethodBody $centres 'public void SurveyProduction()' $surveyBo
 $centres = ReplaceMethodBody $centres 'public void SurveyDelivery()' $deliveryBody
 WriteText $centresPath $centres
 
-# Validate exact one-page order requested in the 17 August Survey Production comments.
+# Validate only the final one-page SurveyProduction method. Separate Survey Settings,
+# Surface and Delivery sub-centres remain in this class for compatibility and may
+# legitimately contain style commands that are not on the requested one-page menu.
 $centres = ReadText $centresPath
 $surveyStart = $centres.IndexOf('public void SurveyProduction()', [StringComparison]::Ordinal)
-$platformStart = $centres.IndexOf('// PLATFORM', $surveyStart, [StringComparison]::Ordinal)
-if ($surveyStart -lt 0 -or $platformStart -le $surveyStart) { throw 'Survey Production method range could not be validated.' }
-$surveySection = $centres.Substring($surveyStart,$platformStart-$surveyStart)
+$surveySettingsStart = $centres.IndexOf('public void SurveySettings()', $surveyStart, [StringComparison]::Ordinal)
+if ($surveyStart -lt 0 -or $surveySettingsStart -le $surveyStart) { throw 'Survey Production method range could not be validated.' }
+$surveySection = $centres.Substring($surveyStart,$surveySettingsStart-$surveyStart)
 
 $expected = @(
     'CE_SURVEYLOCATION',
