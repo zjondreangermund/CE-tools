@@ -13,6 +13,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 $project = Join-Path $repo 'src\CE.Tools.Civil3D\CE.Tools.Civil3D.csproj'
 $verifiedInstaller = Join-Path $repo 'scripts\Install-VerifiedCivil3D2023Bundle.ps1'
 $packager = Join-Path $repo 'scripts\New-CE-ToolsReleasePackage.ps1'
+$surveyCommentRepair = Join-Path $repo 'scripts\Repair-August17-SurveyProductionComments-Civil3D2023.ps1'
 $autoCadRoot = 'C:\Program Files\Autodesk\AutoCAD 2023'
 $civil3DRoot = if (Test-Path (Join-Path $autoCadRoot 'AeccDbMgd.dll')) { $autoCadRoot } else { Join-Path $autoCadRoot 'C3D' }
 $aecRoot = if (Test-Path (Join-Path $civil3DRoot 'AecBaseMgd.dll')) { $civil3DRoot } else { $autoCadRoot }
@@ -29,6 +30,9 @@ if (-not (Test-Path -LiteralPath $verifiedInstaller)) {
 }
 if (-not (Test-Path -LiteralPath $packager)) {
     throw "Release packager not found: $packager"
+}
+if (-not (Test-Path -LiteralPath $surveyCommentRepair)) {
+    throw "Final Survey Production repair not found: $surveyCommentRepair"
 }
 if ([string]::IsNullOrWhiteSpace($SourceCommit)) {
     try { $SourceCommit = (& git -C $repo rev-parse HEAD 2>$null).Trim() }
@@ -48,6 +52,10 @@ $missing = $required | Where-Object { -not (Test-Path -LiteralPath $_) }
 if ($missing) {
     throw "Civil 3D 2023 SDK files are missing:`n$($missing -join "`n")"
 }
+
+Write-Host "Applying final 17-08-2026 Survey Production order/grid comments immediately before compilation..." -ForegroundColor Cyan
+& $surveyCommentRepair -RepoRoot $repo
+$global:LASTEXITCODE = 0
 
 Push-Location $repo
 try {
