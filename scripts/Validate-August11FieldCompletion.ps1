@@ -19,6 +19,7 @@ function Require([bool]$condition,[string]$message) {
 }
 
 $production = Text 'August11ProductionCentreCommands.cs'
+$structuredProduction = Text 'August14StructuredDisciplineProductionCentres.cs'
 $presets = Text 'August11DisciplineStylePresetCommands.cs'
 $network = Text 'August11NetworkBatchCommands.cs'
 $midblock = Text 'August11MidblockSewerProductionCommands.cs'
@@ -85,7 +86,7 @@ foreach ($command in @('CE_SURVEYSTYLES','CE_PLATFORMSTYLES','CE_ROADSTYLES','CE
 }
 Require ($disciplineStyles.Contains('SavePreset(document.Database, selection);')) 'discipline style centres do not save separate drawing presets'
 Require ($disciplineStyles.Contains('CeGlobalDisciplineStyleDefaults.Save(selection);')) 'discipline style centres do not retain their own cross-drawing defaults'
-Require ($production.Contains('CE_DISCIPLINESTYLEPRESETS')) 'Production Centre does not expose discipline style preset management'
+Require ($production.Contains('CE_DISCIPLINESTYLEPRESETS') -or $structuredProduction.Contains('CE_DISCIPLINESTYLEPRESETS')) 'Production Centre does not expose discipline style preset management'
 
 # Network batch / duplicate prevention / legacy handoff.
 # CE_NETWORKBATCHTOOLS was retired when the duplicate CE_NETWORKMULTI registration
