@@ -14,6 +14,7 @@ $project = Join-Path $repo 'src\CE.Tools.Civil3D\CE.Tools.Civil3D.csproj'
 $verifiedInstaller = Join-Path $repo 'scripts\Install-VerifiedCivil3D2023Bundle.ps1'
 $packager = Join-Path $repo 'scripts\New-CE-ToolsReleasePackage.ps1'
 $surveyCommentRepair = Join-Path $repo 'scripts\Repair-August17-SurveyProductionComments-Civil3D2023.ps1'
+$august18SurveyVertexRepair = Join-Path $repo 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
 $autoCadRoot = 'C:\Program Files\Autodesk\AutoCAD 2023'
 $civil3DRoot = if (Test-Path (Join-Path $autoCadRoot 'AeccDbMgd.dll')) { $autoCadRoot } else { Join-Path $autoCadRoot 'C3D' }
 $aecRoot = if (Test-Path (Join-Path $civil3DRoot 'AecBaseMgd.dll')) { $civil3DRoot } else { $autoCadRoot }
@@ -33,6 +34,9 @@ if (-not (Test-Path -LiteralPath $packager)) {
 }
 if (-not (Test-Path -LiteralPath $surveyCommentRepair)) {
     throw "Final Survey Production repair not found: $surveyCommentRepair"
+}
+if (-not (Test-Path -LiteralPath $august18SurveyVertexRepair)) {
+    throw "August 18 Survey/vertex repair not found: $august18SurveyVertexRepair"
 }
 if ([string]::IsNullOrWhiteSpace($SourceCommit)) {
     try { $SourceCommit = (& git -C $repo rev-parse HEAD 2>$null).Trim() }
@@ -55,6 +59,10 @@ if ($missing) {
 
 Write-Host "Applying final 17-08-2026 Survey Production order/grid comments immediately before compilation..." -ForegroundColor Cyan
 & $surveyCommentRepair -RepoRoot $repo
+$global:LASTEXITCODE = 0
+
+Write-Host "Applying 18-08-2026 Google Earth boundary and automatic vertex-follow repairs..." -ForegroundColor Cyan
+& $august18SurveyVertexRepair -RepoRoot $repo
 $global:LASTEXITCODE = 0
 
 Push-Location $repo
