@@ -151,6 +151,59 @@ elseif (-not $title.Contains('bool namedTitleBlock =')) {
 $title = $title.Replace('" attributed block definition was found in the selected DWG."','" title-block definition was found in the selected DWG."')
 WriteText $titlePath $title
 
+# Client Book must call the same registered Drawing Register Title Block Source
+# as Drawing Book. Older staged source still used the internal CE table directly,
+# so repair the call-site here before the final validation guard runs.
+$clientBookPath = Required 'ClientBookCommands.cs'
+$clientBook = ReadText $clientBookPath
+if (-not $clientBook.Contains('August17ProjectRuntime.TryInsertRegisteredClientBookTitleBlock')) {
+    $oldClientTitleBlock = @'
+                Table titleBlock = BuildTitleBlock(
+                    database,
+                    new Point3d(margin, margin + titleBlockHeight, 0.0),
+                    page,
+                    stage,
+                    revision,
+                    snapshot,
+                    bodyText);
+                AddGenerated(transaction, paperSpace, titleBlock, generated);
+                titleBlock.GenerateLayout();
+'@ -replace "`n","`r`n"
+    $newClientTitleBlock = @'
+                string registeredTitleBlockDiagnostic;
+                bool usedRegisteredTitleBlock = August17ProjectRuntime.TryInsertRegisteredClientBookTitleBlock(
+                    database,
+                    transaction,
+                    paperSpace,
+                    generated,
+                    page.Paper,
+                    page.LayoutName,
+                    page.PageNumber,
+                    page.Title,
+                    stage,
+                    revision,
+                    out registeredTitleBlockDiagnostic);
+                if (!usedRegisteredTitleBlock)
+                {
+                    Table titleBlock = BuildTitleBlock(
+                        database,
+                        new Point3d(margin, margin + titleBlockHeight, 0.0),
+                        page,
+                        stage,
+                        revision,
+                        snapshot,
+                        bodyText);
+                    AddGenerated(transaction, paperSpace, titleBlock, generated);
+                    titleBlock.GenerateLayout();
+                }
+'@ -replace "`n","`r`n"
+    if (-not $clientBook.Contains($oldClientTitleBlock)) {
+        throw 'Client Book internal title-block call-site could not be located for registered-source wiring.'
+    }
+    $clientBook = $clientBook.Replace($oldClientTitleBlock,$newClientTitleBlock)
+}
+WriteText $clientBookPath $clientBook
+
 # Final guards.
 $projectStart = $centres.IndexOf('public void ProjectProduction()', [StringComparison]::Ordinal)
 $surveyStart = $centres.IndexOf('public void SurveyProduction()', [StringComparison]::Ordinal)
@@ -166,7 +219,7 @@ if (-not (ReadText $stylePath).Contains('CE_PROJECTSTYLES initial discipline pre
 if (-not (ReadText $titlePath).Contains('bool namedTitleBlock =')) { throw 'Drawing/Client Book normal title-block support is missing.' }
 $drawingBook = ReadText (Required 'ProductionReportCommands.cs')
 if (-not $drawingBook.Contains('drawingRegister.Header("Title Block Source")') -or -not $drawingBook.Contains('ProductionTitleBlockManager.TryInsert(')) { throw 'Drawing Book is not wired to Title Block Source.' }
-$clientBook = ReadText (Required 'ClientBookCommands.cs')
+$clientBook = ReadText $clientBookPath
 if (-not $clientBook.Contains('August17ProjectRuntime.TryInsertRegisteredClientBookTitleBlock')) { throw 'Client Book is not wired to Title Block Source.' }
 
 Write-Host 'Project Production now excludes Survey Location and Namibia LO/WGS84; Survey Production owns both.' -ForegroundColor Green
