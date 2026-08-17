@@ -28,13 +28,11 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Project Coordination",
-                "Coordinate discipline drawings, paper-space page setups and survey/location information without merging or exploding live Civil 3D design objects.",
+                "Coordinate discipline drawings and paper-space page setups without merging or exploding live Civil 3D design objects.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction("Create master drawing from discipline XREFs", "CE_MASTERXREF", "Select Roads, Stormwater, Sewer and Water DWGs and create a new non-destructive master DWG containing them as XREFs at the same origin.", "01 Master Drawing"),
-                    new DisciplineWorkflowAction("Multi-layout page setup manager", "CE_PAGESETUPMANAGER", "Copy the page/plot setup of one paper-space layout to multiple layouts in one popup workflow.", "02 Drawing Production"),
-                    new DisciplineWorkflowAction("Survey town / coordinate system", "CE_SURVEYLOCATION", "Choose a Namibian town and assign the best installed Autodesk LO coordinate-system definition.", "03 Survey and Maps"),
-                    new DisciplineWorkflowAction("Latitude / longitude map tools", "CE_MAPLOCATION", "Open a WGS84 latitude/longitude position in Google Maps or Google Earth web.", "03 Survey and Maps")
+                    new DisciplineWorkflowAction("Multi-layout page setup manager", "CE_PAGESETUPMANAGER", "Copy the page/plot setup of one paper-space layout to multiple layouts in one popup workflow.", "02 Drawing Production")
                 });
         }
 
