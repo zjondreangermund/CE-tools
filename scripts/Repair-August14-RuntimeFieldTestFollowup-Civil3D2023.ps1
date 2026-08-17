@@ -51,25 +51,33 @@ Unblock-File -LiteralPath $finalProjectSurvey -ErrorAction SilentlyContinue
 & $finalProjectSurvey -RepoRoot $root
 $global:LASTEXITCODE = 0
 
+# Final Survey PREPARE addition. The established CE_BACKGROUNDTOOLS command remains
+# the existing Background/XREF manager. CE_BACKGROUNDPREPTOOLS is the new Survey
+# preparation launcher and includes a handoff to that established manager.
 $centresPath = Join-Path $src 'August14StructuredDisciplineProductionCentres.cs'
 $centres = [System.IO.File]::ReadAllText($centresPath)
-if (-not $centres.Contains('"CE_BACKGROUNDTOOLS"')) {
+if (-not $centres.Contains('"CE_BACKGROUNDPREPTOOLS"')) {
     $landXml = '                    A("CE-LandXML Import / Export", "CE_LANDXMLTOOLS", "Import/export Civil survey data.", "02 PREPARE"),'
-    $background = '                    A("CE-Background Tools", "CE_BACKGROUNDTOOLS", "Burst/clean background DWGs, colour 250, freeze hatches/dimensions and verify scale to metres.", "02 PREPARE"),'
+    $background = '                    A("CE-Background Tools", "CE_BACKGROUNDPREPTOOLS", "Burst/clean background DWGs, colour 250, freeze hatches/dimensions, verify scale to metres and open existing XREF utilities.", "02 PREPARE"),'
     if (-not $centres.Contains($landXml)) { throw 'Survey PREPARE LandXML anchor was not found for CE-Background Tools.' }
     $centres = $centres.Replace($landXml, $background + "`r`n" + $landXml)
     [System.IO.File]::WriteAllText($centresPath,($centres -replace "`r?`n","`r`n"),$utf8)
 }
 $centresCheck = [System.IO.File]::ReadAllText($centresPath)
-if (-not $centresCheck.Contains('A("CE-Background Tools", "CE_BACKGROUNDTOOLS"')) {
-    throw 'CE-Background Tools is not exposed under Survey Production PREPARE.'
+if (-not $centresCheck.Contains('A("CE-Background Tools", "CE_BACKGROUNDPREPTOOLS"')) {
+    throw 'CE-Background Tools preparation launcher is not exposed under Survey Production PREPARE.'
 }
 $backgroundSource = Join-Path $src 'BackgroundPreparationCommands.cs'
 if (-not (Test-Path -LiteralPath $backgroundSource -PathType Leaf)) { throw 'BackgroundPreparationCommands.cs is missing.' }
 $backgroundText = [System.IO.File]::ReadAllText($backgroundSource)
-foreach ($command in @('CE_BACKGROUNDTOOLS','CE_BGBURSTALL','CE_BGCOLOR250','CE_BGCLEAN','CE_BGFREEZESOLIDHATCH','CE_BGFREEZEDIMS','CE_BGSCALECORRECTION')) {
-    if (-not $backgroundText.Contains($command)) { throw "Background command is missing: $command" }
+foreach ($command in @('CE_BACKGROUNDPREPTOOLS','CE_BGBURSTALL','CE_BGCOLOR250','CE_BGCLEAN','CE_BGFREEZESOLIDHATCH','CE_BGFREEZEDIMS','CE_BGSCALECORRECTION')) {
+    if (-not $backgroundText.Contains($command)) { throw "Background preparation command is missing: $command" }
 }
+$existingBackground = Join-Path $src 'BackgroundXrefManagementCommands.cs'
+if (-not (Test-Path -LiteralPath $existingBackground -PathType Leaf)) { throw 'Existing Background/XREF manager source is missing.' }
+$existingText = [System.IO.File]::ReadAllText($existingBackground)
+if (-not $existingText.Contains('"CE_BACKGROUNDTOOLS"')) { throw 'Existing CE_BACKGROUNDTOOLS owner is missing.' }
+if (-not $backgroundText.Contains('"CE_BACKGROUNDTOOLS"')) { throw 'Survey background preparation launcher does not hand off to existing Background/XREF utilities.' }
 
 Write-Host 'Final Survey runtime field-test compatibility follow-up passed; August17 Project/Survey contract reapplied last.' -ForegroundColor Cyan
-Write-Host 'CE-Background Tools is exposed under Survey Production - 02 PREPARE.' -ForegroundColor Green
+Write-Host 'CE-Background Tools preparation is exposed under Survey Production - 02 PREPARE without duplicating the existing XREF manager.' -ForegroundColor Green
