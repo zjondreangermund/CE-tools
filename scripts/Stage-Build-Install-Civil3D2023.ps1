@@ -88,6 +88,7 @@ $august11FieldIntegration = Join-Path $stageRoot 'scripts\Inject-August11FieldCo
 $august11CompilerRepair = Join-Path $stageRoot 'scripts\Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1'
 $globalInterfaceSettingsRepair = Join-Path $stageRoot 'scripts\Repair-GlobalInterfaceAndStylePersistence-Civil3D2023.ps1'
 $august12PersistentUi = Join-Path $stageRoot 'scripts\Repair-August12PersistentProductionUi-Civil3D2023.ps1'
+$august17ProjectComments = Join-Path $stageRoot 'scripts\Repair-August17-ProjectProductionComments-Civil3D2023.ps1'
 $closureValidation = Join-Path $stageRoot 'scripts\Validate-August10CommentClosure.ps1'
 $august11Validation = Join-Path $stageRoot 'scripts\Validate-August11FieldCompletion.ps1'
 $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
@@ -113,6 +114,7 @@ foreach ($required in @(
     $august11CompilerRepair,
     $globalInterfaceSettingsRepair,
     $august12PersistentUi,
+    $august17ProjectComments,
     $closureValidation,
     $august11Validation,
     $sanitize,
@@ -192,6 +194,10 @@ $global:LASTEXITCODE = 0
 
 Write-Host "`nKeeping Production Centres open and isolating discipline style centres..." -ForegroundColor Cyan
 & $august12PersistentUi -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nApplying final August 17 Project Production comments..." -ForegroundColor Cyan
+& $august17ProjectComments -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nValidating previous comment closure before compilation..." -ForegroundColor Cyan
