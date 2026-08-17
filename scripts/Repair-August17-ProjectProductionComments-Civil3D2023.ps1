@@ -29,11 +29,7 @@ function ReplaceMethodBody([string]$text,[string]$signature,[string]$body) {
     return $text.Substring(0,$open) + "{`r`n" + $body.TrimEnd() + "`r`n        }" + $text.Substring($close+1)
 }
 
-# ---------------------------------------------------------------------------
-# Final one-page Project/Survey menus after every older August repair has run.
-# Project owns project data/delivery only. Survey owns location and LO/WGS84.
-# Discipline Style Presets intentionally appears before Project Style Centre.
-# ---------------------------------------------------------------------------
+# Final one-page Project/Survey menus.
 $centresPath = Required 'August14StructuredDisciplineProductionCentres.cs'
 $centres = ReadText $centresPath
 $projectBody = @'
@@ -81,10 +77,26 @@ $centres = ReplaceMethodBody $centres 'public void ProjectProduction()' $project
 $centres = ReplaceMethodBody $centres 'public void SurveyProduction()' $surveyBody
 WriteText $centresPath $centres
 
-# ---------------------------------------------------------------------------
-# Namibia popup: always initialize from the CURRENT shared Project CRS/Town.
-# This makes a changed town drive a changed LO central meridian on next open.
-# ---------------------------------------------------------------------------
+# Critical front-door repair: CE_PROJECTPRODUCTIONCENTRE and CE_SURVEYPRODUCTIONCENTRE
+# are owned by August11ProductionCentreCommands. Route those public commands to the
+# final structured one-page centres instead of opening their older hard-coded menus.
+$frontPath = Required 'August11ProductionCentreCommands.cs'
+$front = ReadText $frontPath
+$projectFrontBody = @'
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+            document.SendStringToExecute("CE_PROJECTPRODUCTIONSTRUCTURED ", true, false, true);
+'@
+$surveyFrontBody = @'
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+            document.SendStringToExecute("CE_SURVEYPRODUCTIONSTRUCTURED ", true, false, true);
+'@
+$front = ReplaceMethodBody $front 'public void ProjectProduction()' $projectFrontBody
+$front = ReplaceMethodBody $front 'public void SurveyProduction()' $surveyFrontBody
+WriteText $frontPath $front
+
+# Namibia popup always initializes from current shared Project CRS/Town.
 $namibiaPath = Required 'NamibiaCoordinateRuntimeCommands.cs'
 $namibia = ReadText $namibiaPath
 if (-not $namibia.Contains('August17ProjectRuntime.PreferredLoCentralMeridian(document)')) {
@@ -95,11 +107,7 @@ if (-not $namibia.Contains('August17ProjectRuntime.PreferredLoCentralMeridian(do
 }
 WriteText $namibiaPath $namibia
 
-# ---------------------------------------------------------------------------
-# Project Style Centre: if the active selection is only defaults, activate the
-# saved discipline preset BEFORE the first window is constructed. This removes
-# the need to click the discipline dropdown once just to load its saved values.
-# ---------------------------------------------------------------------------
+# Project Style Centre loads saved discipline preset before first window if only defaults are active.
 $stylePath = Required 'ProjectStyleCenterCommands.cs'
 $style = ReadText $stylePath
 if (-not $style.Contains('CE_PROJECTSTYLES initial discipline preset activation')) {
@@ -127,11 +135,7 @@ if (-not $style.Contains('CE_PROJECTSTYLES initial discipline preset activation'
 }
 WriteText $stylePath $style
 
-# ---------------------------------------------------------------------------
-# Drawing/Client Books: accept the explicitly selected office title-block DWG
-# when its best title block is a normal named block without attributes. Existing
-# attributed blocks remain preferred. Both book generators use this manager.
-# ---------------------------------------------------------------------------
+# Drawing/Client Books accept selected office title-block DWGs including named non-attributed blocks.
 $titlePath = Required 'ProductionDrawingRegisterCommands.cs'
 $title = ReadText $titlePath
 $oldCondition = '                    if (score > bestScore && attributes > 0)'
@@ -151,9 +155,6 @@ elseif (-not $title.Contains('bool namedTitleBlock =')) {
 $title = $title.Replace('" attributed block definition was found in the selected DWG."','" title-block definition was found in the selected DWG."')
 WriteText $titlePath $title
 
-# Client Book must call the same registered Drawing Register Title Block Source
-# as Drawing Book. Older staged source still used the internal CE table directly,
-# so repair the call-site here before the final validation guard runs.
 $clientBookPath = Required 'ClientBookCommands.cs'
 $clientBook = ReadText $clientBookPath
 if (-not $clientBook.Contains('August17ProjectRuntime.TryInsertRegisteredClientBookTitleBlock')) {
@@ -204,7 +205,7 @@ if (-not $clientBook.Contains('August17ProjectRuntime.TryInsertRegisteredClientB
 }
 WriteText $clientBookPath $clientBook
 
-# Final guards.
+# Final guards validate BOTH the final page and the public front-door commands.
 $projectStart = $centres.IndexOf('public void ProjectProduction()', [StringComparison]::Ordinal)
 $surveyStart = $centres.IndexOf('public void SurveyProduction()', [StringComparison]::Ordinal)
 if ($projectStart -lt 0 -or $surveyStart -le $projectStart) { throw 'Project/Survey one-page method ranges could not be validated.' }
@@ -214,6 +215,10 @@ if ($projectSection.IndexOf('CE_DISCIPLINESTYLEPRESETS') -gt $projectSection.Ind
 $surveySection = $centres.Substring($surveyStart,[Math]::Min(7000,$centres.Length-$surveyStart))
 if (-not $surveySection.Contains('CE_SURVEYLOCATION') -or -not $surveySection.Contains('CE_NAMIBIALO')) { throw 'Survey Production no longer owns Survey Location / Namibia LO.' }
 if ($surveySection.IndexOf('CE_DISCIPLINESTYLEPRESETS') -gt $surveySection.IndexOf('CE_PROJECTSTYLES')) { throw 'Survey Production style preset order is incorrect.' }
+
+$front = ReadText $frontPath
+if (-not $front.Contains('document.SendStringToExecute("CE_PROJECTPRODUCTIONSTRUCTURED ", true, false, true);')) { throw 'CE_PROJECTPRODUCTIONCENTRE is not routed to the final structured Project page.' }
+if (-not $front.Contains('document.SendStringToExecute("CE_SURVEYPRODUCTIONSTRUCTURED ", true, false, true);')) { throw 'CE_SURVEYPRODUCTIONCENTRE is not routed to the final structured Survey page.' }
 if (-not (ReadText $namibiaPath).Contains('August17ProjectRuntime.PreferredLoCentralMeridian(document)')) { throw 'Town/CRS -> LO central-meridian wiring is missing.' }
 if (-not (ReadText $stylePath).Contains('CE_PROJECTSTYLES initial discipline preset activation')) { throw 'Project Style Centre initial preset activation is missing.' }
 if (-not (ReadText $titlePath).Contains('bool namedTitleBlock =')) { throw 'Drawing/Client Book normal title-block support is missing.' }
@@ -222,8 +227,9 @@ if (-not $drawingBook.Contains('drawingRegister.Header("Title Block Source")') -
 $clientBook = ReadText $clientBookPath
 if (-not $clientBook.Contains('August17ProjectRuntime.TryInsertRegisteredClientBookTitleBlock')) { throw 'Client Book is not wired to Title Block Source.' }
 
-Write-Host 'Project Production now excludes Survey Location and Namibia LO/WGS84; Survey Production owns both.' -ForegroundColor Green
-Write-Host 'Discipline Style Presets now appears above Project Style Centre in Project and Survey Production.' -ForegroundColor Green
-Write-Host 'Namibia LO central meridian now initializes from the current Project Town/CRS.' -ForegroundColor Green
-Write-Host 'Project Style Centre now activates the saved discipline preset on first open when the active selection is still defaults.' -ForegroundColor Green
-Write-Host 'Drawing Book and Client Book accept the registered Title Block Source including normal named non-attributed title blocks.' -ForegroundColor Green
+Write-Host 'CE_PROJECTPRODUCTIONCENTRE now routes to the corrected one-page Project Production page.' -ForegroundColor Green
+Write-Host 'CE_SURVEYPRODUCTIONCENTRE now routes to the corrected one-page Survey Production page.' -ForegroundColor Green
+Write-Host 'Project Production excludes Survey Location and Namibia LO/WGS84; Survey Production owns both.' -ForegroundColor Green
+Write-Host 'Discipline Style Presets appears above Project Style Centre.' -ForegroundColor Green
+Write-Host 'Namibia LO central meridian initializes from current Project Town/CRS.' -ForegroundColor Green
+Write-Host 'Drawing Book and Client Book use the registered Title Block Source including named non-attributed title blocks.' -ForegroundColor Green
