@@ -23,6 +23,8 @@ namespace CETools.Civil3D
 
     internal static class CeTablePresentationManager
     {
+        private const double Tolerance = 1e-8;
+
         internal static int CenterCeTables(Document document)
         {
             if (document == null) return 0;
@@ -50,31 +52,59 @@ namespace CETools.Civil3D
                         try { table = transaction.GetObject(id, OpenMode.ForRead, false) as Table; }
                         catch { continue; }
                         if (table == null || !IsCeTable(table)) continue;
-                        table.UpgradeOpen();
 
-                        // Reapply an absolute paper-derived size on every refresh.
-                        // Never derive the next size from the current title cell,
-                        // otherwise a title factor such as 1.15 compounds forever.
+                        bool needsUpdate = NeedsPresentationUpdate(
+                            table,
+                            baseTextHeight,
+                            titleTextHeight,
+                            normalRowHeight,
+                            titleRowHeight,
+                            minimumColumnWidth);
+                        if (!needsUpdate) continue;
+
+                        table.UpgradeOpen();
                         for (int row = 0; row < table.Rows.Count; row++)
                         {
-                            try { table.Rows[row].Height = row == 0 ? titleRowHeight : normalRowHeight; }
+                            double desiredRowHeight = row == 0 ? titleRowHeight : normalRowHeight;
+                            try
+                            {
+                                if (!NearlyEqual(table.Rows[row].Height, desiredRowHeight))
+                                    table.Rows[row].Height = desiredRowHeight;
+                            }
                             catch { }
+
                             for (int column = 0; column < table.Columns.Count; column++)
                             {
-                                table.Cells[row, column].Alignment = CellAlignment.MiddleCenter;
-                                try { table.Cells[row, column].TextHeight = row == 0 ? titleTextHeight : baseTextHeight; }
+                                try
+                                {
+                                    if (table.Cells[row, column].Alignment != CellAlignment.MiddleCenter)
+                                        table.Cells[row, column].Alignment = CellAlignment.MiddleCenter;
+                                }
+                                catch { }
+
+                                double desiredTextHeight = row == 0 ? titleTextHeight : baseTextHeight;
+                                try
+                                {
+                                    if (!NearlyEqual(table.Cells[row, column].TextHeight, desiredTextHeight))
+                                        table.Cells[row, column].TextHeight = desiredTextHeight;
+                                }
                                 catch { }
                             }
                         }
+
                         for (int column = 0; column < table.Columns.Count; column++)
                         {
                             try
                             {
-                                if (table.Columns[column].Width < minimumColumnWidth)
+                                if (table.Columns[column].Width + Tolerance < minimumColumnWidth)
                                     table.Columns[column].Width = minimumColumnWidth;
                             }
                             catch { }
                         }
+
+                        // Only regenerate graphics when a table actually needed a
+                        // presentation change. This prevents idle linked refreshes
+                        // from repeatedly flashing every CE table on screen.
                         try { PaperAnnotationScale.SetAnnotative(table); } catch { }
                         try { table.GenerateLayout(); } catch { }
                         try { table.RecordGraphicsModified(true); } catch { }
@@ -84,6 +114,57 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
             return changed;
+        }
+
+        private static bool NeedsPresentationUpdate(
+            Table table,
+            double baseTextHeight,
+            double titleTextHeight,
+            double normalRowHeight,
+            double titleRowHeight,
+            double minimumColumnWidth)
+        {
+            if (table == null) return false;
+            for (int row = 0; row < table.Rows.Count; row++)
+            {
+                double desiredRowHeight = row == 0 ? titleRowHeight : normalRowHeight;
+                try
+                {
+                    if (!NearlyEqual(table.Rows[row].Height, desiredRowHeight)) return true;
+                }
+                catch { return true; }
+
+                for (int column = 0; column < table.Columns.Count; column++)
+                {
+                    try
+                    {
+                        if (table.Cells[row, column].Alignment != CellAlignment.MiddleCenter) return true;
+                    }
+                    catch { return true; }
+
+                    double desiredTextHeight = row == 0 ? titleTextHeight : baseTextHeight;
+                    try
+                    {
+                        if (!NearlyEqual(table.Cells[row, column].TextHeight, desiredTextHeight)) return true;
+                    }
+                    catch { return true; }
+                }
+            }
+
+            for (int column = 0; column < table.Columns.Count; column++)
+            {
+                try
+                {
+                    if (table.Columns[column].Width + Tolerance < minimumColumnWidth) return true;
+                }
+                catch { return true; }
+            }
+            return false;
+        }
+
+        private static bool NearlyEqual(double left, double right)
+        {
+            return Math.Abs(left - right) <= Math.Max(Tolerance, Math.Abs(right) * 1e-8);
         }
 
         private static double ResolveStableTableTextHeight(Database database)
