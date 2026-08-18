@@ -68,10 +68,31 @@ namespace CETools.Civil3D
 
         private static void OnCommandEnded(object sender, CommandEventArgs args)
         {
-            string name = ReadCommandName(args);
+            string name = NormalizeCommandName(ReadCommandName(args));
             if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
+
+            // A refresh/maintenance command has already brought linked outputs up to
+            // date. Re-queueing another idle refresh immediately afterwards creates
+            // a second presentation pass, visible table flicker and unnecessary
+            // undo/transaction noise. Creation/edit commands still queue normally.
+            if (IsRefreshMaintenanceCommand(name)) return;
+
             UniversalDynamicRefreshManager.Queue();
             PlatformDynamicRefreshManager.Queue();
+        }
+
+        private static bool IsRefreshMaintenanceCommand(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return false;
+            return name.IndexOf("REFRESH", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                string.Equals(name, "CE_COGOPOINTSYNC", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_COGOOVERLAPFIX", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_TABLECENTERALL", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeCommandName(string value)
+        {
+            return (value ?? string.Empty).Trim().TrimStart('.', '_').ToUpperInvariant();
         }
 
         private static string ReadCommandName(CommandEventArgs args)
