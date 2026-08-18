@@ -1,0 +1,300 @@
+name: Apply August 18 Survey Grid Refresh Fix
+
+on:
+  push:
+    branches:
+      - fix/aug18-survey-grid-refresh-stability
+    paths:
+      - '.github/workflows/apply-aug18-survey-grid-refresh-fix.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  apply-fix:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out fix branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/aug18-survey-grid-refresh-stability
+
+      - name: Apply focused Survey stability patch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $root = (Resolve-Path '.').ProviderPath
+          $src = Join-Path $root 'src\CE.Tools.Civil3D'
+          $utf8 = New-Object System.Text.UTF8Encoding($false)
+
+          function ReadText([string]$name) {
+              $path = Join-Path $src $name
+              if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "Missing source: $name" }
+              return [System.IO.File]::ReadAllText($path)
+          }
+          function WriteText([string]$name,[string]$text) {
+              [System.IO.File]::WriteAllText((Join-Path $src $name),$text,$utf8)
+          }
+          function ReplaceRequired([string]$text,[string]$old,[string]$new,[string]$label) {
+              if ($text.Contains($new)) { return $text }
+              if (-not $text.Contains($old)) { throw "Patch anchor missing: $label" }
+              return $text.Replace($old,$new)
+          }
+          function ReplaceMethod([string]$text,[string]$marker,[string]$replacement,[string]$label) {
+              $start = $text.IndexOf($marker,[StringComparison]::Ordinal)
+              if ($start -lt 0) { throw "Method marker missing: $label" }
+              $open = $text.IndexOf('{',$start)
+              if ($open -lt 0) { throw "Opening brace missing: $label" }
+              $depth = 0
+              $close = -1
+              for ($i=$open; $i -lt $text.Length; $i++) {
+                  if ($text[$i] -eq '{') { $depth++ }
+                  elseif ($text[$i] -eq '}') {
+                      $depth--
+                      if ($depth -eq 0) { $close = $i; break }
+                  }
+              }
+              if ($close -lt 0) { throw "Closing brace missing: $label" }
+              return $text.Substring(0,$start) + $replacement + $text.Substring($close+1)
+          }
+
+          # 1. CE_GRIDSETTINGOUT is only a front door. The dedicated August 18
+          # engine owns multiple closed-polylines, Perimeter / Full grid, linked
+          # COGO points and linked table creation/refresh.
+          $finalName = 'FinalAllCommentsCompletionCommands.cs'
+          $final = ReadText $finalName
+          $gridMarker = '        [CommandMethod("CE_TOOLS", "CE_GRIDSETTINGOUT", CommandFlags.Modal | CommandFlags.Redraw)]'
+          $gridReplacement = @'
+                  [CommandMethod("CE_TOOLS", "CE_GRIDSETTINGOUT", CommandFlags.Modal | CommandFlags.Redraw)]
+                  public void CreateGrid()
+                  {
+                      Document document = AcApplication.DocumentManager.MdiActiveDocument;
+                      if (document == null) return;
+                      document.Editor.WriteMessage(
+                          "\nCE_GRIDSETTINGOUT: select one or more closed polylines, then choose Perimeter or Full grid.");
+                      document.SendStringToExecute("CE_GRIDSETTINGOUTDYNAMIC ", true, false, true);
+                  }
+          '@
+          $gridReplacement = ($gridReplacement -replace '(?m)^ {10}','')
+          $final = ReplaceMethod $final $gridMarker $gridReplacement 'CE_GRIDSETTINGOUT launcher'
+          WriteText $finalName $final
+
+          # 2. Universal refresh becomes one undo-suppressed dependency refresh.
+          # Do not use it as a presentation/overlap solver: those commands remain
+          # available explicitly when the user actually asks to move labels.
+          $universalName = 'UniversalDynamicRefreshCommands.cs'
+          $universal = ReadText $universalName
+          $universal = ReplaceRequired $universal `
+              '            return RefreshNow(document, false);' `
+              '            return RefreshNow(document, true);' `
+              'manual refresh undo suppression'
+
+          foreach ($call in @(
+              'CogoPointProjectStyleCommands.ApplySelectedStyles(document, true);',
+              'CogoPointProjectStyleCommands.ApplySelectedStyles(document, false);')) {
+              $universal = $universal.Replace($call,'/* COGO label/style movement intentionally excluded from ordinary linked refresh */')
+          }
+          foreach ($call in @(
+              'RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);',
+              'RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, false);')) {
+              $universal = $universal.Replace($call,'/* annotation overlap movement intentionally excluded from ordinary linked refresh */')
+          }
+          $universal = $universal.Replace(
+              'CeTablePresentationManager.CenterCeTables(document);',
+              '/* CE table presentation is not regenerated during ordinary linked refresh */')
+
+          if (-not $universal.Contains('August18DynamicGridSettingOutCommands.RefreshAll(document)')) {
+              $coordOld = "                try { SurveyCoordinateWorkflowCommands.RefreshAll(document); }`r`n                catch { result.Warnings++; }"
+              if (-not $universal.Contains($coordOld)) {
+                  $coordOld = "                try { SurveyCoordinateWorkflowCommands.RefreshAll(document); }`n                catch { result.Warnings++; }"
+              }
+              $coordNew = $coordOld + [Environment]::NewLine +
+                  '                try { result.VertexTables += August18DynamicGridSettingOutCommands.RefreshAll(document); }' + [Environment]::NewLine +
+                  '                catch { result.Warnings++; }' + [Environment]::NewLine +
+                  '                try { SurfaceComparisonLinkStore.RefreshAll(document); }' + [Environment]::NewLine +
+                  '                catch { result.Warnings++; }' + [Environment]::NewLine +
+                  '                try { MultiSurfaceComparisonTableStore.RefreshAll(document); }' + [Environment]::NewLine +
+                  '                catch { result.Warnings++; }' + [Environment]::NewLine +
+                  '                try { LinkedSurfaceReportTableStore.RefreshAll(document); }' + [Environment]::NewLine +
+                  '                catch { result.Warnings++; }'
+              $universal = ReplaceRequired $universal $coordOld $coordNew 'Grid/surface linked refresh ownership'
+          }
+
+          if (-not $universal.Contains('IsSelfRefreshingSurveyCommand(string command)')) {
+              $normalizeMarker = '        private static string NormalizeCommand(string value)'
+              $helper = @'
+                  private static bool IsSelfRefreshingSurveyCommand(string command)
+                  {
+                      return string.Equals(command, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(command, "CE_SITEGRIDREFRESH", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(command, "CE_SITEGRIDREMOVE", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(command, "CE_GRIDSETTINGOUT", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(command, "CE_GRIDSETTINGOUTDYNAMIC", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(command, "CE_GRIDSETTINGOUTREFRESH", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(command, "CE_VERTEXSETTINGOUT", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(command, "CE_VERTEXSETTINGOUTREFRESH", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(command, "CE_SURVEYREFRESHSAFE", StringComparison.OrdinalIgnoreCase) ||
+                          string.Equals(command, "CE_DYNAMICREFRESHALL", StringComparison.OrdinalIgnoreCase);
+                  }
+
+          '@
+              $helper = ($helper -replace '(?m)^ {10}','')
+              $universal = ReplaceRequired $universal $normalizeMarker ($helper + $normalizeMarker) 'self-refreshing Survey predicate'
+          }
+
+          $queueOld = @'
+                      if (command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
+                          command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase) ||
+                          command.IndexOf("GRIP", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          command.IndexOf("MOVE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          command.IndexOf("STRETCH", StringComparison.OrdinalIgnoreCase) >= 0)
+                          Queue();
+          '@
+          $queueOld = ($queueOld -replace '(?m)^ {10}','')
+          $queueNew = @'
+                      if (IsSelfRefreshingSurveyCommand(command))
+                      {
+                          _pending = false;
+                          return;
+                      }
+                      if (command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
+                          command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase) ||
+                          command.IndexOf("GRIP", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          command.IndexOf("MOVE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          command.IndexOf("STRETCH", StringComparison.OrdinalIgnoreCase) >= 0)
+                          Queue();
+          '@
+          $queueNew = ($queueNew -replace '(?m)^ {10}','')
+          if (-not $universal.Contains('if (IsSelfRefreshingSurveyCommand(command))')) {
+              $universal = ReplaceRequired $universal $queueOld $queueNew 'duplicate self-refresh queue exclusion'
+          }
+
+          if (-not $universal.Contains('IsRefreshDependency(DBObject value)')) {
+              $changedOld = @'
+                      DBObject value = e.DBObject;
+                      if (value is Entity || value is Xrecord || value is DBDictionary ||
+                          value is CogoPoint || value is Pipe || value is Structure ||
+                          value is Autodesk.Civil.DatabaseServices.Network)
+                          Queue();
+          '@
+              $changedOld = ($changedOld -replace '(?m)^ {10}','')
+              $changedNew = @'
+                      DBObject value = e.DBObject;
+                      if (IsRefreshDependency(value)) Queue();
+          '@
+              $changedNew = ($changedNew -replace '(?m)^ {10}','')
+              $universal = ReplaceRequired $universal $changedOld $changedNew 'dependency-only ObjectModified queue'
+
+              $changedMarker = '        private static void OnObjectChanged(object sender, ObjectEventArgs e)'
+              $dependencyHelper = @'
+                  private static bool IsRefreshDependency(DBObject value)
+                  {
+                      if (value == null || value.IsErased) return false;
+                      if (value is Polyline || value is Polyline2d || value is Polyline3d ||
+                          value is Line || value is Arc || value is CogoPoint ||
+                          value is Pipe || value is Structure ||
+                          value is Autodesk.Civil.DatabaseServices.Network)
+                          return true;
+
+                      string name = value.GetType().Name ?? string.Empty;
+                      return name.IndexOf("FeatureLine", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          name.IndexOf("Surface", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          name.IndexOf("Alignment", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          name.IndexOf("Profile", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          name.IndexOf("Corridor", StringComparison.OrdinalIgnoreCase) >= 0;
+                  }
+
+          '@
+              $dependencyHelper = ($dependencyHelper -replace '(?m)^ {10}','')
+              $universal = ReplaceRequired $universal $changedMarker ($dependencyHelper + $changedMarker) 'refresh dependency filter helper'
+          }
+          WriteText $universalName $universal
+
+          # 3. Survey Linked/Annotative Refresh must be one pass only. No label
+          # restore, no annotation-scale write, no table presentation pass after it.
+          $surveyName = 'August14SurveyFieldReviewCommands.cs'
+          $survey = ReadText $surveyName
+          $surveyMarker = '        [CommandMethod("CE_TOOLS", "CE_SURVEYREFRESHSAFE", CommandFlags.Modal | CommandFlags.Redraw)]'
+          $surveyReplacement = @'
+                  [CommandMethod("CE_TOOLS", "CE_SURVEYREFRESHSAFE", CommandFlags.Modal | CommandFlags.Redraw)]
+                  public void SurveyRefreshSafe()
+                  {
+                      Document document = Active();
+                      if (document == null) return;
+                      try
+                      {
+                          UniversalRefreshResult result = UniversalDynamicRefreshManager.RefreshNow(document);
+                          document.Editor.Regen();
+                          document.Editor.WriteMessage(
+                              "\nCE_SURVEYREFRESHSAFE complete. One linked refresh was applied without moving COGO label offsets. Vertex/grid tables={0}; warnings={1}.",
+                              result.VertexTables,
+                              result.Warnings);
+                      }
+                      catch (System.Exception exception)
+                      {
+                          document.Editor.WriteMessage("\nCE_SURVEYREFRESHSAFE stopped. {0}", exception.Message);
+                      }
+                  }
+          '@
+          $surveyReplacement = ($surveyReplacement -replace '(?m)^ {10}','')
+          $survey = ReplaceMethod $survey $surveyMarker $surveyReplacement 'CE_SURVEYREFRESHSAFE one-pass refresh'
+          WriteText $surveyName $survey
+
+          # Focused guards before committing.
+          $finalCheck = ReadText $finalName
+          if (-not $finalCheck.Contains('document.SendStringToExecute("CE_GRIDSETTINGOUTDYNAMIC ", true, false, true);')) {
+              throw 'Grid Setting-Out still does not route to the dedicated dynamic engine.'
+          }
+          $universalCheck = ReadText $universalName
+          foreach ($forbidden in @(
+              'return RefreshNow(document, false);',
+              'CogoPointProjectStyleCommands.ApplySelectedStyles(document, true);',
+              'CogoPointProjectStyleCommands.ApplySelectedStyles(document, false);',
+              'RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);',
+              'RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, false);',
+              'CeTablePresentationManager.CenterCeTables(document);',
+              'value is Entity || value is Xrecord || value is DBDictionary')) {
+              if ($universalCheck.Contains($forbidden)) { throw "Refresh stability guard failed: $forbidden" }
+          }
+          foreach ($required in @(
+              'return RefreshNow(document, true);',
+              'August18DynamicGridSettingOutCommands.RefreshAll(document)',
+              'IsSelfRefreshingSurveyCommand(string command)',
+              'IsRefreshDependency(DBObject value)')) {
+              if (-not $universalCheck.Contains($required)) { throw "Missing refresh stability marker: $required" }
+          }
+          $surveyCheck = ReadText $surveyName
+          $surveyStart = $surveyCheck.IndexOf($surveyMarker,[StringComparison]::Ordinal)
+          $surveySlice = $surveyCheck.Substring($surveyStart,[Math]::Min(1800,$surveyCheck.Length-$surveyStart))
+          foreach ($forbidden in @('RestoreCogoLabels(document','AnnotationScaleSyncManager.ApplyCurrentScale(document)','CeTablePresentationManager.CenterCeTables(document)','DynamicCoordinateLinkStore.Refresh(document)')) {
+              if ($surveySlice.Contains($forbidden)) { throw "Survey refresh still contains duplicate/moving operation: $forbidden" }
+          }
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
+
+      - name: Validate unique command registry
+        shell: pwsh
+        run: python scripts/Validate-CommandRegistry.py
+
+      - name: Commit transformed source
+        shell: pwsh
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add src/CE.Tools.Civil3D/FinalAllCommentsCompletionCommands.cs src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs src/CE.Tools.Civil3D/August14SurveyFieldReviewCommands.cs
+          if (git diff --cached --quiet) {
+              Write-Host 'No source changes required.'
+              exit 0
+          }
+          git commit -m "Fix Survey grid and linked refresh stability"
+          git push origin HEAD:fix/aug18-survey-grid-refresh-stability
