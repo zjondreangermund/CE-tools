@@ -165,6 +165,23 @@ if errorlevel 1 (
   exit /b 1
 )
 
+if not exist "%CD%\scripts\Repair-August18-SurveyDynamicsHotfix2-Civil3D2023.ps1" (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The August 18 Survey/Vertex dynamic-link hotfix is missing.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+findstr /C:"Repair-August18-SurveyDynamicsHotfix2-Civil3D2023.ps1" "%CD%\scripts\Stage-Build-Install-Civil3D2023.ps1" >nul
+if errorlevel 1 (
+  echo ERROR: THIS IS AN OLD CE TOOLS SOURCE COPY.
+  echo The August 18 Survey/Vertex dynamic-link hotfix is not chained into the final Civil 3D 2023 staging build.
+  echo Download/extract the latest GitHub main before building.
+  pause
+  exit /b 1
+)
+echo Latest August 18 Survey/Vertex dynamic-link hotfix: PASSED
+
 if exist "%CD%\.git" (
   for /f "delims=" %%i in ('git -C "%CD%" rev-parse HEAD 2^>nul') do set "CE_SOURCE_COMMIT=%%i"
   if defined CE_SOURCE_COMMIT echo Source commit: %CE_SOURCE_COMMIT%
