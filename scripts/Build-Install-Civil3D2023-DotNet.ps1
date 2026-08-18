@@ -15,6 +15,8 @@ $verifiedInstaller = Join-Path $repo 'scripts\Install-VerifiedCivil3D2023Bundle.
 $packager = Join-Path $repo 'scripts\New-CE-ToolsReleasePackage.ps1'
 $surveyCommentRepair = Join-Path $repo 'scripts\Repair-August17-SurveyProductionComments-Civil3D2023.ps1'
 $august18SurveyVertexRepair = Join-Path $repo 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+$universalRefreshSource = Join-Path $repo 'src\CE.Tools.Civil3D\UniversalDynamicRefreshCommands.cs'
+$finalGridSource = Join-Path $repo 'src\CE.Tools.Civil3D\FinalAllCommentsCompletionCommands.cs'
 $autoCadRoot = 'C:\Program Files\Autodesk\AutoCAD 2023'
 $civil3DRoot = if (Test-Path (Join-Path $autoCadRoot 'AeccDbMgd.dll')) { $autoCadRoot } else { Join-Path $autoCadRoot 'C3D' }
 $aecRoot = if (Test-Path (Join-Path $civil3DRoot 'AecBaseMgd.dll')) { $civil3DRoot } else { $autoCadRoot }
@@ -57,13 +59,40 @@ if ($missing) {
     throw "Civil 3D 2023 SDK files are missing:`n$($missing -join "`n")"
 }
 
-Write-Host "Applying final 17-08-2026 Survey Production order/grid comments immediately before compilation..." -ForegroundColor Cyan
-& $surveyCommentRepair -RepoRoot $repo
-$global:LASTEXITCODE = 0
+# Stage-Build-Install-Civil3D2023.ps1 already applies the historical Survey
+# repairs and then the final August 18 stability pass. Replaying the older
+# August 17/18 transforms here would undo or collide with that final state.
+# A direct standalone build from raw repository source still receives the
+# historical precompile repairs for backward compatibility.
+$finalSurveyStateDetected = $false
+try {
+    if ((Test-Path -LiteralPath $universalRefreshSource -PathType Leaf) -and
+        (Test-Path -LiteralPath $finalGridSource -PathType Leaf)) {
+        $universalText = [System.IO.File]::ReadAllText($universalRefreshSource)
+        $gridText = [System.IO.File]::ReadAllText($finalGridSource)
+        $finalSurveyStateDetected =
+            $universalText.Contains('RefreshBackground(Document document)') -and
+            $universalText.Contains('DelaySeconds { get; set; } = 0.35;') -and
+            $universalText.Contains('IsSelfRefreshingSurveyCommand(string command)') -and
+            $gridText.Contains('CE_GRIDSETTINGOUTDYNAMIC')
+    }
+}
+catch {
+    $finalSurveyStateDetected = $false
+}
 
-Write-Host "Applying 18-08-2026 Google Earth boundary and automatic vertex-follow repairs..." -ForegroundColor Cyan
-& $august18SurveyVertexRepair -RepoRoot $repo
-$global:LASTEXITCODE = 0
+if ($finalSurveyStateDetected) {
+    Write-Host 'Final staged Survey/Grid stability markers detected; skipping legacy August 17/18 precompile source repairs.' -ForegroundColor Green
+}
+else {
+    Write-Host "Applying final 17-08-2026 Survey Production order/grid comments immediately before compilation..." -ForegroundColor Cyan
+    & $surveyCommentRepair -RepoRoot $repo
+    $global:LASTEXITCODE = 0
+
+    Write-Host "Applying 18-08-2026 Google Earth boundary and automatic vertex-follow repairs..." -ForegroundColor Cyan
+    & $august18SurveyVertexRepair -RepoRoot $repo
+    $global:LASTEXITCODE = 0
+}
 
 Push-Location $repo
 try {
