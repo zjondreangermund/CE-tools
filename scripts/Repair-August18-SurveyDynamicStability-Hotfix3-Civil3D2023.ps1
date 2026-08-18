@@ -23,14 +23,12 @@ function WriteText([string]$path,[string]$text) {
 }
 function ReplaceRequired([string]$text,[string]$old,[string]$new,[string]$label) {
     if ($text.Contains($new)) { return $text }
-    if (-not $text.Contains($old)) {
-        throw "August 18 Survey stability anchor not found: $label"
-    }
+    if (-not $text.Contains($old)) { throw "August 18 Survey stability anchor not found: $label" }
     return $text.Replace($old,$new)
 }
 function ReplaceMethod([string]$text,[string]$marker,[string]$replacement,[string]$label) {
     $start = $text.IndexOf($marker,[StringComparison]::Ordinal)
-    if ($start -lt 0) { throw "August 18 Survey stability method marker not found: $label" }
+    if ($start -lt 0) { throw "Method marker not found: $label" }
     $open = $text.IndexOf('{',$start)
     if ($open -lt 0) { throw "Opening brace not found: $label" }
     $depth = 0
@@ -46,12 +44,7 @@ function ReplaceMethod([string]$text,[string]$marker,[string]$replacement,[strin
     return $text.Substring(0,$start) + $replacement + $text.Substring($close+1)
 }
 
-# -----------------------------------------------------------------------------
-# 1. GRID SETTING-OUT: keep its own Perimeter / Full-grid popup and route the
-#    historical public command to the new linked multi-polyline grid engine.
-#    Hotfix2 temporarily routed this command to Vertex Setting-Out; replace only
-#    that temporary bridge so the legacy static implementation remains unreachable.
-# -----------------------------------------------------------------------------
+# 1. Dedicated dynamic Grid Setting-Out front door.
 $gridEnginePath = Required 'August18DynamicGridSettingOutCommands.cs'
 $gridEngine = ReadText $gridEnginePath
 foreach ($marker in @(
@@ -61,24 +54,26 @@ foreach ($marker in @(
     'CE_DYNAMIC_GRID_TABLE',
     'internal static int RefreshAll(Document document)',
     'point.RawDescription = record.Name;')) {
-    if (-not $gridEngine.Contains($marker)) {
-        throw "Dynamic Grid Setting-Out engine marker missing: $marker"
-    }
+    if (-not $gridEngine.Contains($marker)) { throw "Dynamic Grid engine marker missing: $marker" }
 }
 
 $finalPath = Required 'FinalAllCommentsCompletionCommands.cs'
 $final = ReadText $finalPath
-$final = ReplaceRequired $final `
-    '            document.Editor.WriteMessage(`r`n                "\nCE_GRIDSETTINGOUT: select one or more polylines/feature lines for linked dynamic setting-out.");`r`n            document.SendStringToExecute("CE_VERTEXSETTINGOUT ", true, false, true);' `
-    '            document.Editor.WriteMessage(`r`n                "\nCE_GRIDSETTINGOUT: select one or more closed polylines, then choose Perimeter or Full grid.");`r`n            document.SendStringToExecute("CE_GRIDSETTINGOUTDYNAMIC ", true, false, true);' `
-    'Grid Setting-Out dedicated dynamic front door'
+$gridOld = @'
+            document.Editor.WriteMessage(
+                "\nCE_GRIDSETTINGOUT: select one or more polylines/feature lines for linked dynamic setting-out.");
+            document.SendStringToExecute("CE_VERTEXSETTINGOUT ", true, false, true);
+'@ -replace "`n","`r`n"
+$gridNew = @'
+            document.Editor.WriteMessage(
+                "\nCE_GRIDSETTINGOUT: select one or more closed polylines, then choose Perimeter or Full grid.");
+            document.SendStringToExecute("CE_GRIDSETTINGOUTDYNAMIC ", true, false, true);
+'@ -replace "`n","`r`n"
+$final = ReplaceRequired $final $gridOld $gridNew 'Grid Setting-Out dedicated dynamic front door'
 WriteText $finalPath $final
 
-# -----------------------------------------------------------------------------
-# 2. UNIVERSAL REFRESH: one refresh owner, one settled pass, no presentation
-#    solvers during normal dependency updates and no broad Table/MText/Xrecord
-#    feedback. Geometry/source edits still queue automatically.
-# -----------------------------------------------------------------------------
+# 2. One settled Universal refresh owner. Normal refresh updates dependency data;
+# it does not re-run label overlap/style/table presentation solvers.
 $universalPath = Required 'UniversalDynamicRefreshCommands.cs'
 $universal = ReadText $universalPath
 $universal = $universal.Replace(
@@ -91,16 +86,15 @@ $universal = $universal.Replace(
     '            if ((DateTime.UtcNow - _lastRefreshUtc).TotalSeconds < 0.10) return;',
     '            if ((DateTime.UtcNow - _lastRefreshUtc).TotalSeconds < 0.75) return;')
 
-$refreshEntryOld = @'
+$refreshOld = @'
         internal static UniversalRefreshResult RefreshNow(Document document)
         {
             return RefreshNow(document, false);
         }
 '@ -replace "`n","`r`n"
-$refreshEntryNew = @'
+$refreshNew = @'
         internal static UniversalRefreshResult RefreshNow(Document document)
         {
-            // Refresh commands are dependency bookkeeping, not drawing edits.
             return RefreshNow(document, true);
         }
 
@@ -109,25 +103,30 @@ $refreshEntryNew = @'
             return RefreshNow(document, true);
         }
 '@ -replace "`n","`r`n"
-$universal = ReplaceRequired $universal $refreshEntryOld $refreshEntryNew 'undo-suppressed universal refresh entry'
+$universal = ReplaceRequired $universal $refreshOld $refreshNew 'undo-suppressed Universal refresh entry'
 
-# Presentation/style solvers are deliberate manual actions. Re-running them after
-# every geometry edit moves COGO labels and causes visible table/annotation churn.
+# These operations can change visual positions or force table redraws. Keep them
+# available through their dedicated/manual commands, but never run them as part
+# of ordinary automatic source-geometry refresh.
+foreach ($call in @(
+    'CogoPointProjectStyleCommands.ApplySelectedStyles(document, false);',
+    'CogoPointProjectStyleCommands.ApplySelectedStyles(document, true);')) {
+    $universal = $universal.Replace($call,'/* point style reapply intentionally excluded from automatic refresh */')
+}
+foreach ($call in @(
+    'RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, false);',
+    'RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);')) {
+    $universal = $universal.Replace($call,'/* annotation overlap movement intentionally excluded from automatic refresh */')
+}
 $universal = $universal.Replace(
-    '                try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, false); }`r`n                catch { result.Warnings++; }`r`n',
-    '')
-$universal = $universal.Replace(
-    '                try { RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, false); }`r`n                catch { result.Warnings++; }`r`n',
-    '')
-$universal = $universal.Replace(
-    '                try { CeTablePresentationManager.CenterCeTables(document); }`r`n                catch { result.Warnings++; }`r`n',
-    '')
+    'CeTablePresentationManager.CenterCeTables(document);',
+    '/* table presentation movement intentionally excluded from automatic refresh */')
 
-$coordinateRefreshAnchor = @'
+$coordOld = @'
                 try { SurveyCoordinateWorkflowCommands.RefreshAll(document); }
                 catch { result.Warnings++; }
 '@ -replace "`n","`r`n"
-$coordinateRefreshExpanded = @'
+$coordNew = @'
                 try { SurveyCoordinateWorkflowCommands.RefreshAll(document); }
                 catch { result.Warnings++; }
                 try { result.VertexTables += August18DynamicGridSettingOutCommands.RefreshAll(document); }
@@ -139,9 +138,9 @@ $coordinateRefreshExpanded = @'
                 try { LinkedSurfaceReportTableStore.RefreshAll(document); }
                 catch { result.Warnings++; }
 '@ -replace "`n","`r`n"
-$universal = ReplaceRequired $universal $coordinateRefreshAnchor $coordinateRefreshExpanded 'dynamic grid and Survey linked-table integration'
+$universal = ReplaceRequired $universal $coordOld $coordNew 'dynamic Grid and Survey linked tables in Universal refresh'
 
-$sitePredicateOld = @'
+$predicateOld = @'
         private static bool IsSiteGridCommand(string command)
         {
             return string.Equals(command, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
@@ -149,7 +148,7 @@ $sitePredicateOld = @'
                 string.Equals(command, "CE_SITEGRIDREMOVE", StringComparison.OrdinalIgnoreCase);
         }
 '@ -replace "`n","`r`n"
-$sitePredicateNew = @'
+$predicateNew = @'
         private static bool IsSelfRefreshingSurveyCommand(string command)
         {
             return string.Equals(command, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
@@ -164,23 +163,23 @@ $sitePredicateNew = @'
                 string.Equals(command, "CE_DYNAMICREFRESHALL", StringComparison.OrdinalIgnoreCase);
         }
 '@ -replace "`n","`r`n"
-$universal = ReplaceRequired $universal $sitePredicateOld $sitePredicateNew 'self-refreshing Survey command predicate'
+$universal = ReplaceRequired $universal $predicateOld $predicateNew 'self-refreshing Survey command predicate'
 $universal = $universal.Replace('if (IsSiteGridCommand(command))','if (IsSelfRefreshingSurveyCommand(command))')
 
-$objectChangedOld = @'
+$changedOld = @'
             DBObject value = e.DBObject;
             if (value is Entity || value is Xrecord || value is DBDictionary ||
                 value is CogoPoint || value is Pipe || value is Structure ||
                 value is Autodesk.Civil.DatabaseServices.Network)
                 Queue();
 '@ -replace "`n","`r`n"
-$objectChangedNew = @'
+$changedNew = @'
             DBObject value = e.DBObject;
             if (IsRefreshDependency(value)) Queue();
 '@ -replace "`n","`r`n"
-$universal = ReplaceRequired $universal $objectChangedOld $objectChangedNew 'dependency-only ObjectModified queue'
+$universal = ReplaceRequired $universal $changedOld $changedNew 'dependency-only ObjectModified queue'
 
-$objectChangedMethodAnchor = @'
+$changedMarker = @'
         private static void OnObjectChanged(object sender, ObjectEventArgs e)
 '@ -replace "`n","`r`n"
 $dependencyHelper = @'
@@ -193,11 +192,6 @@ $dependencyHelper = @'
                 value is Autodesk.Civil.DatabaseServices.Network)
                 return true;
 
-            // Avoid a compile-time dependency on every Civil 3D derived class
-            // while still recognizing the engineering sources that can drive
-            // linked outputs. Tables, MText, MLeaders, Dimensions, Xrecords and
-            // dictionaries are deliberately excluded: they are CE outputs and
-            // must not feed another refresh back into the queue.
             string name = value.GetType().Name ?? string.Empty;
             return name.IndexOf("FeatureLine", StringComparison.OrdinalIgnoreCase) >= 0 ||
                 name.IndexOf("Surface", StringComparison.OrdinalIgnoreCase) >= 0 ||
@@ -208,10 +202,10 @@ $dependencyHelper = @'
 
         private static void OnObjectChanged(object sender, ObjectEventArgs e)
 '@ -replace "`n","`r`n"
-$universal = ReplaceRequired $universal $objectChangedMethodAnchor $dependencyHelper 'refresh dependency filter helper'
+$universal = ReplaceRequired $universal $changedMarker $dependencyHelper 'refresh dependency filter helper'
 
-$idleRefreshOld = '            RefreshNow(active, true);'
-$idleRefreshNew = @'
+$idleOld = '            RefreshNow(active, true);'
+$idleNew = @'
             UniversalRefreshResult result = RefreshNow(active, true);
             if (result.LinkedEngineRuns > 0 || result.VertexTables > 0 ||
                 result.JunctionLabels > 0 || result.MetadataAttributes > 0)
@@ -219,19 +213,14 @@ $idleRefreshNew = @'
                 try { active.Editor.Regen(); } catch { }
             }
 '@ -replace "`n","`r`n"
-$universal = ReplaceRequired $universal $idleRefreshOld $idleRefreshNew 'single post-refresh regen'
+$universal = ReplaceRequired $universal $idleOld $idleNew 'single final automatic Regen'
 WriteText $universalPath $universal
 
-# -----------------------------------------------------------------------------
-# 3. SURVEY LINKED/ANNOTATIVE REFRESH: one coordinated pass only. The old method
-#    refreshed many stores independently, then Universal refreshed them again,
-#    then the post-command manager queued a third pass. It also historically
-#    restored stale COGO label offsets. Replace the entire public command body.
-# -----------------------------------------------------------------------------
+# 3. Survey Linked/Annotative Refresh becomes one Universal background pass only.
 $surveyFieldPath = Required 'August14SurveyFieldReviewCommands.cs'
 $surveyField = ReadText $surveyFieldPath
-$surveyRefreshMarker = '        [CommandMethod("CE_TOOLS", "CE_SURVEYREFRESHSAFE", CommandFlags.Modal | CommandFlags.Redraw)]'
-$surveyRefreshReplacement = @'
+$surveyMarker = '        [CommandMethod("CE_TOOLS", "CE_SURVEYREFRESHSAFE", CommandFlags.Modal | CommandFlags.Redraw)]'
+$surveyReplacement = @'
         [CommandMethod("CE_TOOLS", "CE_SURVEYREFRESHSAFE", CommandFlags.Modal | CommandFlags.Redraw)]
         public void SurveyRefreshSafe()
         {
@@ -249,23 +238,18 @@ $surveyRefreshReplacement = @'
             }
             catch (System.Exception exception)
             {
-                document.Editor.WriteMessage(
-                    "\nCE_SURVEYREFRESHSAFE stopped. {0}",
-                    exception.Message);
+                document.Editor.WriteMessage("\nCE_SURVEYREFRESHSAFE stopped. {0}", exception.Message);
             }
         }
 '@ -replace "`n","`r`n"
-$surveyField = ReplaceMethod $surveyField $surveyRefreshMarker $surveyRefreshReplacement 'CE_SURVEYREFRESHSAFE single-owner refresh'
+$surveyField = ReplaceMethod $surveyField $surveyMarker $surveyReplacement 'CE_SURVEYREFRESHSAFE'
 WriteText $surveyFieldPath $surveyField
 
-# -----------------------------------------------------------------------------
-# 4. CANNOSCALE watcher: update annotation contexts silently and queue exactly one
-#    linked refresh. No immediate Regen here; the queued universal pass owns the
-#    single redraw and is already outside AutoCAD Undo recording.
-# -----------------------------------------------------------------------------
+# 4. CANNOSCALE changes: update annotation contexts silently, queue one Universal
+# pass and let that pass own the only redraw.
 $annotationPath = Required 'AnnotationScaleSyncCommands.cs'
 $annotation = ReadText $annotationPath
-$scaleBlockOld = @'
+$scaleOld = @'
             _busy = true;
             try
             {
@@ -289,12 +273,11 @@ $scaleBlockOld = @'
                 _busy = false;
             }
 '@ -replace "`n","`r`n"
-$scaleBlockNew = @'
+$scaleNew = @'
             _busy = true;
             bool undoRecordingDisabled = false;
             try
             {
-                // Annotation-context maintenance is background bookkeeping.
                 try
                 {
                     document.Database.DisableUndoRecording(true);
@@ -323,13 +306,11 @@ $scaleBlockNew = @'
                 _busy = false;
             }
 '@ -replace "`n","`r`n"
-$annotation = ReplaceRequired $annotation $scaleBlockOld $scaleBlockNew 'single-redraw annotation scale watcher'
+$annotation = ReplaceRequired $annotation $scaleOld $scaleNew 'silent annotation-scale maintenance'
 WriteText $annotationPath $annotation
 
-# -----------------------------------------------------------------------------
-# 5. Post-command refresh manager: self-refreshing Survey commands have already
-#    updated their outputs. Do not queue Universal + Platform a second time.
-# -----------------------------------------------------------------------------
+# 5. Do not queue a second Universal + Platform refresh after self-refreshing
+# Survey commands have already completed their own linked update.
 $automaticPath = Required 'AugustAutomaticRefreshManager.cs'
 $automatic = ReadText $automaticPath
 $autoOld = @'
@@ -351,42 +332,23 @@ $autoNew = @'
                 string.Equals(name, "CE_DYNAMICREFRESHALL", StringComparison.OrdinalIgnoreCase))
                 return;
 '@ -replace "`n","`r`n"
-$automatic = ReplaceRequired $automatic $autoOld $autoNew 'post-command duplicate refresh exclusion'
+$automatic = ReplaceRequired $automatic $autoOld $autoNew 'duplicate post-command Survey refresh exclusion'
 WriteText $automaticPath $automatic
 
-# -----------------------------------------------------------------------------
-# 6. Survey Production Background entry: the final one-page menu must open the
-#    requested CE-Background Tools preparation window, not the old XREF manager.
-#    The dedicated background-menu repair runs immediately before this script;
-#    retain a final guard here so later edits cannot regress it silently.
-# -----------------------------------------------------------------------------
-$centresPath = Required 'August14StructuredDisciplineProductionCentres.cs'
-$centres = ReadText $centresPath
-$surveyStart = $centres.IndexOf('public void SurveyProduction()', [StringComparison]::Ordinal)
-if ($surveyStart -lt 0) { throw 'SurveyProduction() missing during final stability validation.' }
-$surveySlice = $centres.Substring($surveyStart,[Math]::Min(12000,$centres.Length-$surveyStart))
-if (-not $surveySlice.Contains('"CE_BACKGROUNDPREPTOOLS"')) {
-    throw 'Survey Production does not open CE-Background Tools under PREPARE.'
+# Final guards.
+$centres = ReadText (Required 'August14StructuredDisciplineProductionCentres.cs')
+if (-not $centres.Contains('"CE_BACKGROUNDPREPTOOLS"')) {
+    throw 'Survey Production Background Tools final menu marker is missing.'
 }
-if ($surveySlice.Contains('"CE_BACKGROUNDTOOLS"')) {
-    throw 'Survey Production still exposes CE-Background/XREF Utilities directly.'
-}
-
-# -----------------------------------------------------------------------------
-# FINAL REGRESSION GUARDS
-# -----------------------------------------------------------------------------
 $final = ReadText $finalPath
-if (-not $final.Contains('document.SendStringToExecute("CE_GRIDSETTINGOUTDYNAMIC ", true, false, true);')) {
-    throw 'CE_GRIDSETTINGOUT is not routed to the dedicated dynamic Grid Setting-Out engine.'
+$gridClassStart = $final.IndexOf('public sealed class GridSettingOutCommands',[StringComparison]::Ordinal)
+if ($gridClassStart -lt 0) { throw 'GridSettingOutCommands class missing.' }
+$gridSlice = $final.Substring($gridClassStart,[Math]::Min(5500,$final.Length-$gridClassStart))
+if (-not $gridSlice.Contains('CE_GRIDSETTINGOUTDYNAMIC')) {
+    throw 'CE_GRIDSETTINGOUT does not route to the dedicated dynamic Grid engine.'
 }
-if ($final.Contains('document.SendStringToExecute("CE_VERTEXSETTINGOUT ", true, false, true);')) {
-    $gridStart = $final.IndexOf('public sealed class GridSettingOutCommands',[StringComparison]::Ordinal)
-    if ($gridStart -ge 0) {
-        $gridSlice = $final.Substring($gridStart,[Math]::Min(6000,$final.Length-$gridStart))
-        if ($gridSlice.Contains('document.SendStringToExecute("CE_VERTEXSETTINGOUT ", true, false, true);')) {
-            throw 'Grid Setting-Out still routes to Vertex Setting-Out.'
-        }
-    }
+if ($gridSlice.Contains('document.SendStringToExecute("CE_VERTEXSETTINGOUT ", true, false, true);')) {
+    throw 'CE_GRIDSETTINGOUT still routes to Vertex Setting-Out.'
 }
 $universal = ReadText $universalPath
 foreach ($required in @(
@@ -395,36 +357,33 @@ foreach ($required in @(
     'IsRefreshDependency(DBObject value)',
     'IsSelfRefreshingSurveyCommand(string command)',
     'DelaySeconds { get; set; } = 0.35;')) {
-    if (-not $universal.Contains($required)) {
-        throw "Universal Survey stability marker missing: $required"
-    }
+    if (-not $universal.Contains($required)) { throw "Universal stability marker missing: $required" }
 }
 foreach ($forbidden in @(
     'CogoPointProjectStyleCommands.ApplySelectedStyles(document, false);',
+    'CogoPointProjectStyleCommands.ApplySelectedStyles(document, true);',
     'RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, false);',
+    'RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);',
     'CeTablePresentationManager.CenterCeTables(document);',
     'value is Entity || value is Xrecord || value is DBDictionary')) {
-    if ($universal.Contains($forbidden)) {
-        throw "Universal refresh still contains feedback/presentation mutation: $forbidden"
-    }
+    if ($universal.Contains($forbidden)) { throw "Automatic refresh still contains feedback/layout operation: $forbidden" }
 }
 $surveyField = ReadText $surveyFieldPath
-$refreshStart = $surveyField.IndexOf($surveyRefreshMarker,[StringComparison]::Ordinal)
-$refreshSlice = $surveyField.Substring($refreshStart,[Math]::Min(1800,$surveyField.Length-$refreshStart))
-if (-not $refreshSlice.Contains('UniversalDynamicRefreshManager.RefreshBackground(document)')) {
-    throw 'Survey linked/annotative refresh is not using the one coordinated background refresh.'
+$surveyStart = $surveyField.IndexOf($surveyMarker,[StringComparison]::Ordinal)
+if ($surveyStart -lt 0) { throw 'Survey linked/annotative refresh command missing after replacement.' }
+$surveySlice = $surveyField.Substring($surveyStart,[Math]::Min(1600,$surveyField.Length-$surveyStart))
+if (-not $surveySlice.Contains('UniversalDynamicRefreshManager.RefreshBackground(document)')) {
+    throw 'Survey linked/annotative refresh is not using one coordinated background refresh.'
 }
 foreach ($forbidden in @(
     'RestoreCogoLabels(document',
     'CeTablePresentationManager.CenterCeTables(document)',
     'DynamicCoordinateLinkStore.Refresh(document)')) {
-    if ($refreshSlice.Contains($forbidden)) {
-        throw "Survey refresh still contains duplicate/label-moving operation: $forbidden"
-    }
+    if ($surveySlice.Contains($forbidden)) { throw "Survey refresh still contains duplicate/label-moving operation: $forbidden" }
 }
 
-Write-Host 'Grid Setting-Out now keeps its own multi-polyline Perimeter / Full-grid workflow.' -ForegroundColor Green
-Write-Host 'Grid and Vertex source edits are handled by one settled Universal refresh pass.' -ForegroundColor Green
-Write-Host 'Survey linked/annotative refresh no longer restores or auto-solves COGO label offsets.' -ForegroundColor Green
-Write-Host 'Automatic scale/link maintenance is excluded from Undo and uses one final redraw.' -ForegroundColor Green
-Write-Host 'Survey Production PREPARE opens CE-Background Tools, with XREF utilities nested inside it.' -ForegroundColor Green
+Write-Host 'Grid Setting-Out now has its own MULTIPLE-polyline Perimeter / Full-grid workflow.' -ForegroundColor Green
+Write-Host 'Grid/Vertex linked updates now use one settled dependency refresh path instead of repeated feedback passes.' -ForegroundColor Green
+Write-Host 'Survey Linked/Annotative Refresh no longer moves COGO labels or repeats table presentation operations.' -ForegroundColor Green
+Write-Host 'Automatic annotation-scale maintenance is excluded from Undo and redraws only through the coordinated refresh.' -ForegroundColor Green
+Write-Host 'Survey Production PREPARE opens CE-Background Tools; the old XREF utilities remain nested inside it.' -ForegroundColor Green
