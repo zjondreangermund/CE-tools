@@ -15,6 +15,7 @@ $verifiedInstaller = Join-Path $repo 'scripts\Install-VerifiedCivil3D2023Bundle.
 $packager = Join-Path $repo 'scripts\New-CE-ToolsReleasePackage.ps1'
 $surveyCommentRepair = Join-Path $repo 'scripts\Repair-August17-SurveyProductionComments-Civil3D2023.ps1'
 $august18SurveyVertexRepair = Join-Path $repo 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+$disableLegacyBackgroundWatchers = Join-Path $repo 'scripts\Repair-August18-DisableLegacyBackgroundWatchers-Civil3D2023.ps1'
 $sourceOnlySettingOutRefresh = Join-Path $repo 'scripts\Repair-August18-SourceOnlySettingOutRefresh-Civil3D2023.ps1'
 $universalRefreshSource = Join-Path $repo 'src\CE.Tools.Civil3D\UniversalDynamicRefreshCommands.cs'
 $finalGridSource = Join-Path $repo 'src\CE.Tools.Civil3D\FinalAllCommentsCompletionCommands.cs'
@@ -40,6 +41,9 @@ if (-not (Test-Path -LiteralPath $surveyCommentRepair)) {
 }
 if (-not (Test-Path -LiteralPath $august18SurveyVertexRepair)) {
     throw "August 18 Survey/vertex repair not found: $august18SurveyVertexRepair"
+}
+if (-not (Test-Path -LiteralPath $disableLegacyBackgroundWatchers)) {
+    throw "Legacy background watcher repair not found: $disableLegacyBackgroundWatchers"
 }
 if (-not (Test-Path -LiteralPath $sourceOnlySettingOutRefresh)) {
     throw "Source-only setting-out refresh repair not found: $sourceOnlySettingOutRefresh"
@@ -98,8 +102,13 @@ else {
     $global:LASTEXITCODE = 0
 }
 
-# This is intentionally the final source mutation before MSBuild. It prevents
-# legacy Idle/CommandEnded/database watchers from creating a regeneration loop.
+# These are intentionally the final source mutations before MSBuild. First strip
+# dormant legacy watcher subscriptions, then enforce one source-owner-only
+# setting-out refresh path.
+Write-Host "Removing legacy background watcher subscriptions before final refresh policy..." -ForegroundColor Cyan
+& $disableLegacyBackgroundWatchers -RepoRoot $repo
+$global:LASTEXITCODE = 0
+
 Write-Host "Applying source-owner-only Vertex/Grid automatic refresh policy..." -ForegroundColor Cyan
 & $sourceOnlySettingOutRefresh -RepoRoot $repo
 $global:LASTEXITCODE = 0
