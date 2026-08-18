@@ -93,6 +93,7 @@ $august18SurveyDynamics = Join-Path $stageRoot 'scripts\Repair-August18-SurveyGo
 $august18SurveyDynamicsHotfix2 = Join-Path $stageRoot 'scripts\Repair-August18-SurveyDynamicsHotfix2-Civil3D2023.ps1'
 $august18SurveyBackgroundMenu = Join-Path $stageRoot 'scripts\Repair-August18-SurveyBackgroundToolsMenu-Civil3D2023.ps1'
 $august18SurveyDynamicsHotfix3 = Join-Path $stageRoot 'scripts\Repair-August18-SurveyDynamicStability-Hotfix3-Civil3D2023.ps1'
+$postSanitizeSurveyStability = Join-Path $stageRoot 'scripts\Repair-August18-SurveyPostSanitizeStability-Civil3D2023.ps1'
 $closureValidation = Join-Path $stageRoot 'scripts\Validate-August10CommentClosure.ps1'
 $august11Validation = Join-Path $stageRoot 'scripts\Validate-August11FieldCompletion.ps1'
 $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
@@ -123,6 +124,7 @@ foreach ($required in @(
     $august18SurveyDynamicsHotfix2,
     $august18SurveyBackgroundMenu,
     $august18SurveyDynamicsHotfix3,
+    $postSanitizeSurveyStability,
     $closureValidation,
     $august11Validation,
     $sanitize,
@@ -220,16 +222,23 @@ Write-Host "`nValidating August 11 field-test comment closure before the August 
 & $august11Validation -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
-Write-Host "`nApplying August 18 Survey grid/vertex refresh stability hotfix..." -ForegroundColor Cyan
+# The sanitizer intentionally runs several historical August 14 recovery repairs.
+# Let those scripts complete against the source shape they were written for, then
+# apply the final August 18 stability architecture immediately before compilation.
+Write-Host "`nSanitizing recovered C# source encoding and hidden characters..." -ForegroundColor Cyan
+& $sanitize -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nApplying final August 18 Survey grid/vertex refresh stability after late recovery repairs..." -ForegroundColor Cyan
 & $august18SurveyDynamicsHotfix3 -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
-Write-Host "`nValidating previous comment closure before compilation..." -ForegroundColor Cyan
-& $closureValidation -RepoRoot $stageRoot
+Write-Host "`nApplying post-sanitize Survey/Grid stability guard..." -ForegroundColor Cyan
+& $postSanitizeSurveyStability -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
-Write-Host "`nSanitizing recovered C# source encoding and hidden characters..." -ForegroundColor Cyan
-& $sanitize -RepoRoot $stageRoot
+Write-Host "`nValidating previous comment closure on final staged sources..." -ForegroundColor Cyan
+& $closureValidation -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nChecking restored source files for the Roslyn TextSpan parser crash..." -ForegroundColor Cyan
