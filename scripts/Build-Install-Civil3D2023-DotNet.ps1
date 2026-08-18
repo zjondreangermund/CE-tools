@@ -17,6 +17,7 @@ $surveyCommentRepair = Join-Path $repo 'scripts\Repair-August17-SurveyProduction
 $august18SurveyVertexRepair = Join-Path $repo 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
 $disableLegacyBackgroundWatchers = Join-Path $repo 'scripts\Repair-August18-DisableLegacyBackgroundWatchers-Civil3D2023.ps1'
 $sourceOnlySettingOutRefresh = Join-Path $repo 'scripts\Repair-August18-SourceOnlySettingOutRefresh-Civil3D2023.ps1'
+$settingOutCoordinateDisplay = Join-Path $repo 'scripts\Repair-August18-SettingOutCoordinateDisplay-Civil3D2023.ps1'
 $universalRefreshSource = Join-Path $repo 'src\CE.Tools.Civil3D\UniversalDynamicRefreshCommands.cs'
 $finalGridSource = Join-Path $repo 'src\CE.Tools.Civil3D\FinalAllCommentsCompletionCommands.cs'
 $autoCadRoot = 'C:\Program Files\Autodesk\AutoCAD 2023'
@@ -47,6 +48,9 @@ if (-not (Test-Path -LiteralPath $disableLegacyBackgroundWatchers)) {
 }
 if (-not (Test-Path -LiteralPath $sourceOnlySettingOutRefresh)) {
     throw "Source-only setting-out refresh repair not found: $sourceOnlySettingOutRefresh"
+}
+if (-not (Test-Path -LiteralPath $settingOutCoordinateDisplay)) {
+    throw "Setting-out coordinate display repair not found: $settingOutCoordinateDisplay"
 }
 if ([string]::IsNullOrWhiteSpace($SourceCommit)) {
     try { $SourceCommit = (& git -C $repo rev-parse HEAD 2>$null).Trim() }
@@ -104,13 +108,17 @@ else {
 
 # These are intentionally the final source mutations before MSBuild. First strip
 # dormant legacy watcher subscriptions, then enforce one source-owner-only
-# setting-out refresh path.
+# setting-out refresh path, then apply the shared display-only coordinate rules.
 Write-Host "Removing legacy background watcher subscriptions before final refresh policy..." -ForegroundColor Cyan
 & $disableLegacyBackgroundWatchers -RepoRoot $repo
 $global:LASTEXITCODE = 0
 
 Write-Host "Applying source-owner-only Vertex/Grid automatic refresh policy..." -ForegroundColor Cyan
 & $sourceOnlySettingOutRefresh -RepoRoot $repo
+$global:LASTEXITCODE = 0
+
+Write-Host "Applying final setting-out X/Y display and Site Grid text fixes..." -ForegroundColor Cyan
+& $settingOutCoordinateDisplay -RepoRoot $repo
 $global:LASTEXITCODE = 0
 
 Push-Location $repo
