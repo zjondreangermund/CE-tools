@@ -71,11 +71,11 @@ namespace CETools.Civil3D
             string name = NormalizeCommandName(ReadCommandName(args));
             if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
 
-            // A refresh/maintenance command has already brought linked outputs up to
-            // date. Re-queueing another idle refresh immediately afterwards creates
-            // a second presentation pass, visible table flicker and unnecessary
-            // undo/transaction noise. Creation/edit commands still queue normally.
-            if (IsRefreshMaintenanceCommand(name)) return;
+            // Refresh/maintenance and self-refreshing Survey setting-out commands
+            // already leave their linked outputs current. Re-queueing another idle
+            // pass immediately afterwards creates visible table flicker and undo /
+            // transaction noise without changing the engineering result.
+            if (IsRefreshMaintenanceCommand(name) || IsSelfRefreshingSurveyCommand(name)) return;
 
             UniversalDynamicRefreshManager.Queue();
             PlatformDynamicRefreshManager.Queue();
@@ -88,6 +88,18 @@ namespace CETools.Civil3D
                 string.Equals(name, "CE_COGOPOINTSYNC", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(name, "CE_COGOOVERLAPFIX", StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(name, "CE_TABLECENTERALL", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsSelfRefreshingSurveyCommand(string name)
+        {
+            return string.Equals(name, "CE_GRIDSETTINGOUT", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_GRIDSETTINGOUTDYNAMIC", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_GRIDSETTINGOUTREFRESH", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_VERTEXSETTINGOUT", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_VERTEXSETTINGOUTREFRESH", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_SITEGRIDREFRESH", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_SITEGRIDREMOVE", StringComparison.OrdinalIgnoreCase);
         }
 
         private static string NormalizeCommandName(string value)
