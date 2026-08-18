@@ -54,6 +54,18 @@ foreach ($line in @(
 }
 WriteText $cogoPath $cogo
 
+# The source-only final repair replaces AugustAutomaticRefreshManager.OnCommandEnded
+# by text marker. Parameter names do not matter to C#, but historical source uses
+# both 'args' and 'e'. Normalize the harmless parameter name so the final repair is
+# deterministic regardless of which recovery pass produced the staged source.
+$item = ReadText 'AugustAutomaticRefreshManager.cs'
+$automaticPath = $item[0]
+$automatic = $item[1]
+$automatic = $automatic.Replace(
+    '        private static void OnCommandEnded(object sender, CommandEventArgs args)',
+    '        private static void OnCommandEnded(object sender, CommandEventArgs e)')
+WriteText $automaticPath $automatic
+
 $platform = [System.IO.File]::ReadAllText($platformPath)
 foreach ($forbidden in @(
     'AcApplication.Idle += Idle;',
@@ -72,5 +84,13 @@ foreach ($forbidden in @(
         throw "COGO legacy watcher remains: $forbidden"
     }
 }
+$automatic = [System.IO.File]::ReadAllText($automaticPath)
+if ($automatic.Contains('private static void OnCommandEnded(object sender, CommandEventArgs args)')) {
+    throw 'August automatic refresh OnCommandEnded signature was not normalized for the source-only final repair.'
+}
+if (-not $automatic.Contains('private static void OnCommandEnded(object sender, CommandEventArgs e)')) {
+    throw 'August automatic refresh OnCommandEnded method is missing before the source-only final repair.'
+}
 
 Write-Host 'Dormant Platform and COGO background watcher subscriptions were removed before final compilation.' -ForegroundColor Green
+Write-Host 'August automatic refresh method signature was normalized for the source-only final repair.' -ForegroundColor Green
