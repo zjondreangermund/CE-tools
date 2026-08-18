@@ -91,12 +91,6 @@ foreach ($required in @(
 Write-Host 'Survey Production PREPARE now opens CE-Background Tools directly.' -ForegroundColor Green
 Write-Host 'The older Background/XREF Utilities remain available only inside CE-Background Tools.' -ForegroundColor Green
 
-# The final Survey stability pass must run after the one-page menu correction and
-# after Hotfix2. This is intentionally chained here so old Stage scripts cannot
-# accidentally omit the newest Grid/Undo/refresh fixes.
-$stability = Join-Path $root 'scripts\Repair-August18-SurveyDynamicStability-Hotfix3-Civil3D2023.ps1'
-if (-not (Test-Path -LiteralPath $stability -PathType Leaf)) {
-    throw "Final August 18 Survey stability hotfix was not found: $stability"
-}
-& $stability -RepoRoot $root
-$global:LASTEXITCODE = 0
+# The Survey stability hotfix is owned by Stage-Build-Install-Civil3D2023.ps1.
+# Do not chain it from this menu repair; the August 11 validator must be able to
+# inspect the pre-Hotfix3 compatibility state before the final stability override.
