@@ -66,6 +66,22 @@ $automatic = $automatic.Replace(
     '        private static void OnCommandEnded(object sender, CommandEventArgs e)')
 WriteText $automaticPath $automatic
 
+# AnnotationScaleSyncManager historically exposes Initialize/Terminate as public
+# static methods, while the final source-only repair uses an internal-static text
+# marker. Accessibility is assembly-internal in practice here; normalize only the
+# staged source signature so the repair remains deterministic without changing
+# the method body or manual CE_ANNOSCALESYNC command behavior.
+$item = ReadText 'AnnotationScaleSyncCommands.cs'
+$annotationPath = $item[0]
+$annotation = $item[1]
+$annotation = $annotation.Replace(
+    '        public static void Initialize()',
+    '        internal static void Initialize()')
+$annotation = $annotation.Replace(
+    '        public static void Terminate()',
+    '        internal static void Terminate()')
+WriteText $annotationPath $annotation
+
 $platform = [System.IO.File]::ReadAllText($platformPath)
 foreach ($forbidden in @(
     'AcApplication.Idle += Idle;',
@@ -91,6 +107,14 @@ if ($automatic.Contains('private static void OnCommandEnded(object sender, Comma
 if (-not $automatic.Contains('private static void OnCommandEnded(object sender, CommandEventArgs e)')) {
     throw 'August automatic refresh OnCommandEnded method is missing before the source-only final repair.'
 }
+$annotation = [System.IO.File]::ReadAllText($annotationPath)
+if (-not $annotation.Contains('internal static void Initialize()')) {
+    throw 'AnnotationScaleSync Initialize signature was not normalized for the source-only final repair.'
+}
+if (-not $annotation.Contains('internal static void Terminate()')) {
+    throw 'AnnotationScaleSync Terminate signature was not normalized for the source-only final repair.'
+}
 
 Write-Host 'Dormant Platform and COGO background watcher subscriptions were removed before final compilation.' -ForegroundColor Green
 Write-Host 'August automatic refresh method signature was normalized for the source-only final repair.' -ForegroundColor Green
+Write-Host 'Annotation Scale Initialize/Terminate signatures were normalized for the source-only final repair.' -ForegroundColor Green
