@@ -89,6 +89,8 @@ $august11CompilerRepair = Join-Path $stageRoot 'scripts\Repair-August11-FieldCom
 $globalInterfaceSettingsRepair = Join-Path $stageRoot 'scripts\Repair-GlobalInterfaceAndStylePersistence-Civil3D2023.ps1'
 $august12PersistentUi = Join-Path $stageRoot 'scripts\Repair-August12PersistentProductionUi-Civil3D2023.ps1'
 $august17ProjectComments = Join-Path $stageRoot 'scripts\Repair-August17-ProjectProductionComments-Civil3D2023.ps1'
+$august18SurveyDynamics = Join-Path $stageRoot 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+$august18SurveyDynamicsHotfix2 = Join-Path $stageRoot 'scripts\Repair-August18-SurveyDynamicsHotfix2-Civil3D2023.ps1'
 $closureValidation = Join-Path $stageRoot 'scripts\Validate-August10CommentClosure.ps1'
 $august11Validation = Join-Path $stageRoot 'scripts\Validate-August11FieldCompletion.ps1'
 $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
@@ -115,6 +117,8 @@ foreach ($required in @(
     $globalInterfaceSettingsRepair,
     $august12PersistentUi,
     $august17ProjectComments,
+    $august18SurveyDynamics,
+    $august18SurveyDynamicsHotfix2,
     $closureValidation,
     $august11Validation,
     $sanitize,
@@ -198,6 +202,12 @@ $global:LASTEXITCODE = 0
 
 Write-Host "`nApplying final August 17 Project Production comments..." -ForegroundColor Cyan
 & $august17ProjectComments -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
+Write-Host "`nApplying final August 18 Survey/Vertex dynamic refresh, Site Grid loop and scale fixes..." -ForegroundColor Cyan
+& $august18SurveyDynamics -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+& $august18SurveyDynamicsHotfix2 -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nValidating previous comment closure before compilation..." -ForegroundColor Cyan
