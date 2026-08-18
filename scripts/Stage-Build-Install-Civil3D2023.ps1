@@ -216,16 +216,16 @@ $global:LASTEXITCODE = 0
 & $august18SurveyBackgroundMenu -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
+Write-Host "`nValidating August 11 field-test comment closure before the August 18 stability override..." -ForegroundColor Cyan
+& $august11Validation -RepoRoot $stageRoot
+$global:LASTEXITCODE = 0
+
 Write-Host "`nApplying August 18 Survey grid/vertex refresh stability hotfix..." -ForegroundColor Cyan
 & $august18SurveyDynamicsHotfix3 -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nValidating previous comment closure before compilation..." -ForegroundColor Cyan
 & $closureValidation -RepoRoot $stageRoot
-$global:LASTEXITCODE = 0
-
-Write-Host "`nValidating August 11 field-test comment closure before compilation..." -ForegroundColor Cyan
-& $august11Validation -RepoRoot $stageRoot
 $global:LASTEXITCODE = 0
 
 Write-Host "`nSanitizing recovered C# source encoding and hidden characters..." -ForegroundColor Cyan
