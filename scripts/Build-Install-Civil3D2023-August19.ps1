@@ -14,6 +14,7 @@ $legacyBuild = Join-Path $PSScriptRoot 'Build-Install-Civil3D2023-DotNet.ps1'
 $prepareCoordinateRepair = Join-Path $PSScriptRoot 'Repair-August19-PrepareCoordinateDisplayStage.ps1'
 $adaptCoordinateValidation = Join-Path $PSScriptRoot 'Repair-August19-AdaptCoordinateValidation.ps1'
 $august19Repair = Join-Path $PSScriptRoot 'Repair-August19-VertexSettingOutIntervalsAndAlignments-Civil3D2023.ps1'
+$august19CompilerFix = Join-Path $PSScriptRoot 'Repair-August19-VertexHeadingCompilerFix.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August19.runtime.ps1'
 
 if (-not (Test-Path -LiteralPath $legacyBuild -PathType Leaf)) {
@@ -27,6 +28,9 @@ if (-not (Test-Path -LiteralPath $adaptCoordinateValidation -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $august19Repair -PathType Leaf)) {
     throw "August 19 Vertex Setting-Out repair was not found: $august19Repair"
+}
+if (-not (Test-Path -LiteralPath $august19CompilerFix -PathType Leaf)) {
+    throw "August 19 Vertex compiler finalizer was not found: $august19CompilerFix"
 }
 
 # Never run August 19 directly against the tracked source checkout. The official
@@ -77,10 +81,17 @@ if ($pushIndex -lt 0 -or $coordinateIndex -lt 0 -or $coordinateIndex -gt $pushIn
 $august19Block = @'
 Write-Host "`nVerifying completed August 18 staged sources before adding August 19..." -ForegroundColor Cyan
 $august19VertexRepair = Join-Path $repo 'scripts\Repair-August19-VertexSettingOutIntervalsAndAlignments-Civil3D2023.ps1'
+$august19VertexCompilerFix = Join-Path $repo 'scripts\Repair-August19-VertexHeadingCompilerFix.ps1'
 if (-not (Test-Path -LiteralPath $august19VertexRepair -PathType Leaf)) {
     throw "August 19 Vertex Setting-Out repair not found in staged repository: $august19VertexRepair"
 }
+if (-not (Test-Path -LiteralPath $august19VertexCompilerFix -PathType Leaf)) {
+    throw "August 19 Vertex compiler finalizer not found in staged repository: $august19VertexCompilerFix"
+}
 & $august19VertexRepair -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Finalizing August 19 Vertex table headings for compilation..." -ForegroundColor Cyan
+& $august19VertexCompilerFix -RepoRoot $repo
 $global:LASTEXITCODE = 0
 Write-Host "August 19 source layer applied only after the complete August 18 build mutations." -ForegroundColor Green
 
