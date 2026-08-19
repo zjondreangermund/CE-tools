@@ -15,7 +15,8 @@ $text = [System.IO.File]::ReadAllText($path)
 $verificationPattern = '(?s)AugustRoadStyleDefaults\.Resolve\(\s*database,\s*collection,\s*preferred,\s*"Road",\s*out actualName\s*\)'
 
 if (-not [regex]::IsMatch($text, $verificationPattern)) {
-    $pattern = '(?s)        private static ObjectId ResolveStyle\(\s*Database database,\s*object collection,\s*string preferred,\s*out string actualName\)\s*\{.*?\n        \}\n\n        private static Dictionary<string, string> ReadProjectStyleSelection'
+    # Accept both LF and CRLF staged C# source on Linux and Windows runners.
+    $pattern = '(?s)        private static ObjectId ResolveStyle\(\s*Database database,\s*object collection,\s*string preferred,\s*out string actualName\)\s*\{.*?\r?\n        \}\r?\n\r?\n        private static Dictionary<string, string> ReadProjectStyleSelection'
     $matches = [regex]::Matches($text, $pattern)
     if ($matches.Count -ne 1) { throw "Could not isolate road ResolveStyle fallback. Matches=$($matches.Count)" }
     $replacement = @'
