@@ -6,8 +6,11 @@ Set-StrictMode -Version Latest
 
 $root = (Resolve-Path -LiteralPath $RepoRoot.Trim().Trim('"')).ProviderPath
 $vertexPath = Join-Path $root 'src\CE.Tools.Civil3D\VertexSettingOutCommands.cs'
-if (-not (Test-Path -LiteralPath $vertexPath -PathType Leaf)) {
-    throw "August 19 Vertex compiler-fix source missing: $vertexPath"
+$gridPath = Join-Path $root 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
+foreach ($required in @($vertexPath,$gridPath)) {
+    if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+        throw "August 19 compiler-fix source missing: $required"
+    }
 }
 
 $utf8 = New-Object System.Text.UTF8Encoding($false)
@@ -58,5 +61,41 @@ if ($check -match '\byFirst\s*\?\s*display[XY]') {
     throw 'August 19 Vertex compiler fix failed: a legacy double-swap expression still survives.'
 }
 
+# The August 19 Grid surface popup is applied after several historical staging
+# transforms. Those transforms can move the popup ahead of a local choice-list
+# declaration, producing CS0841 even though the raw August 18 source is ordered
+# correctly. Do not rely on a local variable at all: build each dropdown list
+# inline from the live Civil 3D surface catalogue, then remove the obsolete locals.
+$grid = [System.IO.File]::ReadAllText($gridPath) -replace "`r?`n", "`r`n"
+$inlineSurfaceChoices = 'new[] { "<None>" }.Concat(ReadGridSurfaceNames(document.Database, civil)).ToList()'
+$grid = [regex]::Replace(
+    $grid,
+    '\bgridSurfaceChoices\s*\)',
+    $inlineSurfaceChoices + ')')
+
+$surfaceChoiceDeclarationPattern = '(?ms)^\s*List<string>\s+gridSurfaceNames\s*=\s*ReadGridSurfaceNames\(\s*document\.Database\s*,\s*civil\s*\)\s*;\s*\r?\n\s*var\s+gridSurfaceChoices\s*=\s*new\s+List<string>\s*\{\s*"<None>"\s*\}\s*;\s*\r?\n\s*gridSurfaceChoices\.AddRange\(\s*gridSurfaceNames\s*\)\s*;\s*\r?\n?'
+$grid = [regex]::Replace($grid,$surfaceChoiceDeclarationPattern,'')
+
+[System.IO.File]::WriteAllText($gridPath,$grid,$utf8)
+
+$gridCheck = [System.IO.File]::ReadAllText($gridPath)
+if ($gridCheck -match '\bgridSurfaceChoices\b') {
+    throw 'August 19 Grid compiler fix failed: gridSurfaceChoices still survives in the final staged C#.'
+}
+if ($gridCheck -match '\bgridSurfaceNames\b') {
+    throw 'August 19 Grid compiler fix failed: obsolete gridSurfaceNames local still survives in the final staged C#.'
+}
+if (-not ($gridCheck.Contains('"BaseSurface"') -and
+          $gridCheck.Contains('"ComparisonSurface"'))) {
+    throw 'August 19 Grid compiler fix failed: Base/Comparison surface popup controls were not verified.'
+}
+if (-not $gridCheck.Contains($inlineSurfaceChoices)) {
+    throw 'August 19 Grid compiler fix failed: inline live surface choices were not verified.'
+}
+if (-not $gridCheck.Contains('using System.Linq;')) {
+    throw 'August 19 Grid compiler fix failed: System.Linq is required for inline surface choices.'
+}
+
 Write-Host 'August 19 Vertex display finalizer removed all obsolete yFirst expressions, value swaps and declarations before compilation.' -ForegroundColor Green
 Write-Host 'DisplayX/DisplayY remain solely responsible for the saved Swap X/Y and Reverse signs behavior.' -ForegroundColor Green
+Write-Host 'August 19 Grid surface dropdowns now build their choices inline; no local choice variable can be referenced before declaration.' -ForegroundColor Green
