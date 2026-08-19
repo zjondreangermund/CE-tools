@@ -19,6 +19,7 @@ $august19SurveyGridSewer = Join-Path $PSScriptRoot 'Repair-August19-SurveyGridSu
 $august19SewerPartsResolution = Join-Path $PSScriptRoot 'Repair-August19-SewerPartsListResolution-Civil3D2023.ps1'
 $august19CadastralSewer = Join-Path $PSScriptRoot 'Repair-August19-CadastralSewerRouting-Civil3D2023.ps1'
 $august19CompilerFix = Join-Path $PSScriptRoot 'Repair-August19-VertexHeadingCompilerFix.ps1'
+$august19SiteGridCompileFinalizer = Join-Path $PSScriptRoot 'Repair-August19-SiteGridCompileFinalizer.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August19.runtime.ps1'
 
 if (-not (Test-Path -LiteralPath $legacyBuild -PathType Leaf)) {
@@ -47,6 +48,9 @@ if (-not (Test-Path -LiteralPath $august19CadastralSewer -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $august19CompilerFix -PathType Leaf)) {
     throw "August 19 Vertex compiler finalizer was not found: $august19CompilerFix"
+}
+if (-not (Test-Path -LiteralPath $august19SiteGridCompileFinalizer -PathType Leaf)) {
+    throw "August 19 Site Grid compile finalizer was not found: $august19SiteGridCompileFinalizer"
 }
 
 # Never run August 19 directly against the tracked source checkout. The official
@@ -102,6 +106,7 @@ $august19SurveyGridSewer = Join-Path $repo 'scripts\Repair-August19-SurveyGridSu
 $august19SewerPartsResolution = Join-Path $repo 'scripts\Repair-August19-SewerPartsListResolution-Civil3D2023.ps1'
 $august19CadastralSewer = Join-Path $repo 'scripts\Repair-August19-CadastralSewerRouting-Civil3D2023.ps1'
 $august19VertexCompilerFix = Join-Path $repo 'scripts\Repair-August19-VertexHeadingCompilerFix.ps1'
+$august19SiteGridCompileFinalizer = Join-Path $repo 'scripts\Repair-August19-SiteGridCompileFinalizer.ps1'
 if (-not (Test-Path -LiteralPath $august19VertexRepair -PathType Leaf)) {
     throw "August 19 Vertex Setting-Out repair not found in staged repository: $august19VertexRepair"
 }
@@ -120,6 +125,9 @@ if (-not (Test-Path -LiteralPath $august19CadastralSewer -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $august19VertexCompilerFix -PathType Leaf)) {
     throw "August 19 Vertex compiler finalizer not found in staged repository: $august19VertexCompilerFix"
 }
+if (-not (Test-Path -LiteralPath $august19SiteGridCompileFinalizer -PathType Leaf)) {
+    throw "August 19 Site Grid compile finalizer not found in staged repository: $august19SiteGridCompileFinalizer"
+}
 & $august19VertexRepair -RepoRoot $repo
 $global:LASTEXITCODE = 0
 Write-Host "Adapting the final staged generic Sewer batch to the true multi-source engine..." -ForegroundColor Cyan
@@ -136,6 +144,9 @@ Write-Host "Applying August 19 cadastral Sewer low-point routing and separate Se
 $global:LASTEXITCODE = 0
 Write-Host "Finalizing August 19 Vertex table headings for compilation..." -ForegroundColor Cyan
 & $august19VertexCompilerFix -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Normalizing final August 19 Site Grid compile block..." -ForegroundColor Cyan
+& $august19SiteGridCompileFinalizer -RepoRoot $repo
 $global:LASTEXITCODE = 0
 Write-Host "August 19 source layer applied only after the complete August 18 build mutations." -ForegroundColor Green
 
