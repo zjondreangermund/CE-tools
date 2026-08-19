@@ -10,7 +10,9 @@ if (-not (Test-Path -LiteralPath $path -PathType Leaf)) { throw "COGO source mis
 $text = [System.IO.File]::ReadAllText($path)
 
 if (-not $text.Contains('if (!occupied.Any(existing => existing.Intersects(currentBox)))')) {
-    $pattern = '(?s)        private static Point3d FindClearLocation\(\s*CogoLabelItem item,\s*IList<Box2d> occupied,\s*double gap,\s*double textHeight\)\s*\{.*?\n        \}\n\n        private static Box2d LabelBox'
+    # Accept both LF and CRLF staged source. GitHub's Windows runners commonly
+    # materialize the C# checkout with CRLF, while Linux PR validation sees LF.
+    $pattern = '(?s)        private static Point3d FindClearLocation\(\s*CogoLabelItem item,\s*IList<Box2d> occupied,\s*double gap,\s*double textHeight\)\s*\{.*?\r?\n        \}\r?\n\r?\n        private static Box2d LabelBox'
     $matches = [regex]::Matches($text, $pattern)
     if ($matches.Count -ne 1) { throw "Could not isolate the COGO FindClearLocation method. Matches=$($matches.Count)" }
     $replacement = @'
