@@ -39,7 +39,7 @@ if ($catalog.Contains($obsoleteKatima)) {
     $catalog = $catalog.Replace($obsoleteKatima,$correctKatima)
     WriteText $catalogPath $catalog
 }
-elif (-not $catalog.Contains($correctKatima)) {
+elseif (-not $catalog.Contains($correctKatima)) {
     throw 'Katima Mulilo town mapping could not be normalized to LO25.'
 }
 
@@ -93,7 +93,7 @@ $newInference = @'
 if ($namibia.Contains($oldInference)) {
     $namibia = $namibia.Replace($oldInference,$newInference)
 }
-elif (-not $namibia.Contains('int inferred = August17ProjectRuntime.PreferredLoCentralMeridian(document);')) {
+elseif (-not $namibia.Contains('int inferred = August17ProjectRuntime.PreferredLoCentralMeridian(document);')) {
     throw 'CE_NAMIBIALO initial-zone block could not be linked to Project Town/CRS.'
 }
 
