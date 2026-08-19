@@ -21,6 +21,7 @@ $august19SewerPartsResolution = Join-Path $PSScriptRoot 'Repair-August19-SewerPa
 $august19CadastralSewer = Join-Path $PSScriptRoot 'Repair-August19-CadastralSewerRouting-Civil3D2023.ps1'
 $august19CompilerFix = Join-Path $PSScriptRoot 'Repair-August19-VertexHeadingCompilerFix.ps1'
 $august19SiteGridCompileFinalizer = Join-Path $PSScriptRoot 'Repair-August19-SiteGridCompileFinalizer.ps1'
+$august19BackgroundMultiDimension = Join-Path $PSScriptRoot 'Repair-August19-BackgroundColorAndMultiDimension-Civil3D2023.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August19.runtime.ps1'
 
 if (-not (Test-Path -LiteralPath $legacyBuild -PathType Leaf)) {
@@ -55,6 +56,9 @@ if (-not (Test-Path -LiteralPath $august19CompilerFix -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $august19SiteGridCompileFinalizer -PathType Leaf)) {
     throw "August 19 Site Grid compile finalizer was not found: $august19SiteGridCompileFinalizer"
+}
+if (-not (Test-Path -LiteralPath $august19BackgroundMultiDimension -PathType Leaf)) {
+    throw "August 19 Background Colour / Multi-Dimension repair was not found: $august19BackgroundMultiDimension"
 }
 
 # Never run August 19 directly against the tracked source checkout. The official
@@ -112,6 +116,7 @@ $august19SewerPartsResolution = Join-Path $repo 'scripts\Repair-August19-SewerPa
 $august19CadastralSewer = Join-Path $repo 'scripts\Repair-August19-CadastralSewerRouting-Civil3D2023.ps1'
 $august19VertexCompilerFix = Join-Path $repo 'scripts\Repair-August19-VertexHeadingCompilerFix.ps1'
 $august19SiteGridCompileFinalizer = Join-Path $repo 'scripts\Repair-August19-SiteGridCompileFinalizer.ps1'
+$august19BackgroundMultiDimension = Join-Path $repo 'scripts\Repair-August19-BackgroundColorAndMultiDimension-Civil3D2023.ps1'
 if (-not (Test-Path -LiteralPath $august17NamibiaProjectZone -PathType Leaf)) {
     throw "Namibia Project Town/LO zone repair not found in staged repository: $august17NamibiaProjectZone"
 }
@@ -136,6 +141,9 @@ if (-not (Test-Path -LiteralPath $august19VertexCompilerFix -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $august19SiteGridCompileFinalizer -PathType Leaf)) {
     throw "August 19 Site Grid compile finalizer not found in staged repository: $august19SiteGridCompileFinalizer"
 }
+if (-not (Test-Path -LiteralPath $august19BackgroundMultiDimension -PathType Leaf)) {
+    throw "August 19 Background Colour / Multi-Dimension repair not found in staged repository: $august19BackgroundMultiDimension"
+}
 Write-Host "Applying Namibia Project Town/LO zone authority..." -ForegroundColor Cyan
 & $august17NamibiaProjectZone -RepoRoot $repo
 $global:LASTEXITCODE = 0
@@ -158,6 +166,9 @@ Write-Host "Finalizing August 19 Vertex table headings for compilation..." -Fore
 $global:LASTEXITCODE = 0
 Write-Host "Normalizing final August 19 Site Grid compile block..." -ForegroundColor Cyan
 & $august19SiteGridCompileFinalizer -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Applying Background Colour 250 safety and annotative Multi-Dimension workflow..." -ForegroundColor Cyan
+& $august19BackgroundMultiDimension -RepoRoot $repo
 $global:LASTEXITCODE = 0
 Write-Host "August 19 source layer applied only after the complete August 18 build mutations." -ForegroundColor Green
 
