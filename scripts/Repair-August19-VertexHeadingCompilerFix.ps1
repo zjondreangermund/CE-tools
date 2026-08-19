@@ -7,7 +7,8 @@ Set-StrictMode -Version Latest
 $root = (Resolve-Path -LiteralPath $RepoRoot.Trim().Trim('"')).ProviderPath
 $vertexPath = Join-Path $root 'src\CE.Tools.Civil3D\VertexSettingOutCommands.cs'
 $gridPath = Join-Path $root 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
-foreach ($required in @($vertexPath,$gridPath)) {
+$sitePath = Join-Path $root 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
+foreach ($required in @($vertexPath,$gridPath,$sitePath)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "August 19 compiler-fix source missing: $required"
     }
@@ -96,6 +97,138 @@ if (-not $gridCheck.Contains('using System.Linq;')) {
     throw 'August 19 Grid compiler fix failed: System.Linq is required for inline surface choices.'
 }
 
+# Finalize Site Grid presentation after every August 18/19 source transform. The
+# linked frame may use an explicit entity colour while its layer colour is dark;
+# children that only copy LayerId can therefore exist successfully but be invisible
+# on AutoCAD's black model-space background. Copy the visible frame colour to every
+# generated child, and keep coordinate labels inside the selected frame even when
+# the active annotation scale is unusually large.
+$site = [System.IO.File]::ReadAllText($sitePath) -replace "`r?`n", "`r`n"
+
+if (-not $site.Contains('double siteGridTextCeiling = Math.Max(')) {
+    $oldSiteHeight = @'
+            double siteGridMinimumSpacing = Math.Max(
+                0.001,
+                Math.Min(settings.SpacingX, settings.SpacingY));
+            double siteGridFrameSpan = Math.Max(
+                0.001,
+                Math.Min(
+                    Math.Abs(bounds.MaxX - bounds.MinX),
+                    Math.Abs(bounds.MaxY - bounds.MinY)));
+            double siteGridTextFloor = Math.Max(
+                Math.Max(siteGridMinimumSpacing * 0.40, siteGridFrameSpan * 0.008),
+                0.01);
+            modelTextHeight = Math.Max(modelTextHeight, siteGridTextFloor);
+            double insideOffset = Math.Max(modelTextHeight * 1.35, 0.001);
+'@ -replace "`n","`r`n"
+    $newSiteHeight = @'
+            double siteGridMinimumSpacing = Math.Max(
+                0.001,
+                Math.Min(settings.SpacingX, settings.SpacingY));
+            double siteGridFrameSpan = Math.Max(
+                0.001,
+                Math.Min(
+                    Math.Abs(bounds.MaxX - bounds.MinX),
+                    Math.Abs(bounds.MaxY - bounds.MinY)));
+            double siteGridTextFloor = Math.Max(
+                Math.Min(siteGridMinimumSpacing * 0.04, siteGridFrameSpan * 0.01),
+                0.01);
+            double siteGridTextCeiling = Math.Max(
+                siteGridTextFloor,
+                Math.Min(siteGridMinimumSpacing * 0.16, siteGridFrameSpan * 0.025));
+            modelTextHeight = Math.Max(
+                siteGridTextFloor,
+                Math.Min(modelTextHeight, siteGridTextCeiling));
+            double insideOffsetLimit = Math.Max(
+                0.01,
+                Math.Min(siteGridMinimumSpacing * 0.35, siteGridFrameSpan * 0.08));
+            double insideOffset = Math.Min(
+                Math.Max(modelTextHeight * 1.35, 0.01),
+                insideOffsetLimit);
+'@ -replace "`n","`r`n"
+    if (-not $site.Contains($oldSiteHeight)) {
+        throw 'August 19 Site Grid display fix failed: final text-height/offset anchor was not found.'
+    }
+    $site = $site.Replace($oldSiteHeight,$newSiteHeight)
+}
+
+$oldLinePresentation = @'
+            line.SetDatabaseDefaults(database);
+            line.LayerId = boundary.LayerId;
+            line.Elevation = boundary.Elevation;
+'@ -replace "`n","`r`n"
+$newLinePresentation = @'
+            line.SetDatabaseDefaults(database);
+            line.LayerId = boundary.LayerId;
+            line.Color = boundary.Color;
+            line.LineWeight = boundary.LineWeight;
+            line.Elevation = boundary.Elevation;
+'@ -replace "`n","`r`n"
+if (-not $site.Contains('line.Color = boundary.Color;')) {
+    if (-not $site.Contains($oldLinePresentation)) {
+        throw 'August 19 Site Grid display fix failed: grid-line presentation anchor was not found.'
+    }
+    $site = $site.Replace($oldLinePresentation,$newLinePresentation)
+}
+
+$oldLabelPresentation = @'
+            label.SetDatabaseDefaults(database);
+            label.LayerId = boundary.LayerId;
+            label.Location = location;
+'@ -replace "`n","`r`n"
+$newLabelPresentation = @'
+            label.SetDatabaseDefaults(database);
+            label.LayerId = boundary.LayerId;
+            label.Color = boundary.Color;
+            label.TextStyleId = database.Textstyle;
+            label.Normal = Vector3d.ZAxis;
+            label.Location = location;
+'@ -replace "`n","`r`n"
+if (-not $site.Contains('label.Color = boundary.Color;')) {
+    if (-not $site.Contains($oldLabelPresentation)) {
+        throw 'August 19 Site Grid display fix failed: coordinate-label presentation anchor was not found.'
+    }
+    $site = $site.Replace($oldLabelPresentation,$newLabelPresentation)
+}
+
+$oldPointPresentation = @'
+                        point.SetDatabaseDefaults(database);
+                        point.LayerId = boundary.LayerId;
+                        Append(modelSpace, transaction, point);
+'@ -replace "`n","`r`n"
+$newPointPresentation = @'
+                        point.SetDatabaseDefaults(database);
+                        point.LayerId = boundary.LayerId;
+                        point.Color = boundary.Color;
+                        Append(modelSpace, transaction, point);
+'@ -replace "`n","`r`n"
+if (-not $site.Contains('point.Color = boundary.Color;')) {
+    if (-not $site.Contains($oldPointPresentation)) {
+        throw 'August 19 Site Grid display fix failed: grid-point presentation anchor was not found.'
+    }
+    $site = $site.Replace($oldPointPresentation,$newPointPresentation)
+}
+
+[System.IO.File]::WriteAllText($sitePath,$site,$utf8)
+$siteCheck = [System.IO.File]::ReadAllText($sitePath)
+foreach ($marker in @(
+    'double siteGridTextCeiling = Math.Max(',
+    'double insideOffsetLimit = Math.Max(',
+    'line.Color = boundary.Color;',
+    'line.LineWeight = boundary.LineWeight;',
+    'label.Color = boundary.Color;',
+    'label.TextStyleId = database.Textstyle;',
+    'label.Normal = Vector3d.ZAxis;',
+    'point.Color = boundary.Color;')) {
+    if (-not $siteCheck.Contains($marker)) {
+        throw "August 19 Site Grid display fix failed: final marker missing: $marker"
+    }
+}
+if ($siteCheck.Contains('siteGridMinimumSpacing * 0.40')) {
+    throw 'August 19 Site Grid display fix failed: the oversized 40-percent text floor still survives.'
+}
+
 Write-Host 'August 19 Vertex display finalizer removed all obsolete yFirst expressions, value swaps and declarations before compilation.' -ForegroundColor Green
 Write-Host 'DisplayX/DisplayY remain solely responsible for the saved Swap X/Y and Reverse signs behavior.' -ForegroundColor Green
 Write-Host 'August 19 Grid surface dropdowns now build their choices inline; no local choice variable can be referenced before declaration.' -ForegroundColor Green
+Write-Host 'August 19 Site Grid children now inherit the visible frame colour and labels are clamped to a readable in-frame size.' -ForegroundColor Green
