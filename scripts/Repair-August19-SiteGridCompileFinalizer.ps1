@@ -31,6 +31,8 @@ if ($modelHeightEnd -lt 0) {
 
 # Replace every historical August 19 floor/ceiling/offset variant in one pass.
 # The first X-label loop is the stable structural boundary after this settings block.
+# Preserve the August 14 corner-clearance behavior because the first/last labels
+# on all four frame edges use it to stay clear of the rectangle corners.
 $nextLoop = $site.IndexOf(
     '            for (int xIndex = 0; xIndex < xValues.Count; xIndex++)',
     $modelHeightEnd,
@@ -64,6 +66,7 @@ $canonical = @'
             double insideOffset = Math.Min(
                 Math.Max(modelTextHeight * 1.35, 0.01),
                 insideOffsetLimit);
+            double cornerClearance = Math.Max(modelTextHeight * 4.5, 0.001);
 
 '@ -replace "`n","`r`n"
 
@@ -77,7 +80,8 @@ $singleDeclarations = @(
     'siteGridTextFloor',
     'siteGridTextCeiling',
     'insideOffsetLimit',
-    'insideOffset'
+    'insideOffset',
+    'cornerClearance'
 )
 foreach ($name in $singleDeclarations) {
     $count = [regex]::Matches($check,'\bdouble\s+' + [regex]::Escape($name) + '\b').Count
@@ -89,7 +93,8 @@ foreach ($name in $singleDeclarations) {
 foreach ($marker in @(
     'Math.Min(siteGridMinimumSpacing * 0.04, siteGridFrameSpan * 0.01)',
     'Math.Min(siteGridMinimumSpacing * 0.16, siteGridFrameSpan * 0.025)',
-    'Math.Min(siteGridMinimumSpacing * 0.35, siteGridFrameSpan * 0.08)')) {
+    'Math.Min(siteGridMinimumSpacing * 0.35, siteGridFrameSpan * 0.08)',
+    'double cornerClearance = Math.Max(modelTextHeight * 4.5, 0.001);')) {
     if (-not $check.Contains($marker)) {
         throw "August 19 Site Grid compile finalizer failed: canonical marker missing: $marker"
     }
@@ -100,4 +105,4 @@ if ($check.Contains('siteGridMinimumSpacing * 0.40') -or
     throw 'August 19 Site Grid compile finalizer failed: an obsolete Site Grid text-floor formula still survives.'
 }
 
-Write-Host 'August 19 Site Grid compile block normalized: spacing/frame/text/offset locals are each declared exactly once.' -ForegroundColor Green
+Write-Host 'August 19 Site Grid compile block normalized: spacing/frame/text/offset/corner-clearance locals are each declared exactly once.' -ForegroundColor Green
