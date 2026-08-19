@@ -142,6 +142,9 @@ jobs:
       - name: Validate August 17 Background Project Survey consolidation
         run: python3 scripts/Validate-August17BackgroundProjectSurveyConsolidation.py
 
+      - name: Validate August 19 cadastral sewer routing
+        run: python3 scripts/Validate-August19CadastralSewerRouting.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
