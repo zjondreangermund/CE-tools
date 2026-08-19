@@ -88,8 +88,12 @@ function Assert-PreservedFiles([string]$repoRoot,[hashtable]$before) {
 $preservedBefore = Snapshot-PreservedFiles $source
 Write-Host 'August 18-and-earlier source snapshot captured. No tracked source file will be edited by August 19 staging.' -ForegroundColor Green
 
-$oldBuildAssignment = "$build = Join-Path $stageRoot 'scripts\Build-Install-Civil3D2023-DotNet.ps1'"
-$newBuildAssignment = "$build = Join-Path $stageRoot 'scripts\Build-Install-Civil3D2023-August19.ps1'"
+$oldBuildAssignment = @'
+$build = Join-Path $stageRoot 'scripts\Build-Install-Civil3D2023-DotNet.ps1'
+'@.Trim()
+$newBuildAssignment = @'
+$build = Join-Path $stageRoot 'scripts\Build-Install-Civil3D2023-August19.ps1'
+'@.Trim()
 $count = ([regex]::Matches($legacyStageText,[regex]::Escape($oldBuildAssignment))).Count
 if ($count -ne 1) {
     throw "August 19 expected exactly one August 18 build assignment in the stage script; found $count."
