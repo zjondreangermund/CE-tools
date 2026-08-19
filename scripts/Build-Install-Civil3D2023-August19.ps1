@@ -16,6 +16,7 @@ $adaptCoordinateValidation = Join-Path $PSScriptRoot 'Repair-August19-AdaptCoord
 $august19Repair = Join-Path $PSScriptRoot 'Repair-August19-VertexSettingOutIntervalsAndAlignments-Civil3D2023.ps1'
 $august19SewerBatchStage = Join-Path $PSScriptRoot 'Repair-August19-PrepareSewerGenericBatchStage.ps1'
 $august19SurveyGridSewer = Join-Path $PSScriptRoot 'Repair-August19-SurveyGridSurfacesAndSewerMulti-Civil3D2023.ps1'
+$august19SewerPartsResolution = Join-Path $PSScriptRoot 'Repair-August19-SewerPartsListResolution-Civil3D2023.ps1'
 $august19CompilerFix = Join-Path $PSScriptRoot 'Repair-August19-VertexHeadingCompilerFix.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August19.runtime.ps1'
 
@@ -36,6 +37,9 @@ if (-not (Test-Path -LiteralPath $august19SewerBatchStage -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $august19SurveyGridSewer -PathType Leaf)) {
     throw "August 19 Survey/Grid/Sewer repair was not found: $august19SurveyGridSewer"
+}
+if (-not (Test-Path -LiteralPath $august19SewerPartsResolution -PathType Leaf)) {
+    throw "August 19 Sewer parts-list resolver was not found: $august19SewerPartsResolution"
 }
 if (-not (Test-Path -LiteralPath $august19CompilerFix -PathType Leaf)) {
     throw "August 19 Vertex compiler finalizer was not found: $august19CompilerFix"
@@ -91,6 +95,7 @@ Write-Host "`nVerifying completed August 18 staged sources before adding August 
 $august19VertexRepair = Join-Path $repo 'scripts\Repair-August19-VertexSettingOutIntervalsAndAlignments-Civil3D2023.ps1'
 $august19SewerBatchStage = Join-Path $repo 'scripts\Repair-August19-PrepareSewerGenericBatchStage.ps1'
 $august19SurveyGridSewer = Join-Path $repo 'scripts\Repair-August19-SurveyGridSurfacesAndSewerMulti-Civil3D2023.ps1'
+$august19SewerPartsResolution = Join-Path $repo 'scripts\Repair-August19-SewerPartsListResolution-Civil3D2023.ps1'
 $august19VertexCompilerFix = Join-Path $repo 'scripts\Repair-August19-VertexHeadingCompilerFix.ps1'
 if (-not (Test-Path -LiteralPath $august19VertexRepair -PathType Leaf)) {
     throw "August 19 Vertex Setting-Out repair not found in staged repository: $august19VertexRepair"
@@ -100,6 +105,9 @@ if (-not (Test-Path -LiteralPath $august19SewerBatchStage -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $august19SurveyGridSewer -PathType Leaf)) {
     throw "August 19 Survey/Grid/Sewer repair not found in staged repository: $august19SurveyGridSewer"
+}
+if (-not (Test-Path -LiteralPath $august19SewerPartsResolution -PathType Leaf)) {
+    throw "August 19 Sewer parts-list resolver not found in staged repository: $august19SewerPartsResolution"
 }
 if (-not (Test-Path -LiteralPath $august19VertexCompilerFix -PathType Leaf)) {
     throw "August 19 Vertex compiler finalizer not found in staged repository: $august19VertexCompilerFix"
@@ -111,6 +119,9 @@ Write-Host "Adapting the final staged generic Sewer batch to the true multi-sour
 $global:LASTEXITCODE = 0
 Write-Host "Applying August 19 Site Grid visibility, Grid surface and Sewer multi-source fixes..." -ForegroundColor Cyan
 & $august19SurveyGridSewer -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Applying August 19 Sewer Parts List family/size resolution..." -ForegroundColor Cyan
+& $august19SewerPartsResolution -RepoRoot $repo
 $global:LASTEXITCODE = 0
 Write-Host "Finalizing August 19 Vertex table headings for compilation..." -ForegroundColor Cyan
 & $august19VertexCompilerFix -RepoRoot $repo
