@@ -22,13 +22,9 @@ $text = $text.Replace('yFirst ? "X" : "Y"','"Y"')
 $text = $text.Replace('(yFirst ? "Y=" : "X=")','"X="')
 $text = $text.Replace('(yFirst ? "X=" : "Y=")','"Y="')
 
-$yFirstDeclaration = @'
-            bool yFirst = string.Equals(
-                link.CoordinateOrder,
-                "Y then X",
-                StringComparison.OrdinalIgnoreCase);
-'@ -replace "`n","`r`n"
-$text = $text.Replace($yFirstDeclaration,$null)
+# Remove any remaining local declaration regardless of indentation/line wrapping.
+$yFirstDeclarationPattern = '(?ms)^\s*bool\s+yFirst\s*=\s*string\.Equals\(\s*link\.CoordinateOrder\s*,\s*"Y then X"\s*,\s*StringComparison\.OrdinalIgnoreCase\s*\)\s*;\s*'
+$text = [regex]::Replace($text,$yFirstDeclarationPattern,'')
 
 [System.IO.File]::WriteAllText($vertexPath,$text,$utf8)
 
