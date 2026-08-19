@@ -106,21 +106,34 @@ if (-not $gridCheck.Contains('using System.Linq;')) {
 $site = [System.IO.File]::ReadAllText($sitePath) -replace "`r?`n", "`r`n"
 
 if (-not $site.Contains('double siteGridTextCeiling = Math.Max(')) {
-    $oldSiteHeight = @'
-            double siteGridMinimumSpacing = Math.Max(
-                0.001,
-                Math.Min(settings.SpacingX, settings.SpacingY));
-            double siteGridFrameSpan = Math.Max(
-                0.001,
-                Math.Min(
-                    Math.Abs(bounds.MaxX - bounds.MinX),
-                    Math.Abs(bounds.MaxY - bounds.MinY)));
-            double siteGridTextFloor = Math.Max(
-                Math.Max(siteGridMinimumSpacing * 0.40, siteGridFrameSpan * 0.008),
-                0.01);
-            modelTextHeight = Math.Max(modelTextHeight, siteGridTextFloor);
-            double insideOffset = Math.Max(modelTextHeight * 1.35, 0.001);
-'@ -replace "`n","`r`n"
+    # Earlier August 19 staging has used more than one readable-height formula
+    # (including 0.08 and an older 0.40 spacing floor). Do not anchor to either
+    # historical formula. Locate the current Site Grid floor structurally and
+    # replace everything through the insideOffset assignment with the final
+    # clamped presentation block.
+    $rebuildStart = $site.IndexOf('        private static int RebuildOne(',[StringComparison]::Ordinal)
+    if ($rebuildStart -lt 0) {
+        throw 'August 19 Site Grid display fix failed: RebuildOne was not found.'
+    }
+    $heightStart = $site.IndexOf(
+        '            double siteGridTextFloor = Math.Max(',
+        $rebuildStart,
+        [StringComparison]::Ordinal)
+    if ($heightStart -lt 0) {
+        throw 'August 19 Site Grid display fix failed: current siteGridTextFloor block was not found.'
+    }
+    $insideStart = $site.IndexOf(
+        '            double insideOffset =',
+        $heightStart,
+        [StringComparison]::Ordinal)
+    if ($insideStart -lt 0) {
+        throw 'August 19 Site Grid display fix failed: current insideOffset assignment was not found.'
+    }
+    $insideEnd = $site.IndexOf(';',$insideStart,[StringComparison]::Ordinal)
+    if ($insideEnd -lt 0) {
+        throw 'August 19 Site Grid display fix failed: current insideOffset terminator was not found.'
+    }
+
     $newSiteHeight = @'
             double siteGridMinimumSpacing = Math.Max(
                 0.001,
@@ -146,10 +159,10 @@ if (-not $site.Contains('double siteGridTextCeiling = Math.Max(')) {
                 Math.Max(modelTextHeight * 1.35, 0.01),
                 insideOffsetLimit);
 '@ -replace "`n","`r`n"
-    if (-not $site.Contains($oldSiteHeight)) {
-        throw 'August 19 Site Grid display fix failed: final text-height/offset anchor was not found.'
-    }
-    $site = $site.Replace($oldSiteHeight,$newSiteHeight)
+
+    $site = $site.Substring(0,$heightStart) +
+        $newSiteHeight.TrimEnd() +
+        $site.Substring($insideEnd + 1)
 }
 
 $oldLinePresentation = @'
@@ -212,6 +225,8 @@ if (-not $site.Contains('point.Color = boundary.Color;')) {
 [System.IO.File]::WriteAllText($sitePath,$site,$utf8)
 $siteCheck = [System.IO.File]::ReadAllText($sitePath)
 foreach ($marker in @(
+    'double siteGridMinimumSpacing = Math.Max(',
+    'double siteGridFrameSpan = Math.Max(',
     'double siteGridTextCeiling = Math.Max(',
     'double insideOffsetLimit = Math.Max(',
     'line.Color = boundary.Color;',
@@ -231,4 +246,4 @@ if ($siteCheck.Contains('siteGridMinimumSpacing * 0.40')) {
 Write-Host 'August 19 Vertex display finalizer removed all obsolete yFirst expressions, value swaps and declarations before compilation.' -ForegroundColor Green
 Write-Host 'DisplayX/DisplayY remain solely responsible for the saved Swap X/Y and Reverse signs behavior.' -ForegroundColor Green
 Write-Host 'August 19 Grid surface dropdowns now build their choices inline; no local choice variable can be referenced before declaration.' -ForegroundColor Green
-Write-Host 'August 19 Site Grid children now inherit the visible frame colour and labels are clamped to a readable in-frame size.' -ForegroundColor Green
+Write-Host 'August 19 Site Grid finalizer now accepts the current staged height formula structurally and clamps labels to a readable in-frame size.' -ForegroundColor Green
