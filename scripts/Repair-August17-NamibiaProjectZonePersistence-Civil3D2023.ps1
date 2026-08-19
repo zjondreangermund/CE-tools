@@ -29,6 +29,20 @@ function ReplaceMethodBody([string]$text,[string]$signature,[string]$body) {
     return $text.Substring(0,$open) + "{`r`n" + $body.TrimEnd() + "`r`n        }" + $text.Substring($close+1)
 }
 
+# Keep the legacy/internal Namibia town catalogue aligned with the current CE
+# project town catalogue. Katima Mulilo is LO25; LO21 is an obsolete mapping.
+$catalogPath = Required 'FinalAllCommentsCompletionCommands.cs'
+$catalog = ReadText $catalogPath
+$obsoleteKatima = '{ "Katima Mulilo", 21 }'
+$correctKatima = '{ "Katima Mulilo", 25 }'
+if ($catalog.Contains($obsoleteKatima)) {
+    $catalog = $catalog.Replace($obsoleteKatima,$correctKatima)
+    WriteText $catalogPath $catalog
+}
+elif (-not $catalog.Contains($correctKatima)) {
+    throw 'Katima Mulilo town mapping could not be normalized to LO25.'
+}
+
 # The selected Project/Survey Town is authoritative when it has a known Namibia
 # LO mapping. A stale previously saved Coordinate System must not keep the old LO.
 $runtimePath = Required 'August17ProductionFeatureLineCommands.cs'
@@ -79,7 +93,7 @@ $newInference = @'
 if ($namibia.Contains($oldInference)) {
     $namibia = $namibia.Replace($oldInference,$newInference)
 }
-elseif (-not $namibia.Contains('int inferred = August17ProjectRuntime.PreferredLoCentralMeridian(document);')) {
+elif (-not $namibia.Contains('int inferred = August17ProjectRuntime.PreferredLoCentralMeridian(document);')) {
     throw 'CE_NAMIBIALO initial-zone block could not be linked to Project Town/CRS.'
 }
 
@@ -105,7 +119,7 @@ if (-not $namibia.Contains('projectZoneField.Value = inferred.ToString(CultureIn
 }
 WriteText $namibiaPath $namibia
 
-# Regression guards for the exact field failure reported on 17 August.
+# Regression guards for the exact field failure reported on 17/19 August.
 $runtimeCheck = ReadText $runtimePath
 $methodStart = $runtimeCheck.IndexOf('internal static int PreferredLoCentralMeridian(Document document)',[StringComparison]::Ordinal)
 $methodEnd = $runtimeCheck.IndexOf('internal static bool TryInsertRegisteredClientBookTitleBlock',$methodStart,[StringComparison]::Ordinal)
@@ -123,8 +137,10 @@ foreach ($marker in @(
     'projectZoneField.Value = inferred.ToString(CultureInfo.InvariantCulture);')) {
     if (-not $namibiaCheck.Contains($marker)) { throw "Namibia project-zone runtime marker missing: $marker" }
 }
-$catalog = ReadText (Required 'FinalAllCommentsCompletionCommands.cs')
+$catalog = ReadText $catalogPath
 if (-not $catalog.Contains('{ "Windhoek", 17 }')) { throw 'Windhoek -> LO17 town mapping is missing.' }
+if (-not $catalog.Contains($correctKatima)) { throw 'Katima Mulilo -> LO25 town mapping is missing.' }
+if ($catalog.Contains($obsoleteKatima)) { throw 'Obsolete Katima Mulilo -> LO21 town mapping still survives.' }
 
 Write-Host 'Namibia LO project-zone fix passed: recognized Town overrides stale CRS and persisted popup Zone.' -ForegroundColor Green
-Write-Host 'Windhoek now resolves to LO17 when CE_NAMIBIALO opens.' -ForegroundColor Green
+Write-Host 'Windhoek resolves to LO17 and Katima Mulilo resolves to LO25 when CE_NAMIBIALO opens.' -ForegroundColor Green
