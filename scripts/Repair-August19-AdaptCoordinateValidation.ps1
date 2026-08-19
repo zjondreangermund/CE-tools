@@ -17,7 +17,7 @@ $newLines = "    '? -xValues[xIndex]',`r`n    '? -yValues[yIndex]',"
 if ($text.Contains($oldLine)) {
     $text = $text.Replace($oldLine,$newLines)
 }
-elif (-not ($text.Contains("'? -xValues[xIndex]'") -and $text.Contains("'? -yValues[yIndex]'"))) {
+elseif (-not ($text.Contains("'? -xValues[xIndex]'") -and $text.Contains("'? -yValues[yIndex]'"))) {
     throw 'August 19 could not adapt the staged Site Grid display validator to the finalized source shape.'
 }
 
