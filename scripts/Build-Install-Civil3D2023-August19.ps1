@@ -13,6 +13,7 @@ $repo = Split-Path -Parent $PSScriptRoot
 $legacyBuild = Join-Path $PSScriptRoot 'Build-Install-Civil3D2023-DotNet.ps1'
 $prepareCoordinateRepair = Join-Path $PSScriptRoot 'Repair-August19-PrepareCoordinateDisplayStage.ps1'
 $adaptCoordinateValidation = Join-Path $PSScriptRoot 'Repair-August19-AdaptCoordinateValidation.ps1'
+$august17NamibiaProjectZone = Join-Path $PSScriptRoot 'Repair-August17-NamibiaProjectZonePersistence-Civil3D2023.ps1'
 $august19Repair = Join-Path $PSScriptRoot 'Repair-August19-VertexSettingOutIntervalsAndAlignments-Civil3D2023.ps1'
 $august19SewerBatchStage = Join-Path $PSScriptRoot 'Repair-August19-PrepareSewerGenericBatchStage.ps1'
 $august19SurveyGridSewer = Join-Path $PSScriptRoot 'Repair-August19-SurveyGridSurfacesAndSewerMulti-Civil3D2023.ps1'
@@ -30,6 +31,9 @@ if (-not (Test-Path -LiteralPath $prepareCoordinateRepair -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $adaptCoordinateValidation -PathType Leaf)) {
     throw "August 19 staged coordinate validation adapter was not found: $adaptCoordinateValidation"
+}
+if (-not (Test-Path -LiteralPath $august17NamibiaProjectZone -PathType Leaf)) {
+    throw "Namibia Project Town/LO zone repair was not found: $august17NamibiaProjectZone"
 }
 if (-not (Test-Path -LiteralPath $august19Repair -PathType Leaf)) {
     throw "August 19 Vertex Setting-Out repair was not found: $august19Repair"
@@ -100,6 +104,7 @@ if ($pushIndex -lt 0 -or $coordinateIndex -lt 0 -or $coordinateIndex -gt $pushIn
 
 $august19Block = @'
 Write-Host "`nVerifying completed August 18 staged sources before adding August 19..." -ForegroundColor Cyan
+$august17NamibiaProjectZone = Join-Path $repo 'scripts\Repair-August17-NamibiaProjectZonePersistence-Civil3D2023.ps1'
 $august19VertexRepair = Join-Path $repo 'scripts\Repair-August19-VertexSettingOutIntervalsAndAlignments-Civil3D2023.ps1'
 $august19SewerBatchStage = Join-Path $repo 'scripts\Repair-August19-PrepareSewerGenericBatchStage.ps1'
 $august19SurveyGridSewer = Join-Path $repo 'scripts\Repair-August19-SurveyGridSurfacesAndSewerMulti-Civil3D2023.ps1'
@@ -107,6 +112,9 @@ $august19SewerPartsResolution = Join-Path $repo 'scripts\Repair-August19-SewerPa
 $august19CadastralSewer = Join-Path $repo 'scripts\Repair-August19-CadastralSewerRouting-Civil3D2023.ps1'
 $august19VertexCompilerFix = Join-Path $repo 'scripts\Repair-August19-VertexHeadingCompilerFix.ps1'
 $august19SiteGridCompileFinalizer = Join-Path $repo 'scripts\Repair-August19-SiteGridCompileFinalizer.ps1'
+if (-not (Test-Path -LiteralPath $august17NamibiaProjectZone -PathType Leaf)) {
+    throw "Namibia Project Town/LO zone repair not found in staged repository: $august17NamibiaProjectZone"
+}
 if (-not (Test-Path -LiteralPath $august19VertexRepair -PathType Leaf)) {
     throw "August 19 Vertex Setting-Out repair not found in staged repository: $august19VertexRepair"
 }
@@ -128,6 +136,9 @@ if (-not (Test-Path -LiteralPath $august19VertexCompilerFix -PathType Leaf)) {
 if (-not (Test-Path -LiteralPath $august19SiteGridCompileFinalizer -PathType Leaf)) {
     throw "August 19 Site Grid compile finalizer not found in staged repository: $august19SiteGridCompileFinalizer"
 }
+Write-Host "Applying Namibia Project Town/LO zone authority..." -ForegroundColor Cyan
+& $august17NamibiaProjectZone -RepoRoot $repo
+$global:LASTEXITCODE = 0
 & $august19VertexRepair -RepoRoot $repo
 $global:LASTEXITCODE = 0
 Write-Host "Adapting the final staged generic Sewer batch to the true multi-source engine..." -ForegroundColor Cyan
