@@ -22,6 +22,18 @@ $text = $text.Replace('yFirst ? "X" : "Y"','"Y"')
 $text = $text.Replace('(yFirst ? "Y=" : "X=")','"X="')
 $text = $text.Replace('(yFirst ? "X=" : "Y=")','"Y="')
 
+# DisplayX/DisplayY already contain the persisted Swap X/Y and Reverse-sign logic.
+# Any old yFirst ternary around those values would apply the swap a second time.
+# Collapse those historical expressions regardless of whitespace or parentheses.
+$text = [regex]::Replace(
+    $text,
+    '\byFirst\s*\?\s*displayY\s*:\s*displayX\b',
+    'displayX')
+$text = [regex]::Replace(
+    $text,
+    '\byFirst\s*\?\s*displayX\s*:\s*displayY\b',
+    'displayY')
+
 # Remove any remaining local declaration regardless of indentation/line wrapping.
 $yFirstDeclarationPattern = '(?ms)^\s*bool\s+yFirst\s*=\s*string\.Equals\(\s*link\.CoordinateOrder\s*,\s*"Y then X"\s*,\s*StringComparison\.OrdinalIgnoreCase\s*\)\s*;\s*'
 $text = [regex]::Replace($text,$yFirstDeclarationPattern,'')
@@ -42,6 +54,9 @@ if (-not ($check.Contains('"X=" + displayX.ToString') -and
           $check.Contains('"Y=" + displayY.ToString'))) {
     throw 'August 19 Vertex compiler fix failed: fixed X/Y label prefixes were not verified.'
 }
+if ($check -match '\byFirst\s*\?\s*display[XY]') {
+    throw 'August 19 Vertex compiler fix failed: a legacy double-swap expression still survives.'
+}
 
-Write-Host 'August 19 Vertex display finalizer removed all obsolete yFirst expressions and declarations before compilation.' -ForegroundColor Green
-Write-Host 'DisplayX/DisplayY remain responsible for the saved Swap X/Y and Reverse signs behavior.' -ForegroundColor Green
+Write-Host 'August 19 Vertex display finalizer removed all obsolete yFirst expressions, value swaps and declarations before compilation.' -ForegroundColor Green
+Write-Host 'DisplayX/DisplayY remain solely responsible for the saved Swap X/Y and Reverse signs behavior.' -ForegroundColor Green
