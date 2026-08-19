@@ -121,7 +121,7 @@ $newInitialRead = @'
                     out geometryRejected);
 '@
 $vertex = ReplaceRequired $vertex $oldInitialRead $newInitialRead 'Initial August 19 geometry read'
-$vertex = $vertex.Replace("            ApplyGenerationMode(sources, generationMode);`r`n", string.Empty)
+$vertex = $vertex.Replace("            ApplyGenerationMode(sources, generationMode);`r`n", $null)
 
 $oldGenerationLink = @'
                 GenerationMode = generationMode,
@@ -159,7 +159,7 @@ $newRefreshRead = @'
                     out rejected);
 '@
 $vertex = ReplaceRequired $vertex $oldRefreshRead $newRefreshRead 'Linked August 19 interval refresh'
-$vertex = $vertex.Replace("                ApplyGenerationMode(sources, link.GenerationMode);`r`n", string.Empty)
+$vertex = $vertex.Replace("                ApplyGenerationMode(sources, link.GenerationMode);`r`n", $null)
 $vertex = $vertex.Replace(
     'None of the linked source polylines or feature lines are available.',
     'None of the linked source polylines, feature lines or alignments are available.')
