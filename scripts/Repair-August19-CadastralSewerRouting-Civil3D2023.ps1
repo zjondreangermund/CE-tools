@@ -13,6 +13,22 @@ function Need([string]$name) {
 }
 function ReadText([string]$path) { [System.IO.File]::ReadAllText($path) }
 function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText($path,$text,[System.Text.UTF8Encoding]::new($false)) }
+function EnsureCivilSurfaceAlias([string]$path) {
+    $text = ReadText $path
+    $alias = 'using Surface = Autodesk.Civil.DatabaseServices.Surface;'
+    if (-not $text.Contains($alias)) {
+        $anchor = 'using Autodesk.Civil.DatabaseServices;'
+        if (-not $text.Contains($anchor)) {
+            throw "August 19 Civil Surface alias anchor missing in: $path"
+        }
+        $text = $text.Replace($anchor,$anchor + "`r`n" + $alias)
+        WriteText $path $text
+    }
+    $check = ReadText $path
+    if (-not $check.Contains($alias)) {
+        throw "August 19 Civil Surface alias was not applied in: $path"
+    }
+}
 
 $cadastral = Need 'August19CadastralSewerRouteCommands.cs'
 $roadReserve = Need 'August19RoadReserveSewerAndSafetyCommands.cs'
@@ -20,13 +36,20 @@ $structured = Need 'August14StructuredDisciplineProductionCentres.cs'
 $routePlanner = Need 'RoutePlannerExpansionCommands.cs'
 $roadLayout = Need 'RoadLayoutProductionCommands.cs'
 
+# Both AutoCAD and Civil 3D expose a type named Surface.  The August 19 sewer
+# sources use terrain surfaces exclusively, so force the unqualified Surface name
+# to Autodesk.Civil.DatabaseServices.Surface in the staged copy before compilation.
+EnsureCivilSurfaceAlias $cadastral
+EnsureCivilSurfaceAlias $roadReserve
+
 $cadastralText = ReadText $cadastral
 foreach ($marker in @(
     '"CE_SEWERFROMCADASTRAL"',
     'Offset from shared erf boundary',
     'Offset from outer erf boundary',
     'SAMPLED SITE LOW POINT',
-    'Shortest practical route')) {
+    'Shortest practical route',
+    'using Surface = Autodesk.Civil.DatabaseServices.Surface;')) {
     if (-not $cadastralText.Contains($marker)) { throw "August 19 cadastral sewer command marker missing: $marker" }
 }
 
@@ -43,7 +66,8 @@ foreach ($marker in @(
     'Starting manhole setback from erf boundary',
     'FindElevationAtXY',
     'SelfIntersects',
-    'SplitAtJunctionsAndSpacing')) {
+    'SplitAtJunctionsAndSpacing',
+    'using Surface = Autodesk.Civil.DatabaseServices.Surface;')) {
     if (-not $roadReserveText.Contains($marker)) { throw "August 19 Road Reserve sewer/safety marker missing: $marker" }
 }
 
@@ -129,6 +153,7 @@ if (-not $roadLayoutText.Contains('"CE_ROADRESERVECENTERLINESSAFE"')) {
 }
 
 Write-Host 'August 19 Sewer routing / Road Reserve safety is ready.' -ForegroundColor Green
+Write-Host 'Civil 3D Surface alias applied to August 19 cadastral and road-reserve sewer sources.' -ForegroundColor Green
 Write-Host 'Sewer Production exposes separate Cadastral, Midblock and Sewer-only Road-Reserve workflows.' -ForegroundColor Green
 Write-Host 'Road Reserve Sewer offsets from outer erf boundaries toward the road centre and follows selected-surface low-point flow.' -ForegroundColor Green
 Write-Host 'Road-reserve width, opposing-angle, overlap, minimum-edge and polygon safety conditions are enforced before output.' -ForegroundColor Green
