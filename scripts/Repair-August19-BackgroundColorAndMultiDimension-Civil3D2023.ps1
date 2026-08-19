@@ -167,11 +167,41 @@ if ($surveyClose -lt 0) { throw 'SurveyDelivery() closing brace was not found.' 
 $survey = $menu.Substring($surveyStart,$surveyClose-$surveyStart+1)
 $multiAction = '                    A("CE-Multiple Dimensions", "CE_MULTIDIM", "Annotative aligned/linear/angular/radius/arc-length dimensions for multiple polylines and feature lines, using a selected dimension style.", "05 COMPLETE"),'
 if (-not $survey.Contains('"CE_MULTIDIM"')) {
-    $gridAction = '                    A("CE-Grid Setting-Out", "CE_GRIDSETTINGOUT", "Linked grid/perimeter setting-out.", "05 COMPLETE"),'
-    if (-not $survey.Contains($gridAction)) {
-        throw 'Survey Delivery Grid Setting-Out anchor was not found for CE-Multiple Dimensions insertion.'
+    # Earlier August 18/19 staging is allowed to rename or reword Survey actions.
+    # Anchor to the command token, not one historical full action line. Prefer the
+    # current Grid command, then Site Grid, then Vertex Setting-Out. If none are
+    # present, insert immediately before the Surface Comparison action.
+    $anchorMarker = $null
+    foreach ($candidate in @('"CE_GRIDSETTINGOUT"','"CE_SITEGRID"','"CE_VERTEXSETTINGOUT"')) {
+        if ($survey.Contains($candidate)) {
+            $anchorMarker = $candidate
+            break
+        }
     }
-    $survey = $survey.Replace($gridAction,$gridAction + "`r`n" + $multiAction)
+
+    if ($anchorMarker) {
+        $markerIndex = $survey.IndexOf($anchorMarker,[StringComparison]::Ordinal)
+        $lineEnd = $survey.IndexOf("`n",$markerIndex,[StringComparison]::Ordinal)
+        if ($lineEnd -lt 0) {
+            throw "Survey Delivery action line containing $anchorMarker has no terminating newline."
+        }
+        $insertAt = $lineEnd + 1
+        $survey = $survey.Substring(0,$insertAt) + $multiAction + "`r`n" + $survey.Substring($insertAt)
+    }
+    else {
+        $fallbackMarker = '"CE_SURFACECOMPARETABLE"'
+        $fallbackIndex = $survey.IndexOf($fallbackMarker,[StringComparison]::Ordinal)
+        if ($fallbackIndex -lt 0) {
+            throw 'Survey Delivery has no current Grid, Site Grid, Vertex Setting-Out or Surface Comparison action for CE-Multiple Dimensions insertion.'
+        }
+        $lineStart = $survey.LastIndexOf("`n",$fallbackIndex)
+        $insertAt = if ($lineStart -lt 0) { 0 } else { $lineStart + 1 }
+        $survey = $survey.Substring(0,$insertAt) + $multiAction + "`r`n" + $survey.Substring($insertAt)
+    }
+
+    if ([regex]::Matches($survey,'"CE_MULTIDIM"').Count -ne 1) {
+        throw 'CE-Multiple Dimensions insertion did not produce exactly one Survey Delivery action.'
+    }
     $menu = $menu.Substring(0,$surveyStart) + $survey + $menu.Substring($surveyClose+1)
     WriteText $menuPath $menu
 }
