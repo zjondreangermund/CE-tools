@@ -11,11 +11,15 @@ Set-StrictMode -Version Latest
 
 $repo = Split-Path -Parent $PSScriptRoot
 $legacyBuild = Join-Path $PSScriptRoot 'Build-Install-Civil3D2023-DotNet.ps1'
+$prepareCoordinateRepair = Join-Path $PSScriptRoot 'Repair-August19-PrepareCoordinateDisplayStage.ps1'
 $august19Repair = Join-Path $PSScriptRoot 'Repair-August19-VertexSettingOutIntervalsAndAlignments-Civil3D2023.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August19.runtime.ps1'
 
 if (-not (Test-Path -LiteralPath $legacyBuild -PathType Leaf)) {
     throw "Existing August 18 build script was not found: $legacyBuild"
+}
+if (-not (Test-Path -LiteralPath $prepareCoordinateRepair -PathType Leaf)) {
+    throw "August 19 staged coordinate compatibility repair was not found: $prepareCoordinateRepair"
 }
 if (-not (Test-Path -LiteralPath $august19Repair -PathType Leaf)) {
     throw "August 19 Vertex Setting-Out repair was not found: $august19Repair"
@@ -27,6 +31,14 @@ if (-not (Test-Path -LiteralPath $august19Repair -PathType Leaf)) {
 if (Test-Path -LiteralPath (Join-Path $repo '.git')) {
     throw 'August 19 build refused to modify the tracked checkout. Run Stage-Build-Install-Civil3D2023-August19.ps1 so August 18 remains unchanged and August 19 is applied only to the staged copy.'
 }
+
+# The late August 18 recovery/sanitizer chain can change harmless Site Grid popup
+# wording before the final coordinate-display repair runs. Adapt only the staged
+# copy of that August 18 repair so it locates the AxisOrder control structurally.
+# The tracked August 18 source and scripts remain byte-for-byte unchanged.
+Write-Host "Preparing staged Site Grid coordinate-display compatibility for August 19..." -ForegroundColor Cyan
+& $prepareCoordinateRepair -RepoRoot $repo
+$global:LASTEXITCODE = 0
 
 $legacyText = [System.IO.File]::ReadAllText($legacyBuild) -replace "`r?`n","`r`n"
 
