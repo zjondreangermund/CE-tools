@@ -167,15 +167,18 @@ else { Write-Host 'No remaining Close Pipes -> BOQ refresh mapping was found.' -
 # Dynamically keep names consistent after relevant road/name geometry changes.
 $text = ReadText $universal
 if (-not $text.Contains('August11RoadNamingCurveCommands.SyncRoadNames(document, false);')) {
-    $anchor = '                try { result.JunctionLabels += RoadJunctionCompletionCommands.RefreshAll(document); }`r`n                catch { result.Warnings++; }'
-    if (-not $text.Contains($anchor)) {
-        # tolerate LF-only staged source
-        $anchor = "                try { result.JunctionLabels += RoadJunctionCompletionCommands.RefreshAll(document); }`n                catch { result.Warnings++; }"
-    }
-    if (-not $text.Contains($anchor)) { throw 'Universal road-junction refresh marker not found for road-name sync.' }
-    $newline = if ($anchor.Contains("`r`n")) { "`r`n" } else { "`n" }
-    $insert = '                try { August11RoadNamingCurveCommands.SyncRoadNames(document, false); }' + $newline + '                catch { result.Warnings++; }'
-    $text = $text.Replace($anchor,$anchor + $newline + $insert)
+    # Match the complete existing junction-refresh try/catch regardless of whether
+    # the staged C# file is LF or CRLF. The previous single-quoted CRLF anchor
+    # treated `r`n as literal characters and therefore failed on Windows runners.
+    $pattern = '(?m)^(?<indent>\s*)try \{ result\.JunctionLabels \+= RoadJunctionCompletionCommands\.RefreshAll\(document\); \}\r?\n\k<indent>catch \{ result\.Warnings\+\+; \}'
+    $match = [regex]::Match($text,$pattern)
+    if (-not $match.Success) { throw 'Universal road-junction refresh marker not found for road-name sync.' }
+    $newline = if ($match.Value.Contains("`r`n")) { "`r`n" } else { "`n" }
+    $indent = $match.Groups['indent'].Value
+    $insert = $indent + 'try { August11RoadNamingCurveCommands.SyncRoadNames(document, false); }' + $newline +
+              $indent + 'catch { result.Warnings++; }'
+    $replacement = $match.Value + $newline + $insert
+    $text = $text.Substring(0,$match.Index) + $replacement + $text.Substring($match.Index + $match.Length)
     WriteText $universal $text
     Write-Host 'Integrated dynamic ROAD-n name synchronization into universal refresh.' -ForegroundColor Green
 }
