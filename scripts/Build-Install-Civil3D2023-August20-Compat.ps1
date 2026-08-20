@@ -12,10 +12,11 @@ Set-StrictMode -Version Latest
 $repo = Split-Path -Parent $PSScriptRoot
 $preflight = Join-Path $PSScriptRoot 'Repair-August20-SurveyProductionMenuPreflight.ps1'
 $lateSafety = Join-Path $PSScriptRoot 'Repair-August20-SewerFatalAndSiteGridVisibility-Civil3D2023.ps1'
+$geometryFirst = Join-Path $PSScriptRoot 'Repair-August20-GeometryFirstSewerAndDynamicSiteGrid-Civil3D2023.ps1'
 $build = Join-Path $PSScriptRoot 'Build-Install-Civil3D2023-August19.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August20-Compat.runtime.ps1'
 
-foreach ($required in @($preflight,$lateSafety,$build)) {
+foreach ($required in @($preflight,$lateSafety,$geometryFirst,$build)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "August 20 compatibility build prerequisite missing: $required"
     }
@@ -27,8 +28,9 @@ $global:LASTEXITCODE = 0
 
 # Build-Install-Civil3D2023-August19.ps1 owns the complete staged August 18/19/20
 # mutation order.  Do not edit that preserved pipeline here.  Create a temporary
-# runtime copy and insert the field fatal/site-grid guard immediately after the
-# existing August 20 stability finalizer and before MSBuild starts.
+# runtime copy and insert the field fatal/site-grid guard plus the final geometry-
+# first/dynamic repair immediately after the existing August 20 stability finalizer
+# and before MSBuild starts.
 $text = [System.IO.File]::ReadAllText($build) -replace "`r?`n","`r`n"
 $anchor = @'
 & $august20FieldStability -RepoRoot $repo
@@ -46,6 +48,13 @@ if (-not (Test-Path -LiteralPath $august20LateSafety -PathType Leaf)) {
     throw "August 20 late field-safety repair not found in staged repository: $august20LateSafety"
 }
 & $august20LateSafety -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Applying geometry-first Sewer/Road Centreline workflows and dynamic Site Grid repair..." -ForegroundColor Cyan
+$august20GeometryFirst = Join-Path $repo 'scripts\Repair-August20-GeometryFirstSewerAndDynamicSiteGrid-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $august20GeometryFirst -PathType Leaf)) {
+    throw "August 20 geometry-first/dynamic repair not found in staged repository: $august20GeometryFirst"
+}
+& $august20GeometryFirst -RepoRoot $repo
 $global:LASTEXITCODE = 0
 '@.Trim() -replace "`r?`n","`r`n"
 $text = $text.Replace($anchor,$injected)
