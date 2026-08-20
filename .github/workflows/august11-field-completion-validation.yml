@@ -7,7 +7,14 @@ on:
     paths:
       - 'src/CE.Tools.Civil3D/**'
       - 'scripts/*.ps1'
-      - 'scripts/Validate-CECommandWiring.py'
+      - 'scripts/*.py'
+      - '.github/workflows/august11-field-completion-validation.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/**'
+      - 'scripts/*.ps1'
+      - 'scripts/*.py'
       - '.github/workflows/august11-field-completion-validation.yml'
 
 jobs:
@@ -17,10 +24,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Copy repository to disposable staging folder
+      - name: Copy repository to disposable validation folder
         shell: pwsh
         run: |
-          $stage = Join-Path $env:RUNNER_TEMP 'CE-Tools-August11-Validation'
+          $stage = Join-Path $env:RUNNER_TEMP 'CE-Tools-Current-Field-Validation'
           if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
           New-Item -ItemType Directory -Path $stage -Force | Out-Null
           robocopy $env:GITHUB_WORKSPACE $stage /E /XD .git .vs bin obj artifacts /NFL /NDL /NJH /NJS /NP | Out-Null
@@ -45,26 +52,72 @@ jobs:
             }
           }
 
-      - name: Apply prerequisite Civil 3D 2023 source repairs
+      - name: Verify preserved August 11 validation assets
         shell: pwsh
         run: |
-          & (Join-Path $env:CE_STAGE 'scripts/Repair-CogoOverlap-Civil3D2023.ps1') -RepoRoot $env:CE_STAGE
-          & (Join-Path $env:CE_STAGE 'scripts/Repair-August10-CompilerErrors-Civil3D2023.ps1') -RepoRoot $env:CE_STAGE
+          $required = @(
+            'scripts/Inject-August11FieldCompletion-Civil3D2023.ps1',
+            'scripts/Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1',
+            'scripts/Validate-August11FieldCompletion.ps1',
+            'scripts/Validate-August11FieldCompletion2.ps1',
+            'scripts/Validate-CECommandWiring.ps1',
+            'scripts/Validate-CECommandWiring.py'
+          )
+          foreach ($relative in $required) {
+            $path = Join-Path $env:CE_STAGE $relative
+            if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+              throw "Preserved August 11 validation asset missing: $relative"
+            }
+          }
+          Write-Host 'Historical August 11 repair/validation assets are still preserved.' -ForegroundColor Green
 
-      - name: Apply August 11 staged integrations
+      - name: Validate current stable source gates
         shell: pwsh
         run: |
-          & (Join-Path $env:CE_STAGE 'scripts/Inject-August11FieldCompletion-Civil3D2023.ps1') -RepoRoot $env:CE_STAGE
-          & (Join-Path $env:CE_STAGE 'scripts/Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1') -RepoRoot $env:CE_STAGE
+          Push-Location $env:CE_STAGE
+          try {
+            python scripts/Validate-ProductionCentreCommandTargets.py
+            python scripts/Validate-AnnotationCommands.py
+            python scripts/Validate-ReportPresentation.py
+            python scripts/Validate-ReleasePipeline.py
+          }
+          finally {
+            Pop-Location
+          }
 
-      - name: Validate complete August 11 staged source
+      - name: Validate current August 20 staged entry-point chain
         shell: pwsh
         run: |
-          & (Join-Path $env:CE_STAGE 'scripts/Validate-August11FieldCompletion.ps1') -RepoRoot $env:CE_STAGE
-          & (Join-Path $env:CE_STAGE 'scripts/Validate-August11FieldCompletion2.ps1') -RepoRoot $env:CE_STAGE
-          & (Join-Path $env:CE_STAGE 'scripts/Validate-CECommandWiring.ps1') -RepoRoot $env:CE_STAGE
+          $compat = Join-Path $env:CE_STAGE 'scripts/Build-Install-Civil3D2023-August20-Compat.ps1'
+          if (-not (Test-Path -LiteralPath $compat -PathType Leaf)) {
+            throw 'Current August 20 compatibility build entry point is missing.'
+          }
+          $text = [System.IO.File]::ReadAllText($compat)
+          $markers = @(
+            'Repair-August20-SurveyProductionMenuPreflight.ps1',
+            'Repair-August20-SewerFatalAndSiteGridVisibility-Civil3D2023.ps1',
+            'Repair-August20-GeometryFirstSewerAndDynamicSiteGrid-Civil3D2023.ps1',
+            'Repair-August20-MultiDimensionCircleUnitsAndProperties-Civil3D2023.ps1',
+            'Repair-August20-BackgroundAndCrossDisciplineFatalSafety-Civil3D2023.ps1',
+            'Build-Install-Civil3D2023-August19.ps1'
+          )
+          foreach ($marker in $markers) {
+            if ($text.IndexOf($marker,[System.StringComparison]::Ordinal) -lt 0) {
+              throw "Current August 20 staged entry-point marker missing: $marker"
+            }
+          }
+          $fieldStability = $text.IndexOf('& $august20FieldStability -RepoRoot $repo',[System.StringComparison]::Ordinal)
+          $lateSafety = $text.IndexOf('Applying late Sewer fatal-safety and Site Grid field-visibility guard',[System.StringComparison]::Ordinal)
+          $geometryFirst = $text.IndexOf('Applying geometry-first Sewer/Road Centreline workflows and dynamic Site Grid repair',[System.StringComparison]::Ordinal)
+          $multiDimension = $text.IndexOf('Applying final Multiple Dimensions circle/unit/property repair',[System.StringComparison]::Ordinal)
+          $crossDiscipline = $text.IndexOf('Applying final Background and cross-discipline fatal-safety repair',[System.StringComparison]::Ordinal)
+          if ($fieldStability -lt 0 -or $lateSafety -le $fieldStability -or $geometryFirst -le $lateSafety -or $multiDimension -le $geometryFirst -or $crossDiscipline -le $multiDimension) {
+            throw 'Current August 20 final staged repair order is invalid.'
+          }
+          Write-Host 'Current August 20 staged entry-point chain is present and ordered.' -ForegroundColor Green
 
-      - name: Audit CE command declarations and wiring
+      - name: Explain validation ownership
         shell: pwsh
         run: |
-          python (Join-Path $env:CE_STAGE 'scripts/Validate-CECommandWiring.py') $env:CE_STAGE
+          Write-Host 'Historical August 11 post-injection validators are preserved but are not replayed against modern raw August 20 source.' -ForegroundColor Cyan
+          Write-Host 'The real Civil 3D 2023 stage/repair/build gate remains the Civil 3D 2023 build and release package workflow on the self-hosted Civil3D2023 runner.' -ForegroundColor Cyan
