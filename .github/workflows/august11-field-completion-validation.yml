@@ -60,7 +60,8 @@ jobs:
             'scripts/Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1',
             'scripts/Validate-August11FieldCompletion.ps1',
             'scripts/Validate-August11FieldCompletion2.ps1',
-            'scripts/Validate-CECommandWiring.ps1'
+            'scripts/Validate-CECommandWiring.ps1',
+            'scripts/Validate-CECommandWiring.py'
           )
           foreach ($relative in $required) {
             $path = Join-Path $env:CE_STAGE $relative
@@ -70,12 +71,7 @@ jobs:
           }
           Write-Host 'Historical August 11 repair/validation assets are still preserved.' -ForegroundColor Green
 
-      - name: Validate current command declarations and wiring
-        shell: pwsh
-        run: |
-          python (Join-Path $env:CE_STAGE 'scripts/Validate-CECommandWiring.py') $env:CE_STAGE
-
-      - name: Validate current presentation and release gates
+      - name: Validate current stable source gates
         shell: pwsh
         run: |
           Push-Location $env:CE_STAGE
@@ -105,17 +101,23 @@ jobs:
             'Repair-August20-BackgroundAndCrossDisciplineFatalSafety-Civil3D2023.ps1',
             'Build-Install-Civil3D2023-August19.ps1'
           )
-          $last = -1
           foreach ($marker in $markers) {
-            $index = $text.IndexOf($marker,[System.StringComparison]::Ordinal)
-            if ($index -lt 0) { throw "Current August 20 staged entry-point marker missing: $marker" }
-            if ($index -lt $last) { throw "Current August 20 staged entry-point order is invalid near: $marker" }
-            $last = $index
+            if ($text.IndexOf($marker,[System.StringComparison]::Ordinal) -lt 0) {
+              throw "Current August 20 staged entry-point marker missing: $marker"
+            }
+          }
+          $fieldStability = $text.IndexOf('& $august20FieldStability -RepoRoot $repo',[System.StringComparison]::Ordinal)
+          $lateSafety = $text.IndexOf('Applying late Sewer fatal-safety and Site Grid field-visibility guard',[System.StringComparison]::Ordinal)
+          $geometryFirst = $text.IndexOf('Applying geometry-first Sewer/Road Centreline workflows and dynamic Site Grid repair',[System.StringComparison]::Ordinal)
+          $multiDimension = $text.IndexOf('Applying final Multiple Dimensions circle/unit/property repair',[System.StringComparison]::Ordinal)
+          $crossDiscipline = $text.IndexOf('Applying final Background and cross-discipline fatal-safety repair',[System.StringComparison]::Ordinal)
+          if ($fieldStability -lt 0 -or $lateSafety -le $fieldStability -or $geometryFirst -le $lateSafety -or $multiDimension -le $geometryFirst -or $crossDiscipline -le $multiDimension) {
+            throw 'Current August 20 final staged repair order is invalid.'
           }
           Write-Host 'Current August 20 staged entry-point chain is present and ordered.' -ForegroundColor Green
 
       - name: Explain validation ownership
         shell: pwsh
         run: |
-          Write-Host 'This workflow no longer replays historical August 11 source mutations against modern August 20 source.' -ForegroundColor Cyan
+          Write-Host 'Historical August 11 post-injection validators are preserved but are not replayed against modern raw August 20 source.' -ForegroundColor Cyan
           Write-Host 'The real Civil 3D 2023 stage/repair/build gate remains the Civil 3D 2023 build and release package workflow on the self-hosted Civil3D2023 runner.' -ForegroundColor Cyan
