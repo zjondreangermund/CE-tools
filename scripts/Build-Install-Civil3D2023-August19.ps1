@@ -22,6 +22,7 @@ $august19CadastralSewer = Join-Path $PSScriptRoot 'Repair-August19-CadastralSewe
 $august19CompilerFix = Join-Path $PSScriptRoot 'Repair-August19-VertexHeadingCompilerFix.ps1'
 $august19SiteGridCompileFinalizer = Join-Path $PSScriptRoot 'Repair-August19-SiteGridCompileFinalizer.ps1'
 $august19BackgroundMultiDimension = Join-Path $PSScriptRoot 'Repair-August19-BackgroundColorAndMultiDimension-Civil3D2023.ps1'
+$august20FieldStability = Join-Path $PSScriptRoot 'Repair-August20-SewerSurfaceDimSiteGrid-Stability-Civil3D2023.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August19.runtime.ps1'
 
 if (-not (Test-Path -LiteralPath $legacyBuild -PathType Leaf)) {
@@ -59,6 +60,9 @@ if (-not (Test-Path -LiteralPath $august19SiteGridCompileFinalizer -PathType Lea
 }
 if (-not (Test-Path -LiteralPath $august19BackgroundMultiDimension -PathType Leaf)) {
     throw "August 19 Background Colour / Multi-Dimension repair was not found: $august19BackgroundMultiDimension"
+}
+if (-not (Test-Path -LiteralPath $august20FieldStability -PathType Leaf)) {
+    throw "August 20 Sewer/Surface/Dimension/Site Grid stability repair was not found: $august20FieldStability"
 }
 
 # Never run August 19 directly against the tracked source checkout. The official
@@ -117,6 +121,7 @@ $august19CadastralSewer = Join-Path $repo 'scripts\Repair-August19-CadastralSewe
 $august19VertexCompilerFix = Join-Path $repo 'scripts\Repair-August19-VertexHeadingCompilerFix.ps1'
 $august19SiteGridCompileFinalizer = Join-Path $repo 'scripts\Repair-August19-SiteGridCompileFinalizer.ps1'
 $august19BackgroundMultiDimension = Join-Path $repo 'scripts\Repair-August19-BackgroundColorAndMultiDimension-Civil3D2023.ps1'
+$august20FieldStability = Join-Path $repo 'scripts\Repair-August20-SewerSurfaceDimSiteGrid-Stability-Civil3D2023.ps1'
 if (-not (Test-Path -LiteralPath $august17NamibiaProjectZone -PathType Leaf)) {
     throw "Namibia Project Town/LO zone repair not found in staged repository: $august17NamibiaProjectZone"
 }
@@ -144,6 +149,9 @@ if (-not (Test-Path -LiteralPath $august19SiteGridCompileFinalizer -PathType Lea
 if (-not (Test-Path -LiteralPath $august19BackgroundMultiDimension -PathType Leaf)) {
     throw "August 19 Background Colour / Multi-Dimension repair not found in staged repository: $august19BackgroundMultiDimension"
 }
+if (-not (Test-Path -LiteralPath $august20FieldStability -PathType Leaf)) {
+    throw "August 20 Sewer/Surface/Dimension/Site Grid stability repair not found in staged repository: $august20FieldStability"
+}
 Write-Host "Applying Namibia Project Town/LO zone authority..." -ForegroundColor Cyan
 & $august17NamibiaProjectZone -RepoRoot $repo
 $global:LASTEXITCODE = 0
@@ -169,6 +177,9 @@ Write-Host "Normalizing final August 19 Site Grid compile block..." -ForegroundC
 $global:LASTEXITCODE = 0
 Write-Host "Applying Background Colour 250 safety and annotative Multi-Dimension workflow..." -ForegroundColor Cyan
 & $august19BackgroundMultiDimension -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Applying final Sewer surface-popup, fatal-safety, dimension presentation and Site Grid point fixes..." -ForegroundColor Cyan
+& $august20FieldStability -RepoRoot $repo
 $global:LASTEXITCODE = 0
 Write-Host "August 19 source layer applied only after the complete August 18 build mutations." -ForegroundColor Green
 
