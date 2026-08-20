@@ -15,8 +15,19 @@ function Required([string]$name) {
 function ReadText([string]$path) { [System.IO.File]::ReadAllText($path) -replace "`r?`n","`r`n" }
 function WriteText([string]$path,[string]$text) { [System.IO.File]::WriteAllText($path,($text -replace "`r?`n","`r`n"),$utf8) }
 
-function ReplaceMethodBody([string]$text,[string]$signature,[string]$body,[string]$label) {
+function ReplaceMethodBody([string]$text,[string]$signature,[string]$body,[string]$label,[string]$fallbackMethodName='') {
     $start = $text.IndexOf($signature,[StringComparison]::Ordinal)
+    if ($start -lt 0 -and -not [string]::IsNullOrWhiteSpace($fallbackMethodName)) {
+        $pattern = '(?m)^\s*private\s+static\s+[^\r\n{;]*\b' + [regex]::Escape($fallbackMethodName) + '\s*\('
+        $matches = [regex]::Matches($text,$pattern)
+        if ($matches.Count -eq 1) {
+            $start = $matches[0].Index
+            Write-Host ("August 20 hotfix using structural method fallback for {0}: {1}" -f $label,$fallbackMethodName) -ForegroundColor DarkCyan
+        }
+        elseif ($matches.Count -gt 1) {
+            throw "August 20 hotfix method fallback is ambiguous ($label): $fallbackMethodName matches=$($matches.Count)"
+        }
+    }
     if ($start -lt 0) { throw "August 20 hotfix method signature not found ($label): $signature" }
     $open = $text.IndexOf('{',$start)
     if ($open -lt 0) { throw "August 20 hotfix opening brace not found: $label" }
@@ -133,7 +144,12 @@ $cadastral=MoveSurfaceResolutionBeforeSelection $cadastral 'public void CreateSe
 $cadastralBody=@'
             return August20SurfaceChoice.TryElevationSafe(surface, point, out elevation);
 '@
-$cadastral=ReplaceMethodBody $cadastral 'private static bool TryElevation(Surface surface, Point2d point, out double elevation)' $cadastralBody 'Cadastral safe Surface sampling'
+if (-not $cadastral.Contains('August20SurfaceChoice.TryElevationSafe(surface, point, out elevation)')) {
+    $cadastral=ReplaceMethodBody $cadastral 'private static bool TryElevation(Surface surface, Point2d point, out double elevation)' $cadastralBody 'Cadastral safe Surface sampling' 'TryElevation'
+}
+else {
+    Write-Host 'August 20 Cadastral Surface sampling is already guarded.' -ForegroundColor DarkGreen
+}
 WriteText $cadastralPath $cadastral
 
 # Road Reserve: same common crash boundary.
@@ -142,7 +158,12 @@ $road=MoveSurfaceResolutionBeforeSelection $road 'public void SewerRoadReserve()
 $roadBody=@'
             return August20SurfaceChoice.TryElevationSafe(surface, point, out elevation);
 '@
-$road=ReplaceMethodBody $road 'private static bool TryElevation(Surface surface, Point2d point, out double elevation)' $roadBody 'Road Reserve safe Surface sampling'
+if (-not $road.Contains('August20SurfaceChoice.TryElevationSafe(surface, point, out elevation)')) {
+    $road=ReplaceMethodBody $road 'private static bool TryElevation(Surface surface, Point2d point, out double elevation)' $roadBody 'Road Reserve safe Surface sampling' 'TryElevation'
+}
+else {
+    Write-Host 'August 20 Road Reserve Surface sampling is already guarded.' -ForegroundColor DarkGreen
+}
 WriteText $roadReservePath $road
 
 # Midblock: resolve Surface first and route every low-side sample through the same guard.
@@ -158,7 +179,12 @@ $midBody=@'
             }
             return values.Count == 0 ? double.NaN : values.Average();
 '@
-$mid=ReplaceMethodBody $mid 'private static double AverageSurface(Surface surface, IEnumerable<Point2d> points)' $midBody 'Midblock safe Surface sampling'
+if (-not $mid.Contains('August20SurfaceChoice.TryElevationSafe(surface, point, out value)')) {
+    $mid=ReplaceMethodBody $mid 'private static double AverageSurface(Surface surface, IEnumerable<Point2d> points)' $midBody 'Midblock safe Surface sampling' 'AverageSurface'
+}
+else {
+    Write-Host 'August 20 Midblock Surface sampling is already guarded.' -ForegroundColor DarkGreen
+}
 WriteText $midblockPath $mid
 
 # Site Grid: successful compilation is refused unless the visible field markers survive all earlier repairs.
