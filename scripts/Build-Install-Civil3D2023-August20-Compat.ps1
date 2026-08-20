@@ -14,10 +14,11 @@ $preflight = Join-Path $PSScriptRoot 'Repair-August20-SurveyProductionMenuPrefli
 $lateSafety = Join-Path $PSScriptRoot 'Repair-August20-SewerFatalAndSiteGridVisibility-Civil3D2023.ps1'
 $geometryFirst = Join-Path $PSScriptRoot 'Repair-August20-GeometryFirstSewerAndDynamicSiteGrid-Civil3D2023.ps1'
 $multiDimensionFinal = Join-Path $PSScriptRoot 'Repair-August20-MultiDimensionCircleUnitsAndProperties-Civil3D2023.ps1'
+$crossDisciplineFatalSafety = Join-Path $PSScriptRoot 'Repair-August20-BackgroundAndCrossDisciplineFatalSafety-Civil3D2023.ps1'
 $build = Join-Path $PSScriptRoot 'Build-Install-Civil3D2023-August19.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August20-Compat.runtime.ps1'
 
-foreach ($required in @($preflight,$lateSafety,$geometryFirst,$multiDimensionFinal,$build)) {
+foreach ($required in @($preflight,$lateSafety,$geometryFirst,$multiDimensionFinal,$crossDisciplineFatalSafety,$build)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "August 20 compatibility build prerequisite missing: $required"
     }
@@ -30,8 +31,8 @@ $global:LASTEXITCODE = 0
 # Build-Install-Civil3D2023-August19.ps1 owns the complete staged August 18/19/20
 # mutation order. Do not edit that preserved pipeline here. Create a temporary
 # runtime copy and insert the field fatal/site-grid guard, geometry-first repair,
-# and the final Multiple Dimensions repair after the existing August 20 stability
-# finalizer and before MSBuild starts.
+# Multiple Dimensions repair, then the final Background/cross-discipline fatal-
+# safety pass after the existing August 20 stability finalizer and before MSBuild.
 $text = [System.IO.File]::ReadAllText($build) -replace "`r?`n","`r`n"
 $anchor = @'
 & $august20FieldStability -RepoRoot $repo
@@ -63,6 +64,13 @@ if (-not (Test-Path -LiteralPath $august20MultiDimensionFinal -PathType Leaf)) {
     throw "August 20 Multiple Dimensions final repair not found in staged repository: $august20MultiDimensionFinal"
 }
 & $august20MultiDimensionFinal -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Applying final Background and cross-discipline fatal-safety repair..." -ForegroundColor Cyan
+$august20CrossDisciplineFatalSafety = Join-Path $repo 'scripts\Repair-August20-BackgroundAndCrossDisciplineFatalSafety-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $august20CrossDisciplineFatalSafety -PathType Leaf)) {
+    throw "August 20 Background/cross-discipline fatal-safety repair not found in staged repository: $august20CrossDisciplineFatalSafety"
+}
+& $august20CrossDisciplineFatalSafety -RepoRoot $repo
 $global:LASTEXITCODE = 0
 '@.Trim() -replace "`r?`n","`r`n"
 $text = $text.Replace($anchor,$injected)
