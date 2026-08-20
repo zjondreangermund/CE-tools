@@ -17,10 +17,11 @@ $multiDimensionFinal = Join-Path $PSScriptRoot 'Repair-August20-MultiDimensionCi
 $crossDisciplineFatalSafety = Join-Path $PSScriptRoot 'Repair-August20-BackgroundAndCrossDisciplineFatalSafety-Civil3D2023.ps1'
 $siteGridOptionalGuard = Join-Path $PSScriptRoot 'Repair-August20-SiteGridOptionalSurfaceGuard-Civil3D2023.ps1'
 $runtimeStabilityWorkflow = Join-Path $PSScriptRoot 'Repair-August20-RuntimeStabilityWorkflowPass-Civil3D2023.ps1'
+$fieldRecovery = Join-Path $PSScriptRoot 'Repair-August20-FieldRecoveryPass-Civil3D2023.ps1'
 $build = Join-Path $PSScriptRoot 'Build-Install-Civil3D2023-August19.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August20-Compat.runtime.ps1'
 
-foreach ($required in @($preflight,$lateSafety,$geometryFirst,$multiDimensionFinal,$crossDisciplineFatalSafety,$siteGridOptionalGuard,$runtimeStabilityWorkflow,$build)) {
+foreach ($required in @($preflight,$lateSafety,$geometryFirst,$multiDimensionFinal,$crossDisciplineFatalSafety,$siteGridOptionalGuard,$runtimeStabilityWorkflow,$fieldRecovery,$build)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "August 20 compatibility build prerequisite missing: $required"
     }
@@ -34,8 +35,8 @@ $global:LASTEXITCODE = 0
 # mutation order. Do not edit that preserved pipeline here. Create a temporary
 # runtime copy and insert the field fatal/site-grid guard, geometry-first repair,
 # Multiple Dimensions repair, Background/cross-discipline fatal-safety pass,
-# Site/Grid semantic-validator normalization, then the final runtime-stability/
-# workflow pass immediately before MSBuild.
+# Site/Grid semantic-validator normalization, runtime-stability/workflow pass,
+# then the Civil 3D field-recovery pass as the final repair before MSBuild.
 $text = [System.IO.File]::ReadAllText($build) -replace "`r?`n","`r`n"
 $anchor = @'
 & $august20FieldStability -RepoRoot $repo
@@ -88,6 +89,13 @@ if (-not (Test-Path -LiteralPath $august20RuntimeStabilityWorkflow -PathType Lea
     throw "August 20 runtime-stability/workflow finalizer not found in staged repository: $august20RuntimeStabilityWorkflow"
 }
 & $august20RuntimeStabilityWorkflow -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Applying August 20 Civil 3D field-recovery pass..." -ForegroundColor Cyan
+$august20FieldRecovery = Join-Path $repo 'scripts\Repair-August20-FieldRecoveryPass-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $august20FieldRecovery -PathType Leaf)) {
+    throw "August 20 Civil 3D field-recovery pass not found in staged repository: $august20FieldRecovery"
+}
+& $august20FieldRecovery -RepoRoot $repo
 $global:LASTEXITCODE = 0
 '@.Trim() -replace "`r?`n","`r`n"
 $text = $text.Replace($anchor,$injected)
