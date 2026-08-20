@@ -15,11 +15,12 @@ $lateSafety = Join-Path $PSScriptRoot 'Repair-August20-SewerFatalAndSiteGridVisi
 $geometryFirst = Join-Path $PSScriptRoot 'Repair-August20-GeometryFirstSewerAndDynamicSiteGrid-Civil3D2023.ps1'
 $multiDimensionFinal = Join-Path $PSScriptRoot 'Repair-August20-MultiDimensionCircleUnitsAndProperties-Civil3D2023.ps1'
 $crossDisciplineFatalSafety = Join-Path $PSScriptRoot 'Repair-August20-BackgroundAndCrossDisciplineFatalSafety-Civil3D2023.ps1'
+$siteGridOptionalGuard = Join-Path $PSScriptRoot 'Repair-August20-SiteGridOptionalSurfaceGuard-Civil3D2023.ps1'
 $runtimeStabilityWorkflow = Join-Path $PSScriptRoot 'Repair-August20-RuntimeStabilityWorkflowPass-Civil3D2023.ps1'
 $build = Join-Path $PSScriptRoot 'Build-Install-Civil3D2023-August19.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August20-Compat.runtime.ps1'
 
-foreach ($required in @($preflight,$lateSafety,$geometryFirst,$multiDimensionFinal,$crossDisciplineFatalSafety,$runtimeStabilityWorkflow,$build)) {
+foreach ($required in @($preflight,$lateSafety,$geometryFirst,$multiDimensionFinal,$crossDisciplineFatalSafety,$siteGridOptionalGuard,$runtimeStabilityWorkflow,$build)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "August 20 compatibility build prerequisite missing: $required"
     }
@@ -32,8 +33,9 @@ $global:LASTEXITCODE = 0
 # Build-Install-Civil3D2023-August19.ps1 owns the complete staged August 18/19/20
 # mutation order. Do not edit that preserved pipeline here. Create a temporary
 # runtime copy and insert the field fatal/site-grid guard, geometry-first repair,
-# Multiple Dimensions repair, Background/cross-discipline fatal-safety pass, then
-# the final runtime-stability/workflow pass immediately before MSBuild.
+# Multiple Dimensions repair, Background/cross-discipline fatal-safety pass,
+# Site/Grid semantic-validator normalization, then the final runtime-stability/
+# workflow pass immediately before MSBuild.
 $text = [System.IO.File]::ReadAllText($build) -replace "`r?`n","`r`n"
 $anchor = @'
 & $august20FieldStability -RepoRoot $repo
@@ -72,6 +74,13 @@ if (-not (Test-Path -LiteralPath $august20CrossDisciplineFatalSafety -PathType L
     throw "August 20 Background/cross-discipline fatal-safety repair not found in staged repository: $august20CrossDisciplineFatalSafety"
 }
 & $august20CrossDisciplineFatalSafety -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Normalizing Site/Grid optional-surface validation guard..." -ForegroundColor Cyan
+$august20SiteGridOptionalGuard = Join-Path $repo 'scripts\Repair-August20-SiteGridOptionalSurfaceGuard-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $august20SiteGridOptionalGuard -PathType Leaf)) {
+    throw "August 20 Site/Grid optional-surface guard normalizer not found in staged repository: $august20SiteGridOptionalGuard"
+}
+& $august20SiteGridOptionalGuard -RepoRoot $repo
 $global:LASTEXITCODE = 0
 Write-Host "Applying final August 20 runtime-stability/workflow pass..." -ForegroundColor Cyan
 $august20RuntimeStabilityWorkflow = Join-Path $repo 'scripts\Repair-August20-RuntimeStabilityWorkflowPass-Civil3D2023.ps1'
