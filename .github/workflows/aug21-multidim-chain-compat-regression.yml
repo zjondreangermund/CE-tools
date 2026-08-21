@@ -8,7 +8,10 @@ on:
       - 'scripts/Repair-August21-MultiDimensionChainDispatchCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-CadProductionFieldFinalizer-Civil3D2023.ps1'
       - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - 'src/CE.Tools.Civil3D/August21CadProductionCommands.cs'
+      - 'src/CE.Tools.Civil3D/August21SafePolylineBreakEngine.cs'
       - '.github/workflows/aug21-multidim-chain-compat-regression.yml'
   push:
     branches: [ main ]
@@ -16,13 +19,16 @@ on:
       - 'scripts/Repair-August21-MultiDimensionChainDispatchCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-CadProductionFieldFinalizer-Civil3D2023.ps1'
       - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - 'src/CE.Tools.Civil3D/August21CadProductionCommands.cs'
+      - 'src/CE.Tools.Civil3D/August21SafePolylineBreakEngine.cs'
       - '.github/workflows/aug21-multidim-chain-compat-regression.yml'
 
 jobs:
   reproduce-chain-dispatch-anchor-failure:
     runs-on: windows-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -55,11 +61,15 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $path = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-MultiDimensionChainDispatchCompatibility-Civil3D2023.ps1'
-          $tokens=$null; $errors=$null
-          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
-          if ($errors -and $errors.Count -gt 0) {
-            throw (($errors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
+          foreach ($name in @(
+            'Repair-August21-MultiDimensionChainDispatchCompatibility-Civil3D2023.ps1',
+            'Repair-August21-CadProductionFieldFinalizer-Civil3D2023.ps1')) {
+            $path = Join-Path $env:GITHUB_WORKSPACE ('scripts\' + $name)
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              throw (($errors | ForEach-Object { $name + ' line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
+            }
           }
 
       - name: Normalize chain-dispatch compatibility
@@ -96,19 +106,73 @@ jobs:
           $ErrorActionPreference = 'Stop'
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1') -RepoRoot $env:GITHUB_WORKSPACE
 
-      - name: Verify chain dispatch installed and units survived
+      - name: Run final CAD production field finalizer
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
-          $text = [System.IO.File]::ReadAllText($path)
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-CadProductionFieldFinalizer-Civil3D2023.ps1') -RepoRoot $env:GITHUB_WORKSPACE
+
+      - name: Verify chain dispatch, CAD tab and field fixes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dim = [System.IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'))
+          $floating = [System.IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\FloatingToolsWindow.cs'))
+          $cad = [System.IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August21CadProductionCommands.cs'))
+          $grid = [System.IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'))
+          $break = [System.IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\PolylineNetworkPreparationCommands.cs'))
+          $safe = [System.IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August21SafePolylineBreakEngine.cs'))
+
           foreach ($marker in @(
               'const string chain = "Chain - between multiple open polylines";',
               'string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase)',
-              'DimensionOpenPolylineChain(',
               'private static void DimensionOpenPolylineChain(',
-              'bool outputMillimetres = string.Equals(',
-              'double measurementFactor = outputMillimetres ? 1000.0 : 1.0;')) {
-            if (-not $text.Contains($marker)) { throw "Final staged marker missing: $marker" }
+              'settings.Text("ValueUnits")',
+              'double chainMeasurementFactor = chainOutputMillimetres ? 1000.0 : 1.0;',
+              'dimension.Dimlfac = chainMeasurementFactor;',
+              'if (chainOutputMillimetres) dimension.Dimdec = 0;')) {
+            if (-not $dim.Contains($marker)) { throw "Final chain/millimetre marker missing: $marker" }
           }
-          Write-Host 'Exact staged chain-dimension failure is repaired and Metres/Millimetres support remains.' -ForegroundColor Green
+          foreach ($marker in @(
+              '"cadproduction", "CE-CAD Production"',
+              'Step("Open CE-CAD Production page", "CE_CADPRODUCTION")')) {
+            if (-not $floating.Contains($marker)) { throw "CE-CAD workflow marker missing: $marker" }
+          }
+          foreach ($marker in @(
+              '"01 GENERAL PRODUCTION"',
+              '"02 ANNOTATION PRODUCTION"',
+              '"03 BACKGROUND PRODUCTION"',
+              '"04 CLEANUP PRODUCTION"',
+              '"05 XREF PRODUCTION"',
+              '"06 HATCH PRODUCTION"')) {
+            if (-not $cad.Contains($marker)) { throw "CE-CAD page section missing: $marker" }
+          }
+          if (([regex]::Matches($grid,[regex]::Escape('August21DisplayRefresh.Flush(document);'))).Count -lt 3) {
+            throw 'Site Grid does not flush display after create/manual refresh/linked refresh.'
+          }
+          if (-not $grid.Contains('entity.RecordGraphicsModified(true);')) {
+            throw 'Site Grid generated children are not graphics-dirty.'
+          }
+          if (-not $break.Contains('August21SafePolylineBreakEngine.Run(document);')) {
+            throw 'CE_PLBREAKJUNCTIONS is not delegated to the safe per-source engine.'
+          }
+          $verifyIndex = $safe.IndexOf('VerifyReplacement(',[StringComparison]::Ordinal)
+          $eraseIndex = $safe.IndexOf('source.Erase();',[StringComparison]::Ordinal)
+          if ($verifyIndex -lt 0 -or $eraseIndex -le $verifyIndex) {
+            throw 'Safe break source erase is not ordered after replacement verification.'
+          }
+          foreach ($marker in @('Cleanup(database, newIds);','LengthMatches(originalLength, total)')) {
+            if (-not $safe.Contains($marker)) { throw "Safe break marker missing: $marker" }
+          }
+          Write-Host 'Exact staged CE-CAD/millimetre/SiteGrid/safe-break regression passed.' -ForegroundColor Green
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
