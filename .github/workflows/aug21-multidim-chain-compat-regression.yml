@@ -1,0 +1,126 @@
+name: August 21 Multi Dimensions Chain Compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August21-MultiDimensionChainDispatchCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - '.github/workflows/aug21-multidim-chain-compat-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August21-MultiDimensionChainDispatchCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - '.github/workflows/aug21-multidim-chain-compat-regression.yml'
+
+jobs:
+  reproduce-chain-dispatch-anchor-failure:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reproduce August 20 unit-factor staged state
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+          $old = @'
+            double leader = PaperAnnotationScale.ModelDistance(
+                document.Database,
+                settings.Double("ArcLeader", 6.0));
+
+            int sources = 0;
+          '@ -replace "`r?`n", "`r`n"
+          $staged = @'
+            double leader = PaperAnnotationScale.ModelDistance(
+                document.Database,
+                settings.Double("ArcLeader", 6.0));
+            bool outputMillimetres = string.Equals(
+                settings.Text("ValueUnits"),
+                "Millimetres",
+                StringComparison.OrdinalIgnoreCase);
+            double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
+
+            int sources = 0;
+          '@ -replace "`r?`n", "`r`n"
+          if (-not $text.Contains($old)) { throw 'Regression setup could not find the pre-unit leader/source anchor.' }
+          $text = $text.Replace($old,$staged)
+          [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
+          $check = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+          if ($check.Contains($old)) { throw 'Regression setup failed: historical chain-dispatch anchor is still present.' }
+          if (-not $check.Contains('double measurementFactor = outputMillimetres ? 1000.0 : 1.0;')) { throw 'Regression setup missing measurement factor.' }
+          Write-Host 'Exact August 20 unit-factor/chain-dispatch anchor conflict reproduced.' -ForegroundColor Green
+
+      - name: Parse compatibility normalizer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-MultiDimensionChainDispatchCompatibility-Civil3D2023.ps1'
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            throw (($errors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
+          }
+
+      - name: Normalize chain-dispatch compatibility
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-MultiDimensionChainDispatchCompatibility-Civil3D2023.ps1') -RepoRoot $env:GITHUB_WORKSPACE
+
+      - name: Verify preserved finalizer anchor and units
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+          $anchor = @'
+            double leader = PaperAnnotationScale.ModelDistance(
+                document.Database,
+                settings.Double("ArcLeader", 6.0));
+
+            int sources = 0;
+          '@ -replace "`r?`n", "`r`n"
+          if (-not $text.Contains($anchor)) { throw 'Compatibility did not restore the preserved August 21 chain-dispatch anchor.' }
+          foreach ($marker in @(
+              'bool outputMillimetres = string.Equals(',
+              'double measurementFactor = outputMillimetres ? 1000.0 : 1.0;')) {
+            if (([regex]::Matches($text,[regex]::Escape($marker))).Count -ne 1) { throw "Unit marker not preserved exactly once: $marker" }
+          }
+          $style = $text.IndexOf('string outputStyleName = string.Empty;',[StringComparison]::Ordinal)
+          $factor = $text.IndexOf('double measurementFactor = outputMillimetres ? 1000.0 : 1.0;',[StringComparison]::Ordinal)
+          $try = $text.IndexOf('            try',$factor,[StringComparison]::Ordinal)
+          if ($style -lt 0 -or $factor -lt $style -or $try -lt $factor) { throw 'Unit declarations are not in safe pre-transaction scope.' }
+          Write-Host 'Chain-dispatch anchor restored without removing measurement-unit support.' -ForegroundColor Green
+
+      - name: Run preserved August 21 page/dimension/trim finalizer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1') -RepoRoot $env:GITHUB_WORKSPACE
+
+      - name: Verify chain dispatch installed and units survived
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path)
+          foreach ($marker in @(
+              'const string chain = "Chain - between multiple open polylines";',
+              'string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase)',
+              'DimensionOpenPolylineChain(',
+              'private static void DimensionOpenPolylineChain(',
+              'bool outputMillimetres = string.Equals(',
+              'double measurementFactor = outputMillimetres ? 1000.0 : 1.0;')) {
+            if (-not $text.Contains($marker)) { throw "Final staged marker missing: $marker" }
+          }
+          Write-Host 'Exact staged chain-dimension failure is repaired and Metres/Millimetres support remains.' -ForegroundColor Green
