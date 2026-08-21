@@ -1,0 +1,102 @@
+name: August 21 Plugin Manager Compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-StateGraphicsSurfaceSafety-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/PluginEntry.cs'
+      - '.github/workflows/aug21-plugin-manager-compat-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-StateGraphicsSurfaceSafety-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/PluginEntry.cs'
+      - '.github/workflows/aug21-plugin-manager-compat-regression.yml'
+
+jobs:
+  reproduce-plugin-anchor-failure:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Simulate late staged PluginEntry manager drift
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\PluginEntry.cs'
+          $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+
+          # Reproduce the class of staged failure from the field build: the exact
+          # ParkingOption anchors are no longer available and a partial August21
+          # manager call may already be present.
+          $text = $text.Replace("            ParkingOptionAutoRefreshManager.Initialize();`r`n",'')
+          $text = $text.Replace("            ParkingOptionAutoRefreshManager.Terminate();`r`n",'')
+          $initMarker = "        {`r`n            DynamicSectionUpdateManager.Initialize();"
+          if (-not $text.Contains($initMarker)) { throw 'Regression setup Initialize marker missing.' }
+          $text = $text.Replace(
+            $initMarker,
+            "        {`r`n                August21SimpleParkingRefreshManager.Initialize();`r`n            DynamicSectionUpdateManager.Initialize();")
+          [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
+
+          $staged = [System.IO.File]::ReadAllText($path)
+          if ($staged.Contains("            ParkingOptionAutoRefreshManager.Initialize();`r`n")) { throw 'Regression setup still has exact Initialize anchor.' }
+          if ($staged.Contains("            ParkingOptionAutoRefreshManager.Terminate();`r`n")) { throw 'Regression setup still has exact Terminate anchor.' }
+          Write-Host 'Exact PluginEntry anchor-loss class reproduced.' -ForegroundColor Green
+
+      - name: Parse compatibility repair
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            throw (($errors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
+          }
+
+      - name: Run PluginEntry compatibility normalizer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1') -RepoRoot $env:GITHUB_WORKSPACE
+
+      - name: Verify historical August 21 anchors are satisfied
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $pluginPath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\PluginEntry.cs'
+          $statePath = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-StateGraphicsSurfaceSafety-Civil3D2023.ps1'
+          $plugin = [System.IO.File]::ReadAllText($pluginPath) -replace "`r?`n", "`r`n"
+          $state = [System.IO.File]::ReadAllText($statePath) -replace "`r?`n", "`r`n"
+
+          $init = @'
+            ParkingOptionAutoRefreshManager.Initialize();
+            August21SimpleParkingRefreshManager.Initialize();
+            August21GraphicsRefreshManager.Initialize();
+          '@ -replace "`r?`n", "`r`n"
+          $term = @'
+            August21GraphicsRefreshManager.Terminate();
+            August21SimpleParkingRefreshManager.Terminate();
+            ParkingOptionAutoRefreshManager.Terminate();
+          '@ -replace "`r?`n", "`r`n"
+
+          if (-not $plugin.Contains($init.TrimEnd("`r","`n"))) { throw 'Canonical Initialize block missing after compatibility.' }
+          if (-not $plugin.Contains($term.TrimEnd("`r","`n"))) { throw 'Canonical Terminate block missing after compatibility.' }
+          foreach ($call in @(
+              'August21SimpleParkingRefreshManager.Initialize();',
+              'August21GraphicsRefreshManager.Initialize();',
+              'August21GraphicsRefreshManager.Terminate();',
+              'August21SimpleParkingRefreshManager.Terminate();')) {
+            if (([regex]::Matches($plugin,[regex]::Escape($call))).Count -ne 1) { throw "Duplicate/missing manager call: $call" }
+          }
+          if (-not $state.Contains('Plugin August21 managers initialize')) { throw 'Historical state-safety Initialize guard contract changed unexpectedly.' }
+          if (-not $state.Contains('Plugin August21 managers terminate')) { throw 'Historical state-safety Terminate guard contract changed unexpectedly.' }
+          Write-Host 'PluginEntry manager compatibility satisfies the August 21 state-safety anchors.' -ForegroundColor Green
