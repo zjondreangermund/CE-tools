@@ -7,16 +7,20 @@ on:
     paths:
       - 'scripts/Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-August21-SewerSequenceDeferredLabelsCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-RoadCentrelineMenuCompatibility-Civil3D2023.ps1'
       - 'src/CE.Tools.Civil3D/SewerSequenceCommands.cs'
       - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - 'src/CE.Tools.Civil3D/August13RoadProductionCentres.cs'
       - '.github/workflows/aug21-field-recovery-compat-regression.yml'
   push:
     branches: [ main ]
     paths:
       - 'scripts/Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-August21-SewerSequenceDeferredLabelsCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-RoadCentrelineMenuCompatibility-Civil3D2023.ps1'
       - 'src/CE.Tools.Civil3D/SewerSequenceCommands.cs'
       - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - 'src/CE.Tools.Civil3D/August13RoadProductionCentres.cs'
       - '.github/workflows/aug21-field-recovery-compat-regression.yml'
 
 jobs:
@@ -62,22 +66,36 @@ jobs:
           if (-not $staged.Contains('CE_SEWSEQ safety: selected-path sequencing/renaming is complete.')) { throw 'Regression setup missing selected-path safety message.' }
           Write-Host 'Exact August 20 sequence-only state reproduced.' -ForegroundColor Green
 
+      - name: Verify compact legacy Road Production route is present
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $roadPath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August13RoadProductionCentres.cs'
+          $road = [System.IO.File]::ReadAllText($roadPath)
+          $legacy = 'A\(\s*"CE-Road Reserve Centrelines"\s*,\s*"CE_ROADRESERVECENTERLINES"'
+          if (-not [regex]::IsMatch($road,$legacy)) {
+            throw 'Regression setup no longer contains the compact/legacy Road Reserve centreline route.'
+          }
+          Write-Host 'Exact Road Production legacy route state reproduced.' -ForegroundColor Green
+
       - name: Run pre-field-recovery compatibility bridge
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           & (Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1') -RepoRoot $env:GITHUB_WORKSPACE
 
-      - name: Verify exact failed guard is now satisfied
+      - name: Verify exact failed guards are now satisfied
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $sequencePath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\SewerSequenceCommands.cs'
           $fieldPath = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August20-FieldRecoveryPass-Civil3D2023.ps1'
           $sitePath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
+          $roadPath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August13RoadProductionCentres.cs'
           $sequence = [System.IO.File]::ReadAllText($sequencePath)
           $field = [System.IO.File]::ReadAllText($fieldPath)
           $site = [System.IO.File]::ReadAllText($sitePath)
+          $road = [System.IO.File]::ReadAllText($roadPath)
 
           $queue = 'document.SendStringToExecute("CE_SEWLABELS ", true, false, false);'
           $queueCount = ([regex]::Matches($sequence,[regex]::Escape($queue))).Count
@@ -85,6 +103,11 @@ jobs:
           if ($sequence.Contains('SewerNetworkLabelCommands.EnsureLabels(')) { throw 'Synchronous EnsureLabels survived compatibility.' }
           if (-not $sequence.Contains('CE_SEWSEQ complete. Sequencing/renaming is committed;')) { throw 'Whole-network deferred-label state missing.' }
           if (-not $sequence.Contains('CE_SEWSEQ selected path complete.')) { throw 'Selected-path deferred-label state missing.' }
-          if (-not $field.Contains('document.SendStringToExecute("CE_SEWLABELS ", true, false, false);')) { throw 'Historical field-recovery guard contract changed unexpectedly.' }
+          if (-not $field.Contains('document.SendStringToExecute("CE_SEWLABELS ", true, false, false);')) { throw 'Historical field-recovery sewer guard contract changed unexpectedly.' }
           if (-not $site.Contains('private static ObjectId Append(') -or -not $site.Contains('entity.RecordGraphicsModified(true);')) { throw 'Site Grid compatibility contract was not preserved.' }
-          Write-Host 'Exact Sewer Sequence field-recovery failure is covered and the guard is satisfied.' -ForegroundColor Green
+
+          $safeRoad = 'A("CE-Road Reserve Centrelines", "CE_ROADCENTERLINEPOLY"'
+          if (-not $road.Contains($safeRoad)) { throw 'Road Production was not normalized to the exact safe CE_ROADCENTERLINEPOLY guard string.' }
+          if ($road.Contains('"CE_ROADRESERVECENTERLINES"')) { throw 'Legacy Road Reserve centreline menu command survived compatibility.' }
+          if (-not $field.Contains($safeRoad)) { throw 'Historical field-recovery Road Production guard contract changed unexpectedly.' }
+          Write-Host 'Site Grid, Sewer Sequence and Road Production field-recovery compatibility guards are satisfied.' -ForegroundColor Green
