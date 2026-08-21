@@ -1,0 +1,90 @@
+name: August 21 Field Recovery Compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-SewerSequenceDeferredLabelsCompatibility-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/SewerSequenceCommands.cs'
+      - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - '.github/workflows/aug21-field-recovery-compat-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-SewerSequenceDeferredLabelsCompatibility-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/SewerSequenceCommands.cs'
+      - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - '.github/workflows/aug21-field-recovery-compat-regression.yml'
+
+jobs:
+  reproduce-field-recovery-state:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Simulate August 20 sequence-only staged source
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\SewerSequenceCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+
+          $wholePattern = '\s*SewerNetworkLabelCommands\.EnsureLabels\(\s*document,\s*plans\.Select\(plan\s*=>\s*plan\.NetworkId\)\s*\);'
+          $wholeMatches = [regex]::Matches($text,$wholePattern,[System.Text.RegularExpressions.RegexOptions]::Singleline)
+          if ($wholeMatches.Count -ne 1) { throw "Regression setup whole-network EnsureLabels matches=$($wholeMatches.Count)." }
+          $wholeSafety = @'
+                editor.WriteMessage(
+                    "\nCE_SEWSEQ safety: sequencing/renaming is complete. Run sewer labels, alignments and linked refresh as separate commands after reviewing the network.");
+          '@ -replace "`r?`n", "`r`n"
+          $text = [regex]::Replace($text,$wholePattern,[System.Text.RegularExpressions.MatchEvaluator]{ param($m) $wholeSafety.TrimEnd("`r","`n") },[System.Text.RegularExpressions.RegexOptions]::Singleline)
+
+          $selectedPattern = 'if\s*\(!labelledNetworkId\.IsNull\)\s*\{\s*SewerNetworkLabelCommands\.EnsureLabels\(\s*document,\s*new\[\]\s*\{\s*labelledNetworkId\s*\}\s*\);\s*\}'
+          $selectedMatches = [regex]::Matches($text,$selectedPattern,[System.Text.RegularExpressions.RegexOptions]::Singleline)
+          if ($selectedMatches.Count -ne 1) { throw "Regression setup selected-path EnsureLabels matches=$($selectedMatches.Count)." }
+          $selectedSafety = @'
+                if (!labelledNetworkId.IsNull)
+                {
+                    editor.WriteMessage(
+                        "\nCE_SEWSEQ safety: selected-path sequencing/renaming is complete. Run sewer labels, alignments and linked refresh separately.");
+                }
+          '@ -replace "`r?`n", "`r`n"
+          $text = [regex]::Replace($text,$selectedPattern,[System.Text.RegularExpressions.MatchEvaluator]{ param($m) $selectedSafety.TrimEnd("`r","`n") },[System.Text.RegularExpressions.RegexOptions]::Singleline)
+          [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
+
+          $staged = [System.IO.File]::ReadAllText($path)
+          if ($staged.Contains('SewerNetworkLabelCommands.EnsureLabels(')) { throw 'Regression setup left synchronous EnsureLabels calls.' }
+          if (-not $staged.Contains('CE_SEWSEQ safety: sequencing/renaming is complete.')) { throw 'Regression setup missing whole-network safety message.' }
+          if (-not $staged.Contains('CE_SEWSEQ safety: selected-path sequencing/renaming is complete.')) { throw 'Regression setup missing selected-path safety message.' }
+          Write-Host 'Exact August 20 sequence-only state reproduced.' -ForegroundColor Green
+
+      - name: Run pre-field-recovery compatibility bridge
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1') -RepoRoot $env:GITHUB_WORKSPACE
+
+      - name: Verify exact failed guard is now satisfied
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sequencePath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\SewerSequenceCommands.cs'
+          $fieldPath = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August20-FieldRecoveryPass-Civil3D2023.ps1'
+          $sitePath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
+          $sequence = [System.IO.File]::ReadAllText($sequencePath)
+          $field = [System.IO.File]::ReadAllText($fieldPath)
+          $site = [System.IO.File]::ReadAllText($sitePath)
+
+          $queue = 'document.SendStringToExecute("CE_SEWLABELS ", true, false, false);'
+          $queueCount = ([regex]::Matches($sequence,[regex]::Escape($queue))).Count
+          if ($queueCount -lt 2) { throw "Expected two deferred CE_SEWLABELS queue points; found $queueCount." }
+          if ($sequence.Contains('SewerNetworkLabelCommands.EnsureLabels(')) { throw 'Synchronous EnsureLabels survived compatibility.' }
+          if (-not $sequence.Contains('CE_SEWSEQ complete. Sequencing/renaming is committed;')) { throw 'Whole-network deferred-label state missing.' }
+          if (-not $sequence.Contains('CE_SEWSEQ selected path complete.')) { throw 'Selected-path deferred-label state missing.' }
+          if (-not $field.Contains('document.SendStringToExecute("CE_SEWLABELS ", true, false, false);')) { throw 'Historical field-recovery guard contract changed unexpectedly.' }
+          if (-not $site.Contains('private static ObjectId Append(') -or -not $site.Contains('entity.RecordGraphicsModified(true);')) { throw 'Site Grid compatibility contract was not preserved.' }
+          Write-Host 'Exact Sewer Sequence field-recovery failure is covered and the guard is satisfied.' -ForegroundColor Green
