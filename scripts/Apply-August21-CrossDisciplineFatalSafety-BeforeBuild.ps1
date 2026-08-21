@@ -5,26 +5,113 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 $root = (Resolve-Path -LiteralPath $RepoRoot.Trim().Trim('"')).ProviderPath
-$geometry = Join-Path $root 'src\CE.Tools.Civil3D\August20GeometryFirstSewerCommands.cs'
-if (-not (Test-Path -LiteralPath $geometry -PathType Leaf)) {
-    throw "Final fatal-safety bootstrap cannot find geometry-first source: $geometry"
+$utf8 = New-Object System.Text.UTF8Encoding($false)
+$src = Join-Path $root 'src\CE.Tools.Civil3D'
+
+function Required([string]$name) {
+    $path = Join-Path $src $name
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Final fatal-safety bootstrap prerequisite missing: $path"
+    }
+    return $path
+}
+function ReadText([string]$path) {
+    return [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+}
+function WriteText([string]$path,[string]$text) {
+    [System.IO.File]::WriteAllText($path,($text -replace "`r?`n","`r`n"),$utf8)
+}
+function NormalizeCommandToken(
+    [string]$path,
+    [string]$oldToken,
+    [string]$newToken,
+    [string]$label) {
+
+    $text = ReadText $path
+    if ($text.Contains($newToken)) {
+        if ($text.Contains($oldToken)) {
+            throw "Final fatal-safety bridge state is ambiguous for $label; old and new tokens both exist."
+        }
+        return
+    }
+    $count = ([regex]::Matches($text,[regex]::Escape($oldToken))).Count
+    if ($count -ne 1) {
+        throw "Final fatal-safety bridge expected one $label token but found $count."
+    }
+    WriteText $path ($text.Replace($oldToken,$newToken))
 }
 
-# A direct developer MSBuild may not have gone through the historical staged
-# installer mutation sequence. If the raw bridge tokens are still present, run the
-# geometry-first bridge repair now. In the normal ZIP installer the bridge is
-# already applied, so this is a no-op.
-$text = [System.IO.File]::ReadAllText($geometry)
-if ($text.Contains('CE_AUG20MIDBLOCKBRIDGE') -or
-    $text.Contains('CE_AUG20ROADRESERVEBRIDGE') -or
-    $text.Contains('CE_AUG20ROADCENTERBRIDGE')) {
-    $geometryRepair = Join-Path $root 'scripts\Repair-August20-GeometryFirstSewerAndDynamicSiteGrid-Civil3D2023.ps1'
-    if (-not (Test-Path -LiteralPath $geometryRepair -PathType Leaf)) {
-        throw "Final fatal-safety bootstrap cannot find geometry-first repair: $geometryRepair"
+$midblock = Required 'August11MidblockSewerProductionCommands.cs'
+$road = Required 'August19RoadReserveSewerAndSafetyCommands.cs'
+$geometry = Required 'August20GeometryFirstSewerCommands.cs'
+
+# A direct developer MSBuild starts from the repository's raw source, while the
+# packaged installer has already applied the historical August 20 command bridge.
+# Normalize ONLY those six command tokens here. Do not call the old combined
+# GeometryFirst+SiteGrid repair: its Site Grid guards intentionally target an older
+# source state and must never block this final pre-compile fatal-safety boundary.
+NormalizeCommandToken `
+    $midblock `
+    '"CE_MIDBLOCKSEWERPRODUCTION", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    '"CE_MIDBLOCKSEWERPRODUCTIONLEGACY", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    'legacy Midblock command'
+NormalizeCommandToken `
+    $road `
+    '"CE_SEWERROADRESERVE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    '"CE_SEWERROADRESERVELEGACY", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    'legacy Road Reserve sewer command'
+NormalizeCommandToken `
+    $road `
+    '"CE_ROADRESERVECENTERLINESSAFE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    '"CE_ROADRESERVECENTERLINESSAFELEGACY", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    'legacy Road Reserve centreline command'
+NormalizeCommandToken `
+    $geometry `
+    '"CE_AUG20MIDBLOCKBRIDGE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    '"CE_MIDBLOCKSEWERPRODUCTION", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    'geometry-first Midblock public bridge'
+NormalizeCommandToken `
+    $geometry `
+    '"CE_AUG20ROADRESERVEBRIDGE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    '"CE_SEWERROADRESERVE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    'geometry-first Road Reserve sewer public bridge'
+NormalizeCommandToken `
+    $geometry `
+    '"CE_AUG20ROADCENTERBRIDGE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    '"CE_ROADRESERVECENTERLINESSAFE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw' `
+    'geometry-first Road Reserve centreline public bridge'
+
+$midCheck = ReadText $midblock
+$roadCheck = ReadText $road
+$geometryCheck = ReadText $geometry
+foreach ($required in @(
+    'CE_MIDBLOCKSEWERPRODUCTIONLEGACY')) {
+    if (-not $midCheck.Contains($required)) {
+        throw "Final fatal-safety bridge verification missing: $required"
     }
-    & $geometryRepair -RepoRoot $root
-    if ($LASTEXITCODE -ne 0) { throw "Geometry-first bridge repair failed with exit code $LASTEXITCODE." }
-    $global:LASTEXITCODE = 0
+}
+foreach ($required in @(
+    'CE_SEWERROADRESERVELEGACY',
+    'CE_ROADRESERVECENTERLINESSAFELEGACY')) {
+    if (-not $roadCheck.Contains($required)) {
+        throw "Final fatal-safety bridge verification missing: $required"
+    }
+}
+foreach ($required in @(
+    '"CE_MIDBLOCKSEWERPRODUCTION"',
+    '"CE_SEWERROADRESERVE"',
+    '"CE_ROADRESERVECENTERLINESSAFE"')) {
+    if (-not $geometryCheck.Contains($required)) {
+        throw "Final fatal-safety public geometry-first bridge missing: $required"
+    }
+}
+foreach ($legacyBridge in @(
+    'CE_AUG20MIDBLOCKBRIDGE',
+    'CE_AUG20ROADRESERVEBRIDGE',
+    'CE_AUG20ROADCENTERBRIDGE')) {
+    if ($geometryCheck.Contains($legacyBridge)) {
+        throw "Final fatal-safety raw bridge token survived: $legacyBridge"
+    }
 }
 
 $finalizer = Join-Path $root 'scripts\Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1'
