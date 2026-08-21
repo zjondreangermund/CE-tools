@@ -59,7 +59,25 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          & (Join-Path $env:STAGE 'scripts\Repair-August20-MultiDimensionCircleUnitsAndProperties-Civil3D2023.ps1') -RepoRoot $env:STAGE
+          $path = Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+          $pattern = '(?s)(\s*double leader = PaperAnnotationScale\.ModelDistance\(\s*document\.Database,\s*settings\.Double\("ArcLeader", 6\.0\)\);)(\s*int sources = 0;)'
+          $match = [regex]::Match($text,$pattern)
+          if (-not $match.Success) { throw 'Could not reproduce the late August 20 unit-factor position.' }
+          $unit = @'
+            bool outputMillimetres = string.Equals(
+                settings.Text("ValueUnits"),
+                "Millimetres",
+                StringComparison.OrdinalIgnoreCase);
+            double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
+'@ -replace "`r?`n", "`r`n"
+          $replacement = $match.Groups[1].Value + "`r`n" + $unit + $match.Groups[2].Value
+          $text = $text.Substring(0,$match.Index) + $replacement + $text.Substring($match.Index + $match.Length)
+          [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
+          if (-not $text.Contains('double measurementFactor = outputMillimetres ? 1000.0 : 1.0;')) {
+            throw 'Late unit-factor state was not reproduced.'
+          }
+          Write-Host 'Exact late unit-factor/chain-anchor state reproduced.' -ForegroundColor Green
 
       - name: Run compatibility bridge and final page pass
         shell: pwsh
