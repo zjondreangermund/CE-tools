@@ -33,25 +33,16 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
           $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
-          $old = @'
-            double leader = PaperAnnotationScale.ModelDistance(
-                document.Database,
-                settings.Double("ArcLeader", 6.0));
-
-            int sources = 0;
-          '@ -replace "`r?`n", "`r`n"
-          $staged = @'
-            double leader = PaperAnnotationScale.ModelDistance(
-                document.Database,
-                settings.Double("ArcLeader", 6.0));
-            bool outputMillimetres = string.Equals(
-                settings.Text("ValueUnits"),
-                "Millimetres",
-                StringComparison.OrdinalIgnoreCase);
-            double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
-
-            int sources = 0;
-          '@ -replace "`r?`n", "`r`n"
+          $leader = "            double leader = PaperAnnotationScale.ModelDistance(`r`n" +
+                    "                document.Database,`r`n" +
+                    "                settings.Double(`"ArcLeader`", 6.0));`r`n"
+          $old = $leader + "`r`n            int sources = 0;"
+          $unit = "            bool outputMillimetres = string.Equals(`r`n" +
+                  "                settings.Text(`"ValueUnits`"),`r`n" +
+                  "                `"Millimetres`",`r`n" +
+                  "                StringComparison.OrdinalIgnoreCase);`r`n" +
+                  "            double measurementFactor = outputMillimetres ? 1000.0 : 1.0;`r`n"
+          $staged = $leader + $unit + "`r`n            int sources = 0;"
           if (-not $text.Contains($old)) { throw 'Regression setup could not find the pre-unit leader/source anchor.' }
           $text = $text.Replace($old,$staged)
           [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
@@ -83,13 +74,10 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
           $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
-          $anchor = @'
-            double leader = PaperAnnotationScale.ModelDistance(
-                document.Database,
-                settings.Double("ArcLeader", 6.0));
-
-            int sources = 0;
-          '@ -replace "`r?`n", "`r`n"
+          $anchor = "            double leader = PaperAnnotationScale.ModelDistance(`r`n" +
+                    "                document.Database,`r`n" +
+                    "                settings.Double(`"ArcLeader`", 6.0));`r`n`r`n" +
+                    "            int sources = 0;"
           if (-not $text.Contains($anchor)) { throw 'Compatibility did not restore the preserved August 21 chain-dispatch anchor.' }
           foreach ($marker in @(
               'bool outputMillimetres = string.Equals(',
