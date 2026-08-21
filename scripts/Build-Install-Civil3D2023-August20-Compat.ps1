@@ -18,32 +18,32 @@ $crossDisciplineFatalSafety = Join-Path $PSScriptRoot 'Repair-August20-Backgroun
 $siteGridOptionalGuard = Join-Path $PSScriptRoot 'Repair-August20-SiteGridOptionalSurfaceGuard-Civil3D2023.ps1'
 $runtimeStabilityWorkflow = Join-Path $PSScriptRoot 'Repair-August20-RuntimeStabilityWorkflowPass-Civil3D2023.ps1'
 $fieldRecovery = Join-Path $PSScriptRoot 'Repair-August20-FieldRecoveryPass-Civil3D2023.ps1'
+$august21StateSafety = Join-Path $PSScriptRoot 'Repair-August21-StateGraphicsSurfaceSafety-Civil3D2023.ps1'
+$august21PageTrimDimension = Join-Path $PSScriptRoot 'Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
 $build = Join-Path $PSScriptRoot 'Build-Install-Civil3D2023-August19.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August20-Compat.runtime.ps1'
 
-foreach ($required in @($preflight,$lateSafety,$geometryFirst,$multiDimensionFinal,$crossDisciplineFatalSafety,$siteGridOptionalGuard,$runtimeStabilityWorkflow,$fieldRecovery,$build)) {
+foreach ($required in @($preflight,$lateSafety,$geometryFirst,$multiDimensionFinal,$crossDisciplineFatalSafety,$siteGridOptionalGuard,$runtimeStabilityWorkflow,$fieldRecovery,$august21StateSafety,$august21PageTrimDimension,$build)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
-        throw "August 20 compatibility build prerequisite missing: $required"
+        throw "August 20/21 compatibility build prerequisite missing: $required"
     }
 }
 
-Write-Host "`nPreparing current Survey Production menu for the August 20 finalizer..." -ForegroundColor Cyan
+Write-Host "`nPreparing current Survey Production menu for the August 20/21 finalizer..." -ForegroundColor Cyan
 & $preflight -RepoRoot $repo
 $global:LASTEXITCODE = 0
 
 # Build-Install-Civil3D2023-August19.ps1 owns the complete staged August 18/19/20
 # mutation order. Do not edit that preserved pipeline here. Create a temporary
-# runtime copy and insert the field fatal/site-grid guard, geometry-first repair,
-# Multiple Dimensions repair, Background/cross-discipline fatal-safety pass,
-# Site/Grid semantic-validator normalization, runtime-stability/workflow pass,
-# then the Civil 3D field-recovery pass as the final repair before MSBuild.
+# runtime copy and insert the late August 20 finalizers, followed by the August 21
+# state/surface/graphics repair and the final page-order/dimension/trim repair.
 $text = [System.IO.File]::ReadAllText($build) -replace "`r?`n","`r`n"
 $anchor = @'
 & $august20FieldStability -RepoRoot $repo
 $global:LASTEXITCODE = 0
 '@.Trim() -replace "`r?`n","`r`n"
 if (-not $text.Contains($anchor)) {
-    throw 'August 20 compatibility build could not locate the existing field-stability finalizer anchor.'
+    throw 'August 20/21 compatibility build could not locate the existing field-stability finalizer anchor.'
 }
 $injected = @'
 & $august20FieldStability -RepoRoot $repo
@@ -97,6 +97,20 @@ if (-not (Test-Path -LiteralPath $august20FieldRecovery -PathType Leaf)) {
 }
 & $august20FieldRecovery -RepoRoot $repo
 $global:LASTEXITCODE = 0
+Write-Host "Applying August 21 state, graphics, dynamic parking and surface-safety pass..." -ForegroundColor Cyan
+$august21StateSafety = Join-Path $repo 'scripts\Repair-August21-StateGraphicsSurfaceSafety-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $august21StateSafety -PathType Leaf)) {
+    throw "August 21 state/graphics/surface-safety pass not found in staged repository: $august21StateSafety"
+}
+& $august21StateSafety -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Applying August 21 Platform page, workflow numbering, chain dimensions and Multi Trim repair..." -ForegroundColor Cyan
+$august21PageTrimDimension = Join-Path $repo 'scripts\Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $august21PageTrimDimension -PathType Leaf)) {
+    throw "August 21 Platform/page-order/dimension/trim pass not found in staged repository: $august21PageTrimDimension"
+}
+& $august21PageTrimDimension -RepoRoot $repo
+$global:LASTEXITCODE = 0
 '@.Trim() -replace "`r?`n","`r`n"
 $text = $text.Replace($anchor,$injected)
 [System.IO.File]::WriteAllText($runtime,$text,(New-Object System.Text.UTF8Encoding($false)))
@@ -106,7 +120,7 @@ $tokens=$null; $parseErrors=$null
 if ($parseErrors -and $parseErrors.Count -gt 0) {
     $details = ($parseErrors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | '
     Remove-Item -LiteralPath $runtime -Force -ErrorAction SilentlyContinue
-    throw "August 20 compatibility runtime build has a PowerShell syntax error: $details"
+    throw "August 20/21 compatibility runtime build has a PowerShell syntax error: $details"
 }
 
 $invoke = @{ Configuration = $Configuration }
@@ -117,7 +131,7 @@ if (-not [string]::IsNullOrWhiteSpace($SourceCommit)) { $invoke.SourceCommit = $
 try {
     & $runtime @invoke
     if ($LASTEXITCODE -ne 0) {
-        throw "August 20 compatibility build failed with exit code $LASTEXITCODE."
+        throw "August 20/21 compatibility build failed with exit code $LASTEXITCODE."
     }
 }
 finally {
