@@ -55,6 +55,7 @@ function InvokeFinalizer([string]$name,[string]$label) {
 $midblock = Required 'August11MidblockSewerProductionCommands.cs'
 $road = Required 'August19RoadReserveSewerAndSafetyCommands.cs'
 $geometry = Required 'August20GeometryFirstSewerCommands.cs'
+$automaticRefresh = Required 'AugustAutomaticRefreshManager.cs'
 
 # A direct developer MSBuild starts from the repository's raw source, while the
 # packaged installer has already applied the historical August 20 command bridge.
@@ -123,6 +124,19 @@ foreach ($legacyBridge in @(
     if ($geometryCheck.Contains($legacyBridge)) {
         throw "Final fatal-safety raw bridge token survived: $legacyBridge"
     }
+}
+
+# Historical raw source uses 'args' while one older staged repair uses 'e'. The
+# Platform/relative finalizer is intentionally strict, so normalize this harmless
+# parameter name at the final build boundary before that repair scans the method.
+$automaticText = ReadText $automaticRefresh
+$automaticText = $automaticText.Replace(
+    '        private static void OnCommandEnded(object sender, CommandEventArgs args)',
+    '        private static void OnCommandEnded(object sender, CommandEventArgs e)')
+WriteText $automaticRefresh $automaticText
+$automaticCheck = ReadText $automaticRefresh
+if (-not $automaticCheck.Contains('private static void OnCommandEnded(object sender, CommandEventArgs e)')) {
+    throw 'Final fatal-safety bootstrap could not normalize AugustAutomaticRefreshManager.OnCommandEnded.'
 }
 
 # Order matters: first restore the cross-discipline Sewer/Cadastral/FeatureLine
