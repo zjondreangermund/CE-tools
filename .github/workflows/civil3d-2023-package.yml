@@ -58,11 +58,12 @@ jobs:
       - name: Stage, repair, validate, build and install Civil 3D 2023
         shell: powershell
         run: |
-          # This is deliberately the same staging path used by
-          # BUILD-INSTALL-CIVIL3D-2023.cmd on field PCs. It applies the August
-          # injectors/compatibility repairs before the real Autodesk compile,
-          # avoiding false failures from validating pre-injection source.
-          .\scripts\Stage-Build-Install-Civil3D2023.ps1 -SourceRoot $PWD
+          # Use the same current staged pipeline as the field launcher.
+          # Stage-Build-Install-Civil3D2023-August20.ps1 routes the preserved
+          # August 18/19/20 pipeline through Build-Install-Civil3D2023-August20-Compat.ps1,
+          # whose finalizers include the August 21 state/surface/graphics and
+          # Platform/page-order/Multiple-Dimensions/Multi-Trim fixes before MSBuild.
+          .\scripts\Stage-Build-Install-Civil3D2023-August20.ps1 -SourceRoot $PWD
 
       - name: Recreate exact versioned release package
         shell: powershell
