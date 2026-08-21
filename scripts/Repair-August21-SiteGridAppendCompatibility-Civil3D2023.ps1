@@ -85,3 +85,14 @@ if (-not (Test-Path -LiteralPath $sewerCompat -PathType Leaf)) {
 }
 & $sewerCompat -RepoRoot $root
 $global:LASTEXITCODE = 0
+
+# Road Production was historically generated with compact argument formatting
+# (no spaces after commas), while the August 20 field-recovery pass checks an
+# exact spaced CE_ROADCENTERLINEPOLY menu string. Normalize the semantic route
+# before field recovery so either formatting/legacy command shape is accepted.
+$roadCompat = Join-Path $root 'scripts\Repair-August21-RoadCentrelineMenuCompatibility-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $roadCompat -PathType Leaf)) {
+    throw "Road Reserve centreline menu compatibility repair missing: $roadCompat"
+}
+& $roadCompat -RepoRoot $root
+$global:LASTEXITCODE = 0
