@@ -20,6 +20,7 @@ on:
       - 'scripts/Repair-UtilityProfileIsolation-Civil3D2023.ps1'
       - 'scripts/Validate-August10CommentClosure.ps1'
       - 'scripts/Stage-Build-Install-Civil3D2023.ps1'
+      - 'scripts/Stage-Build-Install-Civil3D2023-August20.ps1'
       - '.github/workflows/validate-final-comment-closure.yml'
 
 permissions:
@@ -51,6 +52,43 @@ jobs:
           & (Join-Path $root 'scripts\Repair-ProfileStyleAutoImport-Civil3D2023.ps1') -RepoRoot $root
           & (Join-Path $root 'scripts\Repair-UtilityProfileIsolation-Civil3D2023.ps1') -RepoRoot $root
           & (Join-Path $root 'scripts\Validate-August10CommentClosure.ps1') -RepoRoot $root
+
+      - name: Simulate late Midblock recovery and verify final repair
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $root = (Resolve-Path '.').ProviderPath
+          $route = Join-Path $root 'src\CE.Tools.Civil3D\RoutePlannerExpansionCommands.cs'
+          $repair = Join-Path $root 'scripts\Repair-MidblockRoutePlanner-Civil3D2023.ps1'
+          $stage20 = Join-Path $root 'scripts\Stage-Build-Install-Civil3D2023-August20.ps1'
+
+          $text = [System.IO.File]::ReadAllText($route)
+          if (-not $text.Contains('"CE_MIDBLOCKSEWERLAYOUT"')) {
+            throw 'Regression setup failed: final Midblock target was not present before simulated recovery.'
+          }
+          $text = $text.Replace('"CE_MIDBLOCKSEWERLAYOUT"','"CE_MIDBLOCKSEWERPRODUCTION"')
+          [System.IO.File]::WriteAllText($route,$text,[System.Text.UTF8Encoding]::new($false))
+
+          & $repair -RepoRoot $root
+          $repaired = [System.IO.File]::ReadAllText($route)
+          if (-not $repaired.Contains('"CE_MIDBLOCKSEWERLAYOUT"')) {
+            throw 'Late Midblock recovery regression: final command target was not restored.'
+          }
+          if ($repaired -match '(?i)new\s+DisciplineWorkflowAction\(\s*"[^"]*Midblock sewer route[^"]*"\s*,\s*"CE_MIDBLOCKSEWERPRODUCTION"') {
+            throw 'Late Midblock recovery regression: retired command target remains.'
+          }
+
+          $stageText = [System.IO.File]::ReadAllText($stage20)
+          foreach ($marker in @(
+            'Reapplying final Midblock Route Planner handoff after late recovery repairs...',
+            '$lateMidblockAnchor',
+            '& $midblockRepair -RepoRoot $stageRoot')) {
+            if (-not $stageText.Contains($marker)) {
+              throw "August 20 post-sanitize Midblock stage guard missing: $marker"
+            }
+          }
+          Write-Host 'Post-sanitize Midblock handoff regression passed.' -ForegroundColor Green
 
       - name: Check transformed source for conflict markers
         shell: pwsh
