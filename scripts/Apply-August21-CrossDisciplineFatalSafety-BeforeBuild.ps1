@@ -40,6 +40,17 @@ function NormalizeCommandToken(
     }
     WriteText $path ($text.Replace($oldToken,$newToken))
 }
+function InvokeFinalizer([string]$name,[string]$label) {
+    $path = Join-Path $root ('scripts\' + $name)
+    if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
+        throw "Final fatal-safety pass not found: $path"
+    }
+    & $path -RepoRoot $root
+    if ($LASTEXITCODE -ne 0) {
+        throw "$label failed with exit code $LASTEXITCODE."
+    }
+    $global:LASTEXITCODE = 0
+}
 
 $midblock = Required 'August11MidblockSewerProductionCommands.cs'
 $road = Required 'August19RoadReserveSewerAndSafetyCommands.cs'
@@ -114,12 +125,16 @@ foreach ($legacyBridge in @(
     }
 }
 
-$finalizer = Join-Path $root 'scripts\Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1'
-if (-not (Test-Path -LiteralPath $finalizer -PathType Leaf)) {
-    throw "Final fatal-safety pass not found: $finalizer"
-}
-& $finalizer -RepoRoot $root
-if ($LASTEXITCODE -ne 0) { throw "Final fatal-safety pass failed with exit code $LASTEXITCODE." }
-$global:LASTEXITCODE = 0
+# Order matters: first restore the cross-discipline Sewer/Cadastral/FeatureLine
+# boundary, then apply the stricter Platform/relative-feature-line/Idle boundary.
+# Both repairs are idempotent and the regression executes this complete bootstrap
+# twice against staged source before syntax validation.
+InvokeFinalizer `
+    'Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1' `
+    'Cross-discipline fatal-safety pass'
+InvokeFinalizer `
+    'Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1' `
+    'Platform/relative fatal-safety pass'
 
 Write-Host 'Final Civil 3D fatal-safety boundary applied immediately before compilation.' -ForegroundColor Green
+Write-Host 'Platform, linked feature-line, surface-drape and automatic-refresh safety are included in the final boundary.' -ForegroundColor Green
