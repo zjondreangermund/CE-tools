@@ -148,3 +148,36 @@ if (-not (Test-Path -LiteralPath $platformApiCompat -PathType Leaf)) {
 }
 & $platformApiCompat -RepoRoot $root
 $global:LASTEXITCODE = 0
+
+# The CAD/field finalizer must run after the preserved August 21 page/dimension/
+# trim repair, because that repair creates the open-polyline chain helper. Rather
+# than duplicating the full historical build launcher, append one idempotent call
+# to the staged page finalizer now. When the build later executes that page repair,
+# this field finalizer is therefore guaranteed to be the final source mutation
+# before MSBuild.
+$cadFieldFinalizer = Join-Path $root 'scripts\Repair-August21-CadProductionFieldFinalizer-Civil3D2023.ps1'
+$pageFinalizer = Join-Path $root 'scripts\Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $cadFieldFinalizer -PathType Leaf)) {
+    throw "August 21 CAD/field finalizer missing: $cadFieldFinalizer"
+}
+if (-not (Test-Path -LiteralPath $pageFinalizer -PathType Leaf)) {
+    throw "August 21 page/dimension/trim finalizer missing: $pageFinalizer"
+}
+$pageText = [System.IO.File]::ReadAllText($pageFinalizer) -replace "`r?`n","`r`n"
+$cadCallMarker = 'Repair-August21-CadProductionFieldFinalizer-Civil3D2023.ps1'
+if (-not $pageText.Contains($cadCallMarker)) {
+    $tail = @'
+
+# Final August 21 CAD production / field-runtime pass. This intentionally runs
+# after this page/dimension/trim script has created the open-polyline chain helper.
+$cadFieldFinalizer = Join-Path $root 'scripts\Repair-August21-CadProductionFieldFinalizer-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $cadFieldFinalizer -PathType Leaf)) {
+    throw "August 21 CAD/field finalizer missing: $cadFieldFinalizer"
+}
+& $cadFieldFinalizer -RepoRoot $root
+$global:LASTEXITCODE = 0
+'@ -replace "`r?`n","`r`n"
+    $pageText = $pageText.TrimEnd("`r","`n") + $tail + "`r`n"
+    [System.IO.File]::WriteAllText($pageFinalizer,$pageText,$utf8)
+}
+Write-Host 'August 21 CAD/field finalizer chained after the page/dimension/trim pass.' -ForegroundColor Green
