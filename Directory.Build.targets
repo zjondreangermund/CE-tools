@@ -1,0 +1,15 @@
+<Project>
+  <!--
+    Civil 3D 2023 field-safety final boundary.
+    The repository has a historical staged-repair pipeline. Running this target
+    immediately before CE.Tools.Civil3D compilation guarantees that no older repair
+    script can re-introduce crash-prone Sewer/Cadastral/FeatureLine code after the
+    final August 21 safety pass.
+  -->
+  <Target Name="CEApplyAugust21CrossDisciplineFatalSafety"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying final Civil 3D 2023 cross-discipline fatal-safety boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
+</Project>
