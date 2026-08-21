@@ -77,19 +77,17 @@ jobs:
           $plugin = [System.IO.File]::ReadAllText($pluginPath) -replace "`r?`n", "`r`n"
           $state = [System.IO.File]::ReadAllText($statePath) -replace "`r?`n", "`r`n"
 
-          $init = @'
-            ParkingOptionAutoRefreshManager.Initialize();
-            August21SimpleParkingRefreshManager.Initialize();
-            August21GraphicsRefreshManager.Initialize();
-          '@ -replace "`r?`n", "`r`n"
-          $term = @'
-            August21GraphicsRefreshManager.Terminate();
-            August21SimpleParkingRefreshManager.Terminate();
-            ParkingOptionAutoRefreshManager.Terminate();
-          '@ -replace "`r?`n", "`r`n"
+          $init = @(
+            '            ParkingOptionAutoRefreshManager.Initialize();',
+            '            August21SimpleParkingRefreshManager.Initialize();',
+            '            August21GraphicsRefreshManager.Initialize();') -join "`r`n"
+          $term = @(
+            '            August21GraphicsRefreshManager.Terminate();',
+            '            August21SimpleParkingRefreshManager.Terminate();',
+            '            ParkingOptionAutoRefreshManager.Terminate();') -join "`r`n"
 
-          if (-not $plugin.Contains($init.TrimEnd("`r","`n"))) { throw 'Canonical Initialize block missing after compatibility.' }
-          if (-not $plugin.Contains($term.TrimEnd("`r","`n"))) { throw 'Canonical Terminate block missing after compatibility.' }
+          if (-not $plugin.Contains($init)) { throw 'Canonical Initialize block missing after compatibility.' }
+          if (-not $plugin.Contains($term)) { throw 'Canonical Terminate block missing after compatibility.' }
           foreach ($call in @(
               'August21SimpleParkingRefreshManager.Initialize();',
               'August21GraphicsRefreshManager.Initialize();',
