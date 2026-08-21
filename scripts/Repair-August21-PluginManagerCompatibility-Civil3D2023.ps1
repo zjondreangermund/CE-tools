@@ -126,3 +126,14 @@ foreach ($call in @(
 }
 
 Write-Host 'Plugin August21 manager initialization/termination normalized for the state-safety pass.' -ForegroundColor Green
+
+# The final August 21 page/dimension/trim pass was authored before the August 20
+# measurement-unit declarations were inserted between ArcLeader and `int sources`.
+# Normalize that harmless declaration ordering now so the preserved finalizer can
+# install the open-polyline chain dispatch without sacrificing Metres/Millimetres.
+$multiCompat = Join-Path $root 'scripts\Repair-August21-MultiDimensionChainDispatchCompatibility-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $multiCompat -PathType Leaf)) {
+    throw "August 21 Multi Dimensions chain-dispatch compatibility repair missing: $multiCompat"
+}
+& $multiCompat -RepoRoot $root
+$global:LASTEXITCODE = 0
