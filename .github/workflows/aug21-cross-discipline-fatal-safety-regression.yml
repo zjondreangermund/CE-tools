@@ -155,7 +155,7 @@ jobs:
           if ($join.Contains('CivilFeatureLine.Create(outputName, sourcePolyline.ObjectId)')) { throw 'Old stepped-join FeatureLine.Create path survived.' }
 
           $idleStart = $universal.IndexOf('private static void OnIdle(object sender, EventArgs e)',[StringComparison]::Ordinal)
-          $idleEnd = $universal.IndexOf('private static void OnObjectChanged(', $idleStart,[StringComparison]::Ordinal)
+          $idleEnd = $universal.IndexOf('public sealed class ProductionMetadataDynamicCommands', $idleStart,[StringComparison]::Ordinal)
           if ($idleStart -lt 0 -or $idleEnd -le $idleStart) { throw 'Universal Idle range not found.' }
           $idle = $universal.Substring($idleStart,$idleEnd-$idleStart)
           if ($idle.Contains('RefreshNow(active, true);')) { throw 'Universal refresh still mutates Civil objects directly from Idle.' }
