@@ -8,9 +8,11 @@ on:
       - 'scripts/Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-August21-SewerSequenceDeferredLabelsCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-August21-RoadCentrelineMenuCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-SewerLayoutMenuCompatibility-Civil3D2023.ps1'
       - 'src/CE.Tools.Civil3D/SewerSequenceCommands.cs'
       - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
       - 'src/CE.Tools.Civil3D/August13RoadProductionCentres.cs'
+      - 'src/CE.Tools.Civil3D/August14StructuredDisciplineProductionCentres.cs'
       - '.github/workflows/aug21-field-recovery-compat-regression.yml'
   push:
     branches: [ main ]
@@ -18,9 +20,11 @@ on:
       - 'scripts/Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-August21-SewerSequenceDeferredLabelsCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-August21-RoadCentrelineMenuCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-SewerLayoutMenuCompatibility-Civil3D2023.ps1'
       - 'src/CE.Tools.Civil3D/SewerSequenceCommands.cs'
       - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
       - 'src/CE.Tools.Civil3D/August13RoadProductionCentres.cs'
+      - 'src/CE.Tools.Civil3D/August14StructuredDisciplineProductionCentres.cs'
       - '.github/workflows/aug21-field-recovery-compat-regression.yml'
 
 jobs:
@@ -66,17 +70,24 @@ jobs:
           if (-not $staged.Contains('CE_SEWSEQ safety: selected-path sequencing/renaming is complete.')) { throw 'Regression setup missing selected-path safety message.' }
           Write-Host 'Exact August 20 sequence-only state reproduced.' -ForegroundColor Green
 
-      - name: Verify compact legacy Road Production route is present
+      - name: Verify compact legacy Road and Sewer routes are present
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $roadPath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August13RoadProductionCentres.cs'
           $road = [System.IO.File]::ReadAllText($roadPath)
-          $legacy = 'A\(\s*"CE-Road Reserve Centrelines"\s*,\s*"CE_ROADRESERVECENTERLINES"'
-          if (-not [regex]::IsMatch($road,$legacy)) {
+          $legacyRoad = 'A\(\s*"CE-Road Reserve Centrelines"\s*,\s*"CE_ROADRESERVECENTERLINES"'
+          if (-not [regex]::IsMatch($road,$legacyRoad)) {
             throw 'Regression setup no longer contains the compact/legacy Road Reserve centreline route.'
           }
-          Write-Host 'Exact Road Production legacy route state reproduced.' -ForegroundColor Green
+
+          $sewerPath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August14StructuredDisciplineProductionCentres.cs'
+          $sewer = [System.IO.File]::ReadAllText($sewerPath)
+          $legacySewer = 'A\(\s*"CE-Midblock / Road-Reserve Sewer Route"\s*,\s*"CE_MIDBLOCKSEWERPRODUCTION"'
+          if (-not [regex]::IsMatch($sewer,$legacySewer)) {
+            throw 'Regression setup no longer contains the combined legacy Sewer Layout route.'
+          }
+          Write-Host 'Exact Road and Sewer Layout legacy route states reproduced.' -ForegroundColor Green
 
       - name: Run pre-field-recovery compatibility bridge
         shell: pwsh
@@ -92,10 +103,12 @@ jobs:
           $fieldPath = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August20-FieldRecoveryPass-Civil3D2023.ps1'
           $sitePath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
           $roadPath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August13RoadProductionCentres.cs'
+          $sewerPath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August14StructuredDisciplineProductionCentres.cs'
           $sequence = [System.IO.File]::ReadAllText($sequencePath)
           $field = [System.IO.File]::ReadAllText($fieldPath)
           $site = [System.IO.File]::ReadAllText($sitePath)
           $road = [System.IO.File]::ReadAllText($roadPath)
+          $sewer = [System.IO.File]::ReadAllText($sewerPath)
 
           $queue = 'document.SendStringToExecute("CE_SEWLABELS ", true, false, false);'
           $queueCount = ([regex]::Matches($sequence,[regex]::Escape($queue))).Count
@@ -110,4 +123,12 @@ jobs:
           if (-not $road.Contains($safeRoad)) { throw 'Road Production was not normalized to the exact safe CE_ROADCENTERLINEPOLY guard string.' }
           if ($road.Contains('"CE_ROADRESERVECENTERLINES"')) { throw 'Legacy Road Reserve centreline menu command survived compatibility.' }
           if (-not $field.Contains($safeRoad)) { throw 'Historical field-recovery Road Production guard contract changed unexpectedly.' }
-          Write-Host 'Site Grid, Sewer Sequence and Road Production field-recovery compatibility guards are satisfied.' -ForegroundColor Green
+
+          foreach ($required in @('"CE_SEWERLAYOUTMIDBLOCK"','"CE_SEWERLAYOUTROADRESERVE"')) {
+            if (-not $sewer.Contains($required)) { throw "Sewer Layout compatibility missing required geometry-only route: $required" }
+            if (-not $field.Contains($required)) { throw "Historical field-recovery Sewer Layout guard contract changed unexpectedly: $required" }
+          }
+          if ([regex]::IsMatch($sewer,'A\(\s*"CE-Midblock / Road-Reserve Sewer Route"')) {
+            throw 'Combined legacy Sewer Layout route survived compatibility.'
+          }
+          Write-Host 'Site Grid, Sewer Sequence, Road Production and Sewer Layout field-recovery compatibility guards are satisfied.' -ForegroundColor Green
