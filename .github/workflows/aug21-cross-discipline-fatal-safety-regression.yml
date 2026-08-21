@@ -1,0 +1,183 @@
+name: August 21 Cross Discipline Fatal Safety
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/August21CrossDisciplineFatalSafety.cs'
+      - 'src/CE.Tools.Civil3D/August21PlatformRelativeFatalSafety.cs'
+      - 'scripts/Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1'
+      - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+      - 'Directory.Build.targets'
+      - '.github/workflows/aug21-cross-discipline-fatal-safety-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/August21CrossDisciplineFatalSafety.cs'
+      - 'src/CE.Tools.Civil3D/August21PlatformRelativeFatalSafety.cs'
+      - 'scripts/Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1'
+      - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+      - 'Directory.Build.targets'
+      - '.github/workflows/aug21-cross-discipline-fatal-safety-regression.yml'
+
+jobs:
+  fatal-safety-staged-source:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create staged copy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-tools-fatal-safety'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'src') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'scripts') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'tests') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'global.json') -Destination $stage -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'Directory.Build.targets') -Destination $stage -Force
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Parse fatal-safety scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in @(
+            'Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1',
+            'Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1',
+            'Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1')) {
+            $path = Join-Path $env:STAGE ('scripts\' + $name)
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              throw (($errors | ForEach-Object { $name + ' line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
+            }
+          }
+
+      - name: Apply final build-boundary pass twice
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $apply = Join-Path $env:STAGE 'scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+          & $apply -RepoRoot $env:STAGE
+          & $apply -RepoRoot $env:STAGE
+
+      - name: Verify Sewer fatal-safety
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $seq = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\SewerSequenceCommands.cs') -Raw
+          $dyn = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\SewerNetworkDynamicSequenceManager.cs') -Raw
+          if ($seq.Contains('SewerNetworkLabelCommands.EnsureLabels(')) { throw 'CE_SEWSEQ still contains synchronous label re-entry.' }
+          if (([regex]::Matches($seq,[regex]::Escape('document.SendStringToExecute("CE_SEWLABELS ", true, false, false);'))).Count -lt 2) {
+            throw 'CE_SEWSEQ does not have both deferred label queue points.'
+          }
+          $start = $dyn.IndexOf('private static void OnIdle(object sender, EventArgs eventArgs)',[StringComparison]::Ordinal)
+          $next = $dyn.IndexOf('private static void AttachDatabase(Database database)', $start,[StringComparison]::Ordinal)
+          if ($start -lt 0 -or $next -le $start) { throw 'Dynamic Sewer OnIdle range not found.' }
+          $idle = $dyn.Substring($start,$next-$start)
+          if ($idle.Contains('ResequenceAll(')) { throw 'Dynamic Sewer still rewrites Civil networks directly from Application.Idle.' }
+          if (-not $idle.Contains('"CE_SEWAUTOSEQALL "')) { throw 'Dynamic Sewer modal queue marker missing.' }
+          if ($dyn.Contains('SewerNetworkLabelCommands.EnsureLabels(')) { throw 'Dynamic resequence still calls labels synchronously.' }
+          if (-not $dyn.Contains('UniversalDynamicRefreshManager.Queue();')) { throw 'Dynamic resequence does not hand refresh work back to the safe refresh manager.' }
+
+      - name: Verify cadastral geometry-first safety
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $geometry = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August20GeometryFirstSewerCommands.cs') -Raw
+          $oldMid = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August11MidblockSewerProductionCommands.cs') -Raw
+          $oldRoad = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August19RoadReserveSewerAndSafetyCommands.cs') -Raw
+          $roadMenu = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August13RoadProductionCentres.cs') -Raw
+          $sewerMenu = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August14StructuredDisciplineProductionCentres.cs') -Raw
+          foreach ($marker in @('SafeCadastralPolygon(points)','Math.Abs(bulge) > Tol','"CE_MIDBLOCKSEWERPRODUCTION"','"CE_SEWERROADRESERVE"','"CE_ROADRESERVECENTERLINESSAFE"')) {
+            if (-not $geometry.Contains($marker)) { throw "Geometry-first safety marker missing: $marker" }
+          }
+          foreach ($marker in @('CE_MIDBLOCKSEWERPRODUCTIONLEGACY')) { if (-not $oldMid.Contains($marker)) { throw "Old Midblock command not isolated: $marker" } }
+          foreach ($marker in @('CE_SEWERROADRESERVELEGACY','CE_ROADRESERVECENTERLINESSAFELEGACY')) { if (-not $oldRoad.Contains($marker)) { throw "Old Road Reserve command not isolated: $marker" } }
+          if (-not [regex]::IsMatch($roadMenu,'A\(\s*"CE-Road Reserve Centrelines"\s*,\s*"CE_ROADCENTERLINEPOLY"')) { throw 'Road Production menu is not geometry-first.' }
+          foreach ($marker in @('"CE_SEWERLAYOUTMIDBLOCK"','"CE_SEWERLAYOUTROADRESERVE"')) { if (-not $sewerMenu.Contains($marker)) { throw "Sewer menu safe route missing: $marker" } }
+
+      - name: Verify protected feature-line creation
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $create = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\FeatureLineConstructionCommands.cs') -Raw
+          $platform = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August17ProductionFeatureLineCommands.cs') -Raw
+          $safe = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August21CrossDisciplineFatalSafety.cs') -Raw
+          if (-not $create.Contains('August21SafeFeatureLineCreation.RunCreateFromObjects(document);')) { throw 'CE_FLCREATE safe delegation missing.' }
+          if (-not $platform.Contains('August21SafeFeatureLineCreation.RunPlatformFeatureLinesAtSlope(document);')) { throw 'Platform slope feature-line safe delegation missing.' }
+          foreach ($marker in @(
+            'Entity temporary = source.Clone() as Entity;',
+            'featureLineId = CivilFeatureLine.Create(string.Empty, temporaryId);',
+            'Cleanup(document, temporaryId, ObjectId.Null);',
+            'Source objects retained')) {
+            if (-not $safe.Contains($marker)) { throw "Protected feature-line marker missing: $marker" }
+          }
+          if ($safe.Contains('CivilFeatureLine.Create(string.Empty, sourceId)')) { throw 'User source ObjectId is still passed directly to FeatureLine.Create.' }
+
+      - name: Verify platform and linked-feature-line safety
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $relative = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\FeatureLineRelativeCommands.cs') -Raw
+          $platform = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\PlatformProductionCommands.cs') -Raw
+          $join = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\FeatureLineSteppedJoinCommands.cs') -Raw
+          $universal = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\UniversalDynamicRefreshCommands.cs') -Raw
+          $auto = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs') -Raw
+          $helper = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August21PlatformRelativeFatalSafety.cs') -Raw
+
+          foreach ($marker in @(
+            'August21PlatformRelativeFatalSafety.CreateRelativeSet(',
+            'August21PlatformRelativeFatalSafety.RebuildRelativeSource(document, sourceId)',
+            'Unsafe in-transaction FeatureLine.Create path disabled')) {
+            if (-not $relative.Contains($marker)) { throw "Linked feature-line safety marker missing: $marker" }
+          }
+          foreach ($marker in @(
+            'August21PlatformRelativeFatalSafety.CreatePlatformSteps(',
+            'August21PlatformRelativeFatalSafety.DrapeSelection(',
+            'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)',
+            'active.SendStringToExecute("CE_PLATFORMREFRESH "')) {
+            if (-not $platform.Contains($marker)) { throw "Platform safety marker missing: $marker" }
+          }
+          if ($platform.Contains('child.AssignElevationsFromSurface(surface.ObjectId, intermediate);') -or
+              $platform.Contains('rebuilt.AssignElevationsFromSurface(surfaceId, snapshot.Link.Intermediate);')) {
+            throw 'Unsafe direct Platform surface assignment survived.'
+          }
+          if (-not $join.Contains('August21PlatformRelativeFatalSafety.CreateJoinedFeatureLine(')) { throw 'Stepped join safety delegation missing.' }
+          if ($join.Contains('CivilFeatureLine.Create(outputName, sourcePolyline.ObjectId)')) { throw 'Old stepped-join FeatureLine.Create path survived.' }
+
+          $idleStart = $universal.IndexOf('private static void OnIdle(object sender, EventArgs e)',[StringComparison]::Ordinal)
+          $idleEnd = $universal.IndexOf('public sealed class ProductionMetadataDynamicCommands', $idleStart,[StringComparison]::Ordinal)
+          if ($idleStart -lt 0 -or $idleEnd -le $idleStart) { throw 'Universal Idle range not found.' }
+          $idle = $universal.Substring($idleStart,$idleEnd-$idleStart)
+          if ($idle.Contains('RefreshNow(active, true);')) { throw 'Universal refresh still mutates Civil objects directly from Idle.' }
+          if (-not $idle.Contains('CE_DYNAMICREFRESHALL')) { throw 'Universal Idle command queue is missing.' }
+          if (-not $universal.Contains('PlatformProductionCommands.RefreshAll(document);')) { throw 'Platform refresh is not folded into Universal refresh.' }
+          if (-not $auto.Contains('string.Equals(name, "CE_DYNAMICREFRESHALL"')) { throw 'Automatic refresh loop suppression is missing.' }
+
+          foreach ($marker in @(
+            'TryCreateFromCommittedTemporary(',
+            'CommitCandidateSwap(',
+            'August21SurfaceSafety.TryApplyFeatureLineElevations(',
+            'existing linked child is never erased until')) {
+            if (-not $helper.Contains($marker)) { throw "Platform helper safety marker missing: $marker" }
+          }
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
