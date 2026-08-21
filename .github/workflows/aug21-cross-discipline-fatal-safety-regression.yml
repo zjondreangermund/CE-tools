@@ -6,7 +6,9 @@ on:
     branches: [ main ]
     paths:
       - 'src/CE.Tools.Civil3D/August21CrossDisciplineFatalSafety.cs'
+      - 'src/CE.Tools.Civil3D/August21PlatformRelativeFatalSafety.cs'
       - 'scripts/Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1'
       - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
       - 'Directory.Build.targets'
       - '.github/workflows/aug21-cross-discipline-fatal-safety-regression.yml'
@@ -14,7 +16,9 @@ on:
     branches: [ main ]
     paths:
       - 'src/CE.Tools.Civil3D/August21CrossDisciplineFatalSafety.cs'
+      - 'src/CE.Tools.Civil3D/August21PlatformRelativeFatalSafety.cs'
       - 'scripts/Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1'
       - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
       - 'Directory.Build.targets'
       - '.github/workflows/aug21-cross-discipline-fatal-safety-regression.yml'
@@ -47,6 +51,7 @@ jobs:
           $ErrorActionPreference = 'Stop'
           foreach ($name in @(
             'Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1',
+            'Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1',
             'Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1')) {
             $path = Join-Path $env:STAGE ('scripts\' + $name)
             $tokens=$null; $errors=$null
@@ -100,7 +105,7 @@ jobs:
           if (-not [regex]::IsMatch($roadMenu,'A\(\s*"CE-Road Reserve Centrelines"\s*,\s*"CE_ROADCENTERLINEPOLY"')) { throw 'Road Production menu is not geometry-first.' }
           foreach ($marker in @('"CE_SEWERLAYOUTMIDBLOCK"','"CE_SEWERLAYOUTROADRESERVE"')) { if (-not $sewerMenu.Contains($marker)) { throw "Sewer menu safe route missing: $marker" } }
 
-      - name: Verify feature-line isolation
+      - name: Verify protected feature-line creation
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -117,6 +122,54 @@ jobs:
             if (-not $safe.Contains($marker)) { throw "Protected feature-line marker missing: $marker" }
           }
           if ($safe.Contains('CivilFeatureLine.Create(string.Empty, sourceId)')) { throw 'User source ObjectId is still passed directly to FeatureLine.Create.' }
+
+      - name: Verify platform and linked-feature-line safety
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $relative = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\FeatureLineRelativeCommands.cs') -Raw
+          $platform = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\PlatformProductionCommands.cs') -Raw
+          $join = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\FeatureLineSteppedJoinCommands.cs') -Raw
+          $universal = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\UniversalDynamicRefreshCommands.cs') -Raw
+          $auto = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs') -Raw
+          $helper = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August21PlatformRelativeFatalSafety.cs') -Raw
+
+          foreach ($marker in @(
+            'August21PlatformRelativeFatalSafety.CreateRelativeSet(',
+            'August21PlatformRelativeFatalSafety.RebuildRelativeSource(document, sourceId)',
+            'Unsafe in-transaction FeatureLine.Create path disabled')) {
+            if (-not $relative.Contains($marker)) { throw "Linked feature-line safety marker missing: $marker" }
+          }
+          foreach ($marker in @(
+            'August21PlatformRelativeFatalSafety.CreatePlatformSteps(',
+            'August21PlatformRelativeFatalSafety.DrapeSelection(',
+            'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)',
+            'active.SendStringToExecute("CE_PLATFORMREFRESH "')) {
+            if (-not $platform.Contains($marker)) { throw "Platform safety marker missing: $marker" }
+          }
+          if ($platform.Contains('child.AssignElevationsFromSurface(surface.ObjectId, intermediate);') -or
+              $platform.Contains('rebuilt.AssignElevationsFromSurface(surfaceId, snapshot.Link.Intermediate);')) {
+            throw 'Unsafe direct Platform surface assignment survived.'
+          }
+          if (-not $join.Contains('August21PlatformRelativeFatalSafety.CreateJoinedFeatureLine(')) { throw 'Stepped join safety delegation missing.' }
+          if ($join.Contains('CivilFeatureLine.Create(outputName, sourcePolyline.ObjectId)')) { throw 'Old stepped-join FeatureLine.Create path survived.' }
+
+          $idleStart = $universal.IndexOf('private static void OnIdle(object sender, EventArgs e)',[StringComparison]::Ordinal)
+          $idleEnd = $universal.IndexOf('private static void OnObjectChanged(', $idleStart,[StringComparison]::Ordinal)
+          if ($idleStart -lt 0 -or $idleEnd -le $idleStart) { throw 'Universal Idle range not found.' }
+          $idle = $universal.Substring($idleStart,$idleEnd-$idleStart)
+          if ($idle.Contains('RefreshNow(active, true);')) { throw 'Universal refresh still mutates Civil objects directly from Idle.' }
+          if (-not $idle.Contains('CE_DYNAMICREFRESHALL')) { throw 'Universal Idle command queue is missing.' }
+          if (-not $universal.Contains('PlatformProductionCommands.RefreshAll(document);')) { throw 'Platform refresh is not folded into Universal refresh.' }
+          if (-not $auto.Contains('string.Equals(name, "CE_DYNAMICREFRESHALL"')) { throw 'Automatic refresh loop suppression is missing.' }
+
+          foreach ($marker in @(
+            'TryCreateFromCommittedTemporary(',
+            'CommitCandidateSwap(',
+            'August21SurfaceSafety.TryApplyFeatureLineElevations(',
+            'existing linked child is never erased until')) {
+            if (-not $helper.Contains($marker)) { throw "Platform helper safety marker missing: $marker" }
+          }
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
