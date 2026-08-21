@@ -17,13 +17,14 @@ $multiDimensionFinal = Join-Path $PSScriptRoot 'Repair-August20-MultiDimensionCi
 $crossDisciplineFatalSafety = Join-Path $PSScriptRoot 'Repair-August20-BackgroundAndCrossDisciplineFatalSafety-Civil3D2023.ps1'
 $siteGridOptionalGuard = Join-Path $PSScriptRoot 'Repair-August20-SiteGridOptionalSurfaceGuard-Civil3D2023.ps1'
 $runtimeStabilityWorkflow = Join-Path $PSScriptRoot 'Repair-August20-RuntimeStabilityWorkflowPass-Civil3D2023.ps1'
+$siteGridAppendCompat = Join-Path $PSScriptRoot 'Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
 $fieldRecovery = Join-Path $PSScriptRoot 'Repair-August20-FieldRecoveryPass-Civil3D2023.ps1'
 $august21StateSafety = Join-Path $PSScriptRoot 'Repair-August21-StateGraphicsSurfaceSafety-Civil3D2023.ps1'
 $august21PageTrimDimension = Join-Path $PSScriptRoot 'Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
 $build = Join-Path $PSScriptRoot 'Build-Install-Civil3D2023-August19.ps1'
 $runtime = Join-Path $PSScriptRoot '.Build-Install-Civil3D2023-August20-Compat.runtime.ps1'
 
-foreach ($required in @($preflight,$lateSafety,$geometryFirst,$multiDimensionFinal,$crossDisciplineFatalSafety,$siteGridOptionalGuard,$runtimeStabilityWorkflow,$fieldRecovery,$august21StateSafety,$august21PageTrimDimension,$build)) {
+foreach ($required in @($preflight,$lateSafety,$geometryFirst,$multiDimensionFinal,$crossDisciplineFatalSafety,$siteGridOptionalGuard,$runtimeStabilityWorkflow,$siteGridAppendCompat,$fieldRecovery,$august21StateSafety,$august21PageTrimDimension,$build)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "August 20/21 compatibility build prerequisite missing: $required"
     }
@@ -89,6 +90,13 @@ if (-not (Test-Path -LiteralPath $august20RuntimeStabilityWorkflow -PathType Lea
     throw "August 20 runtime-stability/workflow finalizer not found in staged repository: $august20RuntimeStabilityWorkflow"
 }
 & $august20RuntimeStabilityWorkflow -RepoRoot $repo
+$global:LASTEXITCODE = 0
+Write-Host "Normalizing Site Grid Append helper for field-recovery compatibility..." -ForegroundColor Cyan
+$august21SiteGridAppendCompat = Join-Path $repo 'scripts\Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $august21SiteGridAppendCompat -PathType Leaf)) {
+    throw "August 21 Site Grid Append compatibility repair not found in staged repository: $august21SiteGridAppendCompat"
+}
+& $august21SiteGridAppendCompat -RepoRoot $repo
 $global:LASTEXITCODE = 0
 Write-Host "Applying August 20 Civil 3D field-recovery pass..." -ForegroundColor Cyan
 $august20FieldRecovery = Join-Path $repo 'scripts\Repair-August20-FieldRecoveryPass-Civil3D2023.ps1'
