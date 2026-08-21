@@ -2,6 +2,9 @@ name: Validate Final Comment Closure
 
 on:
   workflow_dispatch:
+  pull_request:
+    branches:
+      - main
   push:
     paths:
       - 'src/CE.Tools.Civil3D/**'
