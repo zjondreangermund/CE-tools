@@ -63,23 +63,13 @@ $wholePatterns = @(
     '\s*SewerNetworkLabelCommands\.EnsureLabels\(\s*document,\s*plans\.Select\(plan\s*=>\s*plan\.NetworkId\)\s*\);',
     '\s*editor\.WriteMessage\(\s*"\\nCE_SEWSEQ safety:\s*sequencing/renaming is complete\.[^"]*"\s*\);'
 )
-$text = Replace-OneOf \
-    $text \
-    $wholePatterns \
-    $wholeReplacement \
-    'whole-network deferred labels' \
-    'CE_SEWSEQ complete. Sequencing/renaming is committed; sewer pipe/structure labels are queued as a separate safe command.'
+$text = Replace-OneOf $text $wholePatterns $wholeReplacement 'whole-network deferred labels' 'CE_SEWSEQ complete. Sequencing/renaming is committed; sewer pipe/structure labels are queued as a separate safe command.'
 
 $selectedPatterns = @(
     'if\s*\(!labelledNetworkId\.IsNull\)\s*\{\s*SewerNetworkLabelCommands\.EnsureLabels\(\s*document,\s*new\[\]\s*\{\s*labelledNetworkId\s*\}\s*\);\s*\}',
     'if\s*\(!labelledNetworkId\.IsNull\)\s*\{\s*editor\.WriteMessage\(\s*"\\nCE_SEWSEQ safety:\s*selected-path sequencing/renaming is complete\.[^"]*"\s*\);\s*\}'
 )
-$text = Replace-OneOf \
-    $text \
-    $selectedPatterns \
-    $selectedReplacement \
-    'selected-path deferred labels' \
-    'CE_SEWSEQ selected path complete. Sewer pipe/structure labels are queued as a separate safe command.'
+$text = Replace-OneOf $text $selectedPatterns $selectedReplacement 'selected-path deferred labels' 'CE_SEWSEQ selected path complete. Sewer pipe/structure labels are queued as a separate safe command.'
 
 [System.IO.File]::WriteAllText($path,$text,$utf8)
 
