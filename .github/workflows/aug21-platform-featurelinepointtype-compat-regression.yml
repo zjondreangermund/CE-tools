@@ -1,0 +1,88 @@
+name: August 21 Platform Civil 3D 2023 API Compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August21-PlatformFeatureLinePointType-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-StateGraphicsSurfaceSafety-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/PlatformProductionCommands.cs'
+      - '.github/workflows/aug21-platform-featurelinepointtype-compat-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August21-PlatformFeatureLinePointType-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'
+      - 'scripts/Repair-August21-StateGraphicsSurfaceSafety-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/PlatformProductionCommands.cs'
+      - '.github/workflows/aug21-platform-featurelinepointtype-compat-regression.yml'
+
+jobs:
+  reproduce-featurelinepointtype-compile-failure:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reproduce Civil 3D 2023 namespace mismatch
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:GITHUB_WORKSPACE
+          $platform = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\PlatformProductionCommands.cs'))
+          $state = [System.IO.File]::ReadAllText((Join-Path $root 'scripts\Repair-August21-StateGraphicsSurfaceSafety-Civil3D2023.ps1'))
+          $pattern = '(?<!Autodesk\.Civil\.)\bFeatureLinePointType\.'
+          if (-not [regex]::IsMatch($platform,$pattern)) { throw 'Regression setup: Platform source no longer reproduces the unqualified FeatureLinePointType state.' }
+          if (-not [regex]::IsMatch($state,$pattern)) { throw 'Regression setup: late state-safety template no longer reproduces the unqualified FeatureLinePointType state.' }
+          Write-Host 'Exact unqualified FeatureLinePointType compile-risk state reproduced.' -ForegroundColor Green
+
+      - name: Parse compatibility repair
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-PlatformFeatureLinePointType-Civil3D2023.ps1'
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            throw (($errors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
+          }
+
+      - name: Run Civil 3D 2023 Platform API compatibility
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & (Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-PlatformFeatureLinePointType-Civil3D2023.ps1') -RepoRoot $env:GITHUB_WORKSPACE
+
+      - name: Verify live source and late repair templates
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = $env:GITHUB_WORKSPACE
+          $pattern = '(?<!Autodesk\.Civil\.)\bFeatureLinePointType\.'
+          $platformPath = Join-Path $root 'src\CE.Tools.Civil3D\PlatformProductionCommands.cs'
+          $platform = [System.IO.File]::ReadAllText($platformPath)
+          if ([regex]::IsMatch($platform,$pattern)) { throw 'Unqualified FeatureLinePointType survived in PlatformProductionCommands.cs.' }
+          if (-not $platform.Contains('Autodesk.Civil.FeatureLinePointType.AllPoints')) { throw 'Qualified Civil 3D 2023 FeatureLinePointType was not installed in Platform source.' }
+
+          $scriptFiles = Get-ChildItem -LiteralPath (Join-Path $root 'scripts') -Filter '*.ps1' -File
+          foreach ($file in $scriptFiles) {
+            if ($file.Name -eq 'Repair-August21-PlatformFeatureLinePointType-Civil3D2023.ps1') { continue }
+            $text = [System.IO.File]::ReadAllText($file.FullName)
+            if ([regex]::IsMatch($text,$pattern)) { throw "Late repair template can reintroduce unqualified FeatureLinePointType: $($file.Name)" }
+          }
+          Write-Host 'Platform source and all late repair templates are Civil 3D 2023 namespace-safe.' -ForegroundColor Green
+
+      - name: Verify compatibility bridge wiring
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $bridge = [System.IO.File]::ReadAllText((Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'))
+          foreach ($marker in @(
+              'Repair-August21-PlatformFeatureLinePointType-Civil3D2023.ps1',
+              '& $platformApiCompat -RepoRoot $root')) {
+            if (-not $bridge.Contains($marker)) { throw "Platform API compatibility bridge marker missing: $marker" }
+          }
+          Write-Host 'Platform API compatibility is wired into the August 21 staged build before state/surface injection.' -ForegroundColor Green
