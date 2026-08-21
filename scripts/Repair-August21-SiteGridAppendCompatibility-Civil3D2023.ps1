@@ -74,3 +74,14 @@ if ($check.Contains('private static void Append(')) {
 }
 
 Write-Host 'Site Grid Append compatibility normalized for the August 20 field-recovery pass.' -ForegroundColor Green
+
+# The historical field-recovery pass that follows this compatibility bridge also
+# expects CE_SEWSEQ to already contain deferred CE_SEWLABELS queue points. Normalize
+# both the older direct EnsureLabels form and the August 20 sequence-only safety form
+# before handing control back to that preserved field-recovery script.
+$sewerCompat = Join-Path $root 'scripts\Repair-August21-SewerSequenceDeferredLabelsCompatibility-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $sewerCompat -PathType Leaf)) {
+    throw "Sewer Sequence deferred-label compatibility repair missing: $sewerCompat"
+}
+& $sewerCompat -RepoRoot $root
+$global:LASTEXITCODE = 0
