@@ -106,3 +106,14 @@ if (-not (Test-Path -LiteralPath $sewerLayoutCompat -PathType Leaf)) {
 }
 & $sewerLayoutCompat -RepoRoot $root
 $global:LASTEXITCODE = 0
+
+# The August 21 state/graphics/surface pass historically patched PluginEntry by
+# replacing one exact manager-call line. Late recovery passes can change the
+# whitespace/order or leave a partial manager state. Canonicalize the Initialize
+# and Terminate manager blocks before that historical pass runs.
+$pluginCompat = Join-Path $root 'scripts\Repair-August21-PluginManagerCompatibility-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $pluginCompat -PathType Leaf)) {
+    throw "August 21 PluginEntry manager compatibility repair missing: $pluginCompat"
+}
+& $pluginCompat -RepoRoot $root
+$global:LASTEXITCODE = 0
