@@ -96,3 +96,13 @@ if (-not (Test-Path -LiteralPath $roadCompat -PathType Leaf)) {
 }
 & $roadCompat -RepoRoot $root
 $global:LASTEXITCODE = 0
+
+# Sewer Layout can likewise arrive here as the older combined Midblock/Road-Reserve
+# action or as separate actions with different formatting/targets. Normalize it to
+# the two geometry-only public commands required by the preserved field-recovery guard.
+$sewerLayoutCompat = Join-Path $root 'scripts\Repair-August21-SewerLayoutMenuCompatibility-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $sewerLayoutCompat -PathType Leaf)) {
+    throw "Sewer Layout geometry-only menu compatibility repair missing: $sewerLayoutCompat"
+}
+& $sewerLayoutCompat -RepoRoot $root
+$global:LASTEXITCODE = 0
