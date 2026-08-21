@@ -137,3 +137,14 @@ if (-not (Test-Path -LiteralPath $multiCompat -PathType Leaf)) {
 }
 & $multiCompat -RepoRoot $root
 $global:LASTEXITCODE = 0
+
+# The real Civil 3D 2023 compiler resolves FeatureLinePointType from the
+# Autodesk.Civil namespace. Normalize both PlatformProductionCommands.cs and all
+# later staged repair templates now so the August 21 state/surface pass cannot
+# re-introduce the unqualified enum before MSBuild.
+$platformApiCompat = Join-Path $root 'scripts\Repair-August21-PlatformFeatureLinePointType-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $platformApiCompat -PathType Leaf)) {
+    throw "August 21 Platform FeatureLinePointType compatibility repair missing: $platformApiCompat"
+}
+& $platformApiCompat -RepoRoot $root
+$global:LASTEXITCODE = 0
