@@ -52,6 +52,45 @@ jobs:
             }
           }
 
+      - name: Reproduce Site Grid Append field-recovery compatibility
+        shell: pwsh
+        run: |
+          $siteGrid = Join-Path $env:CE_STAGE 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+          $compat = Join-Path $env:CE_STAGE 'scripts/Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1'
+          $fieldRecovery = Join-Path $env:CE_STAGE 'scripts/Repair-August20-FieldRecoveryPass-Civil3D2023.ps1'
+          foreach ($required in @($siteGrid,$compat,$fieldRecovery)) {
+            if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
+              throw "Site Grid compatibility validation prerequisite missing: $required"
+            }
+          }
+
+          $before = [System.IO.File]::ReadAllText($siteGrid)
+          if (-not $before.Contains('private static void Append(') -and
+              -not $before.Contains('private static ObjectId Append(')) {
+            throw 'Site Grid validation could not locate either supported Append helper shape.'
+          }
+
+          & $compat -RepoRoot $env:CE_STAGE
+          $after = [System.IO.File]::ReadAllText($siteGrid)
+          foreach ($marker in @(
+            'private static ObjectId Append(',
+            'ObjectId id = modelSpace.AppendEntity(entity);',
+            'entity.RecordGraphicsModified(true);',
+            'return id;')) {
+            if (-not $after.Contains($marker)) {
+              throw "Site Grid Append compatibility regression missing: $marker"
+            }
+          }
+          if ($after.Contains('private static void Append(')) {
+            throw 'Site Grid void Append helper survived compatibility normalization.'
+          }
+
+          $fieldText = [System.IO.File]::ReadAllText($fieldRecovery)
+          if (-not $fieldText.Contains("ReplaceMethodBody `$site '        private static ObjectId Append('")) {
+            throw 'Historical field-recovery pass no longer exposes the expected ObjectId Append marker contract.'
+          }
+          Write-Host 'Site Grid void/ObjectId Append compatibility contract passed.' -ForegroundColor Green
+
       - name: Verify preserved August 11 validation assets
         shell: pwsh
         run: |
@@ -99,6 +138,8 @@ jobs:
             'Repair-August20-GeometryFirstSewerAndDynamicSiteGrid-Civil3D2023.ps1',
             'Repair-August20-MultiDimensionCircleUnitsAndProperties-Civil3D2023.ps1',
             'Repair-August20-BackgroundAndCrossDisciplineFatalSafety-Civil3D2023.ps1',
+            'Repair-August21-SiteGridAppendCompatibility-Civil3D2023.ps1',
+            'Repair-August20-FieldRecoveryPass-Civil3D2023.ps1',
             'Build-Install-Civil3D2023-August19.ps1'
           )
           foreach ($marker in $markers) {
@@ -111,7 +152,17 @@ jobs:
           $geometryFirst = $text.IndexOf('Applying geometry-first Sewer/Road Centreline workflows and dynamic Site Grid repair',[System.StringComparison]::Ordinal)
           $multiDimension = $text.IndexOf('Applying final Multiple Dimensions circle/unit/property repair',[System.StringComparison]::Ordinal)
           $crossDiscipline = $text.IndexOf('Applying final Background and cross-discipline fatal-safety repair',[System.StringComparison]::Ordinal)
-          if ($fieldStability -lt 0 -or $lateSafety -le $fieldStability -or $geometryFirst -le $lateSafety -or $multiDimension -le $geometryFirst -or $crossDiscipline -le $multiDimension) {
+          $runtimeStability = $text.IndexOf('Applying final August 20 runtime-stability/workflow pass',[System.StringComparison]::Ordinal)
+          $siteGridCompat = $text.IndexOf('Normalizing Site Grid Append helper for field-recovery compatibility',[System.StringComparison]::Ordinal)
+          $fieldRecovery = $text.IndexOf('Applying August 20 Civil 3D field-recovery pass',[System.StringComparison]::Ordinal)
+          if ($fieldStability -lt 0 -or
+              $lateSafety -le $fieldStability -or
+              $geometryFirst -le $lateSafety -or
+              $multiDimension -le $geometryFirst -or
+              $crossDiscipline -le $multiDimension -or
+              $runtimeStability -le $crossDiscipline -or
+              $siteGridCompat -le $runtimeStability -or
+              $fieldRecovery -le $siteGridCompat) {
             throw 'Current August 20 final staged repair order is invalid.'
           }
           Write-Host 'Current August 20 staged entry-point chain is present and ordered.' -ForegroundColor Green
