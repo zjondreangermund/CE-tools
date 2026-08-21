@@ -248,3 +248,5 @@ Write-Host ' - CE-CAD Production is the final/right workflow tab and opens the s
 Write-Host ' - Open-polyline chain dimensions honour Millimetres with DIMLFAC x1000 and zero decimals.' -ForegroundColor Green
 Write-Host ' - Site Grid queues graphics flush + screen update + deferred REGEN after create/refresh.' -ForegroundColor Green
 Write-Host ' - Break at Crossings/T-junctions uses verified replacements before source erase.' -ForegroundColor Green
+
+# Regression trigger: validate this exact final staged field batch before merge.
