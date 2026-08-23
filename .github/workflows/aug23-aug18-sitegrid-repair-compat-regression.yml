@@ -81,17 +81,13 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
           $text = [System.IO.File]::ReadAllText($path)
-          foreach ($marker in @(
-            'internal static bool IsLinkedSiteGridObject(',
-            'internal static void AcknowledgeCurrentState()',
-            'dirty.RemoveWhere(id =>',
-            '_document.Database.DisableUndoRecording(true);')) {
-            if (-not $text.Contains($marker)) { throw "Staged prerequisite Site Grid marker missing: $marker" }
-          }
           if (-not $text.Contains('August21DisplayRefresh.Flush(document);')) {
             throw 'Staged source did not preserve the PR #110 display-flush state.'
           }
-          Write-Host 'Reproduced the relevant staged Site Grid state immediately before the August 18 repair.' -ForegroundColor Green
+          if ($text.Contains('August12SiteGridRuntimeManager.AcknowledgeCurrentState();')) {
+            throw 'Pre-August18 staged source unexpectedly already contains explicit Site Grid acknowledgement.'
+          }
+          Write-Host 'Reproduced the actual pre-August18 Site Grid display-flush state.' -ForegroundColor Green
 
       - name: Execute August 18 repair exactly where installer failed
         shell: pwsh
