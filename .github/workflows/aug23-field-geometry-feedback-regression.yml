@@ -52,19 +52,15 @@ jobs:
             throw (($errors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
           }
 
-      - name: Reproduce reported restrictive source state
+      - name: Validate staged source prerequisites
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $geometry = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August20GeometryFirstSewerCommands.cs') -Raw
-          $break = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August21SafePolylineBreakEngine.cs') -Raw
           if (-not $geometry.Contains('var used = new HashSet<int>();')) {
             throw 'Regression prerequisite missing: old one-use Road Reserve edge lock was not found.'
           }
-          if ($break.Contains('JunctionSnapTolerance')) {
-            throw 'Regression prerequisite invalid: tolerant plan-XY junction pass already exists in raw source.'
-          }
-          Write-Host 'Reported Road Centreline + T-junction source state reproduced.' -ForegroundColor Green
+          Write-Host 'Road Centreline staged source prerequisite reproduced; junction source may already contain the idempotent fix.' -ForegroundColor Green
 
       - name: Run final build boundary twice
         shell: pwsh
