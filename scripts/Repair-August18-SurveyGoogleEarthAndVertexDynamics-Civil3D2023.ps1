@@ -48,13 +48,22 @@ $centresPath = Required $src 'August14StructuredDisciplineProductionCentres.cs'
 $centres = ReadText $centresPath
 $menuCommand = 'CE_SURVEYGOOGLEEARTHBOUNDARY'
 if (-not $centres.Contains($menuCommand)) {
-    $anchor = '                    A("CE-Namibia LO / WGS84 Survey Conversion", "CE_NAMIBIALO", "Convert picked/drawing WGS84 and Namibia Schwarzeck LO survey coordinates.", "01 SETTINGS"),'
-    $addition = $anchor + "`r`n" +
-        '                    A("CE-Plot Polyline Boundary in Google Earth", "CE_SURVEYGOOGLEEARTHBOUNDARY", "Convert one or more closed survey polylines to WGS84 KML and open the polygon boundaries in Google Earth.", "01 SETTINGS"),'
-    if (-not $centres.Contains($anchor)) {
-        throw 'Survey Production Namibia LO menu anchor was not found for Google Earth boundary insertion.'
+    $googleEarthAction = '                    A("CE-Plot Polyline Boundary in Google Earth", "CE_SURVEYGOOGLEEARTHBOUNDARY", "Convert one or more closed survey polylines to WGS84 KML and open the polygon boundaries in Google Earth.", "01 SETTINGS"),'
+    $anchors = @(
+        '                    A("CE-Namibia LO / WGS84 Survey Conversion", "CE_NAMIBIALO", "Convert picked/drawing WGS84 and Namibia Schwarzeck LO survey coordinates.", "01 SETTINGS"),',
+        '                    A("CE-Survey Location / Coordinate System", "CE_SURVEYLOCATION", "Set project area and the installed Namibia LO coordinate system.", "01 SETTINGS"),'
+    )
+    $inserted = $false
+    foreach ($anchor in $anchors) {
+        if ($centres.Contains($anchor)) {
+            $centres = $centres.Replace($anchor, $anchor + "`r`n" + $googleEarthAction)
+            $inserted = $true
+            break
+        }
     }
-    $centres = $centres.Replace($anchor,$addition)
+    if (-not $inserted) {
+        throw 'Survey Production location/coordinate-system menu anchor was not found for Google Earth boundary insertion.'
+    }
     WriteText $centresPath $centres
 }
 
@@ -126,6 +135,17 @@ WriteText $vertexPath $vertex
 $siteGridPath = Required $src 'August12SurveySiteGridCommands.cs'
 $siteGrid = ReadText $siteGridPath
 
+# PR #110 moved Site Grid display refresh away from Editor.Regen() so refreshes
+# do not pollute AutoCAD Undo/Redo. Normalize an older staged source to the same
+# display-flush form before applying the August 18 loop/Undo guards. This keeps
+# the repair compatible with both the legacy REGEN source and the newer source.
+$siteGrid = $siteGrid.Replace(
+    '            document.Editor.Regen();',
+    '            August21DisplayRefresh.Flush(document);')
+$siteGrid = $siteGrid.Replace(
+    '                    _document.Editor.Regen();',
+    '                    August21DisplayRefresh.Flush(_document);')
+
 $siteGridHelperAnchor = @'
         private static Document Active()
         {
@@ -194,14 +214,14 @@ $commitAckOld = @'
                 transaction.Commit();
             }
 
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
 '@ -replace "`n","`r`n"
 $commitAckNew = @'
                 transaction.Commit();
             }
 
             August12SiteGridRuntimeManager.AcknowledgeCurrentState();
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
 '@ -replace "`n","`r`n"
 if (-not $siteGrid.Contains($commitAckNew)) {
     if (-not $siteGrid.Contains($commitAckOld)) {
@@ -212,12 +232,12 @@ if (-not $siteGrid.Contains($commitAckNew)) {
 
 $manualRefreshOld = @'
             int refreshed = RefreshAll(document, null);
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
 '@ -replace "`n","`r`n"
 $manualRefreshNew = @'
             int refreshed = RefreshAll(document, null);
             August12SiteGridRuntimeManager.AcknowledgeCurrentState();
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
 '@ -replace "`n","`r`n"
 $siteGrid = ReplaceRequired $siteGrid $manualRefreshOld $manualRefreshNew 'site-grid manual refresh acknowledgement'
 
@@ -254,7 +274,7 @@ $siteGridAutoRefreshOld = @'
                         _document,
                         dirty);
                 if (refreshed > 0)
-                    _document.Editor.Regen();
+                    August21DisplayRefresh.Flush(_document);
             }
             catch
             {
@@ -284,7 +304,7 @@ $siteGridAutoRefreshNew = @'
                         _document,
                         dirty);
                 if (refreshed > 0)
-                    _document.Editor.Regen();
+                    August21DisplayRefresh.Flush(_document);
             }
             catch
             {
@@ -401,6 +421,15 @@ foreach ($requiredSiteGrid in @(
     if (-not $siteGrid.Contains($requiredSiteGrid)) {
         throw "Site Grid loop/Undo guard missing: $requiredSiteGrid"
     }
+}
+if ($siteGrid.Contains('document.Editor.Regen();') -or
+    $siteGrid.Contains('_document.Editor.Regen();')) {
+    throw 'Site Grid repair regressed to Editor.Regen instead of August21DisplayRefresh.Flush.'
+}
+if (([regex]::Matches(
+        $siteGrid,
+        [regex]::Escape('August21DisplayRefresh.Flush('))).Count -lt 3) {
+    throw 'Site Grid display-flush guard is missing from create/manual/deferred refresh paths.'
 }
 $automatic = ReadText $automaticPath
 if (-not $automatic.Contains('CE_SITEGRIDREFRESH')) {

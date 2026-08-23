@@ -1,0 +1,129 @@
+name: August 18 Site Grid Repair Compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+      - 'scripts/Repair-August12PersistentProductionUi-Civil3D2023.ps1'
+      - 'scripts/Repair-August12SurveyGridAndDisplayNames-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - '.github/workflows/aug23-aug18-sitegrid-repair-compat-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+      - 'scripts/Repair-August12PersistentProductionUi-Civil3D2023.ps1'
+      - 'scripts/Repair-August12SurveyGridAndDisplayNames-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - '.github/workflows/aug23-aug18-sitegrid-repair-compat-regression.yml'
+
+jobs:
+  sitegrid-acknowledgement-regression:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse August 18 repair
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            throw (($errors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
+          }
+
+      - name: Reproduce staged Site Grid source through August 12
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          # These are the active-source transforms that establish the Site Grid
+          # state involved in the reported August 18 failure. Recovery-only ZIP
+          # restoration is intentionally excluded from this focused regression.
+          $scripts = @(
+            'Repair-Civil3D2023-Compatibility.ps1',
+            'Repair-V60-RemainingCompatibility.ps1',
+            'Inject-ProductionExpansion-Civil3D2023.ps1',
+            'Inject-August10BehaviorFixes-Civil3D2023.ps1',
+            'Inject-FinalAnnotationReview2-Civil3D2023.ps1',
+            'Inject-FinalUtilityWorkflow-Civil3D2023.ps1',
+            'Repair-CogoOverlap-Civil3D2023.ps1',
+            'Repair-RoadStyleFallback-Civil3D2023.ps1',
+            'Repair-BranchLabelRefresh-Civil3D2023.ps1',
+            'Repair-MidblockRoutePlanner-Civil3D2023.ps1',
+            'Repair-ProfileStyleAutoImport-Civil3D2023.ps1',
+            'Repair-UtilityProfileIsolation-Civil3D2023.ps1',
+            'Repair-August10-CompilerErrors-Civil3D2023.ps1',
+            'Inject-August11FieldCompletion-Civil3D2023.ps1',
+            'Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1',
+            'Repair-GlobalInterfaceAndStylePersistence-Civil3D2023.ps1',
+            'Repair-August12PersistentProductionUi-Civil3D2023.ps1'
+          )
+          foreach ($name in $scripts) {
+            & (Join-Path $env:GITHUB_WORKSPACE ('scripts\' + $name)) -RepoRoot $env:GITHUB_WORKSPACE
+            $global:LASTEXITCODE = 0
+          }
+
+      - name: Reproduce and verify exact acknowledgement replacement
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $gridPath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
+          $siteGrid = [System.IO.File]::ReadAllText($gridPath) -replace "`r?`n", "`r`n"
+          $repairPath = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+          $repair = [System.IO.File]::ReadAllText($repairPath)
+
+          if (-not $siteGrid.Contains('August21DisplayRefresh.Flush(document);')) {
+            throw 'Staged Site Grid did not preserve the PR #110 display-flush call.'
+          }
+          if ($siteGrid.Contains('August12SiteGridRuntimeManager.AcknowledgeCurrentState();')) {
+            throw 'Staged pre-August18 source unexpectedly already contains explicit acknowledgement.'
+          }
+
+          $old = @'
+                transaction.Commit();
+            }
+
+            August21DisplayRefresh.Flush(document);
+'@ -replace "`n","`r`n"
+          $new = @'
+                transaction.Commit();
+            }
+
+            August12SiteGridRuntimeManager.AcknowledgeCurrentState();
+            August21DisplayRefresh.Flush(document);
+'@ -replace "`n","`r`n"
+
+          if (-not $siteGrid.Contains($old)) {
+            throw 'Reported staged Site Grid acknowledgement anchor was not reproduced.'
+          }
+          $patched = $siteGrid.Replace($old,$new)
+          if (-not $patched.Contains($new)) {
+            throw 'Corrected Site Grid acknowledgement replacement did not apply.'
+          }
+          if (-not $repair.Contains('August21DisplayRefresh.Flush(document);')) {
+            throw 'August 18 repair does not contain the corrected display-flush acknowledgement anchor.'
+          }
+          if (-not $repair.Contains("'            document.Editor.Regen();'")) {
+            throw 'August 18 repair no longer normalizes legacy REGEN source for compatibility.'
+          }
+          if (-not $repair.Contains('CE-Survey Location / Coordinate System')) {
+            throw 'August 18 Survey menu repair lacks the current Survey Location fallback anchor.'
+          }
+          Write-Host 'Exact reported Site Grid acknowledgement failure is reproduced and the corrected replacement succeeds.' -ForegroundColor Green
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse staged Civil 3D C# syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
