@@ -126,6 +126,17 @@ WriteText $vertexPath $vertex
 $siteGridPath = Required $src 'August12SurveySiteGridCommands.cs'
 $siteGrid = ReadText $siteGridPath
 
+# PR #110 moved Site Grid display refresh away from Editor.Regen() so refreshes
+# do not pollute AutoCAD Undo/Redo. Normalize an older staged source to the same
+# display-flush form before applying the August 18 loop/Undo guards. This keeps
+# the repair compatible with both the legacy REGEN source and the newer source.
+$siteGrid = $siteGrid.Replace(
+    '            document.Editor.Regen();',
+    '            August21DisplayRefresh.Flush(document);')
+$siteGrid = $siteGrid.Replace(
+    '                    _document.Editor.Regen();',
+    '                    August21DisplayRefresh.Flush(_document);')
+
 $siteGridHelperAnchor = @'
         private static Document Active()
         {
@@ -194,14 +205,14 @@ $commitAckOld = @'
                 transaction.Commit();
             }
 
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
 '@ -replace "`n","`r`n"
 $commitAckNew = @'
                 transaction.Commit();
             }
 
             August12SiteGridRuntimeManager.AcknowledgeCurrentState();
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
 '@ -replace "`n","`r`n"
 if (-not $siteGrid.Contains($commitAckNew)) {
     if (-not $siteGrid.Contains($commitAckOld)) {
@@ -212,12 +223,12 @@ if (-not $siteGrid.Contains($commitAckNew)) {
 
 $manualRefreshOld = @'
             int refreshed = RefreshAll(document, null);
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
 '@ -replace "`n","`r`n"
 $manualRefreshNew = @'
             int refreshed = RefreshAll(document, null);
             August12SiteGridRuntimeManager.AcknowledgeCurrentState();
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
 '@ -replace "`n","`r`n"
 $siteGrid = ReplaceRequired $siteGrid $manualRefreshOld $manualRefreshNew 'site-grid manual refresh acknowledgement'
 
@@ -254,7 +265,7 @@ $siteGridAutoRefreshOld = @'
                         _document,
                         dirty);
                 if (refreshed > 0)
-                    _document.Editor.Regen();
+                    August21DisplayRefresh.Flush(_document);
             }
             catch
             {
@@ -284,7 +295,7 @@ $siteGridAutoRefreshNew = @'
                         _document,
                         dirty);
                 if (refreshed > 0)
-                    _document.Editor.Regen();
+                    August21DisplayRefresh.Flush(_document);
             }
             catch
             {
@@ -401,6 +412,15 @@ foreach ($requiredSiteGrid in @(
     if (-not $siteGrid.Contains($requiredSiteGrid)) {
         throw "Site Grid loop/Undo guard missing: $requiredSiteGrid"
     }
+}
+if ($siteGrid.Contains('document.Editor.Regen();') -or
+    $siteGrid.Contains('_document.Editor.Regen();')) {
+    throw 'Site Grid repair regressed to Editor.Regen instead of August21DisplayRefresh.Flush.'
+}
+if (([regex]::Matches(
+        $siteGrid,
+        [regex]::Escape('August21DisplayRefresh.Flush('))).Count -lt 3) {
+    throw 'Site Grid display-flush guard is missing from create/manual/deferred refresh paths.'
 }
 $automatic = ReadText $automaticPath
 if (-not $automatic.Contains('CE_SITEGRIDREFRESH')) {
