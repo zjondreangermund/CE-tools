@@ -1,4 +1,5 @@
 name: August 23 Field Geometry Feedback
+# Final-head regression is intentionally idempotent when the junction fix is already present.
 
 on:
   workflow_dispatch:
