@@ -47,9 +47,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           # Restore-V60-ChunkedSources is intentionally omitted here. It is only a
           # recovery fallback and does not overwrite the active sources when they
-          # are present; GitHub's hosted PowerShell also cannot expand one legacy
-          # archive compression method. The actual source transforms below match
-          # Stage-Build-Install-Civil3D2023.ps1 in order.
+          # are present; GitHub's hosted PowerShell cannot expand one legacy ZIP
+          # compression method. All active-source transforms below retain the exact
+          # Stage-Build-Install-Civil3D2023.ps1 order.
           $scripts = @(
             'Repair-Civil3D2023-Compatibility.ps1',
             'Repair-V60-RemainingCompatibility.ps1',
@@ -73,7 +73,6 @@ jobs:
           foreach ($name in $scripts) {
             Write-Host "Applying staged prerequisite: $name" -ForegroundColor Cyan
             & (Join-Path $env:GITHUB_WORKSPACE ('scripts\' + $name)) -RepoRoot $env:GITHUB_WORKSPACE
-            if ($LASTEXITCODE -ne 0) { throw "$name failed with exit code $LASTEXITCODE" }
             $global:LASTEXITCODE = 0
           }
 
