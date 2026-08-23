@@ -13,10 +13,11 @@ if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
 
-# A fully repaired staged source needs no compatibility normalization.
+# A fully repaired staged source needs no compatibility normalization. Return from
+# this script only; never terminate the parent pre-build PowerShell process.
 if ($text.Contains('"GridLines", "01 Grid"')) {
     Write-Host 'August 23 Grid line settings already present; anchor preflight skipped.' -ForegroundColor Green
-    exit 0
+    return
 }
 
 $methodMarker = '        public void CreateDynamicGrid()'
