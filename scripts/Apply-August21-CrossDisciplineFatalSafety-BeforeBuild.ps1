@@ -170,6 +170,9 @@ InvokeFinalizer `
 InvokeFinalizer `
     'Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1' `
     'Setting-Out / Multiple Dimensions / CAD Production feedback pass'
+InvokeFinalizer `
+    'Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1' `
+    'Setting-Out feedback idempotence normalization'
 
 Write-Host 'Final Civil 3D fatal-safety boundary applied immediately before compilation.' -ForegroundColor Green
 Write-Host 'Platform, linked feature-line, surface-drape, automatic-refresh, field-geometry and setting-out/CAD feedback safety are included in the final boundary.' -ForegroundColor Green
