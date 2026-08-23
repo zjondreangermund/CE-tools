@@ -1,0 +1,92 @@
+name: August 23 Grid Setting Anchor Compatibility
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'scripts/Repair-August23-GridSettingAnchorPreflight-Civil3D2023.ps1'
+      - 'scripts/Run-August23-SettingOutCadFeedback-Civil3D2023.ps1'
+      - 'scripts/Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1'
+      - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+      - '.github/workflows/aug23-grid-setting-anchor-compat.yml'
+
+jobs:
+  staged-grid-anchor:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Reproduce non-canonical staged Prefix setting
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
+          $text = [IO.File]::ReadAllText($path) -replace "`r?`n","`r`n"
+          $old = @'
+            settings.AddText(
+                "Prefix", "02 Numbering", "Point prefix", "G",
+                "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
+'@ -replace "`r?`n","`r`n"
+          $new = @'
+            settings.AddText(
+                "Prefix",
+                "04 Numbering",
+                "Grid point prefix",
+                "G",
+                "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
+'@ -replace "`r?`n","`r`n"
+          if (-not $text.Contains($old)) { throw 'Raw Grid Prefix setting anchor missing.' }
+          $text = $text.Replace($old,$new)
+          [IO.File]::WriteAllText($path,$text,(New-Object Text.UTF8Encoding($false)))
+          if ($text.Contains('"GridLines", "01 Grid"')) { throw 'Grid line settings unexpectedly exist before final repair.' }
+
+      - name: Run final pre-build safety boundary twice
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $apply = Join-Path $env:GITHUB_WORKSPACE 'scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+          & $apply -RepoRoot $env:GITHUB_WORKSPACE
+          & $apply -RepoRoot $env:GITHUB_WORKSPACE
+
+      - name: Verify Grid settings survived and are idempotent
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
+          $text = [IO.File]::ReadAllText($path)
+          foreach ($required in @(
+            '"GridLines", "01 Grid"',
+            '"GridColor", "01 Grid"',
+            '"NGSurface", "02 Levels"',
+            '"DesignSurface", "02 Levels"',
+            'DrawGridLines = string.Equals(settings.Text("GridLines")',
+            'GridColorIndex = Math.Max(1, Math.Min(255, settings.Integer("GridColor", 3)))')) {
+            if (-not $text.Contains($required)) { throw "Final Grid marker missing: $required" }
+          }
+          $gridChoiceCount = ([regex]::Matches($text,[regex]::Escape('"GridLines", "01 Grid"'))).Count
+          if ($gridChoiceCount -ne 1) { throw "Expected one GridLines setting after two passes; found $gridChoiceCount." }
+
+      - name: Parse repair PowerShell syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in @(
+            'Repair-August23-GridSettingAnchorPreflight-Civil3D2023.ps1',
+            'Run-August23-SettingOutCadFeedback-Civil3D2023.ps1')) {
+            $file = Join-Path $env:GITHUB_WORKSPACE ('scripts\' + $name)
+            $tokens=$null; $errors=$null
+            [void][System.Management.Automation.Language.Parser]::ParseFile($file,[ref]$tokens,[ref]$errors)
+            if ($errors.Count -gt 0) { throw ($name + ': ' + ($errors | Out-String)) }
+          }
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project "$env:GITHUB_WORKSPACE\tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj" -c Release -- $env:GITHUB_WORKSPACE
