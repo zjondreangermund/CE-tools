@@ -150,5 +150,13 @@ InvokeFinalizer `
     'Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1' `
     'Platform/relative fatal-safety pass'
 
+# This is deliberately the last source mutation before MSBuild. Historical Site
+# Grid field/display passes can leave the int RefreshAll overload without its
+# terminal accumulator return even though repository source is valid. Repair the
+# staged method semantically here so CS0161 cannot survive to the compiler.
+InvokeFinalizer `
+    'Repair-August23-SiteGridRefreshReturnCompatibility-Civil3D2023.ps1' `
+    'Site Grid RefreshAll return compatibility pass'
+
 Write-Host 'Final Civil 3D fatal-safety boundary applied immediately before compilation.' -ForegroundColor Green
 Write-Host 'Platform, linked feature-line, surface-drape and automatic-refresh safety are included in the final boundary.' -ForegroundColor Green
