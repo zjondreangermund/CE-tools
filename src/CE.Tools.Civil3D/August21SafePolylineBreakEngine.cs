@@ -15,6 +15,12 @@ namespace CETools.Civil3D
     /// created and committed first, verified in a second transaction, and only
     /// after successful verification is that one original erased. A failed source
     /// is left untouched and any provisional pieces are removed.
+    ///
+    /// Civil/site-network drawings are commonly edited in plan while route
+    /// polylines carry different Z values. Native 3D IntersectWith can therefore
+    /// report no intersection even when two straight segments cross in XY. The
+    /// analysis below keeps native intersections for full curve support and adds a
+    /// plan fallback for straight lightweight/3D-polyline segments.
     /// </summary>
     internal static class August21SafePolylineBreakEngine
     {
@@ -24,6 +30,12 @@ namespace CETools.Civil3D
         {
             public ObjectId SourceId;
             public List<Point3d> Points = new List<Point3d>();
+        }
+
+        private sealed class PlanSegment
+        {
+            public Point3d Start;
+            public Point3d End;
         }
 
         internal static void Run(Document document)
@@ -72,13 +84,13 @@ namespace CETools.Civil3D
             if (junctions == 0 || affected == 0)
             {
                 document.Editor.WriteMessage(
-                    "\nCE_PLBREAKJUNCTIONS: no internal crossings or T-junctions were found. Endpoint-to-endpoint connections were retained.");
+                    "\nCE_PLBREAKJUNCTIONS: no internal plan crossings or T-junctions were found. Endpoint-to-endpoint connections were retained.");
                 return;
             }
 
             if (!PopupTablePresenter.ShowReview(
                 "CE Tools - Safe Polyline Junction Preview",
-                "Accept to split each affected source independently. CE Tools commits and verifies every replacement set before erasing that source. A failed source remains untouched.",
+                "Accept to split each affected source independently. Plan crossings are detected even where selected route polylines carry different elevations. CE Tools commits and verifies every replacement set before erasing that source; a failed source remains untouched.",
                 new List<KeyValuePair<string, string>>
                 {
                     Pair("Selected polylines", ids.Count),
@@ -107,7 +119,7 @@ namespace CETools.Civil3D
 
             August21DisplayRefresh.Flush(document);
             document.Editor.WriteMessage(
-                "\nCE_PLBREAKJUNCTIONS complete. Sources safely replaced={0}; segments created={1}; failed sources preserved={2}; junctions={3}.",
+                "\nCE_PLBREAKJUNCTIONS complete. Sources safely replaced={0}; segments created={1}; failed sources preserved={2}; plan junctions={3}.",
                 replaced,
                 created,
                 preserved,
@@ -150,21 +162,152 @@ namespace CETools.Civil3D
                         }
                         catch
                         {
-                            continue;
+                            // The plan fallback below still gets a chance to resolve
+                            // ordinary straight network crossings.
                         }
 
                         foreach (Point3d intersection in intersections)
                         {
                             AddInternal(first, intersection, result[ids[firstIndex]].Points);
                             AddInternal(second, intersection, result[ids[secondIndex]].Points);
-                            AddUnique(unique, intersection);
+                            AddUniquePlan(unique, intersection);
                         }
+
+                        AddPlanLinearIntersections(
+                            transaction,
+                            first,
+                            second,
+                            result[ids[firstIndex]].Points,
+                            result[ids[secondIndex]].Points,
+                            unique);
                     }
                 }
             }
 
             uniqueIntersections = unique.Count;
             return result;
+        }
+
+        private static void AddPlanLinearIntersections(
+            Transaction transaction,
+            Curve first,
+            Curve second,
+            IList<Point3d> firstPoints,
+            IList<Point3d> secondPoints,
+            IList<Point3d> unique)
+        {
+            List<PlanSegment> firstSegments = ReadStraightSegments(transaction, first);
+            List<PlanSegment> secondSegments = ReadStraightSegments(transaction, second);
+            if (firstSegments.Count == 0 || secondSegments.Count == 0) return;
+
+            foreach (PlanSegment firstSegment in firstSegments)
+            {
+                foreach (PlanSegment secondSegment in secondSegments)
+                {
+                    Point3d firstPoint;
+                    Point3d secondPoint;
+                    if (!TryPlanIntersection(
+                            firstSegment,
+                            secondSegment,
+                            out firstPoint,
+                            out secondPoint))
+                        continue;
+
+                    AddInternal(first, firstPoint, firstPoints);
+                    AddInternal(second, secondPoint, secondPoints);
+                    AddUniquePlan(unique, firstPoint);
+                }
+            }
+        }
+
+        private static List<PlanSegment> ReadStraightSegments(
+            Transaction transaction,
+            Curve curve)
+        {
+            var result = new List<PlanSegment>();
+            Polyline lightweight = curve as Polyline;
+            if (lightweight != null)
+            {
+                int count = lightweight.NumberOfVertices;
+                if (count < 2) return result;
+                int segmentCount = lightweight.Closed ? count : count - 1;
+                for (int index = 0; index < segmentCount; index++)
+                {
+                    int next = (index + 1) % count;
+                    double bulge;
+                    try { bulge = lightweight.GetBulgeAt(index); }
+                    catch { continue; }
+                    if (Math.Abs(bulge) > Tolerance) continue;
+                    Point3d start = lightweight.GetPoint3dAt(index);
+                    Point3d end = lightweight.GetPoint3dAt(next);
+                    if (PlanDistance(start, end) <= Tolerance) continue;
+                    result.Add(new PlanSegment { Start = start, End = end });
+                }
+                return result;
+            }
+
+            Polyline3d threeDimensional = curve as Polyline3d;
+            if (threeDimensional != null)
+            {
+                var vertices = new List<Point3d>();
+                foreach (ObjectId vertexId in threeDimensional)
+                {
+                    PolylineVertex3d vertex = transaction.GetObject(
+                        vertexId,
+                        OpenMode.ForRead,
+                        false) as PolylineVertex3d;
+                    if (vertex != null) vertices.Add(vertex.Position);
+                }
+                int segmentCount = threeDimensional.Closed
+                    ? vertices.Count
+                    : vertices.Count - 1;
+                for (int index = 0; index < segmentCount; index++)
+                {
+                    Point3d start = vertices[index];
+                    Point3d end = vertices[(index + 1) % vertices.Count];
+                    if (PlanDistance(start, end) <= Tolerance) continue;
+                    result.Add(new PlanSegment { Start = start, End = end });
+                }
+            }
+            return result;
+        }
+
+        private static bool TryPlanIntersection(
+            PlanSegment first,
+            PlanSegment second,
+            out Point3d firstPoint,
+            out Point3d secondPoint)
+        {
+            firstPoint = Point3d.Origin;
+            secondPoint = Point3d.Origin;
+            double rx = first.End.X - first.Start.X;
+            double ry = first.End.Y - first.Start.Y;
+            double sx = second.End.X - second.Start.X;
+            double sy = second.End.Y - second.Start.Y;
+            double denominator = rx * sy - ry * sx;
+            if (Math.Abs(denominator) <= Tolerance) return false;
+
+            double qx = second.Start.X - first.Start.X;
+            double qy = second.Start.Y - first.Start.Y;
+            double firstRatio = (qx * sy - qy * sx) / denominator;
+            double secondRatio = (qx * ry - qy * rx) / denominator;
+            if (firstRatio < -Tolerance || firstRatio > 1.0 + Tolerance ||
+                secondRatio < -Tolerance || secondRatio > 1.0 + Tolerance)
+                return false;
+
+            firstRatio = Math.Max(0.0, Math.Min(1.0, firstRatio));
+            secondRatio = Math.Max(0.0, Math.Min(1.0, secondRatio));
+            firstPoint = Interpolate(first.Start, first.End, firstRatio);
+            secondPoint = Interpolate(second.Start, second.End, secondRatio);
+            return true;
+        }
+
+        private static Point3d Interpolate(Point3d start, Point3d end, double ratio)
+        {
+            return new Point3d(
+                start.X + (end.X - start.X) * ratio,
+                start.Y + (end.Y - start.Y) * ratio,
+                start.Z + (end.Z - start.Z) * ratio);
         }
 
         private static void AddInternal(
@@ -187,6 +330,19 @@ namespace CETools.Civil3D
         {
             if (points.Any(existing => existing.DistanceTo(point) <= Tolerance)) return;
             points.Add(point);
+        }
+
+        private static void AddUniquePlan(IList<Point3d> points, Point3d point)
+        {
+            if (points.Any(existing => PlanDistance(existing, point) <= Tolerance)) return;
+            points.Add(new Point3d(point.X, point.Y, 0.0));
+        }
+
+        private static double PlanDistance(Point3d first, Point3d second)
+        {
+            double dx = first.X - second.X;
+            double dy = first.Y - second.Y;
+            return Math.Sqrt(dx * dx + dy * dy);
         }
 
         private static bool TryReplaceOne(
@@ -411,14 +567,10 @@ namespace CETools.Civil3D
         internal static void Flush(Document document)
         {
             if (document == null) return;
+            August21GraphicsRefreshManager.MarkDirty();
             try { document.Database.TransactionManager.QueueForGraphicsFlush(); } catch { }
             try { document.Editor.Regen(); } catch { }
             try { Autodesk.AutoCAD.ApplicationServices.Core.Application.UpdateScreen(); } catch { }
-            try
-            {
-                document.SendStringToExecute("_.REGEN ", true, false, false);
-            }
-            catch { }
         }
     }
 }
