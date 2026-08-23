@@ -1,10 +1,6 @@
 name: Temporary August 23 Site Grid Refresh Fix
 
 on:
-  push:
-    branches: [ fix/aug23-video-command-safety ]
-    paths:
-      - '.github/workflows/_temp-aug23-sitegrid-refresh-fix.yml'
   pull_request:
     branches: [ main ]
     paths:
@@ -15,7 +11,6 @@ permissions:
 
 jobs:
   patch-site-grid:
-    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
@@ -38,11 +33,11 @@ jobs:
               raise SystemExit(f'Expected at least 3 Site Grid Regen calls, found {regen_count}')
           text = text.replace(old_regen, 'August21DisplayRefresh.Flush(document);')
 
-          old_append = '''            ObjectId id = blockTableRecord.AppendEntity(entity);\n            transaction.AddNewlyCreatedDBObject(entity, true);\n            return id;'''
-          new_append = '''            ObjectId id = blockTableRecord.AppendEntity(entity);\n            transaction.AddNewlyCreatedDBObject(entity, true);\n            entity.RecordGraphicsModified(true);\n            return id;'''
+          old_append = '''            space.AppendEntity(entity);\n            transaction.AddNewlyCreatedDBObject(entity, true);'''
+          new_append = '''            space.AppendEntity(entity);\n            transaction.AddNewlyCreatedDBObject(entity, true);\n            entity.RecordGraphicsModified(true);'''
           if old_append not in text:
               if 'entity.RecordGraphicsModified(true);' not in text:
-                  raise SystemExit('Could not find Site Grid AppendEntity helper anchor')
+                  raise SystemExit('Could not find Site Grid Append helper anchor')
           else:
               text = text.replace(old_append, new_append, 1)
 
