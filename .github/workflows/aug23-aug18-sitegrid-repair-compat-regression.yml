@@ -41,15 +41,15 @@ jobs:
             }
           }
 
-      - name: Reproduce Stage-Build source transforms through August 17
+      - name: Reproduce Site Grid staging transforms through August 12
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Restore-V60-ChunkedSources is intentionally omitted here. It is only a
-          # recovery fallback and does not overwrite the active sources when they
-          # are present; GitHub's hosted PowerShell cannot expand one legacy ZIP
-          # compression method. All active-source transforms below retain the exact
-          # Stage-Build-Install-Civil3D2023.ps1 order.
+          # Restore-V60-ChunkedSources is intentionally omitted here. It is a
+          # recovery fallback; GitHub's hosted PowerShell cannot expand one legacy
+          # archive compression method. The Project Production repair that follows
+          # August 12 in the real installer does not touch Site Grid, so this test
+          # stops at the exact relevant Site Grid source state before August 18.
           $scripts = @(
             'Repair-Civil3D2023-Compatibility.ps1',
             'Repair-V60-RemainingCompatibility.ps1',
@@ -67,8 +67,7 @@ jobs:
             'Inject-August11FieldCompletion-Civil3D2023.ps1',
             'Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1',
             'Repair-GlobalInterfaceAndStylePersistence-Civil3D2023.ps1',
-            'Repair-August12PersistentProductionUi-Civil3D2023.ps1',
-            'Repair-August17-ProjectProductionComments-Civil3D2023.ps1'
+            'Repair-August12PersistentProductionUi-Civil3D2023.ps1'
           )
           foreach ($name in $scripts) {
             Write-Host "Applying staged prerequisite: $name" -ForegroundColor Cyan
@@ -92,7 +91,7 @@ jobs:
           if (-not $text.Contains('August21DisplayRefresh.Flush(document);')) {
             throw 'Staged source did not preserve the PR #110 display-flush state.'
           }
-          Write-Host 'Reproduced the staged Site Grid state immediately before the August 18 repair.' -ForegroundColor Green
+          Write-Host 'Reproduced the relevant staged Site Grid state immediately before the August 18 repair.' -ForegroundColor Green
 
       - name: Execute August 18 repair exactly where installer failed
         shell: pwsh
