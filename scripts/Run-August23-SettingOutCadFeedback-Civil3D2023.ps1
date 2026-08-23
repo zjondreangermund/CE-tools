@@ -7,9 +7,22 @@ Set-StrictMode -Version Latest
 $root = (Resolve-Path -LiteralPath $RepoRoot.Trim().Trim('"')).ProviderPath
 $sourcePath = Join-Path $root 'scripts\Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1'
 $tempPath = Join-Path $root 'scripts\.Repair-August23-SettingOutCadFeedback.runtime.ps1'
+$cadRoute = Join-Path $root 'scripts\Repair-August23-CadProductionRouteCompatibility-Civil3D2023.ps1'
 if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
     throw "August 23 setting-out feedback repair missing: $sourcePath"
 }
+if (-not (Test-Path -LiteralPath $cadRoute -PathType Leaf)) {
+    throw "August 23 CAD Production route compatibility repair missing: $cadRoute"
+}
+
+# Production Centre titles have evolved across the staged August repairs. Normalize
+# the semantic CAD discipline route first so the larger feedback pass does not rely
+# on a historical exact-text insertion marker.
+& $cadRoute -RepoRoot $root
+if ($LASTEXITCODE -ne 0) {
+    throw "August 23 CAD Production route compatibility repair failed with exit code $LASTEXITCODE."
+}
+$global:LASTEXITCODE = 0
 
 # PowerShell 7 can bind a here-string followed by -replace inside String.Replace(...)
 # to the three-argument StringComparison overload. The authored repair is kept
