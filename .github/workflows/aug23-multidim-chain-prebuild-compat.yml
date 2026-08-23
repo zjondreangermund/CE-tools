@@ -16,7 +16,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Create staged Multiple Dimensions source with late unit and presentation declarations
+      - name: Create staged source with late declarations and non-canonical chain dispatch
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -40,6 +40,13 @@ jobs:
             double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
             double latePresentationProbe = 42.0;
 
+            if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))
+            {
+                // Earlier staged repair emitted the same dispatch with different formatting.
+                DimensionOpenPolylineChain(document, selection, requestedStyle);
+                return;
+            }
+
             int sources = 0;
 '@ -replace "`r?`n","`r`n"
           if (-not $text.Contains($old)) { throw 'Raw ArcLeader/sources anchor missing.' }
@@ -55,7 +62,7 @@ jobs:
             & "$env:GITHUB_WORKSPACE\scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1" -RepoRoot $env:GITHUB_WORKSPACE
           }
 
-      - name: Verify chain dispatch and late declarations coexist
+      - name: Verify one canonical chain dispatch and preserved late declarations
         shell: pwsh
         run: |
           $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
@@ -67,6 +74,13 @@ jobs:
             'double measurementFactor = outputMillimetres ? 1000.0 : 1.0;',
             'double latePresentationProbe = 42.0;')) {
             if (-not $text.Contains($required)) { throw "Missing: $required" }
+          }
+          $dispatch = 'if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))'
+          if (($text.Split(@($dispatch),[StringSplitOptions]::None).Count - 1) -ne 1) {
+            throw 'Expected exactly one final chain dispatch.'
+          }
+          if ($text.Contains('Earlier staged repair emitted the same dispatch')) {
+            throw 'Non-canonical staged dispatch was not structurally replaced.'
           }
 
       - name: Parse preflight PowerShell syntax
