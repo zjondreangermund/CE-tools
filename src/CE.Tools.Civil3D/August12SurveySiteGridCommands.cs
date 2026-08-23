@@ -1099,7 +1099,7 @@ namespace CETools.Civil3D
                         _document,
                         dirty);
                 if (refreshed > 0)
-                    _August21DisplayRefresh.Flush(document);
+                    August21DisplayRefresh.Flush(_document);
             }
             catch
             {
