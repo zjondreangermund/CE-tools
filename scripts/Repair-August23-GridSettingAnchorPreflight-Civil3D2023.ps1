@@ -37,7 +37,7 @@ if ($methodEnd -lt 0) {
 # unique one that contains the Prefix setting key.
 $prefixToken = '"Prefix"'
 $addTextMarker = '            settings.AddText('
-$candidates = New-Object System.Collections.Generic.List[object]
+$candidates = [System.Collections.Generic.List[object]]::new()
 $search = $methodStart
 while ($true) {
     $start = $text.IndexOf($addTextMarker,$search,[StringComparison]::Ordinal)
@@ -49,7 +49,7 @@ while ($true) {
     $end += 2
     $call = $text.Substring($start,$end-$start)
     if ($call.Contains($prefixToken)) {
-        $candidates.Add([pscustomobject]@{ Start = $start; End = $end })
+        [void]$candidates.Add([pscustomobject]@{ Start = $start; End = $end })
     }
     $search = $end
 }
