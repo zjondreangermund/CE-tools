@@ -631,7 +631,7 @@ $resolveTargetsBody = @'
             }
             return result;
 '@
-$trim = ReplaceMethodBody $trim '        private static List<ObjectId> ResolveTargets(Document document, string scope, IList<ObjectId> boundaryIds, bool extend)' $resolveTargetsBody 'Multi Trim target validation'
+$trim = ReplaceMethodBody $trim '        private static List<ObjectId> ResolveTargets(' $resolveTargetsBody 'Multi Trim target validation'
 $trim = $trim.Replace(
     'document.Editor.WriteMessage("\n{0}: no supported curve targets were selected/found.", commandName);',
     'document.Editor.WriteMessage("\n{0}: no supported curve targets remained after boundary/target validation.", commandName);')

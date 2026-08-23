@@ -129,7 +129,7 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
 
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
             document.Editor.WriteMessage(
                 "\nCE_SITEGRID complete. Linked objects regenerated={0}. Move the frame/grid line/grid point to auto-refresh.",
                 generated);
@@ -142,7 +142,7 @@ namespace CETools.Civil3D
             Document document = Active();
             if (document == null) return;
             int refreshed = RefreshAll(document, null);
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
             document.Editor.WriteMessage(
                 "\nCE_SITEGRIDREFRESH complete. Linked site grids refreshed={0}.",
                 refreshed);
@@ -184,7 +184,7 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
 
-            document.Editor.Regen();
+            August21DisplayRefresh.Flush(document);
             document.Editor.WriteMessage(
                 "\nCE_SITEGRIDREMOVE complete. Generated grid objects removed={0}; source frame retained.",
                 removed);
@@ -658,6 +658,7 @@ namespace CETools.Civil3D
         {
             space.AppendEntity(entity);
             transaction.AddNewlyCreatedDBObject(entity, true);
+            entity.RecordGraphicsModified(true);
         }
 
         private static BlockTableRecord OpenModelSpace(
@@ -1098,7 +1099,7 @@ namespace CETools.Civil3D
                         _document,
                         dirty);
                 if (refreshed > 0)
-                    _document.Editor.Regen();
+                    August21DisplayRefresh.Flush(_document);
             }
             catch
             {

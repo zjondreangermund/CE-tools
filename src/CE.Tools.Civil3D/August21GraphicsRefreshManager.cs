@@ -8,11 +8,15 @@ namespace CETools.Civil3D
 {
     /// <summary>
     /// Civil 3D 2023 occasionally leaves freshly appended managed entities out of
-    /// the display list until AUDIT/PURGE/OVERKILL forces a redraw.  This manager
+    /// the display list until AUDIT/PURGE/OVERKILL forces a redraw. This manager
     /// records append/modify activity while a CE command is active and performs one
-    /// normal REGEN + UpdateScreen after the command stack is empty.
+    /// graphics-queue flush + normal REGEN + UpdateScreen after the command stack is
+    /// empty.
     ///
-    /// It does not alter drawing geometry or run repair/cleanup commands.
+    /// It does not alter drawing geometry, run repair/cleanup commands, or inject a
+    /// command with SendStringToExecute. Keeping refresh work inside the graphics API
+    /// avoids creating an extra command-history boundary that can interfere with
+    /// AutoCAD UNDO/REDO.
     /// </summary>
     internal static class August21GraphicsRefreshManager
     {
@@ -56,6 +60,11 @@ namespace CETools.Civil3D
             {
                 using (DocumentLock documentLock = document.LockDocument())
                 {
+                    try
+                    {
+                        document.Database.TransactionManager.QueueForGraphicsFlush();
+                    }
+                    catch { }
                     document.Editor.Regen();
                     AcApplication.UpdateScreen();
                 }
