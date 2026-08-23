@@ -168,7 +168,7 @@ InvokeFinalizer `
     'Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1' `
     'Platform/page-order/chain-dimension compatibility pass'
 InvokeFinalizer `
-    'Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1' `
+    'Run-August23-SettingOutCadFeedback-Civil3D2023.ps1' `
     'Setting-Out / Multiple Dimensions / CAD Production feedback pass'
 InvokeFinalizer `
     'Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1' `
