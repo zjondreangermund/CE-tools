@@ -23,4 +23,18 @@
     <ConcurrentBuild>false</ConcurrentBuild>
     <ReportAnalyzer>false</ReportAnalyzer>
   </PropertyGroup>
+
+  <!--
+    The historical August 21 Multi Dimensions finalizer still recognises one
+    canonical ArcLeader/chain/sources layout. Late August 20/23 staging repairs can
+    legitimately insert unit/presentation declarations between those statements.
+    Normalize only that small declaration window immediately before the final
+    Civil 3D fatal-safety target so the preserved finalizer remains idempotent.
+  -->
+  <Target Name="CEPreflightAugust23MultiDimensionChainAnchor"
+          BeforeTargets="CEApplyAugust21CrossDisciplineFatalSafety"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Normalizing Multi Dimensions chain anchor before final Civil 3D safety pass..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August23-MultiDimensionChainAnchorPreflight-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
 </Project>
