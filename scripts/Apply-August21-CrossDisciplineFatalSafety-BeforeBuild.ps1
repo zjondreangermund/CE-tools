@@ -161,40 +161,44 @@ InvokeFinalizer `
     'Repair-August23-FieldGeometryFeedback-Civil3D2023.ps1' `
     'Road centreline / break-at-junction field geometry pass'
 
-# The August 20 Multiple Dimensions units finalizer inserts ValueUnits state
-# between ArcLeader and the historical `int sources = 0;` chain-dispatch anchor.
-# The August 21 chain finalizer is intentionally strict and therefore needs that
-# harmless declaration block moved just after `int sources = 0;` before it runs.
-# This changes declaration order only; Metres/Millimetres behavior and DIMLFAC are
-# preserved. It also makes repeated pre-build execution converge on one layout.
+# The preserved August 21 chain finalizer historically expects ArcLeader to be
+# immediately followed by `int sources = 0;`. Several later Multiple Dimensions
+# repairs legitimately add ValueUnits/arrow/text/circle declarations between those
+# two statements. When chain dispatch is still absent, move the complete intervening
+# declaration block (whatever its current shape) to immediately after `sources` so
+# the strict historical finalizer sees its canonical anchor. No declarations are
+# deleted and runtime behavior is unchanged; only local declaration order changes.
 $multiText = ReadText $multiDimension
-$leaderBlock = @'
+$chainDispatchMarker = 'if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))'
+if (-not $multiText.Contains($chainDispatchMarker)) {
+    $leaderBlock = @'
             double leader = PaperAnnotationScale.ModelDistance(
                 document.Database,
                 settings.Double("ArcLeader", 6.0));
 '@ -replace "`r?`n", "`r`n"
-$unitsBlock = @'
-            bool outputMillimetres = string.Equals(
-                settings.Text("ValueUnits"),
-                "Millimetres",
-                StringComparison.OrdinalIgnoreCase);
-            double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
-'@ -replace "`r?`n", "`r`n"
-$sourcesMarker = '            int sources = 0;'
-$leaderIndex = $multiText.IndexOf($leaderBlock,[StringComparison]::Ordinal)
-$sourcesIndex = $multiText.IndexOf($sourcesMarker,[StringComparison]::Ordinal)
-$unitsIndex = $multiText.IndexOf($unitsBlock,[StringComparison]::Ordinal)
-if ($leaderIndex -lt 0 -or $sourcesIndex -lt 0) {
-    throw 'Final fatal-safety bootstrap could not locate the Multiple Dimensions ArcLeader/sources chain anchors.'
-}
-if ($unitsIndex -ge 0 -and $unitsIndex -gt $leaderIndex -and $unitsIndex -lt $sourcesIndex) {
-    $multiText = $multiText.Remove($unitsIndex,$unitsBlock.Length)
-    $sourcesIndex = $multiText.IndexOf($sourcesMarker,[StringComparison]::Ordinal)
-    if ($sourcesIndex -lt 0) {
-        throw 'Final fatal-safety bootstrap lost the Multiple Dimensions sources marker while normalizing units.'
+    $sourcesMarker = '            int sources = 0;'
+    $leaderIndex = $multiText.IndexOf($leaderBlock,[StringComparison]::Ordinal)
+    if ($leaderIndex -lt 0) {
+        throw 'Final fatal-safety bootstrap could not locate the Multiple Dimensions ArcLeader chain anchor.'
     }
-    $insertAt = $sourcesIndex + $sourcesMarker.Length
-    $multiText = $multiText.Insert($insertAt,"`r`n" + $unitsBlock)
+    $leaderEnd = $leaderIndex + $leaderBlock.Length
+    $sourcesIndex = $multiText.IndexOf($sourcesMarker,$leaderEnd,[StringComparison]::Ordinal)
+    if ($sourcesIndex -lt 0) {
+        throw 'Final fatal-safety bootstrap could not locate the Multiple Dimensions sources chain anchor after ArcLeader.'
+    }
+
+    $intervening = $multiText.Substring($leaderEnd,$sourcesIndex-$leaderEnd)
+    $payload = $intervening.Trim("`r","`n")
+    $multiText = $multiText.Substring(0,$leaderEnd) + "`r`n`r`n" + $multiText.Substring($sourcesIndex)
+
+    if (-not [string]::IsNullOrWhiteSpace($payload)) {
+        $sourcesIndex = $multiText.IndexOf($sourcesMarker,$leaderEnd,[StringComparison]::Ordinal)
+        if ($sourcesIndex -lt 0) {
+            throw 'Final fatal-safety bootstrap lost the Multiple Dimensions sources marker during semantic normalization.'
+        }
+        $insertAt = $sourcesIndex + $sourcesMarker.Length
+        $multiText = $multiText.Insert($insertAt,"`r`n" + $payload)
+    }
     WriteText $multiDimension $multiText
 }
 
