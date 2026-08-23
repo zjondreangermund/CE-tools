@@ -422,28 +422,21 @@ namespace CETools.Civil3D
 
         private static List<ObjectId> SelectBoundaries(Document document)
         {
-            PromptSelectionResult implied = document.Editor.SelectImplied();
-            PromptSelectionResult selection;
-            if (implied.Status == PromptStatus.OK && implied.Value != null && implied.Value.Count > 0)
+            // Always select boundaries explicitly. PICKFIRST belongs to the user's
+            // target workflow and must never silently become a protected boundary.
+            document.Editor.SetImpliedSelection(new ObjectId[0]);
+            var filter = new SelectionFilter(new[]
             {
-                selection = implied;
-                document.Editor.SetImpliedSelection(new ObjectId[0]);
-            }
-            else
-            {
-                var filter = new SelectionFilter(new[]
+                new TypedValue((int)DxfCode.Start, "LWPOLYLINE")
+            });
+            PromptSelectionResult selection = document.Editor.GetSelection(
+                new PromptSelectionOptions
                 {
-                    new TypedValue((int)DxfCode.Start, "LWPOLYLINE")
-                });
-                selection = document.Editor.GetSelection(
-                    new PromptSelectionOptions
-                    {
-                        MessageForAdding = "\nSelect multiple CLOSED polyline boundary objects: ",
-                        AllowDuplicates = false,
-                        RejectObjectsFromNonCurrentSpace = true
-                    },
-                    filter);
-            }
+                    MessageForAdding = "\nSelect CLOSED polyline trimming boundary objects: ",
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                },
+                filter);
             if (selection.Status != PromptStatus.OK || selection.Value == null)
                 return new List<ObjectId>();
 
@@ -503,6 +496,7 @@ namespace CETools.Civil3D
             HashSet<ObjectId> boundarySet = new HashSet<ObjectId>(boundaryIds);
             if (string.Equals(scope, "Selected", StringComparison.OrdinalIgnoreCase))
             {
+                document.Editor.SetImpliedSelection(new ObjectId[0]);
                 PromptSelectionResult selection = document.Editor.GetSelection(
                     new PromptSelectionOptions
                     {
