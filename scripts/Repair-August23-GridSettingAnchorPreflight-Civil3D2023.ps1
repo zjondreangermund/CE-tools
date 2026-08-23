@@ -31,27 +31,33 @@ if ($methodEnd -lt 0) {
     throw 'August 23 Grid RefreshDynamicGrids marker missing for setting-anchor preflight.'
 }
 
-$methodText = $text.Substring($methodStart,$methodEnd-$methodStart)
+# Locate the semantic Prefix *settings.AddText call*, not every later settings.Text
+# reference to the Prefix key in the link initializer. Earlier staged builds can
+# reformat this call, so scan AddText calls inside CreateDynamicGrid and select the
+# unique one that contains the Prefix setting key.
 $prefixToken = '"Prefix"'
-$prefixRelative = $methodText.IndexOf($prefixToken,[StringComparison]::Ordinal)
-if ($prefixRelative -lt 0) {
-    throw 'August 23 Grid Prefix setting missing inside CreateDynamicGrid.'
-}
-if ($methodText.IndexOf($prefixToken,$prefixRelative+$prefixToken.Length,[StringComparison]::Ordinal) -ge 0) {
-    throw 'August 23 Grid Prefix setting is ambiguous inside CreateDynamicGrid.'
-}
-
-$prefixAbsolute = $methodStart + $prefixRelative
 $addTextMarker = '            settings.AddText('
-$addTextStart = $text.LastIndexOf($addTextMarker,$prefixAbsolute,[StringComparison]::Ordinal)
-if ($addTextStart -lt $methodStart) {
-    throw 'August 23 Grid Prefix AddText call could not be resolved.'
+$candidates = New-Object System.Collections.Generic.List[object]
+$search = $methodStart
+while ($true) {
+    $start = $text.IndexOf($addTextMarker,$search,[StringComparison]::Ordinal)
+    if ($start -lt 0 -or $start -ge $methodEnd) { break }
+    $end = $text.IndexOf(');',$start + $addTextMarker.Length,[StringComparison]::Ordinal)
+    if ($end -lt 0 -or $end -ge $methodEnd) {
+        throw 'August 23 Grid AddText call closing marker could not be resolved.'
+    }
+    $end += 2
+    $call = $text.Substring($start,$end-$start)
+    if ($call.Contains($prefixToken)) {
+        $candidates.Add([pscustomobject]@{ Start = $start; End = $end })
+    }
+    $search = $end
 }
-$callEnd = $text.IndexOf(');',$prefixAbsolute,[StringComparison]::Ordinal)
-if ($callEnd -lt 0 -or $callEnd -ge $methodEnd) {
-    throw 'August 23 Grid Prefix AddText closing marker could not be resolved.'
+if ($candidates.Count -ne 1) {
+    throw "August 23 Grid Prefix AddText setting expected exactly once inside CreateDynamicGrid; found $($candidates.Count)."
 }
-$callEnd += 2
+$addTextStart = [int]$candidates[0].Start
+$callEnd = [int]$candidates[0].End
 
 # Earlier staged repairs may change the numbering group/title formatting around the
 # Prefix setting. Rebuild only this one settings call into the historical shape that
