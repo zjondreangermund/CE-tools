@@ -9,6 +9,7 @@ on:
       - 'src/CE.Tools.Civil3D/August21PlatformRelativeFatalSafety.cs'
       - 'scripts/Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1'
       - 'scripts/Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1'
+      - 'scripts/Repair-August23-SiteGridRefreshReturnCompatibility-Civil3D2023.ps1'
       - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
       - 'Directory.Build.targets'
       - '.github/workflows/aug21-cross-discipline-fatal-safety-regression.yml'
@@ -19,6 +20,7 @@ on:
       - 'src/CE.Tools.Civil3D/August21PlatformRelativeFatalSafety.cs'
       - 'scripts/Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1'
       - 'scripts/Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1'
+      - 'scripts/Repair-August23-SiteGridRefreshReturnCompatibility-Civil3D2023.ps1'
       - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
       - 'Directory.Build.targets'
       - '.github/workflows/aug21-cross-discipline-fatal-safety-regression.yml'
@@ -52,6 +54,7 @@ jobs:
           foreach ($name in @(
             'Repair-August21-CrossDisciplineFatalSafety-Civil3D2023.ps1',
             'Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1',
+            'Repair-August23-SiteGridRefreshReturnCompatibility-Civil3D2023.ps1',
             'Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1')) {
             $path = Join-Path $env:STAGE ('scripts\' + $name)
             $tokens=$null; $errors=$null
@@ -61,6 +64,27 @@ jobs:
             }
           }
 
+      - name: Reproduce reported Site Grid CS0161 staged state
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+          $marker = '        internal static int RefreshAll(Document document, ISet<ObjectId> dirtyIds)'
+          $start = $text.IndexOf($marker,[StringComparison]::Ordinal)
+          $next = $text.IndexOf('        private static int RebuildOne(',$start,[StringComparison]::Ordinal)
+          if ($start -lt 0 -or $next -le $start) { throw 'Could not isolate Site Grid RefreshAll for CS0161 reproduction.' }
+          $method = $text.Substring($start,$next-$start)
+          $returnIndex = $method.LastIndexOf('            return refreshed;',[StringComparison]::Ordinal)
+          if ($returnIndex -lt 0) { throw 'Site Grid RefreshAll terminal return was not found before reproduction.' }
+          $method = $method.Substring(0,$returnIndex) + '            August21DisplayRefresh.Flush(document);' + $method.Substring($returnIndex + '            return refreshed;'.Length)
+          if ([regex]::IsMatch($method.TrimEnd(),'(?s)return\s+refreshed\s*;\s*\}\s*$')) {
+            throw 'CS0161 reproduction failed: terminal return still exists.'
+          }
+          $text = $text.Substring(0,$start) + $method + $text.Substring($next)
+          [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
+          Write-Host 'Reproduced the packaged staged Site Grid int RefreshAll without a terminal return.' -ForegroundColor Yellow
+
       - name: Apply final build-boundary pass twice
         shell: pwsh
         run: |
@@ -68,6 +92,24 @@ jobs:
           $apply = Join-Path $env:STAGE 'scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
           & $apply -RepoRoot $env:STAGE
           & $apply -RepoRoot $env:STAGE
+
+      - name: Verify Site Grid RefreshAll total return path
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $grid = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs') -Raw
+          $marker = 'internal static int RefreshAll(Document document, ISet<ObjectId> dirtyIds)'
+          $start = $grid.IndexOf($marker,[StringComparison]::Ordinal)
+          $next = $grid.IndexOf('private static int RebuildOne(',$start,[StringComparison]::Ordinal)
+          if ($start -lt 0 -or $next -le $start) { throw 'Site Grid RefreshAll range not found after final boundary.' }
+          $method = $grid.Substring($start,$next-$start).TrimEnd()
+          if (-not [regex]::IsMatch($method,'(?s)return\s+refreshed\s*;\s*\}\s*$')) {
+            throw 'Site Grid RefreshAll still has no terminal return refreshed path.'
+          }
+          if ([regex]::IsMatch($method,'(?m)^\s*return\s*;\s*$')) {
+            throw 'Site Grid RefreshAll contains an invalid bare return in an int method.'
+          }
+          Write-Host 'Site Grid RefreshAll has a guaranteed terminal int return after the final pre-compile boundary.' -ForegroundColor Green
 
       - name: Verify Sewer fatal-safety
         shell: pwsh
