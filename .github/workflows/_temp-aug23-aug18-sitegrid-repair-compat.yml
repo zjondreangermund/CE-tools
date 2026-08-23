@@ -1,0 +1,92 @@
+name: Temporary August 23 August18 SiteGrid Repair Compatibility
+
+on:
+  push:
+    branches: [ fix/aug23-aug18-sitegrid-repair-compat ]
+    paths:
+      - '.github/workflows/_temp-aug23-aug18-sitegrid-repair-compat.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  patch-repair-script:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout branch
+        uses: actions/checkout@v4
+        with:
+          ref: fix/aug23-aug18-sitegrid-repair-compat
+          fetch-depth: 0
+
+      - name: Make August 18 Site Grid repair compatible with display flush
+        shell: python
+        run: |
+          from pathlib import Path
+
+          path = Path('scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1')
+          text = path.read_text(encoding='utf-8').replace('\r\n', '\n')
+
+          anchor = "$siteGridPath = Required $src 'August12SurveySiteGridCommands.cs'\n$siteGrid = ReadText $siteGridPath\n"
+          normalization = """$siteGridPath = Required $src 'August12SurveySiteGridCommands.cs'
+$siteGrid = ReadText $siteGridPath
+
+# PR #110 moved Site Grid display refresh away from Editor.Regen() so refreshes
+# do not pollute AutoCAD Undo/Redo. Normalize an older staged source to the same
+# display-flush form before applying the August 18 loop/Undo guards. This keeps
+# the repair compatible with both the legacy REGEN source and the newer source.
+$siteGrid = $siteGrid.Replace(
+    '            document.Editor.Regen();',
+    '            August21DisplayRefresh.Flush(document);')
+$siteGrid = $siteGrid.Replace(
+    '                    _document.Editor.Regen();',
+    '                    August21DisplayRefresh.Flush(_document);')
+"""
+          if '# PR #110 moved Site Grid display refresh away from Editor.Regen()' not in text:
+              if anchor not in text:
+                  raise SystemExit('Site Grid repair setup anchor not found')
+              text = text.replace(anchor, normalization, 1)
+
+          # The strict August 18 anchors must now describe the canonical display
+          # refresh implementation produced by the normalization above.
+          text = text.replace(
+              '            document.Editor.Regen();',
+              '            August21DisplayRefresh.Flush(document);')
+          text = text.replace(
+              '                    _document.Editor.Regen();',
+              '                    August21DisplayRefresh.Flush(_document);')
+
+          required = [
+              "'            August21DisplayRefresh.Flush(document);'",
+              "'                    August21DisplayRefresh.Flush(_document);'",
+              'August12SiteGridRuntimeManager.AcknowledgeCurrentState();',
+              '_document.Database.DisableUndoRecording(true);',
+          ]
+          for marker in required:
+              if marker not in text:
+                  raise SystemExit(f'Expected patched August 18 marker missing: {marker}')
+
+          path.write_text(text, encoding='utf-8', newline='\n')
+
+      - name: Parse patched PowerShell
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            throw (($errors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
+          }
+
+      - name: Remove temporary workflow and commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/_temp-aug23-aug18-sitegrid-repair-compat.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1 .github/workflows/_temp-aug23-aug18-sitegrid-repair-compat.yml
+          git diff --cached --check
+          git commit -m "fix: accept Site Grid display flush in August 18 repair"
+          git push origin HEAD:fix/aug23-aug18-sitegrid-repair-compat
