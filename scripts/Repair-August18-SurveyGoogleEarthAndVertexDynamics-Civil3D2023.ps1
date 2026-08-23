@@ -48,13 +48,22 @@ $centresPath = Required $src 'August14StructuredDisciplineProductionCentres.cs'
 $centres = ReadText $centresPath
 $menuCommand = 'CE_SURVEYGOOGLEEARTHBOUNDARY'
 if (-not $centres.Contains($menuCommand)) {
-    $anchor = '                    A("CE-Namibia LO / WGS84 Survey Conversion", "CE_NAMIBIALO", "Convert picked/drawing WGS84 and Namibia Schwarzeck LO survey coordinates.", "01 SETTINGS"),'
-    $addition = $anchor + "`r`n" +
-        '                    A("CE-Plot Polyline Boundary in Google Earth", "CE_SURVEYGOOGLEEARTHBOUNDARY", "Convert one or more closed survey polylines to WGS84 KML and open the polygon boundaries in Google Earth.", "01 SETTINGS"),'
-    if (-not $centres.Contains($anchor)) {
-        throw 'Survey Production Namibia LO menu anchor was not found for Google Earth boundary insertion.'
+    $googleEarthAction = '                    A("CE-Plot Polyline Boundary in Google Earth", "CE_SURVEYGOOGLEEARTHBOUNDARY", "Convert one or more closed survey polylines to WGS84 KML and open the polygon boundaries in Google Earth.", "01 SETTINGS"),'
+    $anchors = @(
+        '                    A("CE-Namibia LO / WGS84 Survey Conversion", "CE_NAMIBIALO", "Convert picked/drawing WGS84 and Namibia Schwarzeck LO survey coordinates.", "01 SETTINGS"),',
+        '                    A("CE-Survey Location / Coordinate System", "CE_SURVEYLOCATION", "Set project area and the installed Namibia LO coordinate system.", "01 SETTINGS"),'
+    )
+    $inserted = $false
+    foreach ($anchor in $anchors) {
+        if ($centres.Contains($anchor)) {
+            $centres = $centres.Replace($anchor, $anchor + "`r`n" + $googleEarthAction)
+            $inserted = $true
+            break
+        }
     }
-    $centres = $centres.Replace($anchor,$addition)
+    if (-not $inserted) {
+        throw 'Survey Production location/coordinate-system menu anchor was not found for Google Earth boundary insertion.'
+    }
     WriteText $centresPath $centres
 }
 
