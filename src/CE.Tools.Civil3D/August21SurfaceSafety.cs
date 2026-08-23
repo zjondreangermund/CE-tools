@@ -20,6 +20,12 @@ namespace CETools.Civil3D
     /// elevations are copied to plain managed values before any feature-line write
     /// transaction begins. This deliberately avoids keeping a Civil Surface DBObject
     /// alive while AutoCAD/Civil geometry is being created, erased or edited.
+    ///
+    /// FeatureLine.SetPointElevation uses the feature line's PI-point index. Passing
+    /// indexes obtained from AllPoints can include elevation/intermediate points and
+    /// can drive Civil 3D into native instability. Surface application therefore
+    /// samples and writes PI points only. Native intermediate-TIN insertion remains
+    /// disabled in this fatal-safe path.
     /// </summary>
     internal static class August21SurfaceSafety
     {
@@ -125,7 +131,7 @@ namespace CETools.Civil3D
                         return false;
                     }
                     Point3dCollection collection = featureLine.GetPoints(
-                        FeatureLinePointType.AllPoints);
+                        FeatureLinePointType.PIPoint);
                     sourcePoints = collection == null
                         ? new List<Point3d>()
                         : collection.Cast<Point3d>().ToList();
@@ -133,13 +139,13 @@ namespace CETools.Civil3D
             }
             catch (System.Exception exception)
             {
-                error = "Feature-line read failed: " + exception.Message;
+                error = "Feature-line PI read failed: " + exception.Message;
                 return false;
             }
 
             if (sourcePoints.Count == 0)
             {
-                error = "The feature line has no readable elevation points.";
+                error = "The feature line has no readable PI elevation points.";
                 return false;
             }
 
@@ -189,7 +195,7 @@ namespace CETools.Civil3D
 
             if (sampledCount == 0)
             {
-                error = "The selected surface has no readable elevations at the feature-line points.";
+                error = "The selected surface has no readable elevations at the feature-line PI points.";
                 return false;
             }
 
@@ -209,7 +215,7 @@ namespace CETools.Civil3D
                     }
 
                     Point3dCollection current = featureLine.GetPoints(
-                        FeatureLinePointType.AllPoints);
+                        FeatureLinePointType.PIPoint);
                     int count = Math.Min(
                         current == null ? 0 : current.Count,
                         sampled.Count);
@@ -226,21 +232,24 @@ namespace CETools.Civil3D
             }
             catch (System.Exception exception)
             {
-                error = "Feature-line elevation write failed safely: " + exception.Message;
+                error = "Feature-line PI elevation write failed safely: " + exception.Message;
                 return false;
             }
 
             // Civil 3D's native AssignElevationsFromSurface(..., true) is not used
             // here because it can keep the Surface object active while Civil mutates
-            // the feature line. The UI option is retained; all existing feature-line
-            // points are sampled safely. Intermediate TIN break insertion can be
-            // added later without reintroducing the crash-prone native call.
+            // the feature line. The UI option is retained, but fatal-safe creation
+            // intentionally updates existing PI points only. Intermediate TIN break
+            // insertion can be added later without reintroducing the crash-prone
+            // native mutation path.
             try
             {
+                document.Database.TransactionManager.QueueForGraphicsFlush();
                 document.Editor.Regen();
                 AcApplication.UpdateScreen();
             }
             catch { }
+            August21GraphicsRefreshManager.MarkDirty();
             return true;
         }
 
