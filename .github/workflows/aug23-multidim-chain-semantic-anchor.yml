@@ -1,0 +1,51 @@
+name: August 23 Multi Dimensions Semantic Chain Anchor
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+      - '.github/workflows/aug23-multidim-chain-semantic-anchor.yml'
+
+jobs:
+  semantic-chain-anchor:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reproduce complex staged declaration layout
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
+          $text = [IO.File]::ReadAllText($path) -replace "`r?`n","`r`n"
+          $leader = @'
+            double leader = PaperAnnotationScale.ModelDistance(
+                document.Database,
+                settings.Double("ArcLeader", 6.0));
+'@ -replace "`r?`n","`r`n"
+          $extra = @'
+            bool outputMillimetres = string.Equals(
+                settings.Text("ValueUnits"),
+                "Millimetres",
+                StringComparison.OrdinalIgnoreCase);
+            double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
+            double stagedCompatibilityProbe = measurementFactor;
+'@ -replace "`r?`n","`r`n"
+          if (-not $text.Contains($leader)) { throw 'Raw ArcLeader anchor missing.' }
+          $text = $text.Replace($leader,$leader + "`r`n" + $extra)
+          [IO.File]::WriteAllText($path,$text,(New-Object Text.UTF8Encoding($false)))
+      - name: Run final build boundary twice
+        shell: pwsh
+        run: |
+          & "$env:GITHUB_WORKSPACE\scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1" -RepoRoot $env:GITHUB_WORKSPACE
+          & "$env:GITHUB_WORKSPACE\scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1" -RepoRoot $env:GITHUB_WORKSPACE
+      - name: Verify chain dispatch and staged declarations survive
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
+          $text = [IO.File]::ReadAllText($path)
+          foreach ($required in @(
+            'if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))',
+            'private static void DimensionOpenPolylineChain(',
+            'double measurementFactor = outputMillimetres ? 1000.0 : 1.0;',
+            'double stagedCompatibilityProbe = measurementFactor;')) {
+            if (-not $text.Contains($required)) { throw "Missing: $required" }
+          }
