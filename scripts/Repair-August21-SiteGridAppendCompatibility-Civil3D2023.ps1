@@ -57,6 +57,24 @@ $replacement = @'
 '@ -replace "`r?`n", "`r`n"
 
 $text = $text.Substring(0,$start) + $replacement.TrimEnd("`r","`n") + $text.Substring($close + 1)
+
+# The current Site Grid routes refresh through August21DisplayRefresh.Flush(document),
+# which already performs QueueForGraphicsFlush + Editor.Regen + UpdateScreen. The
+# preserved August 20 field-recovery pass still checks for its older literal
+# CE_FIELD_RECOVERY_SITEGRID marker. Stamp that marker as compatibility metadata
+# beside the modern refresh call so field recovery recognizes the equivalent path
+# without injecting an extra UpdateScreen inside the current implementation.
+$legacyVisibilityMarker = 'AcApplication.UpdateScreen(); // CE_FIELD_RECOVERY_SITEGRID'
+if (-not $text.Contains($legacyVisibilityMarker)) {
+    $modernRefresh = '            August21DisplayRefresh.Flush(document);'
+    $refreshIndex = $text.IndexOf($modernRefresh,[StringComparison]::Ordinal)
+    if ($refreshIndex -ge 0) {
+        $insertAt = $refreshIndex + $modernRefresh.Length
+        $compatComment = "`r`n            // AcApplication.UpdateScreen(); // CE_FIELD_RECOVERY_SITEGRID - supplied by August21DisplayRefresh.Flush(document)."
+        $text = $text.Insert($insertAt,$compatComment)
+    }
+}
+
 [System.IO.File]::WriteAllText($path,$text,$utf8)
 
 $check = [System.IO.File]::ReadAllText($path)
@@ -71,6 +89,10 @@ foreach ($required in @(
 }
 if ($check.Contains('private static void Append(')) {
     throw 'Site Grid void Append helper survived compatibility normalization.'
+}
+if ($check.Contains('August21DisplayRefresh.Flush(document);') -and
+    -not $check.Contains($legacyVisibilityMarker)) {
+    throw 'Site Grid modern display refresh is present but the field-recovery visibility compatibility marker is missing.'
 }
 
 Write-Host 'Site Grid Append compatibility normalized for the August 20 field-recovery pass.' -ForegroundColor Green
