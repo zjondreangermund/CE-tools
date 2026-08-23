@@ -13,6 +13,8 @@ on:
       - 'scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
       - 'scripts/Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1'
       - 'scripts/Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1'
+      - 'scripts/Repair-August23-GridSettingAnchorPreflight-Civil3D2023.ps1'
+      - 'scripts/Run-August23-SettingOutCadFeedback-Civil3D2023.ps1'
       - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
       - '.github/workflows/aug23-setting-out-cad-feedback-regression.yml'
   push:
@@ -26,6 +28,8 @@ on:
       - 'scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
       - 'scripts/Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1'
       - 'scripts/Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1'
+      - 'scripts/Repair-August23-GridSettingAnchorPreflight-Civil3D2023.ps1'
+      - 'scripts/Run-August23-SettingOutCadFeedback-Civil3D2023.ps1'
       - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
       - '.github/workflows/aug23-setting-out-cad-feedback-regression.yml'
 
@@ -57,7 +61,9 @@ jobs:
           $ErrorActionPreference = 'Stop'
           foreach ($name in @(
             'Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1',
-            'Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1')) {
+            'Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1',
+            'Repair-August23-GridSettingAnchorPreflight-Civil3D2023.ps1',
+            'Run-August23-SettingOutCadFeedback-Civil3D2023.ps1')) {
             $path = Join-Path $env:STAGE ('scripts\' + $name)
             $tokens=$null; $errors=$null
             [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
@@ -66,12 +72,13 @@ jobs:
             }
           }
 
-      - name: Reproduce tester source state
+      - name: Reproduce tester source state and staged Prefix drift
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $vertex = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\VertexSettingOutCommands.cs') -Raw
-          $grid = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs') -Raw
+          $gridPath = Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
+          $grid = Get-Content -LiteralPath $gridPath -Raw
           $dimension = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs') -Raw
           $production = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August11ProductionCentreCommands.cs') -Raw
           if ($vertex.Contains('SetDimensionDoubleOverride(dimension, "Dimasz", 3.0);')) { throw 'Vertex radial-size tester state is already repaired.' }
@@ -79,7 +86,25 @@ jobs:
           if (-not $grid.Contains('"POINT", "SOURCE", "X", "Y", "Z", "MODE"')) { throw 'Old Grid Z-column state not found.' }
           if (-not $dimension.Contains('featureLine.GetType() == typeof(CivilFeatureLine)')) { throw 'Restrictive FeatureLine tester state not found.' }
           if ($production.Contains('"CAD PRODUCTION", "CE_CADPRODUCTION"')) { throw 'CAD Production is already routed from the Production Centre.' }
-          Write-Host 'Tester-reported setting-out/CAD source state reproduced.' -ForegroundColor Green
+
+          $oldPrefix = @'
+            settings.AddText(
+                "Prefix", "02 Numbering", "Point prefix", "G",
+                "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
+'@ -replace "`r?`n","`r`n"
+          $newPrefix = @'
+            settings.AddText(
+                "Prefix",
+                "04 Numbering",
+                "Grid point prefix",
+                "G",
+                "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
+'@ -replace "`r?`n","`r`n"
+          $grid = $grid -replace "`r?`n","`r`n"
+          if (-not $grid.Contains($oldPrefix)) { throw 'Canonical Grid Prefix setting not found before staged drift injection.' }
+          $grid = $grid.Replace($oldPrefix,$newPrefix)
+          [IO.File]::WriteAllText($gridPath,$grid,(New-Object Text.UTF8Encoding($false)))
+          Write-Host 'Tester-reported setting-out/CAD state plus non-canonical Grid Prefix anchor reproduced.' -ForegroundColor Green
 
       - name: Run final build boundary twice
         shell: pwsh
@@ -123,6 +148,8 @@ jobs:
           if ($grid.Contains('"POINT", "SOURCE", "X", "Y", "Z"')) { throw 'Dynamic Grid old Z column survived.' }
           $syncCount = ([regex]::Matches($grid,'SyncGridLines\(document\.Database, transaction, sources, link\); // CE_AUG23_GRID_SYNC')).Count
           if ($syncCount -ne 2) { throw "Dynamic Grid idempotence failed; expected two create/refresh sync calls, found $syncCount." }
+          $gridSettingCount = ([regex]::Matches($grid,[regex]::Escape('"GridLines", "01 Grid"'))).Count
+          if ($gridSettingCount -ne 1) { throw "Dynamic Grid line setting expected once after repeated finalization; found $gridSettingCount." }
 
           foreach ($marker in @(
             'ProcessConstructionLine(',

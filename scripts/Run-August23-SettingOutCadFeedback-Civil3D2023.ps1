@@ -8,11 +8,15 @@ $root = (Resolve-Path -LiteralPath $RepoRoot.Trim().Trim('"')).ProviderPath
 $sourcePath = Join-Path $root 'scripts\Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1'
 $tempPath = Join-Path $root 'scripts\.Repair-August23-SettingOutCadFeedback.runtime.ps1'
 $cadRoute = Join-Path $root 'scripts\Repair-August23-CadProductionRouteCompatibility-Civil3D2023.ps1'
+$gridAnchor = Join-Path $root 'scripts\Repair-August23-GridSettingAnchorPreflight-Civil3D2023.ps1'
 if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
     throw "August 23 setting-out feedback repair missing: $sourcePath"
 }
 if (-not (Test-Path -LiteralPath $cadRoute -PathType Leaf)) {
     throw "August 23 CAD Production route compatibility repair missing: $cadRoute"
+}
+if (-not (Test-Path -LiteralPath $gridAnchor -PathType Leaf)) {
+    throw "August 23 Grid Setting-Out anchor preflight missing: $gridAnchor"
 }
 
 # Production Centre titles have evolved across the staged August repairs. Normalize
@@ -21,6 +25,16 @@ if (-not (Test-Path -LiteralPath $cadRoute -PathType Leaf)) {
 & $cadRoute -RepoRoot $root
 if ($LASTEXITCODE -ne 0) {
     throw "August 23 CAD Production route compatibility repair failed with exit code $LASTEXITCODE."
+}
+$global:LASTEXITCODE = 0
+
+# The packaged installer may already have changed the Prefix setting's group/title
+# formatting before this final feedback pass. The authored August 23 repair still
+# uses that setting as its insertion point for GridLines/NG/Design controls, so
+# restore only that one semantic settings call to the canonical anchor first.
+& $gridAnchor -RepoRoot $root
+if ($LASTEXITCODE -ne 0) {
+    throw "August 23 Grid Setting-Out anchor preflight failed with exit code $LASTEXITCODE."
 }
 $global:LASTEXITCODE = 0
 
