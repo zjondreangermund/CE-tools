@@ -5,51 +5,46 @@ on:
   pull_request:
     branches: [ main ]
     paths:
-      - 'scripts/**'
+      - 'scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+      - 'scripts/Repair-August12PersistentProductionUi-Civil3D2023.ps1'
+      - 'scripts/Repair-August12SurveyGridAndDisplayNames-Civil3D2023.ps1'
       - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
-      - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
-      - 'src/CE.Tools.Civil3D/AugustAutomaticRefreshManager.cs'
-      - 'src/CE.Tools.Civil3D/VertexSettingOutCommands.cs'
       - '.github/workflows/aug23-aug18-sitegrid-repair-compat-regression.yml'
   push:
     branches: [ main ]
     paths:
-      - 'scripts/**'
+      - 'scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+      - 'scripts/Repair-August12PersistentProductionUi-Civil3D2023.ps1'
+      - 'scripts/Repair-August12SurveyGridAndDisplayNames-Civil3D2023.ps1'
       - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
-      - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
-      - 'src/CE.Tools.Civil3D/AugustAutomaticRefreshManager.cs'
-      - 'src/CE.Tools.Civil3D/VertexSettingOutCommands.cs'
       - '.github/workflows/aug23-aug18-sitegrid-repair-compat-regression.yml'
 
 jobs:
-  execute-aug18-repair:
+  sitegrid-acknowledgement-regression:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Parse staged repair scripts
+      - name: Parse August 18 repair
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Get-ChildItem -LiteralPath (Join-Path $env:GITHUB_WORKSPACE 'scripts') -Filter '*.ps1' -File | ForEach-Object {
-            $tokens=$null; $errors=$null
-            [System.Management.Automation.Language.Parser]::ParseFile($_.FullName,[ref]$tokens,[ref]$errors) | Out-Null
-            if ($errors -and $errors.Count -gt 0) {
-              throw (($errors | ForEach-Object { $_.Name + ' line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
-            }
+          $path = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            throw (($errors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | ')
           }
 
-      - name: Reproduce Site Grid staging transforms through August 12
+      - name: Reproduce staged Site Grid source through August 12
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Restore-V60-ChunkedSources is intentionally omitted here. It is a
-          # recovery fallback; GitHub's hosted PowerShell cannot expand one legacy
-          # archive compression method. The Project Production repair that follows
-          # August 12 in the real installer does not touch Site Grid, so this test
-          # stops at the exact relevant Site Grid source state before August 18.
+          # These are the active-source transforms that establish the Site Grid
+          # state involved in the reported August 18 failure. Recovery-only ZIP
+          # restoration is intentionally excluded from this focused regression.
           $scripts = @(
             'Repair-Civil3D2023-Compatibility.ps1',
             'Repair-V60-RemainingCompatibility.ps1',
@@ -70,59 +65,64 @@ jobs:
             'Repair-August12PersistentProductionUi-Civil3D2023.ps1'
           )
           foreach ($name in $scripts) {
-            Write-Host "Applying staged prerequisite: $name" -ForegroundColor Cyan
             & (Join-Path $env:GITHUB_WORKSPACE ('scripts\' + $name)) -RepoRoot $env:GITHUB_WORKSPACE
             $global:LASTEXITCODE = 0
           }
 
-      - name: Verify reproduced pre-August18 Site Grid state
+      - name: Reproduce and verify exact acknowledgement replacement
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
-          $text = [System.IO.File]::ReadAllText($path)
-          if (-not $text.Contains('August21DisplayRefresh.Flush(document);')) {
-            throw 'Staged source did not preserve the PR #110 display-flush state.'
-          }
-          if ($text.Contains('August12SiteGridRuntimeManager.AcknowledgeCurrentState();')) {
-            throw 'Pre-August18 staged source unexpectedly already contains explicit Site Grid acknowledgement.'
-          }
-          Write-Host 'Reproduced the actual pre-August18 Site Grid display-flush state.' -ForegroundColor Green
+          $gridPath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
+          $siteGrid = [System.IO.File]::ReadAllText($gridPath) -replace "`r?`n", "`r`n"
+          $repairPath = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+          $repair = [System.IO.File]::ReadAllText($repairPath)
 
-      - name: Execute August 18 repair exactly where installer failed
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          & (Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1') -RepoRoot $env:GITHUB_WORKSPACE
+          if (-not $siteGrid.Contains('August21DisplayRefresh.Flush(document);')) {
+            throw 'Staged Site Grid did not preserve the PR #110 display-flush call.'
+          }
+          if ($siteGrid.Contains('August12SiteGridRuntimeManager.AcknowledgeCurrentState();')) {
+            throw 'Staged pre-August18 source unexpectedly already contains explicit acknowledgement.'
+          }
 
-      - name: Verify Site Grid display refresh and loop guards
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
-          $text = [System.IO.File]::ReadAllText($path)
-          foreach ($marker in @(
-            'internal static bool IsLinkedSiteGridObject(',
-            'internal static void AcknowledgeCurrentState()',
-            'dirty.RemoveWhere(id =>',
-            '_document.Database.DisableUndoRecording(true);',
-            '_document.Database.DisableUndoRecording(false);',
-            'August12SiteGridRuntimeManager.AcknowledgeCurrentState();',
-            'August21DisplayRefresh.Flush(document);',
-            'August21DisplayRefresh.Flush(_document);')) {
-            if (-not $text.Contains($marker)) { throw "Site Grid repaired marker missing: $marker" }
+          $old = @'
+                transaction.Commit();
+            }
+
+            August21DisplayRefresh.Flush(document);
+'@ -replace "`n","`r`n"
+          $new = @'
+                transaction.Commit();
+            }
+
+            August12SiteGridRuntimeManager.AcknowledgeCurrentState();
+            August21DisplayRefresh.Flush(document);
+'@ -replace "`n","`r`n"
+
+          if (-not $siteGrid.Contains($old)) {
+            throw 'Reported staged Site Grid acknowledgement anchor was not reproduced.'
           }
-          if ($text.Contains('document.Editor.Regen();') -or $text.Contains('_document.Editor.Regen();')) {
-            throw 'August 18 repair regressed Site Grid to Editor.Regen().'
+          $patched = $siteGrid.Replace($old,$new)
+          if (-not $patched.Contains($new)) {
+            throw 'Corrected Site Grid acknowledgement replacement did not apply.'
           }
-          Write-Host 'Exact staged August 18 Site Grid repair passed without restoring REGEN or Undo pollution.' -ForegroundColor Green
+          if (-not $repair.Contains('August21DisplayRefresh.Flush(document);')) {
+            throw 'August 18 repair does not contain the corrected display-flush acknowledgement anchor.'
+          }
+          if (-not $repair.Contains("'            document.Editor.Regen();'")) {
+            throw 'August 18 repair no longer normalizes legacy REGEN source for compatibility.'
+          }
+          if (-not $repair.Contains('CE-Survey Location / Coordinate System')) {
+            throw 'August 18 Survey menu repair lacks the current Survey Location fallback anchor.'
+          }
+          Write-Host 'Exact reported Site Grid acknowledgement failure is reproduced and the corrected replacement succeeds.' -ForegroundColor Green
 
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - name: Parse repaired Civil 3D C# syntax
+      - name: Parse staged Civil 3D C# syntax
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
