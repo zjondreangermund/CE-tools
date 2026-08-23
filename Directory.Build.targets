@@ -12,4 +12,17 @@
     <Message Text="Applying final Civil 3D 2023 cross-discipline fatal-safety boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
+
+  <!--
+    Platform production finalizer. This runs after the August 21 fatal-safety target
+    and immediately before compilation, so the historical staged repair chain cannot
+    overwrite the August 23 Platform workflow routes or its dynamic refresh bridge.
+  -->
+  <Target Name="CEApplyAugust23PlatformDynamicGrading"
+          AfterTargets="CEApplyAugust21CrossDisciplineFatalSafety"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying final Civil 3D 2023 Platform dynamic-grading boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
 </Project>

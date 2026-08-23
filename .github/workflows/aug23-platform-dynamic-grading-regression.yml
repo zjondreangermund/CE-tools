@@ -1,0 +1,90 @@
+name: August 23 Platform Dynamic Grading Regression
+
+on:
+  push:
+    branches:
+      - main
+      - 'feature/**'
+  pull_request:
+
+jobs:
+  platform-dynamic-grading:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Parse August 23 repair
+        shell: powershell
+        run: |
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile(
+            "$PWD\scripts\Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1",
+            [ref]$tokens,
+            [ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) {
+            $errors | ForEach-Object { Write-Error ("line " + $_.Extent.StartLineNumber + ": " + $_.Message) }
+            throw 'August 23 Platform repair has PowerShell syntax errors.'
+          }
+
+      - name: Verify command implementations
+        shell: powershell
+        run: |
+          $dynamic = Get-Content -Raw 'src\CE.Tools.Civil3D\August23PlatformDynamicGradingCommands.cs'
+          $gradeGap = Get-Content -Raw 'src\CE.Tools.Civil3D\August23PlatformGradeAndGapCommands.cs'
+          $registration = Get-Content -Raw 'src\CE.Tools.Civil3D\August23PlatformCommandRegistration.cs'
+          foreach ($marker in @(
+            '"CE_PLATFORMDRAPEMULTI"',
+            '"CE_PLATFORMGRADETOSURFACE"',
+            'internal static int RefreshAll(Document document)',
+            'August21SurfaceSafety.TryApplyFeatureLineElevations',
+            'TryCreateGradingGroup',
+            'TryCreateInfill')) {
+            if (-not $dynamic.Contains($marker)) { throw "Missing dynamic Platform implementation: $marker" }
+          }
+          foreach ($marker in @(
+            '"CE_PLATFORMCONSTANTGRADE"',
+            '"CE_PLATFORMCLOSEGAPS"',
+            'August21PlatformRelativeFatalSafety.CreateJoinedFeatureLine')) {
+            if (-not $gradeGap.Contains($marker)) { throw "Missing grade/gap Platform implementation: $marker" }
+          }
+          if (-not $registration.Contains('CommandClass(typeof(CETools.Civil3D.August23PlatformDynamicGradingCommands))')) {
+            throw 'August 23 dynamic Platform command class is not registered.'
+          }
+
+      - name: Apply final Platform repair twice
+        shell: powershell
+        run: |
+          & '.\scripts\Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1' -RepoRoot $PWD
+          $first = (Get-FileHash 'src\CE.Tools.Civil3D\PlatformProductionCommands.cs' -Algorithm SHA256).Hash
+          & '.\scripts\Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1' -RepoRoot $PWD
+          $second = (Get-FileHash 'src\CE.Tools.Civil3D\PlatformProductionCommands.cs' -Algorithm SHA256).Hash
+          if ($first -ne $second) { throw 'August 23 Platform finalizer is not idempotent.' }
+
+      - name: Verify workflow routes and dynamic refresh bridge
+        shell: powershell
+        run: |
+          $platform = Get-Content -Raw 'src\CE.Tools.Civil3D\PlatformProductionCommands.cs'
+          foreach ($command in @(
+            'CE_PLATFORMCONSTANTGRADE',
+            'CE_PLATFORMCLOSEGAPS',
+            'CE_FLCLOSEGAP',
+            'CE_PLATFORMDRAPEMULTI',
+            'CE_PLATFORMGRADETOSURFACE')) {
+            $count = ([regex]::Matches($platform,[regex]::Escape('"' + $command + '"'))).Count
+            if ($count -ne 1) { throw "Workflow route count for $command is $count instead of 1." }
+          }
+          if (-not $platform.Contains('refreshed += August23PlatformDynamicGradingCommands.RefreshAll(document);')) {
+            throw 'Automatic August 23 Platform dynamic-refresh bridge is missing.'
+          }
+          foreach ($legacy in @('"CE_PLATFORMDRAPE"','"CE_PLATFORMSURFACE"','"CE_PLATFORMREFRESH"')) {
+            if (-not $platform.Contains($legacy)) { throw "Existing Platform workflow route was lost: $legacy" }
+          }
+
+      - name: Verify pre-compile target ordering
+        shell: powershell
+        run: |
+          $targets = Get-Content -Raw 'Directory.Build.targets'
+          if (-not $targets.Contains('CEApplyAugust23PlatformDynamicGrading')) { throw 'August 23 Platform pre-compile target missing.' }
+          if (-not $targets.Contains('AfterTargets="CEApplyAugust21CrossDisciplineFatalSafety"')) { throw 'August 23 Platform target is not ordered after the August 21 safety boundary.' }
+          if (-not $targets.Contains('Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1')) { throw 'August 23 Platform target is not wired to its repair script.' }
