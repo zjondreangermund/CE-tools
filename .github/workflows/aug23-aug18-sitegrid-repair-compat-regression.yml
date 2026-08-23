@@ -45,8 +45,12 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          # Restore-V60-ChunkedSources is intentionally omitted here. It is only a
+          # recovery fallback and does not overwrite the active sources when they
+          # are present; GitHub's hosted PowerShell also cannot expand one legacy
+          # archive compression method. The actual source transforms below match
+          # Stage-Build-Install-Civil3D2023.ps1 in order.
           $scripts = @(
-            'Restore-V60-ChunkedSources.ps1',
             'Repair-Civil3D2023-Compatibility.ps1',
             'Repair-V60-RemainingCompatibility.ps1',
             'Inject-ProductionExpansion-Civil3D2023.ps1',
