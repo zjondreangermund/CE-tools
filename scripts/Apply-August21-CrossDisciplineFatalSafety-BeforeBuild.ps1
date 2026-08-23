@@ -56,6 +56,7 @@ $midblock = Required 'August11MidblockSewerProductionCommands.cs'
 $road = Required 'August19RoadReserveSewerAndSafetyCommands.cs'
 $geometry = Required 'August20GeometryFirstSewerCommands.cs'
 $automaticRefresh = Required 'AugustAutomaticRefreshManager.cs'
+$multiDimension = Required 'MultiDimensionCommands.cs'
 
 # A direct developer MSBuild starts from the repository's raw source, while the
 # packaged installer has already applied the historical August 20 command bridge.
@@ -160,6 +161,43 @@ InvokeFinalizer `
     'Repair-August23-FieldGeometryFeedback-Civil3D2023.ps1' `
     'Road centreline / break-at-junction field geometry pass'
 
+# The August 20 Multiple Dimensions units finalizer inserts ValueUnits state
+# between ArcLeader and the historical `int sources = 0;` chain-dispatch anchor.
+# The August 21 chain finalizer is intentionally strict and therefore needs that
+# harmless declaration block moved just after `int sources = 0;` before it runs.
+# This changes declaration order only; Metres/Millimetres behavior and DIMLFAC are
+# preserved. It also makes repeated pre-build execution converge on one layout.
+$multiText = ReadText $multiDimension
+$leaderBlock = @'
+            double leader = PaperAnnotationScale.ModelDistance(
+                document.Database,
+                settings.Double("ArcLeader", 6.0));
+'@ -replace "`r?`n", "`r`n"
+$unitsBlock = @'
+            bool outputMillimetres = string.Equals(
+                settings.Text("ValueUnits"),
+                "Millimetres",
+                StringComparison.OrdinalIgnoreCase);
+            double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
+'@ -replace "`r?`n", "`r`n"
+$sourcesMarker = '            int sources = 0;'
+$leaderIndex = $multiText.IndexOf($leaderBlock,[StringComparison]::Ordinal)
+$sourcesIndex = $multiText.IndexOf($sourcesMarker,[StringComparison]::Ordinal)
+$unitsIndex = $multiText.IndexOf($unitsBlock,[StringComparison]::Ordinal)
+if ($leaderIndex -lt 0 -or $sourcesIndex -lt 0) {
+    throw 'Final fatal-safety bootstrap could not locate the Multiple Dimensions ArcLeader/sources chain anchors.'
+}
+if ($unitsIndex -ge 0 -and $unitsIndex -gt $leaderIndex -and $unitsIndex -lt $sourcesIndex) {
+    $multiText = $multiText.Remove($unitsIndex,$unitsBlock.Length)
+    $sourcesIndex = $multiText.IndexOf($sourcesMarker,[StringComparison]::Ordinal)
+    if ($sourcesIndex -lt 0) {
+        throw 'Final fatal-safety bootstrap lost the Multiple Dimensions sources marker while normalizing units.'
+    }
+    $insertAt = $sourcesIndex + $sourcesMarker.Length
+    $multiText = $multiText.Insert($insertAt,"`r`n" + $unitsBlock)
+    WriteText $multiDimension $multiText
+}
+
 # Chain mode is part of the current Multiple Dimensions product surface. Direct
 # developer MSBuild starts from raw source, while the packaged installer has
 # already run this repair. Running it here is intentionally idempotent and keeps
@@ -167,6 +205,21 @@ InvokeFinalizer `
 InvokeFinalizer `
     'Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1' `
     'Platform/page-order/chain-dimension compatibility pass'
+
+$multiCheck = ReadText $multiDimension
+foreach ($required in @(
+    'const string chain = "Chain - between multiple open polylines";',
+    'if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))',
+    'private static void DimensionOpenPolylineChain(')) {
+    if (-not $multiCheck.Contains($required)) {
+        throw "Final fatal-safety Multiple Dimensions chain verification missing: $required"
+    }
+}
+if ($multiCheck.Contains('bool outputMillimetres = string.Equals(') -and
+    -not $multiCheck.Contains('double measurementFactor = outputMillimetres ? 1000.0 : 1.0;')) {
+    throw 'Final fatal-safety Multiple Dimensions unit-factor normalization is incomplete.'
+}
+
 InvokeFinalizer `
     'Run-August23-SettingOutCadFeedback-Civil3D2023.ps1' `
     'Setting-Out / Multiple Dimensions / CAD Production feedback pass'
