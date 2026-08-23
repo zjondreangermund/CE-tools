@@ -1,0 +1,152 @@
+name: August 23 Setting-Out CAD Feedback
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/VertexSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - 'src/CE.Tools.Civil3D/August11ProductionCentreCommands.cs'
+      - 'src/CE.Tools.Civil3D/August14ProductionCentres.cs'
+      - 'scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
+      - 'scripts/Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1'
+      - 'scripts/Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1'
+      - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+      - '.github/workflows/aug23-setting-out-cad-feedback-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/VertexSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - 'src/CE.Tools.Civil3D/August11ProductionCentreCommands.cs'
+      - 'src/CE.Tools.Civil3D/August14ProductionCentres.cs'
+      - 'scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
+      - 'scripts/Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1'
+      - 'scripts/Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1'
+      - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+      - '.github/workflows/aug23-setting-out-cad-feedback-regression.yml'
+
+jobs:
+  staged-setting-out-cad:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create staged repository copy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-tools-aug23-setting-out-cad'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'src') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'scripts') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'tests') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'global.json') -Destination $stage -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'Directory.Build.targets') -Destination $stage -Force
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Parse August 23 repair scripts
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($name in @(
+            'Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1',
+            'Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1')) {
+            $path = Join-Path $env:STAGE ('scripts\' + $name)
+            $tokens=$null; $errors=$null
+            [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
+            if ($errors -and $errors.Count -gt 0) {
+              throw ($name + ': ' + (($errors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | '))
+            }
+          }
+
+      - name: Reproduce tester source state
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vertex = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\VertexSettingOutCommands.cs') -Raw
+          $grid = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs') -Raw
+          $dimension = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs') -Raw
+          $production = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August11ProductionCentreCommands.cs') -Raw
+          if ($vertex.Contains('SetDimensionDoubleOverride(dimension, "Dimasz", 3.0);')) { throw 'Vertex radial-size tester state is already repaired.' }
+          if ($grid.Contains('"NG LEVEL"') -or $grid.Contains('"Points + full grid lines"')) { throw 'Grid tester state is already repaired.' }
+          if (-not $grid.Contains('"POINT", "SOURCE", "X", "Y", "Z", "MODE"')) { throw 'Old Grid Z-column state not found.' }
+          if (-not $dimension.Contains('featureLine.GetType() == typeof(CivilFeatureLine)')) { throw 'Restrictive FeatureLine tester state not found.' }
+          if ($production.Contains('"CAD PRODUCTION", "CE_CADPRODUCTION"')) { throw 'CAD Production is already routed from the Production Centre.' }
+          Write-Host 'Tester-reported setting-out/CAD source state reproduced.' -ForegroundColor Green
+
+      - name: Run final build boundary twice
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $apply = Join-Path $env:STAGE 'scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+          & $apply -RepoRoot $env:STAGE
+          & $apply -RepoRoot $env:STAGE
+
+      - name: Verify tester feedback fixes
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $vertex = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\VertexSettingOutCommands.cs') -Raw
+          $grid = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs') -Raw
+          $dimension = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs') -Raw
+          $production = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August11ProductionCentreCommands.cs') -Raw
+          $productionV3 = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August14ProductionCentres.cs') -Raw
+
+          foreach ($marker in @(
+            'ResetCogoLabel(point);',
+            'ResetCogoLabel(cogo);',
+            'SetDimensionDoubleOverride(dimension, "Dimasz", 3.0);',
+            'SetDimensionDoubleOverride(dimension, "Dimtxt", 1.8);',
+            'AcApplication.UpdateScreen()')) {
+            if (-not $vertex.Contains($marker)) { throw "Vertex Setting-Out marker missing: $marker" }
+          }
+
+          foreach ($marker in @(
+            '"Points + full grid lines"',
+            'GridColorIndex',
+            '"NG LEVEL"',
+            '"DESIGN LEVEL"',
+            'FindElevationAtXY',
+            'LineHandles',
+            'ClipVertical(',
+            'ClipHorizontal(',
+            'ResetCogoLabel(point);')) {
+            if (-not $grid.Contains($marker)) { throw "Dynamic Grid marker missing: $marker" }
+          }
+          if ($grid.Contains('"POINT", "SOURCE", "X", "Y", "Z"')) { throw 'Dynamic Grid old Z column survived.' }
+          $syncCount = ([regex]::Matches($grid,'SyncGridLines\(document\.Database, transaction, sources, link\); // CE_AUG23_GRID_SYNC')).Count
+          if ($syncCount -ne 2) { throw "Dynamic Grid idempotence failed; expected two create/refresh sync calls, found $syncCount." }
+
+          foreach ($marker in @(
+            'ProcessConstructionLine(',
+            'Entity source,',
+            'Line line = source as Line;',
+            'Xline xline = source as Xline;',
+            'CivilFeatureLine featureLine = source as CivilFeatureLine;',
+            'polylines, FeatureLines or construction lines/XLINEs')) {
+            if (-not $dimension.Contains($marker)) { throw "Multiple Dimensions marker missing: $marker" }
+          }
+          if ($dimension.Contains('featureLine.GetType() == typeof(CivilFeatureLine)')) { throw 'Multiple Dimensions still rejects compatible FeatureLines.' }
+
+          foreach ($entry in @($production,$productionV3)) {
+            if (-not $entry.Contains('"CAD PRODUCTION", "CE_CADPRODUCTION"')) { throw 'CAD Production route missing from a Production Centre.' }
+          }
+          Write-Host 'Setting-Out, Grid, Multiple Dimensions and CAD Production feedback guards passed.' -ForegroundColor Green
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE

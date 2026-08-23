@@ -160,5 +160,19 @@ InvokeFinalizer `
     'Repair-August23-FieldGeometryFeedback-Civil3D2023.ps1' `
     'Road centreline / break-at-junction field geometry pass'
 
+# Chain mode is part of the current Multiple Dimensions product surface. Direct
+# developer MSBuild starts from raw source, while the packaged installer has
+# already run this repair. Running it here is intentionally idempotent and keeps
+# both build paths on the same source shape before the August 23 mixed-source pass.
+InvokeFinalizer `
+    'Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1' `
+    'Platform/page-order/chain-dimension compatibility pass'
+InvokeFinalizer `
+    'Run-August23-SettingOutCadFeedback-Civil3D2023.ps1' `
+    'Setting-Out / Multiple Dimensions / CAD Production feedback pass'
+InvokeFinalizer `
+    'Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1' `
+    'Setting-Out feedback idempotence normalization'
+
 Write-Host 'Final Civil 3D fatal-safety boundary applied immediately before compilation.' -ForegroundColor Green
-Write-Host 'Platform, linked feature-line, surface-drape, automatic-refresh and field-geometry safety are included in the final boundary.' -ForegroundColor Green
+Write-Host 'Platform, linked feature-line, surface-drape, automatic-refresh, field-geometry and setting-out/CAD feedback safety are included in the final boundary.' -ForegroundColor Green
