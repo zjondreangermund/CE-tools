@@ -1,0 +1,122 @@
+name: One-shot fix Multi Dimensions chain finalizer
+
+on:
+  push:
+    branches:
+      - fix/aug23-multidim-finalizer-direct
+
+permissions:
+  contents: write
+
+jobs:
+  patch-and-verify:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/aug23-multidim-finalizer-direct
+          fetch-depth: 0
+
+      - name: Patch finalizer to insert chain dispatch semantically
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
+          $text = [IO.File]::ReadAllText($path) -replace "`r?`n","`r`n"
+          $old = @'
+          $dimension = ReplaceRequired $dimension @'
+                      double leader = PaperAnnotationScale.ModelDistance(
+                          document.Database,
+                          settings.Double("ArcLeader", 6.0));
+          
+                      int sources = 0;
+          '@ @'
+                      double leader = PaperAnnotationScale.ModelDistance(
+                          document.Database,
+                          settings.Double("ArcLeader", 6.0));
+          
+                      if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))
+                      {
+                          DimensionOpenPolylineChain(
+                              document,
+                              selection,
+                              requestedStyle);
+                          return;
+                      }
+          
+                      int sources = 0;
+          '@ 'Multi Dimensions chain dispatch'
+          '@ -replace "`r?`n","`r`n"
+          $new = @'
+          $chainDispatchMarker = '            if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))'
+          if (-not $dimension.Contains($chainDispatchMarker)) {
+              $methodMarker = '        public void MultiDimension()'
+              $methodStart = $dimension.IndexOf($methodMarker,[StringComparison]::Ordinal)
+              if ($methodStart -lt 0) {
+                  throw 'August 21 Multi Dimensions public command marker missing for chain dispatch.'
+              }
+              $methodEndMarker = '        private static void ProcessPolyline('
+              $methodEnd = $dimension.IndexOf($methodEndMarker,$methodStart,[StringComparison]::Ordinal)
+              if ($methodEnd -lt 0) {
+                  throw 'August 21 Multi Dimensions ProcessPolyline marker missing for chain dispatch.'
+              }
+              $sourcesMarker = '            int sources = 0;'
+              $methodText = $dimension.Substring($methodStart,$methodEnd-$methodStart)
+              $relativeSources = $methodText.IndexOf($sourcesMarker,[StringComparison]::Ordinal)
+              if ($relativeSources -lt 0) {
+                  throw 'August 21 Multi Dimensions sources marker missing for chain dispatch.'
+              }
+              if ($methodText.IndexOf($sourcesMarker,$relativeSources+$sourcesMarker.Length,[StringComparison]::Ordinal) -ge 0) {
+                  throw 'August 21 Multi Dimensions sources marker is ambiguous for chain dispatch.'
+              }
+              $dispatch = @'
+                      if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))
+                      {
+                          DimensionOpenPolylineChain(
+                              document,
+                              selection,
+                              requestedStyle);
+                          return;
+                      }
+          
+          '@ -replace "`r?`n","`r`n"
+              $insertAt = $methodStart + $relativeSources
+              $dimension = $dimension.Insert($insertAt,$dispatch)
+          }
+          '@ -replace "`r?`n","`r`n"
+          if (-not $text.Contains($old)) { throw 'Historical chain-dispatch ReplaceRequired block not found.' }
+          $text = $text.Replace($old,$new)
+          [IO.File]::WriteAllText($path,$text,(New-Object Text.UTF8Encoding($false)))
+
+      - name: Reproduce non-adjacent staged layout and run finalizer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $source = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
+          $text = [IO.File]::ReadAllText($source) -replace "`r?`n","`r`n"
+          $marker = '            int sources = 0;'
+          if (-not $text.Contains($marker)) { throw 'Multi Dimensions sources marker missing in raw source.' }
+          $probe = "            bool ceChainCompatibilityProbe = true;`r`n            double ceChainCompatibilityValue = 42.0;`r`n`r`n"
+          $text = $text.Replace($marker,$probe + $marker)
+          [IO.File]::WriteAllText($source,$text,(New-Object Text.UTF8Encoding($false)))
+          & "$env:GITHUB_WORKSPACE\scripts\Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1" -RepoRoot $env:GITHUB_WORKSPACE
+          $check = [IO.File]::ReadAllText($source)
+          foreach ($required in @(
+              'const string chain = "Chain - between multiple open polylines";',
+              'if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))',
+              'private static void DimensionOpenPolylineChain(',
+              'bool ceChainCompatibilityProbe = true;')) {
+              if (-not $check.Contains($required)) { throw "Direct chain finalizer verification missing: $required" }
+          }
+          git checkout -- src
+
+      - name: Commit only the finalizer fix
+        shell: pwsh
+        run: |
+          Remove-Item -LiteralPath "$env:GITHUB_WORKSPACE\.github\workflows\one-shot-fix-multidim-chain-finalizer.yml" -Force
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1 .github/workflows/one-shot-fix-multidim-chain-finalizer.yml
+          git diff --cached --check
+          git commit -m "Make Multi Dimensions chain dispatch finalizer semantic"
+          git push origin HEAD:fix/aug23-multidim-finalizer-direct
