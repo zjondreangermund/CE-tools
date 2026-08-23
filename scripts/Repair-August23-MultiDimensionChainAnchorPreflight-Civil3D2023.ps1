@@ -15,15 +15,6 @@ $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
 
 $methodMarker = '        public void MultiDimension()'
 $methodEndMarker = '        private static void ProcessPolyline('
-$methodStart = $text.IndexOf($methodMarker,[StringComparison]::Ordinal)
-if ($methodStart -lt 0) {
-    throw 'Multi Dimensions public command marker missing for chain-anchor preflight.'
-}
-$methodEnd = $text.IndexOf($methodEndMarker,$methodStart,[StringComparison]::Ordinal)
-if ($methodEnd -lt 0) {
-    throw 'Multi Dimensions ProcessPolyline marker missing for chain-anchor preflight.'
-}
-
 $leaderBlock = @'
             double leader = PaperAnnotationScale.ModelDistance(
                 document.Database,
@@ -31,6 +22,7 @@ $leaderBlock = @'
 '@ -replace "`r?`n","`r`n"
 $leaderBlock = $leaderBlock.TrimEnd("`r","`n")
 $sourcesMarker = '            int sources = 0;'
+$dispatchMarker = '            if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))'
 $dispatchBlock = @'
             if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))
             {
@@ -42,9 +34,67 @@ $dispatchBlock = @'
             }
 '@ -replace "`r?`n","`r`n"
 $dispatchBlock = $dispatchBlock.TrimEnd("`r","`n")
-$dispatchMarker = '            if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))'
 
+function Resolve-MethodWindow([string]$source) {
+    $start = $source.IndexOf($methodMarker,[StringComparison]::Ordinal)
+    if ($start -lt 0) {
+        throw 'Multi Dimensions public command marker missing for chain-anchor preflight.'
+    }
+    $end = $source.IndexOf($methodEndMarker,$start,[StringComparison]::Ordinal)
+    if ($end -lt 0) {
+        throw 'Multi Dimensions ProcessPolyline marker missing for chain-anchor preflight.'
+    }
+    return @($start,$end)
+}
+
+function Remove-ExistingChainDispatch([string]$source,[int]$methodStart,[int]$methodEnd) {
+    $methodText = $source.Substring($methodStart,$methodEnd-$methodStart)
+    $relative = $methodText.IndexOf($dispatchMarker,[StringComparison]::Ordinal)
+    if ($relative -lt 0) {
+        return @($source,$false)
+    }
+    if ($methodText.IndexOf($dispatchMarker,$relative+$dispatchMarker.Length,[StringComparison]::Ordinal) -ge 0) {
+        throw 'Multi Dimensions chain dispatch marker is duplicated inside the public command.'
+    }
+
+    $absolute = $methodStart + $relative
+    $open = $source.IndexOf('{',$absolute)
+    if ($open -lt 0 -or $open -ge $methodEnd) {
+        throw 'Multi Dimensions chain dispatch opening brace could not be resolved.'
+    }
+
+    $depth = 0
+    $close = -1
+    for ($i=$open; $i -lt $methodEnd; $i++) {
+        if ($source[$i] -eq '{') { $depth++ }
+        elseif ($source[$i] -eq '}') {
+            $depth--
+            if ($depth -eq 0) { $close = $i; break }
+        }
+    }
+    if ($close -lt 0) {
+        throw 'Multi Dimensions chain dispatch closing brace could not be resolved.'
+    }
+
+    # Remove only the complete if block. Keep all surrounding declarations/comments;
+    # whitespace is normalized later when rebuilding the ArcLeader/sources window.
+    $updated = $source.Remove($absolute,($close-$absolute)+1)
+    return @($updated,$true)
+}
+
+$window = Resolve-MethodWindow $text
+$methodStart = [int]$window[0]
+$methodEnd = [int]$window[1]
+$removed = Remove-ExistingChainDispatch $text $methodStart $methodEnd
+$text = [string]$removed[0]
+$hadDispatch = [bool]$removed[1]
+
+# Re-resolve all offsets after structural dispatch removal.
+$window = Resolve-MethodWindow $text
+$methodStart = [int]$window[0]
+$methodEnd = [int]$window[1]
 $methodText = $text.Substring($methodStart,$methodEnd-$methodStart)
+
 $leaderRelative = $methodText.IndexOf($leaderBlock,[StringComparison]::Ordinal)
 if ($leaderRelative -lt 0) {
     throw 'Multi Dimensions ArcLeader block missing for chain-anchor preflight.'
@@ -66,33 +116,12 @@ if ($methodText.IndexOf(
 $leaderAbsolute = $methodStart + $leaderRelative
 $afterLeader = $leaderAbsolute + $leaderBlock.Length
 $sourcesAbsolute = $methodStart + $sourcesRelative
-$between = $text.Substring($afterLeader,$sourcesAbsolute-$afterLeader)
-$hasDispatch = $methodText.Contains($dispatchMarker)
+$preserved = $text.Substring($afterLeader,$sourcesAbsolute-$afterLeader).Trim("`r","`n")
 
-# Preserve every late declaration/comment inserted between ArcLeader and sources,
-# but remove the chain dispatch itself from that movable block when it already exists.
-$preserved = $between
-if ($hasDispatch) {
-    $dispatchIndexInBetween = $preserved.IndexOf($dispatchBlock,[StringComparison]::Ordinal)
-    if ($dispatchIndexInBetween -ge 0) {
-        $preserved = $preserved.Remove($dispatchIndexInBetween,$dispatchBlock.Length)
-    }
-    elseif ($between.Contains($dispatchMarker)) {
-        throw 'Multi Dimensions chain dispatch exists in an unexpected non-canonical shape.'
-    }
-    else {
-        # A dispatch outside the ArcLeader/sources window is unsafe to silently duplicate.
-        throw 'Multi Dimensions chain dispatch exists outside the ArcLeader/sources window.'
-    }
-}
-$preserved = $preserved.Trim("`r","`n")
-
-# Rebuild only the small ArcLeader -> sources window. If dispatch is not present yet,
-# restore the exact historical OLD anchor so the August 21 finalizer can add it. If
-# dispatch already exists, restore the exact historical NEW anchor so the finalizer
-# recognises the completed state. All unrelated declarations are moved immediately
-# after `int sources = 0;` and remain in the same method/scope.
-$canonicalMiddle = if ($hasDispatch) {
+# Rebuild one canonical ArcLeader -> dispatch -> sources window. If no dispatch existed,
+# restore the old anchor so the preserved August 21 finalizer can add it. If a dispatch
+# already existed in any formatting/location inside MultiDimension(), canonicalize it.
+$canonicalMiddle = if ($hadDispatch) {
     "`r`n`r`n" + $dispatchBlock + "`r`n`r`n"
 }
 else {
@@ -119,7 +148,7 @@ if (-not [string]::IsNullOrWhiteSpace($preserved)) {
 
 $oldAnchor = $leaderBlock + "`r`n`r`n" + $sourcesMarker + "`r`n"
 $newAnchor = $leaderBlock + "`r`n`r`n" + $dispatchBlock + "`r`n`r`n" + $sourcesMarker + "`r`n"
-if ($hasDispatch) {
+if ($hadDispatch) {
     if (-not $rebuilt.Contains($newAnchor)) {
         throw 'Multi Dimensions completed chain anchor could not be normalized for the August 21 finalizer.'
     }
