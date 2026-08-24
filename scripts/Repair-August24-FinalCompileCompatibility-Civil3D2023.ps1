@@ -54,7 +54,7 @@ $sourceGuard = '            if (sourceIds.Count == 0) return;'
 $guardIndex = $create.IndexOf($sourceGuard,[StringComparison]::Ordinal)
 if ($guardIndex -lt 0) { throw 'August 24 final compile Grid source guard missing.' }
 $insertAt = $guardIndex + $sourceGuard.Length
-$surfaceDecl = "`r`n`r`n            List<string> surfaceChoices = ReadSurfaceNames(document.Database, civil);`r`n            surfaceChoices.Insert(0, \"<None>\");"
+$surfaceDecl = "`r`n`r`n            List<string> surfaceChoices = ReadSurfaceNames(document.Database, civil);`r`n            surfaceChoices.Insert(0, `"<None>`");"
 $create = $create.Insert($insertAt,$surfaceDecl)
 $grid = $grid.Substring(0,$createStart) + $create + $grid.Substring($createEnd)
 
