@@ -7,6 +7,8 @@ on:
     paths:
       - 'src/CE.Tools.Core/FloodCulvertHydraulics.cs'
       - 'src/CE.Tools.Civil3D/FloodProductionCulvertDesignCommands.cs'
+      - 'src/CE.Tools.Civil3D/FloodNativeCatchmentBridge.cs'
+      - 'src/CE.Tools.Civil3D/FloodLowPointSamplingBridge.cs'
       - 'src/CE.Tools.Civil3D/AugustAutomaticRefreshManager.cs'
       - 'scripts/Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1'
       - 'Directory.Build.targets'
@@ -17,6 +19,8 @@ on:
     paths:
       - 'src/CE.Tools.Core/FloodCulvertHydraulics.cs'
       - 'src/CE.Tools.Civil3D/FloodProductionCulvertDesignCommands.cs'
+      - 'src/CE.Tools.Civil3D/FloodNativeCatchmentBridge.cs'
+      - 'src/CE.Tools.Civil3D/FloodLowPointSamplingBridge.cs'
       - 'src/CE.Tools.Civil3D/AugustAutomaticRefreshManager.cs'
       - 'scripts/Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1'
       - 'Directory.Build.targets'
@@ -40,7 +44,7 @@ jobs:
         shell: pwsh
         run: dotnet run --project tests/CE.Tools.FloodHydraulics.Tests/CE.Tools.FloodHydraulics.Tests.csproj -c Release
 
-      - name: Reproduce final staged Flood menu
+      - name: Reproduce final staged Flood workflow
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -57,6 +61,11 @@ jobs:
           $menu = [System.IO.File]::ReadAllText((Join-Path $stage 'src\CE.Tools.Civil3D\August14StructuredDisciplineProductionCentres.cs'))
           $count = ([regex]::Matches($menu,'CE_FLOODCULVERTDESIGN')).Count
           if ($count -ne 1) { throw "Expected exactly one Flood Production command entry; found $count." }
+
+          $flood = [System.IO.File]::ReadAllText((Join-Path $stage 'src\CE.Tools.Civil3D\FloodProductionCulvertDesignCommands.cs'))
+          if ($flood.Contains('Autodesk.Civil.DatabaseServices.FeatureLinePointType')) { throw 'Wrong Civil 3D FeatureLinePointType namespace survived finalizer.' }
+          if (-not $flood.Contains('FloodLowPointSamplingBridge.FindLowestPoint(')) { throw 'Surface-aware Flood low-point routing missing.' }
+          if (([regex]::Matches($flood,'FloodNativeCatchmentBridge\.TryCreate')).Count -ne 1) { throw 'Native Civil Catchment bridge is not chained exactly once.' }
           "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Verify single-command refresh behavior
@@ -66,10 +75,17 @@ jobs:
           foreach ($guard in @('PRODUCTIONSTRUCTURED','PRODUCTIONCENTRE','WORKFLOW','MENU','TOOLS','SETTINGS')) {
             if (-not $refresh.Contains('"' + $guard + '"')) { throw "Missing automatic-refresh launcher guard: $guard" }
           }
-          $flood = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\FloodProductionCulvertDesignCommands.cs')
+          $flood = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\FloodProductionCulvertDesignCommands.cs'))
           if (-not $flood.Contains('CE_FLOODCULVERTDESIGN')) { throw 'Flood design command missing.' }
           if (-not $flood.Contains('August21DisplayRefresh.Flush(document);')) { throw 'Flood design must flush display once at completion.' }
           if ($flood.Contains('document.Editor.Regen();')) { throw 'Flood design must not repeatedly REGEN the model.' }
+
+          $native = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\FloodNativeCatchmentBridge.cs')
+          if (-not $native.Contains('Catchment.Create(')) { throw 'Native Civil 3D Catchment creation missing.' }
+          if (-not $native.Contains('RunoffCoefficient')) { throw 'Native catchment runoff coefficient link missing.' }
+
+          $low = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\FloodLowPointSamplingBridge.cs')
+          if (-not $low.Contains('surface.FindElevationAtXY')) { throw 'TIN-surface low-point sampling missing.' }
 
       - name: Parse final staged Civil 3D C# syntax
         shell: pwsh
