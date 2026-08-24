@@ -9,6 +9,7 @@ $sourcePath = Join-Path $root 'scripts\Repair-August23-SettingOutCadFeedback-Civ
 $tempPath = Join-Path $root 'scripts\.Repair-August23-SettingOutCadFeedback.runtime.ps1'
 $cadRoute = Join-Path $root 'scripts\Repair-August23-CadProductionRouteCompatibility-Civil3D2023.ps1'
 $gridAnchor = Join-Path $root 'scripts\Repair-August23-GridSettingAnchorPreflight-Civil3D2023.ps1'
+$vertexLabelGuard = Join-Path $root 'scripts\Repair-August23-VertexLabelGuardPreflight-Civil3D2023.ps1'
 if (-not (Test-Path -LiteralPath $sourcePath -PathType Leaf)) {
     throw "August 23 setting-out feedback repair missing: $sourcePath"
 }
@@ -17,6 +18,9 @@ if (-not (Test-Path -LiteralPath $cadRoute -PathType Leaf)) {
 }
 if (-not (Test-Path -LiteralPath $gridAnchor -PathType Leaf)) {
     throw "August 23 Grid Setting-Out anchor preflight missing: $gridAnchor"
+}
+if (-not (Test-Path -LiteralPath $vertexLabelGuard -PathType Leaf)) {
+    throw "August 23 Vertex Setting-Out label-guard preflight missing: $vertexLabelGuard"
 }
 
 # Production Centre titles have evolved across the staged August repairs. Normalize
@@ -35,6 +39,16 @@ $global:LASTEXITCODE = 0
 & $gridAnchor -RepoRoot $root
 if ($LASTEXITCODE -ne 0) {
     throw "August 23 Grid Setting-Out anchor preflight failed with exit code $LASTEXITCODE."
+}
+$global:LASTEXITCODE = 0
+
+# The packaged August 18/19 mutation chain can remove or reformat one Vertex COGO
+# PointName assignment before this final pass. Establish the created/updated COGO
+# label-reset calls semantically so the final guard does not depend on that older
+# exact source shape. The larger repair still owns the helper implementation.
+& $vertexLabelGuard -RepoRoot $root
+if ($LASTEXITCODE -ne 0) {
+    throw "August 23 Vertex Setting-Out label-guard preflight failed with exit code $LASTEXITCODE."
 }
 $global:LASTEXITCODE = 0
 
@@ -78,5 +92,14 @@ try {
 }
 finally {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
+}
+$global:LASTEXITCODE = 0
+
+# Normalize again after the historical repair. Its old trailing-whitespace regex can
+# backtrack around an already-present reset call and duplicate it. This postflight
+# keeps CreateOutput and UpdateOutput at exactly one reset call each before compile.
+& $vertexLabelGuard -RepoRoot $root
+if ($LASTEXITCODE -ne 0) {
+    throw "August 23 Vertex Setting-Out label-guard postflight failed with exit code $LASTEXITCODE."
 }
 $global:LASTEXITCODE = 0
