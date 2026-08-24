@@ -1,0 +1,105 @@
+name: August 23 Grid Sync Idempotence
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'scripts/Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1'
+      - 'scripts/Run-August23-SettingOutCadFeedback-Civil3D2023.ps1'
+      - '.github/workflows/aug23-grid-sync-idempotence-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'scripts/Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1'
+      - 'scripts/Run-August23-SettingOutCadFeedback-Civil3D2023.ps1'
+      - '.github/workflows/aug23-grid-sync-idempotence-regression.yml'
+
+jobs:
+  staged-grid-sync:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create staged repository copy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-tools-aug23-grid-sync'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'src') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'scripts') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'tests') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'global.json') -Destination $stage -Force
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Establish August 23 Grid helper and calls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & (Join-Path $env:STAGE 'scripts\Run-August23-SettingOutCadFeedback-Civil3D2023.ps1') -RepoRoot $env:STAGE
+
+      - name: Reproduce packaged missing Grid sync calls
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+          if (-not $text.Contains('private static void SyncGridLines(')) { throw 'Grid sync helper was not established.' }
+          $pattern = '(?m)^[ \t]*SyncGridLines\s*\(\s*document\.Database\s*,\s*transaction\s*,\s*sources\s*,\s*link\s*\)\s*;\s*(?://\s*CE_AUG23_GRID_SYNC)?[ \t]*(?:\r\n)?'
+          $before = ([regex]::Matches($text,$pattern)).Count
+          if ($before -lt 1) { throw 'No Grid sync calls existed before staged-drift reproduction.' }
+          $text = [regex]::Replace($text,$pattern,'')
+          $after = ([regex]::Matches($text,'SyncGridLines\s*\(\s*document\.Database\s*,\s*transaction\s*,\s*sources\s*,\s*link\s*\)\s*;')).Count
+          if ($after -ne 0) { throw "Failed to reproduce missing Grid sync calls; remaining=$after." }
+          [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
+          Write-Host 'Packaged missing Grid sync-call state reproduced.' -ForegroundColor Green
+
+      - name: Run self-healing idempotence finalizer twice
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repair = Join-Path $env:STAGE 'scripts\Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1'
+          & $repair -RepoRoot $env:STAGE
+          & $repair -RepoRoot $env:STAGE
+
+      - name: Verify exactly one sync per Grid method
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path)
+          $semantic = 'SyncGridLines\s*\(\s*document\.Database\s*,\s*transaction\s*,\s*sources\s*,\s*link\s*\)\s*;'
+          $count = ([regex]::Matches($text,$semantic)).Count
+          $canonical = ([regex]::Matches($text,'SyncGridLines\(document\.Database, transaction, sources, link\); // CE_AUG23_GRID_SYNC')).Count
+          if ($count -ne 2 -or $canonical -ne 2) { throw "Grid sync normalization failed; semantic=$count canonical=$canonical." }
+          foreach ($pair in @(
+            @('        private static ObjectId CreateGroup(','        private static void RefreshOne(','CreateGroup'),
+            @('        private static void RefreshOne(','        private static ObjectId CreateCogo(','RefreshOne'))) {
+            $start = $text.IndexOf($pair[0],[StringComparison]::Ordinal)
+            $end = $text.IndexOf($pair[1],$start + $pair[0].Length,[StringComparison]::Ordinal)
+            if ($start -lt 0 -or $end -lt 0) { throw "Method boundaries missing for $($pair[2])." }
+            $method = $text.Substring($start,$end-$start)
+            $methodCount = ([regex]::Matches($method,$semantic)).Count
+            if ($methodCount -ne 1) { throw "$($pair[2]) expected one Grid sync call; found $methodCount." }
+            if ($method.IndexOf('SyncGridLines(document.Database, transaction, sources, link);',[StringComparison]::Ordinal) -gt $method.IndexOf('PopulateTable(',[StringComparison]::Ordinal)) {
+              throw "$($pair[2]) Grid sync call is not before PopulateTable."
+            }
+          }
+          Write-Host 'Grid sync idempotence and placement verified.' -ForegroundColor Green
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
