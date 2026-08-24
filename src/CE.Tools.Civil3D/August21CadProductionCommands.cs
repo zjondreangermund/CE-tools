@@ -23,7 +23,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE-CAD PRODUCTION",
-                "General CAD production, annotation, background preparation, cleanup, XREF and hatch production on one page.",
+                "General CAD production, annotation, background preparation, cleanup, XREF, hatch and supplementary field production on one page.",
                 new List<DisciplineWorkflowAction>
                 {
                     A("CE-Bellmouth Densifier", "CE_BMINVERT", "Densify bellmouth/road geometry.", "01 GENERAL PRODUCTION"),
@@ -40,7 +40,7 @@ namespace CETools.Civil3D
                     A("CE-Redo One Step", "CE_REDO", "Redo one CE operation step.", "01 GENERAL PRODUCTION"),
                     A("CE-Undo One Step", "CE_UNDO", "Undo one CE operation step.", "01 GENERAL PRODUCTION"),
                     A("CE-Break routes at crossings / T-junctions", "CE_PLBREAKJUNCTIONS", "Safely split selected route polylines at true internal crossings and T-junctions.", "01 GENERAL PRODUCTION"),
-                    A("CE-Convert Curves and Polylines", "CE_CURVECONVERT", "Convert supported curves and polylines.", "01 GENERAL PRODUCTION"),
+                    A("CE-Convert Curves and Polylines", "CE_CURVECONVERT", "Convert supported curves and polylines while keeping originals by default.", "01 GENERAL PRODUCTION"),
                     A("CE-Select Same Length", "CE_SELECTPOLYSAMELENGTH", "Select objects with the same polyline length.", "01 GENERAL PRODUCTION"),
                     A("CE-Select Shorter", "CE_SELECTPOLYSHORTER", "Select shorter polylines.", "01 GENERAL PRODUCTION"),
                     A("CE-Swap XY", "CE_SETTINGOUTSWAPXY", "Swap setting-out X/Y presentation.", "01 GENERAL PRODUCTION"),
@@ -74,7 +74,16 @@ namespace CETools.Civil3D
                     A("CE-Match Hatch Settings", "CE_HATCHMATCH", "Match hatch settings between objects.", "06 HATCH PRODUCTION"),
                     A("CE-Create Transparent Hatches", "CE_HATCHCREATE", "Create transparent production hatches.", "06 HATCH PRODUCTION"),
                     A("CE-Edit Hatch Settings", "CE_HATCHEDIT", "Edit selected hatch settings.", "06 HATCH PRODUCTION"),
-                    A("CE-Send Hatches Behind Linework", "CE_HATCHBACK", "Send hatches behind linework.", "06 HATCH PRODUCTION")
+                    A("CE-Send Hatches Behind Linework", "CE_HATCHBACK", "Send hatches behind linework.", "06 HATCH PRODUCTION"),
+
+                    A("CE-CAD Supplementary", "CE_CADSUPPLEMENTARY", "Open the recently added field geometry, slope, Site Grid, road, sewer and platform utilities.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Close Multiple Open Polylines / Feature Lines", "CE_CLOSEOPENMULTI", "Close multiple selected open polylines or feature lines.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Stretch Multiple Feature Lines", "CE_MULTISTRETCHFL", "Stretch multiple selected feature lines with native grip-aware STRETCH.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Offset / Construction Offset", "CE_SURVEYCONSTRUCTIONOFFSET", "Normal or per-segment construction offsets with zero-fillet joins.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Centre Construction Lines", "CE_SURVEYMIDCONSTRUCTION", "Create centre construction lines within a maximum separation.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Feature-Line Dynamic Slope Arrows", "CE_FEATURELINESLOPEARROWS", "Linked slope arrows and values for multiple feature lines.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Site Grid Presentation", "CE_SITEGRIDPRESENTATION", "Colour and annotative text controls for linked Site Grids.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Road Side Hatch", "CE_ROADHATCHSIDES", "Hatch road left/right/both sides from polylines or alignments.", "07 CE-CAD SUPPLEMENTARY")
                 });
         }
 
