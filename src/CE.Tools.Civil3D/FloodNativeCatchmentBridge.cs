@@ -43,10 +43,12 @@ namespace CETools.Civil3D
                     return ObjectId.Null;
                 }
 
-                ObjectId groupId;
-                var groups = civil.GetCatchmentGroups();
-                if (groups.Contains(GroupName)) groupId = groups[GroupName];
-                else groupId = CatchmentGroup.Create(database, GroupName);
+                ObjectId groupId = ResolveOrCreateCatchmentGroup(database, civil);
+                if (groupId.IsNull)
+                {
+                    Write(document, "\nCE Flood: native Civil 3D Catchment group could not be resolved; CE plan graphics were retained.");
+                    return ObjectId.Null;
+                }
 
                 ObjectId styleId = civil.Styles.CatchmentStyles[0];
                 string name = BuildUniqueName(database, groupId, result.Settings.Description);
@@ -85,6 +87,115 @@ namespace CETools.Civil3D
                 Write(document, "\nCE Flood: native Civil 3D Catchment creation was skipped. " + exception.Message);
                 return ObjectId.Null;
             }
+        }
+
+        private static ObjectId ResolveOrCreateCatchmentGroup(Database database, CivilDocument civil)
+        {
+            ObjectId existing = TryGetCatchmentGroupId(civil, database, GroupName);
+            if (!existing.IsNull) return existing;
+
+            try
+            {
+                return CatchmentGroup.Create(database, GroupName);
+            }
+            catch
+            {
+                existing = TryGetCatchmentGroupId(civil, database, GroupName);
+                if (!existing.IsNull) return existing;
+
+                // Older AeccDbMgd builds do not expose CivilDocument.GetCatchmentGroups.
+                // Keep native Catchment creation available by using a collision-safe group.
+                for (int suffix = 2; suffix < 10000; suffix++)
+                {
+                    try
+                    {
+                        return CatchmentGroup.Create(
+                            database,
+                            GroupName + " " + suffix.ToString(CultureInfo.InvariantCulture));
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            return ObjectId.Null;
+        }
+
+        private static ObjectId TryGetCatchmentGroupId(CivilDocument civil, Database database, string name)
+        {
+            object collection = null;
+
+            // Some Civil 3D 2023 installs expose the collection as an instance method.
+            try
+            {
+                if (civil != null)
+                {
+                    System.Reflection.MethodInfo instanceMethod = civil.GetType().GetMethod(
+                        "GetCatchmentGroups",
+                        Type.EmptyTypes);
+                    if (instanceMethod != null)
+                        collection = instanceMethod.Invoke(civil, null);
+                }
+            }
+            catch
+            {
+            }
+
+            // Other AeccDbMgd builds expose a static CatchmentGroupCollection accessor.
+            if (collection == null)
+            {
+                try
+                {
+                    Type collectionType = typeof(CatchmentGroup).Assembly.GetType(
+                        "Autodesk.Civil.DatabaseServices.CatchmentGroupCollection");
+                    if (collectionType != null)
+                    {
+                        System.Reflection.MethodInfo staticMethod = collectionType.GetMethod(
+                            "GetCatchmentGroups",
+                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+                            null,
+                            new[] { typeof(Database) },
+                            null);
+                        if (staticMethod != null)
+                            collection = staticMethod.Invoke(null, new object[] { database });
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return TryReadCatchmentGroupId(collection, name);
+        }
+
+        private static ObjectId TryReadCatchmentGroupId(object collection, string name)
+        {
+            if (collection == null || string.IsNullOrWhiteSpace(name)) return ObjectId.Null;
+            try
+            {
+                Type collectionType = collection.GetType();
+                System.Reflection.MethodInfo contains = collectionType.GetMethod(
+                    "Contains",
+                    new[] { typeof(string) });
+                if (contains != null)
+                {
+                    object hasValue = contains.Invoke(collection, new object[] { name });
+                    if (hasValue is bool && !(bool)hasValue) return ObjectId.Null;
+                }
+
+                System.Reflection.MethodInfo getter = collectionType.GetMethod(
+                    "get_Item",
+                    new[] { typeof(string) });
+                if (getter != null)
+                {
+                    object value = getter.Invoke(collection, new object[] { name });
+                    if (value is ObjectId) return (ObjectId)value;
+                }
+            }
+            catch
+            {
+            }
+            return ObjectId.Null;
         }
 
         private static string BuildUniqueName(Database database, ObjectId groupId, string description)

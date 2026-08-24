@@ -116,6 +116,151 @@ if (-not $catchmentBridge.Contains($coreUsing) -or
     -not $catchmentBridge.Contains('IReadOnlyList<GridCell> catchment')) {
     throw 'August 24 Flood Production GridCell compile qualification failed.'
 }
+
+# The user's Civil 3D 2023 AeccDbMgd does not expose CivilDocument.GetCatchmentGroups
+# at compile time even though newer API documentation lists it. Keep this boundary
+# compatible with both API shapes: reflection when a collection accessor exists,
+# otherwise collision-safe CatchmentGroup.Create without a hard method reference.
+$legacyGroupBlock = @'
+                ObjectId groupId;
+                var groups = civil.GetCatchmentGroups();
+                if (groups.Contains(GroupName)) groupId = groups[GroupName];
+                else groupId = CatchmentGroup.Create(database, GroupName);
+'@ -replace "`r?`n", "`r`n"
+$compatGroupBlock = @'
+                ObjectId groupId = ResolveOrCreateCatchmentGroup(database, civil);
+                if (groupId.IsNull)
+                {
+                    Write(document, "\nCE Flood: native Civil 3D Catchment group could not be resolved; CE plan graphics were retained.");
+                    return ObjectId.Null;
+                }
+'@ -replace "`r?`n", "`r`n"
+if ($catchmentBridge.Contains($legacyGroupBlock)) {
+    $catchmentBridge = $catchmentBridge.Replace($legacyGroupBlock,$compatGroupBlock)
+}
+
+if (-not $catchmentBridge.Contains('private static ObjectId ResolveOrCreateCatchmentGroup(')) {
+    $helperAnchor = '        private static string BuildUniqueName(Database database, ObjectId groupId, string description)'
+    $helperIndex = $catchmentBridge.IndexOf($helperAnchor,[StringComparison]::Ordinal)
+    if ($helperIndex -lt 0) {
+        throw 'August 24 Flood Production CatchmentGroup compatibility helper anchor missing.'
+    }
+    $helpers = @'
+        private static ObjectId ResolveOrCreateCatchmentGroup(Database database, CivilDocument civil)
+        {
+            ObjectId existing = TryGetCatchmentGroupId(civil, database, GroupName);
+            if (!existing.IsNull) return existing;
+
+            try
+            {
+                return CatchmentGroup.Create(database, GroupName);
+            }
+            catch
+            {
+                existing = TryGetCatchmentGroupId(civil, database, GroupName);
+                if (!existing.IsNull) return existing;
+                for (int suffix = 2; suffix < 10000; suffix++)
+                {
+                    try
+                    {
+                        return CatchmentGroup.Create(
+                            database,
+                            GroupName + " " + suffix.ToString(CultureInfo.InvariantCulture));
+                    }
+                    catch
+                    {
+                    }
+                }
+            }
+            return ObjectId.Null;
+        }
+
+        private static ObjectId TryGetCatchmentGroupId(CivilDocument civil, Database database, string name)
+        {
+            object collection = null;
+            try
+            {
+                if (civil != null)
+                {
+                    System.Reflection.MethodInfo instanceMethod = civil.GetType().GetMethod(
+                        "GetCatchmentGroups",
+                        Type.EmptyTypes);
+                    if (instanceMethod != null)
+                        collection = instanceMethod.Invoke(civil, null);
+                }
+            }
+            catch
+            {
+            }
+
+            if (collection == null)
+            {
+                try
+                {
+                    Type collectionType = typeof(CatchmentGroup).Assembly.GetType(
+                        "Autodesk.Civil.DatabaseServices.CatchmentGroupCollection");
+                    if (collectionType != null)
+                    {
+                        System.Reflection.MethodInfo staticMethod = collectionType.GetMethod(
+                            "GetCatchmentGroups",
+                            System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static,
+                            null,
+                            new[] { typeof(Database) },
+                            null);
+                        if (staticMethod != null)
+                            collection = staticMethod.Invoke(null, new object[] { database });
+                    }
+                }
+                catch
+                {
+                }
+            }
+
+            return TryReadCatchmentGroupId(collection, name);
+        }
+
+        private static ObjectId TryReadCatchmentGroupId(object collection, string name)
+        {
+            if (collection == null || string.IsNullOrWhiteSpace(name)) return ObjectId.Null;
+            try
+            {
+                Type collectionType = collection.GetType();
+                System.Reflection.MethodInfo contains = collectionType.GetMethod(
+                    "Contains",
+                    new[] { typeof(string) });
+                if (contains != null)
+                {
+                    object hasValue = contains.Invoke(collection, new object[] { name });
+                    if (hasValue is bool && !(bool)hasValue) return ObjectId.Null;
+                }
+
+                System.Reflection.MethodInfo getter = collectionType.GetMethod(
+                    "get_Item",
+                    new[] { typeof(string) });
+                if (getter != null)
+                {
+                    object value = getter.Invoke(collection, new object[] { name });
+                    if (value is ObjectId) return (ObjectId)value;
+                }
+            }
+            catch
+            {
+            }
+            return ObjectId.Null;
+        }
+
+'@ -replace "`r?`n", "`r`n"
+    $catchmentBridge = $catchmentBridge.Insert($helperIndex,$helpers)
+}
+
+if ($catchmentBridge.Contains('civil.GetCatchmentGroups()')) {
+    throw 'August 24 Flood Production CS1061 compatibility failed: direct CivilDocument.GetCatchmentGroups call remains.'
+}
+if (-not $catchmentBridge.Contains('ResolveOrCreateCatchmentGroup(database, civil)') -or
+    -not $catchmentBridge.Contains('private static ObjectId ResolveOrCreateCatchmentGroup(') -or
+    -not $catchmentBridge.Contains('CatchmentGroup.Create(database, GroupName)')) {
+    throw 'August 24 Flood Production CatchmentGroup Civil 3D 2023 compatibility failed.'
+}
 [System.IO.File]::WriteAllText($catchmentBridgePath,$catchmentBridge,$utf8)
 
 Write-Host 'August 24 Flood Production catchment/culvert workflow finalized for Civil 3D 2023.' -ForegroundColor Green
@@ -123,4 +268,5 @@ Write-Host ' - integrated Flood menu entry present.' -ForegroundColor Green
 Write-Host ' - Alignment/polyline/FeatureLine low-point sampler routed.' -ForegroundColor Green
 Write-Host ' - FeatureLinePointType qualified for Civil 3D 2023.' -ForegroundColor Green
 Write-Host ' - WPF Hydraflow Image and Core GridCell types qualified for compilation.' -ForegroundColor Green
+Write-Host ' - CatchmentGroup lookup is compatible with Civil 3D 2023 API variants.' -ForegroundColor Green
 Write-Host ' - native Civil 3D Catchment bridge chained after CE plan output.' -ForegroundColor Green

@@ -71,6 +71,9 @@ jobs:
           $native = [System.IO.File]::ReadAllText((Join-Path $stage 'src\CE.Tools.Civil3D\FloodNativeCatchmentBridge.cs'))
           if (-not $native.Contains('using CETools.Core;')) { throw 'Native Catchment bridge is missing CE.Tools.Core GridCell namespace.' }
           if (-not $native.Contains('IReadOnlyList<GridCell> catchment')) { throw 'Native Catchment bridge GridCell signature missing.' }
+          if ($native.Contains('civil.GetCatchmentGroups()')) { throw 'CS1061 regression: direct CivilDocument.GetCatchmentGroups call survived finalizer.' }
+          if (-not $native.Contains('ResolveOrCreateCatchmentGroup(database, civil)')) { throw 'Civil 3D 2023 CatchmentGroup compatibility route missing.' }
+          if (-not $native.Contains('GetMethod(') -or -not $native.Contains('"GetCatchmentGroups"')) { throw 'CatchmentGroup reflection compatibility path missing.' }
           "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
       - name: Verify Civil 3D compiler type qualifications
@@ -86,6 +89,12 @@ jobs:
           }
           if ($native.Contains('IReadOnlyList<CETools.Civil3D.GridCell>')) {
             throw 'GridCell was incorrectly qualified to the Civil3D namespace.'
+          }
+          if ($native.Contains('civil.GetCatchmentGroups()')) {
+            throw 'CS1061 regression: CivilDocument.GetCatchmentGroups is a hard compile-time dependency.'
+          }
+          if (-not $native.Contains('CatchmentGroup.Create(database, GroupName)')) {
+            throw 'CatchmentGroup fallback creation path missing.'
           }
 
       - name: Verify single-command refresh behavior
