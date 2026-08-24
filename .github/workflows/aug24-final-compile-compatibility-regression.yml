@@ -83,6 +83,15 @@ jobs:
               $grid = $grid.Insert($settings,$line)
             }
           }
+
+          # Reproduce the tester's stronger staged ordering: an already-inserted Grid
+          # control references surfaceChoices before the historical source-selection
+          # guard where the previous compatibility pass placed the declaration.
+          $activeGuard = '            if (document == null || civil == null) return;'
+          $active = $grid.IndexOf($activeGuard,[StringComparison]::Ordinal)
+          if ($active -lt 0) { throw 'Grid active-document guard missing while reproducing early use.' }
+          $earlyUse = "`r`n            string[] stagedEarlySurfaceChoices = surfaceChoices.ToArray(); // regression-only early staged use"
+          $grid = $grid.Insert($active + $activeGuard.Length,$earlyUse)
           [System.IO.File]::WriteAllText($gridPath,$grid,$utf8)
 
           $dimPath = Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
@@ -113,11 +122,17 @@ jobs:
           $ErrorActionPreference = 'Stop'
           $src = Join-Path $env:STAGE 'src\CE.Tools.Civil3D'
 
-          $grid = [System.IO.File]::ReadAllText((Join-Path $src 'August18DynamicGridSettingOutCommands.cs'))
+          $grid = [System.IO.File]::ReadAllText((Join-Path $src 'August18DynamicGridSettingOutCommands.cs')) -replace "`r?`n", "`r`n"
           if ($grid.Contains('ReadGridSurfaceNames(')) { throw 'CS0103 ReadGridSurfaceNames state survived.' }
-          $decl = $grid.IndexOf('List<string> surfaceChoices = ReadSurfaceNames(document.Database, civil);',[StringComparison]::Ordinal)
-          $use = $grid.IndexOf('surfaceChoices.ToArray()',[StringComparison]::Ordinal)
-          if ($decl -lt 0 -or ($use -ge 0 -and $decl -gt $use)) { throw 'CS0841 surfaceChoices declaration-order state survived.' }
+          $createMarker = '        public void CreateDynamicGrid()'
+          $nextMarker = '        [CommandMethod('
+          $createStart = $grid.IndexOf($createMarker,[StringComparison]::Ordinal)
+          $createEnd = $grid.IndexOf($nextMarker,$createStart + $createMarker.Length,[StringComparison]::Ordinal)
+          if ($createStart -lt 0 -or $createEnd -lt 0) { throw 'CreateDynamicGrid scope missing during verification.' }
+          $create = $grid.Substring($createStart,$createEnd-$createStart)
+          $decl = $create.IndexOf('List<string> surfaceChoices = ReadSurfaceNames(document.Database, civil);',[StringComparison]::Ordinal)
+          $use = $create.IndexOf('surfaceChoices.ToArray()',[StringComparison]::Ordinal)
+          if ($decl -lt 0 -or ($use -ge 0 -and $decl -gt $use)) { throw 'CS0841 surfaceChoices declaration-order state survived inside CreateDynamicGrid.' }
           $populate = ([regex]::Matches($grid,'(?m)^[ \t]*PopulateTable\(document\.Database, table, records, link\);')).Count
           if ($populate -ne 2) { throw "CS1501 Grid PopulateTable state survived; canonical=$populate." }
 
