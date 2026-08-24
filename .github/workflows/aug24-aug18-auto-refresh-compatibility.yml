@@ -27,18 +27,18 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          $path = 'src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs'
-          $automatic = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
-          $automaticNew = @'
-            string name = ReadCommandName(args);
-            if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
-            if (string.Equals(name, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(name, "CE_SITEGRIDREFRESH", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(name, "CE_SITEGRIDREMOVE", StringComparison.OrdinalIgnoreCase))
-                return;
-            UniversalDynamicRefreshManager.Queue();
-            PlatformDynamicRefreshManager.Queue();
-          '@ -replace "`n","`r`n"
+          $automaticPath = 'src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs'
+          $repairPath = 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+          $automatic = [System.IO.File]::ReadAllText($automaticPath) -replace "`r?`n", "`r`n"
+          $repair = [System.IO.File]::ReadAllText($repairPath) -replace "`r?`n", "`r`n"
+          $startMarker = '$automaticNew = @'''
+          $start = $repair.IndexOf($startMarker, [StringComparison]::Ordinal)
+          if ($start -lt 0) { throw 'August 18 automaticNew marker missing from repair script.' }
+          $bodyStart = $repair.IndexOf("`r`n", $start, [StringComparison]::Ordinal) + 2
+          $endMarker = "`r`n'@ -replace"
+          $end = $repair.IndexOf($endMarker, $bodyStart, [StringComparison]::Ordinal)
+          if ($bodyStart -lt 2 -or $end -lt $bodyStart) { throw 'Could not extract August 18 automaticNew block.' }
+          $automaticNew = $repair.Substring($bodyStart, $end - $bodyStart)
           if (-not $automatic.Contains($automaticNew)) {
             throw 'August 18 repair would still fail: automatic manager site-grid exclusion anchor missing.'
           }
