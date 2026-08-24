@@ -16,6 +16,7 @@ $packager = Join-Path $repo 'scripts\New-CE-ToolsReleasePackage.ps1'
 $surveyCommentRepair = Join-Path $repo 'scripts\Repair-August17-SurveyProductionComments-Civil3D2023.ps1'
 $august18SurveyVertexRepair = Join-Path $repo 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
 $disableLegacyBackgroundWatchers = Join-Path $repo 'scripts\Repair-August18-DisableLegacyBackgroundWatchers-Civil3D2023.ps1'
+$automaticRefreshMetadataCleanup = Join-Path $repo 'scripts\Repair-August24-RemoveAutomaticRefreshCompatibilityMetadata-Civil3D2023.ps1'
 $sourceOnlySettingOutRefresh = Join-Path $repo 'scripts\Repair-August18-SourceOnlySettingOutRefresh-Civil3D2023.ps1'
 $settingOutCoordinateDisplay = Join-Path $repo 'scripts\Repair-August18-SettingOutCoordinateDisplay-Civil3D2023.ps1'
 $universalRefreshSource = Join-Path $repo 'src\CE.Tools.Civil3D\UniversalDynamicRefreshCommands.cs'
@@ -45,6 +46,9 @@ if (-not (Test-Path -LiteralPath $august18SurveyVertexRepair)) {
 }
 if (-not (Test-Path -LiteralPath $disableLegacyBackgroundWatchers)) {
     throw "Legacy background watcher repair not found: $disableLegacyBackgroundWatchers"
+}
+if (-not (Test-Path -LiteralPath $automaticRefreshMetadataCleanup)) {
+    throw "Automatic-refresh compatibility metadata cleanup not found: $automaticRefreshMetadataCleanup"
 }
 if (-not (Test-Path -LiteralPath $sourceOnlySettingOutRefresh)) {
     throw "Source-only setting-out refresh repair not found: $sourceOnlySettingOutRefresh"
@@ -107,10 +111,15 @@ else {
 }
 
 # These are intentionally the final source mutations before MSBuild. First strip
-# dormant legacy watcher subscriptions, then enforce one source-owner-only
-# setting-out refresh path, then apply the shared display-only coordinate rules.
+# dormant legacy watcher subscriptions, remove the temporary August 18 compatibility
+# metadata, then enforce one source-owner-only setting-out refresh path, then apply
+# the shared display-only coordinate rules.
 Write-Host "Removing legacy background watcher subscriptions before final refresh policy..." -ForegroundColor Cyan
 & $disableLegacyBackgroundWatchers -RepoRoot $repo
+$global:LASTEXITCODE = 0
+
+Write-Host "Removing temporary August 18 automatic-refresh compatibility metadata..." -ForegroundColor Cyan
+& $automaticRefreshMetadataCleanup -RepoRoot $repo
 $global:LASTEXITCODE = 0
 
 Write-Host "Applying source-owner-only Vertex/Grid automatic refresh policy..." -ForegroundColor Cyan
