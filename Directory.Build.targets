@@ -40,4 +40,18 @@
     <Message Text="Qualifying Dynamic Grid Civil Surface references before compilation..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August24-DynamicGridCivilSurfaceCompileFix-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
+
+  <!--
+    Final semantic compile compatibility. This is deliberately the last source
+    mutation before CoreCompile and repairs late historical staging mismatches that
+    are valid PowerShell/C# syntax but fail against the real Civil 3D 2023 API or
+    current helper signatures.
+  -->
+  <Target Name="CEApplyAugust24FinalCompileCompatibility"
+          AfterTargets="CEApplyAugust24DynamicGridCivilSurfaceCompileFix"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying final Civil 3D 2023 compile compatibility boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August24-FinalCompileCompatibility-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
 </Project>
