@@ -7,12 +7,18 @@ on:
     paths:
       - 'src/CE.Tools.Civil3D/AugustAutomaticRefreshManager.cs'
       - 'scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+      - 'scripts/Repair-August18-SourceOnlySettingOutRefresh-Civil3D2023.ps1'
+      - 'scripts/Repair-August24-RemoveAutomaticRefreshCompatibilityMetadata-Civil3D2023.ps1'
+      - 'scripts/Build-Install-Civil3D2023-DotNet.ps1'
       - '.github/workflows/aug24-aug18-auto-refresh-compatibility.yml'
   push:
     branches: [ main ]
     paths:
       - 'src/CE.Tools.Civil3D/AugustAutomaticRefreshManager.cs'
       - 'scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+      - 'scripts/Repair-August18-SourceOnlySettingOutRefresh-Civil3D2023.ps1'
+      - 'scripts/Repair-August24-RemoveAutomaticRefreshCompatibilityMetadata-Civil3D2023.ps1'
+      - 'scripts/Build-Install-Civil3D2023-DotNet.ps1'
       - '.github/workflows/aug24-aug18-auto-refresh-compatibility.yml'
 
 jobs:
@@ -23,7 +29,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Reproduce the August 18 automatic-manager guard
+      - name: Reproduce the earlier August 18 automatic-manager guard
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -41,6 +47,67 @@ jobs:
           $automaticNew = $repair.Substring($bodyStart, $end - $bodyStart)
           if (-not $automatic.Contains($automaticNew)) {
             throw 'August 18 repair would still fail: automatic manager site-grid exclusion anchor missing.'
+          }
+
+      - name: Reproduce source-only final guard after metadata cleanup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-tools-aug18-source-only-compat'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          $src = Join-Path $stage 'src\CE.Tools.Civil3D'
+          New-Item -ItemType Directory -Force -Path $src | Out-Null
+          $target = Join-Path $src 'AugustAutomaticRefreshManager.cs'
+          Copy-Item 'src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs' $target -Force
+
+          & 'scripts\Repair-August24-RemoveAutomaticRefreshCompatibilityMetadata-Civil3D2023.ps1' -RepoRoot $stage
+          $text = [System.IO.File]::ReadAllText($target) -replace "`r?`n", "`r`n"
+          if ($text.Contains('August 18 staged-repair compatibility anchor.')) {
+            throw 'Temporary August 18 compatibility metadata survived cleanup.'
+          }
+
+          # Simulate the source-only repair's OnCommandEnded replacement. The exact
+          # parameter name may already have been normalized by the staged pipeline,
+          # so locate the method structurally and replace only that method body.
+          $signature = '        private static void OnCommandEnded('
+          $start = $text.IndexOf($signature,[StringComparison]::Ordinal)
+          if ($start -lt 0) { throw 'Automatic refresh OnCommandEnded method not found.' }
+          $open = $text.IndexOf('{',$start)
+          $depth = 0; $close = -1
+          for ($i=$open; $i -lt $text.Length; $i++) {
+            if ($text[$i] -eq '{') { $depth++ }
+            elseif ($text[$i] -eq '}') {
+              $depth--
+              if ($depth -eq 0) { $close = $i; break }
+            }
+          }
+          if ($close -lt 0) { throw 'Automatic refresh OnCommandEnded closing brace not found.' }
+          $replacement = @'
+                  private static void OnCommandEnded(object sender, CommandEventArgs e)
+                  {
+                      // No automatic queue on CE command completion.
+                  }
+          '@ -replace "`n","`r`n"
+          $text = $text.Substring(0,$start) + $replacement + $text.Substring($close + 1)
+          [System.IO.File]::WriteAllText($target,$text,(New-Object System.Text.UTF8Encoding($false)))
+
+          $final = [System.IO.File]::ReadAllText($target)
+          if ($final.Contains('UniversalDynamicRefreshManager.Queue();') -or
+              $final.Contains('PlatformDynamicRefreshManager.Queue();')) {
+            throw 'Legacy August command-ended manager can still queue automatic refresh.'
+          }
+          if (-not $final.Contains('internal static bool ShouldQueueRefresh(string commandName)')) {
+            throw 'Modern refresh policy was lost while normalizing compatibility metadata.'
+          }
+
+      - name: Verify build order removes metadata before source-only repair
+        shell: pwsh
+        run: |
+          $build = [System.IO.File]::ReadAllText('scripts\Build-Install-Civil3D2023-DotNet.ps1')
+          $cleanup = $build.IndexOf('Removing temporary August 18 automatic-refresh compatibility metadata...', [StringComparison]::Ordinal)
+          $sourceOnly = $build.IndexOf('Applying source-owner-only Vertex/Grid automatic refresh policy...', [StringComparison]::Ordinal)
+          if ($cleanup -lt 0 -or $sourceOnly -lt 0 -or $cleanup -gt $sourceOnly) {
+            throw 'Automatic-refresh metadata cleanup is not ordered before the source-only finalizer.'
           }
 
       - name: Verify live refresh policy still excludes Site Grid and launchers
