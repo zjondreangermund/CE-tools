@@ -7,6 +7,7 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
+using CETools.Core;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 namespace CETools.Civil3D
