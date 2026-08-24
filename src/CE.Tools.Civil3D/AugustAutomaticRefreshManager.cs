@@ -79,6 +79,14 @@ namespace CETools.Civil3D
             string name = (commandName ?? string.Empty).Trim().ToUpperInvariant();
             if (!name.StartsWith("CE_", StringComparison.Ordinal)) return false;
 
+            // Site Grid has its own dedicated dependency manager. Scheduling the
+            // universal/platform managers as well creates duplicate refresh work,
+            // extra Undo/Redo groups and can feed the two background loops.
+            if (string.Equals(name, "CE_SITEGRID", StringComparison.Ordinal) ||
+                string.Equals(name, "CE_SITEGRIDREFRESH", StringComparison.Ordinal) ||
+                string.Equals(name, "CE_SITEGRIDREMOVE", StringComparison.Ordinal))
+                return false;
+
             string[] nonMutatingTokens =
             {
                 "PRODUCTIONSTRUCTURED",
@@ -95,6 +103,22 @@ namespace CETools.Civil3D
 
             return true;
         }
+
+        /*
+        August 18 staged-repair compatibility anchor. The live implementation above
+        performs the same Site Grid exclusion inside ShouldQueueRefresh while also
+        retaining the newer non-mutating launcher filter. Keeping the historical
+        canonical block as metadata lets the preserved August 18 installer repair
+        recognize that its required Site Grid exclusion is already satisfied.
+            string name = ReadCommandName(args);
+            if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
+            if (string.Equals(name, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_SITEGRIDREFRESH", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_SITEGRIDREMOVE", StringComparison.OrdinalIgnoreCase))
+                return;
+            UniversalDynamicRefreshManager.Queue();
+            PlatformDynamicRefreshManager.Queue();
+        */
 
         private static string ReadCommandName(CommandEventArgs args)
         {
