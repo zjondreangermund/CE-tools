@@ -1,0 +1,76 @@
+name: August 24 Flood Production Hydraulics
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Core/FloodCulvertHydraulics.cs'
+      - 'src/CE.Tools.Civil3D/FloodProductionCulvertDesignCommands.cs'
+      - 'src/CE.Tools.Civil3D/AugustAutomaticRefreshManager.cs'
+      - 'scripts/Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - 'tests/CE.Tools.FloodHydraulics.Tests/**'
+      - '.github/workflows/aug24-flood-production-hydraulics-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Core/FloodCulvertHydraulics.cs'
+      - 'src/CE.Tools.Civil3D/FloodProductionCulvertDesignCommands.cs'
+      - 'src/CE.Tools.Civil3D/AugustAutomaticRefreshManager.cs'
+      - 'scripts/Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - 'tests/CE.Tools.FloodHydraulics.Tests/**'
+      - '.github/workflows/aug24-flood-production-hydraulics-regression.yml'
+
+jobs:
+  flood-production:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Run rational and culvert hydraulics regression
+        shell: pwsh
+        run: dotnet run --project tests/CE.Tools.FloodHydraulics.Tests/CE.Tools.FloodHydraulics.Tests.csproj -c Release
+
+      - name: Reproduce final staged Flood menu
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-tools-flood-production'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item src -Destination $stage -Recurse -Force
+          Copy-Item scripts -Destination $stage -Recurse -Force
+          Copy-Item tests -Destination $stage -Recurse -Force
+          Copy-Item global.json -Destination $stage -Force
+          $repair = Join-Path $stage 'scripts\Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1'
+          & $repair -RepoRoot $stage
+          & $repair -RepoRoot $stage
+          $menu = [System.IO.File]::ReadAllText((Join-Path $stage 'src\CE.Tools.Civil3D\August14StructuredDisciplineProductionCentres.cs'))
+          $count = ([regex]::Matches($menu,'CE_FLOODCULVERTDESIGN')).Count
+          if ($count -ne 1) { throw "Expected exactly one Flood Production command entry; found $count." }
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify single-command refresh behavior
+        shell: pwsh
+        run: |
+          $refresh = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs')
+          foreach ($guard in @('PRODUCTIONSTRUCTURED','PRODUCTIONCENTRE','WORKFLOW','MENU','TOOLS','SETTINGS')) {
+            if (-not $refresh.Contains('"' + $guard + '"')) { throw "Missing automatic-refresh launcher guard: $guard" }
+          }
+          $flood = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\FloodProductionCulvertDesignCommands.cs')
+          if (-not $flood.Contains('CE_FLOODCULVERTDESIGN')) { throw 'Flood design command missing.' }
+          if (-not $flood.Contains('August21DisplayRefresh.Flush(document);')) { throw 'Flood design must flush display once at completion.' }
+          if ($flood.Contains('document.Editor.Regen();')) { throw 'Flood design must not repeatedly REGEN the model.' }
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
