@@ -29,15 +29,36 @@ if ($markerIndex -ge 0) {
 if ($text.Contains($marker)) {
     throw 'August 24 automatic-refresh compatibility metadata was not removed.'
 }
-if (-not $text.Contains('internal static bool ShouldQueueRefresh(string commandName)')) {
+
+$policyMarker = '        internal static bool ShouldQueueRefresh(string commandName)'
+$policyStart = $text.IndexOf($policyMarker,[StringComparison]::Ordinal)
+if ($policyStart -lt 0) {
     throw 'August 24 automatic-refresh live policy was unexpectedly removed.'
 }
-foreach ($required in @('"CE_SITEGRID"','"CE_SITEGRIDREFRESH"','"CE_SITEGRIDREMOVE"','"PRODUCTIONCENTRE"','"WORKFLOW"','"SETTINGS"')) {
-    if (-not $text.Contains($required)) {
-        throw "August 24 automatic-refresh live policy marker missing after metadata cleanup: $required"
+$policyOpen = $text.IndexOf('{',$policyStart)
+if ($policyOpen -lt 0) {
+    throw 'August 24 automatic-refresh live policy opening brace was not found.'
+}
+$depth = 0
+$policyClose = -1
+for ($i = $policyOpen; $i -lt $text.Length; $i++) {
+    if ($text[$i] -eq '{') { $depth++ }
+    elseif ($text[$i] -eq '}') {
+        $depth--
+        if ($depth -eq 0) { $policyClose = $i; break }
     }
+}
+if ($policyClose -lt 0) {
+    throw 'August 24 automatic-refresh live policy closing brace was not found.'
+}
+$policyBody = $text.Substring($policyOpen + 1,$policyClose - $policyOpen - 1)
+if (-not [regex]::IsMatch($policyBody,'(?m)^\s*return\s+false\s*;\s*$')) {
+    throw 'August 24 automatic-refresh live policy no longer blocks blanket command-ended refresh.'
+}
+if ([regex]::IsMatch($policyBody,'(?m)^\s*return\s+true\s*;\s*$')) {
+    throw 'August 24 automatic-refresh live policy can still enable blanket command-ended refresh.'
 }
 
 [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
 Write-Host 'August 24 automatic-refresh compatibility metadata removed before the source-only finalizer.' -ForegroundColor Green
-Write-Host 'Live Site Grid and non-mutating launcher exclusions remain intact.' -ForegroundColor Green
+Write-Host 'Live policy still blocks blanket command-ended universal/platform refresh for every command.' -ForegroundColor Green
