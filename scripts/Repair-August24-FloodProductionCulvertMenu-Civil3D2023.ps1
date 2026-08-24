@@ -8,8 +8,9 @@ $root = (Resolve-Path -LiteralPath $RepoRoot.Trim().Trim('"')).ProviderPath
 $src = Join-Path $root 'src\CE.Tools.Civil3D'
 $menuPath = Join-Path $src 'August14StructuredDisciplineProductionCentres.cs'
 $floodPath = Join-Path $src 'FloodProductionCulvertDesignCommands.cs'
-$bridgePath = Join-Path $src 'FloodNativeCatchmentBridge.cs'
-foreach ($required in @($menuPath,$floodPath,$bridgePath)) {
+$catchmentBridgePath = Join-Path $src 'FloodNativeCatchmentBridge.cs'
+$lowPointBridgePath = Join-Path $src 'FloodLowPointSamplingBridge.cs'
+foreach ($required in @($menuPath,$floodPath,$catchmentBridgePath,$lowPointBridgePath)) {
     if (-not (Test-Path -LiteralPath $required -PathType Leaf)) {
         throw "Flood Production prerequisite missing: $required"
     }
@@ -42,6 +43,16 @@ $flood = $flood.Replace(
     'using CivilFeatureLinePointType = Autodesk.Civil.DatabaseServices.FeatureLinePointType;',
     'using CivilFeatureLinePointType = Autodesk.Civil.FeatureLinePointType;')
 
+# Route the active command through the dedicated surface-aware low-point sampler.
+# It samples Alignments and 2D polylines against the selected TIN surface and uses
+# all Civil FeatureLine control/elevation points, while preserving the old private
+# helper as harmless historical source.
+$oldLowPointCall = '                CrossingLowPoint lowPoint = FindLowestPoint('
+$newLowPointCall = '                CrossingLowPoint lowPoint = FloodLowPointSamplingBridge.FindLowestPoint('
+if ($flood.Contains($oldLowPointCall)) {
+    $flood = $flood.Replace($oldLowPointCall,$newLowPointCall)
+}
+
 # Create a native Civil 3D Catchment as part of the same CE command. Keep CE plan
 # graphics even when a drawing has no catchment style; the bridge reports that
 # condition without corrupting source terrain or centreline objects.
@@ -62,6 +73,9 @@ if ($flood.Contains('Autodesk.Civil.DatabaseServices.FeatureLinePointType')) {
 if (-not $flood.Contains('using CivilFeatureLinePointType = Autodesk.Civil.FeatureLinePointType;')) {
     throw 'August 24 Flood Production FeatureLinePointType alias missing.'
 }
+if (-not $flood.Contains($newLowPointCall)) {
+    throw 'August 24 Flood Production surface-aware low-point routing missing.'
+}
 if (([regex]::Matches($flood,[regex]::Escape($nativeCall))).Count -ne 1) {
     throw 'August 24 Flood Production expected exactly one native Catchment bridge call.'
 }
@@ -69,5 +83,6 @@ if (([regex]::Matches($flood,[regex]::Escape($nativeCall))).Count -ne 1) {
 
 Write-Host 'August 24 Flood Production catchment/culvert workflow finalized for Civil 3D 2023.' -ForegroundColor Green
 Write-Host ' - integrated Flood menu entry present.' -ForegroundColor Green
+Write-Host ' - Alignment/polyline/FeatureLine low-point sampler routed.' -ForegroundColor Green
 Write-Host ' - FeatureLinePointType qualified for Civil 3D 2023.' -ForegroundColor Green
 Write-Host ' - native Civil 3D Catchment bridge chained after CE plan output.' -ForegroundColor Green
