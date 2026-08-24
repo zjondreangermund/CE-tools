@@ -100,9 +100,23 @@ jobs:
       - name: Verify single-command refresh behavior
         shell: pwsh
         run: |
-          $refresh = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs')
-          foreach ($guard in @('PRODUCTIONSTRUCTURED','PRODUCTIONCENTRE','WORKFLOW','MENU','TOOLS','SETTINGS')) {
-            if (-not $refresh.Contains('"' + $guard + '"')) { throw "Missing automatic-refresh launcher guard: $guard" }
+          $refresh = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs') -replace "`r?`n", "`r`n"
+          $signature = '        internal static bool ShouldQueueRefresh(string commandName)'
+          $start = $refresh.IndexOf($signature,[StringComparison]::Ordinal)
+          if ($start -lt 0) { throw 'Automatic-refresh policy method missing.' }
+          $open = $refresh.IndexOf('{',$start)
+          $depth = 0; $close = -1
+          for ($i=$open; $i -lt $refresh.Length; $i++) {
+            if ($refresh[$i] -eq '{') { $depth++ }
+            elseif ($refresh[$i] -eq '}') {
+              $depth--
+              if ($depth -eq 0) { $close = $i; break }
+            }
+          }
+          if ($close -lt 0) { throw 'Automatic-refresh policy method is malformed.' }
+          $body = $refresh.Substring($open + 1,$close - $open - 1)
+          if (-not [regex]::IsMatch($body,'(?m)^\s*return\s+false\s*;\s*$')) {
+            throw 'Blanket command-ended refresh is no longer disabled.'
           }
           $flood = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\FloodProductionCulvertDesignCommands.cs'))
           if (-not $flood.Contains('CE_FLOODCULVERTDESIGN')) { throw 'Flood design command missing.' }
