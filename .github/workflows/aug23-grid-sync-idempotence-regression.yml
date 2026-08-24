@@ -42,6 +42,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          $global:LASTEXITCODE = 0
           & (Join-Path $env:STAGE 'scripts\Run-August23-SettingOutCadFeedback-Civil3D2023.ps1') -RepoRoot $env:STAGE
 
       - name: Reproduce packaged missing Grid sync calls
