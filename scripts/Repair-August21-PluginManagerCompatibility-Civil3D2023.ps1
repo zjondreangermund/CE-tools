@@ -56,9 +56,6 @@ function Normalize-ManagerBlock(
         $body = [regex]::Replace($body,$parkingPattern,$canonical,1)
     }
     else {
-        # Some late recovery/sanitizer variants can remove or wrap the original
-        # ParkingOption manager call. Re-establish the complete canonical manager
-        # block at method entry instead of depending on one historical text anchor.
         $body = "`r`n" + $canonical + $body
     }
 
@@ -67,11 +64,13 @@ function Normalize-ManagerBlock(
 
 $initRemove = @(
     'August21SimpleParkingRefreshManager.Initialize();',
-    'August21GraphicsRefreshManager.Initialize();')
+    'August21GraphicsRefreshManager.Initialize();',
+    'August24RoadElevationDynamicManager.Initialize();')
 $initCanonical = @(
     'ParkingOptionAutoRefreshManager.Initialize();',
     'August21SimpleParkingRefreshManager.Initialize();',
-    'August21GraphicsRefreshManager.Initialize();')
+    'August21GraphicsRefreshManager.Initialize();',
+    'August24RoadElevationDynamicManager.Initialize();')
 $text = Normalize-ManagerBlock `
     $text `
     '        public void Initialize()' `
@@ -81,9 +80,11 @@ $text = Normalize-ManagerBlock `
     'Plugin Initialize'
 
 $termRemove = @(
+    'August24RoadElevationDynamicManager.Terminate();',
     'August21GraphicsRefreshManager.Terminate();',
     'August21SimpleParkingRefreshManager.Terminate();')
 $termCanonical = @(
+    'August24RoadElevationDynamicManager.Terminate();',
     'August21GraphicsRefreshManager.Terminate();',
     'August21SimpleParkingRefreshManager.Terminate();',
     'ParkingOptionAutoRefreshManager.Terminate();')
@@ -102,8 +103,10 @@ $initExpected = @'
             ParkingOptionAutoRefreshManager.Initialize();
             August21SimpleParkingRefreshManager.Initialize();
             August21GraphicsRefreshManager.Initialize();
+            August24RoadElevationDynamicManager.Initialize();
 '@ -replace "`r?`n","`r`n"
 $termExpected = @'
+            August24RoadElevationDynamicManager.Terminate();
             August21GraphicsRefreshManager.Terminate();
             August21SimpleParkingRefreshManager.Terminate();
             ParkingOptionAutoRefreshManager.Terminate();
@@ -118,6 +121,8 @@ if (-not $check.Contains($termExpected)) {
 foreach ($call in @(
     'August21SimpleParkingRefreshManager.Initialize();',
     'August21GraphicsRefreshManager.Initialize();',
+    'August24RoadElevationDynamicManager.Initialize();',
+    'August24RoadElevationDynamicManager.Terminate();',
     'August21GraphicsRefreshManager.Terminate();',
     'August21SimpleParkingRefreshManager.Terminate();')) {
     if (([regex]::Matches($check,[regex]::Escape($call))).Count -ne 1) {
@@ -126,11 +131,8 @@ foreach ($call in @(
 }
 
 Write-Host 'Plugin August21 manager initialization/termination normalized for the state-safety pass.' -ForegroundColor Green
+Write-Host 'Dynamic road elevation link manager is initialized and terminated with the Civil 3D plugin.' -ForegroundColor Green
 
-# The final August 21 page/dimension/trim pass was authored before the August 20
-# measurement-unit declarations were inserted between ArcLeader and `int sources`.
-# Normalize that harmless declaration ordering now so the preserved finalizer can
-# install the open-polyline chain dispatch without sacrificing Metres/Millimetres.
 $multiCompat = Join-Path $root 'scripts\Repair-August21-MultiDimensionChainDispatchCompatibility-Civil3D2023.ps1'
 if (-not (Test-Path -LiteralPath $multiCompat -PathType Leaf)) {
     throw "August 21 Multi Dimensions chain-dispatch compatibility repair missing: $multiCompat"
@@ -138,10 +140,6 @@ if (-not (Test-Path -LiteralPath $multiCompat -PathType Leaf)) {
 & $multiCompat -RepoRoot $root
 $global:LASTEXITCODE = 0
 
-# The real Civil 3D 2023 compiler resolves FeatureLinePointType from the
-# Autodesk.Civil namespace. Normalize both PlatformProductionCommands.cs and all
-# later staged repair templates now so the August 21 state/surface pass cannot
-# re-introduce the unqualified enum before MSBuild.
 $platformApiCompat = Join-Path $root 'scripts\Repair-August21-PlatformFeatureLinePointType-Civil3D2023.ps1'
 if (-not (Test-Path -LiteralPath $platformApiCompat -PathType Leaf)) {
     throw "August 21 Platform FeatureLinePointType compatibility repair missing: $platformApiCompat"
@@ -149,12 +147,6 @@ if (-not (Test-Path -LiteralPath $platformApiCompat -PathType Leaf)) {
 & $platformApiCompat -RepoRoot $root
 $global:LASTEXITCODE = 0
 
-# The CAD/field finalizer must run after the preserved August 21 page/dimension/
-# trim repair, because that repair creates the open-polyline chain helper. Rather
-# than duplicating the full historical build launcher, append one idempotent call
-# to the staged page finalizer now. When the build later executes that page repair,
-# this field finalizer is therefore guaranteed to be the final source mutation
-# before MSBuild.
 $cadFieldFinalizer = Join-Path $root 'scripts\Repair-August21-CadProductionFieldFinalizer-Civil3D2023.ps1'
 $pageFinalizer = Join-Path $root 'scripts\Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
 if (-not (Test-Path -LiteralPath $cadFieldFinalizer -PathType Leaf)) {
