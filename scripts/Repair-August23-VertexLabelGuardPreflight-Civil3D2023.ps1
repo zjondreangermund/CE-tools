@@ -44,10 +44,10 @@ function Ensure-ResetCall(
 
     $escaped = [regex]::Escape($variableName)
 
-    # Prefer the PointName assignment so the historical August 23 regex sees the
-    # reset at the same semantic anchor. Some packaged stages remove or rewrite
-    # that assignment, so fall back to RawDescription, which is the stable
-    # source-linked COGO anchor.
+    # Prefer historical metadata anchors when they still exist. The complete
+    # August 18/19 packaged mutation chain can remove both PointName and
+    # RawDescription assignments, so these are conveniences rather than required
+    # source shapes.
     $patterns = @(
         ('(?m)^(?<indent>[ \t]*)try[ \t]*\{[ \t]*' + $escaped + '\.PointName[ \t]*=[ \t]*record\.PointName;[ \t]*\}[ \t]*catch[ \t]*\{[ \t]*\}[ \t]*$'),
         ('(?m)^(?<indent>[ \t]*)' + $escaped + '\.RawDescription[ \t]*=[ \t]*record\.PointName;[ \t]*$')
@@ -63,7 +63,27 @@ function Ensure-ResetCall(
         return $source.Insert($insertAt,$call)
     }
 
-    throw "August 23 Vertex $label could not find PointName or RawDescription anchor for $variableName."
+    # Stable semantic fallback: both created and refreshed COGO branches write the
+    # CE output link after all available point metadata has been applied. Insert the
+    # reset immediately before that branch's first WriteOutputLink call. This avoids
+    # depending on optional PointName/RawDescription statements while keeping the
+    # label reset after position/elevation updates.
+    $variableToken = 'CivilCogoPoint ' + $variableName
+    $variableIndex = $methodText.IndexOf($variableToken,[StringComparison]::Ordinal)
+    if ($variableIndex -ge 0) {
+        $linkIndex = $methodText.IndexOf('WriteOutputLink(',$variableIndex,[StringComparison]::Ordinal)
+        if ($linkIndex -ge 0) {
+            $lineStart = $methodText.LastIndexOf("`n",$linkIndex)
+            if ($lineStart -lt 0) { $lineStart = 0 } else { $lineStart++ }
+            $prefix = $methodText.Substring($lineStart,$linkIndex-$lineStart)
+            $indentMatch = [regex]::Match($prefix,'^[ \t]*')
+            $indent = $indentMatch.Value
+            $call = $indent + 'ResetCogoLabel(' + $variableName + ');' + "`r`n"
+            return $source.Insert($range.Start + $lineStart,$call)
+        }
+    }
+
+    throw "August 23 Vertex $label could not find PointName, RawDescription or linked-output anchor for $variableName."
 }
 
 function Normalize-ResetCallCount(
