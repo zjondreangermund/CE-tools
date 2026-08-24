@@ -66,7 +66,27 @@ jobs:
           if ($flood.Contains('Autodesk.Civil.DatabaseServices.FeatureLinePointType')) { throw 'Wrong Civil 3D FeatureLinePointType namespace survived finalizer.' }
           if (-not $flood.Contains('FloodLowPointSamplingBridge.FindLowestPoint(')) { throw 'Surface-aware Flood low-point routing missing.' }
           if (([regex]::Matches($flood,'FloodNativeCatchmentBridge\.TryCreate')).Count -ne 1) { throw 'Native Civil Catchment bridge is not chained exactly once.' }
+          if (-not $flood.Contains('using Image = System.Windows.Controls.Image;')) { throw 'Hydraflow WPF Image alias missing; Autodesk Image would remain ambiguous.' }
+
+          $native = [System.IO.File]::ReadAllText((Join-Path $stage 'src\CE.Tools.Civil3D\FloodNativeCatchmentBridge.cs'))
+          if (-not $native.Contains('using CETools.Core;')) { throw 'Native Catchment bridge is missing CE.Tools.Core GridCell namespace.' }
+          if (-not $native.Contains('IReadOnlyList<GridCell> catchment')) { throw 'Native Catchment bridge GridCell signature missing.' }
           "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify Civil 3D compiler type qualifications
+        shell: pwsh
+        run: |
+          $flood = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\FloodProductionCulvertDesignCommands.cs'))
+          $native = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\FloodNativeCatchmentBridge.cs'))
+          if (-not $flood.Contains('using Image = System.Windows.Controls.Image;')) {
+            throw 'CS0104 regression: WPF Image is not explicitly aliased.'
+          }
+          if (-not $native.Contains('using CETools.Core;')) {
+            throw 'CS0246 regression: GridCell namespace is not imported.'
+          }
+          if ($native.Contains('IReadOnlyList<CETools.Civil3D.GridCell>')) {
+            throw 'GridCell was incorrectly qualified to the Civil3D namespace.'
+          }
 
       - name: Verify single-command refresh behavior
         shell: pwsh
@@ -80,7 +100,7 @@ jobs:
           if (-not $flood.Contains('August21DisplayRefresh.Flush(document);')) { throw 'Flood design must flush display once at completion.' }
           if ($flood.Contains('document.Editor.Regen();')) { throw 'Flood design must not repeatedly REGEN the model.' }
 
-          $native = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\FloodNativeCatchmentBridge.cs')
+          $native = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\FloodNativeCatchmentBridge.cs'))
           if (-not $native.Contains('Catchment.Create(')) { throw 'Native Civil 3D Catchment creation missing.' }
           if (-not $native.Contains('RunoffCoefficient')) { throw 'Native catchment runoff coefficient link missing.' }
 
