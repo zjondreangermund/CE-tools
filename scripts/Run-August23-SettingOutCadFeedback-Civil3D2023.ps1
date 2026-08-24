@@ -94,3 +94,12 @@ finally {
     Remove-Item -LiteralPath $tempPath -Force -ErrorAction SilentlyContinue
 }
 $global:LASTEXITCODE = 0
+
+# Normalize again after the historical repair. Its old trailing-whitespace regex can
+# backtrack around an already-present reset call and duplicate it. This postflight
+# keeps CreateOutput and UpdateOutput at exactly one reset call each before compile.
+& $vertexLabelGuard -RepoRoot $root
+if ($LASTEXITCODE -ne 0) {
+    throw "August 23 Vertex Setting-Out label-guard postflight failed with exit code $LASTEXITCODE."
+}
+$global:LASTEXITCODE = 0
