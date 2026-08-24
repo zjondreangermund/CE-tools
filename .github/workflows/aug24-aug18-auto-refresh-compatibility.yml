@@ -1,0 +1,59 @@
+name: August 18 Auto Refresh Compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/AugustAutomaticRefreshManager.cs'
+      - 'scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+      - '.github/workflows/aug24-aug18-auto-refresh-compatibility.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/AugustAutomaticRefreshManager.cs'
+      - 'scripts/Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+      - '.github/workflows/aug24-aug18-auto-refresh-compatibility.yml'
+
+jobs:
+  august18-auto-refresh-compatibility:
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Reproduce the August 18 automatic-manager guard
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = 'src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs'
+          $automatic = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+          $automaticNew = @'
+            string name = ReadCommandName(args);
+            if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
+            if (string.Equals(name, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_SITEGRIDREFRESH", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(name, "CE_SITEGRIDREMOVE", StringComparison.OrdinalIgnoreCase))
+                return;
+            UniversalDynamicRefreshManager.Queue();
+            PlatformDynamicRefreshManager.Queue();
+          '@ -replace "`n","`r`n"
+          if (-not $automatic.Contains($automaticNew)) {
+            throw 'August 18 repair would still fail: automatic manager site-grid exclusion anchor missing.'
+          }
+
+      - name: Verify live refresh policy still excludes Site Grid and launchers
+        shell: pwsh
+        run: |
+          $text = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs')
+          foreach ($command in @('CE_SITEGRID','CE_SITEGRIDREFRESH','CE_SITEGRIDREMOVE')) {
+            if (-not $text.Contains('"' + $command + '"')) { throw "Missing live Site Grid refresh exclusion: $command" }
+          }
+          foreach ($token in @('PRODUCTIONSTRUCTURED','PRODUCTIONCENTRE','WORKFLOW','MENU','TOOLS','SETTINGS')) {
+            if (-not $text.Contains('"' + $token + '"')) { throw "Missing non-mutating launcher guard: $token" }
+          }
+
+      - name: Parse Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
