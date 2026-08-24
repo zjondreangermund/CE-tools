@@ -41,7 +41,9 @@ if ($createEnd -lt 0) { throw 'August 24 final compile Grid CreateDynamicGrid en
 $create = $grid.Substring($createStart,$createEnd-$createStart)
 
 # Remove every local surfaceChoices declaration/Insert produced by historical
-# staging and re-establish one canonical declaration before the settings model.
+# staging and re-establish one canonical declaration immediately after the active
+# Document/CivilDocument null guard. This is earlier than any settings mutation and
+# remains correct even if historical Grid controls were moved above source selection.
 $create = [regex]::Replace(
     $create,
     '(?m)^[ \t]*List<string>[ \t]+surfaceChoices[ \t]*=[^;]+;[ \t]*\r\n?',
@@ -50,10 +52,10 @@ $create = [regex]::Replace(
     $create,
     '(?m)^[ \t]*surfaceChoices\.Insert\(0,[ \t]*"<None>"\);[ \t]*\r\n?',
     '')
-$sourceGuard = '            if (sourceIds.Count == 0) return;'
-$guardIndex = $create.IndexOf($sourceGuard,[StringComparison]::Ordinal)
-if ($guardIndex -lt 0) { throw 'August 24 final compile Grid source guard missing.' }
-$insertAt = $guardIndex + $sourceGuard.Length
+$activeGuard = '            if (document == null || civil == null) return;'
+$guardIndex = $create.IndexOf($activeGuard,[StringComparison]::Ordinal)
+if ($guardIndex -lt 0) { throw 'August 24 final compile Grid active-document guard missing.' }
+$insertAt = $guardIndex + $activeGuard.Length
 $surfaceDecl = "`r`n`r`n            List<string> surfaceChoices = ReadSurfaceNames(document.Database, civil);`r`n            surfaceChoices.Insert(0, `"<None>`");"
 $create = $create.Insert($insertAt,$surfaceDecl)
 $grid = $grid.Substring(0,$createStart) + $create + $grid.Substring($createEnd)
@@ -68,10 +70,13 @@ $grid = [regex]::Replace(
 if ($grid.Contains('ReadGridSurfaceNames(')) {
     throw 'August 24 final compile Grid obsolete ReadGridSurfaceNames call survived.'
 }
-$declIndex = $grid.IndexOf('List<string> surfaceChoices = ReadSurfaceNames(document.Database, civil);',[StringComparison]::Ordinal)
-$firstUseIndex = $grid.IndexOf('surfaceChoices.ToArray()',[StringComparison]::Ordinal)
+# Validate declaration order only inside CreateDynamicGrid. Historical repairs may
+# legitimately add unrelated helpers elsewhere in the class containing the same
+# token text; those must not create a false ordering failure at the final boundary.
+$declIndex = $create.IndexOf('List<string> surfaceChoices = ReadSurfaceNames(document.Database, civil);',[StringComparison]::Ordinal)
+$firstUseIndex = $create.IndexOf('surfaceChoices.ToArray()',[StringComparison]::Ordinal)
 if ($declIndex -lt 0 -or ($firstUseIndex -ge 0 -and $declIndex -gt $firstUseIndex)) {
-    throw 'August 24 final compile Grid surfaceChoices declaration is still after first use.'
+    throw 'August 24 final compile Grid surfaceChoices declaration is still after first use inside CreateDynamicGrid.'
 }
 $populateCount = ([regex]::Matches($grid,'(?m)^[ \t]*PopulateTable\(document\.Database, table, records, link\);')).Count
 if ($populateCount -ne 2) {
