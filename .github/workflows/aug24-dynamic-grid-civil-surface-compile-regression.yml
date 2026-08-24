@@ -1,0 +1,112 @@
+name: August 24 Dynamic Grid Civil Surface Compile
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'Directory.Build.targets'
+      - 'scripts/Repair-August24-DynamicGridCivilSurfaceCompileFix-Civil3D2023.ps1'
+      - '.github/workflows/aug24-dynamic-grid-civil-surface-compile-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'Directory.Build.targets'
+      - 'scripts/Repair-August24-DynamicGridCivilSurfaceCompileFix-Civil3D2023.ps1'
+      - '.github/workflows/aug24-dynamic-grid-civil-surface-compile-regression.yml'
+
+jobs:
+  civil-surface-qualification:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Create staged source with ambiguous Surface helpers
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-tools-aug24-surface'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'src') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'scripts') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'tests') -Destination $stage -Recurse -Force
+          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'global.json') -Destination $stage -Force
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+          $path = Join-Path $stage 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n"
+          $marker = '        private static void EraseIfPossible('
+          $index = $text.IndexOf($marker,[StringComparison]::Ordinal)
+          if ($index -lt 0) { throw 'Staged Dynamic Grid injection marker missing.' }
+          $block = @'
+        private static List<string> ReadSurfaceNames(Database database, CivilDocument civil)
+        {
+            Surface surface = null;
+            return new List<string>();
+        }
+
+        private static Surface OpenSurface(Database database, Transaction transaction, string handle)
+        {
+            return transaction.GetObject(ObjectId.Null, OpenMode.ForRead, false) as Surface;
+        }
+
+        private static void ApplySurfaceLevels(Database database, Transaction transaction)
+        {
+            Surface ng = OpenSurface(database, transaction, string.Empty);
+            Surface design = OpenSurface(database, transaction, string.Empty);
+        }
+
+        private static double? SampleSurface(Surface surface, Point3d point)
+        {
+            return null;
+        }
+
+        private sealed class GridLineSpec
+        {
+        }
+
+'@ -replace "`r?`n", "`r`n"
+          $text = $text.Insert($index,$block)
+          [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
+          if (-not [regex]::IsMatch($text,'(?<![A-Za-z0-9_\.])Surface(?![A-Za-z0-9_])')) { throw 'Ambiguous Surface fixture was not established.' }
+
+      - name: Run Civil Surface compile fix twice
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $repair = Join-Path $env:STAGE 'scripts\Repair-August24-DynamicGridCivilSurfaceCompileFix-Civil3D2023.ps1'
+          $tokens=$null; $errors=$null
+          [System.Management.Automation.Language.Parser]::ParseFile($repair,[ref]$tokens,[ref]$errors) | Out-Null
+          if ($errors -and $errors.Count -gt 0) { throw (($errors | ForEach-Object { $_.Message }) -join ' | ') }
+          & $repair -RepoRoot $env:STAGE
+          & $repair -RepoRoot $env:STAGE
+
+      - name: Verify Civil Surface qualification
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $path = Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path)
+          $alias = 'using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;'
+          if (([regex]::Matches($text,[regex]::Escape($alias))).Count -ne 1) { throw 'CivilSurface alias is not present exactly once.' }
+          $start = $text.IndexOf('        private static List<string> ReadSurfaceNames(',[StringComparison]::Ordinal)
+          $end = $text.IndexOf('        private sealed class GridLineSpec',$start,[StringComparison]::Ordinal)
+          if ($start -lt 0 -or $end -lt 0) { throw 'Surface helper block boundaries missing.' }
+          $block = $text.Substring($start,$end-$start)
+          if ([regex]::IsMatch($block,'(?<![A-Za-z0-9_\.])Surface(?![A-Za-z0-9_])')) { throw 'Bare ambiguous Surface survived qualification.' }
+          if (([regex]::Matches($block,'CivilSurface')).Count -lt 6) { throw 'Expected CivilSurface qualifications were not established.' }
+          Write-Host 'Dynamic Grid Civil Surface qualification is idempotent.' -ForegroundColor Green
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
