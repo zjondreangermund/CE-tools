@@ -110,15 +110,29 @@ jobs:
             throw 'Automatic-refresh metadata cleanup is not ordered before the source-only finalizer.'
           }
 
-      - name: Verify live refresh policy still excludes Site Grid and launchers
+      - name: Verify live policy blocks all blanket command-ended refresh
         shell: pwsh
         run: |
-          $text = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs')
-          foreach ($command in @('CE_SITEGRID','CE_SITEGRIDREFRESH','CE_SITEGRIDREMOVE')) {
-            if (-not $text.Contains('"' + $command + '"')) { throw "Missing live Site Grid refresh exclusion: $command" }
+          $text = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs') -replace "`r?`n", "`r`n"
+          $signature = '        internal static bool ShouldQueueRefresh(string commandName)'
+          $start = $text.IndexOf($signature,[StringComparison]::Ordinal)
+          if ($start -lt 0) { throw 'ShouldQueueRefresh policy method missing.' }
+          $open = $text.IndexOf('{',$start)
+          $depth = 0; $close = -1
+          for ($i=$open; $i -lt $text.Length; $i++) {
+            if ($text[$i] -eq '{') { $depth++ }
+            elseif ($text[$i] -eq '}') {
+              $depth--
+              if ($depth -eq 0) { $close = $i; break }
+            }
           }
-          foreach ($token in @('PRODUCTIONSTRUCTURED','PRODUCTIONCENTRE','WORKFLOW','MENU','TOOLS','SETTINGS')) {
-            if (-not $text.Contains('"' + $token + '"')) { throw "Missing non-mutating launcher guard: $token" }
+          if ($close -lt 0) { throw 'ShouldQueueRefresh policy method is malformed.' }
+          $body = $text.Substring($open + 1,$close - $open - 1)
+          if (-not [regex]::IsMatch($body,'(?m)^\s*return\s+false\s*;\s*$')) {
+            throw 'Blanket command-ended refresh is no longer disabled.'
+          }
+          if ([regex]::IsMatch($body,'(?m)^\s*return\s+true\s*;\s*$')) {
+            throw 'ShouldQueueRefresh can still enable blanket command-ended refresh.'
           }
 
       - name: Parse Civil 3D C# syntax

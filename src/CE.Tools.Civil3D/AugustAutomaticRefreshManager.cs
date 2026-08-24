@@ -7,9 +7,11 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 namespace CETools.Civil3D
 {
     /// <summary>
-    /// Queues linked-output refresh only after CE commands that can actually change
-    /// drawing/model data. Workflow centres, settings/menu launchers and review-only
-    /// commands must not regenerate the model merely because a popup was opened.
+    /// Compatibility command-ended manager. Automatic model rebuilding is owned by
+    /// the dedicated dependency managers (Site Grid, linked feature lines, platform
+    /// grading, etc.), not by every CE command. This keeps Enter/repeat-command,
+    /// Undo/Redo and the cross-hair responsive and prevents a full model refresh
+    /// merely because any CE command finished.
     /// </summary>
     internal static class AugustAutomaticRefreshManager
     {
@@ -76,40 +78,20 @@ namespace CETools.Civil3D
 
         internal static bool ShouldQueueRefresh(string commandName)
         {
-            string name = (commandName ?? string.Empty).Trim().ToUpperInvariant();
-            if (!name.StartsWith("CE_", StringComparison.Ordinal)) return false;
-
-            // Site Grid has its own dedicated dependency manager. Scheduling the
-            // universal/platform managers as well creates duplicate refresh work,
-            // extra Undo/Redo groups and can feed the two background loops.
-            if (string.Equals(name, "CE_SITEGRID", StringComparison.Ordinal) ||
-                string.Equals(name, "CE_SITEGRIDREFRESH", StringComparison.Ordinal) ||
-                string.Equals(name, "CE_SITEGRIDREMOVE", StringComparison.Ordinal))
-                return false;
-
-            string[] nonMutatingTokens =
-            {
-                "PRODUCTIONSTRUCTURED",
-                "PRODUCTIONCENTRE",
-                "WORKFLOW",
-                "MENU",
-                "TOOLS",
-                "SETTINGS",
-                "SETTINGSPRODUCTION",
-                "REPORTCENTRE"
-            };
-            foreach (string token in nonMutatingTokens)
-                if (name.IndexOf(token, StringComparison.Ordinal) >= 0) return false;
-
-            return true;
+            // Field rule (24 Aug): NEVER queue the universal/platform refresh just
+            // because a CE command ended. Commands that create linked data already
+            // request their own display flush/refresh and object-specific managers
+            // react only to linked-object edits. This also restores native Enter to
+            // repeat the last command without a background refresh taking over.
+            return false;
         }
 
         /*
         August 18 staged-repair compatibility anchor. The live implementation above
-        performs the same Site Grid exclusion inside ShouldQueueRefresh while also
-        retaining the newer non-mutating launcher filter. Keeping the historical
-        canonical block as metadata lets the preserved August 18 installer repair
-        recognize that its required Site Grid exclusion is already satisfied.
+        intentionally supersedes the old blanket CE_ queue. Keeping this historical
+        canonical block as metadata lets preserved installer repairs recognize the
+        Site Grid exclusion; the final August 24 field-comments pass reasserts the
+        no-blanket-refresh policy after all historical transforms.
             string name = ReadCommandName(args);
             if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
             if (string.Equals(name, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
