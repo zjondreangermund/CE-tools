@@ -7,9 +7,9 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 namespace CETools.Civil3D
 {
     /// <summary>
-    /// Ensures newly placed linked tables/annotations are queued immediately after
-    /// the creating CE command ends. The existing universal idle manager performs
-    /// the actual mutation, so this adds no competing transaction loop.
+    /// Queues linked-output refresh only after CE commands that can actually change
+    /// drawing/model data. Workflow centres, settings/menu launchers and review-only
+    /// commands must not regenerate the model merely because a popup was opened.
     /// </summary>
     internal static class AugustAutomaticRefreshManager
     {
@@ -69,9 +69,31 @@ namespace CETools.Civil3D
         private static void OnCommandEnded(object sender, CommandEventArgs args)
         {
             string name = ReadCommandName(args);
-            if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
+            if (!ShouldQueueRefresh(name)) return;
             UniversalDynamicRefreshManager.Queue();
             PlatformDynamicRefreshManager.Queue();
+        }
+
+        internal static bool ShouldQueueRefresh(string commandName)
+        {
+            string name = (commandName ?? string.Empty).Trim().ToUpperInvariant();
+            if (!name.StartsWith("CE_", StringComparison.Ordinal)) return false;
+
+            string[] nonMutatingTokens =
+            {
+                "PRODUCTIONSTRUCTURED",
+                "PRODUCTIONCENTRE",
+                "WORKFLOW",
+                "MENU",
+                "TOOLS",
+                "SETTINGS",
+                "SETTINGSPRODUCTION",
+                "REPORTCENTRE"
+            };
+            foreach (string token in nonMutatingTokens)
+                if (name.IndexOf(token, StringComparison.Ordinal) >= 0) return false;
+
+            return true;
         }
 
         private static string ReadCommandName(CommandEventArgs args)

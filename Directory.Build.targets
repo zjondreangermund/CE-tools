@@ -42,10 +42,8 @@
   </Target>
 
   <!--
-    Final semantic compile compatibility. This is deliberately the last source
-    mutation before CoreCompile and repairs late historical staging mismatches that
-    are valid PowerShell/C# syntax but fail against the real Civil 3D 2023 API or
-    current helper signatures.
+    Final semantic compile compatibility. This is deliberately the last historical
+    source-repair boundary before the new Flood Production finalizer.
   -->
   <Target Name="CEApplyAugust24FinalCompileCompatibility"
           AfterTargets="CEApplyAugust24DynamicGridCivilSurfaceCompileFix"
@@ -53,5 +51,18 @@
           Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
     <Message Text="Applying final Civil 3D 2023 compile compatibility boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August24-FinalCompileCompatibility-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
+
+  <!--
+    Historical production-centre repairs can replace the structured Flood menu.
+    Reassert the integrated catchment/culvert workflow after all those mutations and
+    immediately before compilation.
+  -->
+  <Target Name="CEApplyAugust24FloodProductionCulvertMenu"
+          AfterTargets="CEApplyAugust24FinalCompileCompatibility"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Finalizing Flood Production catchment and culvert workflow..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 </Project>
