@@ -13,11 +13,6 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!--
-    Platform production finalizer. This runs after the August 21 fatal-safety target
-    and immediately before compilation, so the historical staged repair chain cannot
-    overwrite the August 23 Platform workflow routes or its dynamic refresh bridge.
-  -->
   <Target Name="CEApplyAugust23PlatformDynamicGrading"
           AfterTargets="CEApplyAugust21CrossDisciplineFatalSafety"
           BeforeTargets="CoreCompile"
@@ -26,13 +21,6 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!--
-    The August 23 Grid feedback repair injects Civil surface-level helpers into a
-    file that imports both AutoCAD and Civil DatabaseServices namespaces. Qualify
-    those helper types after every historical/final repair and immediately before
-    CoreCompile so the real Civil 3D references cannot produce CS0104 Surface
-    ambiguity.
-  -->
   <Target Name="CEApplyAugust24DynamicGridCivilSurfaceCompileFix"
           AfterTargets="CEApplyAugust23PlatformDynamicGrading"
           BeforeTargets="CoreCompile"
@@ -41,10 +29,6 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August24-DynamicGridCivilSurfaceCompileFix-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!--
-    Final semantic compile compatibility. This is deliberately the last historical
-    source-repair boundary before the new Flood Production finalizer.
-  -->
   <Target Name="CEApplyAugust24FinalCompileCompatibility"
           AfterTargets="CEApplyAugust24DynamicGridCivilSurfaceCompileFix"
           BeforeTargets="CoreCompile"
@@ -53,16 +37,21 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August24-FinalCompileCompatibility-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!--
-    Historical production-centre repairs can replace the structured Flood menu.
-    Reassert the integrated catchment/culvert workflow after all those mutations and
-    immediately before compilation.
-  -->
   <Target Name="CEApplyAugust24FloodProductionCulvertMenu"
           AfterTargets="CEApplyAugust24FinalCompileCompatibility"
           BeforeTargets="CoreCompile"
           Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
     <Message Text="Finalizing Flood Production catchment and culvert workflow..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
+
+  <!-- Run last: historical staging repairs must not restore the field failures seen
+       in multi-object Convert, Break, FeatureLine stretch, offsets or dimensions. -->
+  <Target Name="CEApplyAugust25CadSupplementaryFieldMultiSelect"
+          AfterTargets="CEApplyAugust24FloodProductionCulvertMenu"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Finalizing CAD Supplementary multi-select field behavior..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 </Project>

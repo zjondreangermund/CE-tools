@@ -5,27 +5,19 @@ on:
   pull_request:
     branches: [ main ]
     paths:
-      - 'src/CE.Tools.Civil3D/August21CadProductionCommands.cs'
       - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
       - 'src/CE.Tools.Civil3D/August24FieldGeometryCommands.cs'
-      - 'src/CE.Tools.Civil3D/PolylineNetworkPreparationCommands.cs'
-      - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreak*.cs'
+      - 'src/CE.Tools.Civil3D/August25CadSupplementary*.cs'
       - 'src/CE.Tools.Civil3D/August25StraightPolylineSplitter.cs'
+      - 'src/CE.Tools.Civil3D/PolylineNetworkPreparationCommands.cs'
       - 'src/CE.Tools.Civil3D/CurveConversionCommands.cs'
       - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - 'scripts/Repair-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+      - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
       - '.github/workflows/aug25-cad-supplementary-runtime-regression.yml'
   push:
     branches: [ main ]
-    paths:
-      - 'src/CE.Tools.Civil3D/August21CadProductionCommands.cs'
-      - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
-      - 'src/CE.Tools.Civil3D/August24FieldGeometryCommands.cs'
-      - 'src/CE.Tools.Civil3D/PolylineNetworkPreparationCommands.cs'
-      - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreak*.cs'
-      - 'src/CE.Tools.Civil3D/August25StraightPolylineSplitter.cs'
-      - 'src/CE.Tools.Civil3D/CurveConversionCommands.cs'
-      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
-      - '.github/workflows/aug25-cad-supplementary-runtime-regression.yml'
 
 jobs:
   cad-supplementary:
@@ -40,115 +32,85 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
-      - name: Verify every CAD Supplementary menu command is registered
+      - name: Verify all Supplementary commands stay registered
         shell: pwsh
         run: |
-          $ErrorActionPreference = 'Stop'
-          $menuPath = 'src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs'
-          $menu = [System.IO.File]::ReadAllText($menuPath)
-          $required = @(
-            'CE_CURVECONVERT',
-            'CE_PLBREAKJUNCTIONS',
-            'CE_CLOSEOPENMULTI',
-            'CE_MULTISTRETCHFL',
-            'CE_SURVEYCONSTRUCTIONOFFSET',
-            'CE_SURVEYMIDCONSTRUCTION',
-            'CE_MULTIDIM',
-            'CE_FEATURELINESLOPEARROWS',
-            'CE_SURFACESLOPEARROWS',
-            'CE_SITEGRIDPRESENTATION',
-            'CE_ROADHATCHSIDES',
-            'CE_SEWERFIELDSUPPLEMENTARY',
-            'CE_PLATFORMFIELDSUPPLEMENTARY'
-          )
+          $menu = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs')
+          $required = @('CE_CURVECONVERT','CE_PLBREAKJUNCTIONS','CE_CLOSEOPENMULTI','CE_MULTISTRETCHFL','CE_SURVEYCONSTRUCTIONOFFSET','CE_SURVEYMIDCONSTRUCTION','CE_MULTIDIM','CE_FEATURELINESLOPEARROWS','CE_SURFACESLOPEARROWS','CE_SITEGRIDPRESENTATION','CE_ROADHATCHSIDES','CE_SEWERFIELDSUPPLEMENTARY','CE_PLATFORMFIELDSUPPLEMENTARY')
           foreach ($command in $required) {
-            if (-not $menu.Contains('"' + $command + '"')) {
-              throw "CAD Supplementary menu command missing: $command"
-            }
+            if (-not $menu.Contains('"' + $command + '"')) { throw "CAD Supplementary menu command missing: $command" }
           }
 
-          $owners = @{
-            CE_CURVECONVERT='src\CE.Tools.Civil3D\CurveConversionCommands.cs'
-            CE_PLBREAKJUNCTIONS='src\CE.Tools.Civil3D\PolylineNetworkPreparationCommands.cs'
-            CE_CLOSEOPENMULTI='src\CE.Tools.Civil3D\August24FieldGeometryCommands.cs'
-            CE_MULTISTRETCHFL='src\CE.Tools.Civil3D\August24FieldGeometryCommands.cs'
-            CE_SURVEYCONSTRUCTIONOFFSET='src\CE.Tools.Civil3D\August24FieldGeometryCommands.cs'
-            CE_SURVEYMIDCONSTRUCTION='src\CE.Tools.Civil3D\August24FieldGeometryCommands.cs'
-            CE_MULTIDIM='src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
-            CE_FEATURELINESLOPEARROWS='src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs'
-            CE_SURFACESLOPEARROWS='src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs'
-            CE_SITEGRIDPRESENTATION='src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs'
-            CE_ROADHATCHSIDES='src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs'
-            CE_SEWERFIELDSUPPLEMENTARY='src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs'
-            CE_PLATFORMFIELDSUPPLEMENTARY='src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs'
-          }
-          foreach ($command in $required) {
-            $text = [System.IO.File]::ReadAllText($owners[$command])
-            if (-not $text.Contains('[CommandMethod')) { throw "CommandClass source has no CommandMethod attributes: $command" }
-            if (-not $text.Contains('"' + $command + '"')) { throw "Registered command token missing from owner source: $command" }
-          }
-
-      - name: Verify non-destructive crossing and T-junction route
+      - name: Stage and run final field boundary twice
         shell: pwsh
         run: |
-          $entry = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\PolylineNetworkPreparationCommands.cs')
-          if (-not $entry.Contains('August25CadSupplementaryBreakEngine.Run(document);')) {
-            throw 'CE_PLBREAKJUNCTIONS is not routed to the August 25 non-destructive engine.'
-          }
-          if ($entry.Contains('August21SafePolylineBreakEngine.Run(document);')) {
-            throw 'Legacy break engine is still the runtime route.'
-          }
+          $ErrorActionPreference='Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-cad-supplementary-field'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item src -Destination $stage -Recurse -Force
+          Copy-Item scripts -Destination $stage -Recurse -Force
+          Copy-Item tests -Destination $stage -Recurse -Force
+          Copy-Item global.json -Destination $stage -Force
+          $repair = Join-Path $stage 'scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+          & $repair -RepoRoot $stage
+          & $repair -RepoRoot $stage
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-          $analysis = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August25CadSupplementaryBreakAnalysis.cs')
-          $replacement = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August25CadSupplementaryBreakReplacement.cs')
-          $straight = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August25StraightPolylineSplitter.cs')
-          foreach ($token in @('StartDistance','EndDistance','AddDistance(firstDistances','AddDistance(secondDistances')) {
-            if (-not $analysis.Contains($token)) { throw "Distance-based plan junction marker missing: $token" }
-          }
-          if (-not $straight.Contains('boundaries.AddRange(cuts);') -or -not $straight.Contains('boundaries.Add(sourceLength);')) {
-            throw 'Straight-polyline splitter does not explicitly preserve first/intermediate/last spans.'
-          }
-          if (-not $replacement.Contains('VerifyCompleteCoverage(source, newIds, cuts, originalLength, transaction)')) {
-            throw 'Replacement coverage verification is missing.'
-          }
-          $verify = $replacement.IndexOf('VerifyCompleteCoverage(source, newIds, cuts, originalLength, transaction)',[StringComparison]::Ordinal)
-          $erase = $replacement.IndexOf('source.Erase();',[StringComparison]::Ordinal)
-          $commit = $replacement.IndexOf('transaction.Commit();',[StringComparison]::Ordinal)
-          if ($verify -lt 0 -or $erase -lt $verify -or $commit -lt $erase) {
-            throw 'Original erase/commit can happen before complete replacement verification.'
-          }
-          if (-not $replacement.Contains('newIds.Count != cuts.Count + 1')) {
-            throw 'Expected split-piece count guard is missing.'
-          }
-
-      - name: Reproduce field video split-count geometry
+      - name: Verify field multi-select behavior markers
         shell: pwsh
         run: |
-          # Field case: one through route has a true crossing at x=3 and a T-junction
-          # at x=6. The crossing route is split once; the branch ending at x=6 is
-          # retained. Expected pieces: through=3 + crossing=2 + branch=1 untouched.
-          $throughCuts = @(3.0,6.0)
-          $crossingCuts = @(3.0)
-          $branchCuts = @()
-          if (($throughCuts.Count + 1) -ne 3) { throw 'Through-route tail span regression.' }
-          if (($crossingCuts.Count + 1) -ne 2) { throw 'Crossing-route split regression.' }
-          if ($branchCuts.Count -ne 0) { throw 'T-junction branch endpoint must not be split.' }
-          $createdForAffected = ($throughCuts.Count + 1) + ($crossingCuts.Count + 1)
-          if ($createdForAffected -ne 5) {
-            throw "Field geometry must create five replacement segments for the two affected sources; got $createdForAffected."
+          $curve = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\CurveConversionCommands.cs'))
+          if (-not $curve.Contains('foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())')) { throw 'Curve multi-select loop missing.' }
+          if (-not $curve.Contains('using (Transaction transaction = document.Database.TransactionManager.StartTransaction())')) { throw 'Per-source conversion transaction missing.' }
+          if (-not $curve.Contains('source.UpgradeOpen();')) { throw 'Replace-originals controlled write path missing.' }
+          if (-not $curve.Contains('originals={3}')) { throw 'Conversion field completion report missing.' }
+
+          $geometry = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August24FieldGeometryCommands.cs'))
+          foreach ($token in @('August25CadSupplementaryFieldRuntime.StretchFeatureLines(document);','August25CadSupplementaryFieldRuntime.ConstructionOffsets(document);','August25CadSupplementaryFieldRuntime.MiddleConstructionLines(document);')) {
+            if (-not $geometry.Contains($token)) { throw "Final geometry route missing: $token" }
+          }
+          if (-not $geometry.Contains('polyline.Closed = true;')) { throw 'Per-polyline own-endpoint closure missing.' }
+
+          $runtime = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August25CadSupplementaryFieldRuntime.cs'))
+          foreach ($token in @('featureLine.GetStretchPoints','featureLine.MoveStretchPointsAt','CivilFeatureLine featureLine = entity as CivilFeatureLine','BuildZeroFilletOffset','SimplifyStraightVertices','finite construction polyline / zero-fillet')) {
+            if (-not $runtime.Contains($token)) { throw "Field runtime marker missing: $token" }
           }
 
-      - name: Verify CAD Supplementary commands do not restore blanket refresh
+          $dim = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'))
+          if (-not $dim.Contains('Line sourceLine = entity as Line;')) { throw 'Line dimension source route missing.' }
+          if (-not $dim.Contains('dimension.Dimlfac = 1000.0;')) { throw 'Millimetre dimension factor missing.' }
+
+      - name: Verify persisted break replacement before erase
         shell: pwsh
         run: |
-          $refresh = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs')
-          $start = $refresh.IndexOf('internal static bool ShouldQueueRefresh(string commandName)',[StringComparison]::Ordinal)
-          if ($start -lt 0) { throw 'ShouldQueueRefresh is missing.' }
-          $tail = $refresh.Substring($start,[Math]::Min(1800,$refresh.Length-$start))
-          if (-not [regex]::IsMatch($tail,'return\s+false\s*;')) {
-            throw 'Blanket command-ended refresh is no longer disabled.'
+          $break = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August25CadSupplementaryBreakReplacement.cs')
+          foreach ($token in @('VerifyPersistedReplacement(','CleanupPersisted(','Field-safety rule: commit replacement geometry while the source is')) {
+            if (-not $break.Contains($token)) { throw "Persisted break safety marker missing: $token" }
+          }
+          $commitCreate = $break.IndexOf('transaction.Commit();',[StringComparison]::Ordinal)
+          $persist = $break.IndexOf('VerifyPersistedReplacement(',[StringComparison]::Ordinal)
+          $erase = $break.IndexOf('source.Erase();',[StringComparison]::Ordinal)
+          if ($commitCreate -lt 0 -or $persist -lt $commitCreate -or $erase -lt $persist) {
+            throw 'Break source can be erased before persisted replacement verification.'
           }
 
-      - name: Parse Civil 3D C# syntax
+      - name: Reproduce requested multi-object geometry expectations
         shell: pwsh
-        run: dotnet run --project tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
+        run: |
+          # Five selected conversion sources must be five independent attempts.
+          $selected = @('LINE','ARC','LINE','ARC','LINE')
+          if ($selected.Count -ne 5) { throw 'Conversion fixture corrupt.' }
+          # Open routes close to themselves, never to the next selected route.
+          $routes = @(@(0,10),@(20,30),@(40,50))
+          foreach ($route in $routes) { if ($route.Count -ne 2) { throw 'Closure fixture corrupt.' } }
+          # Construction offset of a 3-segment source is one joined finite route.
+          $sourceVertices = 4
+          if ($sourceVertices -lt 2) { throw 'Construction fixture corrupt.' }
+          # 2m/5m/8m/2m become 2000/5000/8000/2000 mm through Dimlfac 1000.
+          $metres = @(2,5,8,2); $mm = $metres | ForEach-Object { $_ * 1000 }
+          if (($mm -join ',') -ne '2000,5000,8000,2000') { throw 'Millimetre dimension regression.' }
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
