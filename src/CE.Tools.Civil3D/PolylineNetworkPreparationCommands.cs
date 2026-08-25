@@ -13,17 +13,14 @@ namespace CETools.Civil3D
 {
     /// <summary>
     /// Public command entry point for the field-safe crossing/T-junction engine.
-    /// The previous implementation performed all replacements in one transaction
-    /// and relied only on true 3D IntersectWith results. The safe engine analyses
-    /// plan intersections first and replaces/verifies one source at a time.
+    /// August 25 uses distance-based plan intersections and an atomic replacement
+    /// transaction so a source cannot be erased unless every expected span exists.
     /// </summary>
     public sealed class PolylineNetworkPreparationCommands
     {
         // Retained only as a staging-compatibility anchor for the preserved
         // August 20 runtime-stability finalizer. CE_PLBREAKJUNCTIONS never calls
-        // this legacy helper; runtime execution stays on August21SafePolylineBreakEngine.
-        // The finalizer rewrites this body to its per-source transaction version
-        // before its historical regression guard runs.
+        // this legacy helper; runtime execution stays on the August 25 engine.
         private const double Tolerance = 0.000001;
 
         [CommandMethod(
@@ -34,7 +31,7 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-            August21SafePolylineBreakEngine.Run(document);
+            August25CadSupplementaryBreakEngine.Run(document);
         }
 
         private static void ApplySplits(
@@ -45,7 +42,7 @@ namespace CETools.Civil3D
         {
             // Compatibility-only body. The August 20 staging finalizer replaces
             // this method with its validated per-source transaction implementation.
-            // Keeping it inert in tracked source prevents any accidental legacy use.
+            // Keeping it inert in tracked source prevents accidental legacy use.
             replaced = 0;
             created = 0;
         }
