@@ -26,16 +26,23 @@ namespace CETools.Civil3D
             if (database == null || plan == null || plan.SourceId.IsNull || plan.SourceId.IsErased)
                 return false;
 
+            var newIds = new List<ObjectId>();
+            List<double> cuts = null;
+            double originalLength = 0.0;
+
             try
             {
+                // Field-safety rule: commit replacement geometry while the source is
+                // still present. Never erase a selected route in the same transaction
+                // that creates transient/new replacement objects.
                 using (Transaction transaction = database.TransactionManager.StartTransaction())
                 {
                     Curve source = transaction.GetObject(plan.SourceId, OpenMode.ForRead, false) as Curve;
                     if (source == null || source.IsErased) return false;
-                    double originalLength = August25CadSupplementaryBreakAnalysis.CurveLength(source);
+                    originalLength = August25CadSupplementaryBreakAnalysis.CurveLength(source);
                     if (originalLength <= Tolerance) return false;
 
-                    List<double> cuts = UniqueCuts(plan.Distances, originalLength);
+                    cuts = UniqueCuts(plan.Distances, originalLength);
                     if (cuts.Count == 0) return false;
 
                     DBObjectCollection pieces = BuildCandidatePieces(source, cuts);
@@ -46,16 +53,13 @@ namespace CETools.Civil3D
                     }
 
                     BlockTableRecord owner = transaction.GetObject(
-                        source.OwnerId,
-                        OpenMode.ForWrite,
-                        false) as BlockTableRecord;
+                        source.OwnerId, OpenMode.ForWrite, false) as BlockTableRecord;
                     if (owner == null)
                     {
                         DisposeUnowned(pieces);
                         return false;
                     }
 
-                    var newIds = new List<ObjectId>();
                     foreach (DBObject value in pieces)
                     {
                         Entity entity = value as Entity;
@@ -74,24 +78,71 @@ namespace CETools.Civil3D
                         newIds.Add(newId);
                     }
 
-                    if (!VerifyCompleteCoverage(source, newIds, cuts, originalLength, transaction))
-                    {
-                        // Transaction disposal rolls back every provisional piece.
-                        return false;
-                    }
-
-                    source.UpgradeOpen();
-                    source.Erase();
+                    if (newIds.Count != cuts.Count + 1) return false;
                     transaction.Commit();
-                    createdCount = newIds.Count;
-                    return true;
                 }
+
+                // Re-open the source and every replacement from the database after
+                // commit. This catches field cases where transient split geometry
+                // looked complete but one persisted tail/span was missing.
+                if (!VerifyPersistedReplacement(
+                        database, plan.SourceId, newIds, cuts, originalLength))
+                {
+                    CleanupPersisted(database, newIds);
+                    return false;
+                }
+
+                // Only now may the original route be erased. If this transaction
+                // fails the original remains; provisional replacements are removed.
+                try
+                {
+                    using (Transaction transaction = database.TransactionManager.StartTransaction())
+                    {
+                        Entity source = transaction.GetObject(
+                            plan.SourceId, OpenMode.ForWrite, false) as Entity;
+                        if (source == null || source.IsErased)
+                        {
+                            CleanupPersisted(database, newIds);
+                            return false;
+                        }
+                        source.Erase();
+                        transaction.Commit();
+                    }
+                }
+                catch
+                {
+                    CleanupPersisted(database, newIds);
+                    return false;
+                }
+
+                createdCount = newIds.Count;
+                return true;
             }
             catch
             {
-                // No commit means the original source remains and provisional pieces vanish.
+                CleanupPersisted(database, newIds);
                 return false;
             }
+        }
+
+        private static bool VerifyPersistedReplacement(
+            Database database,
+            ObjectId sourceId,
+            IList<ObjectId> newIds,
+            IList<double> cuts,
+            double originalLength)
+        {
+            try
+            {
+                using (Transaction transaction = database.TransactionManager.StartTransaction())
+                {
+                    Curve source = transaction.GetObject(sourceId, OpenMode.ForRead, false) as Curve;
+                    if (source == null || source.IsErased) return false;
+                    return VerifyCompleteCoverage(
+                        source, newIds, cuts, originalLength, transaction);
+                }
+            }
+            catch { return false; }
         }
 
         private static DBObjectCollection BuildCandidatePieces(Curve source, IList<double> cuts)
@@ -117,7 +168,8 @@ namespace CETools.Civil3D
             double originalLength,
             Transaction transaction)
         {
-            if (source == null || newIds == null || newIds.Count != cuts.Count + 1)
+            if (source == null || newIds == null || cuts == null ||
+                newIds.Count != cuts.Count + 1)
                 return false;
 
             var intervals = new List<CoverageInterval>();
@@ -206,6 +258,29 @@ namespace CETools.Civil3D
         private static double DistanceTolerance(double length)
         {
             return Math.Max(0.00001, Math.Abs(length) * 0.00000001);
+        }
+
+        private static void CleanupPersisted(Database database, IEnumerable<ObjectId> ids)
+        {
+            if (database == null || ids == null) return;
+            try
+            {
+                using (Transaction transaction = database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in ids)
+                    {
+                        if (id.IsNull || id.IsErased) continue;
+                        try
+                        {
+                            Entity entity = transaction.GetObject(id, OpenMode.ForWrite, false) as Entity;
+                            if (entity != null && !entity.IsErased) entity.Erase();
+                        }
+                        catch { }
+                    }
+                    transaction.Commit();
+                }
+            }
+            catch { }
         }
 
         private static void DisposeUnowned(DBObjectCollection values)
