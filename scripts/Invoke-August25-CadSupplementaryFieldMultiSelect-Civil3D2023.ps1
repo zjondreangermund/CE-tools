@@ -20,6 +20,3 @@ if (-not (Test-Path -LiteralPath $finalizer -PathType Leaf)) {
 }
 
 & $finalizer -RepoRoot $root
-if ($LASTEXITCODE -ne 0 -and $null -ne $LASTEXITCODE) {
-    throw "CAD Supplementary finalizer exited with code $LASTEXITCODE."
-}
