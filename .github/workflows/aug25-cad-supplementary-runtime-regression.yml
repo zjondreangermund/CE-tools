@@ -13,6 +13,7 @@ on:
       - 'src/CE.Tools.Civil3D/CurveConversionCommands.cs'
       - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
       - 'scripts/Repair-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+      - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
       - 'Directory.Build.targets'
       - '.github/workflows/aug25-cad-supplementary-runtime-regression.yml'
   push:
@@ -51,7 +52,7 @@ jobs:
           Copy-Item scripts -Destination $stage -Recurse -Force
           Copy-Item tests -Destination $stage -Recurse -Force
           Copy-Item global.json -Destination $stage -Force
-          $repair = Join-Path $stage 'scripts\Repair-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+          $repair = Join-Path $stage 'scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
           & $repair -RepoRoot $stage
           & $repair -RepoRoot $stage
           "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
