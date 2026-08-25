@@ -1,0 +1,90 @@
+name: August 25 MultiDimension Staged Anchor Regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+      - 'scripts/Repair-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - '.github/workflows/aug25-multidim-staged-anchor-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+      - 'scripts/Repair-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - '.github/workflows/aug25-multidim-staged-anchor-regression.yml'
+
+jobs:
+  staged-multidim:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Reproduce August19 staged AddDimension rewrite
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-multidim-staged-anchor'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item src -Destination $stage -Recurse -Force
+          Copy-Item scripts -Destination $stage -Recurse -Force
+          Copy-Item tests -Destination $stage -Recurse -Force
+          Copy-Item global.json -Destination $stage -Force
+
+          $path = Join-Path $stage 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path)
+          $exact = '            try { dimension.SetFromStyle(); } catch { PaperAnnotationScale.SetAnnotative(dimension); }'
+          if ($text.Contains($exact)) {
+            $alternate = "            try`r`n            {`r`n                dimension.SetFromStyle();`r`n            }`r`n            catch`r`n            {`r`n                PaperAnnotationScale.SetAnnotative(dimension);`r`n            }"
+            $text = $text.Replace($exact,$alternate)
+          }
+          $text = $text.Replace("            // Drawing geometry is in metres; display linear values as millimetres per dimension.`r`n            dimension.Dimlfac = 1000.0;`r`n",'')
+          [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
+
+          $after = [System.IO.File]::ReadAllText($path)
+          if ($after.Contains($exact)) { throw 'Regression setup failed: historical exact Dimlfac anchor still present.' }
+          if ($after.Contains('dimension.Dimlfac = 1000.0;')) { throw 'Regression setup failed: Dimlfac was not removed.' }
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Run real final wrapper twice
+        shell: pwsh
+        run: |
+          $wrapper = Join-Path $env:STAGE 'scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+          & $wrapper -RepoRoot $env:STAGE
+          & $wrapper -RepoRoot $env:STAGE
+
+      - name: Verify semantic millimetre insertion is method scoped and idempotent
+        shell: pwsh
+        run: |
+          $path = Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
+          $text = [System.IO.File]::ReadAllText($path)
+          $marker = 'private static void AddDimension('
+          $start = $text.IndexOf($marker,[StringComparison]::Ordinal)
+          if ($start -lt 0) { throw 'AddDimension missing after finalizer.' }
+          $open = $text.IndexOf('{',$start)
+          $depth = 0; $close = -1
+          for ($i=$open; $i -lt $text.Length; $i++) {
+            if ($text[$i] -eq '{') { $depth++ }
+            elseif ($text[$i] -eq '}') { $depth--; if ($depth -eq 0) { $close=$i; break } }
+          }
+          if ($close -lt 0) { throw 'AddDimension method boundary missing.' }
+          $method = $text.Substring($start,$close-$start+1)
+          $count = ([regex]::Matches($method,[regex]::Escape('dimension.Dimlfac = 1000.0;'))).Count
+          if ($count -ne 1) { throw "Expected exactly one method-scoped Dimlfac assignment, found $count." }
+          if (-not $method.Contains('created++;')) { throw 'AddDimension created++ was lost.' }
+          if (-not $text.Contains('Line sourceLine = entity as Line;')) { throw 'Line source support was not preserved.' }
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
