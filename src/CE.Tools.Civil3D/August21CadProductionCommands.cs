@@ -26,7 +26,6 @@ namespace CETools.Civil3D
                 "General CAD production, annotation, background preparation, cleanup, XREF, hatch and supplementary field production on one page.",
                 new List<DisciplineWorkflowAction>
                 {
-                    A("CE-Bellmouth Densifier", "CE_BMINVERT", "Densify bellmouth/road geometry.", "01 GENERAL PRODUCTION"),
                     A("CE-Fast Block Edit", "CE_BLOCKEDITFAST", "Open the fast block-edit workflow.", "01 GENERAL PRODUCTION"),
                     A("CE-Select Polylines Shorter Than Length", "CE_SELECTPOLYSHORTER", "Select current-space polylines shorter than a specified length.", "01 GENERAL PRODUCTION"),
                     A("CE-Select Polylines With Same Length", "CE_SELECTPOLYSAMELENGTH", "Select polylines matching a reference length.", "01 GENERAL PRODUCTION"),
@@ -56,7 +55,7 @@ namespace CETools.Civil3D
 
                     A("CE-Annotation Presentation", "CE_ROUTEANNOTATIONSTYLE", "Open annotation presentation controls.", "02 ANNOTATION PRODUCTION"),
                     A("CE-Freeze Dimensions", "CE_BGFREEZEDIMS", "Freeze dimensions for background preparation.", "02 ANNOTATION PRODUCTION"),
-                    A("CE-Multiple Dimensions", "CE_MULTIDIM", "Create multiple dimensions, including open-polyline chain dimensions.", "02 ANNOTATION PRODUCTION"),
+                    A("CE-Multiple Dimensions", "CE_MULTIDIM", "Create multiple dimensions for lines, open/closed polylines and feature lines.", "02 ANNOTATION PRODUCTION"),
                     A("CE-Annotation Draw Order", "CE_ANNOTATIONDRAWORDER", "Correct annotation draw order.", "02 ANNOTATION PRODUCTION"),
                     A("CE-Annotation Settings", "CE_ANNOTSETTINGS", "Configure CE annotation settings.", "02 ANNOTATION PRODUCTION"),
                     A("CE-MLeader Text Above Leader", "CE_MLEADERTEXTABOVE", "Place MLeader text above its leader.", "02 ANNOTATION PRODUCTION"),
@@ -77,10 +76,10 @@ namespace CETools.Civil3D
                     A("CE-Send Hatches Behind Linework", "CE_HATCHBACK", "Send hatches behind linework.", "06 HATCH PRODUCTION"),
 
                     A("CE-CAD Supplementary", "CE_CADSUPPLEMENTARY", "Open the recently added field geometry, slope, Site Grid, road, sewer and platform utilities.", "07 CE-CAD SUPPLEMENTARY"),
-                    A("CE-Close Multiple Open Polylines / Feature Lines", "CE_CLOSEOPENMULTI", "Close multiple selected open polylines or feature lines.", "07 CE-CAD SUPPLEMENTARY"),
-                    A("CE-Stretch Multiple Feature Lines", "CE_MULTISTRETCHFL", "Stretch multiple selected feature lines with native grip-aware STRETCH.", "07 CE-CAD SUPPLEMENTARY"),
-                    A("CE-Offset / Construction Offset", "CE_SURVEYCONSTRUCTIONOFFSET", "Normal or per-segment construction offsets with zero-fillet joins.", "07 CE-CAD SUPPLEMENTARY"),
-                    A("CE-Centre Construction Lines", "CE_SURVEYMIDCONSTRUCTION", "Create centre construction lines within a maximum separation.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Close Multiple Open Polylines / Feature Lines", "CE_CLOSEOPENMULTI", "Close each selected open polyline or feature line by connecting its own endpoints.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Stretch Multiple Feature Lines", "CE_MULTISTRETCHFL", "Stretch multiple selected feature lines with the CE multi-object feature-line stretch workflow.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Offset / Construction Offset", "CE_SURVEYCONSTRUCTIONOFFSET", "Offset lines, polylines or feature lines; construction mode creates zero-fillet joined construction routes.", "07 CE-CAD SUPPLEMENTARY"),
+                    A("CE-Centre Construction Lines", "CE_SURVEYMIDCONSTRUCTION", "Create simplified centre construction routes without redundant straight-section vertices.", "07 CE-CAD SUPPLEMENTARY"),
                     A("CE-Feature-Line Dynamic Slope Arrows", "CE_FEATURELINESLOPEARROWS", "Linked slope arrows and values for multiple feature lines.", "07 CE-CAD SUPPLEMENTARY"),
                     A("CE-Site Grid Presentation", "CE_SITEGRIDPRESENTATION", "Colour and annotative text controls for linked Site Grids.", "07 CE-CAD SUPPLEMENTARY"),
                     A("CE-Road Side Hatch", "CE_ROADHATCHSIDES", "Hatch road left/right/both sides from polylines or alignments.", "07 CE-CAD SUPPLEMENTARY")
