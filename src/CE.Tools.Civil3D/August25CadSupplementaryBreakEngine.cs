@@ -70,7 +70,7 @@ namespace CETools.Civil3D
             int expectedSegments = affected.Sum(plan => plan.Distances.Count + 1);
             if (!PopupTablePresenter.ShowReview(
                 "CE Tools - Non-Destructive Route Break Preview",
-                "Each source is replaced only after every first/intermediate/last span is verified. A failed source transaction is rolled back and its original polyline remains untouched.",
+                "All replacement spans for all affected selected polylines are created and verified first. Originals are erased together only after the complete batch is proven. Any failure keeps every original selected object.",
                 new List<KeyValuePair<string, string>>
                 {
                     Pair("Selected polylines", ids.Count),
@@ -78,35 +78,31 @@ namespace CETools.Civil3D
                     Pair("Polylines requiring a split", affected.Count),
                     Pair("Expected replacement segments", expectedSegments)
                 },
-                "Break and Verify"))
+                "Break and Verify Batch"))
                 return;
 
-            int replaced = 0;
-            int created = 0;
-            int preserved = 0;
-            foreach (August25BreakPlan plan in affected)
+            int replaced;
+            int created;
+            string failure;
+            if (!August26CadSupplementaryBreakReplacement.TryReplaceBatch(
+                    document.Database,
+                    affected,
+                    out replaced,
+                    out created,
+                    out failure))
             {
-                int createdForSource;
-                if (August25CadSupplementaryBreakReplacement.TryReplaceOneAtomic(
-                        document.Database,
-                        plan,
-                        out createdForSource))
-                {
-                    replaced++;
-                    created += createdForSource;
-                }
-                else
-                {
-                    preserved++;
-                }
+                August21DisplayRefresh.Flush(document);
+                document.Editor.WriteMessage(
+                    "\nCE_PLBREAKJUNCTIONS stopped safely. No original selected polylines were erased. {0}",
+                    string.IsNullOrWhiteSpace(failure) ? "The replacement batch could not be verified." : failure);
+                return;
             }
 
             August21DisplayRefresh.Flush(document);
             document.Editor.WriteMessage(
-                "\nCE_PLBREAKJUNCTIONS complete. Sources replaced={0}; verified segments created={1}; sources rolled back/preserved={2}; plan junctions={3}.",
+                "\nCE_PLBREAKJUNCTIONS complete. Sources replaced={0}; verified segments created={1}; plan junctions={2}. Batch replacement was all-or-none.",
                 replaced,
                 created,
-                preserved,
                 junctions);
         }
 
