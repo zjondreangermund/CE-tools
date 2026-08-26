@@ -1,0 +1,147 @@
+name: August 26 CAD Supplementary Geometry Safety
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/August26CadSupplementaryFieldRuntime.cs'
+      - 'src/CE.Tools.Civil3D/August26CadSupplementaryBreakReplacement.cs'
+      - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
+      - 'src/CE.Tools.Civil3D/August24FieldGeometryCommands.cs'
+      - 'scripts/Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - '.github/workflows/aug26-cad-supplementary-geometry-safety.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/August26CadSupplementaryFieldRuntime.cs'
+      - 'src/CE.Tools.Civil3D/August26CadSupplementaryBreakReplacement.cs'
+      - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
+      - 'src/CE.Tools.Civil3D/August24FieldGeometryCommands.cs'
+      - 'scripts/Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - '.github/workflows/aug26-cad-supplementary-geometry-safety.yml'
+
+jobs:
+  field-safety:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Verify final build ordering
+        shell: pwsh
+        run: |
+          $targets = [System.IO.File]::ReadAllText('Directory.Build.targets')
+          foreach ($token in @(
+            'CEApplyAugust26CadSupplementaryGeometrySafety',
+            'AfterTargets="CEApplyAugust25CadSupplementaryFieldMultiSelect"',
+            'Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1')) {
+            if (-not $targets.Contains($token)) { throw "August 26 final build marker missing: $token" }
+          }
+
+      - name: Stage historical finalizer then August 26 finalizer
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-aug26-cad-supplementary'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item src -Destination $stage -Recurse -Force
+          Copy-Item scripts -Destination $stage -Recurse -Force
+          Copy-Item tests -Destination $stage -Recurse -Force
+          Copy-Item global.json -Destination $stage -Force
+          & (Join-Path $stage 'scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1') -RepoRoot $stage
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify close/stretch/offset final routes
+        shell: pwsh
+        run: |
+          $geometry = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August24FieldGeometryCommands.cs'))
+          foreach ($token in @(
+            'August26CadSupplementaryFieldRuntime.CloseOpenMultiple(document);',
+            'August26CadSupplementaryFieldRuntime.StretchFeatureLines(document);',
+            'August26CadSupplementaryFieldRuntime.ConstructionOffsets(document);',
+            'August26CadSupplementaryFieldRuntime.MiddleConstructionLines(document);')) {
+            if (-not $geometry.Contains($token)) { throw "Final geometry route missing: $token" }
+          }
+
+      - name: Verify FeatureLine and construction behavior markers
+        shell: pwsh
+        run: |
+          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August26CadSupplementaryFieldRuntime.cs')
+          foreach ($token in @(
+            'FeatureLinePointType.PIPoint',
+            'featureLine.GetBulge(index)',
+            'temporary.Closed = true;',
+            'replacement.SetPointElevation',
+            'replacement.InsertElevationPoint',
+            'featureLine.GetGripPoints',
+            'featureLine.MoveGripPointsAt',
+            'featureLine.MoveStretchPointsAt',
+            'StretchResultIsLocal',
+            'MergeCollinearSections',
+            'JoinZeroFillet',
+            'new Line(segment.Start, segment.End)',
+            'construction LINE entities / zero-fillet',
+            'Construction LINE entities=')) {
+            if (-not $runtime.Contains($token)) { throw "August 26 field-runtime marker missing: $token" }
+          }
+          if ($runtime.Contains('CreatePlanPolyline(document.Database, offsetPoints')) {
+            throw 'Construction mode regressed to an ordinary output polyline.'
+          }
+
+      - name: Verify Break is all-or-none for multi-selection
+        shell: pwsh
+        run: |
+          $engine = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August25CadSupplementaryBreakEngine.cs')
+          if (-not $engine.Contains('August26CadSupplementaryBreakReplacement.TryReplaceBatch')) {
+            throw 'Break engine is not using August 26 batch replacement.'
+          }
+          $batch = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August26CadSupplementaryBreakReplacement.cs')
+          foreach ($token in @(
+            'Phase 1: create every candidate replacement',
+            'VerifyPersistedReplacement(database, source)',
+            'Phase 3: erase all originals in one transaction',
+            'CleanupPersisted(database, staged.SelectMany(item => item.NewIds))')) {
+            if (-not $batch.Contains($token)) { throw "Break batch safety marker missing: $token" }
+          }
+          $verify = $batch.IndexOf('foreach (StagedSource source in staged)',[StringComparison]::Ordinal)
+          $phase3 = $batch.IndexOf('Phase 3: erase all originals in one transaction',[StringComparison]::Ordinal)
+          $erase = $batch.IndexOf('original.Erase();',[StringComparison]::Ordinal)
+          if ($verify -lt 0 -or $phase3 -lt $verify -or $erase -lt $phase3) {
+            throw 'Original erase can occur before the complete staged batch verification.'
+          }
+
+      - name: Audit CAD Supplementary multi-select isolation
+        shell: pwsh
+        run: |
+          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August26CadSupplementaryFieldRuntime.cs')
+          if (([regex]::Matches($runtime,[regex]::Escape('selection.Value.GetObjectIds()')).Count) -lt 3) {
+            throw 'Expected close/stretch/offset multi-select loops are missing.'
+          }
+          # Close, FeatureLine stretch, construction offset and centre construction
+          # each isolate their mutations in their own source/pair transaction.
+          if (([regex]::Matches($runtime,[regex]::Escape('StartTransaction()')).Count) -lt 4) {
+            throw 'Per-object/per-pair transaction isolation markers are missing.'
+          }
+          $curve = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\CurveConversionCommands.cs'))
+          if (-not $curve.Contains('foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())')) {
+            throw 'Curve Convert multi-selection isolation regressed.'
+          }
+          $dimension = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'))
+          if (-not $dimension.Contains('foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())')) {
+            throw 'Multiple Dimensions no longer iterates the complete selected set.'
+          }
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
