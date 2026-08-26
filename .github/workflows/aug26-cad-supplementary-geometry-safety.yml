@@ -128,7 +128,9 @@ jobs:
           if (([regex]::Matches($runtime,[regex]::Escape('selection.Value.GetObjectIds()')).Count) -lt 3) {
             throw 'Expected close/stretch/offset multi-select loops are missing.'
           }
-          if (([regex]::Matches($runtime,[regex]::Escape('StartTransaction()')).Count) -lt 6) {
+          # Close, FeatureLine stretch, construction offset and centre construction
+          # each isolate their mutations in their own source/pair transaction.
+          if (([regex]::Matches($runtime,[regex]::Escape('StartTransaction()')).Count) -lt 4) {
             throw 'Per-object/per-pair transaction isolation markers are missing.'
           }
           $curve = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\CurveConversionCommands.cs'))
