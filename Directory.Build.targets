@@ -45,8 +45,6 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- Run after historical staging repairs so they cannot restore the August 25
-       multi-object failures in Convert, Break, FeatureLine stretch or offsets. -->
   <Target Name="CEApplyAugust25CadSupplementaryFieldMultiSelect"
           AfterTargets="CEApplyAugust24FloodProductionCulvertMenu"
           BeforeTargets="CoreCompile"
@@ -55,13 +53,22 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- Run absolutely last for the August 26 field comments. This overrides the
-       older staged geometry bodies after the August 25 finalizer has completed. -->
   <Target Name="CEApplyAugust26CadSupplementaryGeometrySafety"
           AfterTargets="CEApplyAugust25CadSupplementaryFieldMultiSelect"
           BeforeTargets="CoreCompile"
           Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
     <Message Text="Applying August 26 CAD Supplementary geometry/multi-select safety boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
+
+  <!-- Final August 27 presentation boundary: keep the new dynamic leader slopes,
+       linked annotative Site Grid and transaction-isolated road hatch after every
+       older historical repair has finished rewriting staged Civil 3D source. -->
+  <Target Name="CEApplyAugust27DynamicSlopeGridHatch"
+          AfterTargets="CEApplyAugust26CadSupplementaryGeometrySafety"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying August 27 dynamic slope/grid/road-hatch boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 </Project>
