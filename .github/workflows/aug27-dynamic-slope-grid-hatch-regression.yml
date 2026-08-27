@@ -1,0 +1,147 @@
+name: August 27 Dynamic Slope Grid Hatch
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/August27DynamicSlopeGridHatchCommands.cs'
+      - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
+      - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - 'src/CE.Tools.Civil3D/PluginEntry.cs'
+      - 'scripts/Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - '.github/workflows/aug27-dynamic-slope-grid-hatch-regression.yml'
+  push:
+    branches: [ main ]
+
+jobs:
+  dynamic-presentation:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Verify August 27 runs last
+        shell: pwsh
+        run: |
+          $targets = [System.IO.File]::ReadAllText('Directory.Build.targets')
+          foreach ($token in @(
+            'CEApplyAugust27DynamicSlopeGridHatch',
+            'AfterTargets="CEApplyAugust26CadSupplementaryGeometrySafety"',
+            'Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1')) {
+            if (-not $targets.Contains($token)) { throw "August 27 build-order marker missing: $token" }
+          }
+
+      - name: Stage historical boundaries then August 27
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-aug27-dynamic-presentation'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item src -Destination $stage -Recurse -Force
+          Copy-Item scripts -Destination $stage -Recurse -Force
+          Copy-Item tests -Destination $stage -Recurse -Force
+          Copy-Item global.json -Destination $stage -Force
+          & (Join-Path $stage 'scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1') -RepoRoot $stage
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify leader not polyline slope routes
+        shell: pwsh
+        run: |
+          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August27DynamicSlopeGridHatchCommands.cs')
+          foreach ($token in @(
+            'new Leader()',
+            'leader.HasArrowHead = true;',
+            'leader.AppendVertex(low);',
+            'PaperAnnotationScale.SetAnnotative(leader);',
+            'PaperAnnotationScale.SetAnnotative(text);',
+            'CE_AUG27_SLOPE_SOURCE',
+            'CE_AUG27_SLOPE_CHILD')) {
+            if (-not $runtime.Contains($token)) { throw "Leader slope marker missing: $token" }
+          }
+          if ($runtime.Contains('new Line(geometry.High, geometry.Low)')) {
+            throw 'August 27 runtime regressed to old line/polyline arrow geometry.'
+          }
+
+      - name: Verify automatic source and scale refresh
+        shell: pwsh
+        run: |
+          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August27DynamicSlopeGridHatchCommands.cs')
+          foreach ($token in @(
+            'Database.ObjectModified',
+            'document.CommandEnded',
+            'AcApplication.Idle',
+            'GetSystemVariable("CANNOSCALE")',
+            'RefreshChanged(document, dirty, scaleChanged)',
+            'FindElevationAtXY')) {
+            if (-not $runtime.Contains($token)) { throw "Dynamic refresh marker missing: $token" }
+          }
+          $plugin = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\PluginEntry.cs'))
+          foreach ($token in @('August27DynamicSlopeManager.Initialize();','August12SiteGridRuntimeManager.Initialize();')) {
+            if (-not $plugin.Contains($token)) { throw "Startup dynamic-manager marker missing: $token" }
+          }
+
+      - name: Verify Survey Production additions
+        shell: pwsh
+        run: |
+          $field = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs'))
+          foreach ($token in @(
+            '"CE_FEATURELINECROSSFALLARROWS"',
+            '"CE_CONNECTENDPOINTS"',
+            'August27DynamicSlopeGridHatchCommands.FeatureLineSlopeArrows(document);',
+            'August27DynamicSlopeGridHatchCommands.SurfaceSlopeArrows(document);')) {
+            if (-not $field.Contains($token)) { throw "Survey dynamic slope marker missing: $token" }
+          }
+          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August27DynamicSlopeGridHatchCommands.cs')
+          foreach ($token in @('[CommandMethod("CE_TOOLS", "CE_FEATURELINECROSSFALLARROWS"','[CommandMethod("CE_TOOLS", "CE_CONNECTENDPOINTS"','GetPointAtDist')) {
+            if (-not $runtime.Contains($token)) { throw "Survey command implementation marker missing: $token" }
+          }
+
+      - name: Verify Site Grid remains linked and annotative
+        shell: pwsh
+        run: |
+          $grid = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'))
+          foreach ($token in @(
+            'CE_SITE_GRID_PARENT',
+            'CE_SITE_GRID_CHILD',
+            'boundary.TransformBy(Matrix3d.Displacement(shift));',
+            'PaperAnnotationScale.SetAnnotative(label);',
+            'Database.ObjectModified',
+            'RefreshAll(')) {
+            if (-not $grid.Contains($token)) { throw "Dynamic Site Grid marker missing: $token" }
+          }
+
+      - name: Verify road hatch safety and dropdowns
+        shell: pwsh
+        run: |
+          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August27DynamicSlopeGridHatchCommands.cs')
+          foreach ($token in @(
+            'settings.AddChoice("Pattern"',
+            'settings.AddChoice("Colour"',
+            'ANSI31',
+            'SOLID',
+            'AR-CONC',
+            'GRAVEL',
+            'TryCreateHatchStrip(document, id',
+            'hatch.Associative = false;',
+            'hatch.EvaluateHatch(true);')) {
+            if (-not $runtime.Contains($token)) { throw "Road hatch safety marker missing: $token" }
+          }
+          $field = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs'))
+          if (-not $field.Contains('August27DynamicSlopeGridHatchCommands.RoadHatchSides(document);')) {
+            throw 'CE_ROADHATCHSIDES is not routed to the August 27 safe runtime.'
+          }
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
