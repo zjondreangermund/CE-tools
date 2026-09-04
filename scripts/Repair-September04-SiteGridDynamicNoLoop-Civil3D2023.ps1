@@ -224,10 +224,13 @@ foreach ($token in @('ParentKey', 'ChildKey', 'August12SiteGridRuntimeManager.In
     if (-not $siteGrid.Contains($token)) { throw "Dedicated Site Grid dynamic guard missing: $token" }
 }
 
-$recursiveCommandFiles = Get-ChildItem -LiteralPath $src -Filter '*.cs' -File | Where-Object {
+# Force array semantics under Set-StrictMode. PowerShell unwraps a single
+# pipeline result to a scalar FileInfo, which has no Count property in Windows
+# PowerShell 5.1; @(...).Count is safe for zero, one, or many matching files.
+$recursiveCommandFiles = @(Get-ChildItem -LiteralPath $src -Filter '*.cs' -File | Where-Object {
     $text = ReadText $_.FullName
     $text -match '(?is)SendStringToExecute\s*\([^;]{0,500}CE_DYNAMICREFRESHALL'
-}
+})
 if ($recursiveCommandFiles.Count -gt 0) {
     throw ('Automatic CE_DYNAMICREFRESHALL command dispatch remains in: ' + (($recursiveCommandFiles | Select-Object -ExpandProperty Name) -join ', '))
 }
