@@ -75,17 +75,18 @@ function EnsureBeforeLastTokenInMethod(
 # -----------------------------------------------------------------------------
 $universalPath = Required 'UniversalDynamicRefreshCommands.cs'
 $universal = ReadText $universalPath
+$gridRefreshStatement = @'
+try { August18DynamicGridSettingOutCommands.RefreshAll(document); }
+catch { result.Warnings++; }
+'@
 $universal = EnsureBeforeLastTokenInMethod `
     $universal `
     '        private static UniversalRefreshResult RefreshNow(' `
-    '                _pending = false;' `
-    @'
-try { August18DynamicGridSettingOutCommands.RefreshAll(document); }
-catch { result.Warnings++; }
-'@ `
+    '_pending = false;' `
+    $gridRefreshStatement `
     'August18DynamicGridSettingOutCommands.RefreshAll(document);'
 
-$universal = ReplaceMethodBody $universal '        private static void OnCommandEnded(' @'
+$commandEndedBody = @'
             if (_busy || e == null) return;
             string command = NormalizeCommand(e.GlobalCommandName);
             if (IsUndoRedo(command))
@@ -120,6 +121,7 @@ $universal = ReplaceMethodBody $universal '        private static void OnCommand
                 command.IndexOf("STRETCH", StringComparison.OrdinalIgnoreCase) >= 0)
                 Queue();
 '@
+$universal = ReplaceMethodBody $universal '        private static void OnCommandEnded(' $commandEndedBody
 WriteText $universalPath $universal
 
 # -----------------------------------------------------------------------------
@@ -128,9 +130,10 @@ WriteText $universalPath $universal
 # -----------------------------------------------------------------------------
 $breakPath = Required 'August25CadSupplementaryBreakEngine.cs'
 $break = ReadText $breakPath
-$break = ReplaceMethodBody $break '        internal static void Run(Document document)' @'
+$breakBody = @'
             September04GridBreakStabilityRuntime.BreakPolylinesAtJunctions(document);
 '@
+$break = ReplaceMethodBody $break '        internal static void Run(Document document)' $breakBody
 WriteText $breakPath $break
 
 # -----------------------------------------------------------------------------
