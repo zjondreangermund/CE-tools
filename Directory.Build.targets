@@ -71,4 +71,15 @@
     <Message Text="Applying August 27 dynamic slope/grid/road-hatch boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
+
+  <!-- Final September 04 field correction: construction geometry must be true
+       AutoCAD XLINE entities, and breaking routes at X/T junctions must keep the
+       selected source polylines rather than erase/replace them. -->
+  <Target Name="CEApplySeptember04ConstructionXlineBreakJunctions"
+          AfterTargets="CEApplyAugust27DynamicSlopeGridHatch"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying September 04 construction XLINE and polyline-junction break boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-ConstructionXlineBreakJunctions-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
 </Project>
