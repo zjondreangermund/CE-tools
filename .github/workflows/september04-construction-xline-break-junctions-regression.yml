@@ -1,0 +1,112 @@
+name: September 04 Construction XLINE Break Junctions
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/September04CadSupplementaryRuntime.cs'
+      - 'src/CE.Tools.Civil3D/August24FieldGeometryCommands.cs'
+      - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
+      - 'scripts/Repair-September04-ConstructionXlineBreakJunctions-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - '.github/workflows/september04-construction-xline-break-junctions-regression.yml'
+  push:
+    branches: [ main ]
+
+jobs:
+  construction-break-safety:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Verify September 04 runs last
+        shell: pwsh
+        run: |
+          $targets = [System.IO.File]::ReadAllText('Directory.Build.targets')
+          foreach ($token in @(
+            'CEApplySeptember04ConstructionXlineBreakJunctions',
+            'AfterTargets="CEApplyAugust27DynamicSlopeGridHatch"',
+            'Repair-September04-ConstructionXlineBreakJunctions-Civil3D2023.ps1')) {
+            if (-not $targets.Contains($token)) { throw "September 04 build-order marker missing: $token" }
+          }
+
+      - name: Stage historical boundaries then September 04
+        shell: pwsh
+        run: |
+          $ErrorActionPreference='Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-sep04-xline-break'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item src -Destination $stage -Recurse -Force
+          Copy-Item scripts -Destination $stage -Recurse -Force
+          Copy-Item tests -Destination $stage -Recurse -Force
+          Copy-Item global.json -Destination $stage -Force
+          & (Join-Path $stage 'scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September04-ConstructionXlineBreakJunctions-Civil3D2023.ps1') -RepoRoot $stage
+          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify construction output is true XLINE
+        shell: pwsh
+        run: |
+          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\September04CadSupplementaryRuntime.cs')
+          foreach ($token in @(
+            'new Xline()',
+            'xline.BasePoint =',
+            'xline.UnitDir =',
+            'Construction XLINE entities',
+            'True XLINE centre construction entities')) {
+            if (-not $runtime.Contains($token)) { throw "XLINE marker missing: $token" }
+          }
+          $field = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August24FieldGeometryCommands.cs'))
+          foreach ($token in @(
+            'September04CadSupplementaryRuntime.ConstructionOffsets(document);',
+            'September04CadSupplementaryRuntime.MiddleConstructionLines(document);')) {
+            if (-not $field.Contains($token)) { throw "Final construction route missing: $token" }
+          }
+
+      - name: Verify T and X junction analysis
+        shell: pwsh
+        run: |
+          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\September04CadSupplementaryRuntime.cs')
+          foreach ($token in @(
+            'CollectNativeIntersections',
+            'CollectPlanStraightIntersections',
+            'CollectEndpointTJunctions',
+            'TryPlanSegmentIntersection',
+            'AddPlanCut')) {
+            if (-not $runtime.Contains($token)) { throw "Junction analysis marker missing: $token" }
+          }
+
+      - name: Verify break keeps source polylines
+        shell: pwsh
+        run: |
+          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\September04CadSupplementaryRuntime.cs')
+          foreach ($token in @(
+            'source.GetSplitCurves(splitPoints)',
+            'ReplacePolylineGeometry(source, pieces[0]);',
+            'owner.AppendEntity(piece);',
+            'Original source handles were kept',
+            'LWPOLYLINE')) {
+            if (-not $runtime.Contains($token)) { throw "Keep-polyline marker missing: $token" }
+          }
+          if ($runtime.Contains('source.Erase()') -or $runtime.Contains('target.Erase()')) {
+            throw 'September 04 break runtime must not erase the source polyline.'
+          }
+          $break = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August25CadSupplementaryBreakEngine.cs'))
+          if (-not $break.Contains('September04CadSupplementaryRuntime.BreakPolylinesAtJunctions(document);')) {
+            throw 'CE_PLBREAKJUNCTIONS is not routed to the September 04 keep-polyline runtime.'
+          }
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
