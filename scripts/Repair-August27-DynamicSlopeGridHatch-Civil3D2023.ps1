@@ -30,6 +30,41 @@ function ReplaceMethodBody([string]$text,[string]$marker,[string]$body) {
     if ($close -lt 0) { throw "Closing brace missing: $marker" }
     return $text.Substring(0,$open+1) + "`r`n" + ($body -replace "`r?`n","`r`n").Trim("`r","`n") + "`r`n        " + $text.Substring($close)
 }
+function EnsureStatementBeforeReturnInMethod(
+    [string]$text,
+    [string]$methodMarker,
+    [string]$returnMarker,
+    [string]$statement) {
+    $start = $text.IndexOf($methodMarker,[StringComparison]::Ordinal)
+    if ($start -lt 0) { throw "Method marker missing: $methodMarker" }
+    $open = $text.IndexOf('{',$start)
+    if ($open -lt 0) { throw "Opening brace missing: $methodMarker" }
+    $depth = 0; $close = -1
+    for ($i=$open; $i -lt $text.Length; $i++) {
+        if ($text[$i] -eq '{') { $depth++ }
+        elseif ($text[$i] -eq '}') {
+            $depth--
+            if ($depth -eq 0) { $close=$i; break }
+        }
+    }
+    if ($close -lt 0) { throw "Closing brace missing: $methodMarker" }
+
+    $methodText = $text.Substring($open+1,$close-$open-1)
+    if ($methodText.Contains($statement)) { return $text }
+
+    $returnOffset = $methodText.LastIndexOf($returnMarker,[StringComparison]::Ordinal)
+    if ($returnOffset -lt 0) { throw "Return marker missing inside $methodMarker : $returnMarker" }
+    $returnAbsolute = $open + 1 + $returnOffset
+    $lineStart = $text.LastIndexOf("`n",$returnAbsolute)
+    if ($lineStart -lt 0) { $lineStart = $open } else { $lineStart++ }
+    $indentLength = 0
+    while ($lineStart + $indentLength -lt $text.Length -and
+           ($text[$lineStart + $indentLength] -eq ' ' -or $text[$lineStart + $indentLength] -eq "`t")) {
+        $indentLength++
+    }
+    $indent = $text.Substring($lineStart,$indentLength)
+    return $text.Insert($lineStart,$indent + $statement + "`r`n")
+}
 
 # Route the three existing public menu commands to the August 27 field runtime.
 $fieldPath = Path 'August24FieldCompletionCommands.cs'
@@ -61,16 +96,16 @@ if (-not $field.Contains('"CE_FEATURELINECROSSFALLARROWS"')) {
 }
 WriteFile $fieldPath $field
 
-# Site-grid labels: the grid was already boundary-linked and deferred-refresh safe;
-# make every rebuilt coordinate label genuinely annotative as well.
+# Site-grid labels: historical staging passes can reformat/rebuild CreateLabel, so
+# insert the annotative call semantically inside the method instead of depending
+# on one exact three-line text anchor.
 $gridPath = Path 'August12SurveySiteGridCommands.cs'
 $grid = Read $gridPath
-$labelAnchor = "            label.Attachment = AttachmentPoint.MiddleCenter;`r`n            label.Rotation = rotation;`r`n            return label;"
-$labelReplacement = "            label.Attachment = AttachmentPoint.MiddleCenter;`r`n            label.Rotation = rotation;`r`n            PaperAnnotationScale.SetAnnotative(label);`r`n            return label;"
-if (-not $grid.Contains('PaperAnnotationScale.SetAnnotative(label);')) {
-    if (-not $grid.Contains($labelAnchor)) { throw 'Site Grid annotative-label anchor missing.' }
-    $grid = $grid.Replace($labelAnchor,$labelReplacement)
-}
+$grid = EnsureStatementBeforeReturnInMethod \
+    $grid \
+    '        private static MText CreateLabel(' \
+    'return label;' \
+    'PaperAnnotationScale.SetAnnotative(label);'
 WriteFile $gridPath $grid
 
 # Initialize both dynamic managers at plugin startup so existing linked drawings
