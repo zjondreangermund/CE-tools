@@ -1,0 +1,61 @@
+name: September 04 Site Grid Dynamic Refresh Regression
+
+on:
+  pull_request:
+    paths:
+      - 'src/CE.Tools.Core/DynamicRefreshGate.cs'
+      - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - 'scripts/Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - 'tests/CE.Tools.DynamicRefresh.Tests/**'
+      - '.github/workflows/sep04-site-grid-dynamic-refresh-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Core/DynamicRefreshGate.cs'
+      - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - 'scripts/Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - 'tests/CE.Tools.DynamicRefresh.Tests/**'
+      - '.github/workflows/sep04-site-grid-dynamic-refresh-regression.yml'
+
+jobs:
+  site-grid-dynamic-refresh:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run no-loop and boundary-move scheduling tests
+        shell: pwsh
+        run: dotnet run --project tests/CE.Tools.DynamicRefresh.Tests/CE.Tools.DynamicRefresh.Tests.csproj --configuration Release
+
+      - name: Apply final Civil 3D 2023 Site Grid no-loop boundary
+        shell: powershell
+        run: .\scripts\Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1 -RepoRoot .
+
+      - name: Verify final staged refresh behavior
+        shell: pwsh
+        run: |
+          $universal = Get-Content -Raw src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs
+          $grid = Get-Content -Raw src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs
+          $siteGrid = Get-Content -Raw src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs
+          $targets = Get-Content -Raw Directory.Build.targets
+          if ($universal.Contains('command.StartsWith("CE_"')) { throw 'Broad CE_* command scheduling remains.' }
+          if (-not $universal.Contains('_suppressQueueUntilUtc')) { throw 'Post-refresh suppression window missing.' }
+          if (-not $universal.Contains('RefreshNow(active, true);')) { throw 'Idle must refresh internally.' }
+          if (($universal.Split('August18DynamicGridSettingOutCommands.RefreshAll(document);').Count - 1) -ne 1) { throw 'Grid Setting-Out refresh must run exactly once per pass.' }
+          if (-not $grid.Contains('SourceHandles') -or -not $grid.Contains('RefreshOne(')) { throw 'Linked source refresh path missing.' }
+          if (-not $siteGrid.Contains('August12SiteGridRuntimeManager.Initialize();')) { throw 'Dedicated Site Grid dynamic manager missing.' }
+          if (-not $targets.Contains('AfterTargets="CEApplySeptember04VerifiedJunctionBreak"')) { throw 'Site Grid no-loop target is not last.' }
+
+      - name: Parse final staged C# source
+        shell: pwsh
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj --configuration Release
