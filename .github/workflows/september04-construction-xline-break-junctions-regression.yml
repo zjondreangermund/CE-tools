@@ -12,7 +12,7 @@ on:
       - 'Directory.Build.targets'
       - '.github/workflows/september04-construction-xline-break-junctions-regression.yml'
   push:
-    branches: [ main, 'fix/sep4-construction-xline-break-junctions' ]
+    branches: [ main ]
 
 jobs:
   construction-break-safety:
