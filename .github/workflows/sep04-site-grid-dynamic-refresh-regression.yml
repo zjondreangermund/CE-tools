@@ -7,6 +7,8 @@ on:
       - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
       - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
       - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - 'scripts/Repair-September04-GridRefreshAndBreakStability-Civil3D2023.ps1'
+      - 'scripts/Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1'
       - 'scripts/Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1'
       - 'Directory.Build.targets'
       - 'tests/CE.Tools.DynamicRefresh.Tests/**'
@@ -18,6 +20,8 @@ on:
       - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
       - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
       - 'src/CE.Tools.Civil3D/August12SurveySiteGridCommands.cs'
+      - 'scripts/Repair-September04-GridRefreshAndBreakStability-Civil3D2023.ps1'
+      - 'scripts/Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1'
       - 'scripts/Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1'
       - 'Directory.Build.targets'
       - 'tests/CE.Tools.DynamicRefresh.Tests/**'
@@ -37,6 +41,12 @@ jobs:
         shell: pwsh
         run: dotnet run --project tests/CE.Tools.DynamicRefresh.Tests/CE.Tools.DynamicRefresh.Tests.csproj --configuration Release
 
+      - name: Reproduce preceding September 04 staged finalizers
+        shell: powershell
+        run: |
+          .\scripts\Repair-September04-GridRefreshAndBreakStability-Civil3D2023.ps1 -RepoRoot .
+          .\scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1 -RepoRoot .
+
       - name: Apply final Civil 3D 2023 Site Grid no-loop boundary
         shell: powershell
         run: .\scripts\Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1 -RepoRoot .
@@ -51,7 +61,15 @@ jobs:
           if ($universal.Contains('command.StartsWith("CE_"')) { throw 'Broad CE_* command scheduling remains.' }
           if (-not $universal.Contains('_suppressQueueUntilUtc')) { throw 'Post-refresh suppression window missing.' }
           if (-not $universal.Contains('RefreshNow(active, true);')) { throw 'Idle must refresh internally.' }
-          if (($universal.Split('August18DynamicGridSettingOutCommands.RefreshAll(document);').Count - 1) -ne 1) { throw 'Grid Setting-Out refresh must run exactly once per pass.' }
+
+          $refreshStart = $universal.IndexOf('private static UniversalRefreshResult RefreshNow(')
+          $refreshEnd = $universal.IndexOf('private static void OnDocumentActivated', $refreshStart)
+          if ($refreshStart -lt 0 -or $refreshEnd -le $refreshStart) { throw 'Private RefreshNow method bounds not found.' }
+          $refreshMethod = $universal.Substring($refreshStart, $refreshEnd - $refreshStart)
+          if (($refreshMethod.Split('August18DynamicGridSettingOutCommands.RefreshAll(document);').Count - 1) -ne 1) {
+            throw 'Grid Setting-Out refresh must run exactly once inside the universal RefreshNow pass.'
+          }
+
           if (-not $grid.Contains('SourceHandles') -or -not $grid.Contains('RefreshOne(')) { throw 'Linked source refresh path missing.' }
           if (-not $siteGrid.Contains('August12SiteGridRuntimeManager.Initialize();')) { throw 'Dedicated Site Grid dynamic manager missing.' }
           if (-not $targets.Contains('AfterTargets="CEApplySeptember04VerifiedJunctionBreak"')) { throw 'Site Grid no-loop target is not last.' }
