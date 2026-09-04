@@ -1,0 +1,56 @@
+name: September 04 Verified Junction Break Regression
+
+on:
+  pull_request:
+    paths:
+      - 'src/CE.Tools.Core/PlanJunctionPlanner.cs'
+      - 'src/CE.Tools.Civil3D/September04VerifiedJunctionBreakRuntime.cs'
+      - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
+      - 'scripts/Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - 'tests/CE.Tools.PlanJunction.Tests/**'
+      - '.github/workflows/sep04-verified-junction-break-regression.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Core/PlanJunctionPlanner.cs'
+      - 'src/CE.Tools.Civil3D/September04VerifiedJunctionBreakRuntime.cs'
+      - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
+      - 'scripts/Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - 'tests/CE.Tools.PlanJunction.Tests/**'
+      - '.github/workflows/sep04-verified-junction-break-regression.yml'
+
+jobs:
+  verified-junction-break:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run screenshot-style crossing and T-junction geometry tests
+        shell: pwsh
+        run: dotnet run --project tests/CE.Tools.PlanJunction.Tests/CE.Tools.PlanJunction.Tests.csproj --configuration Release
+
+      - name: Apply final Civil 3D 2023 verified-junction boundary
+        shell: powershell
+        run: .\scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1 -RepoRoot .
+
+      - name: Verify tracked and staged command route
+        shell: pwsh
+        run: |
+          $engine = Get-Content -Raw src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs
+          $runtime = Get-Content -Raw src/CE.Tools.Civil3D/September04VerifiedJunctionBreakRuntime.cs
+          $targets = Get-Content -Raw Directory.Build.targets
+          if (-not $engine.Contains('September04VerifiedJunctionBreakRuntime.BreakPolylinesAtJunctions(document);')) { throw 'Verified runtime is not the final command route.' }
+          if (-not $runtime.Contains('PlanJunctionPlanner.Build(')) { throw 'CAD-independent plan planner is missing.' }
+          if (-not $runtime.Contains('August25StraightPolylineSplitter.TryBuild(')) { throw 'Deterministic straight polyline splitter is missing.' }
+          if ($runtime.Contains('.Erase(')) { throw 'Keep-source runtime contains an erase route.' }
+          if (-not $targets.Contains('AfterTargets="CEApplySeptember04GridRefreshBreakStability"')) { throw 'Verified T/X target is not last in the field chain.' }
+
+      - name: Parse final staged C# source
+        shell: pwsh
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj --configuration Release
