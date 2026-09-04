@@ -104,4 +104,15 @@
     <Message Text="Applying tested September 04 T/X junction break boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
+
+  <!-- Absolute last refresh boundary. The Site Grid field build reproduced a
+       CE_DYNAMICREFRESHALL feedback loop; this pass keeps boundary-linked grid
+       updates while suppressing CE's own post-refresh object/REGEN events. -->
+  <Target Name="CEApplySeptember04SiteGridDynamicNoLoop"
+          AfterTargets="CEApplySeptember04VerifiedJunctionBreak"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying September 04 Site Grid dynamic/no-loop boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
 </Project>
