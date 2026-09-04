@@ -65,6 +65,41 @@ function EnsureStatementBeforeReturnInMethod(
     $indent = $text.Substring($lineStart,$indentLength)
     return $text.Insert($lineStart,$indent + $statement + "`r`n")
 }
+function EnsureStatementBeforeMarkerInMethod(
+    [string]$text,
+    [string]$methodMarker,
+    [string]$beforeMarker,
+    [string]$statement) {
+    $start = $text.IndexOf($methodMarker,[StringComparison]::Ordinal)
+    if ($start -lt 0) { throw "Method marker missing: $methodMarker" }
+    $open = $text.IndexOf('{',$start)
+    if ($open -lt 0) { throw "Opening brace missing: $methodMarker" }
+    $depth = 0; $close = -1
+    for ($i=$open; $i -lt $text.Length; $i++) {
+        if ($text[$i] -eq '{') { $depth++ }
+        elseif ($text[$i] -eq '}') {
+            $depth--
+            if ($depth -eq 0) { $close=$i; break }
+        }
+    }
+    if ($close -lt 0) { throw "Closing brace missing: $methodMarker" }
+
+    $methodText = $text.Substring($open+1,$close-$open-1)
+    if ($methodText.Contains($statement)) { return $text }
+
+    $beforeOffset = $methodText.IndexOf($beforeMarker,[StringComparison]::Ordinal)
+    if ($beforeOffset -lt 0) { throw "Insertion marker missing inside $methodMarker : $beforeMarker" }
+    $beforeAbsolute = $open + 1 + $beforeOffset
+    $lineStart = $text.LastIndexOf("`n",$beforeAbsolute)
+    if ($lineStart -lt 0) { $lineStart = $open + 1 } else { $lineStart++ }
+    $indentLength = 0
+    while ($lineStart + $indentLength -lt $text.Length -and
+           ($text[$lineStart + $indentLength] -eq ' ' -or $text[$lineStart + $indentLength] -eq "`t")) {
+        $indentLength++
+    }
+    $indent = $text.Substring($lineStart,$indentLength)
+    return $text.Insert($lineStart,$indent + $statement + "`r`n")
+}
 
 # Route the three existing public menu commands to the August 27 field runtime.
 $fieldPath = Path 'August24FieldCompletionCommands.cs'
@@ -104,22 +139,15 @@ $grid = Read $gridPath
 $grid = EnsureStatementBeforeReturnInMethod $grid 'private static MText CreateLabel(' 'return label;' 'PaperAnnotationScale.SetAnnotative(label);'
 WriteFile $gridPath $grid
 
-# Initialize both dynamic managers at plugin startup so existing linked drawings
-# continue updating after reopening Civil 3D, without first rerunning the commands.
+# Historical staging passes can add startup/shutdown calls between the original
+# PluginEntry statements. Insert both dynamic managers semantically inside the
+# actual Initialize/Terminate methods instead of requiring adjacent text anchors.
 $pluginPath = Path 'PluginEntry.cs'
 $plugin = Read $pluginPath
-$initAnchor = "            UniversalDynamicRefreshManager.Initialize();`r`n            AcApplication.Idle += OnApplicationIdle;"
-$initReplacement = "            UniversalDynamicRefreshManager.Initialize();`r`n            August12SiteGridRuntimeManager.Initialize();`r`n            August27DynamicSlopeManager.Initialize();`r`n            AcApplication.Idle += OnApplicationIdle;"
-if (-not $plugin.Contains('August27DynamicSlopeManager.Initialize();')) {
-    if (-not $plugin.Contains($initAnchor)) { throw 'Plugin Initialize insertion anchor missing.' }
-    $plugin = $plugin.Replace($initAnchor,$initReplacement)
-}
-$termAnchor = "            AcApplication.Idle -= OnApplicationIdle;`r`n            UniversalDynamicRefreshManager.Terminate();"
-$termReplacement = "            AcApplication.Idle -= OnApplicationIdle;`r`n            August27DynamicSlopeManager.Terminate();`r`n            August12SiteGridRuntimeManager.Terminate();`r`n            UniversalDynamicRefreshManager.Terminate();"
-if (-not $plugin.Contains('August27DynamicSlopeManager.Terminate();')) {
-    if (-not $plugin.Contains($termAnchor)) { throw 'Plugin Terminate insertion anchor missing.' }
-    $plugin = $plugin.Replace($termAnchor,$termReplacement)
-}
+$plugin = EnsureStatementBeforeMarkerInMethod $plugin 'public void Initialize()' 'AcApplication.Idle += OnApplicationIdle;' 'August12SiteGridRuntimeManager.Initialize();'
+$plugin = EnsureStatementBeforeMarkerInMethod $plugin 'public void Initialize()' 'AcApplication.Idle += OnApplicationIdle;' 'August27DynamicSlopeManager.Initialize();'
+$plugin = EnsureStatementBeforeMarkerInMethod $plugin 'public void Terminate()' 'UniversalDynamicRefreshManager.Terminate();' 'August27DynamicSlopeManager.Terminate();'
+$plugin = EnsureStatementBeforeMarkerInMethod $plugin 'public void Terminate()' 'UniversalDynamicRefreshManager.Terminate();' 'August12SiteGridRuntimeManager.Terminate();'
 WriteFile $pluginPath $plugin
 
 # Strict final guards. Fail the build rather than silently shipping an older staged
@@ -149,7 +177,13 @@ foreach ($token in @(
     if (-not $runtime.Contains($token)) { throw "August 27 dynamic runtime marker missing: $token" }
 }
 if (-not $grid.Contains('PaperAnnotationScale.SetAnnotative(label);')) { throw 'Site Grid label annotative guard missing.' }
-if (-not $plugin.Contains('August12SiteGridRuntimeManager.Initialize();') -or -not $plugin.Contains('August27DynamicSlopeManager.Initialize();')) { throw 'Dynamic managers are not initialized at startup.' }
+foreach ($token in @(
+    'August12SiteGridRuntimeManager.Initialize();',
+    'August27DynamicSlopeManager.Initialize();',
+    'August27DynamicSlopeManager.Terminate();',
+    'August12SiteGridRuntimeManager.Terminate();')) {
+    if (-not $plugin.Contains($token)) { throw "Dynamic manager startup/shutdown guard missing: $token" }
+}
 
 Write-Host 'August 27 dynamic slope/grid/road-hatch finalization complete.' -ForegroundColor Green
 Write-Host 'Leader slopes, scale/elevation refresh, annotative Site Grid, safe hatch dropdowns and endpoint connector are on final field routes.' -ForegroundColor Green
