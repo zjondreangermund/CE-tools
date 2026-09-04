@@ -99,26 +99,46 @@ jobs:
             throw 'Construction mode regressed to an ordinary output polyline.'
           }
 
-      - name: Verify Break is all-or-none for multi-selection
+      - name: Verify Break uses a guarded current runtime
         shell: pwsh
         run: |
           $engine = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August25CadSupplementaryBreakEngine.cs')
-          if (-not $engine.Contains('August26CadSupplementaryBreakReplacement.TryReplaceBatch')) {
-            throw 'Break engine is not using August 26 batch replacement.'
+          $aug26 = $engine.Contains('August26CadSupplementaryBreakReplacement.TryReplaceBatch')
+          $sep04 = $engine.Contains('September04VerifiedJunctionBreakRuntime.BreakPolylinesAtJunctions(document);')
+          if (-not $aug26 -and -not $sep04) {
+            throw 'Break engine is not using a recognized guarded runtime.'
           }
-          $batch = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August26CadSupplementaryBreakReplacement.cs')
-          foreach ($token in @(
-            'Phase 1: create every candidate replacement',
-            'VerifyPersistedReplacement(database, source)',
-            'Phase 3: erase all originals in one transaction',
-            'CleanupPersisted(database, staged.SelectMany(item => item.NewIds))')) {
-            if (-not $batch.Contains($token)) { throw "Break batch safety marker missing: $token" }
+
+          if ($aug26) {
+            $batch = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August26CadSupplementaryBreakReplacement.cs')
+            foreach ($token in @(
+              'Phase 1: create every candidate replacement',
+              'VerifyPersistedReplacement(database, source)',
+              'Phase 3: erase all originals in one transaction',
+              'CleanupPersisted(database, staged.SelectMany(item => item.NewIds))')) {
+              if (-not $batch.Contains($token)) { throw "Break batch safety marker missing: $token" }
+            }
+            $verify = $batch.IndexOf('foreach (StagedSource source in staged)',[StringComparison]::Ordinal)
+            $phase3 = $batch.IndexOf('Phase 3: erase all originals in one transaction',[StringComparison]::Ordinal)
+            $erase = $batch.IndexOf('original.Erase();',[StringComparison]::Ordinal)
+            if ($verify -lt 0 -or $phase3 -lt $verify -or $erase -lt $phase3) {
+              throw 'Original erase can occur before the complete staged batch verification.'
+            }
           }
-          $verify = $batch.IndexOf('foreach (StagedSource source in staged)',[StringComparison]::Ordinal)
-          $phase3 = $batch.IndexOf('Phase 3: erase all originals in one transaction',[StringComparison]::Ordinal)
-          $erase = $batch.IndexOf('original.Erase();',[StringComparison]::Ordinal)
-          if ($verify -lt 0 -or $phase3 -lt $verify -or $erase -lt $phase3) {
-            throw 'Original erase can occur before the complete staged batch verification.'
+
+          if ($sep04) {
+            $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\September04VerifiedJunctionBreakRuntime.cs')
+            foreach ($token in @(
+              'PlanJunctionPlanner.Build(',
+              'SplitLineAndKeepSource(',
+              'SplitPolylineAndKeepSource(',
+              'Original source handles were kept',
+              'LWPOLYLINE,LINE')) {
+              if (-not $runtime.Contains($token)) { throw "September 04 Break marker missing: $token" }
+            }
+            if ($runtime.Contains('.Erase(')) {
+              throw 'September 04 verified Break runtime must not erase selected source entities.'
+            }
           }
 
       - name: Audit CAD Supplementary multi-select isolation
