@@ -83,14 +83,25 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-ConstructionXlineBreakJunctions-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- Last field boundary: stop Universal Dynamic Refresh self-requeue, make the
-       Grid Setting-Out source-boundary link actually participate in automatic
-       refresh, and route T/X breaking to the non-erasing plan-XY runtime. -->
+  <!-- Stop Universal Dynamic Refresh self-requeue, make the Grid Setting-Out
+       source-boundary link participate in automatic refresh, and route T/X breaking
+       to the non-erasing plan-XY runtime. -->
   <Target Name="CEApplySeptember04GridRefreshBreakStability"
           AfterTargets="CEApplySeptember04ConstructionXlineBreakJunctions"
           BeforeTargets="CoreCompile"
           Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
     <Message Text="Applying September 04 dynamic-grid refresh and T/X break stability boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-GridRefreshAndBreakStability-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
+
+  <!-- Absolute last T/X boundary. The previous field build still reproduced missed
+       crossings/T-junctions, so this finalizer pins both tracked and staged builds to
+       the CAD-independent tested junction planner and keep-source splitter. -->
+  <Target Name="CEApplySeptember04VerifiedJunctionBreak"
+          AfterTargets="CEApplySeptember04GridRefreshBreakStability"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying tested September 04 T/X junction break boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 </Project>
