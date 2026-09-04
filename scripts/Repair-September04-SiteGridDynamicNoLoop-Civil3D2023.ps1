@@ -204,9 +204,19 @@ foreach ($token in @(
     'RefreshNow(active, true);')) {
     if (-not $universal.Contains($token)) { throw "Site Grid/no-loop universal guard missing: $token" }
 }
-if (($universal.Split('August18DynamicGridSettingOutCommands.RefreshAll(document);').Count - 1) -ne 1) {
-    throw 'Dynamic Grid Setting-Out must be refreshed exactly once per universal refresh pass.'
+
+# Only the private RefreshNow pass must contain exactly one Dynamic Grid refresh.
+# Earlier/later staged code may legitimately expose another explicit/manual refresh
+# route elsewhere in this file; counting the entire file caused a false build stop.
+$refreshBounds = MethodBounds $universal '        private static UniversalRefreshResult RefreshNow('
+$refreshBody = $universal.Substring($refreshBounds.Open+1,$refreshBounds.Close-$refreshBounds.Open-1)
+$gridRefreshCount = ([regex]::Matches(
+    $refreshBody,
+    [regex]::Escape('August18DynamicGridSettingOutCommands.RefreshAll(document);'))).Count
+if ($gridRefreshCount -ne 1) {
+    throw "Dynamic Grid Setting-Out must be refreshed exactly once inside Universal RefreshNow; found $gridRefreshCount."
 }
+
 foreach ($token in @('RefreshOne(', 'SourceHandles', 'PointHandles')) {
     if (-not $grid.Contains($token)) { throw "Dynamic Grid linked-source guard missing: $token" }
 }
