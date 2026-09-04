@@ -101,11 +101,7 @@ WriteFile $fieldPath $field
 # on one exact three-line text anchor.
 $gridPath = Path 'August12SurveySiteGridCommands.cs'
 $grid = Read $gridPath
-$grid = EnsureStatementBeforeReturnInMethod \
-    $grid \
-    '        private static MText CreateLabel(' \
-    'return label;' \
-    'PaperAnnotationScale.SetAnnotative(label);'
+$grid = EnsureStatementBeforeReturnInMethod $grid '        private static MText CreateLabel(' 'return label;' 'PaperAnnotationScale.SetAnnotative(label);'
 WriteFile $gridPath $grid
 
 # Initialize both dynamic managers at plugin startup so existing linked drawings
