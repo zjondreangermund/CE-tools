@@ -13,7 +13,7 @@ function Path([string]$name) {
     return $value
 }
 function Read([string]$path) { [System.IO.File]::ReadAllText($path) -replace "`r?`n", "`r`n" }
-function Write([string]$path,[string]$text) { [System.IO.File]::WriteAllText($path,($text -replace "`r?`n","`r`n"),$utf8) }
+function WriteFile([string]$path,[string]$text) { [System.IO.File]::WriteAllText($path,($text -replace "`r?`n","`r`n"),$utf8) }
 function ReplaceMethodBody([string]$text,[string]$marker,[string]$body) {
     $start = $text.IndexOf($marker,[StringComparison]::Ordinal)
     if ($start -lt 0) { throw "Method marker missing: $marker" }
@@ -50,7 +50,7 @@ $geometry = ReplaceMethodBody $geometry '        public void MiddleConstructionL
             if (document == null) return;
             August25CadSupplementaryFieldRuntime.MiddleConstructionLines(document);
 '@
-Write $geometryPath $geometry
+WriteFile $geometryPath $geometry
 
 # Curve conversion: isolate every selected source in its own transaction. Keep mode
 # never opens a source for write and Replace mode erases only after that source's
@@ -149,7 +149,7 @@ $curve = ReplaceMethodBody $curve '        public void ConvertCurves()' @'
                 "CE TOOLS CURVE CONVERSION REGISTER");
             document.Editor.WriteMessage("\nCE_CURVECONVERT complete. Converted={0}; skipped={1}; failed={2}.", converted, skipped, failed);
 '@
-Write $curvePath $curve
+WriteFile $curvePath $curve
 
 # Multiple Dimensions: Lines are first-class sources and all linear measurements are
 # displayed in millimetres without changing the user's source DimStyle globally.
@@ -226,7 +226,7 @@ if (-not $dimension.Contains('dimension.Dimlfac = 1000.0;')) {
     if (-not $dimension.Contains($dimAnchor)) { throw 'MultiDimension Dimlfac insertion anchor missing.' }
     $dimension = $dimension.Replace($dimAnchor,$dimReplacement)
 }
-Write $dimensionPath $dimension
+WriteFile $dimensionPath $dimension
 
 # Final guards: these are deliberately strict so an installer build fails before
 # compilation rather than silently shipping an older unsafe CAD Supplementary route.
