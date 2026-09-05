@@ -8,7 +8,8 @@ namespace CETools.Civil3D
     /// Registered command front doors for the September 05 field-geometry runtime.
     /// The final Civil 3D 2023 staging pass strips helper-class command attributes,
     /// so CE_CONNECTENDPOINTS remains registered only once by the August 27 command
-    /// class while CE_MULTIFILLET and CE_GRIDDIFFERENCE are exposed here.
+    /// class while CE_MULTIFILLET and CE_GRIDDIFFERENCE are exposed here. The staged
+    /// regression also runs the complete historical repair chain before this boundary.
     /// </summary>
     public sealed class September05FieldGeometryCommandFrontDoor
     {
