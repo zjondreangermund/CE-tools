@@ -69,6 +69,7 @@ jobs:
           New-Item -ItemType Directory -Force -Path $stage | Out-Null
           Copy-Item src -Destination $stage -Recurse -Force
           Copy-Item scripts -Destination $stage -Recurse -Force
+          Copy-Item Directory.Build.targets -Destination $stage -Force
           & (Join-Path $stage 'scripts\Inject-August11FieldCompletion-Civil3D2023.ps1') -RepoRoot $stage
           & (Join-Path $stage 'scripts\Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1') -RepoRoot $stage
 
