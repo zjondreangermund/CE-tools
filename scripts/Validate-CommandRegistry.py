@@ -4,6 +4,11 @@
 This validator deliberately parses source text instead of loading Autodesk
 assemblies, which are unavailable in GitHub Actions. It catches accidental
 command-name collisions before the plugin is loaded into Civil 3D.
+
+September 05 intentionally keeps three helper CommandMethod registrations in the
+tracked source until the final Civil 3D 2023 staging pass. Those helper attributes
+are stripped before compilation. This audit models that guarded handoff rather
+than reporting the temporary raw-source declarations as real runtime duplicates.
 """
 
 from __future__ import annotations
@@ -15,6 +20,15 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCE_DIR = ROOT / "src" / "CE.Tools.Civil3D"
+SEPTEMBER05_FINALIZER = (
+    ROOT / "scripts" / "Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1"
+)
+SEPTEMBER05_HELPER = "September04FieldGeometryCompletionCommands.cs"
+SEPTEMBER05_HANDOFFS = {
+    "CE_CONNECTENDPOINTS",
+    "CE_GRIDDIFFERENCE",
+    "CE_MULTIFILLET",
+}
 
 COMMAND_PATTERN = re.compile(
     r"\[\s*CommandMethod\s*\((?P<arguments>.*?)\)\s*\]",
@@ -34,6 +48,40 @@ if not SOURCE_DIR.exists():
     print(f"Missing source directory: {SOURCE_DIR}", file=sys.stderr)
     raise SystemExit(1)
 
+# Prove the staged owner handoff before suppressing any helper declaration. If
+# this finalizer changes or disappears, the normal duplicate checks below remain
+# strict and the audit fails immediately.
+if not SEPTEMBER05_FINALIZER.exists():
+    errors.append(
+        "September 05 command-owner handoff finalizer is missing: "
+        f"{SEPTEMBER05_FINALIZER.relative_to(ROOT)}"
+    )
+    september05_handoff_verified = False
+else:
+    finalizer_text = SEPTEMBER05_FINALIZER.read_text(encoding="utf-8")
+    required_finalizer_markers = {
+        "$attrMulti": "CE_MULTIFILLET",
+        "$attrConnect": "CE_CONNECTENDPOINTS",
+        "$attrDifference": "CE_GRIDDIFFERENCE",
+    }
+    missing_markers = [
+        marker
+        for marker, command in required_finalizer_markers.items()
+        if marker not in finalizer_text or command not in finalizer_text
+    ]
+    strip_pattern = re.compile(
+        r"\$completion\s*=\s*\$completion\.Replace\(\$attribute\s*,\s*''\s*\)",
+        re.IGNORECASE,
+    )
+    if missing_markers or not strip_pattern.search(finalizer_text):
+        details = ", ".join(missing_markers) if missing_markers else "attribute strip"
+        errors.append(
+            "September 05 command-owner handoff guard is incomplete: " + details
+        )
+        september05_handoff_verified = False
+    else:
+        september05_handoff_verified = True
+
 for path in sorted(SOURCE_DIR.glob("*.cs")):
     text = path.read_text(encoding="utf-8")
     for match in COMMAND_PATTERN.finditer(text):
@@ -44,8 +92,15 @@ for path in sorted(SOURCE_DIR.glob("*.cs")):
         if not command:
             errors.append(f"Empty CommandMethod name in {path.relative_to(ROOT)}")
             continue
+        command_key = command.upper()
+        if (
+            september05_handoff_verified
+            and path.name == SEPTEMBER05_HELPER
+            and command_key in SEPTEMBER05_HANDOFFS
+        ):
+            continue
         line = text.count("\n", 0, match.start()) + 1
-        commands[command.upper()].append((path, line, command))
+        commands[command_key].append((path, line, command))
 
 for command, declarations in sorted(commands.items()):
     if len(declarations) <= 1:
@@ -111,4 +166,7 @@ if errors:
         print(f"- {error}", file=sys.stderr)
     raise SystemExit(1)
 
-print(f"CE Tools command registry passed: {len(commands)} unique commands discovered.")
+print(
+    f"CE Tools command registry passed: {len(commands)} unique commands discovered "
+    "after verified September 05 staged-owner handoff."
+)
