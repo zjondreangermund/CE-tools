@@ -132,8 +132,30 @@ Need ($vertex.Contains('table.Cells[row, 5].TextString = (yFirst ? displayX : di
 Need ($vertex.Contains('(yFirst ? displayY : displayX)') -and $vertex.Contains('(yFirst ? displayX : displayY)')) 'Y-first MText/MLeader value mapping is incorrect'
 Need (-not $vertex.Contains('table.Cells[row, 4].TextString = displayX')) 'old fixed-X first table column mapping remains'
 
+# PlatformProductionCommands.cs is still in its historical/raw shape when this
+# August 11 validator runs. The actual Civil 3D 2023 build has an explicit final
+# fatal-safety boundary immediately before CoreCompile. Validate that guarded
+# handoff here instead of rejecting historical numeric-index text that is removed
+# or bypassed by the later idempotent Platform/relative safety finalizer.
 $platform = Text 'PlatformProductionCommands.cs'
-Need (-not $platform.Contains('else featureLine.SetPointElevation(index, elevation);')) 'unsafe Platform AllPoints numeric-index setter remains'
-Need (-not $platform.Contains('child.SetPointElevation(index, sourcePoint.Z + dz);')) 'unsafe Platform stepped-offset numeric-index setter remains'
+$platformSafetyBootstrapPath = Join-Path $root 'scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+$platformSafetyFinalizerPath = Join-Path $root 'scripts\Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1'
+$targetsPath = Join-Path $root 'Directory.Build.targets'
+Need (Test-Path -LiteralPath $platformSafetyBootstrapPath -PathType Leaf) 'final Platform fatal-safety bootstrap is missing'
+Need (Test-Path -LiteralPath $platformSafetyFinalizerPath -PathType Leaf) 'final Platform/relative fatal-safety repair is missing'
+Need (Test-Path -LiteralPath $targetsPath -PathType Leaf) 'Directory.Build.targets is missing for final Platform safety handoff'
+$platformSafetyBootstrap = [System.IO.File]::ReadAllText($platformSafetyBootstrapPath)
+$platformSafetyFinalizer = [System.IO.File]::ReadAllText($platformSafetyFinalizerPath)
+$targets = [System.IO.File]::ReadAllText($targetsPath)
+Need ($platformSafetyBootstrap.Contains('Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1')) 'final bootstrap no longer invokes Platform/relative fatal-safety repair'
+foreach ($token in @(
+    'August21PlatformRelativeFatalSafety.CreatePlatformSteps(',
+    'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)',
+    "ReplaceMethodBody `$platform 'private static ObjectId CreateOffsetFeatureLine('"
+)) {
+    Need ($platformSafetyFinalizer.Contains($token)) ('Platform/relative finalizer guard missing ' + $token)
+}
+Need ($targets.Contains('Name="CEApplyAugust21CrossDisciplineFatalSafety"')) 'final Platform safety target is not registered before compilation'
+Need ($targets.Contains('Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1')) 'final Platform safety bootstrap is not wired into MSBuild'
 
-Write-Host ('CE command/behavior wiring validation passed. Unique commands=' + $owners.Count + '; referenced commands=' + $refs.Count + '; Civil3D source files=' + $files.Count + '.') -ForegroundColor Green
+Write-Host ('CE command/behavior wiring validation passed. Unique commands=' + $owners.Count + '; referenced commands=' + $refs.Count + '; Civil3D source files=' + $files.Count + '. Final Platform safety handoff verified.') -ForegroundColor Green
