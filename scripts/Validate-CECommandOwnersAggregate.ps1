@@ -10,6 +10,37 @@ if (-not (Test-Path -LiteralPath $src -PathType Container)) {
     throw "CE command-owner validation source folder missing: $src"
 }
 
+# September 05 deliberately keeps the implementation methods in the helper source,
+# while the final Civil 3D 2023 staging pass removes those three helper CommandMethod
+# attributes and leaves the registered owners in the August27 / September05 front
+# doors. The aggregate audit runs before that staging pass in the local installer,
+# so model that guarded handoff here instead of reporting a false duplicate owner.
+$stagedOwnerHandoffs = @{
+    'September04FieldGeometryCompletionCommands.cs' = @(
+        'CE_CONNECTENDPOINTS',
+        'CE_GRIDDIFFERENCE',
+        'CE_MULTIFILLET'
+    )
+}
+$handoffFinalizerPath = Join-Path $root 'scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $handoffFinalizerPath -PathType Leaf)) {
+    throw "September 05 command-owner handoff finalizer missing: $handoffFinalizerPath"
+}
+$handoffFinalizer = [System.IO.File]::ReadAllText($handoffFinalizerPath)
+foreach ($token in @('$attrMulti','$attrConnect','$attrDifference','$completion.Replace($attribute,'''' )')) {
+    # The final Replace guard is validated semantically below because spacing can vary.
+    if ($token -eq '$completion.Replace($attribute,'''' )') { continue }
+    if (-not $handoffFinalizer.Contains($token)) {
+        throw "September 05 command-owner handoff finalizer guard missing: $token"
+    }
+}
+if (-not [regex]::IsMatch(
+        $handoffFinalizer,
+        '\$completion\s*=\s*\$completion\.Replace\(\$attribute\s*,\s*''\s*''\s*\)',
+        [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
+    throw 'September 05 command-owner handoff finalizer no longer strips helper CommandMethod attributes.'
+}
+
 $owners = @{}
 $references = @{}
 $files = Get-ChildItem -LiteralPath $src -Filter '*.cs' -File
@@ -24,6 +55,9 @@ foreach ($file in $files) {
     $text = [System.IO.File]::ReadAllText($file.FullName)
     foreach ($match in [regex]::Matches($text,$declarationPattern,[System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
         $cmd = $match.Groups['cmd'].Value.ToUpperInvariant()
+        $handoff = $stagedOwnerHandoffs.ContainsKey($file.Name) -and
+            @($stagedOwnerHandoffs[$file.Name]) -contains $cmd
+        if ($handoff) { continue }
         if (-not $owners.ContainsKey($cmd)) { $owners[$cmd] = New-Object System.Collections.Generic.List[string] }
         $owners[$cmd].Add($file.Name)
     }
