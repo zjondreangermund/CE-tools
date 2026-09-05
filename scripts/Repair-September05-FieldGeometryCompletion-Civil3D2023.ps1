@@ -16,10 +16,10 @@ function Required([string]$name) {
     return $path
 }
 function ReadText([string]$path) {
-    return [System.IO.File]::ReadAllText($path) -replace '`r?`n', "`r`n"
+    return [System.IO.File]::ReadAllText($path) -replace '\r?\n', "`r`n"
 }
 function WriteText([string]$path,[string]$text) {
-    [System.IO.File]::WriteAllText($path,($text -replace '`r?`n',"`r`n"),$utf8)
+    [System.IO.File]::WriteAllText($path,($text -replace '\r?\n',"`r`n"),$utf8)
 }
 function MethodBounds([string]$text,[string]$marker) {
     $start = $text.IndexOf($marker,[StringComparison]::Ordinal)
@@ -39,7 +39,7 @@ function MethodBounds([string]$text,[string]$marker) {
 }
 function ReplaceMethodBody([string]$text,[string]$marker,[string]$body) {
     $b = MethodBounds $text $marker
-    $normalized = ($body -replace '`r?`n',"`r`n").Trim("`r","`n")
+    $normalized = ($body -replace '\r?\n',"`r`n").Trim("`r","`n")
     return $text.Substring(0,$b.Open+1) + "`r`n" + $normalized + "`r`n        " + $text.Substring($b.Close)
 }
 function EnsureBeforeTokenInMethod([string]$text,[string]$methodMarker,[string]$token,[string]$statement,[string]$presence) {
