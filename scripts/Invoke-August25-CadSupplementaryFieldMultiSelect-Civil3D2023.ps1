@@ -5,22 +5,17 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 # Windows PowerShell defines `write` as an alias for Write-Output. The field
-# finalizer intentionally has a helper named Write(path,text); if the alias remains,
-# PowerShell resolves the alias first and merely prints the path/text instead of
-# persisting the staged source. Remove it only in this invocation scope.
+# finalizer intentionally has a helper named Write(path,text). Remove the alias and
+# dot-source the finalizer into this same scope so the helper cannot be shadowed by
+# a fresh child-script AllScope alias.
 if (Test-Path -LiteralPath Alias:Write) {
     Remove-Item -LiteralPath Alias:Write -Force
 }
 
 $root = (Resolve-Path -LiteralPath $RepoRoot.Trim().Trim('"')).ProviderPath
 
-# The real August19 installer runs several historical repairs before this last
-# boundary. Some of those repairs reformat/rebuild AddDimension and therefore the
-# old finalizer's exact SetFromStyle text anchor is not guaranteed to survive.
-# Normalize the actual AddDimension method semantically before calling the legacy
-# finalizer: if its per-dimension mm factor is absent, insert it immediately before
-# that method's created++ statement. This is deliberately method-scoped so an
-# unrelated Dimlfac elsewhere cannot satisfy the release gate.
+# The real installer runs several historical repairs before this last boundary.
+# Normalize AddDimension semantically before the legacy finalizer executes.
 $dimensionPath = Join-Path $root 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
 if (-not (Test-Path -LiteralPath $dimensionPath -PathType Leaf)) {
     throw "MultiDimension source missing: $dimensionPath"
@@ -46,9 +41,7 @@ $methodLength = $close - $start + 1
 $method = $dimension.Substring($start,$methodLength)
 if (-not $method.Contains('dimension.Dimlfac = 1000.0;')) {
     $created = $method.LastIndexOf('created++;',[StringComparison]::Ordinal)
-    if ($created -lt 0) {
-        throw 'MultiDimension AddDimension semantic insertion point missing: created++.'
-    }
+    if ($created -lt 0) { throw 'MultiDimension AddDimension semantic insertion point missing: created++.' }
     $lineStart = $method.LastIndexOf("`n",$created)
     $indentStart = if ($lineStart -lt 0) { 0 } else { $lineStart + 1 }
     $indent = $method.Substring($indentStart,$created-$indentStart)
@@ -63,7 +56,6 @@ else {
     Write-Host 'MultiDimension millimetre factor already present inside AddDimension.' -ForegroundColor Green
 }
 
-# Re-open the method after normalization and enforce exactly one local factor.
 $dimension = [System.IO.File]::ReadAllText($dimensionPath) -replace "`r?`n", "`r`n"
 $start = $dimension.IndexOf($marker,[StringComparison]::Ordinal)
 $open = $dimension.IndexOf('{',$start)
@@ -88,4 +80,4 @@ if (-not (Test-Path -LiteralPath $finalizer -PathType Leaf)) {
     throw "CAD Supplementary finalizer missing: $finalizer"
 }
 
-& $finalizer -RepoRoot $root
+. $finalizer -RepoRoot $root
