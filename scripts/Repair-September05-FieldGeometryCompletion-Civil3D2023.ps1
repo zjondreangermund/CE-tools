@@ -102,16 +102,14 @@ $aug27Path = Required 'August27DynamicSlopeGridHatchCommands.cs'
 $gridPath = Required 'August18DynamicGridSettingOutCommands.cs'
 $menuPath = Required 'August24FieldCompletionCommands.cs'
 
-# Keep the September 04 completion class as a runtime/helper class. The repository
-# already has a registered CE_CONNECTENDPOINTS command in the August 27 command
-# class, so duplicate CommandMethod attributes would make command loading
-# nondeterministic. CE_MULTIFILLET and CE_GRIDDIFFERENCE are registered by the
-# small September05 front-door class instead.
+# Keep the completion implementation as a runtime/helper class. August 27 already
+# owns CE_CONNECTENDPOINTS; registering it again would make command discovery
+# ambiguous. The small September05 front door owns only the two new commands.
 $completion = ReadText $completionPath
 foreach ($attribute in @(
-    '        [CommandMethod("CE_MULTIFILLET", CommandFlags.Modal | CommandFlags.UsePickSet)]' + "`r`n",
-    '        [CommandMethod("CE_CONNECTENDPOINTS", CommandFlags.Modal | CommandFlags.UsePickSet)]' + "`r`n",
-    '        [CommandMethod("CE_GRIDDIFFERENCE", CommandFlags.Modal)]' + "`r`n")) {
+    '        [CommandMethod("CE_MULTIFILLET", CommandFlags.Modal | CommandFlags.UsePickSet)]'.Replace('\"','"') + "`r`n",
+    '        [CommandMethod("CE_CONNECTENDPOINTS", CommandFlags.Modal | CommandFlags.UsePickSet)]'.Replace('\"','"') + "`r`n",
+    '        [CommandMethod("CE_GRIDDIFFERENCE", CommandFlags.Modal)]'.Replace('\"','"') + "`r`n")) {
     $completion = $completion.Replace($attribute,'')
 }
 $completion = $completion.Replace(
@@ -119,18 +117,16 @@ $completion = $completion.Replace(
     '        internal static void ConnectEndpoints(Document document)')
 WriteText $completionPath $completion
 
-# Restore the break behaviour the field user described: detect T/X in plan, use
-# AutoCAD native GetSplitCurves for polylines, keep the selected source database
-# object/handle as the first span, and never erase the source route.
+# Restore the field behaviour: plan-XY T/X detection, native AutoCAD polyline
+# GetSplitCurves, original object/handle retained as the first span, no source erase.
 $break = ReadText $breakPath
 $break = ReplaceMethodBody $break '        internal static void Run(Document document)' @'
             September04FieldGeometryCompletionCommands.BreakAtJunctions(document);
 '@
 WriteText $breakPath $break
 
-# Construction offsets remain true AutoCAD XLINEs. Centre construction uses the
-# new closest-crossing zero-fillet finite mode by default while retaining the
-# explicit true-XLINE option requested in the previous field round.
+# Construction offsets stay true AutoCAD XLINE entities. Centre construction uses
+# closest-crossing zero-fillet finite lines by default and still offers true XLINE.
 $geometry = ReadText $geometryPath
 $geometry = ReplaceMethodBody $geometry '        public void ConstructionOffsets()' @'
             Document document = Active();
@@ -144,9 +140,8 @@ $geometry = ReplaceMethodBody $geometry '        public void MiddleConstructionL
 '@
 WriteText $geometryPath $geometry
 
-# Route the already-registered CE_CONNECTENDPOINTS command to the new tolerance,
-# source-preserving green-polyline implementation. This avoids a second command
-# registration while replacing the older no-distance version.
+# Reuse the single registered August27 CE_CONNECTENDPOINTS front door but replace
+# its old no-distance implementation with the new green, distance-controlled route.
 $aug27 = ReadText $aug27Path
 $aug27 = ReplaceMethodBody $aug27 '        public void ConnectSelectedEndpoints()' @'
             Document document = Active();
@@ -155,9 +150,7 @@ $aug27 = ReplaceMethodBody $aug27 '        public void ConnectSelectedEndpoints(
 '@
 WriteText $aug27Path $aug27
 
-# Make Design-NG part of normal Grid Setting-Out creation and every refresh. The
-# helper finds the live NG LEVEL and DESIGN LEVEL columns, inserts DIFFERENCE after
-# DESIGN when needed, and recalculates values to three decimals.
+# Add DESIGN LEVEL - NG LEVEL on creation and on every Grid Setting-Out refresh.
 $grid = ReadText $gridPath
 $grid = EnsureBeforeTokenInMethod `
     $grid `
@@ -173,9 +166,8 @@ $grid = EnsureBeforeTokenInMethod `
     'September04FieldGeometryCompletionCommands.EnsureGridDifferenceColumns(document);'
 WriteText $gridPath $grid
 
-# Surface the new field commands in CAD Supplementary. August 27 already inserts
-# CE_CONNECTENDPOINTS in current staged builds; only add it here when an older stage
-# did not. CE_GRIDDIFFERENCE is normally automatic and remains available by command.
+# Show the new multi-fillet in CAD Supplementary. The existing August27 build pass
+# already adds endpoint connection to current staged menus; add it only if missing.
 $menu = ReadText $menuPath
 $menu = EnsureAfterLineContaining `
     $menu `
@@ -191,8 +183,7 @@ if (-not $menu.Contains('"CE_CONNECTENDPOINTS"')) {
 }
 WriteText $menuPath $menu
 
-# Final staged guards. These intentionally check behaviour, command registration,
-# and the final route rather than only checking that a file exists.
+# Strict final staged guards.
 $completion = ReadText $completionPath
 $frontDoor = ReadText $frontDoorPath
 $break = ReadText $breakPath
@@ -215,14 +206,14 @@ foreach ($token in @(
     '_lastEndpointDistance')) {
     if (-not $completion.Contains($token)) { throw "September 05 completion runtime guard missing: $token" }
 }
-if ($completion.Contains('[CommandMethod("CE_CONNECTENDPOINTS"') -or
-    $completion.Contains('[CommandMethod("CE_MULTIFILLET"') -or
-    $completion.Contains('[CommandMethod("CE_GRIDDIFFERENCE"')) {
+if ($completion.Contains('[CommandMethod("CE_CONNECTENDPOINTS"'.Replace('\"','"')) -or
+    $completion.Contains('[CommandMethod("CE_MULTIFILLET"'.Replace('\"','"')) -or
+    $completion.Contains('[CommandMethod("CE_GRIDDIFFERENCE"'.Replace('\"','"'))) {
     throw 'Completion runtime still contains direct command registration; duplicate command loading is possible.'
 }
 foreach ($token in @(
-    '[CommandMethod("CE_TOOLS", "CE_MULTIFILLET"',
-    '[CommandMethod("CE_TOOLS", "CE_GRIDDIFFERENCE"')) {
+    '[CommandMethod("CE_TOOLS", "CE_MULTIFILLET"'.Replace('\"','"'),
+    '[CommandMethod("CE_TOOLS", "CE_GRIDDIFFERENCE"'.Replace('\"','"'))) {
     if (-not $frontDoor.Contains($token)) { throw "September 05 command front-door guard missing: $token" }
 }
 if (-not $break.Contains('September04FieldGeometryCompletionCommands.BreakAtJunctions(document);')) {
@@ -247,4 +238,4 @@ foreach ($token in @('"CE_MULTIFILLET"','"CE_CONNECTENDPOINTS"')) {
 }
 
 Write-Host 'September 05 field-geometry completion finalization complete.' -ForegroundColor Green
-Write-Host 'T/X native keep-source break, centre zero-fillet/XLINE modes, remembered multi-fillet, green endpoint connector and Design-NG grid difference are now the final staged routes.' -ForegroundColor Green
+Write-Host 'T/X native keep-source break, centre zero-fillet/XLINE modes, remembered multi-fillet, green endpoint connector and Design-NG grid difference are the final staged routes.' -ForegroundColor Green
