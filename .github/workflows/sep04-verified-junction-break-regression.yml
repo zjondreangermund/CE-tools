@@ -5,8 +5,10 @@ on:
     paths:
       - 'src/CE.Tools.Core/PlanJunctionPlanner.cs'
       - 'src/CE.Tools.Civil3D/September04VerifiedJunctionBreakRuntime.cs'
+      - 'src/CE.Tools.Civil3D/September04FieldGeometryCompletionCommands.cs'
       - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
       - 'scripts/Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1'
+      - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
       - 'Directory.Build.targets'
       - 'tests/CE.Tools.PlanJunction.Tests/**'
       - '.github/workflows/sep04-verified-junction-break-regression.yml'
@@ -15,8 +17,10 @@ on:
     paths:
       - 'src/CE.Tools.Core/PlanJunctionPlanner.cs'
       - 'src/CE.Tools.Civil3D/September04VerifiedJunctionBreakRuntime.cs'
+      - 'src/CE.Tools.Civil3D/September04FieldGeometryCompletionCommands.cs'
       - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
       - 'scripts/Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1'
+      - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
       - 'Directory.Build.targets'
       - 'tests/CE.Tools.PlanJunction.Tests/**'
       - '.github/workflows/sep04-verified-junction-break-regression.yml'
@@ -35,21 +39,24 @@ jobs:
         shell: pwsh
         run: dotnet run --project tests/CE.Tools.PlanJunction.Tests/CE.Tools.PlanJunction.Tests.csproj --configuration Release
 
-      - name: Apply final Civil 3D 2023 verified-junction boundary
+      - name: Apply historical then final field junction boundaries
         shell: powershell
-        run: .\scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1 -RepoRoot .
+        run: |
+          .\scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1 -RepoRoot .
+          .\scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1 -RepoRoot .
 
-      - name: Verify tracked and staged command route
+      - name: Verify final tracked and staged command route
         shell: pwsh
         run: |
           $engine = Get-Content -Raw src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs
-          $runtime = Get-Content -Raw src/CE.Tools.Civil3D/September04VerifiedJunctionBreakRuntime.cs
+          $runtime = Get-Content -Raw src/CE.Tools.Civil3D/September04FieldGeometryCompletionCommands.cs
           $targets = Get-Content -Raw Directory.Build.targets
-          if (-not $engine.Contains('September04VerifiedJunctionBreakRuntime.BreakPolylinesAtJunctions(document);')) { throw 'Verified runtime is not the final command route.' }
-          if (-not $runtime.Contains('PlanJunctionPlanner.Build(')) { throw 'CAD-independent plan planner is missing.' }
-          if (-not $runtime.Contains('August25StraightPolylineSplitter.TryBuild(')) { throw 'Deterministic straight polyline splitter is missing.' }
-          if ($runtime.Contains('.Erase(')) { throw 'Keep-source runtime contains an erase route.' }
-          if (-not $targets.Contains('AfterTargets="CEApplySeptember04GridRefreshBreakStability"')) { throw 'Verified T/X target is not last in the field chain.' }
+          if (-not $engine.Contains('September04FieldGeometryCompletionCommands.BreakAtJunctions(document);')) { throw 'Native keep-source runtime is not the final command route.' }
+          foreach ($token in @('source.GetSplitCurves(splitPoints)','CollectCrossings(','CollectEndpointTJunctions(','ReplacePolylineGeometry(source, pieces[0]);')) {
+            if (-not $runtime.Contains($token)) { throw "Final T/X runtime marker missing: $token" }
+          }
+          if ($runtime.Contains('source.Erase()')) { throw 'Final T/X runtime contains a source erase route.' }
+          if (-not $targets.Contains('AfterTargets="CEApplySeptember04SiteGridDynamicNoLoop"')) { throw 'September 05 field geometry target is not the absolute final boundary.' }
 
       - name: Parse final staged C# source
         shell: pwsh
