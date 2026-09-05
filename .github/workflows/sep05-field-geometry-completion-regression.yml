@@ -14,6 +14,7 @@ on:
       - 'src/CE.Tools.Civil3D/August27DynamicSlopeGridHatchCommands.cs'
       - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
       - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
+      - 'scripts/Validate-CECommandOwnersAggregate.ps1'
       - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
       - 'scripts/Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1'
       - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
@@ -29,6 +30,7 @@ on:
       - 'src/CE.Tools.Civil3D/August27DynamicSlopeGridHatchCommands.cs'
       - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
       - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
+      - 'scripts/Validate-CECommandOwnersAggregate.ps1'
       - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
       - 'scripts/Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1'
       - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
@@ -45,6 +47,12 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: '8.0.x'
+
+      - name: Validate pre-stage command owner handoffs
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & .\scripts\Validate-CECommandOwnersAggregate.ps1 -RepoRoot .
 
       - name: Run plan T/X geometry scenarios
         shell: pwsh
