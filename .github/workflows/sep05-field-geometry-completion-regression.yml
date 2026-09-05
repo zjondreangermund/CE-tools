@@ -1,0 +1,140 @@
+name: September 05 Field Geometry Completion Regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+      - fix/sep5-field-geometry-finalization
+    paths:
+      - 'src/CE.Tools.Civil3D/September04FieldGeometryCompletionCommands.cs'
+      - 'src/CE.Tools.Civil3D/September05FieldGeometryCommandFrontDoor.cs'
+      - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
+      - 'src/CE.Tools.Civil3D/August24FieldGeometryCommands.cs'
+      - 'src/CE.Tools.Civil3D/August27DynamicSlopeGridHatchCommands.cs'
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
+      - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - '.github/workflows/sep05-field-geometry-completion-regression.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/September04FieldGeometryCompletionCommands.cs'
+      - 'src/CE.Tools.Civil3D/September05FieldGeometryCommandFrontDoor.cs'
+      - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
+      - 'src/CE.Tools.Civil3D/August24FieldGeometryCommands.cs'
+      - 'src/CE.Tools.Civil3D/August27DynamicSlopeGridHatchCommands.cs'
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
+      - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - '.github/workflows/sep05-field-geometry-completion-regression.yml'
+
+jobs:
+  field-geometry-completion:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Run plan T/X geometry scenarios
+        shell: pwsh
+        run: dotnet run --project tests/CE.Tools.PlanJunction.Tests/CE.Tools.PlanJunction.Tests.csproj --configuration Release
+
+      - name: Run dynamic refresh scenarios
+        shell: pwsh
+        run: dotnet run --project tests/CE.Tools.DynamicRefresh.Tests/CE.Tools.DynamicRefresh.Tests.csproj --configuration Release
+
+      - name: Reproduce complete Civil 3D 2023 staged finalizer chain
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-sep05-field-geometry'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item src -Destination $stage -Recurse -Force
+          Copy-Item scripts -Destination $stage -Recurse -Force
+          Copy-Item tests -Destination $stage -Recurse -Force
+          Copy-Item global.json -Destination $stage -Force
+
+          & (Join-Path $stage 'scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August24-DynamicGridCivilSurfaceCompileFix-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August24-FinalCompileCompatibility-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September04-ConstructionXlineBreakJunctions-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September04-GridRefreshAndBreakStability-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1') -RepoRoot $stage
+          ('STAGE=' + $stage) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify final staged command routes and behavior markers
+        shell: pwsh
+        run: |
+          $completion = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\September04FieldGeometryCompletionCommands.cs')
+          $front = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\September05FieldGeometryCommandFrontDoor.cs')
+          $break = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August25CadSupplementaryBreakEngine.cs')
+          $geometry = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August24FieldGeometryCommands.cs')
+          $aug27 = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August27DynamicSlopeGridHatchCommands.cs')
+          $grid = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs')
+          $menu = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs')
+          $targets = Get-Content -Raw Directory.Build.targets
+
+          if (-not $break.Contains('September04FieldGeometryCompletionCommands.BreakAtJunctions(document);')) { throw 'Final T/X route is wrong.' }
+          foreach ($token in @('source.GetSplitCurves(splitPoints)','CollectCrossings(','CollectEndpointTJunctions(','ReplacePolylineGeometry(source, pieces[0]);')) {
+            if (-not $completion.Contains($token)) { throw "Native keep-source T/X marker missing: $token" }
+          }
+          if ($completion.Contains('source.Erase()')) { throw 'T/X completion runtime contains a source erase.' }
+
+          if (-not $geometry.Contains('September04CadSupplementaryRuntime.ConstructionOffsets(document);')) { throw 'Construction offset is not on true-XLINE runtime.' }
+          if (-not $geometry.Contains('September04FieldGeometryCompletionCommands.MiddleConstructionLines(document);')) { throw 'Centre construction is not on closest-crossing runtime.' }
+          foreach ($token in @('ZeroFilletCentreEndpoints(','ClosestSupportIntersection(','Construction XLINE entities')) {
+            if (-not $completion.Contains($token)) { throw "Centre construction marker missing: $token" }
+          }
+
+          if (-not $front.Contains('CE_MULTIFILLET')) { throw 'CE_MULTIFILLET command registration missing.' }
+          foreach ($token in @('_lastFilletRadius','UseDefaultValue = true;','radius > Eps')) {
+            if (-not $completion.Contains($token)) { throw "Multi-fillet marker missing: $token" }
+          }
+
+          if (-not $aug27.Contains('September04FieldGeometryCompletionCommands.ConnectEndpoints(document);')) { throw 'CE_CONNECTENDPOINTS is not routed to final connector.' }
+          foreach ($token in @('_lastEndpointDistance','ColorIndex = 3','CivilFeatureLine feature')) {
+            if (-not $completion.Contains($token)) { throw "Endpoint connector marker missing: $token" }
+          }
+
+          $differenceCalls = ([regex]::Matches($grid,[regex]::Escape('September04FieldGeometryCompletionCommands.EnsureGridDifferenceColumns(document);'))).Count
+          if ($differenceCalls -lt 2) { throw "Grid difference is not linked to create+refresh; calls=$differenceCalls" }
+          foreach ($token in @('DESIGN LEVEL','NG LEVEL','DIFFERENCE','designValue - ngValue')) {
+            if (-not $completion.Contains($token)) { throw "Grid difference marker missing: $token" }
+          }
+
+          foreach ($token in @('"CE_MULTIFILLET"','"CE_CONNECTENDPOINTS"')) {
+            if (-not $menu.Contains($token)) { throw "CAD Supplementary menu command missing: $token" }
+          }
+          if (-not $targets.Contains('AfterTargets="CEApplySeptember04SiteGridDynamicNoLoop"')) { throw 'September 05 target is not chained after the previous final boundary.' }
+          if (-not $targets.Contains('Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1')) { throw 'September 05 finalizer target missing.' }
+
+      - name: Verify command registrations are unique after staging
+        shell: pwsh
+        run: |
+          $files = Get-ChildItem (Join-Path $env:STAGE 'src\CE.Tools.Civil3D') -Filter '*.cs' -File
+          $all = ($files | ForEach-Object { Get-Content -Raw $_.FullName }) -join "`n"
+          foreach ($command in @('CE_CONNECTENDPOINTS','CE_MULTIFILLET','CE_GRIDDIFFERENCE')) {
+            $pattern = '\[CommandMethod\([^\r\n]*"' + [regex]::Escape($command) + '"'
+            $count = ([regex]::Matches($all,$pattern)).Count
+            if ($count -ne 1) { throw "$command must have exactly one CommandMethod registration after staging; found $count." }
+          }
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
