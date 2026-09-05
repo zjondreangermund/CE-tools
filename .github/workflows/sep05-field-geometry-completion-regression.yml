@@ -16,6 +16,8 @@ on:
       - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
       - 'scripts/Validate-CECommandOwnersAggregate.ps1'
       - 'scripts/Validate-CECommandWiring.ps1'
+      - 'scripts/Inject-August11FieldCompletion-Civil3D2023.ps1'
+      - 'scripts/Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1'
       - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
       - 'scripts/Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1'
       - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
@@ -33,6 +35,8 @@ on:
       - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
       - 'scripts/Validate-CECommandOwnersAggregate.ps1'
       - 'scripts/Validate-CECommandWiring.ps1'
+      - 'scripts/Inject-August11FieldCompletion-Civil3D2023.ps1'
+      - 'scripts/Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1'
       - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
       - 'scripts/Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1'
       - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
@@ -50,12 +54,23 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Validate pre-stage command owner handoffs and wiring
+      - name: Validate raw command owner handoffs
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           & .\scripts\Validate-CECommandOwnersAggregate.ps1 -RepoRoot .
-          & .\scripts\Validate-CECommandWiring.ps1 -RepoRoot .
+
+      - name: Reproduce August 11 wiring stage before September 05 finalizer
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-sep05-aug11-wiring'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item src -Destination $stage -Recurse -Force
+          Copy-Item scripts -Destination $stage -Recurse -Force
+          & (Join-Path $stage 'scripts\Inject-August11FieldCompletion-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1') -RepoRoot $stage
 
       - name: Run plan T/X geometry scenarios
         shell: pwsh
