@@ -15,6 +15,28 @@ function Text([string]$name) {
 }
 function Need([bool]$condition,[string]$message) { if (-not $condition) { throw "CE WIRING VALIDATION FAILED: $message" } }
 
+# September 05 keeps implementation methods in the helper source before staging,
+# then the final Civil 3D 2023 pass removes those helper CommandMethod attributes.
+# The local installer runs this wiring audit before that final pass, so model the
+# guarded handoff here rather than reporting a false duplicate owner.
+$stagedOwnerHandoffs = @{
+    'September04FieldGeometryCompletionCommands.cs' = @(
+        'CE_CONNECTENDPOINTS',
+        'CE_GRIDDIFFERENCE',
+        'CE_MULTIFILLET'
+    )
+}
+$handoffFinalizerPath = Join-Path $root 'scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
+Need (Test-Path -LiteralPath $handoffFinalizerPath -PathType Leaf) 'September 05 command-owner handoff finalizer is missing'
+$handoffFinalizer = [System.IO.File]::ReadAllText($handoffFinalizerPath)
+foreach ($token in @('$attrMulti','$attrConnect','$attrDifference')) {
+    Need ($handoffFinalizer.Contains($token)) ("September 05 command-owner handoff guard missing: $token")
+}
+Need ([regex]::IsMatch(
+    $handoffFinalizer,
+    '\$completion\s*=\s*\$completion\.Replace\(\$attribute\s*,\s*''\s*''\s*\)',
+    [System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) 'September 05 finalizer no longer strips helper CommandMethod attributes'
+
 $files = Get-ChildItem -LiteralPath $src -Filter '*.cs' -File
 $owners = @{}
 $refs = @{}
@@ -28,6 +50,8 @@ foreach ($file in $files) {
     $text = [System.IO.File]::ReadAllText($file.FullName)
     foreach ($match in [regex]::Matches($text,$declarationPattern,[System.Text.RegularExpressions.RegexOptions]::IgnoreCase)) {
         $cmd = $match.Groups['cmd'].Value.ToUpperInvariant()
+        $handoff = $stagedOwnerHandoffs.ContainsKey($file.Name) -and @($stagedOwnerHandoffs[$file.Name]) -contains $cmd
+        if ($handoff) { continue }
         if (-not $owners.ContainsKey($cmd)) { $owners[$cmd] = @() }
         $owners[$cmd] += $file.Name
     }
