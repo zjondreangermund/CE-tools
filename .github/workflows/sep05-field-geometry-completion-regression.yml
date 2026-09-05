@@ -15,6 +15,7 @@ on:
       - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
       - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
       - 'scripts/Validate-CECommandOwnersAggregate.ps1'
+      - 'scripts/Validate-CECommandWiring.ps1'
       - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
       - 'scripts/Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1'
       - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
@@ -31,6 +32,7 @@ on:
       - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
       - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
       - 'scripts/Validate-CECommandOwnersAggregate.ps1'
+      - 'scripts/Validate-CECommandWiring.ps1'
       - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
       - 'scripts/Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1'
       - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
@@ -48,11 +50,12 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
-      - name: Validate pre-stage command owner handoffs
+      - name: Validate pre-stage command owner handoffs and wiring
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
           & .\scripts\Validate-CECommandOwnersAggregate.ps1 -RepoRoot .
+          & .\scripts\Validate-CECommandWiring.ps1 -RepoRoot .
 
       - name: Run plan T/X geometry scenarios
         shell: pwsh
@@ -86,7 +89,6 @@ jobs:
           & (Join-Path $stage 'scripts\Repair-September04-GridRefreshAndBreakStability-Civil3D2023.ps1') -RepoRoot $stage
           & (Join-Path $stage 'scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1') -RepoRoot $stage
           & (Join-Path $stage 'scripts\Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1') -RepoRoot $stage
-          & (Join-Path $stage 'scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1') -RepoRoot $stage
           & (Join-Path $stage 'scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1') -RepoRoot $stage
           ('STAGE=' + $stage) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
