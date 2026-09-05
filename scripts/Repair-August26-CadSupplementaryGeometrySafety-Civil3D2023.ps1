@@ -31,9 +31,9 @@ function ReplaceMethodBody([string]$text,[string]$marker,[string]$body) {
     return $text.Substring(0,$open+1) + "`r`n" + ($body -replace "`r?`n","`r`n").Trim("`r","`n") + "`r`n        " + $text.Substring($close)
 }
 
-# This target intentionally runs after the August 25 finalizer. It remains the
-# Civil 3D 2023 route for the August 26 geometry failures, but later September 04
-# work may already have superseded only the Break implementation in tracked source.
+# This target intentionally runs after the August 25 finalizer. Later September
+# field passes can already have superseded only the Break implementation in tracked
+# source, so the compatibility guard below accepts every known safe route.
 $geometryPath = Path 'August24FieldGeometryCommands.cs'
 $geometry = Read $geometryPath
 $geometry = ReplaceMethodBody $geometry '        public void CloseOpenMultiple()' @'
@@ -71,17 +71,14 @@ foreach ($token in @(
     if (-not $runtime.Contains($token)) { throw "August 26 geometry runtime marker missing: $token" }
 }
 
-# Break compatibility guard.
-# August 26 originally used an all-or-none replacement engine. The newer tested
-# September 04 T/X runtime intentionally supersedes that route and keeps the
-# selected source handles rather than erasing/replacing them. A current checkout
-# can therefore legitimately arrive here already routed to September 04. Do not
-# reject the safer/newer route before its later finalizer runs.
+# Break compatibility guard: August26 replacement, September04 deterministic
+# keep-source, or September05 native GetSplitCurves keep-source are all recognized.
 $breakEngine = Read (Path 'August25CadSupplementaryBreakEngine.cs')
 $usesAugust26Break = $breakEngine.Contains('August26CadSupplementaryBreakReplacement.TryReplaceBatch')
 $usesSeptember04Break = $breakEngine.Contains('September04VerifiedJunctionBreakRuntime.BreakPolylinesAtJunctions(document);')
+$usesSeptember05Break = $breakEngine.Contains('September04FieldGeometryCompletionCommands.BreakAtJunctions(document);')
 
-if (-not $usesAugust26Break -and -not $usesSeptember04Break) {
+if (-not $usesAugust26Break -and -not $usesSeptember04Break -and -not $usesSeptember05Break) {
     throw 'Final Break command is not routed through a recognized guarded Break runtime.'
 }
 
@@ -106,9 +103,19 @@ if ($usesSeptember04Break) {
         'LWPOLYLINE,LINE')) {
         if (-not $verifiedBreak.Contains($token)) { throw "September 04 Break compatibility marker missing: $token" }
     }
-    if ($verifiedBreak.Contains('.Erase(')) {
-        throw 'September 04 verified Break runtime must not erase selected source entities.'
+    if ($verifiedBreak.Contains('.Erase(')) { throw 'September 04 verified Break runtime must not erase selected source entities.' }
+}
+
+if ($usesSeptember05Break) {
+    $nativeBreak = Read (Path 'September04FieldGeometryCompletionCommands.cs')
+    foreach ($token in @(
+        'source.GetSplitCurves(splitPoints)',
+        'CollectCrossings(',
+        'CollectEndpointTJunctions(',
+        'ReplacePolylineGeometry(source, pieces[0]);')) {
+        if (-not $nativeBreak.Contains($token)) { throw "September 05 native Break compatibility marker missing: $token" }
     }
+    if ($nativeBreak.Contains('source.Erase()')) { throw 'September 05 native Break runtime must not erase selected source entities.' }
 }
 
 $geometry = Read $geometryPath
@@ -121,8 +128,11 @@ foreach ($token in @(
 }
 
 Write-Host 'August 26 CAD Supplementary geometry safety finalization complete.' -ForegroundColor Green
-if ($usesSeptember04Break) {
-    Write-Host 'Close, FeatureLine stretch, construction offsets and centre construction are on August 26 guarded routes; Break is already on the newer September 04 verified keep-source route.' -ForegroundColor Green
+if ($usesSeptember05Break) {
+    Write-Host 'August 26 geometry routes are guarded; Break is already on the newer September 05 native keep-source route.' -ForegroundColor Green
+}
+elseif ($usesSeptember04Break) {
+    Write-Host 'August 26 geometry routes are guarded; Break is already on the September 04 verified keep-source route.' -ForegroundColor Green
 }
 else {
     Write-Host 'Close, FeatureLine stretch, construction offsets, centre construction and multi-polyline Break are on guarded August 26 field routes.' -ForegroundColor Green
