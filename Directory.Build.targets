@@ -115,4 +115,16 @@
     <Message Text="Applying September 04 Site Grid dynamic/no-loop boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
+
+  <!-- Absolute final September 05 field-geometry boundary. This pass intentionally
+       runs after every historical repair so the field-tested T/X break route,
+       closest-crossing centre construction, remembered multi-fillet, green endpoint
+       connector and Design-minus-NG Grid Setting-Out column cannot be overwritten. -->
+  <Target Name="CEApplySeptember05FieldGeometryCompletion"
+          AfterTargets="CEApplySeptember04SiteGridDynamicNoLoop"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying September 05 final field-geometry completion boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
 </Project>
