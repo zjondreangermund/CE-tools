@@ -27,9 +27,7 @@ if (-not (Test-Path -LiteralPath $handoffFinalizerPath -PathType Leaf)) {
     throw "September 05 command-owner handoff finalizer missing: $handoffFinalizerPath"
 }
 $handoffFinalizer = [System.IO.File]::ReadAllText($handoffFinalizerPath)
-foreach ($token in @('$attrMulti','$attrConnect','$attrDifference','$completion.Replace($attribute,'''' )')) {
-    # The final Replace guard is validated semantically below because spacing can vary.
-    if ($token -eq '$completion.Replace($attribute,'''' )') { continue }
+foreach ($token in @('$attrMulti','$attrConnect','$attrDifference')) {
     if (-not $handoffFinalizer.Contains($token)) {
         throw "September 05 command-owner handoff finalizer guard missing: $token"
     }
