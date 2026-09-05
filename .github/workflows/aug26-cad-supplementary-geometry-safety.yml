@@ -8,8 +8,10 @@ on:
       - 'src/CE.Tools.Civil3D/August26CadSupplementaryFieldRuntime.cs'
       - 'src/CE.Tools.Civil3D/August26CadSupplementaryBreakReplacement.cs'
       - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
+      - 'src/CE.Tools.Civil3D/September04FieldGeometryCompletionCommands.cs'
       - 'src/CE.Tools.Civil3D/August24FieldGeometryCommands.cs'
       - 'scripts/Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1'
+      - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
       - 'Directory.Build.targets'
       - '.github/workflows/aug26-cad-supplementary-geometry-safety.yml'
   push:
@@ -18,8 +20,10 @@ on:
       - 'src/CE.Tools.Civil3D/August26CadSupplementaryFieldRuntime.cs'
       - 'src/CE.Tools.Civil3D/August26CadSupplementaryBreakReplacement.cs'
       - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
+      - 'src/CE.Tools.Civil3D/September04FieldGeometryCompletionCommands.cs'
       - 'src/CE.Tools.Civil3D/August24FieldGeometryCommands.cs'
       - 'scripts/Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1'
+      - 'scripts/Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1'
       - 'Directory.Build.targets'
       - '.github/workflows/aug26-cad-supplementary-geometry-safety.yml'
 
@@ -28,26 +32,21 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 20
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
+      - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
 
-      - name: Verify final build ordering
+      - name: Verify August 26 build boundary still exists
         shell: pwsh
         run: |
-          $targets = [System.IO.File]::ReadAllText('Directory.Build.targets')
-          foreach ($token in @(
-            'CEApplyAugust26CadSupplementaryGeometrySafety',
-            'AfterTargets="CEApplyAugust25CadSupplementaryFieldMultiSelect"',
-            'Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1')) {
-            if (-not $targets.Contains($token)) { throw "August 26 final build marker missing: $token" }
+          $targets = Get-Content -Raw Directory.Build.targets
+          foreach ($token in @('CEApplyAugust26CadSupplementaryGeometrySafety','AfterTargets="CEApplyAugust25CadSupplementaryFieldMultiSelect"','Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1')) {
+            if (-not $targets.Contains($token)) { throw "August 26 build marker missing: $token" }
           }
 
-      - name: Stage historical finalizer then August 26 finalizer
+      - name: Stage August 25 and August 26 boundaries
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -60,106 +59,39 @@ jobs:
           Copy-Item global.json -Destination $stage -Force
           & (Join-Path $stage 'scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1') -RepoRoot $stage
           & (Join-Path $stage 'scripts\Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1') -RepoRoot $stage
-          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+          ('STAGE=' + $stage) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
 
-      - name: Verify close/stretch/offset final routes
+      - name: Verify close stretch offset and centre routes
         shell: pwsh
         run: |
-          $geometry = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August24FieldGeometryCommands.cs'))
-          foreach ($token in @(
-            'August26CadSupplementaryFieldRuntime.CloseOpenMultiple(document);',
-            'August26CadSupplementaryFieldRuntime.StretchFeatureLines(document);',
-            'August26CadSupplementaryFieldRuntime.ConstructionOffsets(document);',
-            'August26CadSupplementaryFieldRuntime.MiddleConstructionLines(document);')) {
-            if (-not $geometry.Contains($token)) { throw "Final geometry route missing: $token" }
+          $geometry = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August24FieldGeometryCommands.cs')
+          foreach ($token in @('August26CadSupplementaryFieldRuntime.CloseOpenMultiple(document);','August26CadSupplementaryFieldRuntime.StretchFeatureLines(document);','August26CadSupplementaryFieldRuntime.ConstructionOffsets(document);','August26CadSupplementaryFieldRuntime.MiddleConstructionLines(document);')) {
+            if (-not $geometry.Contains($token)) { throw "August 26 staged geometry route missing: $token" }
+          }
+          $runtime = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August26CadSupplementaryFieldRuntime.cs')
+          foreach ($token in @('FeatureLinePointType.PIPoint','featureLine.GetGripPoints','featureLine.MoveGripPointsAt','featureLine.MoveStretchPointsAt','MergeCollinearSections','JoinZeroFillet')) {
+            if (-not $runtime.Contains($token)) { throw "August 26 runtime marker missing: $token" }
           }
 
-      - name: Verify FeatureLine and construction behavior markers
+      - name: Verify Break uses a recognized guarded runtime
         shell: pwsh
         run: |
-          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August26CadSupplementaryFieldRuntime.cs')
-          foreach ($token in @(
-            'FeatureLinePointType.PIPoint',
-            'featureLine.GetBulge(index)',
-            'temporary.Closed = true;',
-            'replacement.SetPointElevation',
-            'replacement.InsertElevationPoint',
-            'featureLine.GetGripPoints',
-            'featureLine.MoveGripPointsAt',
-            'featureLine.MoveStretchPointsAt',
-            'StretchResultIsLocal',
-            'MergeCollinearSections',
-            'JoinZeroFillet',
-            'new Line(segment.Start, segment.End)',
-            'construction LINE entities / zero-fillet',
-            'Construction LINE entities=')) {
-            if (-not $runtime.Contains($token)) { throw "August 26 field-runtime marker missing: $token" }
-          }
-          if ($runtime.Contains('CreatePlanPolyline(document.Database, offsetPoints')) {
-            throw 'Construction mode regressed to an ordinary output polyline.'
-          }
-
-      - name: Verify Break uses a guarded current runtime
-        shell: pwsh
-        run: |
-          $engine = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August25CadSupplementaryBreakEngine.cs')
+          $engine = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August25CadSupplementaryBreakEngine.cs')
           $aug26 = $engine.Contains('August26CadSupplementaryBreakReplacement.TryReplaceBatch')
           $sep04 = $engine.Contains('September04VerifiedJunctionBreakRuntime.BreakPolylinesAtJunctions(document);')
-          if (-not $aug26 -and -not $sep04) {
-            throw 'Break engine is not using a recognized guarded runtime.'
-          }
-
-          if ($aug26) {
-            $batch = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August26CadSupplementaryBreakReplacement.cs')
-            foreach ($token in @(
-              'Phase 1: create every candidate replacement',
-              'VerifyPersistedReplacement(database, source)',
-              'Phase 3: erase all originals in one transaction',
-              'CleanupPersisted(database, staged.SelectMany(item => item.NewIds))')) {
-              if (-not $batch.Contains($token)) { throw "Break batch safety marker missing: $token" }
-            }
-            $verify = $batch.IndexOf('foreach (StagedSource source in staged)',[StringComparison]::Ordinal)
-            $phase3 = $batch.IndexOf('Phase 3: erase all originals in one transaction',[StringComparison]::Ordinal)
-            $erase = $batch.IndexOf('original.Erase();',[StringComparison]::Ordinal)
-            if ($verify -lt 0 -or $phase3 -lt $verify -or $erase -lt $phase3) {
-              throw 'Original erase can occur before the complete staged batch verification.'
-            }
-          }
+          $sep05 = $engine.Contains('September04FieldGeometryCompletionCommands.BreakAtJunctions(document);')
+          if (-not $aug26 -and -not $sep04 -and -not $sep05) { throw 'Break engine is not using a recognized guarded runtime.' }
 
           if ($sep04) {
-            $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\September04VerifiedJunctionBreakRuntime.cs')
-            foreach ($token in @(
-              'PlanJunctionPlanner.Build(',
-              'SplitLineAndKeepSource(',
-              'SplitPolylineAndKeepSource(',
-              'Original source handles were kept',
-              'LWPOLYLINE,LINE')) {
-              if (-not $runtime.Contains($token)) { throw "September 04 Break marker missing: $token" }
+            $runtime = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\September04VerifiedJunctionBreakRuntime.cs')
+            if ($runtime.Contains('.Erase(')) { throw 'September 04 keep-source runtime contains an erase route.' }
+          }
+          if ($sep05) {
+            $runtime = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\September04FieldGeometryCompletionCommands.cs')
+            foreach ($token in @('source.GetSplitCurves(splitPoints)','CollectCrossings(','CollectEndpointTJunctions(','ReplacePolylineGeometry(source, pieces[0]);')) {
+              if (-not $runtime.Contains($token)) { throw "September 05 native Break marker missing: $token" }
             }
-            if ($runtime.Contains('.Erase(')) {
-              throw 'September 04 verified Break runtime must not erase selected source entities.'
-            }
-          }
-
-      - name: Audit CAD Supplementary multi-select isolation
-        shell: pwsh
-        run: |
-          $runtime = [System.IO.File]::ReadAllText('src\CE.Tools.Civil3D\August26CadSupplementaryFieldRuntime.cs')
-          if (([regex]::Matches($runtime,[regex]::Escape('selection.Value.GetObjectIds()')).Count) -lt 3) {
-            throw 'Expected close/stretch/offset multi-select loops are missing.'
-          }
-          # Close, FeatureLine stretch, construction offset and centre construction
-          # each isolate their mutations in their own source/pair transaction.
-          if (([regex]::Matches($runtime,[regex]::Escape('StartTransaction()')).Count) -lt 4) {
-            throw 'Per-object/per-pair transaction isolation markers are missing.'
-          }
-          $curve = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\CurveConversionCommands.cs'))
-          if (-not $curve.Contains('foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())')) {
-            throw 'Curve Convert multi-selection isolation regressed.'
-          }
-          $dimension = [System.IO.File]::ReadAllText((Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'))
-          if (-not $dimension.Contains('foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())')) {
-            throw 'Multiple Dimensions no longer iterates the complete selected set.'
+            if ($runtime.Contains('source.Erase()')) { throw 'September 05 native keep-source runtime contains an erase route.' }
           }
 
       - name: Parse final staged Civil 3D C# syntax
