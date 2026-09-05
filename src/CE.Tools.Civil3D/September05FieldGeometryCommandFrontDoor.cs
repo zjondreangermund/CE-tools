@@ -9,7 +9,8 @@ namespace CETools.Civil3D
     /// The final Civil 3D 2023 staging pass strips helper-class command attributes,
     /// so CE_CONNECTENDPOINTS remains registered only once by the August 27 command
     /// class while CE_MULTIFILLET and CE_GRIDDIFFERENCE are exposed here. The staged
-    /// regression also runs the complete historical repair chain before this boundary.
+    /// regression runs the complete historical repair chain, including the legacy
+    /// August 25 writer pass, before validating this final boundary.
     /// </summary>
     public sealed class September05FieldGeometryCommandFrontDoor
     {
