@@ -10,6 +10,8 @@ namespace CETools.Civil3D
     /// Runs interactive CE/AutoCAD commands strictly one at a time. A command is
     /// not submitted until the previous command has ended and AutoCAD is idle,
     /// so later command names cannot be consumed as answers to Editor prompts.
+    /// If the user manually starts another command while a queued step is pending,
+    /// the remaining queue is cancelled rather than leaking into that new command.
     /// </summary>
     internal static class CeSequentialCommandRunner
     {
@@ -52,10 +54,30 @@ namespace CETools.Civil3D
         {
             if (_hooked || _document == null) return;
             _hooked = true;
+            _document.CommandWillStart += OnCommandWillStart;
             _document.CommandEnded += OnCommandEnded;
             _document.CommandCancelled += OnCommandCancelled;
             _document.CommandFailed += OnCommandFailed;
             AcApplication.Idle += OnIdle;
+        }
+
+        private static void OnCommandWillStart(object sender, CommandEventArgs e)
+        {
+            if (!_hooked || _document == null || e == null) return;
+
+            // When our own queued command is launched, OnIdle has already set
+            // _waiting=true and _launchPending=false. Only cancel when AutoCAD is
+            // between queued steps and the user begins some other command.
+            if (_launchPending && !_waiting)
+            {
+                string manualCommand = Normalize(e.GlobalCommandName);
+                if (!string.IsNullOrWhiteSpace(manualCommand))
+                {
+                    Stop(false, true,
+                        "remaining queued steps cancelled because '" +
+                        manualCommand + "' was started manually");
+                }
+            }
         }
 
         private static void OnIdle(object sender, EventArgs e)
@@ -116,6 +138,7 @@ namespace CETools.Civil3D
             string description = _description;
             if (_hooked && _document != null)
             {
+                _document.CommandWillStart -= OnCommandWillStart;
                 _document.CommandEnded -= OnCommandEnded;
                 _document.CommandCancelled -= OnCommandCancelled;
                 _document.CommandFailed -= OnCommandFailed;
