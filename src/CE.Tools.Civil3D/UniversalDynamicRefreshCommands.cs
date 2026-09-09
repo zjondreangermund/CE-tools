@@ -23,11 +23,12 @@ namespace CETools.Civil3D
             UniversalRefreshResult result = UniversalDynamicRefreshManager.RefreshNow(document);
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_DYNAMICREFRESHALL complete. Linked engine={0}; vertex tables={1}; junction labels={2}; metadata attributes={3}; warnings={4}.",
+                "\nCE_DYNAMICREFRESHALL complete. Linked engine={0}; vertex tables={1}; junction labels={2}; metadata attributes={3}; segment label sources={4}; warnings={5}.",
                 result.LinkedEngineRuns,
                 result.VertexTables,
                 result.JunctionLabels,
                 result.MetadataAttributes,
+                result.SegmentLabelSources,
                 result.Warnings);
         }
 
@@ -139,6 +140,8 @@ namespace CETools.Civil3D
                 try { SewerPlanLabelRuntimeManager.Apply(document); }
                 catch { result.Warnings++; }
                 try { ProfileViewBandRuntimeManager.RefreshAll(document); }
+                catch { result.Warnings++; }
+                try { result.SegmentLabelSources += DynamicSegmentLabelManager.RefreshAll(document); }
                 catch { result.Warnings++; }
                 try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); }
                 catch { result.Warnings++; }
@@ -425,6 +428,7 @@ namespace CETools.Civil3D
         internal int VertexTables { get; set; }
         internal int JunctionLabels { get; set; }
         internal int MetadataAttributes { get; set; }
+        internal int SegmentLabelSources { get; set; }
         internal int Warnings { get; set; }
     }
 }
