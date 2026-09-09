@@ -430,55 +430,39 @@ namespace CETools.Civil3D
             }
 
             CivilFeatureLine featureLine = source as CivilFeatureLine;
-            if (featureLine != null && featureLine.GetType() == typeof(CivilFeatureLine))
+            if (featureLine != null)
             {
-                DBObjectCollection exploded = new DBObjectCollection();
                 try
                 {
-                    featureLine.Explode(exploded);
-                    foreach (DBObject item in exploded)
+                    // PI points define the horizontal segment geometry. Elevation
+                    // points lie on those segments and must not split a length label.
+                    Point3dCollection piPoints = featureLine.GetPoints(FeatureLinePointType.PIPoint);
+                    if (piPoints != null && piPoints.Count >= 2)
                     {
-                        Line explodedLine = item as Line;
-                        if (explodedLine != null)
+                        for (int index = 0; index < piPoints.Count - 1; index++)
                         {
-                            AddLineSegment(segments, explodedLine.StartPoint, explodedLine.EndPoint);
-                            continue;
-                        }
+                            Point3d start = Plan(piPoints[index]);
+                            Point3d end = Plan(piPoints[index + 1]);
+                            if (start.DistanceTo(end) <= Tolerance) continue;
 
-                        Arc arc = item as Arc;
-                        if (arc != null)
-                        {
-                            double sweep = arc.EndAngle - arc.StartAngle;
-                            while (sweep <= 0.0) sweep += Math.PI * 2.0;
-                            AddArcSegment(
-                                segments,
-                                Plan(arc.StartPoint),
-                                Plan(arc.EndPoint),
-                                Plan(arc.Center),
-                                arc.Radius,
-                                arc.StartAngle,
-                                sweep);
-                            continue;
-                        }
+                            double bulge = 0.0;
+                            try { bulge = featureLine.GetBulge(index); }
+                            catch { }
 
-                        Polyline explodedPolyline = item as Polyline;
-                        if (explodedPolyline != null)
-                            AddPolylineSegments(segments, explodedPolyline);
+                            if (Math.Abs(bulge) <= Tolerance)
+                                AddLineSegment(segments, start, end);
+                            else
+                                AddBulgeArcSegment(segments, start, end, bulge);
+                        }
                     }
                 }
                 catch
                 {
                     segments.Clear();
                 }
-                finally
-                {
-                    foreach (DBObject item in exploded)
-                    {
-                        try { item.Dispose(); }
-                        catch { }
-                    }
-                }
 
+                // Defensive fallback for unusual Civil wrappers that do not expose
+                // PI points. This keeps straight feature lines usable.
                 if (segments.Count == 0)
                 {
                     try
@@ -516,16 +500,43 @@ namespace CETools.Civil3D
                     continue;
                 }
 
-                double chord = start.DistanceTo(end);
-                double radius = chord * (1.0 + bulge * bulge) / (4.0 * Math.Abs(bulge));
-                Vector3d direction = end - start;
-                Vector3d left = new Vector3d(-direction.Y, direction.X, 0.0).GetNormal();
-                double centerOffset = chord * (1.0 - bulge * bulge) / (4.0 * bulge);
-                Point3d center = Mid(start, end) + left * centerOffset;
-                double startAngle = Math.Atan2(start.Y - center.Y, start.X - center.X);
-                double sweep = 4.0 * Math.Atan(bulge);
-                AddArcSegment(segments, start, end, center, radius, startAngle, sweep);
+                AddBulgeArcSegment(segments, start, end, bulge);
             }
+        }
+
+        private static void AddBulgeArcSegment(
+            ICollection<SegmentGeometry> segments,
+            Point3d start,
+            Point3d end,
+            double bulge)
+        {
+            double chord = start.DistanceTo(end);
+            if (chord <= Tolerance || Math.Abs(bulge) <= Tolerance)
+            {
+                AddLineSegment(segments, start, end);
+                return;
+            }
+
+            double radius = chord * (1.0 + bulge * bulge) /
+                (4.0 * Math.Abs(bulge));
+            Vector3d direction = end - start;
+            Vector3d left = new Vector3d(
+                -direction.Y, direction.X, 0.0).GetNormal();
+            double centerOffset = chord * (1.0 - bulge * bulge) /
+                (4.0 * bulge);
+            Point3d center = Mid(start, end) + left * centerOffset;
+            double startAngle = Math.Atan2(
+                start.Y - center.Y,
+                start.X - center.X);
+            double sweep = 4.0 * Math.Atan(bulge);
+            AddArcSegment(
+                segments,
+                start,
+                end,
+                center,
+                radius,
+                startAngle,
+                sweep);
         }
 
         private static void AddLineSegment(
@@ -1076,7 +1087,7 @@ namespace CETools.Civil3D
         {
             return source is Line ||
                 source is Polyline ||
-                (source is CivilFeatureLine && source.GetType() == typeof(CivilFeatureLine));
+                source is CivilFeatureLine;
         }
 
         private static string Value(IDictionary<string, string> values, string key)
