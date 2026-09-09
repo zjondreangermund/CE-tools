@@ -125,27 +125,112 @@ $aug27 = ReplaceMethodBody $aug27 '        internal static void SurfaceSlopeArro
 '@
 WriteText $aug27Path $aug27
 
-# Preserve AutoCAD REDO after UNDO. Some ObjectModified/ObjectErased events arrive
-# after CommandEnded; suppress CE automatic refresh briefly so no new undo item is
-# inserted between UNDO and REDO. Any new normal command clears the suppression.
+# Preserve native AutoCAD REDO after UNDO.  September04 has already replaced the
+# refresh command-end/Idle bodies, so use semantic method replacement rather than
+# a brittle text anchor. Delayed database events after UNDO are suppressed long
+# enough that CE's automatic refresh cannot become a new undo item between U/UNDO
+# and REDO. Starting any ordinary command clears the special REDO window.
 $universal = ReadText $universalPath
-if (-not $universal.Contains('_undoRedoSuppressUntilUtc')) {
-    $universal = $universal.Replace(
-        '        private static bool _undoRedoActive;',
-        '        private static bool _undoRedoActive;' + "`r`n" + '        private static DateTime _undoRedoSuppressUntilUtc = DateTime.MinValue;')
+if (-not $universal.Contains('private static DateTime _undoRedoSuppressUntilUtc = DateTime.MinValue;')) {
+    $fieldAnchor = '        private static bool _undoRedoActive;'
+    if (-not $universal.Contains($fieldAnchor)) { throw 'Universal undo/redo field anchor missing.' }
+    $universal = $universal.Replace($fieldAnchor,$fieldAnchor + "`r`n        private static DateTime _undoRedoSuppressUntilUtc = DateTime.MinValue;")
 }
-$universal = $universal.Replace(
-    '            if (!IsUndoRedo(command)) return;' + "`r`n" + '            _undoRedoActive = true;',
-    '            if (!IsUndoRedo(command))' + "`r`n" + '            {' + "`r`n" + '                _undoRedoSuppressUntilUtc = DateTime.MinValue;' + "`r`n" + '                return;' + "`r`n" + '            }' + "`r`n" + '            _undoRedoActive = true;')
-$undoEndAnchor = '                _lastChangeUtc = DateTime.UtcNow;' + "`r`n" + '                return;'
-$undoEndReplacement = '                _lastChangeUtc = DateTime.UtcNow;' + "`r`n" + '                _undoRedoSuppressUntilUtc = DateTime.UtcNow.AddSeconds(2.5);' + "`r`n" + '                return;'
-if ($universal.Contains($undoEndAnchor) -and -not $universal.Contains('DateTime.UtcNow.AddSeconds(2.5)')) { $universal = $universal.Replace($undoEndAnchor,$undoEndReplacement) }
-$universal = $universal.Replace(
-    '            if (_busy || _undoRedoActive || e == null || e.DBObject == null) return;',
-    '            if (_busy || _undoRedoActive || DateTime.UtcNow < _undoRedoSuppressUntilUtc || e == null || e.DBObject == null) return;')
-$idleAnchor = '            if (!Enabled || !_pending || _busy || _undoRedoActive || active == null) return;'
-$idleReplacement = $idleAnchor + "`r`n" + '            if (DateTime.UtcNow < _undoRedoSuppressUntilUtc) { _pending = false; return; }'
-if ($universal.Contains($idleAnchor) -and -not $universal.Contains('DateTime.UtcNow < _undoRedoSuppressUntilUtc) { _pending = false; return; }')) { $universal = $universal.Replace($idleAnchor,$idleReplacement) }
+if (-not $universal.Contains('private static DateTime _suppressQueueUntilUtc = DateTime.MinValue;')) {
+    $refreshField = '        private static DateTime _lastRefreshUtc = DateTime.MinValue;'
+    if (-not $universal.Contains($refreshField)) { throw 'Universal queue-suppression field anchor missing.' }
+    $universal = $universal.Replace($refreshField,$refreshField + "`r`n        private static DateTime _suppressQueueUntilUtc = DateTime.MinValue;")
+}
+
+$universal = ReplaceMethodBody $universal '        private static void OnCommandWillStart(' @'
+            if (_busy || e == null) return;
+            string command = NormalizeCommand(e.GlobalCommandName);
+            if (!IsUndoRedo(command))
+            {
+                // A normal command legitimately invalidates AutoCAD's REDO stack.
+                _undoRedoSuppressUntilUtc = DateTime.MinValue;
+                return;
+            }
+            _undoRedoActive = true;
+            _pending = false;
+'@
+
+$universal = ReplaceMethodBody $universal '        private static void OnCommandEnded(' @'
+            if (_busy || e == null) return;
+            string command = NormalizeCommand(e.GlobalCommandName);
+            DateTime now = DateTime.UtcNow;
+
+            if (IsUndoRedo(command))
+            {
+                _undoRedoActive = false;
+                _pending = false;
+                _lastChangeUtc = now;
+                // Prevent late CE ObjectModified/ObjectErased callbacks from
+                // inserting a background refresh undo item after U/UNDO.
+                _undoRedoSuppressUntilUtc = now.AddSeconds(2.5);
+                _suppressQueueUntilUtc = now.AddSeconds(2.5);
+                return;
+            }
+
+            if (string.Equals(command, "CE_DYNAMICREFRESHALL", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "CE_GRIDSETTINGOUTREFRESH", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "CE_SITEGRIDREFRESH", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "CE_REFRESHALL", StringComparison.OrdinalIgnoreCase))
+            {
+                _pending = false;
+                _lastChangeUtc = now;
+                _suppressQueueUntilUtc = now.AddMilliseconds(1000.0);
+                return;
+            }
+
+            bool geometryEdit =
+                string.Equals(command, "MOVE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "STRETCH", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "PEDIT", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "SCALE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "ROTATE", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(command, "ALIGN", StringComparison.OrdinalIgnoreCase) ||
+                command.IndexOf("GRIP", StringComparison.OrdinalIgnoreCase) >= 0;
+            if (geometryEdit)
+            {
+                _pending = true;
+                _lastChangeUtc = now;
+            }
+'@
+
+$universal = ReplaceMethodBody $universal '        private static void OnObjectChanged(' @'
+            if (_busy || _undoRedoActive || DateTime.UtcNow < _undoRedoSuppressUntilUtc || e == null || e.DBObject == null) return;
+            DBObject value = e.DBObject;
+            if (value is Entity || value is Xrecord || value is DBDictionary ||
+                value is CogoPoint || value is Pipe || value is Structure ||
+                value is Autodesk.Civil.DatabaseServices.Network)
+                Queue();
+'@
+
+$universal = ReplaceMethodBody $universal '        private static void OnObjectErased(' @'
+            if (_busy || _undoRedoActive || DateTime.UtcNow < _undoRedoSuppressUntilUtc || e == null || e.DBObject == null) return;
+            Queue();
+'@
+
+$universal = ReplaceMethodBody $universal '        private static void OnIdle(object sender, EventArgs e)' @'
+            Document active = AcApplication.DocumentManager.MdiActiveDocument;
+            Attach(active);
+            if (!Enabled || !_pending || _busy || _undoRedoActive || active == null) return;
+            if (DateTime.UtcNow < _undoRedoSuppressUntilUtc)
+            {
+                _pending = false;
+                return;
+            }
+            if ((DateTime.UtcNow - _lastChangeUtc).TotalSeconds < DelaySeconds) return;
+            if ((DateTime.UtcNow - _lastRefreshUtc).TotalSeconds < 0.75) return;
+            string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
+            if (!string.IsNullOrWhiteSpace(commands)) return;
+            int commandActive = Convert.ToInt32(
+                AcApplication.GetSystemVariable("CMDACTIVE"),
+                CultureInfo.InvariantCulture);
+            if (commandActive != 0) return;
+            RefreshNow(active, true);
+'@
 WriteText $universalPath $universal
 
 # Update menu wording to match field behavior.
@@ -170,9 +255,15 @@ foreach($token in @(
     'Support-line crossings, not arbitrary nearest endpoints',
     'ALL-SEGMENTS complete','SplitPolylineAll(',
     'SurfaceSlopeLabelsPopup(','ReadSurfaceChoices(',
-    'Single slope between two feature lines - Civil 3D','CivilGeneralSegmentLabel.Create','CivilFeatureLine.Create',
-    'DateTime.UtcNow.AddSeconds(2.5)')) {
-    if (-not $runtime.Contains($token) -and -not $universal.Contains($token)) { throw ('September 09 refinement guard missing: {0}' -f $token) }
+    'Single slope between two feature lines - Civil 3D','CivilGeneralSegmentLabel.Create','CivilFeatureLine.Create')) {
+    if (-not $runtime.Contains($token)) { throw ('September 09 refinement runtime guard missing: {0}' -f $token) }
+}
+foreach($token in @(
+    'private static DateTime _undoRedoSuppressUntilUtc = DateTime.MinValue;',
+    '_undoRedoSuppressUntilUtc = now.AddSeconds(2.5);',
+    '_suppressQueueUntilUtc = now.AddSeconds(2.5);',
+    'DateTime.UtcNow < _undoRedoSuppressUntilUtc')) {
+    if (-not $universal.Contains($token)) { throw ('September 09 REDO preservation guard missing: {0}' -f $token) }
 }
 if (-not $grid.Contains('September09FieldRefinementRuntime.EnsureStyledGridDifferenceColumn(table);')) { throw 'Styled DIFFERENCE is not inside the grid create/refresh Table transaction.' }
 if (-not $sep05.Contains('September09FieldRefinementRuntime.MultiFillet(document);')) { throw 'CE_MULTIFILLET final route is wrong.' }
@@ -180,7 +271,6 @@ if (-not $sep09.Contains('September09FieldRefinementRuntime.RoadReserveCentrePol
 if (-not $sep09.Contains('September09FieldRefinementRuntime.SlopeAnnotations(document);')) { throw 'Slope options final route is wrong.' }
 if (-not $break.Contains('September09FieldRefinementRuntime.CutAllJunctions(document);')) { throw 'CE_PLBREAKJUNCTIONS final all-segments route is wrong.' }
 if (-not $aug27.Contains('September09FieldRefinementRuntime.SurfaceSlopeLabelsPopup(document);')) { throw 'Surface slope popup/native final route is wrong.' }
-if (-not $universal.Contains('_undoRedoSuppressUntilUtc')) { throw 'UNDO/REDO post-command suppression is missing.' }
 
 Write-Host 'September 09 field-refinement finalization complete.' -ForegroundColor Green
 Write-Host 'Grid difference formatting, joined/filleted road centres with open-boundary support, support-intersection multi-fillet, all-segment X/T cuts, popup surface labels, native Civil single crossfall label and REDO preservation are final staged routes.' -ForegroundColor Green
