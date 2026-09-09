@@ -116,15 +116,24 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- Absolute final September 05 field-geometry boundary. This pass intentionally
-       runs after every historical repair so the field-tested T/X break route,
-       closest-crossing centre construction, remembered multi-fillet, green endpoint
-       connector and Design-minus-NG Grid Setting-Out column cannot be overwritten. -->
+  <!-- September 05 field-geometry boundary. -->
   <Target Name="CEApplySeptember05FieldGeometryCompletion"
           AfterTargets="CEApplySeptember04SiteGridDynamicNoLoop"
           BeforeTargets="CoreCompile"
           Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
     <Message Text="Applying September 05 final field-geometry completion boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
+
+  <!-- Absolute September 09 field-engineering boundary. This runs after Sep05 so
+       historical staging cannot remove the transactional Design-NG column, finite
+       road-reserve centres, construction-fillet option, native Civil surface slope
+       labels, or the safer sewer-alignment creation path. -->
+  <Target Name="CEApplySeptember09FieldEngineering"
+          AfterTargets="CEApplySeptember05FieldGeometryCompletion"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying September 09 final field-engineering boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September09-FieldEngineering-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 </Project>
