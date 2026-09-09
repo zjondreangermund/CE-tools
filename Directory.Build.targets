@@ -61,9 +61,6 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- Final August 27 presentation boundary: keep the new dynamic leader slopes,
-       linked annotative Site Grid and transaction-isolated road hatch after every
-       older historical repair has finished rewriting staged Civil 3D source. -->
   <Target Name="CEApplyAugust27DynamicSlopeGridHatch"
           AfterTargets="CEApplyAugust26CadSupplementaryGeometrySafety"
           BeforeTargets="CoreCompile"
@@ -72,9 +69,6 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- Final September 04 field correction: construction geometry must be true
-       AutoCAD XLINE entities, and breaking routes at X/T junctions must keep the
-       selected source polylines rather than erase/replace them. -->
   <Target Name="CEApplySeptember04ConstructionXlineBreakJunctions"
           AfterTargets="CEApplyAugust27DynamicSlopeGridHatch"
           BeforeTargets="CoreCompile"
@@ -83,9 +77,6 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-ConstructionXlineBreakJunctions-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- Stop Universal Dynamic Refresh self-requeue, make the Grid Setting-Out
-       source-boundary link participate in automatic refresh, and route T/X breaking
-       to the non-erasing plan-XY runtime. -->
   <Target Name="CEApplySeptember04GridRefreshBreakStability"
           AfterTargets="CEApplySeptember04ConstructionXlineBreakJunctions"
           BeforeTargets="CoreCompile"
@@ -94,9 +85,6 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-GridRefreshAndBreakStability-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- Absolute last T/X boundary. The previous field build still reproduced missed
-       crossings/T-junctions, so this finalizer pins both tracked and staged builds to
-       the CAD-independent tested junction planner and keep-source splitter. -->
   <Target Name="CEApplySeptember04VerifiedJunctionBreak"
           AfterTargets="CEApplySeptember04GridRefreshBreakStability"
           BeforeTargets="CoreCompile"
@@ -105,9 +93,6 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- Absolute last refresh boundary. The Site Grid field build reproduced a
-       CE_DYNAMICREFRESHALL feedback loop; this pass keeps boundary-linked grid
-       updates while suppressing CE's own post-refresh object/REGEN events. -->
   <Target Name="CEApplySeptember04SiteGridDynamicNoLoop"
           AfterTargets="CEApplySeptember04VerifiedJunctionBreak"
           BeforeTargets="CoreCompile"
@@ -116,7 +101,6 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- September 05 field-geometry boundary. -->
   <Target Name="CEApplySeptember05FieldGeometryCompletion"
           AfterTargets="CEApplySeptember04SiteGridDynamicNoLoop"
           BeforeTargets="CoreCompile"
@@ -125,15 +109,20 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 
-  <!-- Absolute September 09 field-engineering boundary. This runs after Sep05 so
-       historical staging cannot remove the transactional Design-NG column, finite
-       road-reserve centres, construction-fillet option, native Civil surface slope
-       labels, or the safer sewer-alignment creation path. -->
   <Target Name="CEApplySeptember09FieldEngineering"
           AfterTargets="CEApplySeptember05FieldGeometryCompletion"
           BeforeTargets="CoreCompile"
           Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
     <Message Text="Applying September 09 final field-engineering boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September09-FieldEngineering-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
+
+  <!-- Absolute final field-refinement boundary from Civil 3D field testing. -->
+  <Target Name="CEApplySeptember09FieldRefinement"
+          AfterTargets="CEApplySeptember09FieldEngineering"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying September 09 final field-refinement boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September09-FieldRefinement-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
 </Project>
