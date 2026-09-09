@@ -163,6 +163,11 @@ namespace CETools.Civil3D
                 }
                 transaction.Commit();
             }
+
+            // Segment labels store their configured paper height and offset. Queue
+            // the universal dynamic pass whenever an annotation scale is applied so
+            // their model-space size/offset is rebuilt for the new CANNOSCALE.
+            UniversalDynamicRefreshManager.Queue();
             return updated;
         }
 
