@@ -1,0 +1,109 @@
+name: September 09 Field Refinement Regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/September09FieldRefinementRuntime.cs'
+      - 'src/CE.Tools.Civil3D/September09FieldEngineeringCommandFrontDoor.cs'
+      - 'src/CE.Tools.Civil3D/September05FieldGeometryCommandFrontDoor.cs'
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/August25CadSupplementaryBreakEngine.cs'
+      - 'src/CE.Tools.Civil3D/August27DynamicSlopeGridHatchCommands.cs'
+      - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
+      - 'scripts/Repair-September09-FieldRefinement-Civil3D2023.ps1'
+      - 'Directory.Build.targets'
+      - '.github/workflows/sep09-field-refinement-regression.yml'
+
+jobs:
+  field-refinement:
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Validate raw command registry
+        shell: pwsh
+        run: python scripts/validate-CommandRegistry.py
+
+      - name: Reproduce complete Civil 3D 2023 finalizer chain
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $stage = Join-Path $env:RUNNER_TEMP 'ce-sep09-field-refinement'
+          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
+          New-Item -ItemType Directory -Force -Path $stage | Out-Null
+          Copy-Item src -Destination $stage -Recurse -Force
+          Copy-Item scripts -Destination $stage -Recurse -Force
+          Copy-Item tests -Destination $stage -Recurse -Force
+          Copy-Item global.json -Destination $stage -Force
+          Copy-Item Directory.Build.targets -Destination $stage -Force
+
+          & (Join-Path $stage 'scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August24-DynamicGridCivilSurfaceCompileFix-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August24-FinalCompileCompatibility-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September04-ConstructionXlineBreakJunctions-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September04-GridRefreshAndBreakStability-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September09-FieldEngineering-Civil3D2023.ps1') -RepoRoot $stage
+          & (Join-Path $stage 'scripts\Repair-September09-FieldRefinement-Civil3D2023.ps1') -RepoRoot $stage
+          ('STAGE=' + $stage) | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+
+      - name: Verify field refinement behavior
+        shell: pwsh
+        run: |
+          $runtime = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\September09FieldRefinementRuntime.cs')
+          $grid = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs')
+          $break = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August25CadSupplementaryBreakEngine.cs')
+          $aug27 = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August27DynamicSlopeGridHatchCommands.cs')
+          $universal = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\UniversalDynamicRefreshCommands.cs')
+          $front05 = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\September05FieldGeometryCommandFrontDoor.cs')
+          $front09 = Get-Content -Raw (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\September09FieldEngineeringCommandFrontDoor.cs')
+          $targets = Get-Content -Raw (Join-Path $env:STAGE 'Directory.Build.targets')
+
+          foreach ($token in @('TextHeight = table.Cells[row, designColumn].TextHeight','TextStyleId = table.Cells[row, designColumn].TextStyleId','Alignment = table.Cells[row, designColumn].Alignment')) {
+            if (-not $runtime.Contains($token)) { throw "Difference style marker missing: $token" }
+          }
+          if (-not $grid.Contains('September09FieldRefinementRuntime.EnsureStyledGridDifferenceColumn(table);')) { throw 'Grid create/refresh does not use styled Difference column.' }
+
+          foreach ($token in @('Open/normal road boundaries','SplitAtAllIntersections(','TraceNetworkChains(','BuildFilletedPolyline(','T/X junctions share exact endpoints')) {
+            if (-not $runtime.Contains($token)) { throw "Road centre refinement missing: $token" }
+          }
+          if (-not $front09.Contains('September09FieldRefinementRuntime.RoadReserveCentrePolylines(document);')) { throw 'Road centre front door route wrong.' }
+
+          if (-not $front05.Contains('September09FieldRefinementRuntime.MultiFillet(document);')) { throw 'CE_MULTIFILLET is not on refined support-intersection route.' }
+          if (-not $runtime.Contains('Support-line crossings, not arbitrary nearest endpoints')) { throw 'MultiFillet support-crossing marker missing.' }
+
+          if (-not $break.Contains('September09FieldRefinementRuntime.CutAllJunctions(document);')) { throw 'Break/cut command route wrong.' }
+          foreach ($token in @('ALL-SEGMENTS complete','SplitPolylineAll(','CollectRouteJunctions(')) { if (-not $runtime.Contains($token)) { throw "All-segment cut marker missing: $token" } }
+
+          if (-not $aug27.Contains('September09FieldRefinementRuntime.SurfaceSlopeLabelsPopup(document);')) { throw 'Surface slope is not popup/native route.' }
+          foreach ($token in @('ReadSurfaceChoices(','CivilSurfaceSlopeLabel.Create','Single slope between two feature lines - Civil 3D','CivilGeneralSegmentLabel.Create','CivilFeatureLine.Create')) {
+            if (-not $runtime.Contains($token)) { throw "Slope refinement marker missing: $token" }
+          }
+
+          foreach ($token in @('_undoRedoSuppressUntilUtc','DateTime.UtcNow.AddSeconds(2.5)','DateTime.UtcNow < _undoRedoSuppressUntilUtc')) {
+            if (-not $universal.Contains($token)) { throw "REDO preservation marker missing: $token" }
+          }
+
+          if (-not $targets.Contains('AfterTargets="CEApplySeptember09FieldEngineering"')) { throw 'Field refinement target is not last after September09 engineering.' }
+          if (-not $targets.Contains('Repair-September09-FieldRefinement-Civil3D2023.ps1')) { throw 'Field refinement target missing.' }
+
+      - name: Validate staged command registry
+        shell: pwsh
+        run: python (Join-Path $env:STAGE 'scripts\validate-CommandRegistry.py')
+
+      - name: Parse final staged Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
