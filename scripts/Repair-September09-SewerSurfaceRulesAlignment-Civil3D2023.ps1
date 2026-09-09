@@ -51,6 +51,21 @@ $menuPath = Required 'August24FieldCompletionCommands.cs'
 $runnerPath = Required 'CeSequentialCommandRunner.cs'
 
 $runtime = ReadText $runtimePath
+
+# Earlier staged recovery sources can leave the completion marker call passing a
+# Database even though NetworkSourceMarker.Mark requires the active Document.
+# Repair that exact legacy call before compilation and guard the corrected form so
+# a later staged source rewrite cannot silently reintroduce CS1503.
+$legacySourceMarkerCall = 'NetworkSourceMarker.Mark(database, sourceId, "Sewer");'
+$documentSourceMarkerCall = 'NetworkSourceMarker.Mark(document, sourceId, "Sewer");'
+if ($runtime.Contains($legacySourceMarkerCall)) {
+    $runtime = $runtime.Replace($legacySourceMarkerCall, $documentSourceMarkerCall)
+    WriteText $runtimePath $runtime
+}
+if (-not $runtime.Contains($documentSourceMarkerCall)) {
+    throw 'September 09 sewer source marker guard missing: NetworkSourceMarker.Mark must receive Document.'
+}
+
 $requiredRuntimeTokens = @(
     'CE_SEWLINKSURFACE',
     'RefSurfaceId = surface.Id',
