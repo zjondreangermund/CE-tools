@@ -93,7 +93,7 @@ jobs:
             if (-not $runtime.Contains($token)) { throw "Slope refinement marker missing: $token" }
           }
 
-          foreach ($token in @('_undoRedoSuppressUntilUtc','DateTime.UtcNow.AddSeconds(2.5)','DateTime.UtcNow < _undoRedoSuppressUntilUtc')) {
+          foreach ($token in @('_undoRedoSuppressUntilUtc','now.AddSeconds(2.5)','DateTime.UtcNow < _undoRedoSuppressUntilUtc')) {
             if (-not $universal.Contains($token)) { throw "REDO preservation marker missing: $token" }
           }
 
