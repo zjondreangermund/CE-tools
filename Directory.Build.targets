@@ -125,4 +125,13 @@
     <Message Text="Applying September 09 final field-refinement boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September09-FieldRefinement-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
+
+  <!-- Absolute final sewer field boundary: must run after all historical and September 09 staged repairs. -->
+  <Target Name="CEApplySeptember09SewerSurfaceRulesAlignment"
+          AfterTargets="CEApplySeptember09FieldRefinement"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying September 09 sewer surface/rules and crash-safe alignment boundary..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September09-SewerSurfaceRulesAlignment-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
 </Project>
