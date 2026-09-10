@@ -48,7 +48,8 @@ jobs:
             'Repair-September09-FieldRefinement-Civil3D2023.ps1',
             'Normalize-September09-UniversalRefreshHousekeeping-Civil3D2023.ps1',
             'Repair-September09-SewerSurfaceRulesAlignment-Civil3D2023.ps1',
-            'Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1'
+            'Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1',
+            'Repair-September10-CompileFix-SewerAuditSequence-Civil3D2023.ps1'
           )
           foreach ($name in $scripts) {
             $path = Join-Path $root ('scripts\' + $name)
@@ -58,6 +59,34 @@ jobs:
             & $path -RepoRoot $root
             if ($LASTEXITCODE -ne 0) { throw "$name exited with code $LASTEXITCODE" }
           }
+
+      - name: Verify staged sewer compile compatibility
+        shell: powershell
+        run: |
+          $audit = Get-Content 'src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs' -Raw
+          if ($audit.Contains('September09SewerSurfaceRulesRuntime.LinkExistingPartsToSurface(')) {
+            throw 'Staged sewer audit still targets the incompatible two-argument September09 helper.'
+          }
+          if (-not $audit.Contains('September10SewerAuditRuntime.LinkExistingPartsToSurface(')) {
+            throw 'Staged sewer audit is missing the September10 nine-argument surface-link helper.'
+          }
+
+          $sequence = Get-Content 'src\CE.Tools.Civil3D\SewerSequenceCommands.cs' -Raw
+          foreach ($token in @(
+            'public List<ObjectId> NodeIds { get; }',
+            'public List<ObjectId> EdgeIds { get; }',
+            'NodeIds = nodeIds.ToList();',
+            'EdgeIds = edgeIds.ToList();',
+            'ReverseInPlace(selected.NodeIds);',
+            'ReverseInPlace(selected.EdgeIds);')) {
+            if (-not $sequence.Contains($token)) { throw "Missing staged sequence compile token: $token" }
+          }
+
+          $helper = Get-Content 'src\CE.Tools.Civil3D\September10SewerAuditRuntime.cs' -Raw
+          if (-not $helper.Contains('internal static bool LinkExistingPartsToSurface(')) {
+            throw 'September10 sewer audit helper is missing.'
+          }
+          Write-Host 'Staged sewer audit and side-branch sequencing are compile-compatible.'
 
       - name: Reproduce installer-prestaged refresh variant
         shell: powershell
