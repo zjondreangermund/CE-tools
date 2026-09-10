@@ -25,7 +25,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Run the real Civil 3D 2023 pre-compile finalizer chain
+      - name: Run the real Civil 3D 2023 pre-September10 finalizer chain
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -47,9 +47,7 @@ jobs:
             'Repair-September09-FieldEngineering-Civil3D2023.ps1',
             'Repair-September09-FieldRefinement-Civil3D2023.ps1',
             'Normalize-September09-UniversalRefreshHousekeeping-Civil3D2023.ps1',
-            'Repair-September09-SewerSurfaceRulesAlignment-Civil3D2023.ps1',
-            'Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1',
-            'Repair-September10-CompileFix-SewerAuditSequence-Civil3D2023.ps1'
+            'Repair-September09-SewerSurfaceRulesAlignment-Civil3D2023.ps1'
           )
           foreach ($name in $scripts) {
             $path = Join-Path $root ('scripts\' + $name)
@@ -59,6 +57,19 @@ jobs:
             & $path -RepoRoot $root
             if ($LASTEXITCODE -ne 0) { throw "$name exited with code $LASTEXITCODE" }
           }
+
+      - name: Run September 10 through the actual MSBuild target graph
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $project = 'src\CE.Tools.Civil3D\CE.Tools.Civil3D.csproj'
+          $projectText = Get-Content $project -Raw
+          if ($projectText.Contains('CEApplySeptember10SewerAuditSequenceCompileFix')) {
+            throw 'Compile-fix target must not be declared in the project file; it can be scheduled before imported finalizers.'
+          }
+          dotnet msbuild $project /t:CEApplySeptember10SewerAuditSequenceDynamicMultiDimension /p:AutoCADVersion=2023 /v:minimal
+          if ($LASTEXITCODE -ne 0) { throw "September 10 MSBuild target graph failed with code $LASTEXITCODE" }
+          Write-Host 'MSBuild ran the September 10 field finalizer before its compile-compatibility after-target.'
 
       - name: Verify staged sewer compile compatibility
         shell: powershell
