@@ -143,4 +143,15 @@
     <Message Text="Applying September 10 sewer audit/sequence and dynamic-dimension field corrections..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
+
+  <!-- Compile compatibility must be an after-target only. Defining it directly as
+       another BeforeTargets=CoreCompile target in the project file lets MSBuild run
+       it before the imported September 10 staged finalizer, which is exactly the
+       installer failure seen in the field build. -->
+  <Target Name="CEApplySeptember10SewerAuditSequenceCompileFix"
+          AfterTargets="CEApplySeptember10SewerAuditSequenceDynamicMultiDimension"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying September 10 Civil 3D 2023 sewer compile compatibility..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September10-CompileFix-SewerAuditSequence-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
 </Project>
