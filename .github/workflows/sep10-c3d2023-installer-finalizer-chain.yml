@@ -59,6 +59,23 @@ jobs:
             $global:LASTEXITCODE = 0
           }
 
+      - name: Reproduce installer-prestaged refresh variant
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = (Resolve-Path '.').Path
+          $source = Join-Path $root 'src\CE.Tools.Civil3D\UniversalDynamicRefreshCommands.cs'
+          $text = [System.IO.File]::ReadAllText($source)
+          $optionalAnchor = 'RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);'
+          if ($text.Contains($optionalAnchor)) {
+            $text = $text.Replace($optionalAnchor, '')
+            [System.IO.File]::WriteAllText($source, $text, (New-Object System.Text.UTF8Encoding($false)))
+          }
+          & (Join-Path $root 'scripts\Normalize-September09-UniversalRefreshHousekeeping-Civil3D2023.ps1') -RepoRoot $root
+          & (Join-Path $root 'scripts\Repair-September09-SewerSurfaceRulesAlignment-Civil3D2023.ps1') -RepoRoot $root
+          if ($LASTEXITCODE -ne 0) { throw "Installer-prestaged refresh variant failed with code $LASTEXITCODE" }
+          Write-Host 'Installer-prestaged variant passed without the optional RuntimeAnnotationLink anchor.'
+
       - name: Verify refresh performance guards survived the full chain
         shell: powershell
         run: |
