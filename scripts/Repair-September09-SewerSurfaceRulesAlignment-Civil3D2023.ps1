@@ -44,9 +44,30 @@ function ReplaceMethodBody([string]$text,[string]$marker,[string]$body) {
     return $text.Substring(0,$bounds.Open+1) + "`r`n" + $body + "`r`n        " + $text.Substring($bounds.Close)
 }
 function ReplaceBackgroundHousekeeping([string]$text,[string]$legacy,[string]$replacement,[string]$label) {
-    if ($text.Contains($replacement)) { return $text }
-    $pattern = [regex]::Escape($legacy) + '\s*catch\s*\{\s*result\.Warnings\+\+;\s*\}'
-    $updated = [regex]::Replace($text,$pattern,$replacement,1)
+    # Older staged finalizers can leave this block either in the original
+    # try/catch form or already guarded by !suppressUndoRecording, sometimes
+    # formatted across several lines. Normalize both forms to one canonical
+    # replacement so repeated build/install runs stay idempotent.
+    $trimmedLegacy = $legacy.Trim()
+    if (-not $trimmedLegacy.StartsWith('try { ',[StringComparison]::Ordinal) -or
+        -not $trimmedLegacy.EndsWith(' }',[StringComparison]::Ordinal)) {
+        throw ('Universal dynamic refresh housekeeping legacy form invalid: {0}' -f $label)
+    }
+    $call = $trimmedLegacy.Substring(6,$trimmedLegacy.Length-8)
+    $escapedCall = [regex]::Escape($call)
+    $alreadyPattern = 'if\s*\(\s*!suppressUndoRecording\s*\)\s*\{\s*try\s*\{\s*' +
+        $escapedCall + '\s*\}\s*catch\s*\{\s*result\.Warnings\+\+;\s*\}\s*\}'
+    $alreadyRegex = New-Object System.Text.RegularExpressions.Regex(
+        $alreadyPattern,
+        [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if ($alreadyRegex.IsMatch($text)) {
+        return $alreadyRegex.Replace($text,$replacement,1)
+    }
+    $legacyPattern = 'try\s*\{\s*' + $escapedCall + '\s*\}\s*catch\s*\{\s*result\.Warnings\+\+;\s*\}'
+    $legacyRegex = New-Object System.Text.RegularExpressions.Regex(
+        $legacyPattern,
+        [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    $updated = $legacyRegex.Replace($text,$replacement,1)
     if ([string]::Equals($updated,$text,[StringComparison]::Ordinal)) {
         throw ('Universal dynamic refresh housekeeping anchor missing: {0}' -f $label)
     }
