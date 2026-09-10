@@ -92,7 +92,7 @@ $required = @(
 foreach ($token in $required) {
     $count = ([regex]::Matches($check,[regex]::Escape($token))).Count
     if ($count -ne 1) {
-        throw "Universal refresh pre-normalization expected exactly one canonical guard but found $count: $token"
+        throw ('Universal refresh pre-normalization expected exactly one canonical guard but found {0}: {1}' -f $count,$token)
     }
 }
 
