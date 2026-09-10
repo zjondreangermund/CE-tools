@@ -28,16 +28,7 @@ function FindMatchingBrace([string]$text,[int]$open) {
     }
     throw 'Universal refresh RefreshNow closing brace was not found.'
 }
-function NormalizeHousekeepingCall(
-    [string]$body,
-    [string]$call,
-    [string]$anchor,
-    [string]$label) {
-
-    $canonical = '                try { ' + $call + ' }' + "`r`n" +
-                 '                catch { result.Warnings++; }'
-    if ($body.Contains($canonical)) { return $body }
-
+function RemoveHousekeepingCall([string]$body,[string]$call) {
     $escaped = [regex]::Escape($call)
     $guarded = '(?ms)^[ \t]*if\s*\(\s*!suppressUndoRecording\s*\)\s*\{\s*try\s*\{\s*' + $escaped + '\s*\}\s*catch\s*\{\s*result\.Warnings\+\+;\s*\}\s*\}\s*(?:\r?\n)?'
     $body = [regex]::Replace($body,$guarded,'',1)
@@ -45,21 +36,14 @@ function NormalizeHousekeepingCall(
     $legacy = '(?ms)^[ \t]*try\s*\{\s*' + $escaped + '\s*\}\s*catch\s*\{\s*result\.Warnings\+\+;\s*\}\s*(?:\r?\n)?'
     $body = [regex]::Replace($body,$legacy,'',1)
 
-    # Last-resort normalization for a historical staged shape not covered above:
-    # remove the call-bearing line itself, then put one canonical legacy block in
-    # RefreshNow. Any surrounding empty try/if block remains valid C# and the
-    # September 09 finalizer will immediately replace this canonical block with
-    # the !suppressUndoRecording guarded form.
+    # Historical installer staging has produced several intermediate shapes. If
+    # the exact call survives outside the two known wrappers, remove only the call
+    # token and leave the surrounding C# structure intact. An empty try/if block is
+    # still valid and the canonical guarded call is inserted below exactly once.
     if ($body.Contains($call)) {
-        $linePattern = '(?m)^[^\r\n]*' + $escaped + '[^\r\n]*(?:\r?\n)?'
-        $body = [regex]::Replace($body,$linePattern,'',1)
+        $body = $body.Replace($call,'')
     }
-
-    $at = $body.IndexOf($anchor,[StringComparison]::Ordinal)
-    if ($at -lt 0) {
-        throw ('Universal refresh normalization anchor missing for {0}: {1}' -f $label,$anchor)
-    }
-    return $body.Substring(0,$at) + $canonical + "`r`n" + $body.Substring($at)
+    return $body
 }
 
 $text = ReadText $path
@@ -71,30 +55,45 @@ if ($open -lt 0) { throw 'Universal refresh RefreshNow opening brace was not fou
 $close = FindMatchingBrace $text $open
 $body = $text.Substring($open + 1,$close - $open - 1)
 
-$body = NormalizeHousekeepingCall $body `
-    'CogoPointProjectStyleCommands.ApplySelectedStyles(document, true);' `
-    '                try { RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true); }' `
-    'COGO style refresh'
-$body = NormalizeHousekeepingCall $body `
-    'result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document);' `
-    '                try { FinalFeatureLineReportCommands.RefreshAll(document); }' `
-    'metadata refresh'
-$body = NormalizeHousekeepingCall $body `
-    'CeTablePresentationManager.CenterCeTables(document);' `
-    '                _pending = false;' `
-    'table presentation refresh'
+$cogoCall = 'CogoPointProjectStyleCommands.ApplySelectedStyles(document, true);'
+$metadataCall = 'result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document);'
+$tableCall = 'CeTablePresentationManager.CenterCeTables(document);'
+
+$body = RemoveHousekeepingCall $body $cogoCall
+$body = RemoveHousekeepingCall $body $metadataCall
+$body = RemoveHousekeepingCall $body $tableCall
+
+# Do not anchor these housekeeping calls to another optional refresh manager. The
+# packaged installer can legitimately remove/reorder those managers before this
+# final boundary. _pending=false is the stable end-of-refresh marker inside this
+# RefreshNow method, so place the three manual-only calls immediately before it.
+$anchorMatch = [regex]::Match($body,'(?m)^[ \t]*_pending\s*=\s*false\s*;\s*$')
+if (-not $anchorMatch.Success) {
+    throw 'Universal refresh normalization could not locate the stable _pending=false marker inside RefreshNow.'
+}
+
+$guardBlock = @'
+                if (!suppressUndoRecording) { try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); } catch { result.Warnings++; } }
+                if (!suppressUndoRecording) { try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); } catch { result.Warnings++; } }
+                if (!suppressUndoRecording) { try { CeTablePresentationManager.CenterCeTables(document); } catch { result.Warnings++; } }
+'@
+$guardBlock = ($guardBlock -replace "`r?`n","`r`n").Trim("`r","`n")
+$body = $body.Substring(0,$anchorMatch.Index) + $guardBlock + "`r`n" + $body.Substring($anchorMatch.Index)
 
 $text = $text.Substring(0,$open + 1) + $body + $text.Substring($close)
 WriteText $path $text
 
 $check = ReadText $path
-foreach ($required in @(
-    'try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); }',
-    'try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); }',
-    'try { CeTablePresentationManager.CenterCeTables(document); }')) {
-    if (-not $check.Contains($required)) {
-        throw "Universal refresh pre-normalization failed: $required"
+$required = @(
+    'if (!suppressUndoRecording) { try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); } catch { result.Warnings++; } }',
+    'if (!suppressUndoRecording) { try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); } catch { result.Warnings++; } }',
+    'if (!suppressUndoRecording) { try { CeTablePresentationManager.CenterCeTables(document); } catch { result.Warnings++; } }'
+)
+foreach ($token in $required) {
+    $count = ([regex]::Matches($check,[regex]::Escape($token))).Count
+    if ($count -ne 1) {
+        throw "Universal refresh pre-normalization expected exactly one canonical guard but found $count: $token"
     }
 }
 
-Write-Host 'September 09 Universal Dynamic Refresh housekeeping pre-normalized for the sewer/surface finalizer.' -ForegroundColor Green
+Write-Host 'September 09 Universal Dynamic Refresh housekeeping pre-normalized with stable guarded calls.' -ForegroundColor Green
