@@ -49,6 +49,7 @@ $networkPath = Required 'August13SewerMultiSourceNetworkCommands.cs'
 $alignmentPath = Required 'SewerBranchAlignmentCommands.cs'
 $menuPath = Required 'August24FieldCompletionCommands.cs'
 $runnerPath = Required 'CeSequentialCommandRunner.cs'
+$googleEarthPath = Required 'SurveyGoogleEarthCommands.cs'
 
 $runtime = ReadText $runtimePath
 
@@ -64,6 +65,28 @@ if ($runtime.Contains($legacySourceMarkerCall)) {
 }
 if (-not $runtime.Contains($documentSourceMarkerCall)) {
     throw 'September 09 sewer source marker guard missing: NetworkSourceMarker.Mark must receive Document.'
+}
+
+# Civil 3D 2023 exposes the WinForms modal-dialog helper on the ApplicationServices
+# Application type rather than the Core.Application alias used for DocumentManager.
+# Also qualify WinForms FlowDirection so the DatabaseServices enum cannot collide.
+$googleEarth = ReadText $googleEarthPath
+$legacyModalDialog = 'AcApplication.ShowModalDialog(form);'
+$compatibleModalDialog = 'Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(form);'
+if ($googleEarth.Contains($legacyModalDialog)) {
+    $googleEarth = $googleEarth.Replace($legacyModalDialog, $compatibleModalDialog)
+}
+$legacyFlowDirection = 'FlowDirection = FlowDirection.LeftToRight'
+$compatibleFlowDirection = 'FlowDirection = System.Windows.Forms.FlowDirection.LeftToRight'
+if ($googleEarth.Contains($legacyFlowDirection)) {
+    $googleEarth = $googleEarth.Replace($legacyFlowDirection, $compatibleFlowDirection)
+}
+WriteText $googleEarthPath $googleEarth
+if (-not $googleEarth.Contains($compatibleModalDialog)) {
+    throw 'Survey Google Earth modal-dialog compatibility guard missing.'
+}
+if (-not $googleEarth.Contains($compatibleFlowDirection)) {
+    throw 'Survey Google Earth FlowDirection compatibility guard missing.'
 }
 
 $requiredRuntimeTokens = @(
