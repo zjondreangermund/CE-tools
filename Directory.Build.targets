@@ -134,4 +134,13 @@
     <Message Text="Applying September 09 sewer surface/rules and crash-safe alignment boundary..." Importance="high" />
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September09-SewerSurfaceRulesAlignment-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
+
+  <!-- Final September 10 field corrections: run after every older staged mutation. -->
+  <Target Name="CEApplySeptember10SewerAuditSequenceDynamicMultiDimension"
+          AfterTargets="CEApplySeptember09SewerSurfaceRulesAlignment"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying September 10 sewer audit/sequence and dynamic-dimension field corrections..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
+  </Target>
 </Project>

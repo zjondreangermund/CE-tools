@@ -1,0 +1,81 @@
+name: September 10 sewer and dynamic dimension regression
+
+on:
+  pull_request:
+    paths:
+      - 'Directory.Build.targets'
+      - 'scripts/Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/September10DynamicMultiDimensionManager.cs'
+      - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
+      - 'src/CE.Tools.Civil3D/SewerSequenceCommands.cs'
+      - 'src/CE.Tools.Civil3D/SewerNetworkDynamicSequenceManager.cs'
+      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
+      - 'src/CE.Tools.Civil3D/AnnotationScaleSyncCommands.cs'
+      - '.github/workflows/sep10-sewer-dynamic-dimension-regression.yml'
+  push:
+    branches:
+      - feature/sewer-audit-sequence-dynamic-multidim
+    paths:
+      - 'Directory.Build.targets'
+      - 'scripts/Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1'
+      - 'src/CE.Tools.Civil3D/September10DynamicMultiDimensionManager.cs'
+      - '.github/workflows/sep10-sewer-dynamic-dimension-regression.yml'
+
+jobs:
+  staged-finalizer:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply staged Civil 3D 2023 finalizers through September 10
+        shell: powershell
+        run: |
+          $root = (Resolve-Path '.').Path
+          $scripts = @(
+            'scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1',
+            'scripts\Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1',
+            'scripts\Repair-August24-DynamicGridCivilSurfaceCompileFix-Civil3D2023.ps1',
+            'scripts\Repair-August24-FinalCompileCompatibility-Civil3D2023.ps1',
+            'scripts\Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1',
+            'scripts\Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1',
+            'scripts\Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1',
+            'scripts\Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1',
+            'scripts\Repair-September04-ConstructionXlineBreakJunctions-Civil3D2023.ps1',
+            'scripts\Repair-September04-GridRefreshAndBreakStability-Civil3D2023.ps1',
+            'scripts\Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1',
+            'scripts\Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1',
+            'scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1',
+            'scripts\Repair-September09-FieldEngineering-Civil3D2023.ps1',
+            'scripts\Repair-September09-FieldRefinement-Civil3D2023.ps1',
+            'scripts\Repair-September09-SewerSurfaceRulesAlignment-Civil3D2023.ps1',
+            'scripts\Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1'
+          )
+          foreach ($script in $scripts) {
+            Write-Host "Running $script"
+            & (Join-Path $root $script) -RepoRoot $root
+            if (-not $?) { throw "$script failed" }
+          }
+
+      - name: Verify September 10 behavior markers
+        shell: powershell
+        run: |
+          $checks = @{
+            'src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs' = @('PrepareNetwork','LinkExistingPartsToSurface','ReadPipeInnerRadius');
+            'src\CE.Tools.Civil3D\SewerSequenceCommands.cs' = @('firstEndpointAlreadyAssigned','ReverseInPlace(selected.NodeIds)');
+            'src\CE.Tools.Civil3D\SewerNetworkDynamicSequenceManager.cs' = @('branch.Nodes.Reverse()','branch.Edges.Reverse()');
+            'src\CE.Tools.Civil3D\MultiDimensionCommands.cs' = @('Dynamic update','BeginSource(transaction, sourceLine','RebuildDynamicSource','CaptureOutput(transaction, dimension)','SetAnnotative(dimension)');
+            'src\CE.Tools.Civil3D\UniversalDynamicRefreshCommands.cs' = @('DynamicMultiDimensionManager.RefreshAll(document)');
+            'src\CE.Tools.Civil3D\AnnotationScaleSyncCommands.cs' = @('undoRecordingDisabled','DisableUndoRecording(true)','DisableUndoRecording(false)');
+          }
+          foreach ($file in $checks.Keys) {
+            $text = Get-Content -Raw $file
+            foreach ($marker in $checks[$file]) {
+              if (-not $text.Contains($marker)) { throw "Missing marker '$marker' in $file" }
+            }
+          }
+
+      - name: Parse all Civil 3D C# sources
+        shell: powershell
+        run: dotnet run --project tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj -- .
