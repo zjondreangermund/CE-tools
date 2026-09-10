@@ -93,6 +93,18 @@
            Text="The AEC managed assembly AecBaseMgd.dll was not found. Pass /p:AecRoot=&quot;the folder containing AecBaseMgd.dll&quot;." />
   </Target>
 
+  <!-- The historical staged pipeline can rewrite UniversalDynamicRefreshCommands.cs
+       into several valid shapes before the September 09 sewer finalizer. Normalize
+       only the three manual housekeeping calls immediately before that finalizer so
+       its performance guard is deterministic on the real installer path. -->
+  <Target Name="CENormalizeSeptember09RefreshHousekeeping"
+          AfterTargets="CEApplySeptember09FieldRefinement"
+          BeforeTargets="CEApplySeptember09SewerSurfaceRulesAlignment"
+          Condition="'$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Pre-normalizing September 09 Universal Dynamic Refresh housekeeping..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\Normalize-September09-UniversalRefreshHousekeeping-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildProjectDirectory)\..\..\&quot;" />
+  </Target>
+
   <Target Name="CopyToApplicationBundle" AfterTargets="Build">
     <PropertyGroup>
       <BundleOutput>$(MSBuildProjectDirectory)\..\..\bundle\CE Tools.bundle\Contents\Windows\$(AutoCADVersion)</BundleOutput>
