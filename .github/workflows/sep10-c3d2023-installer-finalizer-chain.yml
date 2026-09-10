@@ -54,9 +54,9 @@ jobs:
             $path = Join-Path $root ('scripts\' + $name)
             if (-not (Test-Path -LiteralPath $path)) { throw "Missing finalizer: $name" }
             Write-Host "Running $name"
+            $global:LASTEXITCODE = 0
             & $path -RepoRoot $root
             if ($LASTEXITCODE -ne 0) { throw "$name exited with code $LASTEXITCODE" }
-            $global:LASTEXITCODE = 0
           }
 
       - name: Reproduce installer-prestaged refresh variant
@@ -71,9 +71,12 @@ jobs:
             $text = $text.Replace($optionalAnchor, '')
             [System.IO.File]::WriteAllText($source, $text, (New-Object System.Text.UTF8Encoding($false)))
           }
+          $global:LASTEXITCODE = 0
           & (Join-Path $root 'scripts\Normalize-September09-UniversalRefreshHousekeeping-Civil3D2023.ps1') -RepoRoot $root
+          if ($LASTEXITCODE -ne 0) { throw "Refresh normalizer failed with code $LASTEXITCODE" }
+          $global:LASTEXITCODE = 0
           & (Join-Path $root 'scripts\Repair-September09-SewerSurfaceRulesAlignment-Civil3D2023.ps1') -RepoRoot $root
-          if ($LASTEXITCODE -ne 0) { throw "Installer-prestaged refresh variant failed with code $LASTEXITCODE" }
+          if ($LASTEXITCODE -ne 0) { throw "September 09 finalizer failed with code $LASTEXITCODE" }
           Write-Host 'Installer-prestaged variant passed without the optional RuntimeAnnotationLink anchor.'
 
       - name: Verify refresh performance guards survived the full chain
