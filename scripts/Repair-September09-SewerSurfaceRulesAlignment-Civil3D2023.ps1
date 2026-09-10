@@ -43,6 +43,15 @@ function ReplaceMethodBody([string]$text,[string]$marker,[string]$body) {
     $body = ($body -replace '\r?\n',"`r`n").Trim("`r","`n")
     return $text.Substring(0,$bounds.Open+1) + "`r`n" + $body + "`r`n        " + $text.Substring($bounds.Close)
 }
+function ReplaceBackgroundHousekeeping([string]$text,[string]$legacy,[string]$replacement,[string]$label) {
+    if ($text.Contains($replacement)) { return $text }
+    $pattern = [regex]::Escape($legacy) + '\s*catch\s*\{\s*result\.Warnings\+\+;\s*\}'
+    $updated = [regex]::Replace($text,$pattern,$replacement,1)
+    if ([string]::Equals($updated,$text,[StringComparison]::Ordinal)) {
+        throw ('Universal dynamic refresh housekeeping anchor missing: {0}' -f $label)
+    }
+    return $updated
+}
 
 $runtimePath = Required 'September09SewerSurfaceRulesRuntime.cs'
 $networkPath = Required 'August13SewerMultiSourceNetworkCommands.cs'
@@ -167,25 +176,13 @@ $universal = ReplaceMethodBody $universal '        private static void OnCommand
 
 $legacyCogoHousekeeping = '                try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); }'
 $lightCogoHousekeeping = '                if (!suppressUndoRecording) { try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); } catch { result.Warnings++; } }'
-if ($universal.Contains($legacyCogoHousekeeping)) {
-    $universal = $universal.Replace(
-        $legacyCogoHousekeeping + "`r`n                catch { result.Warnings++; }",
-        $lightCogoHousekeeping)
-}
+$universal = ReplaceBackgroundHousekeeping $universal $legacyCogoHousekeeping $lightCogoHousekeeping 'COGO style refresh'
 $legacyMetadataHousekeeping = '                try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); }'
 $lightMetadataHousekeeping = '                if (!suppressUndoRecording) { try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); } catch { result.Warnings++; } }'
-if ($universal.Contains($legacyMetadataHousekeeping)) {
-    $universal = $universal.Replace(
-        $legacyMetadataHousekeeping + "`r`n                catch { result.Warnings++; }",
-        $lightMetadataHousekeeping)
-}
+$universal = ReplaceBackgroundHousekeeping $universal $legacyMetadataHousekeeping $lightMetadataHousekeeping 'metadata refresh'
 $legacyTableHousekeeping = '                try { CeTablePresentationManager.CenterCeTables(document); }'
 $lightTableHousekeeping = '                if (!suppressUndoRecording) { try { CeTablePresentationManager.CenterCeTables(document); } catch { result.Warnings++; } }'
-if ($universal.Contains($legacyTableHousekeeping)) {
-    $universal = $universal.Replace(
-        $legacyTableHousekeeping + "`r`n                catch { result.Warnings++; }",
-        $lightTableHousekeeping)
-}
+$universal = ReplaceBackgroundHousekeeping $universal $legacyTableHousekeeping $lightTableHousekeeping 'table presentation refresh'
 WriteText $universalRefreshPath $universal
 foreach ($token in @(
     'Generated/presentation objects are outputs, not geometry drivers.',
