@@ -8,10 +8,11 @@ $root = (Resolve-Path -LiteralPath $RepoRoot.Trim().Trim('"')).ProviderPath
 $src = Join-Path $root 'src\CE.Tools.Civil3D'
 $multiPath = Join-Path $src 'MultiDimensionCommands.cs'
 $universalPath = Join-Path $src 'UniversalDynamicRefreshCommands.cs'
+$annotationPath = Join-Path $src 'AnnotationScaleSyncCommands.cs'
 $corePath = Join-Path $root 'scripts\Repair-September10-SewerAuditSequenceDynamicMultiDimension-Core-Civil3D2023.ps1'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
-foreach ($path in @($multiPath,$universalPath,$corePath)) {
+foreach ($path in @($multiPath,$universalPath,$annotationPath,$corePath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "September 10 wrapper input missing: $path"
     }
@@ -79,6 +80,28 @@ if (-not $universal.Contains('CE_SEPT10_UNIVERSAL_COMPAT_ANCHOR')) {
 
 try {
     . $corePath -RepoRoot $root
+
+    # CANNOSCALE changes do not necessarily modify a model entity, so the universal
+    # geometry debounce is not guaranteed to run. Hook dynamic dimensions directly
+    # into the annotation-scale Idle pass while that pass already owns the document
+    # lock and has undo recording disabled.
+    $annotation = [System.IO.File]::ReadAllText($annotationPath) -replace "`r?`n", "`r`n"
+    $onIdleMarker = '        private static void OnIdle(object sender, EventArgs eventArgs)'
+    $onIdleAt = $annotation.IndexOf($onIdleMarker,[StringComparison]::Ordinal)
+    if ($onIdleAt -lt 0) { throw 'September 10 annotation-scale OnIdle marker missing.' }
+    $applyLine = '                    ApplyCurrentScale(document);'
+    $applyAt = $annotation.IndexOf($applyLine,$onIdleAt,[StringComparison]::Ordinal)
+    if ($applyAt -lt 0) { throw 'September 10 annotation-scale ApplyCurrentScale marker missing.' }
+    $scaleHook = '                    try { DynamicMultiDimensionManager.RefreshAll(document); } catch { }'
+    $hookAt = $annotation.IndexOf($scaleHook,$onIdleAt,[StringComparison]::Ordinal)
+    if ($hookAt -lt 0) {
+        $annotation = $annotation.Insert($applyAt + $applyLine.Length,"`r`n" + $scaleHook)
+        [System.IO.File]::WriteAllText($annotationPath,$annotation,$utf8)
+    }
+    if (-not $annotation.Contains($scaleHook)) {
+        throw 'September 10 dynamic dimensions are not wired to annotation-scale changes.'
+    }
+    Write-Host 'September 10 annotation-scale dynamic dimension refresh hook applied.' -ForegroundColor Green
 }
 finally {
     if (Test-Path -LiteralPath $universalPath -PathType Leaf) {
