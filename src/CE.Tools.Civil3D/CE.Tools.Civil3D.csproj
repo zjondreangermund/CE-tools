@@ -105,6 +105,17 @@
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\Normalize-September09-UniversalRefreshHousekeeping-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildProjectDirectory)\..\..\&quot;" />
   </Target>
 
+  <!-- The September 10 field finalizer intentionally rewrites sewer audit and
+       branch-sequence source. Run one tiny compile-compatibility pass after it so
+       the staged source matches the Civil 3D 2023 API and collection types. -->
+  <Target Name="CEApplySeptember10SewerAuditSequenceCompileFix"
+          AfterTargets="CEApplySeptember10SewerAuditSequenceDynamicMultiDimension"
+          BeforeTargets="CoreCompile"
+          Condition="'$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
+    <Message Text="Applying September 10 Civil 3D 2023 sewer compile compatibility..." Importance="high" />
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildProjectDirectory)\..\..\scripts\Repair-September10-CompileFix-SewerAuditSequence-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildProjectDirectory)\..\..\&quot;" />
+  </Target>
+
   <Target Name="CopyToApplicationBundle" AfterTargets="Build">
     <PropertyGroup>
       <BundleOutput>$(MSBuildProjectDirectory)\..\..\bundle\CE Tools.bundle\Contents\Windows\$(AutoCADVersion)</BundleOutput>
