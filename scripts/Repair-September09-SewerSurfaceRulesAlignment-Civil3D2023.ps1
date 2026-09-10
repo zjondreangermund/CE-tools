@@ -50,6 +50,7 @@ $alignmentPath = Required 'SewerBranchAlignmentCommands.cs'
 $menuPath = Required 'August24FieldCompletionCommands.cs'
 $runnerPath = Required 'CeSequentialCommandRunner.cs'
 $googleEarthPath = Required 'SurveyGoogleEarthCommands.cs'
+$universalRefreshPath = Required 'UniversalDynamicRefreshCommands.cs'
 
 $runtime = ReadText $runtimePath
 
@@ -87,6 +88,115 @@ if (-not $googleEarth.Contains($compatibleModalDialog)) {
 }
 if (-not $googleEarth.Contains($compatibleFlowDirection)) {
     throw 'Survey Google Earth FlowDirection compatibility guard missing.'
+}
+
+# Universal dynamic refresh had become too broad for large production drawings:
+# every text/table/dimension/Xrecord change could queue the complete linked-output
+# pipeline, and MOVE/STRETCH forced another full queue even when only passive
+# annotation moved. Keep geometry/Civil sources dynamic, but do not wake the global
+# engine for generated presentation objects. Expensive style/title-block/table
+# housekeeping remains available in CE_DYNAMICREFRESHALL and CE commands, while
+# the idle/background pass focuses on linked design outputs.
+$universal = ReadText $universalRefreshPath
+$universal = ReplaceMethodBody $universal '        private static void OnObjectChanged(object sender, ObjectEventArgs e)' @'
+            if (_busy || _undoRedoActive || e == null || e.DBObject == null) return;
+            DBObject value = e.DBObject;
+
+            // Generated/presentation objects are outputs, not geometry drivers.
+            // Ignoring their modification events prevents refresh storms when CE
+            // labels, dimensions, tables and title-block attributes redraw.
+            if (value is Xrecord || value is DBDictionary ||
+                value is AttributeReference || value is DBText || value is MText ||
+                value is Dimension || value is Table || value is Hatch ||
+                value is RasterImage || value is Viewport)
+                return;
+
+            // Preserve automatic refresh for AutoCAD/Civil design sources and
+            // other entities that can drive linked CE outputs.
+            if (value is Entity || value is CogoPoint || value is Pipe ||
+                value is Structure || value is Autodesk.Civil.DatabaseServices.Network)
+                Queue();
+'@
+$universal = ReplaceMethodBody $universal '        private static void OnObjectErased(object sender, ObjectErasedEventArgs e)' @'
+            if (_busy || _undoRedoActive || e == null || e.DBObject == null) return;
+            DBObject value = e.DBObject;
+            if (value is Xrecord || value is DBDictionary ||
+                value is AttributeReference || value is DBText || value is MText ||
+                value is Dimension || value is Table || value is Hatch ||
+                value is RasterImage || value is Viewport)
+                return;
+            Queue();
+'@
+$universal = ReplaceMethodBody $universal '        private static void OnCommandEnded(object sender, CommandEventArgs e)' @'
+            if (_busy || e == null) return;
+            string command = NormalizeCommand(e.GlobalCommandName);
+            if (IsUndoRedo(command))
+            {
+                // Object events raised while AutoCAD is undoing must not queue a
+                // background CE refresh, otherwise the refresh becomes a new
+                // undo item immediately after the user's undo.
+                _undoRedoActive = false;
+                _pending = false;
+                _lastChangeUtc = DateTime.UtcNow;
+                return;
+            }
+
+            // CE commands may create/update linked metadata that is not represented
+            // by one model entity, so retain the deliberate full post-command queue.
+            if (command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
+                command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase))
+            {
+                Queue();
+                return;
+            }
+
+            // Geometry commands already raise ObjectModified on the actual source.
+            // Only restart the debounce timer when a relevant source queued work;
+            // moving passive annotations must not wake the complete CE pipeline.
+            if (command.IndexOf("GRIP", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                command.IndexOf("MOVE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                command.IndexOf("STRETCH", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                command.IndexOf("SCALE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                command.IndexOf("ROTATE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                command.IndexOf("ALIGN", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                command.IndexOf("PEDIT", StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                if (_pending) _lastChangeUtc = DateTime.UtcNow;
+            }
+'@
+
+$legacyCogoHousekeeping = '                try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); }'
+$lightCogoHousekeeping = '                if (!suppressUndoRecording) { try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); } catch { result.Warnings++; } }'
+if ($universal.Contains($legacyCogoHousekeeping)) {
+    $universal = $universal.Replace(
+        $legacyCogoHousekeeping + "`r`n                catch { result.Warnings++; }",
+        $lightCogoHousekeeping)
+}
+$legacyMetadataHousekeeping = '                try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); }'
+$lightMetadataHousekeeping = '                if (!suppressUndoRecording) { try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); } catch { result.Warnings++; } }'
+if ($universal.Contains($legacyMetadataHousekeeping)) {
+    $universal = $universal.Replace(
+        $legacyMetadataHousekeeping + "`r`n                catch { result.Warnings++; }",
+        $lightMetadataHousekeeping)
+}
+$legacyTableHousekeeping = '                try { CeTablePresentationManager.CenterCeTables(document); }'
+$lightTableHousekeeping = '                if (!suppressUndoRecording) { try { CeTablePresentationManager.CenterCeTables(document); } catch { result.Warnings++; } }'
+if ($universal.Contains($legacyTableHousekeeping)) {
+    $universal = $universal.Replace(
+        $legacyTableHousekeeping + "`r`n                catch { result.Warnings++; }",
+        $lightTableHousekeeping)
+}
+WriteText $universalRefreshPath $universal
+foreach ($token in @(
+    'Generated/presentation objects are outputs, not geometry drivers.',
+    'if (_pending) _lastChangeUtc = DateTime.UtcNow;',
+    'if (!suppressUndoRecording) { try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); }',
+    'if (!suppressUndoRecording) { try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); }',
+    'if (!suppressUndoRecording) { try { CeTablePresentationManager.CenterCeTables(document); }'
+)) {
+    if (-not $universal.Contains($token)) {
+        throw ('Universal dynamic refresh performance guard missing: {0}' -f $token)
+    }
 }
 
 $requiredRuntimeTokens = @(
@@ -169,4 +279,4 @@ if (-not $menu.Contains('CE_SEWLINKSURFACE')) {
     throw 'CE_SEWLINKSURFACE is missing from the Sewer field supplementary menu.'
 }
 
-Write-Host 'September 09 sewer surface/rules + crash-safe alignment finalizer applied.'
+Write-Host 'September 09 sewer surface/rules + crash-safe alignment + dynamic-refresh performance finalizer applied.'
