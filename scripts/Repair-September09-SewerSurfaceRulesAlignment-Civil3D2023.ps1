@@ -57,11 +57,17 @@ function ReplaceBackgroundHousekeeping([string]$text,[string]$legacy,[string]$re
     $escapedCall = [regex]::Escape($call)
     $alreadyPattern = 'if\s*\(\s*!suppressUndoRecording\s*\)\s*\{\s*try\s*\{\s*' +
         $escapedCall + '\s*\}\s*catch\s*\{\s*result\.Warnings\+\+;\s*\}\s*\}'
-    if ([regex]::IsMatch($text,$alreadyPattern,[System.Text.RegularExpressions.RegexOptions]::Singleline)) {
-        return [regex]::Replace($text,$alreadyPattern,$replacement,1,[System.Text.RegularExpressions.RegexOptions]::Singleline)
+    $alreadyRegex = New-Object System.Text.RegularExpressions.Regex(
+        $alreadyPattern,
+        [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if ($alreadyRegex.IsMatch($text)) {
+        return $alreadyRegex.Replace($text,$replacement,1)
     }
     $legacyPattern = 'try\s*\{\s*' + $escapedCall + '\s*\}\s*catch\s*\{\s*result\.Warnings\+\+;\s*\}'
-    $updated = [regex]::Replace($text,$legacyPattern,$replacement,1,[System.Text.RegularExpressions.RegexOptions]::Singleline)
+    $legacyRegex = New-Object System.Text.RegularExpressions.Regex(
+        $legacyPattern,
+        [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    $updated = $legacyRegex.Replace($text,$replacement,1)
     if ([string]::Equals($updated,$text,[StringComparison]::Ordinal)) {
         throw ('Universal dynamic refresh housekeeping anchor missing: {0}' -f $label)
     }
