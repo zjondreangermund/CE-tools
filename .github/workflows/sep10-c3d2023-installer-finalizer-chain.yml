@@ -1,0 +1,74 @@
+name: September 10 Civil 3D 2023 installer finalizer chain
+
+on:
+  pull_request:
+    paths:
+      - 'Directory.Build.targets'
+      - 'src/CE.Tools.Civil3D/**'
+      - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
+      - 'scripts/Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1'
+      - 'scripts/Repair-August24-*.ps1'
+      - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
+      - 'scripts/Repair-August26-*.ps1'
+      - 'scripts/Repair-August27-*.ps1'
+      - 'scripts/Repair-September04-*.ps1'
+      - 'scripts/Repair-September05-*.ps1'
+      - 'scripts/Repair-September09-*.ps1'
+      - 'scripts/Normalize-September09-UniversalRefreshHousekeeping-Civil3D2023.ps1'
+      - 'scripts/Repair-September10-*.ps1'
+      - '.github/workflows/sep10-c3d2023-installer-finalizer-chain.yml'
+  workflow_dispatch:
+
+jobs:
+  installer-finalizer-chain:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run the real Civil 3D 2023 pre-compile finalizer chain
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = (Resolve-Path '.').Path
+          $scripts = @(
+            'Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1',
+            'Repair-August23-PlatformDynamicGrading-Civil3D2023.ps1',
+            'Repair-August24-DynamicGridCivilSurfaceCompileFix-Civil3D2023.ps1',
+            'Repair-August24-FinalCompileCompatibility-Civil3D2023.ps1',
+            'Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1',
+            'Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1',
+            'Repair-August26-CadSupplementaryGeometrySafety-Civil3D2023.ps1',
+            'Repair-August27-DynamicSlopeGridHatch-Civil3D2023.ps1',
+            'Repair-September04-ConstructionXlineBreakJunctions-Civil3D2023.ps1',
+            'Repair-September04-GridRefreshAndBreakStability-Civil3D2023.ps1',
+            'Repair-September04-VerifiedJunctionBreak-Civil3D2023.ps1',
+            'Repair-September04-SiteGridDynamicNoLoop-Civil3D2023.ps1',
+            'Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1',
+            'Repair-September09-FieldEngineering-Civil3D2023.ps1',
+            'Repair-September09-FieldRefinement-Civil3D2023.ps1',
+            'Normalize-September09-UniversalRefreshHousekeeping-Civil3D2023.ps1',
+            'Repair-September09-SewerSurfaceRulesAlignment-Civil3D2023.ps1',
+            'Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1'
+          )
+          foreach ($name in $scripts) {
+            $path = Join-Path $root ('scripts\' + $name)
+            if (-not (Test-Path -LiteralPath $path)) { throw "Missing finalizer: $name" }
+            Write-Host "Running $name"
+            & $path -RepoRoot $root
+            if ($LASTEXITCODE -ne 0) { throw "$name exited with code $LASTEXITCODE" }
+            $global:LASTEXITCODE = 0
+          }
+
+      - name: Verify refresh performance guards survived the full chain
+        shell: powershell
+        run: |
+          $text = Get-Content 'src\CE.Tools.Civil3D\UniversalDynamicRefreshCommands.cs' -Raw
+          $required = @(
+            'if (!suppressUndoRecording) { try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); }',
+            'if (!suppressUndoRecording) { try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); }',
+            'if (!suppressUndoRecording) { try { CeTablePresentationManager.CenterCeTables(document); }'
+          )
+          foreach ($token in $required) {
+            if (-not $text.Contains($token)) { throw "Missing final refresh performance guard: $token" }
+          }
+          Write-Host 'Real installer finalizer chain completed with guarded background housekeeping.'
