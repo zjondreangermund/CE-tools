@@ -19,7 +19,10 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-            September09FieldEngineeringRuntime.RoadReserveCentrePolylines(document);
+            // The September 11 wrapper keeps the established reserve-detection engine,
+            // then joins its new open centre segments and removes straight redundant
+            // vertices without touching bend or T/X junction vertices.
+            September11FieldCompletionRuntime.RoadReserveCentrePolylines(document);
         }
 
         [CommandMethod("CE_TOOLS", "CE_CONSTRUCTIONFILLET", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
