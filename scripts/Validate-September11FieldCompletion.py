@@ -22,6 +22,10 @@ required_source = [
     'Surface/rule writes are committed before any profile command starts',
     'VerifyReplacements',
     'Straight intermediate vertices are removed; bend and T/X junction vertices are retained',
+    # Civil 3D 2023 returns ObjectIdCollection here. It is non-generic, so the
+    # collection must be explicitly Cast<ObjectId>() before passing it to the
+    # IEnumerable<ObjectId> helper or the Autodesk build fails with CS1503.
+    'civilDocument.GetSurfaceIds().Cast<ObjectId>()',
 ]
 for token in required_source:
     if token not in source:

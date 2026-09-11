@@ -480,7 +480,7 @@ namespace CETools.Civil3D
 
             List<NamedId> surfaces = ReadNamedObjects(
                 document.Database,
-                civilDocument.GetSurfaceIds(),
+                civilDocument.GetSurfaceIds().Cast<ObjectId>(),
                 delegate(DBObject value) { return (value as CivilSurface)?.Name; });
             if (surfaces.Count == 0)
             {
