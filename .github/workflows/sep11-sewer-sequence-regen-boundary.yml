@@ -1,0 +1,22 @@
+name: September 11 Sewer Sequence Regen Boundary
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    name: Guard CE_SEWSEQ from idle refresh feedback
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Verify sewer sequence refresh boundary
+        shell: pwsh
+        run: ./scripts/Test-September11-SewerSequenceRegenBoundary.ps1 -RepoRoot $PWD.Path
