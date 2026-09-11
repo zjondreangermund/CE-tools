@@ -133,8 +133,14 @@ namespace CETools.Civil3D
                 catch { result.Warnings++; }
                 try { RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true); }
                 catch { result.Warnings++; }
-                try { SewerNetworkDynamicSequenceCommands.ResequenceAll(document, false); }
-                catch { result.Warnings++; }
+                // CE_SEWSEQ owns Civil network sequencing. Never mutate/resequence a
+                // gravity network from Application.Idle: those writes raise network
+                // and label events that can feed the universal refresh back into itself.
+                if (!suppressUndoRecording)
+                {
+                    try { SewerNetworkDynamicSequenceCommands.ResequenceAll(document, false); }
+                    catch { result.Warnings++; }
+                }
                 try { result.JunctionLabels += RoadJunctionCompletionCommands.RefreshAll(document); }
                 catch { result.Warnings++; }
                 try { SewerPlanLabelRuntimeManager.Apply(document); }
@@ -215,6 +221,15 @@ namespace CETools.Civil3D
         {
             if (_busy || e == null) return;
             string command = NormalizeCommand(e.GlobalCommandName);
+            if (IsSewerSequence(command))
+            {
+                // A preceding style import or object edit may already have armed an
+                // idle refresh. CE_SEWSEQ owns its sequence/label transaction, so
+                // discard that stale request before the Civil command starts.
+                _pending = false;
+                _lastChangeUtc = DateTime.UtcNow;
+                return;
+            }
             if (!IsUndoRedo(command)) return;
             _undoRedoActive = true;
             _pending = false;
@@ -224,6 +239,15 @@ namespace CETools.Civil3D
         {
             if (_busy || e == null) return;
             string command = NormalizeCommand(e.GlobalCommandName);
+            if (IsSewerSequence(command))
+            {
+                // Network, style and label writes raised by CE_SEWSEQ can queue
+                // ObjectModified/ObjectAppended events while the command is active.
+                // Do not let those events start a second background sequence pass.
+                _pending = false;
+                _lastChangeUtc = DateTime.UtcNow;
+                return;
+            }
             if (IsUndoRedo(command))
             {
                 // Object events raised while AutoCAD is undoing must not queue a
@@ -245,6 +269,11 @@ namespace CETools.Civil3D
         private static string NormalizeCommand(string value)
         {
             return (value ?? string.Empty).Trim().TrimStart('.', '_').ToUpperInvariant();
+        }
+
+        private static bool IsSewerSequence(string command)
+        {
+            return string.Equals(command, "CE_SEWSEQ", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsUndoRedo(string command)
