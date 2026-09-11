@@ -1,0 +1,45 @@
+name: September 11 Field Completion Regression
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/September11FieldCompletionCommands.cs'
+      - 'src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs'
+      - 'src/CE.Tools.Civil3D/September09FieldEngineeringCommandFrontDoor.cs'
+      - 'src/CE.Tools.Civil3D/ProjectCoordinationCommands.cs'
+      - 'scripts/Validate-September11FieldCompletion.py'
+      - '.github/workflows/sep11-field-completion-regression.yml'
+  pull_request:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/September11FieldCompletionCommands.cs'
+      - 'src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs'
+      - 'src/CE.Tools.Civil3D/September09FieldEngineeringCommandFrontDoor.cs'
+      - 'src/CE.Tools.Civil3D/ProjectCoordinationCommands.cs'
+      - 'scripts/Validate-September11FieldCompletion.py'
+      - '.github/workflows/sep11-field-completion-regression.yml'
+
+jobs:
+  validate:
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Validate September 11 field behavior
+        shell: pwsh
+        run: python scripts/Validate-September11FieldCompletion.py
+
+      - name: Validate command registry
+        shell: pwsh
+        run: python scripts/validate-CommandRegistry.py
+
+      - name: Parse Civil 3D C# syntax
+        shell: pwsh
+        run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
