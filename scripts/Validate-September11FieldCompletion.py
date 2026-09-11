@@ -51,7 +51,7 @@ for town, zone in [
     ("Katima Mulilo", "LO25"),
     ("Opuwo", "LO13"),
 ]:
-    marker = '{{ "' + town + '", "' + zone + '" }}'
+    marker = '{ "' + town + '", "' + zone + '" }'
     if marker not in project:
         raise SystemExit(f"Namibia town mapping missing: {town} -> {zone}")
 
