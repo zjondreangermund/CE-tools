@@ -1,42 +1,68 @@
 from pathlib import Path
+import re
 
 root = Path(__file__).resolve().parents[1]
-completion = (root / "src/CE.Tools.Civil3D/September14FeatureLineCompletionCommands.cs").read_text(encoding="utf-8")
-menu = (root / "src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs").read_text(encoding="utf-8")
-fatal = (root / "src/CE.Tools.Civil3D/August21PlatformRelativeFatalSafety.cs").read_text(encoding="utf-8")
-dynamic = (root / "src/CE.Tools.Civil3D/August23PlatformDynamicGradingCommands.cs").read_text(encoding="utf-8")
-relative = (root / "src/CE.Tools.Civil3D/FeatureLineRelativeCommands.cs").read_text(encoding="utf-8")
+source_root = root / "src/CE.Tools.Civil3D"
+completion = (source_root / "September14FeatureLineCompletionCommands.cs").read_text(encoding="utf-8")
+menu = (source_root / "September11FieldCompletionMenu.cs").read_text(encoding="utf-8")
+field_pack = (source_root / "August24FieldCompletionCommands.cs").read_text(encoding="utf-8")
+fatal = (source_root / "August21PlatformRelativeFatalSafety.cs").read_text(encoding="utf-8")
+dynamic = (source_root / "August23PlatformDynamicGradingCommands.cs").read_text(encoding="utf-8")
+relative = (source_root / "FeatureLineRelativeCommands.cs").read_text(encoding="utf-8")
 
 required_completion = [
-    '"CE_FLRELLINKEXISTING"',
     '"CE_FLSTEPSSAFE"',
     '"CE_FLSURFACELINKEXISTING"',
-    'private const string RelationKey = "CE_FLREL";',
-    'TryMeasureConstantOffset(source, child',
-    'Plan offsets are not constant enough to rebuild safely as a CE_FLREL child.',
-    'Elevation differences are not constant enough to rebuild safely as a CE_FLREL child.',
-    'new TypedValue((int)DxfCode.Text, sourceHandle)',
-    'new TypedValue((int)DxfCode.Real, horizontalOffset)',
-    'new TypedValue((int)DxfCode.Real, verticalOffset)',
-    'new TypedValue((int)DxfCode.Int32, sequence)',
     'August21PlatformRelativeFatalSafety.CreatePlatformSteps(',
     'new August23PlatformDynamicGradingCommands().DrapeMultipleFeatureLines();',
-    'Geometry was not recreated or erased.',
+    'Existing source feature lines were kept.',
 ]
 for token in required_completion:
     if token not in completion:
         raise SystemExit(f"Feature-line completion marker missing: {token}")
 
-# Linking existing feature lines must remain metadata-only. It may add/update the
-# CE_FLREL Xrecord, but it must never erase or replace the user's selected geometry.
-for forbidden in [
-    '.Erase(',
-    'CivilFeatureLine.Create(',
-    'FeatureLine.Create(',
-    'Delete(',
-]:
-    if forbidden in completion:
-        raise SystemExit(f"Existing feature-line link path contains destructive/create marker: {forbidden}")
+# CE_FLRELLINKEXISTING is an established August 24 command. Keep exactly one
+# registration so old buttons/macros remain compatible while CE_FIELDCOMPLETION
+# can surface the same canonical command without creating a duplicate command.
+command_pattern = re.compile(
+    r'\[CommandMethod\(\s*"CE_TOOLS"\s*,\s*"CE_FLRELLINKEXISTING"',
+    re.MULTILINE,
+)
+registrations = []
+for path in source_root.glob("*.cs"):
+    text = path.read_text(encoding="utf-8")
+    count = len(command_pattern.findall(text))
+    registrations.extend([path.name] * count)
+if registrations != ["August24FieldCompletionCommands.cs"]:
+    raise SystemExit(
+        "CE_FLRELLINKEXISTING must have exactly one canonical registration in "
+        f"August24FieldCompletionCommands.cs; found {registrations}"
+    )
+
+required_field_pack = [
+    '"CE_FLRELLINKEXISTING"',
+    'public void LinkExistingFeatureLines()',
+    'MeasureFeatureRelation(source, child, out horizontal, out vertical)',
+    'WriteFeatureRelation(child, transaction, source.Handle.ToString(), horizontal, vertical, sequence++)',
+    'Existing CE linked-feature-line refresh now owns these relationships.',
+]
+for token in required_field_pack:
+    if token not in field_pack:
+        raise SystemExit(f"Canonical existing-feature-line link marker missing: {token}")
+
+link_match = re.search(
+    r'\[CommandMethod\("CE_TOOLS", "CE_FLRELLINKEXISTING".*?'
+    r'(?=\n\s*\[CommandMethod\("CE_TOOLS", "CE_FLRELADOPT")',
+    field_pack,
+    re.DOTALL,
+)
+if not link_match:
+    raise SystemExit("Could not isolate the canonical CE_FLRELLINKEXISTING command body.")
+for forbidden in ['.Erase(', 'CivilFeatureLine.Create(', 'FeatureLine.Create(', 'Delete(']:
+    if forbidden in link_match.group(0):
+        raise SystemExit(
+            f"Canonical existing-feature-line link path became destructive: {forbidden}"
+        )
 
 required_menu = [
     '"CE_FIELDCOMPLETION"',
@@ -78,8 +104,8 @@ for token in required_dynamic:
     if token not in dynamic:
         raise SystemExit(f"August 23 dynamic drape marker missing: {token}")
 
-# Keep the new relation record byte-for-byte compatible in shape with the canonical
-# CE_FLREL reader/writer so existing CE_FLRELUPDATE / CE_FLRELUPDATEMULTI can rebuild it.
+# Keep the canonical CE_FLREL record shape intact so existing CE_FLRELUPDATE /
+# CE_FLRELUPDATEMULTI continue to rebuild stored linked offsets.
 canonical_relation_tokens = [
     'private const string RecordKey = "CE_FLREL";',
     'new TypedValue((int)DxfCode.Text, sourceHandle)',
