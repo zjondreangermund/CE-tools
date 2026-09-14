@@ -4,6 +4,7 @@ root = Path(__file__).resolve().parents[1]
 source = (root / "src/CE.Tools.Civil3D/September11FieldCompletionCommands.cs").read_text(encoding="utf-8")
 september14 = (root / "src/CE.Tools.Civil3D/September14HatchOuterBoundaryCommands.cs").read_text(encoding="utf-8")
 road_strict = (root / "src/CE.Tools.Civil3D/September14RoadCentreStrictCommands.cs").read_text(encoding="utf-8")
+alignment_bands = (root / "src/CE.Tools.Civil3D/September14AlignmentBandStyleCommands.cs").read_text(encoding="utf-8")
 context_menu = (root / "src/CE.Tools.Civil3D/DynamicRefreshContextMenu.cs").read_text(encoding="utf-8")
 menu = (root / "src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs").read_text(encoding="utf-8")
 front = (root / "src/CE.Tools.Civil3D/September09FieldEngineeringCommandFrontDoor.cs").read_text(encoding="utf-8")
@@ -66,6 +67,30 @@ arc_guard = 'if (previousType.Value == SegmentType.Arc || nextType.Value == Segm
 if arc_guard not in road_strict:
     raise SystemExit("Strict road-centre cleanup no longer protects BC/EC arc transitions.")
 
+required_alignment_bands = [
+    '"CE_ALIGNLABELSETMULTI"',
+    'civilDocument.Styles.LabelSetStyles.AlignmentLabelSetStyles',
+    'alignment.ImportLabelSet(choice.Id)',
+    '"CE_ROADBANDLABELS"',
+    'civilDocument.Styles.ProfileViewBandSetStyles',
+    'profileView.Bands.ImportBandSetStyle(choice.Id)',
+    'profileView.Bands.GetTopBandItems()',
+    'profileView.Bands.GetBottomBandItems()',
+    'item.ShowLabels = true',
+    'profileView.Bands.SetTopBandItems(top)',
+    'profileView.Bands.SetBottomBandItems(bottom)',
+]
+for token in required_alignment_bands:
+    if token not in alignment_bands:
+        raise SystemExit(f"September 14 alignment/band marker missing: {token}")
+
+# The multi-object style tools must stay Civil 3D-native. Alignment labels are
+# imported from an AlignmentLabelSetStyle and road bands from a
+# ProfileViewBandSetStyle; do not replace them with generic AutoCAD text.
+for forbidden in ['new MText()', 'new DBText()', 'new Leader()', 'new MLeader()']:
+    if forbidden in alignment_bands:
+        raise SystemExit(f"Alignment/band fix regressed to generic AutoCAD annotation: {forbidden}")
+
 required_context_menu = [
     'ExtensionApplication(typeof(CETools.Civil3D.DynamicRefreshContextMenuApplication))',
     'IExtensionApplication',
@@ -98,6 +123,10 @@ required_menu = [
     '"CE_ROADCENTRECLEANSTRICT"',
     'Strict Road Centre Cleanup - Start / BC / EC / End',
     'Straight roads keep start/end only',
+    '"CE_ALIGNLABELSETMULTI"',
+    'Alignment Label Set - Multiple Alignments',
+    '"CE_ROADBANDLABELS"',
+    'Road Profile Band Set - Show Labels',
     '"CE_SEWRECALC"',
     '"CE_ANNOSCALESYNC"',
     '"CE_DISCIPLINESTYLEPRESETS"',
