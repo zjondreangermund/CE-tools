@@ -3,6 +3,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 source = (root / "src/CE.Tools.Civil3D/September11FieldCompletionCommands.cs").read_text(encoding="utf-8")
 september14 = (root / "src/CE.Tools.Civil3D/September14HatchOuterBoundaryCommands.cs").read_text(encoding="utf-8")
+road_strict = (root / "src/CE.Tools.Civil3D/September14RoadCentreStrictCommands.cs").read_text(encoding="utf-8")
 context_menu = (root / "src/CE.Tools.Civil3D/DynamicRefreshContextMenu.cs").read_text(encoding="utf-8")
 menu = (root / "src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs").read_text(encoding="utf-8")
 front = (root / "src/CE.Tools.Civil3D/September09FieldEngineeringCommandFrontDoor.cs").read_text(encoding="utf-8")
@@ -44,6 +45,27 @@ for token in required_september14:
     if token not in september14:
         raise SystemExit(f"September 14 hatch perimeter marker missing: {token}")
 
+required_road_strict = [
+    '"CE_ROADCENTRECLEANSTRICT"',
+    'SegmentType.Arc',
+    'SegmentType.Line',
+    'FindRedundantVertices',
+    'polyline.RemoveVertexAt(remove[index])',
+    'One transaction per source polyline',
+    'regardless of a T/X road junction',
+    'Straight roads keep start/end only; arc roads keep BC/EC',
+]
+for token in required_road_strict:
+    if token not in road_strict:
+        raise SystemExit(f"September 14 strict road-centre marker missing: {token}")
+
+# Strict cleanup must never remove a vertex that touches an arc. This is the
+# source-level guard that preserves BC/EC while allowing straight T/X junction
+# vertices to disappear from the through road.
+arc_guard = 'if (previousType.Value == SegmentType.Arc || nextType.Value == SegmentType.Arc)\n                    continue;'
+if arc_guard not in road_strict:
+    raise SystemExit("Strict road-centre cleanup no longer protects BC/EC arc transitions.")
+
 required_context_menu = [
     'ExtensionApplication(typeof(CETools.Civil3D.DynamicRefreshContextMenuApplication))',
     'IExtensionApplication',
@@ -73,6 +95,9 @@ required_menu = [
     'DynamicRefreshAllCommand,',
     'right-click menu',
     '"CE_ROADRESERVECENTRELINES"',
+    '"CE_ROADCENTRECLEANSTRICT"',
+    'Strict Road Centre Cleanup - Start / BC / EC / End',
+    'Straight roads keep start/end only',
     '"CE_SEWRECALC"',
     '"CE_ANNOSCALESYNC"',
     '"CE_DISCIPLINESTYLEPRESETS"',
@@ -89,6 +114,11 @@ for token in required_menu:
 # workflow, not route users back to the old per-hatch-loop behaviour.
 if '"Separate Hatch Boundaries"' in menu or '"CE_HATCHBOUNDARIES"' in menu:
     raise SystemExit("Field-completion menu still routes to the legacy separate-hatch boundary workflow.")
+
+# The field-completion road cleanup must use the September 14 strict path. The
+# legacy CE_ROADCENTRECLEAN command remains available for backwards compatibility.
+if '"Clean Existing Road Centres",\n                        "CE_ROADCENTRECLEAN"' in menu:
+    raise SystemExit("Field-completion menu still routes road cleanup to the legacy junction-preserving path.")
 
 if '"CE_ANNOSCALESYNC"' not in annotation or 'CANNOSCALE' not in annotation:
     raise SystemExit("Annotation-scale synchronisation command/monitor is missing.")

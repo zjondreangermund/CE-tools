@@ -28,7 +28,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Field Completion",
-                "Current field workflows for manual dynamic refresh, road-centre cleanup, sewer recalculation/profile safety, annotation scale synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
+                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, sewer recalculation/profile safety, annotation scale synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction(
@@ -39,12 +39,12 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Road Reserve Centres - Generate + Clean",
                         "CE_ROADRESERVECENTRELINES",
-                        "Create the road-reserve centre segments, join connected runs and remove redundant straight vertices while retaining bend and T/X junction vertices.",
+                        "Create the road-reserve centre segments and join connected runs. Use Strict Road Centre Cleanup immediately afterwards when the generated linework must be reduced to start/end and BC/EC control vertices.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
-                        "Clean Existing Road Centres",
-                        "CE_ROADCENTRECLEAN",
-                        "Join selected/open road-centre polylines and clean straight intermediate vertices without removing junction vertices.",
+                        "Strict Road Centre Cleanup - Start / BC / EC / End",
+                        "CE_ROADCENTRECLEANSTRICT",
+                        "Clean multiple selected open road-centre polylines. Straight roads keep start/end only, including through T/X junctions; arc transition vertices BC/EC are retained, so a single horizontal curve resolves to start, BC, EC and end. Genuine non-collinear bends are preserved.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
                         "Sewer Surface / Rules Recalculation",
