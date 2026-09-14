@@ -2,6 +2,7 @@ using System;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.Windows;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+using ContextMenuApplication = Autodesk.AutoCAD.ApplicationServices.Application;
 
 namespace CETools.Civil3D
 {
@@ -38,7 +39,7 @@ namespace CETools.Civil3D
                 refreshItem.Click += OnDynamicRefreshClick;
                 extension.MenuItems.Add(refreshItem);
 
-                AcApplication.AddDefaultContextMenuExtension(extension);
+                ContextMenuApplication.AddDefaultContextMenuExtension(extension);
                 _menuExtension = extension;
                 _attached = true;
             }
@@ -61,7 +62,7 @@ namespace CETools.Civil3D
 
             try
             {
-                AcApplication.RemoveDefaultContextMenuExtension(extension);
+                ContextMenuApplication.RemoveDefaultContextMenuExtension(extension);
             }
             catch (Autodesk.AutoCAD.Runtime.Exception ex)
             {

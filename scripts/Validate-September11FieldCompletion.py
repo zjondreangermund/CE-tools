@@ -85,9 +85,10 @@ for forbidden in ['new MText()', 'new DBText()', 'new Leader()', 'new MLeader()'
 
 required_context_menu = [
     'ContextMenuExtension',
+    'ContextMenuApplication = Autodesk.AutoCAD.ApplicationServices.Application',
     'new MenuItem("CE Dynamic Refresh All")',
-    'AddDefaultContextMenuExtension',
-    'RemoveDefaultContextMenuExtension',
+    'ContextMenuApplication.AddDefaultContextMenuExtension',
+    'ContextMenuApplication.RemoveDefaultContextMenuExtension',
     'DynamicRefreshAllCommand = "CE_DYNAMIC" + "REFRESHALL"',
     'document.SendStringToExecute(DynamicRefreshAllCommand + " "',
 ]
