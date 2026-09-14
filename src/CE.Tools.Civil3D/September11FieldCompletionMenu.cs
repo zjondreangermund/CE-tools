@@ -24,7 +24,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Field Completion",
-                "Current field workflows for road-centre cleanup, sewer recalculation/profile safety, annotation scale synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
+                "Current field workflows for road-centre cleanup, sewer recalculation/profile safety, annotation scale synchronisation, reusable/project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction(
@@ -50,7 +50,12 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Discipline Style Presets",
                         "CE_DISCIPLINESTYLEPRESETS",
-                        "Choose and apply the existing CE Tools discipline style preset workflow for the current drawing.",
+                        "Choose and apply the CE Tools discipline style preset stored inside the current drawing.",
+                        "03 Standards"),
+                    new DisciplineWorkflowAction(
+                        "Reusable Project Style Presets",
+                        "CE_STYLEPRESETLIBRARY",
+                        "Save the current Project Style Centre selection under your own name and apply that named preset in other drawings on this workstation.",
                         "03 Standards"),
                     new DisciplineWorkflowAction(
                         "Namibia Town -> Coordinate System",
