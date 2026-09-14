@@ -28,7 +28,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Field Completion",
-                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, sewer recalculation/profile safety, annotation scale synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
+                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, multi-alignment label sets, road profile band labels, sewer recalculation/profile safety, annotation scale synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction(
@@ -45,6 +45,16 @@ namespace CETools.Civil3D
                         "Strict Road Centre Cleanup - Start / BC / EC / End",
                         "CE_ROADCENTRECLEANSTRICT",
                         "Clean multiple selected open road-centre polylines. Straight roads keep start/end only, including through T/X junctions; arc transition vertices BC/EC are retained, so a single horizontal curve resolves to start, BC, EC and end. Genuine non-collinear bends are preserved.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Alignment Label Set - Multiple Alignments",
+                        "CE_ALIGNLABELSETMULTI",
+                        "Choose one existing Civil 3D alignment label set style, then apply it to every selected editable alignment in one operation.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Road Profile Band Set - Show Labels",
+                        "CE_ROADBANDLABELS",
+                        "Choose one existing Civil 3D profile-view band set, apply it to multiple selected road profile views and force Show Labels on for every imported top/bottom band item.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
                         "Sewer Surface / Rules Recalculation",
