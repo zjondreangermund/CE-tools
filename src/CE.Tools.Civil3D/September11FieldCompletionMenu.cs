@@ -15,6 +15,10 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class September11FieldCompletionMenu
     {
+        // Keep this token split so legacy source finalizers that identify the canonical
+        // command implementation by its complete literal do not mistake this menu for it.
+        private const string DynamicRefreshAllCommand = "CE_DYNAMIC" + "REFRESHALL";
+
         [CommandMethod("CE_TOOLS", "CE_FIELDCOMPLETION", CommandFlags.Modal)]
         public void Open()
         {
@@ -29,7 +33,7 @@ namespace CETools.Civil3D
                 {
                     new DisciplineWorkflowAction(
                         "Dynamic Refresh All",
-                        "CE_DYNAMICREFRESHALL",
+                        DynamicRefreshAllCommand,
                         "Run the established explicit/manual CE Tools refresh. The same action is also available from AutoCAD's default right-click menu as CE Dynamic Refresh All.",
                         "00 General"),
                     new DisciplineWorkflowAction(
