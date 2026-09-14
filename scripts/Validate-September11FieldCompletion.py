@@ -100,10 +100,12 @@ required_context_menu = [
     'RemoveDefaultContextMenuExtension',
     'DynamicRefreshAllCommand = "CE_DYNAMIC" + "REFRESHALL"',
     'document.SendStringToExecute(DynamicRefreshAllCommand + " "',
+    'AnnotationScaleSyncManager.Initialize();',
+    'AnnotationScaleSyncManager.Terminate();',
 ]
 for token in required_context_menu:
     if token not in context_menu:
-        raise SystemExit(f"Dynamic Refresh right-click marker missing: {token}")
+        raise SystemExit(f"Dynamic Refresh/startup marker missing: {token}")
 
 # The shortcut must remain an explicit/manual command handoff. Calling refresh
 # manager internals directly from a menu event would bypass the sewer sequence
@@ -129,6 +131,7 @@ required_menu = [
     'Road Profile Band Set - Show Labels',
     '"CE_SEWRECALC"',
     '"CE_ANNOSCALESYNC"',
+    'Automatic monitor now applies each changed drawing annotation scale',
     '"CE_DISCIPLINESTYLEPRESETS"',
     '"CE_SURVEYLOCATIONNAMIBIA"',
     '"CE_GOOGLEEARTHLINEWORK"',
@@ -149,8 +152,29 @@ if '"Separate Hatch Boundaries"' in menu or '"CE_HATCHBOUNDARIES"' in menu:
 if '"Clean Existing Road Centres",\n                        "CE_ROADCENTRECLEAN"' in menu:
     raise SystemExit("Field-completion menu still routes road cleanup to the legacy junction-preserving path.")
 
-if '"CE_ANNOSCALESYNC"' not in annotation or 'CANNOSCALE' not in annotation:
-    raise SystemExit("Annotation-scale synchronisation command/monitor is missing.")
+required_annotation = [
+    '"CE_ANNOSCALESYNC"',
+    '"CANNOSCALE"',
+    'AcApplication.Idle += OnIdle;',
+    'AcApplication.Idle -= OnIdle;',
+    'DocumentToBeDestroyed += OnDocumentToBeDestroyed',
+    'DocumentToBeDestroyed -= OnDocumentToBeDestroyed',
+    'entity is Dimension',
+    'entity is DBText',
+    'entity is MText',
+    'entity is MLeader',
+    'entity.AddContext(scale);',
+]
+for token in required_annotation:
+    if token not in annotation:
+        raise SystemExit(f"Automatic annotation-scale synchronisation marker missing: {token}")
+
+# Changing CANNOSCALE must add the newly current context without deleting older
+# annotation scales from entities. This lets layouts/viewports that still use an
+# earlier annotation scale continue to display the same annotation.
+if 'RemoveContext(' in annotation:
+    raise SystemExit("Annotation-scale monitor removes existing entity contexts; it must only add the new current scale.")
+
 if '"CE_DISCIPLINESTYLEPRESETS"' not in presets:
     raise SystemExit("Discipline style preset command is missing.")
 
