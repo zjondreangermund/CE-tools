@@ -44,7 +44,7 @@ namespace CETools.Civil3D
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
                         "Synchronise Annotation Scale",
-                        "CE_SYNCANNOSCALE",
+                        "CE_ANNOSCALESYNC",
                         "Apply the current drawing annotation scale to supported dimensions, text, MText and multileaders so annotation follows drawing-scale changes consistently.",
                         "03 Standards"),
                     new DisciplineWorkflowAction(
