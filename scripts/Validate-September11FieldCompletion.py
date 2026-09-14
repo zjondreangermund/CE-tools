@@ -49,7 +49,7 @@ required_menu = [
     '"CE_FIELDCOMPLETION"',
     '"CE_ROADRESERVECENTRELINES"',
     '"CE_SEWRECALC"',
-    '"CE_SYNCANNOSCALE"',
+    '"CE_ANNOSCALESYNC"',
     '"CE_DISCIPLINESTYLEPRESET"',
     '"CE_SURVEYLOCATIONNAMIBIA"',
     '"CE_GOOGLEEARTHLINEWORK"',
@@ -65,7 +65,7 @@ for token in required_menu:
 if '"Separate Hatch Boundaries"' in menu or '"CE_HATCHBOUNDARIES"' in menu:
     raise SystemExit("Field-completion menu still routes to the legacy separate-hatch boundary workflow.")
 
-if '"CE_SYNCANNOSCALE"' not in annotation or 'CANNOSCALE' not in annotation:
+if '"CE_ANNOSCALESYNC"' not in annotation or 'CANNOSCALE' not in annotation:
     raise SystemExit("Annotation-scale synchronisation command/monitor is missing.")
 
 # The town workflow existed before this batch; keep it guarded because the field
