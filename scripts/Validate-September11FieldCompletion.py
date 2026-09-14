@@ -15,7 +15,7 @@ presets = (root / "src/CE.Tools.Civil3D/August11DisciplineStylePresetCommands.cs
 required_source = [
     '"CE_ROADCENTRECLEAN"',
     '"CE_GOOGLEEARTHLINEWORK"',
-    '"CE_HATCHBOUNDARIES"',  # legacy command remains available for backwards compatibility
+    '"CE_HATCHBOUNDARIES"',
     '"CE_SEWRECALC"',
     '"CE_SURVEYLOCATIONNAMIBIA"',
     'Separate line strings',
@@ -26,9 +26,6 @@ required_source = [
     'Surface/rule writes are committed before any profile command starts',
     'VerifyReplacements',
     'Straight intermediate vertices are removed; bend and T/X junction vertices are retained',
-    # Civil 3D 2023 returns ObjectIdCollection here. It is non-generic, so the
-    # collection must be explicitly Cast<ObjectId>() before passing it to the
-    # IEnumerable<ObjectId> helper or the Autodesk build fails with CS1503.
     'civilDocument.GetSurfaceIds().Cast<ObjectId>()',
 ]
 for token in required_source:
@@ -60,9 +57,6 @@ for token in required_road_strict:
     if token not in road_strict:
         raise SystemExit(f"September 14 strict road-centre marker missing: {token}")
 
-# Strict cleanup must never remove a vertex that touches an arc. This is the
-# source-level guard that preserves BC/EC while allowing straight T/X junction
-# vertices to disappear from the through road.
 arc_guard = 'if (previousType.Value == SegmentType.Arc || nextType.Value == SegmentType.Arc)\n                    continue;'
 if arc_guard not in road_strict:
     raise SystemExit("Strict road-centre cleanup no longer protects BC/EC arc transitions.")
@@ -84,9 +78,6 @@ for token in required_alignment_bands:
     if token not in alignment_bands:
         raise SystemExit(f"September 14 alignment/band marker missing: {token}")
 
-# The multi-object style tools must stay Civil 3D-native. Alignment labels are
-# imported from an AlignmentLabelSetStyle and road bands from a
-# ProfileViewBandSetStyle; do not replace them with generic AutoCAD text.
 for forbidden in ['new MText()', 'new DBText()', 'new Leader()', 'new MLeader()']:
     if forbidden in alignment_bands:
         raise SystemExit(f"Alignment/band fix regressed to generic AutoCAD annotation: {forbidden}")
@@ -107,9 +98,6 @@ for token in required_context_menu:
     if token not in context_menu:
         raise SystemExit(f"Dynamic Refresh/startup marker missing: {token}")
 
-# The shortcut must remain an explicit/manual command handoff. Calling refresh
-# manager internals directly from a menu event would bypass the sewer sequence
-# safety boundary introduced by PR #151.
 if 'UniversalDynamicRefreshManager.RefreshNow(' in context_menu:
     raise SystemExit("Right-click Dynamic Refresh bypasses the explicit manual command boundary.")
 
@@ -142,13 +130,9 @@ for token in required_menu:
     if token not in menu:
         raise SystemExit(f"Field-completion menu marker missing: {token}")
 
-# The field-completion front door must use the September 14 outside-perimeter
-# workflow, not route users back to the old per-hatch-loop behaviour.
 if '"Separate Hatch Boundaries"' in menu or '"CE_HATCHBOUNDARIES"' in menu:
     raise SystemExit("Field-completion menu still routes to the legacy separate-hatch boundary workflow.")
 
-# The field-completion road cleanup must use the September 14 strict path. The
-# legacy CE_ROADCENTRECLEAN command remains available for backwards compatibility.
 if '"Clean Existing Road Centres",\n                        "CE_ROADCENTRECLEAN"' in menu:
     raise SystemExit("Field-completion menu still routes road cleanup to the legacy junction-preserving path.")
 
@@ -157,29 +141,25 @@ required_annotation = [
     '"CANNOSCALE"',
     'AcApplication.Idle += OnIdle;',
     'AcApplication.Idle -= OnIdle;',
-    'DocumentToBeDestroyed += OnDocumentToBeDestroyed',
-    'DocumentToBeDestroyed -= OnDocumentToBeDestroyed',
+    'AcApplication.DocumentManager.DocumentToBeDestroyed +=\n                OnDocumentToBeDestroyed;',
+    'AcApplication.DocumentManager.DocumentToBeDestroyed -=\n                OnDocumentToBeDestroyed;',
     'entity is Dimension',
     'entity is DBText',
     'entity is MText',
     'entity is MLeader',
-    'entity.AddContext(scale);',
+    'changed = AddContext(entity, currentContext) || changed;',
+    '"AddContext"',
 ]
 for token in required_annotation:
     if token not in annotation:
         raise SystemExit(f"Automatic annotation-scale synchronisation marker missing: {token}")
 
-# Changing CANNOSCALE must add the newly current context without deleting older
-# annotation scales from entities. This lets layouts/viewports that still use an
-# earlier annotation scale continue to display the same annotation.
 if 'RemoveContext(' in annotation:
     raise SystemExit("Annotation-scale monitor removes existing entity contexts; it must only add the new current scale.")
 
 if '"CE_DISCIPLINESTYLEPRESETS"' not in presets:
     raise SystemExit("Discipline style preset command is missing.")
 
-# The town workflow existed before this batch; keep it guarded because the field
-# completion menu deliberately reuses that single canonical Namibia mapping.
 for town, zone in [
     ("Windhoek", "LO17"),
     ("Walvis Bay", "LO15"),
@@ -191,8 +171,6 @@ for town, zone in [
     if marker not in project:
         raise SystemExit(f"Namibia town mapping missing: {town} -> {zone}")
 
-# The profile handoff must stay queued after the September10 surface/rule helper;
-# do not re-introduce direct/nested profile creation inside the recalculation command.
 if 'new SewerProductionCommands().CreateProfiles' in source:
     raise SystemExit("Sewer profile creation was nested inside the surface/rule recalculation path.")
 
