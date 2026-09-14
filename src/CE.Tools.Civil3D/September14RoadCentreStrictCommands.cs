@@ -16,8 +16,8 @@ namespace CETools.Civil3D
     /// September 14 road-centre field correction.
     ///
     /// The strict cleanup intentionally ignores T/X junction vertices when they are
-    /// merely intermediate points on an otherwise straight road.  A straight road
-    /// therefore finishes with start/end only.  Arc transition vertices are always
+    /// merely intermediate points on an otherwise straight road. A straight road
+    /// therefore finishes with start/end only. Arc transition vertices are always
     /// retained, so one horizontal arc is represented by start, BC, EC and end.
     /// Genuine line-line direction changes are also retained rather than silently
     /// changing the road geometry.
@@ -91,6 +91,8 @@ namespace CETools.Civil3D
                                 continue;
                             }
 
+                            // One transaction per source polyline: if any edit fails,
+                            // AutoCAD rolls that source back without affecting the rest.
                             polyline.UpgradeOpen();
                             for (int index = remove.Count - 1; index >= 0; index--)
                                 polyline.RemoveVertexAt(remove[index]);
@@ -123,18 +125,19 @@ namespace CETools.Civil3D
             if (polyline == null || polyline.Closed || polyline.NumberOfVertices <= 2)
                 return remove;
 
-            // Endpoints are never candidates.  Every vertex touching an arc is a
-            // BC/EC transition and must remain.  Only a truly straight line-line
+            // Endpoints are never candidates. Every vertex touching an arc is a
+            // BC/EC transition and must remain. Only a truly straight line-line
             // intermediate vertex is removed, regardless of a T/X road junction.
             for (int vertexIndex = 1; vertexIndex < polyline.NumberOfVertices - 1; vertexIndex++)
             {
-                SegmentType previousType = SafeSegmentType(polyline, vertexIndex - 1);
-                SegmentType nextType = SafeSegmentType(polyline, vertexIndex);
+                SegmentType? previousType = SafeSegmentType(polyline, vertexIndex - 1);
+                SegmentType? nextType = SafeSegmentType(polyline, vertexIndex);
 
-                if (previousType == SegmentType.Arc || nextType == SegmentType.Arc)
+                if (!previousType.HasValue || !nextType.HasValue)
                     continue;
-
-                if (previousType != SegmentType.Line || nextType != SegmentType.Line)
+                if (previousType.Value == SegmentType.Arc || nextType.Value == SegmentType.Arc)
+                    continue;
+                if (previousType.Value != SegmentType.Line || nextType.Value != SegmentType.Line)
                     continue;
 
                 Point2d before = polyline.GetPoint2dAt(vertexIndex - 1);
@@ -147,10 +150,10 @@ namespace CETools.Civil3D
             return remove;
         }
 
-        private static SegmentType SafeSegmentType(Polyline polyline, int segmentIndex)
+        private static SegmentType? SafeSegmentType(Polyline polyline, int segmentIndex)
         {
             try { return polyline.GetSegmentType(segmentIndex); }
-            catch { return SegmentType.Point; }
+            catch { return null; }
         }
 
         private static bool IsStraightThrough(Point2d before, Point2d current, Point2d after)
