@@ -28,7 +28,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Field Completion",
-                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, multi-alignment label sets, road profile band labels, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
+                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, safe/dynamic feature-line linking and stepped offsets, multi-alignment label sets, road profile band labels, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction(
@@ -46,6 +46,26 @@ namespace CETools.Civil3D
                         "CE_ROADCENTRECLEANSTRICT",
                         "Clean multiple selected open road-centre polylines. Straight roads keep start/end only, including through T/X junctions; arc transition vertices BC/EC are retained, so a single horizontal curve resolves to start, BC, EC and end. Genuine non-collinear bends are preserved.",
                         "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Link Existing Relative Feature Lines",
+                        "CE_FLRELLINKEXISTING",
+                        "Select one source and multiple existing constant-offset Civil 3D feature lines. CE Tools verifies the horizontal/vertical relation and attaches CE_FLREL links without erasing or recreating the existing geometry.",
+                        "01 Feature Lines"),
+                    new DisciplineWorkflowAction(
+                        "Safe Stepped Offsets - Multiple Feature Lines",
+                        "CE_FLSTEPSSAFE",
+                        "Create linked stepped offsets from multiple selected source feature lines through the candidate-first fatal-safety engine. Existing source feature lines are kept.",
+                        "01 Feature Lines"),
+                    new DisciplineWorkflowAction(
+                        "Dynamic Surface Link - Existing Feature Lines",
+                        "CE_FLSURFACELINKEXISTING",
+                        "Drape multiple existing Civil 3D feature lines to one selected surface and store persistent direct-drape links. Surface sampling is isolated from feature-line writes and failed selections are skipped safely.",
+                        "01 Feature Lines"),
+                    new DisciplineWorkflowAction(
+                        "Feature Line Appearance / Site",
+                        "CE_FLAPPEARANCE",
+                        "Apply the existing multi-feature-line colour, feature-line style and optional Civil 3D Site assignment workflow.",
+                        "01 Feature Lines"),
                     new DisciplineWorkflowAction(
                         "Alignment Label Set - Multiple Alignments",
                         "CE_ALIGNLABELSETMULTI",
