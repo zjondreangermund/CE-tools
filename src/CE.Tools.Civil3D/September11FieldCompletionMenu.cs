@@ -49,7 +49,7 @@ namespace CETools.Civil3D
                         "03 Standards"),
                     new DisciplineWorkflowAction(
                         "Discipline Style Presets",
-                        "CE_DISCIPLINESTYLEPRESET",
+                        "CE_DISCIPLINESTYLEPRESETS",
                         "Choose and apply the existing CE Tools discipline style preset workflow for the current drawing.",
                         "03 Standards"),
                     new DisciplineWorkflowAction(
