@@ -28,7 +28,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Field Completion",
-                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, multi-alignment label sets, road profile band labels, sewer recalculation/profile safety, annotation scale synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
+                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, multi-alignment label sets, road profile band labels, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction(
@@ -64,7 +64,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Synchronise Annotation Scale",
                         "CE_ANNOSCALESYNC",
-                        "Apply the current drawing annotation scale to supported dimensions, text, MText and multileaders so annotation follows drawing-scale changes consistently.",
+                        "Automatic monitor now applies each changed drawing annotation scale to annotative dimensions, text, MText and multileaders. Run this command when an immediate manual synchronisation is required.",
                         "03 Standards"),
                     new DisciplineWorkflowAction(
                         "Discipline Style Presets",
