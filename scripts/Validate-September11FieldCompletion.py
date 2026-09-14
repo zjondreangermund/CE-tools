@@ -6,6 +6,7 @@ september14 = (root / "src/CE.Tools.Civil3D/September14HatchOuterBoundaryCommand
 road_strict = (root / "src/CE.Tools.Civil3D/September14RoadCentreStrictCommands.cs").read_text(encoding="utf-8")
 alignment_bands = (root / "src/CE.Tools.Civil3D/September14AlignmentBandStyleCommands.cs").read_text(encoding="utf-8")
 context_menu = (root / "src/CE.Tools.Civil3D/DynamicRefreshContextMenu.cs").read_text(encoding="utf-8")
+plugin = (root / "src/CE.Tools.Civil3D/PluginEntry.cs").read_text(encoding="utf-8")
 menu = (root / "src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs").read_text(encoding="utf-8")
 front = (root / "src/CE.Tools.Civil3D/September09FieldEngineeringCommandFrontDoor.cs").read_text(encoding="utf-8")
 project = (root / "src/CE.Tools.Civil3D/ProjectCoordinationCommands.cs").read_text(encoding="utf-8")
@@ -83,16 +84,12 @@ for forbidden in ['new MText()', 'new DBText()', 'new Leader()', 'new MLeader()'
         raise SystemExit(f"Alignment/band fix regressed to generic AutoCAD annotation: {forbidden}")
 
 required_context_menu = [
-    'ExtensionApplication(typeof(CETools.Civil3D.DynamicRefreshContextMenuApplication))',
-    'IExtensionApplication',
     'ContextMenuExtension',
     'new MenuItem("CE Dynamic Refresh All")',
     'AddDefaultContextMenuExtension',
     'RemoveDefaultContextMenuExtension',
     'DynamicRefreshAllCommand = "CE_DYNAMIC" + "REFRESHALL"',
     'document.SendStringToExecute(DynamicRefreshAllCommand + " "',
-    'AnnotationScaleSyncManager.Initialize();',
-    'AnnotationScaleSyncManager.Terminate();',
 ]
 for token in required_context_menu:
     if token not in context_menu:
@@ -100,6 +97,16 @@ for token in required_context_menu:
 
 if 'UniversalDynamicRefreshManager.RefreshNow(' in context_menu:
     raise SystemExit("Right-click Dynamic Refresh bypasses the explicit manual command boundary.")
+
+if 'ExtensionApplication(' in context_menu or 'IExtensionApplication' in context_menu:
+    raise SystemExit("Dynamic Refresh context menu declares a second Civil 3D extension application.")
+
+if plugin.count('ExtensionApplication(') != 1 or 'ExtensionApplication(typeof(CETools.Civil3D.PluginEntry))' not in plugin:
+    raise SystemExit("PluginEntry is not the single Civil 3D extension application.")
+
+for token in ['DynamicRefreshContextMenu.Attach();', 'DynamicRefreshContextMenu.Detach();']:
+    if plugin.count(token) != 1:
+        raise SystemExit(f"PluginEntry context-menu lifecycle marker is missing or duplicated: {token}")
 
 if 'September11FieldCompletionRuntime.RoadReserveCentrePolylines(document);' not in front:
     raise SystemExit("Road Reserve front door is not routed through the final centreline cleanup wrapper.")

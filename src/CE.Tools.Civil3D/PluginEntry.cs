@@ -20,6 +20,7 @@ namespace CETools.Civil3D
             DynamicSectionUpdateManager.Initialize();
             DynamicIntersectionUpdateManager.Initialize();
             AnnotationScaleSyncManager.Initialize();
+            DynamicRefreshContextMenu.Attach();
             ParkingNumberAutoRefreshManager.Initialize();
             WaterSewerCostAutoRefreshManager.Initialize();
             LinkedTableAutoRefreshManager.Initialize();
@@ -36,6 +37,7 @@ namespace CETools.Civil3D
         public void Terminate()
         {
             AcApplication.Idle -= OnApplicationIdle;
+            DynamicRefreshContextMenu.Detach();
             UniversalDynamicRefreshManager.Terminate();
             CeInteractionTelemetryManager.Terminate();
             SewerNetworkDynamicSequenceManager.Terminate();
