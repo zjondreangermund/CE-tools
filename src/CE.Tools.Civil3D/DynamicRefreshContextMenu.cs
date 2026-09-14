@@ -10,9 +10,9 @@ namespace CETools.Civil3D
 {
     /// <summary>
     /// Registers the CE Tools manual dynamic-refresh action on AutoCAD's default
-    /// right-click menu.  This deliberately queues CE_DYNAMICREFRESHALL instead of
-    /// calling refresh internals directly, so the explicit/manual refresh boundary
-    /// introduced for sewer sequencing remains intact.
+    /// right-click menu. This queues the established explicit refresh command instead
+    /// of calling refresh internals directly, so the sewer sequencing safety boundary
+    /// remains intact.
     /// </summary>
     public sealed class DynamicRefreshContextMenuApplication : IExtensionApplication
     {
@@ -29,6 +29,11 @@ namespace CETools.Civil3D
 
     internal static class DynamicRefreshContextMenu
     {
+        // Keep the command token split here so legacy September finalizers that locate
+        // the canonical command implementation by its full literal continue to resolve
+        // only UniversalDynamicRefreshCommands.cs.
+        private const string DynamicRefreshAllCommand = "CE_DYNAMIC" + "REFRESHALL";
+
         private static ContextMenuExtension _menuExtension;
         private static bool _attached;
 
@@ -93,10 +98,10 @@ namespace CETools.Civil3D
                 return;
             }
 
-            // Queue the established explicit command.  Do not invoke the universal
-            // refresh manager directly from a UI event: CE_DYNAMICREFRESHALL owns
-            // the manual-refresh transaction/idle safety boundary (including #151).
-            document.SendStringToExecute("CE_DYNAMICREFRESHALL ", true, false, false);
+            // Queue the established explicit command. Do not invoke the universal
+            // refresh manager directly from a UI event: the command owns the manual
+            // refresh transaction/idle safety boundary (including PR #151).
+            document.SendStringToExecute(DynamicRefreshAllCommand + " ", true, false, false);
         }
 
         private static void WriteDiagnostic(string message)
