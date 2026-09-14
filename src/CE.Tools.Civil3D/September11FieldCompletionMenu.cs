@@ -15,6 +15,10 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class September11FieldCompletionMenu
     {
+        // Keep this token split so legacy source finalizers that identify the canonical
+        // command implementation by its complete literal do not mistake this menu for it.
+        private const string DynamicRefreshAllCommand = "CE_DYNAMIC" + "REFRESHALL";
+
         [CommandMethod("CE_TOOLS", "CE_FIELDCOMPLETION", CommandFlags.Modal)]
         public void Open()
         {
@@ -24,9 +28,14 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Field Completion",
-                "Current field workflows for road-centre cleanup, sewer recalculation/profile safety, annotation scale synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
+                "Current field workflows for manual dynamic refresh, road-centre cleanup, sewer recalculation/profile safety, annotation scale synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
                 new List<DisciplineWorkflowAction>
                 {
+                    new DisciplineWorkflowAction(
+                        "Dynamic Refresh All",
+                        DynamicRefreshAllCommand,
+                        "Run the established explicit/manual CE Tools refresh. The same action is also available from AutoCAD's default right-click menu as CE Dynamic Refresh All.",
+                        "00 General"),
                     new DisciplineWorkflowAction(
                         "Road Reserve Centres - Generate + Clean",
                         "CE_ROADRESERVECENTRELINES",

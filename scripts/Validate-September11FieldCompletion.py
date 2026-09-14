@@ -3,6 +3,7 @@ from pathlib import Path
 root = Path(__file__).resolve().parents[1]
 source = (root / "src/CE.Tools.Civil3D/September11FieldCompletionCommands.cs").read_text(encoding="utf-8")
 september14 = (root / "src/CE.Tools.Civil3D/September14HatchOuterBoundaryCommands.cs").read_text(encoding="utf-8")
+context_menu = (root / "src/CE.Tools.Civil3D/DynamicRefreshContextMenu.cs").read_text(encoding="utf-8")
 menu = (root / "src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs").read_text(encoding="utf-8")
 front = (root / "src/CE.Tools.Civil3D/September09FieldEngineeringCommandFrontDoor.cs").read_text(encoding="utf-8")
 project = (root / "src/CE.Tools.Civil3D/ProjectCoordinationCommands.cs").read_text(encoding="utf-8")
@@ -43,11 +44,34 @@ for token in required_september14:
     if token not in september14:
         raise SystemExit(f"September 14 hatch perimeter marker missing: {token}")
 
+required_context_menu = [
+    'ExtensionApplication(typeof(CETools.Civil3D.DynamicRefreshContextMenuApplication))',
+    'IExtensionApplication',
+    'ContextMenuExtension',
+    'new MenuItem("CE Dynamic Refresh All")',
+    'AddDefaultContextMenuExtension',
+    'RemoveDefaultContextMenuExtension',
+    'DynamicRefreshAllCommand = "CE_DYNAMIC" + "REFRESHALL"',
+    'document.SendStringToExecute(DynamicRefreshAllCommand + " "',
+]
+for token in required_context_menu:
+    if token not in context_menu:
+        raise SystemExit(f"Dynamic Refresh right-click marker missing: {token}")
+
+# The shortcut must remain an explicit/manual command handoff. Calling refresh
+# manager internals directly from a menu event would bypass the sewer sequence
+# safety boundary introduced by PR #151.
+if 'UniversalDynamicRefreshManager.RefreshNow(' in context_menu:
+    raise SystemExit("Right-click Dynamic Refresh bypasses the explicit manual command boundary.")
+
 if 'September11FieldCompletionRuntime.RoadReserveCentrePolylines(document);' not in front:
     raise SystemExit("Road Reserve front door is not routed through the final centreline cleanup wrapper.")
 
 required_menu = [
     '"CE_FIELDCOMPLETION"',
+    'DynamicRefreshAllCommand = "CE_DYNAMIC" + "REFRESHALL"',
+    'DynamicRefreshAllCommand,',
+    'right-click menu',
     '"CE_ROADRESERVECENTRELINES"',
     '"CE_SEWRECALC"',
     '"CE_ANNOSCALESYNC"',
