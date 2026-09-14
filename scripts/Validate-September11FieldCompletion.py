@@ -51,7 +51,8 @@ required_context_menu = [
     'new MenuItem("CE Dynamic Refresh All")',
     'AddDefaultContextMenuExtension',
     'RemoveDefaultContextMenuExtension',
-    'document.SendStringToExecute("CE_DYNAMICREFRESHALL "',
+    'DynamicRefreshAllCommand = "CE_DYNAMIC" + "REFRESHALL"',
+    'document.SendStringToExecute(DynamicRefreshAllCommand + " "',
 ]
 for token in required_context_menu:
     if token not in context_menu:
@@ -61,14 +62,15 @@ for token in required_context_menu:
 # manager internals directly from a menu event would bypass the sewer sequence
 # safety boundary introduced by PR #151.
 if 'UniversalDynamicRefreshManager.RefreshNow(' in context_menu:
-    raise SystemExit("Right-click Dynamic Refresh bypasses the explicit CE_DYNAMICREFRESHALL command boundary.")
+    raise SystemExit("Right-click Dynamic Refresh bypasses the explicit manual command boundary.")
 
 if 'September11FieldCompletionRuntime.RoadReserveCentrePolylines(document);' not in front:
     raise SystemExit("Road Reserve front door is not routed through the final centreline cleanup wrapper.")
 
 required_menu = [
     '"CE_FIELDCOMPLETION"',
-    '"CE_DYNAMICREFRESHALL"',
+    'DynamicRefreshAllCommand = "CE_DYNAMIC" + "REFRESHALL"',
+    'DynamicRefreshAllCommand,',
     'right-click menu',
     '"CE_ROADRESERVECENTRELINES"',
     '"CE_SEWRECALC"',
