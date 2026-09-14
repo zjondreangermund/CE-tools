@@ -10,19 +10,22 @@ namespace CETools.Civil3D
 {
     /// <summary>
     /// Registers the CE Tools manual dynamic-refresh action on AutoCAD's default
-    /// right-click menu. This queues the established explicit refresh command instead
-    /// of calling refresh internals directly, so the sewer sequencing safety boundary
-    /// remains intact.
+    /// right-click menu and starts the lightweight annotation-scale monitor used to
+    /// keep annotative dimensions/text/MText/multileaders current when CANNOSCALE changes.
+    /// This queues the established explicit refresh command instead of calling refresh
+    /// internals directly, so the sewer sequencing safety boundary remains intact.
     /// </summary>
     public sealed class DynamicRefreshContextMenuApplication : IExtensionApplication
     {
         public void Initialize()
         {
             DynamicRefreshContextMenu.Attach();
+            AnnotationScaleSyncManager.Initialize();
         }
 
         public void Terminate()
         {
+            AnnotationScaleSyncManager.Terminate();
             DynamicRefreshContextMenu.Detach();
         }
     }
