@@ -7,6 +7,7 @@ menu = (root / "src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs").read_te
 front = (root / "src/CE.Tools.Civil3D/September09FieldEngineeringCommandFrontDoor.cs").read_text(encoding="utf-8")
 project = (root / "src/CE.Tools.Civil3D/ProjectCoordinationCommands.cs").read_text(encoding="utf-8")
 annotation = (root / "src/CE.Tools.Civil3D/AnnotationScaleSyncCommands.cs").read_text(encoding="utf-8")
+presets = (root / "src/CE.Tools.Civil3D/August11DisciplineStylePresetCommands.cs").read_text(encoding="utf-8")
 
 required_source = [
     '"CE_ROADCENTRECLEAN"',
@@ -50,7 +51,7 @@ required_menu = [
     '"CE_ROADRESERVECENTRELINES"',
     '"CE_SEWRECALC"',
     '"CE_ANNOSCALESYNC"',
-    '"CE_DISCIPLINESTYLEPRESET"',
+    '"CE_DISCIPLINESTYLEPRESETS"',
     '"CE_SURVEYLOCATIONNAMIBIA"',
     '"CE_GOOGLEEARTHLINEWORK"',
     '"CE_HATCHOUTERBOUNDARY"',
@@ -67,6 +68,8 @@ if '"Separate Hatch Boundaries"' in menu or '"CE_HATCHBOUNDARIES"' in menu:
 
 if '"CE_ANNOSCALESYNC"' not in annotation or 'CANNOSCALE' not in annotation:
     raise SystemExit("Annotation-scale synchronisation command/monitor is missing.")
+if '"CE_DISCIPLINESTYLEPRESETS"' not in presets:
+    raise SystemExit("Discipline style preset command is missing.")
 
 # The town workflow existed before this batch; keep it guarded because the field
 # completion menu deliberately reuses that single canonical Namibia mapping.
