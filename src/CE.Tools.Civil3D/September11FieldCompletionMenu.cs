@@ -82,6 +82,11 @@ namespace CETools.Civil3D
                         "Export individual grading feature lines from selected corridor centre, edge, kerb, sidewalk, shoulder, toe or exact point codes. Choose dynamic links in the popup and review or insert the extraction register as a DWG table.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
+                        "Dynamic Corridor Annotation",
+                        "CE_CORLABELX",
+                        "Create corridor information as a dynamically refreshed MLeader, MText or COGO point. Choose 1.8, 2.0, 2.5, 3.5 or 5.0 mm paper height and an optional small circle at the reference/leader start.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
                         "Sewer Engineering Audit - Inverts / Cover / Depth",
                         "CE_SEWAUDITLIMITS",
                         "Review every pipe and manhole in one gravity network: inside inverts, outside-crown cover, slopes, connected-invert drops, rim-to-sump depth and sump clearance. Results open in a grid and can be inserted as a drawing table; the audit does not change the network.",

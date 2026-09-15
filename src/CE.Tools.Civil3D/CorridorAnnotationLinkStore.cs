@@ -28,19 +28,19 @@ namespace CETools.Civil3D
             Point3d point,
             IEnumerable<ObjectId> outputIds)
         {
-            if (database == null || corridorId.IsNull || sourcePointId.IsNull) return;
+            if (database == null || corridorId.IsNull || outputIds == null) return;
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
-                DBObject source = transaction.GetObject(sourcePointId, OpenMode.ForWrite, false);
-                Write(source, transaction, corridorId, sourcePointId, pointName, point);
-                if (outputIds != null)
+                if (!sourcePointId.IsNull)
                 {
-                    foreach (ObjectId id in outputIds)
-                    {
-                        if (id.IsNull || id.IsErased || id == sourcePointId) continue;
-                        DBObject output = transaction.GetObject(id, OpenMode.ForWrite, false);
-                        Write(output, transaction, corridorId, sourcePointId, pointName, point);
-                    }
+                    DBObject source = transaction.GetObject(sourcePointId, OpenMode.ForWrite, false);
+                    Write(source, transaction, corridorId, sourcePointId, pointName, point);
+                }
+                foreach (ObjectId id in outputIds)
+                {
+                    if (id.IsNull || id.IsErased || id == sourcePointId) continue;
+                    DBObject output = transaction.GetObject(id, OpenMode.ForWrite, false);
+                    Write(output, transaction, corridorId, sourcePointId, pointName, point);
                 }
                 transaction.Commit();
             }
@@ -69,7 +69,7 @@ namespace CETools.Civil3D
                 ObjectId tableId = space.AppendEntity(table);
                 transaction.AddNewlyCreatedDBObject(table, true);
                 Write(table, transaction, corridorId, sourcePointId, pointName, point);
-                Populate(table, Read(transaction, corridorId, sourcePointId, pointName), height);
+                Populate(table, Read(transaction, corridorId, sourcePointId, pointName, point), height);
                 transaction.Commit();
                 return tableId;
             }
@@ -96,7 +96,8 @@ namespace CETools.Civil3D
                             transaction,
                             link.CorridorId,
                             link.SourcePointId,
-                            link.PointName);
+                            link.PointName,
+                            link.LastPoint);
                     }
                     catch { continue; }
 
@@ -134,7 +135,8 @@ namespace CETools.Civil3D
             Transaction transaction,
             ObjectId corridorId,
             ObjectId sourcePointId,
-            string pointName)
+            string pointName,
+            Point3d storedPoint)
         {
             CivilCorridor corridor = transaction.GetObject(
                 corridorId,
@@ -142,7 +144,9 @@ namespace CETools.Civil3D
                 false) as CivilCorridor;
             if (corridor == null)
                 throw new InvalidOperationException("The linked corridor is unavailable.");
-            Point3d point = ReadPoint(transaction, sourcePointId);
+            Point3d point = sourcePointId.IsNull
+                ? storedPoint
+                : ReadPoint(transaction, sourcePointId);
             int regions = 0;
             foreach (Baseline baseline in corridor.Baselines)
                 regions += baseline.BaselineRegions.Count;
@@ -293,7 +297,7 @@ namespace CETools.Civil3D
             record.Data = new ResultBuffer(
                 new TypedValue((int)DxfCode.Text, "Schema=" + SchemaVersion),
                 new TypedValue((int)DxfCode.Text, "Corridor=" + corridorId.Handle),
-                new TypedValue((int)DxfCode.Text, "Source=" + sourcePointId.Handle),
+                new TypedValue((int)DxfCode.Text, "Source=" + (sourcePointId.IsNull ? string.Empty : sourcePointId.Handle.ToString())),
                 new TypedValue((int)DxfCode.Text, "PointName=" + (pointName ?? string.Empty)),
                 new TypedValue((int)DxfCode.Text, "X=" + point.X.ToString("R", CultureInfo.InvariantCulture)),
                 new TypedValue((int)DxfCode.Text, "Y=" + point.Y.ToString("R", CultureInfo.InvariantCulture)),
@@ -326,12 +330,13 @@ namespace CETools.Civil3D
                 if (equals > 0) values[text.Substring(0, equals)] = text.Substring(equals + 1);
             }
             ObjectId corridorId;
-            ObjectId sourceId;
+            ObjectId sourceId = ObjectId.Null;
             double x;
             double y;
             double z;
+            string sourceText = Read(values, "Source");
             if (!Resolve(database, Read(values, "Corridor"), out corridorId) ||
-                !Resolve(database, Read(values, "Source"), out sourceId) ||
+                (!string.IsNullOrWhiteSpace(sourceText) && !Resolve(database, sourceText, out sourceId)) ||
                 !double.TryParse(Read(values, "X"), NumberStyles.Float, CultureInfo.InvariantCulture, out x) ||
                 !double.TryParse(Read(values, "Y"), NumberStyles.Float, CultureInfo.InvariantCulture, out y) ||
                 !double.TryParse(Read(values, "Z"), NumberStyles.Float, CultureInfo.InvariantCulture, out z))

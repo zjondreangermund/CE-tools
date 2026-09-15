@@ -16,6 +16,9 @@ All notable CE Tools changes will be recorded here.
 - Corridor feature-line extraction now accepts exact point codes inside its popup,
   reports every matched export with corridor, baseline, code, group, name, handle
   and dynamic-link state, and offers the same register as a DWG table.
+- Corridor annotations now support MLeader, MText and COGO output at the shared
+  1.8/2.0/2.5/3.5/5.0 mm paper heights, can draw a circle at the reference or
+  leader start, and refresh their corridor counts/status through the stored link.
 
 ### Changed
 
