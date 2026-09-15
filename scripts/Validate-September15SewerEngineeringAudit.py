@@ -72,8 +72,8 @@ if not inside_names:
     raise SystemExit("Inside-diameter lookup can no longer be verified as inside-only.")
 
 for text, label, tokens in [
-    (menu, "Field Completion", ['"Sewer Engineering Audit - Inverts / Cover / Depth"', '"CE_SEWAUDITLIMITS"']),
-    (ribbon, "Sewer ribbon", ['Cmd("Engineering Audit", "CE_SEWAUDITLIMITS "']),
+    (menu, "Field Completion", ['"Sewer Integrity Audit - Connections / Rules / Levels"', '"CE_SEWAUDITLIMITS"']),
+    (ribbon, "Sewer ribbon", ['Cmd("Integrity / Engineering Audit", "CE_SEWAUDITLIMITS "']),
 ]:
     for token in tokens:
         if token not in text:
