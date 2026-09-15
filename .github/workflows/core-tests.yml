@@ -37,6 +37,9 @@ jobs:
       - name: Validate report presentation source
         run: python3 scripts/Validate-ReportPresentation.py
 
+      - name: Validate corridor feature-line completion
+        run: python3 scripts/Validate-September15CorridorFeatureLineCompletion.py
+
       - name: Validate shared annotation source
         run: python3 scripts/Validate-AnnotationCommands.py
 
