@@ -146,6 +146,7 @@ All code-complete items below remain subject to the final Civil 3D 2023 build an
 | One bad Stormwater alignment must not cancel all profile views | CODE COMPLETE | Staged SW profile creation uses singleton alignment transactions and continues |
 | One bad Water alignment must not cancel all profile views | CODE COMPLETE | Staged Water profile loop uses one transaction per route/alignment and continues |
 | Batch band-set/internal-error workflow must remain usable after one failure | CODE COMPLETE | `CE_PROFILEBATCHSAFE` separates import / style / band / refresh / discipline stages |
+| Show the exact open/not-connected pipes and structures and identify Civil rule errors | CODE COMPLETE / HOST ACCEPTANCE REQUIRED | Read-only `CE_SEWAUDITLIMITS` lists open starts/ends, isolated/terminal structures, rule sets and surfaces; explicit `CE_SEWRECALC` lists every pipe/structure rule result or error, while `CE_SEWCONNECTPARTS` offers a separate guarded repair |
 
 ## L. Sewer excavation / pipe data
 
