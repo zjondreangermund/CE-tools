@@ -52,6 +52,8 @@ function ReplaceMethodBody([string]$text,[string]$signature,[string]$body,[strin
 # -----------------------------------------------------------------------------
 $auditPath = SourcePath 'August24FieldCompletionCommands.cs'
 $audit = ReadText $auditPath
+$readOnlyEngineeringAudit = $audit.Contains('CE TOOLS SEWER ENGINEERING AUDIT')
+if (-not $readOnlyEngineeringAudit) {
 $audit = $audit.Replace(
     'Review full-network cover, pipe slopes and structure drops. The command reports observed ranges and violations without modifying the network.',
     'Review full-network cover, pipe slopes and structure drops. By default the selected surface is linked to every pipe/structure and existing Civil 3D part rules are applied before the audit.')
@@ -142,6 +144,7 @@ if (-not $audit.Contains('private static double ReadPipeInnerRadius(CivilPipe pi
     $at = $audit.IndexOf($anchor,[StringComparison]::Ordinal)
     if ($at -lt 0) { throw 'September 10 ReadPipeInnerRadius insertion anchor missing.' }
     $audit = $audit.Insert($at,($innerRadius -replace "`r?`n","`r`n"))
+}
 }
 WriteText $auditPath $audit
 
@@ -456,8 +459,13 @@ $annoBody = @'
 WriteText $annoPath $anno
 
 # Final guards: fail the build rather than silently shipping an older behavior.
+$auditMarkers = if ((ReadText $auditPath).Contains('CE TOOLS SEWER ENGINEERING AUDIT')) {
+    @('ReadPipeDiameter(pipe, false)','ReadPipeDiameter(pipe, true)','outside pipe crown','GridReportPresenter.ShowReportAndOfferTable(','"Sump Clearance"')
+} else {
+    @('"PrepareNetwork"','September09SewerSurfaceRulesRuntime.LinkExistingPartsToSurface(','ReadPipeInnerRadius(pipe)','"OuterDiameterOrWidth", "InnerDiameterOrWidth"')
+}
 $checks = @{
-    $auditPath = @('"PrepareNetwork"','September09SewerSurfaceRulesRuntime.LinkExistingPartsToSurface(','ReadPipeInnerRadius(pipe)','"OuterDiameterOrWidth", "InnerDiameterOrWidth"');
+    $auditPath = $auditMarkers;
     $sequencePath = @('firstEndpointAlreadyAssigned','ReverseInPlace(selected.NodeIds);');
     $dynamicSequencePath = @('branch.Nodes.Reverse();','branch.Edges.Reverse();');
     $multiPath = @('"Dynamic", "03 Dynamic", "Dynamic update"','DynamicMultiDimensionManager.BeginCommand(','DynamicMultiDimensionManager.BeginSource(transaction, sourceLine','internal static int RebuildDynamicSource(','DynamicMultiDimensionManager.CaptureOutput(transaction, dimension);','PaperAnnotationScale.SetAnnotative(dimension);');
@@ -472,4 +480,4 @@ foreach ($entry in $checks.GetEnumerator()) {
 }
 
 Write-Host 'September 10 Civil 3D field corrections applied.' -ForegroundColor Green
-Write-Host 'Sewer audit now links the selected surface/applies rules, side branches sequence toward the main, and Multiple Dimensions can refresh dynamically without background Undo pollution.' -ForegroundColor Green
+Write-Host 'Sewer audit compatibility, side-branch sequencing, and dynamic Multiple Dimensions behavior are current without background Undo pollution.' -ForegroundColor Green
