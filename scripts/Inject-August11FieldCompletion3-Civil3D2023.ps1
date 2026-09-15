@@ -126,6 +126,10 @@ if ($text.Contains($oldProfileFull)) {
     Write-Host 'Integrated automatic PVI parabolic vertical curves into CE_ROADPROFILEFULL.' -ForegroundColor Green
 }
 elseif ($text.Contains($newProfileFull)) { Write-Host 'CE_ROADPROFILEFULL already includes vertical curves.' -ForegroundColor DarkGreen }
+elseif ($text.Contains('new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" }') -and
+        $text.Contains('CeSequentialCommandRunner.Start(')) {
+    Write-Host 'CE_ROADPROFILEFULL already includes vertical curves through the safe sequential runner.' -ForegroundColor DarkGreen
+}
 else { throw 'CE_ROADPROFILEFULL command sequence marker not found.' }
 
 # Existing corridors can exist in Prospector while their display remains hidden.
