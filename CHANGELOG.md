@@ -2,6 +2,23 @@
 
 All notable CE Tools changes will be recorded here.
 
+## Unreleased — 2026-09-15
+
+### Added
+
+- Road corridor completion now exposes tangent, horizontal-curve and vertical-curve
+  assembly frequencies, ensures selected corridor output is visible, and enables
+  Civil 3D native automatic rebuild after alignment/profile edits.
+
+### Changed
+
+- Active road-production comments and workflow descriptions now distinguish
+  source-preserving corridor creation from supported completion settings and
+  explicitly report unavailable Civil 3D API members as warnings.
+- Complete road-profile, corridor and best-fit vertical-profile workflows now
+  queue interactive Civil 3D commands one at a time, preventing later command
+  names from being consumed as answers to an earlier command's prompts.
+
 ## 0.61.0-alpha — 2026-08-04
 
 ### Added
