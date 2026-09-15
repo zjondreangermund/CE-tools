@@ -78,8 +78,8 @@ jobs:
           if ($audit.Contains('September09SewerSurfaceRulesRuntime.LinkExistingPartsToSurface(')) {
             throw 'Staged sewer audit still targets the incompatible two-argument September09 helper.'
           }
-          if (-not $audit.Contains('September10SewerAuditRuntime.LinkExistingPartsToSurface(')) {
-            throw 'Staged sewer audit is missing the September10 nine-argument surface-link helper.'
+          if (-not ($audit.Contains('September10SewerAuditRuntime.LinkExistingPartsToSurface(') -or $audit.Contains('CE TOOLS SEWER ENGINEERING AUDIT'))) {
+            throw 'Staged sewer audit is missing both the legacy helper route and the current read-only engineering audit.'
           }
 
           $sequence = Get-Content 'src\CE.Tools.Civil3D\SewerSequenceCommands.cs' -Raw

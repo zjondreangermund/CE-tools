@@ -5,8 +5,13 @@ on:
     paths:
       - 'Directory.Build.targets'
       - 'scripts/Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1'
+      - 'scripts/Repair-September10-SewerAuditSequenceDynamicMultiDimension-Core-Civil3D2023.ps1'
+      - 'scripts/Repair-September10-CompileFix-SewerAuditSequence-Civil3D2023.ps1'
+      - 'scripts/Validate-September15SewerEngineeringAudit.py'
       - 'src/CE.Tools.Civil3D/September10DynamicMultiDimensionManager.cs'
       - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
+      - 'src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs'
+      - 'src/CE.Tools.Civil3D/PluginEntry.cs'
       - 'src/CE.Tools.Civil3D/SewerSequenceCommands.cs'
       - 'src/CE.Tools.Civil3D/SewerNetworkDynamicSequenceManager.cs'
       - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
@@ -62,7 +67,7 @@ jobs:
         shell: powershell
         run: |
           $checks = @{
-            'src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs' = @('PrepareNetwork','LinkExistingPartsToSurface','ReadPipeInnerRadius');
+            'src\CE.Tools.Civil3D\August24FieldCompletionCommands.cs' = @('CE TOOLS SEWER ENGINEERING AUDIT','ReadPipeDiameter(pipe, false)','ReadPipeDiameter(pipe, true)','outside pipe crown','Sump Clearance');
             'src\CE.Tools.Civil3D\SewerSequenceCommands.cs' = @('firstEndpointAlreadyAssigned','ReverseInPlace(selected.NodeIds)');
             'src\CE.Tools.Civil3D\SewerNetworkDynamicSequenceManager.cs' = @('branch.Nodes.Reverse()','branch.Edges.Reverse()');
             'src\CE.Tools.Civil3D\MultiDimensionCommands.cs' = @('Dynamic update','BeginSource(transaction, sourceLine','RebuildDynamicSource','CaptureOutput(transaction, dimension)','SetAnnotative(dimension)');
@@ -79,3 +84,7 @@ jobs:
       - name: Parse all Civil 3D C# sources
         shell: powershell
         run: dotnet run --project tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj -- .
+
+      - name: Validate read-only sewer engineering audit
+        shell: powershell
+        run: python scripts\Validate-September15SewerEngineeringAudit.py

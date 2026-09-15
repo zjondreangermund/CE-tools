@@ -9,6 +9,10 @@ All notable CE Tools changes will be recorded here.
 - Road corridor completion now exposes tangent, horizontal-curve and vertical-curve
   assembly frequencies, ensures selected corridor output is visible, and enables
   Civil 3D native automatic rebuild after alignment/profile edits.
+- The sewer engineering audit now reports each pipe's inside start/end invert,
+  slope and outside-crown cover, plus each structure's rim, sump, depth,
+  connected-invert drop and sump clearance in a review grid with an optional DWG
+  table.
 
 ### Changed
 
@@ -18,6 +22,9 @@ All notable CE Tools changes will be recorded here.
 - Complete road-profile, corridor and best-fit vertical-profile workflows now
   queue interactive Civil 3D commands one at a time, preventing later command
   names from being consumed as answers to an earlier command's prompts.
+- Sewer audit cover violations are counted once per pipe instead of once per
+  failed sample, and the audit remains read-only so surface/rule recalculation is
+  available only through its separate command.
 
 ## 0.61.0-alpha — 2026-08-04
 

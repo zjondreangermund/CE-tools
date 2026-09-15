@@ -41,11 +41,13 @@ function FindMatchingBrace([string]$text,[int]$open) {
 $audit = ReadText $auditPath
 $oldAuditCall = 'September09SewerSurfaceRulesRuntime.LinkExistingPartsToSurface('
 $newAuditCall = 'September10SewerAuditRuntime.LinkExistingPartsToSurface('
-if ($audit.Contains($oldAuditCall)) {
-    $audit = $audit.Replace($oldAuditCall,$newAuditCall)
-}
-if (-not $audit.Contains($newAuditCall)) {
-    throw 'September 10 compile-fix could not locate the staged sewer audit surface-link call.'
+if (-not $audit.Contains('CE TOOLS SEWER ENGINEERING AUDIT')) {
+    if ($audit.Contains($oldAuditCall)) {
+        $audit = $audit.Replace($oldAuditCall,$newAuditCall)
+    }
+    if (-not $audit.Contains($newAuditCall)) {
+        throw 'September 10 compile-fix could not locate the staged sewer audit surface-link call.'
+    }
 }
 WriteText $auditPath $audit
 
@@ -85,5 +87,5 @@ if ($sequence.Contains('ReverseInPlace(selected.NodeIds);') -and -not $sequence.
 WriteText $sequencePath $sequence
 
 Write-Host 'September 10 Civil 3D 2023 sewer audit/sequence compile compatibility applied.' -ForegroundColor Green
-Write-Host ' - Audit surface linking uses the non-interactive nine-argument helper.'
+Write-Host ' - Legacy audit surface linking uses the non-interactive helper; the current engineering audit remains read-only.'
 Write-Host ' - CandidatePath node/edge storage is mutable for in-place side-branch reversal.'

@@ -38,7 +38,8 @@ if ($text.Contains($oldProfile)) {
     $text = $text.Replace($oldProfile,$newProfile.TrimEnd("`r","`n"))
     Write-Host 'Sequenced CE_ROADPROFILEFULL one command at a time.' -ForegroundColor Green
 }
-elseif (-not $text.Contains('"CE Tools - Complete road profile"')) {
+elseif (-not ($text.Contains('CeSequentialCommandRunner.Start(') -and
+             $text.Contains('new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" }'))) {
     throw 'CE_ROADPROFILEFULL interactive command chain marker was not found.'
 }
 
@@ -53,7 +54,8 @@ if ($text.Contains($oldCorridor)) {
     $text = $text.Replace($oldCorridor,$newCorridor.TrimEnd("`r","`n"))
     Write-Host 'Sequenced CE_ROADCORRIDORFULL one command at a time.' -ForegroundColor Green
 }
-elseif (-not $text.Contains('"CE Tools - Complete road corridors"')) {
+elseif (-not ($text.Contains('CeSequentialCommandRunner.Start(') -and
+             $text.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }'))) {
     throw 'CE_ROADCORRIDORFULL interactive command chain marker was not found.'
 }
 WriteText $roadCorridor $text
@@ -73,7 +75,8 @@ if ($text.Contains($oldBestFit)) {
     $text = $text.Replace($oldBestFit,$newBestFit.TrimEnd("`r","`n"))
     Write-Host 'Sequenced CE_ROADPROFILEBESTFIT one command at a time.' -ForegroundColor Green
 }
-elseif (-not $text.Contains('"CE Tools - Best-fit final road profile"')) {
+elseif (-not ($text.Contains('CeSequentialCommandRunner.Start(') -and
+             $text.Contains('new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" }'))) {
     throw 'CE_ROADPROFILEBESTFIT interactive command chain marker was not found.'
 }
 WriteText $vertical $text

@@ -586,6 +586,7 @@ namespace CETools.Civil3D
                         Cmd("Format Alignments and Labels", "CE_SEWFORMAT ", "Apply styles and improve label spacing."),
                         Cmd("Automatic Civil Label Formatting", "CE_CIVILLABELFORMAT ", "Format alignment, profile, corridor, pipe, structure and CE labels to one paper height."),
                         Cmd("Create / Refresh Profiles", "CE_SEWPROFILE ", "Create EG profiles and profile views."),
+                        Cmd("Engineering Audit", "CE_SEWAUDITLIMITS ", "Review inside inverts, outside-crown cover, slopes, connected-invert drops, manhole depths and sump clearances without changing the network."),
                         Cmd("Sewer Settings", "CE_SEWSETTINGS ", "Configure styles, layers and label height."),
                         Cmd("Sewer Information", "CE_SEWINFO ", "Review links and generated output."),
                         Cmd("Sort Branch Labels", "CE_SEWLABELSORT ", "Stagger branch labels to reduce overlap."),
