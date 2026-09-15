@@ -478,6 +478,7 @@ namespace CETools.Civil3D
                     Cmd("Corridor Tools", "CE_CORTOOLS ", "Open the legacy corridor tools menu."),
                     Cmd("Corridor Report", "CE_CORREPORTUI ", "Show corridor details in a pop-up and optionally place a table."),
                     Cmd("Baselines and Regions", "CE_CORBASEUI ", "Show baseline and region details in a pop-up and optionally place a table."),
+                    Cmd("Extract Corridor Feature Lines", "CE_CORRIDORFEATURELINES ", "Export selected centre, edge, kerb, sidewalk, shoulder, toe or exact point-code feature lines and review the results in a popup or DWG table."),
                     Cmd("Corridor Annotation", "CE_CORLABELX ", "Create a corridor MLeader or MText using shared annotation settings."),
                     Cmd("Rebuild Corridors", "CE_CORREBUILDX ", "Explicitly call Corridor.Rebuild() for every editable selected corridor after review."),
                     Cmd("Rebuild Corridors (Legacy)", "CE_CORREBUILD ", "Run the original controlled rebuild command."))));
