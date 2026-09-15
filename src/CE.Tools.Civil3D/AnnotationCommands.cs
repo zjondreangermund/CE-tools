@@ -499,7 +499,7 @@ namespace CETools.Civil3D
             if (document == null) return;
 
             AnnotationOptions settings;
-            if (!AnnotationSettingsStore.Prepare(document, false, out settings)) return;
+            if (!AnnotationSettingsStore.Prepare(document, true, out settings)) return;
 
             Editor editor = document.Editor;
             PromptEntityResult corridorResult = PromptForEntity<CivilCorridor>(
@@ -514,6 +514,7 @@ namespace CETools.Civil3D
 
             Point3d target = ToWorld(editor, targetResult.Value);
             string contents;
+            string plainDescription;
 
             try
             {
@@ -539,6 +540,7 @@ namespace CETools.Civil3D
                         "REGIONS: " + regions.ToString(CultureInfo.InvariantCulture),
                         "SURFACES: " + corridor.CorridorSurfaces.Count.ToString(CultureInfo.InvariantCulture),
                         "OUT OF DATE: " + (corridor.IsOutOfDate ? "Yes" : "No"));
+                    plainDescription = contents.Replace("\\P", "; ");
                 }
             }
             catch (System.Exception exception)
@@ -553,16 +555,30 @@ namespace CETools.Civil3D
                 return;
             }
 
+            var generatedIds = new List<ObjectId>();
             if (AnnotationWriter.Create(
                 document,
                 target,
                 labelPoint,
                 contents,
-                "Corridor annotation",
+                plainDescription,
                 settings,
-                false))
+                true,
+                generatedIds))
             {
-                editor.WriteMessage("\nCE_CORLABELX complete. Annotation created using {0}.", settings.Output);
+                CorridorAnnotationLinkStore.Link(
+                    document.Database,
+                    corridorResult.ObjectId,
+                    ObjectId.Null,
+                    "Corridor reference",
+                    target,
+                    generatedIds);
+                CorridorAnnotationLinkStore.RefreshAll(document);
+                editor.WriteMessage(
+                    "\nCE_CORLABELX complete. Dynamic corridor annotation created using {0}; paper height={1:0.###} mm; reference marker={2}.",
+                    settings.Output,
+                    settings.TextHeight,
+                    settings.DrawMarker ? "Yes" : "No");
             }
         }
 
