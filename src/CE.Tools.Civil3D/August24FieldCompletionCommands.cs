@@ -95,7 +95,7 @@ namespace CETools.Civil3D
                     A("CE-Create Sewer Network from Multiple Sources", "CE_SEWERNETWORKMULTI", "Create one connected gravity network from lines, polylines or feature lines.", "01 Network preparation"),
                     A("CE-Connect Selected / Whole Network", "CE_SEWCONNECTPARTS", "Connect pipe endpoints to the nearest compatible structures.", "01 Network preparation"),
                     A("CE-Rims from Selected Surface", "CE_SEWSURFACERIMS", "Set selected/all structure rims to a surface plus a specified height.", "02 Surface / levels"),
-                    A("CE-Sewer Cover / Slope / Drop Audit", "CE_SEWAUDITLIMITS", "Review min/max cover, pipe slope and manhole drop against field limits.", "02 Surface / levels"),
+                    A("CE-Sewer Engineering Audit", "CE_SEWAUDITLIMITS", "Review inside inverts, outside-crown cover, pipe slope, manhole drop, depth and sump clearance without changing the network.", "02 Surface / levels"),
                     A("CE-Sequence + Auto Alignments", "CE_SEWSEQAUTOALIGN", "Sequence first, then safely hand off to alignment production as a separate command step.", "03 Sequence / production"),
                     A("CE-Sequence Network + Production Options", "CE_SEWSEQNETWORKPRODUCTION", "Complete-network sequencing with labels/alignments/profiles as separate production options.", "03 Sequence / production"),
                     A("CE-Sequence Selected Main + Production Options", "CE_SEWSEQMAINPRODUCTION", "Select the main route first, then choose labels/alignments/profiles separately.", "03 Sequence / production"),
@@ -168,7 +168,7 @@ namespace CETools.Civil3D
                     A("2. Create / Refresh Pipe and Structure Labels", "CE_SEWLABELS", "Apply sewer plan labels after the sequence completes.", "02 Production"),
                     A("3. Create Sewer Alignments", "CE_SEWALIGN", "Create alignments after reviewing the sequenced network.", "02 Production"),
                     A("4. Create Sewer Profiles", "CE_SEWPROFILE", "Create profiles after alignment production.", "02 Production"),
-                    A("Audit Cover / Slope / Drop", "CE_SEWAUDITLIMITS", "Check the final network engineering limits.", "03 Review")
+                    A("Audit Inverts / Cover / Structures", "CE_SEWAUDITLIMITS", "Check inside inverts, outside-crown cover, slopes, drops, depths and sump clearances without changing the network.", "03 Review")
                 });
         }
 
@@ -184,7 +184,7 @@ namespace CETools.Civil3D
                     A("2. Create / Refresh Pipe and Structure Labels", "CE_SEWLABELS", "Apply labels after sequence review.", "02 Production"),
                     A("3. Create Sewer Alignments", "CE_SEWALIGN", "Create branch alignments separately.", "02 Production"),
                     A("4. Create Sewer Profiles", "CE_SEWPROFILE", "Create surface/profile views after alignments.", "02 Production"),
-                    A("Audit Cover / Slope / Drop", "CE_SEWAUDITLIMITS", "Check engineering limits.", "03 Review")
+                    A("Audit Inverts / Cover / Structures", "CE_SEWAUDITLIMITS", "Check inside inverts, outside-crown cover, slopes, drops, depths and sump clearances without changing the network.", "03 Review")
                 });
         }
 
@@ -309,7 +309,7 @@ namespace CETools.Civil3D
             string[] surfaceNames = new[] { "<No surface / skip cover>" }.Concat(surfaces.Select(item => item.Name)).ToArray();
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Sewer Engineering Limits Audit",
-                "Review full-network cover, pipe slopes and structure drops. The command reports observed ranges and violations without modifying the network.");
+                "Review full-network inside inverts, outside-crown cover, pipe slopes, connected-invert drops, manhole depth and sump clearance. The network is not modified.");
             settings.AddChoice("Surface", "01 Cover", "Cover surface", surfaceNames[0], "Surface used to sample cover along pipe lengths.", surfaceNames);
             settings.AddPositiveDouble("MinCover", "01 Cover", "Minimum cover", 0.8, "Minimum permitted cover.");
             settings.AddPositiveDouble("MaxCover", "01 Cover", "Maximum cover", 6.0, "Maximum permitted cover.");
@@ -317,27 +317,39 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble("MaxSlope", "02 Pipe", "Maximum pipe slope (%)", 15.0, "Maximum absolute pipe grade.");
             settings.AddPositiveDouble("MinDrop", "03 Structures", "Minimum manhole drop", 0.0, "Minimum end-elevation difference between connected pipes at a structure.");
             settings.AddPositiveDouble("MaxDrop", "03 Structures", "Maximum manhole drop", 1.0, "Maximum end-elevation difference between connected pipes at a structure.");
+            settings.AddPositiveDouble("MinDepth", "03 Structures", "Minimum manhole depth", 0.8, "Minimum rim-to-sump depth used for this project audit.");
+            settings.AddPositiveDouble("MaxDepth", "03 Structures", "Maximum manhole depth", 8.0, "Maximum rim-to-sump depth used for this project audit.");
+            settings.AddPositiveDouble("MinSumpClearance", "03 Structures", "Minimum sump below lowest invert", 0.15, "Minimum vertical distance from the lowest connected pipe invert down to the structure sump.");
             settings.AddPositiveInteger("Samples", "01 Cover", "Cover samples per pipe", 10, "Number of equally spaced cover samples along each pipe.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             SurfaceChoice surfaceChoice = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
             SewerAuditResult audit = AuditNetwork(document, networkId, surfaceChoice == null ? ObjectId.Null : surfaceChoice.ObjectId, settings);
-            PopupTablePresenter.ShowReview(
+            string note = string.Format(
+                CultureInfo.CurrentCulture,
+                "Pipes={0}; structures={1}; cover violations={2}; slope violations={3}; drop violations={4}; depth violations={5}; sump violations={6}; open endpoints={7}; unreadable values={8}; failed cover samples={9}. Cover is surface elevation minus outside pipe crown; inverts use the inside pipe radius.",
+                audit.Pipes,
+                audit.Structures,
+                audit.CoverViolations,
+                audit.SlopeViolations,
+                audit.DropViolations,
+                audit.DepthViolations,
+                audit.SumpViolations,
+                audit.OpenEndpoints,
+                audit.UnreadableValues,
+                audit.CoverSampleFailures);
+            GridReportPresenter.ShowReportAndOfferTable(
+                document,
                 "CE Tools - Sewer Limits Audit",
-                "Observed values are based on the current network geometry. Cover is sampled along each pipe when a surface is selected.",
-                new List<KeyValuePair<string, string>>
+                note,
+                new List<string>
                 {
-                    Pair("Pipes checked", audit.Pipes.ToString(CultureInfo.CurrentCulture)),
-                    Pair("Structures checked", audit.Structures.ToString(CultureInfo.CurrentCulture)),
-                    Pair("Cover range", RangeText(audit.MinCover, audit.MaxCover)),
-                    Pair("Cover violations", audit.CoverViolations.ToString(CultureInfo.CurrentCulture)),
-                    Pair("Pipe slope range (%)", RangeText(audit.MinSlope, audit.MaxSlope)),
-                    Pair("Slope violations", audit.SlopeViolations.ToString(CultureInfo.CurrentCulture)),
-                    Pair("Structure drop range", RangeText(audit.MinDrop, audit.MaxDrop)),
-                    Pair("Drop violations", audit.DropViolations.ToString(CultureInfo.CurrentCulture)),
-                    Pair("Open pipe endpoints", audit.OpenEndpoints.ToString(CultureInfo.CurrentCulture))
+                    "Object", "Name", "Size", "Length", "Start / High Invert",
+                    "End / Low Invert", "Slope %", "Min Cover", "Max Cover",
+                    "Rim", "Sump", "Depth", "Drop", "Sump Clearance", "Status"
                 },
-                "Close");
+                audit.Rows,
+                "CE TOOLS SEWER ENGINEERING AUDIT");
         }
 
         // -----------------------------------------------------------------
@@ -797,6 +809,7 @@ namespace CETools.Civil3D
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 CivilNetwork network = transaction.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
+                if (network == null) return result;
                 CivilSurface surface = surfaceId.IsNull ? null : transaction.GetObject(surfaceId, OpenMode.ForRead, false) as CivilSurface;
                 var pipeEndpointElevations = new Dictionary<ObjectId, List<double>>();
                 int samples = Math.Max(2, settings.Integer("Samples", 10));
@@ -806,39 +819,168 @@ namespace CETools.Civil3D
                     if (pipe == null) continue;
                     result.Pipes++;
                     double run = PlanDistance(pipe.StartPoint, pipe.EndPoint);
-                    if (run > Tol)
+                    double length = ReadFiniteDouble(pipe, "Length3DCenterToCenter");
+                    if (!IsFinitePositive(length)) length = run;
+                    double insideDiameter = ReadPipeDiameter(pipe, false);
+                    double outsideDiameter = ReadPipeDiameter(pipe, true);
+                    if (!IsFinitePositive(outsideDiameter)) outsideDiameter = insideDiameter;
+                    double startInvert = IsFinitePositive(insideDiameter)
+                        ? pipe.StartPoint.Z - insideDiameter * 0.5
+                        : double.NaN;
+                    double endInvert = IsFinitePositive(insideDiameter)
+                        ? pipe.EndPoint.Z - insideDiameter * 0.5
+                        : double.NaN;
+                    var issues = new List<string>();
+
+                    if (!IsFinite(startInvert) || !IsFinite(endInvert))
                     {
-                        double slope = Math.Abs(pipe.EndPoint.Z - pipe.StartPoint.Z) / run * 100.0;
-                        result.AddSlope(slope);
-                        if (slope < settings.Double("MinSlope", 0.5) || slope > settings.Double("MaxSlope", 15.0)) result.SlopeViolations++;
+                        result.UnreadableValues++;
+                        issues.Add("inside diameter/invert unavailable");
                     }
-                    if (pipe.StartStructureId.IsNull) result.OpenEndpoints++; else AddEndpoint(pipeEndpointElevations, pipe.StartStructureId, pipe.StartPoint.Z);
-                    if (pipe.EndStructureId.IsNull) result.OpenEndpoints++; else AddEndpoint(pipeEndpointElevations, pipe.EndStructureId, pipe.EndPoint.Z);
-                    if (surface != null)
+                    else
                     {
-                        double radius = ReadPipeRadius(pipe);
+                        result.AddStartInvert(startInvert);
+                        result.AddEndInvert(endInvert);
+                    }
+
+                    double slope = double.NaN;
+                    if (run > Tol && IsFinite(startInvert) && IsFinite(endInvert))
+                    {
+                        slope = Math.Abs(endInvert - startInvert) / run * 100.0;
+                        result.AddSlope(slope);
+                        if (slope < settings.Double("MinSlope", 0.5) || slope > settings.Double("MaxSlope", 15.0))
+                        {
+                            result.SlopeViolations++;
+                            issues.Add("slope");
+                        }
+                    }
+                    else if (run <= Tol)
+                    {
+                        result.UnreadableValues++;
+                        issues.Add("zero plan length");
+                    }
+
+                    if (pipe.StartStructureId.IsNull) result.OpenEndpoints++;
+                    else if (IsFinite(startInvert)) AddEndpoint(pipeEndpointElevations, pipe.StartStructureId, startInvert);
+                    if (pipe.EndStructureId.IsNull) result.OpenEndpoints++;
+                    else if (IsFinite(endInvert)) AddEndpoint(pipeEndpointElevations, pipe.EndStructureId, endInvert);
+
+                    double minimumCover = double.PositiveInfinity;
+                    double maximumCover = double.NegativeInfinity;
+                    if (surface != null && IsFinitePositive(outsideDiameter))
+                    {
+                        double outsideRadius = outsideDiameter * 0.5;
                         for (int index = 0; index <= samples; index++)
                         {
                             double fraction = index / (double)samples;
                             try
                             {
                                 Point3d point = pipe.GetPointAtParam(fraction);
-                                double cover = surface.FindElevationAtXY(point.X, point.Y) - (point.Z + radius);
+                                double cover = surface.FindElevationAtXY(point.X, point.Y) - (point.Z + outsideRadius);
+                                if (!IsFinite(cover)) continue;
+                                minimumCover = Math.Min(minimumCover, cover);
+                                maximumCover = Math.Max(maximumCover, cover);
                                 result.AddCover(cover);
-                                if (cover < settings.Double("MinCover", 0.8) || cover > settings.Double("MaxCover", 6.0)) result.CoverViolations++;
                             }
-                            catch { }
+                            catch { result.CoverSampleFailures++; }
+                        }
+                        if (IsFinite(minimumCover) &&
+                            (minimumCover < settings.Double("MinCover", 0.8) || maximumCover > settings.Double("MaxCover", 6.0)))
+                        {
+                            result.CoverViolations++;
+                            issues.Add("cover");
                         }
                     }
+                    else if (surface != null)
+                    {
+                        result.UnreadableValues++;
+                        issues.Add("outside diameter/crown unavailable");
+                    }
+
+                    result.Rows.Add(new List<string>
+                    {
+                        "Pipe",
+                        SafeName(pipe.Name, pipe.Handle.ToString()),
+                        Number(insideDiameter),
+                        Number(length),
+                        Number(startInvert),
+                        Number(endInvert),
+                        Number(slope),
+                        Number(minimumCover),
+                        Number(maximumCover),
+                        "-", "-", "-", "-", "-",
+                        issues.Count == 0 ? "OK" : string.Join(", ", issues)
+                    });
                 }
                 foreach (ObjectId structureId in network.GetStructureIds())
                 {
+                    CivilStructure structure = transaction.GetObject(structureId, OpenMode.ForRead, false) as CivilStructure;
+                    if (structure == null) continue;
                     result.Structures++;
                     List<double> elevations;
-                    if (!pipeEndpointElevations.TryGetValue(structureId, out elevations) || elevations.Count < 2) continue;
-                    double drop = elevations.Max() - elevations.Min();
-                    result.AddDrop(drop);
-                    if (drop < settings.Double("MinDrop", 0.0) || drop > settings.Double("MaxDrop", 1.0)) result.DropViolations++;
+                    pipeEndpointElevations.TryGetValue(structureId, out elevations);
+                    elevations = elevations ?? new List<double>();
+                    double highInvert = elevations.Count == 0 ? double.NaN : elevations.Max();
+                    double lowInvert = elevations.Count == 0 ? double.NaN : elevations.Min();
+                    double drop = elevations.Count < 2 ? double.NaN : highInvert - lowInvert;
+                    double rim = ReadFiniteDouble(structure, "RimElevation");
+                    double sump = ReadFiniteDouble(structure, "SumpElevation");
+                    double depth = IsFinite(rim) && IsFinite(sump) ? rim - sump : double.NaN;
+                    double sumpClearance = IsFinite(lowInvert) && IsFinite(sump) ? lowInvert - sump : double.NaN;
+                    var issues = new List<string>();
+
+                    if (IsFinite(drop))
+                    {
+                        result.AddDrop(drop);
+                        if (drop < settings.Double("MinDrop", 0.0) || drop > settings.Double("MaxDrop", 1.0))
+                        {
+                            result.DropViolations++;
+                            issues.Add("drop");
+                        }
+                    }
+                    if (IsFinite(depth))
+                    {
+                        result.AddDepth(depth);
+                        if (depth < settings.Double("MinDepth", 0.8) || depth > settings.Double("MaxDepth", 8.0))
+                        {
+                            result.DepthViolations++;
+                            issues.Add("depth");
+                        }
+                    }
+                    else
+                    {
+                        result.UnreadableValues++;
+                        issues.Add("rim/sump unavailable");
+                    }
+                    if (IsFinite(sumpClearance))
+                    {
+                        result.AddSumpClearance(sumpClearance);
+                        if (sumpClearance < settings.Double("MinSumpClearance", 0.15))
+                        {
+                            result.SumpViolations++;
+                            issues.Add("sump clearance");
+                        }
+                    }
+                    else if (elevations.Count > 0)
+                    {
+                        result.UnreadableValues++;
+                    }
+
+                    result.Rows.Add(new List<string>
+                    {
+                        "Structure",
+                        SafeName(structure.Name, structure.Handle.ToString()),
+                        "-", "-",
+                        Number(highInvert),
+                        Number(lowInvert),
+                        "-", "-", "-",
+                        Number(rim),
+                        Number(sump),
+                        Number(depth),
+                        Number(drop),
+                        Number(sumpClearance),
+                        issues.Count == 0 ? "OK" : string.Join(", ", issues)
+                    });
                 }
             }
             return result;
@@ -851,20 +993,40 @@ namespace CETools.Civil3D
             list.Add(elevation);
         }
 
-        private static double ReadPipeRadius(CivilPipe pipe)
+        private static double ReadPipeDiameter(CivilPipe pipe, bool outside)
         {
-            foreach (string name in new[] { "InnerDiameterOrWidth", "OuterDiameterOrWidth" })
+            string[] names = outside
+                ? new[] { "OuterDiameterOrWidth", "InnerDiameterOrWidth" }
+                : new[] { "InnerDiameterOrWidth" };
+            foreach (string name in names)
             {
                 try
                 {
                     PropertyInfo property = pipe.GetType().GetProperty(name, BindingFlags.Instance | BindingFlags.Public);
                     if (property == null || !property.CanRead) continue;
                     double diameter = Convert.ToDouble(property.GetValue(pipe, null), CultureInfo.InvariantCulture);
-                    if (diameter > 0.0) return diameter * 0.5;
+                    if (IsFinitePositive(diameter)) return diameter;
                 }
                 catch { }
             }
-            return 0.0;
+            return double.NaN;
+        }
+
+        private static double ReadFiniteDouble(object value, params string[] propertyNames)
+        {
+            if (value == null || propertyNames == null) return double.NaN;
+            foreach (string propertyName in propertyNames)
+            {
+                try
+                {
+                    PropertyInfo property = value.GetType().GetProperty(propertyName, BindingFlags.Instance | BindingFlags.Public);
+                    if (property == null || !property.CanRead) continue;
+                    double number = Convert.ToDouble(property.GetValue(value, null), CultureInfo.InvariantCulture);
+                    if (IsFinite(number)) return number;
+                }
+                catch { }
+            }
+            return double.NaN;
         }
 
         // -----------------------------------------------------------------
@@ -1387,18 +1549,32 @@ namespace CETools.Civil3D
 
         private static int ClampColour(int value) { return Math.Max(1, Math.Min(255, value)); }
         private static double PlanDistance(Point3d first, Point3d second) { double dx = first.X - second.X; double dy = first.Y - second.Y; return Math.Sqrt(dx * dx + dy * dy); }
+        private static bool IsFinite(double value) { return !double.IsNaN(value) && !double.IsInfinity(value); }
+        private static bool IsFinitePositive(double value) { return IsFinite(value) && value > Tol; }
+        private static string Number(double value) { return IsFinite(value) ? value.ToString("0.###", CultureInfo.CurrentCulture) : "-"; }
+        private static string SafeName(string value, string fallback) { return string.IsNullOrWhiteSpace(value) ? fallback : value; }
         private static KeyValuePair<string, string> Pair(string key, string value) { return new KeyValuePair<string, string>(key, value); }
         private static string RangeText(double minimum, double maximum) { return double.IsInfinity(minimum) || double.IsInfinity(maximum) ? "No values" : minimum.ToString("0.###", CultureInfo.CurrentCulture) + " to " + maximum.ToString("0.###", CultureInfo.CurrentCulture); }
 
         private sealed class SewerAuditResult
         {
-            public int Pipes; public int Structures; public int CoverViolations; public int SlopeViolations; public int DropViolations; public int OpenEndpoints;
+            public SewerAuditResult() { Rows = new List<IList<string>>(); }
+            public int Pipes; public int Structures; public int CoverViolations; public int SlopeViolations; public int DropViolations; public int DepthViolations; public int SumpViolations; public int OpenEndpoints; public int UnreadableValues; public int CoverSampleFailures;
             public double MinCover = double.PositiveInfinity, MaxCover = double.NegativeInfinity;
             public double MinSlope = double.PositiveInfinity, MaxSlope = double.NegativeInfinity;
             public double MinDrop = double.PositiveInfinity, MaxDrop = double.NegativeInfinity;
+            public double MinStartInvert = double.PositiveInfinity, MaxStartInvert = double.NegativeInfinity;
+            public double MinEndInvert = double.PositiveInfinity, MaxEndInvert = double.NegativeInfinity;
+            public double MinDepth = double.PositiveInfinity, MaxDepth = double.NegativeInfinity;
+            public double MinSumpClearance = double.PositiveInfinity, MaxSumpClearance = double.NegativeInfinity;
+            public List<IList<string>> Rows { get; private set; }
             public void AddCover(double value) { MinCover = Math.Min(MinCover, value); MaxCover = Math.Max(MaxCover, value); }
             public void AddSlope(double value) { MinSlope = Math.Min(MinSlope, value); MaxSlope = Math.Max(MaxSlope, value); }
             public void AddDrop(double value) { MinDrop = Math.Min(MinDrop, value); MaxDrop = Math.Max(MaxDrop, value); }
+            public void AddStartInvert(double value) { MinStartInvert = Math.Min(MinStartInvert, value); MaxStartInvert = Math.Max(MaxStartInvert, value); }
+            public void AddEndInvert(double value) { MinEndInvert = Math.Min(MinEndInvert, value); MaxEndInvert = Math.Max(MaxEndInvert, value); }
+            public void AddDepth(double value) { MinDepth = Math.Min(MinDepth, value); MaxDepth = Math.Max(MaxDepth, value); }
+            public void AddSumpClearance(double value) { MinSumpClearance = Math.Min(MinSumpClearance, value); MaxSumpClearance = Math.Max(MaxSumpClearance, value); }
         }
 
         private sealed class SlopeLink { public string SourceHandle; public int Segment; public string Role; public double ArrowHead; }
