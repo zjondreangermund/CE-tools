@@ -8,11 +8,14 @@ on:
       - 'scripts/Repair-September10-SewerAuditSequenceDynamicMultiDimension-Core-Civil3D2023.ps1'
       - 'scripts/Repair-September10-CompileFix-SewerAuditSequence-Civil3D2023.ps1'
       - 'scripts/Validate-September15SewerEngineeringAudit.py'
+      - 'scripts/Validate-September15SewerProfileLongSections.py'
       - 'src/CE.Tools.Civil3D/September10DynamicMultiDimensionManager.cs'
       - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
       - 'src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs'
       - 'src/CE.Tools.Civil3D/PluginEntry.cs'
       - 'src/CE.Tools.Civil3D/SewerSequenceCommands.cs'
+      - 'src/CE.Tools.Civil3D/SewerProductionCommands.cs'
+      - 'src/CE.Tools.Civil3D/PreBuildRuntimeCompletionCommands.cs'
       - 'src/CE.Tools.Civil3D/SewerNetworkDynamicSequenceManager.cs'
       - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
       - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
@@ -88,3 +91,7 @@ jobs:
       - name: Validate read-only sewer engineering audit
         shell: powershell
         run: python scripts\Validate-September15SewerEngineeringAudit.py
+
+      - name: Validate sewer profile and long-section completion
+        shell: powershell
+        run: python scripts\Validate-September15SewerProfileLongSections.py
