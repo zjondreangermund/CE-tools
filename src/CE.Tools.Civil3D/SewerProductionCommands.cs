@@ -54,7 +54,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Create sewer alignments", "CE_SEWALIGN", "Create linked branch alignments from the sequenced network.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Refresh alignments", "CE_SEWREFRESH", "Rebuild generated sewer alignments from their live network sources.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Format alignments and labels", "CE_SEWFORMAT", "Reapply production styles and repeated branch labels.", "2 — Alignments"),
-                    new DisciplineWorkflowAction("Create sewer profiles", "CE_SEWPROFILE", "Select a surface, pick an insertion point and create profile views.", "3 — Profiles"),
+                    new DisciplineWorkflowAction("Create sewer profiles / long sections", "CE_SEWPROFILE", "Create one isolated long-section profile view per branch, link its pipe-network parts and bands, then review the branch results in a grid or DWG table.", "3 — Profiles"),
                     new DisciplineWorkflowAction("Sewer information", "CE_SEWINFO", "Review settings, alignments, profile views and network links.", "5 — Review")
                 });
             if (!string.IsNullOrWhiteSpace(command))
@@ -502,38 +502,117 @@ namespace CETools.Civil3D
             if (!Confirm(editor, "Create or refresh the sewer profiles and profile views"))
                 return;
 
+            int profiles = 0;
+            int views = 0;
+            int parts = 0;
+            int bandItems = 0;
+            int skipped = 0;
+            var reportRows = new List<IList<string>>();
+            for (int index = 0; index < records.Count; index++)
+            {
+                SewerAlignmentRecord record = records[index];
+                int row = index / Math.Max(1, settings.ProfileColumns);
+                int column = index % Math.Max(1, settings.ProfileColumns);
+                Point3d branchPoint = new Point3d(
+                    pointResult.Value.X + column * settings.ProfileHorizontalSpacing,
+                    pointResult.Value.Y - row * settings.ProfileVerticalSpacing,
+                    pointResult.Value.Z);
+                try
+                {
+                    int branchProfiles;
+                    int branchViews;
+                    int branchParts;
+                    int branchBandItems;
+                    CreateProfileObjects(
+                        database,
+                        civilDocument,
+                        settings,
+                        selectedSurface.ObjectId,
+                        new List<SewerAlignmentRecord> { record },
+                        branchPoint,
+                        1,
+                        settings.ProfileHorizontalSpacing,
+                        settings.ProfileVerticalSpacing,
+                        out branchProfiles,
+                        out branchViews,
+                        out branchParts,
+                        out branchBandItems);
+                    profiles += branchProfiles;
+                    views += branchViews;
+                    parts += branchParts;
+                    bandItems += branchBandItems;
+                    reportRows.Add(new List<string>
+                    {
+                        record.BranchName,
+                        branchProfiles.ToString(CultureInfo.InvariantCulture),
+                        branchViews.ToString(CultureInfo.InvariantCulture),
+                        branchParts.ToString(CultureInfo.InvariantCulture),
+                        branchBandItems.ToString(CultureInfo.InvariantCulture),
+                        Display(settings.ProfileViewStyle),
+                        Display(settings.ProfileViewBandSetStyle),
+                        branchParts > 0
+                            ? "Created and linked"
+                            : "Created; review network-part descriptions"
+                    });
+                }
+                catch (System.Exception exception)
+                {
+                    skipped++;
+                    reportRows.Add(new List<string>
+                    {
+                        record.BranchName,
+                        "0", "0", "0", "0",
+                        Display(settings.ProfileViewStyle),
+                        Display(settings.ProfileViewBandSetStyle),
+                        "Skipped: " + exception.Message
+                    });
+                    editor.WriteMessage(
+                        "\nCE_SEWPROFILE skipped {0}: {1}",
+                        record.BranchName,
+                        exception.Message);
+                }
+            }
+
+            var bandRefresh = new ProfileBandRuntimeResult();
             try
             {
-                int profiles;
-                int views;
-                int parts;
-                CreateProfileObjects(
-                    database,
-                    civilDocument,
-                    settings,
-                    selectedSurface.ObjectId,
-                    records,
-                    pointResult.Value,
-                    settings.ProfileColumns,
-                    settings.ProfileHorizontalSpacing,
-                    settings.ProfileVerticalSpacing,
-                    out profiles,
-                    out views,
-                    out parts);
-
-                ProfileViewBandRuntimeManager.RefreshAll(document);
-                editor.WriteMessage(
-                    "\nCE_SEWPROFILE complete. Surface profiles: {0}; profile views: {1}; network parts added where supported: {2}.",
-                    profiles,
-                    views,
-                    parts);
+                bandRefresh = ProfileViewBandRuntimeManager.RefreshAll(document);
             }
             catch (System.Exception exception)
             {
-                editor.WriteMessage(
-                    "\nCE_SEWPROFILE cancelled. The transaction was not committed: " +
-                    exception.Message);
+                bandRefresh.Warning = exception.Message;
             }
+            if (!string.IsNullOrWhiteSpace(bandRefresh.Warning))
+            {
+                editor.WriteMessage(
+                    "\nCE_SEWPROFILE band refresh warning: " + bandRefresh.Warning);
+            }
+            try
+            {
+                database.TransactionManager.QueueForGraphicsFlush();
+                editor.Regen();
+                AcApplication.UpdateScreen();
+            }
+            catch { }
+
+            editor.WriteMessage(
+                "\nCE_SEWPROFILE complete. Surface profiles: {0}; profile views: {1}; network parts added: {2}; band items linked: {3}; skipped branches: {4}.",
+                profiles,
+                views,
+                parts + bandRefresh.NetworkPartsAdded,
+                bandItems + bandRefresh.BandItemsLinked,
+                skipped);
+            GridReportPresenter.ShowReportAndOfferTable(
+                document,
+                "CE Tools - Sewer Profiles / Long Sections",
+                "Each branch is committed independently. Network parts and band data are linked after the profile view exists; failed branches remain isolated and are listed for review.",
+                new[]
+                {
+                    "Branch", "Profiles", "Views", "Parts", "Band Items",
+                    "Profile View Style", "Band Set", "Status"
+                },
+                reportRows,
+                "CE SEWER PROFILE / LONG-SECTION REGISTER");
         }
 
         [CommandMethod("CE_SEWINFO", CommandFlags.Modal)]
@@ -1004,11 +1083,13 @@ namespace CETools.Civil3D
             double verticalSpacing,
             out int profilesCreated,
             out int viewsCreated,
-            out int partsAdded)
+            out int partsAdded,
+            out int bandItemsLinked)
         {
             profilesCreated = 0;
             viewsCreated = 0;
             partsAdded = 0;
+            bandItemsLinked = 0;
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
                 EnsureRegApp(database, transaction, ProfileRegAppName);
@@ -1092,7 +1173,7 @@ namespace CETools.Civil3D
                         if (network != null)
                             partsAdded += AddBranchParts(network, record.BranchName, viewId, transaction);
                     }
-                    ProfileViewBandDataBinder.Bind(
+                    bandItemsLinked += ProfileViewBandDataBinder.Bind(
                         view,
                         profileId,
                         ObjectId.Null,
