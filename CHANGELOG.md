@@ -13,6 +13,9 @@ All notable CE Tools changes will be recorded here.
   slope and outside-crown cover, plus each structure's rim, sump, depth,
   connected-invert drop and sump clearance in a review grid with an optional DWG
   table.
+- Corridor feature-line extraction now accepts exact point codes inside its popup,
+  reports every matched export with corridor, baseline, code, group, name, handle
+  and dynamic-link state, and offers the same register as a DWG table.
 
 ### Changed
 

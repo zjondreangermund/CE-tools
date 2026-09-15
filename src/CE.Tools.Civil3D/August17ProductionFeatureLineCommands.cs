@@ -45,21 +45,18 @@ namespace CETools.Civil3D
             settings.AddChoice("BackKerb", "02 Groups", "Back of kerbs", "Yes", "Include back-of-kerb / back-of-curb codes.", new[] { "Yes", "No" });
             settings.AddChoice("Sidewalk", "02 Groups", "Sidewalk / shoulder outer edges", "Yes", "Include sidewalk, walk, shoulder and hinge codes.", new[] { "Yes", "No" });
             settings.AddChoice("Toe", "02 Groups", "Toe / daylight lines", "Yes", "Include toe, daylight, cut and fill codes.", new[] { "Yes", "No" });
-            settings.AddChoice("Other", "02 Groups", "Other / exact corridor codes", "No", "Include unclassified feature lines and optionally enter exact Civil 3D point codes.", new[] { "Yes", "No" });
+            settings.AddChoice("Other", "02 Groups", "Other / unclassified codes", "No", "Include corridor point codes that do not match one of the named engineering groups.", new[] { "Yes", "No" });
+            settings.AddText("ExactCodes", "02 Groups", "Exact point codes", string.Empty, "Optional comma-separated Civil 3D point codes. This stays in the popup instead of opening a command-line text prompt.");
             settings.AddChoice("Dynamic", "03 Output", "Link exported feature lines to corridor", "Yes", "Yes keeps Civil 3D's dynamic corridor relationship; No creates independent grading feature lines.", new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             HashSet<string> exactCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-            if (IsYes(settings.Text("Other")) && !string.Equals(settings.Text("Scope"), "All", StringComparison.OrdinalIgnoreCase))
+            if (!string.Equals(settings.Text("Scope"), "All", StringComparison.OrdinalIgnoreCase))
             {
-                var exact = new PromptStringOptions("\nOptional exact corridor point codes, comma-separated <Enter for none>: ")
+                string exactCodeText = settings.Text("ExactCodes");
+                if (!string.IsNullOrWhiteSpace(exactCodeText))
                 {
-                    AllowSpaces = true
-                };
-                PromptResult exactResult = document.Editor.GetString(exact);
-                if (exactResult.Status == PromptStatus.OK && !string.IsNullOrWhiteSpace(exactResult.StringResult))
-                {
-                    foreach (string value in exactResult.StringResult.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                    foreach (string value in exactCodeText.Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
                     {
                         string code = value.Trim();
                         if (code.Length > 0) exactCodes.Add(code);
@@ -81,6 +78,7 @@ namespace CETools.Civil3D
             int matched = 0;
             int created = 0;
             int failed = 0;
+            var rows = new List<IList<string>>();
 
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
@@ -107,12 +105,32 @@ namespace CETools.Civil3D
                             try
                             {
                                 ObjectId id = line.ExportAsGradingFeatureLine(ObjectId.Null, dynamic);
-                                if (!id.IsNull) created++;
-                                else failed++;
+                                if (!id.IsNull)
+                                {
+                                    created++;
+                                    CivilFeatureLine exported = transaction.GetObject(id, OpenMode.ForRead, false) as CivilFeatureLine;
+                                    rows.Add(new List<string>
+                                    {
+                                        Display(corridor.Name),
+                                        Display(baseline.Name),
+                                        Display(code),
+                                        ClassifyCode(code),
+                                        exported == null ? "-" : Display(exported.Name),
+                                        id.Handle.ToString(),
+                                        dynamic ? "Yes" : "No",
+                                        "Created"
+                                    });
+                                }
+                                else
+                                {
+                                    failed++;
+                                    rows.Add(BuildExportRow(corridor, baseline, code, dynamic, "Export returned no object"));
+                                }
                             }
                             catch
                             {
                                 failed++;
+                                rows.Add(BuildExportRow(corridor, baseline, code, dynamic, "Failed"));
                             }
                         }
                     }
@@ -124,6 +142,16 @@ namespace CETools.Civil3D
             document.Editor.WriteMessage(
                 "\nCE_CORRIDORFEATURELINES complete. Corridors={0}; scanned={1}; matched={2}; feature lines created={3}; failed={4}; dynamic={5}.",
                 corridorIds.Distinct().Count(), scanned, matched, created, failed, dynamic ? "Yes" : "No");
+            GridReportPresenter.ShowReportAndOfferTable(
+                document,
+                "CE Tools - Corridor Feature-Line Extraction",
+                string.Format(
+                    CultureInfo.CurrentCulture,
+                    "Corridors={0}; source feature lines scanned={1}; matched={2}; created={3}; failed={4}; dynamic links={5}.",
+                    corridorIds.Distinct().Count(), scanned, matched, created, failed, dynamic ? "Yes" : "No"),
+                new List<string> { "Corridor", "Baseline", "Point Code", "Group", "Exported Feature Line", "Handle", "Dynamic", "Status" },
+                rows,
+                "CE TOOLS CORRIDOR FEATURE LINES");
         }
 
         [CommandMethod("CE_TOOLS", "CE_PLATFORMFEATURELINESLOPE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -333,6 +361,39 @@ namespace CETools.Civil3D
             if (IsYes(settings.Text("Toe")) && ContainsAny(normalized, "TOE", "DAYLIGHT", "CUT", "FILL")) return true;
             if (IsYes(settings.Text("Other")) && !IsKnownGroup(normalized)) return true;
             return false;
+        }
+
+        private static IList<string> BuildExportRow(Corridor corridor, Baseline baseline, string code, bool dynamic, string status)
+        {
+            return new List<string>
+            {
+                corridor == null ? "-" : Display(corridor.Name),
+                baseline == null ? "-" : Display(baseline.Name),
+                Display(code),
+                ClassifyCode(code),
+                "-",
+                "-",
+                dynamic ? "Yes" : "No",
+                status
+            };
+        }
+
+        private static string ClassifyCode(string code)
+        {
+            string normalized = Regex.Replace((code ?? string.Empty).ToUpperInvariant(), "[^A-Z0-9]", string.Empty);
+            if (ContainsAny(normalized, "CENTER", "CENTRE", "CROWN", "BASELINE", "CL")) return "Centre / Crown";
+            if (ContainsAny(normalized, "ETW", "EOP", "EDGE", "PAVEEDGE", "EDGEPAVE")) return "Road Edge";
+            if (ContainsAny(normalized, "BOTTOMKERB", "BOTTOMCURB", "BOK", "GUTTER", "FLOWLINE")) return "Bottom Kerb / Gutter";
+            if (ContainsAny(normalized, "TOPKERB", "TOPCURB", "TOK", "TOC")) return "Top Kerb";
+            if (ContainsAny(normalized, "BACKKERB", "BACKCURB", "BCK")) return "Back Kerb";
+            if (ContainsAny(normalized, "SIDEWALK", "WALK", "SHOULDER", "SHLDR", "HINGE")) return "Sidewalk / Shoulder";
+            if (ContainsAny(normalized, "TOE", "DAYLIGHT", "CUT", "FILL")) return "Toe / Daylight";
+            return "Other";
+        }
+
+        private static string Display(string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ? "-" : value;
         }
 
         private static bool IsKnownGroup(string normalized)
