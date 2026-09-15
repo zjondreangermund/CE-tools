@@ -327,15 +327,19 @@ namespace CETools.Civil3D
             SewerAuditResult audit = AuditNetwork(document, networkId, surfaceChoice == null ? ObjectId.Null : surfaceChoice.ObjectId, settings);
             string note = string.Format(
                 CultureInfo.CurrentCulture,
-                "Pipes={0}; structures={1}; cover violations={2}; slope violations={3}; drop violations={4}; depth violations={5}; sump violations={6}; open endpoints={7}; unreadable values={8}; failed cover samples={9}. Cover is surface elevation minus outside pipe crown; inverts use the inside pipe radius.",
+                "Pipes={0}; structures={1}; open pipes={2}; open endpoints={3}; isolated structures={4}; terminal structures={5}; missing rule sets={6}; cover violations={7}; slope violations={8}; drop violations={9}; depth violations={10}; sump violations={11}; unreadable values={12}; failed cover samples={13}. Cover is surface elevation minus outside pipe crown; inverts use the inside pipe radius. Terminal structures are reported for review but are not automatically treated as violations.",
                 audit.Pipes,
                 audit.Structures,
+                audit.OpenPipes,
+                audit.OpenEndpoints,
+                audit.OpenStructures,
+                audit.TerminalStructures,
+                audit.RuleConfigurationViolations,
                 audit.CoverViolations,
                 audit.SlopeViolations,
                 audit.DropViolations,
                 audit.DepthViolations,
                 audit.SumpViolations,
-                audit.OpenEndpoints,
                 audit.UnreadableValues,
                 audit.CoverSampleFailures);
             GridReportPresenter.ShowReportAndOfferTable(
@@ -344,7 +348,9 @@ namespace CETools.Civil3D
                 note,
                 new List<string>
                 {
-                    "Object", "Name", "Size", "Length", "Start / High Invert",
+                    "Object", "Name", "Connections", "Start Structure",
+                    "End Structure", "Rule Set", "Reference Surface",
+                    "Size", "Length", "Start / High Invert",
                     "End / Low Invert", "Slope %", "Min Cover", "Max Cover",
                     "Rim", "Sump", "Depth", "Drop", "Sump Clearance", "Status"
                 },
@@ -831,6 +837,28 @@ namespace CETools.Civil3D
                         ? pipe.EndPoint.Z - insideDiameter * 0.5
                         : double.NaN;
                     var issues = new List<string>();
+                    string startStructure = ReadNamedObject(
+                        transaction,
+                        pipe.StartStructureId,
+                        "<Open>");
+                    string endStructure = ReadNamedObject(
+                        transaction,
+                        pipe.EndStructureId,
+                        "<Open>");
+                    string ruleSet = ReadNamedObject(
+                        transaction,
+                        pipe.RuleSetStyleId,
+                        "<No pipe rule set>");
+                    string referenceSurface = ReadNamedObject(
+                        transaction,
+                        pipe.RefSurfaceId,
+                        "<No surface>");
+
+                    if (pipe.RuleSetStyleId.IsNull)
+                    {
+                        result.RuleConfigurationViolations++;
+                        issues.Add("pipe rule set missing");
+                    }
 
                     if (!IsFinite(startInvert) || !IsFinite(endInvert))
                     {
@@ -860,10 +888,22 @@ namespace CETools.Civil3D
                         issues.Add("zero plan length");
                     }
 
-                    if (pipe.StartStructureId.IsNull) result.OpenEndpoints++;
+                    bool openPipe = false;
+                    if (pipe.StartStructureId.IsNull)
+                    {
+                        result.OpenEndpoints++;
+                        openPipe = true;
+                        issues.Add("open start");
+                    }
                     else if (IsFinite(startInvert)) AddEndpoint(pipeEndpointElevations, pipe.StartStructureId, startInvert);
-                    if (pipe.EndStructureId.IsNull) result.OpenEndpoints++;
+                    if (pipe.EndStructureId.IsNull)
+                    {
+                        result.OpenEndpoints++;
+                        openPipe = true;
+                        issues.Add("open end");
+                    }
                     else if (IsFinite(endInvert)) AddEndpoint(pipeEndpointElevations, pipe.EndStructureId, endInvert);
+                    if (openPipe) result.OpenPipes++;
 
                     double minimumCover = double.PositiveInfinity;
                     double maximumCover = double.NegativeInfinity;
@@ -901,6 +941,12 @@ namespace CETools.Civil3D
                     {
                         "Pipe",
                         SafeName(pipe.Name, pipe.Handle.ToString()),
+                        (pipe.StartStructureId.IsNull ? 0 : 1) +
+                            (pipe.EndStructureId.IsNull ? 0 : 1) + " / 2",
+                        startStructure,
+                        endStructure,
+                        ruleSet,
+                        referenceSurface,
                         Number(insideDiameter),
                         Number(length),
                         Number(startInvert),
@@ -928,6 +974,29 @@ namespace CETools.Civil3D
                     double depth = IsFinite(rim) && IsFinite(sump) ? rim - sump : double.NaN;
                     double sumpClearance = IsFinite(lowInvert) && IsFinite(sump) ? lowInvert - sump : double.NaN;
                     var issues = new List<string>();
+                    string ruleSet = ReadNamedObject(
+                        transaction,
+                        structure.RuleSetStyleId,
+                        "<No structure rule set>");
+                    string referenceSurface = ReadNamedObject(
+                        transaction,
+                        structure.RefSurfaceId,
+                        "<No surface>");
+
+                    if (structure.RuleSetStyleId.IsNull)
+                    {
+                        result.RuleConfigurationViolations++;
+                        issues.Add("structure rule set missing");
+                    }
+                    if (elevations.Count == 0)
+                    {
+                        result.OpenStructures++;
+                        issues.Add("no connected pipes");
+                    }
+                    else if (elevations.Count == 1)
+                    {
+                        result.TerminalStructures++;
+                    }
 
                     if (IsFinite(drop))
                     {
@@ -970,6 +1039,11 @@ namespace CETools.Civil3D
                     {
                         "Structure",
                         SafeName(structure.Name, structure.Handle.ToString()),
+                        elevations.Count.ToString(CultureInfo.CurrentCulture),
+                        "-",
+                        "-",
+                        ruleSet,
+                        referenceSurface,
                         "-", "-",
                         Number(highInvert),
                         Number(lowInvert),
@@ -991,6 +1065,33 @@ namespace CETools.Civil3D
             List<double> list;
             if (!values.TryGetValue(id, out list)) { list = new List<double>(); values[id] = list; }
             list.Add(elevation);
+        }
+
+        private static string ReadNamedObject(
+            Transaction transaction,
+            ObjectId id,
+            string fallback)
+        {
+            if (transaction == null || id.IsNull || !id.IsValid || id.IsErased)
+                return fallback;
+            try
+            {
+                DBObject value = transaction.GetObject(id, OpenMode.ForRead, false);
+                PropertyInfo property = value == null
+                    ? null
+                    : value.GetType().GetProperty(
+                        "Name",
+                        BindingFlags.Instance | BindingFlags.Public);
+                object name = property == null || !property.CanRead
+                    ? null
+                    : property.GetValue(value, null);
+                string text = Convert.ToString(name, CultureInfo.CurrentCulture);
+                return string.IsNullOrWhiteSpace(text) ? fallback : text;
+            }
+            catch
+            {
+                return fallback;
+            }
         }
 
         private static double ReadPipeDiameter(CivilPipe pipe, bool outside)
@@ -1559,7 +1660,7 @@ namespace CETools.Civil3D
         private sealed class SewerAuditResult
         {
             public SewerAuditResult() { Rows = new List<IList<string>>(); }
-            public int Pipes; public int Structures; public int CoverViolations; public int SlopeViolations; public int DropViolations; public int DepthViolations; public int SumpViolations; public int OpenEndpoints; public int UnreadableValues; public int CoverSampleFailures;
+            public int Pipes; public int Structures; public int CoverViolations; public int SlopeViolations; public int DropViolations; public int DepthViolations; public int SumpViolations; public int OpenPipes; public int OpenEndpoints; public int OpenStructures; public int TerminalStructures; public int RuleConfigurationViolations; public int UnreadableValues; public int CoverSampleFailures;
             public double MinCover = double.PositiveInfinity, MaxCover = double.NegativeInfinity;
             public double MinSlope = double.PositiveInfinity, MaxSlope = double.NegativeInfinity;
             public double MinDrop = double.PositiveInfinity, MaxDrop = double.NegativeInfinity;
