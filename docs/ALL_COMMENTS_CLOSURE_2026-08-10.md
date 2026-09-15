@@ -142,7 +142,7 @@ All code-complete items below remain subject to the final Civil 3D 2023 build an
 
 | Comment | Status | Implementation / command |
 |---|---|---|
-| One bad Sewer alignment must not cancel all profile views | CODE COMPLETE | Staged Sewer profile creation now runs one branch per transaction and reports skipped branch names |
+| One bad Sewer alignment must not cancel all profile views | CODE COMPLETE / HOST ACCEPTANCE REQUIRED | Canonical `CE_SEWPROFILE` source now commits one branch per transaction, preserves the previous branch output on failure, reports linked parts/bands and skipped branches in a grid or DWG table, and prevents band refresh from pre-clearing valid rows |
 | One bad Stormwater alignment must not cancel all profile views | CODE COMPLETE | Staged SW profile creation uses singleton alignment transactions and continues |
 | One bad Water alignment must not cancel all profile views | CODE COMPLETE | Staged Water profile loop uses one transaction per route/alignment and continues |
 | Batch band-set/internal-error workflow must remain usable after one failure | CODE COMPLETE | `CE_PROFILEBATCHSAFE` separates import / style / band / refresh / discipline stages |
