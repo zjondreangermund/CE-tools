@@ -54,6 +54,7 @@ namespace CETools.Civil3D
                     RoadAction("Assembly workflow", "CE_ASSEMBLYTOOLS", "Create, review and select project assemblies.", "3 — Assembly"),
                     RoadAction("Create and complete road corridors", "CE_ROADCORRIDORFULL", "Create corridors, then apply supported baselines, regions, frequencies, targets, TOP/DATUM surfaces, boundaries, visibility, automatic rebuild and slope patterns.", "4 — Corridors"),
                     RoadAction("Corridor baselines and regions", "CE_CORBASEUI", "Review generated corridor baselines and regions.", "4 — Corridors"),
+                    RoadAction("Extract corridor feature lines", "CE_CORRIDORFEATURELINES", "Choose all or selected centre, road-edge, kerb, sidewalk, shoulder, toe and exact point codes; keep the exported grading feature lines dynamically linked when required.", "4 — Corridors"),
                     RoadAction("Rebuild selected corridors", "CE_CORREBUILDX", "Rebuild selected road corridors.", "4 — Corridors"),
                     RoadAction("Create dynamic intersections", "CE_INTCREATE", "Create linked road intersection output.", "5 — Intersections"),
                     RoadAction("Create T-junction bellmouths", "CE_ROADTJUNCTION", "Create linked T-junction bellmouth returns and number them clockwise.", "5 — Intersections"),
