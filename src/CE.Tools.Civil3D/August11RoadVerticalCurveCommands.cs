@@ -23,7 +23,10 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-            document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE CE_ROADVERTICALCURVES ", true, false, true);
+            CeSequentialCommandRunner.Start(
+                document,
+                new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" },
+                "CE best-fit road-profile workflow");
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADVERTICALCURVES", CommandFlags.Modal | CommandFlags.Redraw)]

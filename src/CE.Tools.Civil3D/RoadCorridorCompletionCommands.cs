@@ -20,6 +20,11 @@ using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
 
 namespace CETools.Civil3D
 {
+    /// <summary>
+    /// Completes existing CE road corridors without replacing their source
+    /// alignments, profiles or assemblies. Each supported Civil 3D setting is
+    /// applied explicitly; unavailable API members are reported as warnings.
+    /// </summary>
     public sealed class RoadCorridorCompletionCommands
     {
         [CommandMethod("CE_TOOLS", "CE_ROADPROFILEFULL", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -27,7 +32,10 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            document.SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE ", true, false, true);
+            CeSequentialCommandRunner.Start(
+                document,
+                new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" },
+                "CE complete road-profile workflow");
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADDESIGNPROFILE", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -125,7 +133,10 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            document.SendStringToExecute("CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE ", true, false, true);
+            CeSequentialCommandRunner.Start(
+                document,
+                new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" },
+                "CE complete road-corridor workflow");
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADCORRIDORCOMPLETE", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -151,7 +162,7 @@ namespace CETools.Civil3D
 
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Complete Road Corridors",
-                "Repair every CE road corridor and add complete production output: baselines, regions, assemblies, targets, TOP/DATUM surfaces, boundaries, slope patterns, styles and rebuild.");
+                "Create or repair supported corridor production settings: baselines, regions, assemblies, frequencies, targets, TOP/DATUM surfaces, boundaries, visibility, slope patterns and rebuild behavior.");
             model.AddText("TopName", "01 Corridor Surfaces", "Top surface name", "CE-TOP", "Corridor top surface name.");
             model.AddText("BottomName", "01 Corridor Surfaces", "Bottom surface name", "CE-BOTTOM", "Corridor bottom/datum surface name.");
             List<string> assemblyNames = ReadAssemblyNames(document, civilDocument);
@@ -163,7 +174,12 @@ namespace CETools.Civil3D
             model.AddText("BottomCodes", "01 Corridor Surfaces", "Bottom link codes", "Datum,Subgrade", "Comma-separated corridor link codes included in the bottom surface.");
             model.AddChoice("Boundary", "02 Boundaries", "Automatic outer boundary", "Enabled", "Add a corridor-extents boundary to each generated corridor surface.", new[] { "Enabled", "Disabled" });
             model.AddChoice("Targets", "03 Targets", "Apply selected surface targets", "Enabled", "Assign the selected surface wherever a region exposes an ObjectId surface target.", new[] { "Enabled", "Disabled" });
-            model.AddChoice("Slope", "04 Slope Patterns", "Create/refresh slope patterns", "Enabled", "Enable available corridor slope-pattern collections and rebuild them.", new[] { "Enabled", "Disabled" });
+            model.AddPositiveDouble("TangentFrequency", "04 Assembly Frequencies", "Along tangents (m)", 10.0, "Maximum spacing between applied assemblies along tangent geometry.");
+            model.AddPositiveDouble("CurveFrequency", "04 Assembly Frequencies", "Along horizontal curves (m)", 5.0, "Maximum spacing between applied assemblies along horizontal curves and spirals.");
+            model.AddPositiveDouble("VerticalFrequency", "04 Assembly Frequencies", "Along vertical curves (m)", 5.0, "Maximum spacing between applied assemblies along profile curves.");
+            model.AddChoice("Visible", "05 Display and Rebuild", "Ensure corridor display is visible", "Enabled", "Turn on the corridor entity and its layer without unlocking the layer.", new[] { "Enabled", "Disabled" });
+            model.AddChoice("AutoRebuild", "05 Display and Rebuild", "Automatic rebuild after source edits", "Enabled", "Use Civil 3D native automatic corridor rebuilding after alignment or profile edits.", new[] { "Enabled", "Disabled" });
+            model.AddChoice("Slope", "06 Slope Patterns", "Create/refresh slope patterns", "Enabled", "Enable available corridor slope-pattern collections and rebuild them.", new[] { "Enabled", "Disabled" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             RoadCorridorCompletionOptions options = new RoadCorridorCompletionOptions
@@ -176,6 +192,11 @@ namespace CETools.Civil3D
                 BottomCodes = SplitCodes(model.Text("BottomCodes"), new[] { "Datum", "Subgrade" }),
                 AddBoundary = string.Equals(model.Text("Boundary"), "Enabled", StringComparison.OrdinalIgnoreCase),
                 ApplyTargets = string.Equals(model.Text("Targets"), "Enabled", StringComparison.OrdinalIgnoreCase),
+                TangentFrequency = model.Double("TangentFrequency", 10.0),
+                CurveFrequency = model.Double("CurveFrequency", 5.0),
+                VerticalFrequency = model.Double("VerticalFrequency", 5.0),
+                EnsureVisible = string.Equals(model.Text("Visible"), "Enabled", StringComparison.OrdinalIgnoreCase),
+                EnableAutomaticRebuild = string.Equals(model.Text("AutoRebuild"), "Enabled", StringComparison.OrdinalIgnoreCase),
                 EnableSlopePatterns = string.Equals(model.Text("Slope"), "Enabled", StringComparison.OrdinalIgnoreCase)
             };
 
@@ -185,11 +206,12 @@ namespace CETools.Civil3D
                 document,
                 "CE Tools - Road Corridor Completion",
                 string.Format(CultureInfo.CurrentCulture,
-                    "Corridors={0}; baselines={1}; regions={2}; targets={3}; surfaces={4}; boundaries={5}; slope patterns={6}; rebuilt={7}; warnings={8}.",
-                    result.Corridors, result.Baselines, result.Regions, result.Targets,
-                    result.Surfaces, result.Boundaries, result.SlopePatterns,
-                    result.Rebuilt, result.Warnings),
-                new List<string> { "Corridor", "Baselines", "Regions", "Targets", "Surfaces", "Boundaries", "Slope Patterns", "Status" },
+                    "Corridors={0}; baselines={1}; regions={2}; frequency values={3}; targets={4}; surfaces={5}; boundaries={6}; visibility settings={7}; automatic rebuild={8}; slope patterns={9}; rebuilt={10}; warnings={11}.",
+                    result.Corridors, result.Baselines, result.Regions, result.FrequencySettings,
+                    result.Targets, result.Surfaces, result.Boundaries,
+                    result.VisibilitySettings, result.AutomaticRebuildSettings,
+                    result.SlopePatterns, result.Rebuilt, result.Warnings),
+                new List<string> { "Corridor", "Baselines", "Regions", "Frequencies", "Targets", "Surfaces", "Boundaries", "Visible", "Auto Rebuild", "Slope Patterns", "Status" },
                 result.Rows,
                 "CE TOOLS ROAD CORRIDOR COMPLETION REGISTER");
         }
@@ -231,13 +253,30 @@ namespace CETools.Civil3D
                     result.Corridors++;
                     int beforeBaseline = result.Baselines;
                     int beforeRegion = result.Regions;
+                    int beforeFrequency = result.FrequencySettings;
                     int beforeTarget = result.Targets;
                     int beforeSurface = result.Surfaces;
                     int beforeBoundary = result.Boundaries;
+                    int beforeVisibility = result.VisibilitySettings;
+                    int beforeAutomaticRebuild = result.AutomaticRebuildSettings;
                     int beforeSlope = result.SlopePatterns;
+                    int beforeWarnings = result.Warnings;
 
                     if (!corridorStyleId.IsNull) TrySetObjectId(corridor, corridorStyleId, "StyleId", "CorridorStyleId");
                     if (!codeSetStyleId.IsNull) TrySetObjectId(corridor, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle");
+                    if (options.EnsureVisible)
+                    {
+                        int visible = EnsureCorridorVisible(corridor, transaction);
+                        result.VisibilitySettings += visible;
+                        if (visible == 0) result.Warnings++;
+                    }
+                    if (options.EnableAutomaticRebuild)
+                    {
+                        if (TrySetBoolean(corridor, true, "RebuildAutomatic", "AutomaticRebuild"))
+                            result.AutomaticRebuildSettings++;
+                        else
+                            result.Warnings++;
+                    }
                     object baselines = ReadProperty(corridor, "Baselines");
                     if (!CivilStyleDiscovery.Enumerate(baselines).Any())
                     {
@@ -249,12 +288,21 @@ namespace CETools.Civil3D
                     {
                         if (baseline == null) continue;
                         result.Baselines++;
+                        if (options.EnsureVisible &&
+                            TrySetBoolean(baseline, true, "IsEnabled", "Enabled", "IsProcessed"))
+                            result.VisibilitySettings++;
                         object regions = ReadProperty(baseline, "BaselineRegions") ?? ReadProperty(baseline, "Regions");
                         foreach (object region in CivilStyleDiscovery.Enumerate(regions))
                         {
                             if (region == null) continue;
                             result.Regions++;
+                            if (options.EnsureVisible &&
+                                TrySetBoolean(region, true, "IsEnabled", "Enabled", "IsProcessed"))
+                                result.VisibilitySettings++;
                             if (!codeSetStyleId.IsNull) TrySetObjectId(region, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle");
+                            int frequencies = ApplyAssemblyFrequencies(region, options);
+                            result.FrequencySettings += frequencies;
+                            if (frequencies == 0) result.Warnings++;
                             if (options.ApplyTargets) result.Targets += ApplySurfaceTargets(region, options.TargetSurfaceId);
                             Invoke(region, "Rebuild");
                         }
@@ -266,17 +314,24 @@ namespace CETools.Civil3D
                     if (top != null) Invoke(top, "Rebuild");
                     if (bottom != null) Invoke(bottom, "Rebuild");
                     if (options.EnableSlopePatterns) result.SlopePatterns += EnableSlopePatterns(corridor);
-                    if (Invoke(corridor, "Rebuild")) result.Rebuilt++;
+                    bool rebuilt = Invoke(corridor, "Rebuild");
+                    if (rebuilt) result.Rebuilt++;
+                    else result.Warnings++;
                     result.Rows.Add(new List<string>
                     {
                         name,
                         (result.Baselines - beforeBaseline).ToString(CultureInfo.CurrentCulture),
                         (result.Regions - beforeRegion).ToString(CultureInfo.CurrentCulture),
+                        (result.FrequencySettings - beforeFrequency).ToString(CultureInfo.CurrentCulture),
                         (result.Targets - beforeTarget).ToString(CultureInfo.CurrentCulture),
                         (result.Surfaces - beforeSurface).ToString(CultureInfo.CurrentCulture),
                         (result.Boundaries - beforeBoundary).ToString(CultureInfo.CurrentCulture),
+                        (result.VisibilitySettings - beforeVisibility).ToString(CultureInfo.CurrentCulture),
+                        (result.AutomaticRebuildSettings - beforeAutomaticRebuild).ToString(CultureInfo.CurrentCulture),
                         (result.SlopePatterns - beforeSlope).ToString(CultureInfo.CurrentCulture),
-                        "Rebuilt"
+                        result.Warnings == beforeWarnings
+                            ? "Completed"
+                            : rebuilt ? "Completed with warnings" : "Settings applied; rebuild unavailable"
                     });
                 }
                 transaction.Commit();
@@ -585,6 +640,67 @@ namespace CETools.Civil3D
             return changed;
         }
 
+        private static int ApplyAssemblyFrequencies(
+            object region,
+            RoadCorridorCompletionOptions options)
+        {
+            if (region == null || options == null) return 0;
+            object settings = ReadProperty(region, "AppliedAssemblySetting") ??
+                              ReadProperty(region, "AppliedAssemblySettings") ??
+                              ReadProperty(region, "FrequencySettings");
+            if (settings == null) return 0;
+
+            int applied = 0;
+            if (TrySetDouble(settings, options.TangentFrequency,
+                "FrequencyAlongTangents", "FrequencyAlongTangent")) applied++;
+            if (TrySetDouble(settings, options.CurveFrequency,
+                "FrequencyAlongCurves", "FrequencyAlongHorizontalCurves")) applied++;
+            if (TrySetDouble(settings, options.CurveFrequency,
+                "FrequencyAlongSpirals", "FrequencyAlongHorizontalSpirals")) applied++;
+            if (TrySetDouble(settings, options.VerticalFrequency,
+                "FrequencyAlongProfileCurves", "FrequencyAlongVerticalCurves")) applied++;
+            if (TrySetDouble(settings, options.CurveFrequency,
+                "FrequencyAlongTargetCurves", "FrequencyAlongOffsetTargetCurves")) applied++;
+
+            TrySetEnum(settings,
+                new[] { "AtAnIncrement", "ByIncrement", "Increment", "Both" },
+                "CorridorAlongCurvesOption");
+            TrySetEnum(settings,
+                new[] { "AtAnIncrement", "ByIncrement", "Increment", "Both" },
+                "TargetCurveOption");
+
+            if (TrySetBoolean(settings, true,
+                "AppliedAtHorizontalGeometryPoints", "AtHorizontalGeometryPoints", "ApplyAtHorizontalGeometryPoints")) applied++;
+            if (TrySetBoolean(settings, true,
+                "AppliedAtProfileGeometryPoints", "AtVerticalGeometryPoints", "ApplyAtVerticalGeometryPoints")) applied++;
+            if (TrySetBoolean(settings, true,
+                "AppliedAtProfileHighLowPoints", "AtProfileHighLowPoints")) applied++;
+            if (TrySetBoolean(settings, true,
+                "AppliedAtSuperelevationCriticalPoints", "AtSuperelevationCriticalPoints")) applied++;
+
+            TrySetObject(region, settings, "AppliedAssemblySetting", "AppliedAssemblySettings", "FrequencySettings");
+            Invoke(region, "SetAppliedAssemblySetting", settings);
+            return applied;
+        }
+
+        private static int EnsureCorridorVisible(object corridor, Transaction transaction)
+        {
+            if (corridor == null || transaction == null) return 0;
+            int applied = TrySetBoolean(corridor, true, "Visible", "IsVisible") ? 1 : 0;
+            ObjectId layerId = ReadObjectId(corridor, "LayerId");
+            if (layerId.IsNull || layerId.IsErased) return applied;
+            try
+            {
+                LayerTableRecord layer = transaction.GetObject(layerId, OpenMode.ForWrite, false) as LayerTableRecord;
+                if (layer == null) return applied;
+                layer.IsOff = false;
+                if (layer.IsFrozen) layer.IsFrozen = false;
+                applied++;
+            }
+            catch { }
+            return applied;
+        }
+
         private static int EnableSlopePatterns(object corridor)
         {
             int changed = 0;
@@ -719,6 +835,68 @@ namespace CETools.Civil3D
             return false;
         }
 
+        private static bool TrySetDouble(object target, double value, params string[] names)
+        {
+            if (target == null || double.IsNaN(value) || double.IsInfinity(value) || value <= 0.0)
+                return false;
+            foreach (string name in names)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                    if (property != null && property.CanWrite && property.PropertyType == typeof(double))
+                    {
+                        property.SetValue(target, value, null);
+                        return true;
+                    }
+                }
+                catch { }
+            }
+            return false;
+        }
+
+        private static bool TrySetObject(object target, object value, params string[] names)
+        {
+            if (target == null || value == null) return false;
+            foreach (string name in names)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                    if (property != null && property.CanWrite && property.PropertyType.IsInstanceOfType(value))
+                    {
+                        property.SetValue(target, value, null);
+                        return true;
+                    }
+                }
+                catch { }
+            }
+            return false;
+        }
+
+        private static bool TrySetEnum(object target, IEnumerable<string> values, params string[] names)
+        {
+            if (target == null || values == null) return false;
+            foreach (string name in names)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                    if (property == null || !property.CanWrite || !property.PropertyType.IsEnum) continue;
+                    foreach (string value in values)
+                    {
+                        object parsed;
+                        try { parsed = Enum.Parse(property.PropertyType, value, true); }
+                        catch { continue; }
+                        property.SetValue(target, parsed, null);
+                        return true;
+                    }
+                }
+                catch { }
+            }
+            return false;
+        }
+
         private static bool Invoke(object target, string name, params object[] supplied)
         {
             return InvokeReturning(target, name, supplied) != null;
@@ -762,6 +940,11 @@ namespace CETools.Civil3D
         internal IList<string> BottomCodes { get; set; }
         internal bool AddBoundary { get; set; }
         internal bool ApplyTargets { get; set; }
+        internal double TangentFrequency { get; set; }
+        internal double CurveFrequency { get; set; }
+        internal double VerticalFrequency { get; set; }
+        internal bool EnsureVisible { get; set; }
+        internal bool EnableAutomaticRebuild { get; set; }
         internal bool EnableSlopePatterns { get; set; }
     }
 
@@ -771,9 +954,12 @@ namespace CETools.Civil3D
         internal int Corridors { get; set; }
         internal int Baselines { get; set; }
         internal int Regions { get; set; }
+        internal int FrequencySettings { get; set; }
         internal int Targets { get; set; }
         internal int Surfaces { get; set; }
         internal int Boundaries { get; set; }
+        internal int VisibilitySettings { get; set; }
+        internal int AutomaticRebuildSettings { get; set; }
         internal int SlopePatterns { get; set; }
         internal int Rebuilt { get; set; }
         internal int Warnings { get; set; }

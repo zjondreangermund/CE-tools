@@ -21,11 +21,12 @@ using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
 namespace CETools.Civil3D
 {
     /// <summary>
-    /// Batch road-production workflows requested in the active comments. Selected
-    /// open polylines become sequential road alignments, generated alignments can
-    /// receive EG profiles/profile views from a selected surface, and corridors are
-    /// created through the compatible Civil 3D CorridorCollection.Add overload.
-    /// Project Style Centre selections are used when they resolve in the drawing.
+    /// Active road-production workflow. Selected open polylines become sequential
+    /// road alignments; generated alignments receive surface profiles and profile
+    /// views; corridor creation preserves those sources. CE_ROADCORRIDORFULL then
+    /// applies supported baselines, regions, frequencies, targets, surfaces,
+    /// boundaries, visibility and native automatic rebuild settings. Unsupported
+    /// Civil 3D API members remain unchanged and are reported by the completion step.
     /// </summary>
     public sealed class RoadProductionCommentCommands
     {
@@ -51,7 +52,7 @@ namespace CETools.Civil3D
                     RoadAction("Create NGL and final road profiles", "CE_ROADPROFILEFULL", "Create existing-ground profiles, final editable design profiles and ordered profile views.", "2 — Profiles"),
                     RoadAction("Create CE road assembly", "CE_ASSEMBLYCREATE", "Create the Civil 3D roadway assembly used by corridor regions.", "3 — Assembly"),
                     RoadAction("Assembly workflow", "CE_ASSEMBLYTOOLS", "Create, review and select project assemblies.", "3 — Assembly"),
-                    RoadAction("Create complete road corridors", "CE_ROADCORRIDORFULL", "Create corridors and complete baselines, regions, assemblies, targets, TOP/DATUM surfaces, boundaries and slope patterns.", "4 — Corridors"),
+                    RoadAction("Create and complete road corridors", "CE_ROADCORRIDORFULL", "Create corridors, then apply supported baselines, regions, frequencies, targets, TOP/DATUM surfaces, boundaries, visibility, automatic rebuild and slope patterns.", "4 — Corridors"),
                     RoadAction("Corridor baselines and regions", "CE_CORBASEUI", "Review generated corridor baselines and regions.", "4 — Corridors"),
                     RoadAction("Rebuild selected corridors", "CE_CORREBUILDX", "Rebuild selected road corridors.", "4 — Corridors"),
                     RoadAction("Create dynamic intersections", "CE_INTCREATE", "Create linked road intersection output.", "5 — Intersections"),

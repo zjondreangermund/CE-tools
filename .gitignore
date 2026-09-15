@@ -8,6 +8,7 @@ bin/
 obj/
 artifacts/
 TestResults/
+__pycache__/
 
 # Compiled application bundle outputs
 bundle/CE Tools.bundle/Contents/Windows/2023/*.dll
