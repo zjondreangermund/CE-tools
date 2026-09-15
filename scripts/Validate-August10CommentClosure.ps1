@@ -147,8 +147,12 @@ Require $sewerProduction 'ProfileStyleAutoImportRuntime.EnsureBundledProfileStyl
 Require $stormwaterProduction 'ProfileStyleAutoImportRuntime.EnsureBundledProfileStyles' 'stormwater profile auto-import hook'
 Require $waterProduction 'ProfileStyleAutoImportRuntime.EnsureBundledProfileStyles' 'water profile auto-import hook'
 
-foreach ($token in @('CE_SEWPROFILE skipped {0}: {1}','new List<SewerAlignmentRecord> { record }','skipped branches: {3}')) {
+foreach ($token in @('CE_SEWPROFILE skipped {0}: {1}','new List<SewerAlignmentRecord> { record }')) {
     Require $sewerProduction $token 'sewer per-branch profile isolation'
+}
+if (-not ($sewerProduction.Contains('skipped branches: {3}') -or
+          $sewerProduction.Contains('skipped branches: {4}'))) {
+    throw 'Final comment validation failed: missing sewer per-branch skipped count'
 }
 foreach ($token in @('new List<StormwaterAlignmentRecord> { record }','skipped alignments: {3}','CE_SWPROFILE band refresh warning')) {
     Require $stormwaterProduction $token 'stormwater per-alignment profile isolation'
