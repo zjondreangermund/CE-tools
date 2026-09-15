@@ -22,6 +22,9 @@ All notable CE Tools changes will be recorded here.
 - Sewer profile production now creates and commits each branch long section in
   isolation, links gravity-network parts and band data after the view exists,
   and presents a branch register in a grid with optional DWG-table placement.
+- The read-only sewer audit now identifies each open pipe end, isolated and
+  terminal structures, missing pipe/structure rule sets and reference surfaces;
+  sewer recalculation reports the Civil 3D rule result or error for every part.
 
 ### Changed
 

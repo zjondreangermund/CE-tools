@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.Civil.DatabaseServices;
@@ -28,10 +31,37 @@ namespace CETools.Civil3D
             out int ruleFailureCount,
             out string error)
         {
+            List<IList<string>> ignored;
+            return LinkExistingPartsToSurface(
+                document,
+                networkId,
+                surfaceId,
+                pipeRuleSetId,
+                structureRuleSetId,
+                out pipeCount,
+                out structureCount,
+                out ruleFailureCount,
+                out error,
+                out ignored);
+        }
+
+        internal static bool LinkExistingPartsToSurface(
+            Document document,
+            ObjectId networkId,
+            ObjectId surfaceId,
+            ObjectId pipeRuleSetId,
+            ObjectId structureRuleSetId,
+            out int pipeCount,
+            out int structureCount,
+            out int ruleFailureCount,
+            out string error,
+            out List<IList<string>> reportRows)
+        {
             pipeCount = 0;
             structureCount = 0;
             ruleFailureCount = 0;
             error = string.Empty;
+            reportRows = new List<IList<string>>();
 
             if (document == null)
             {
@@ -75,12 +105,46 @@ namespace CETools.Civil3D
                                 pipe.RuleSetStyleId = pipeRuleSetId;
                             pipeCount++;
 
-                            try { pipe.ApplyRules(); }
-                            catch { ruleFailureCount++; }
+                            string ruleSet = ReadName(
+                                transaction,
+                                pipe.RuleSetStyleId,
+                                "<No pipe rule set>");
+                            string status;
+                            try
+                            {
+                                bool applied = pipe.ApplyRules();
+                                if (applied) status = "Applied";
+                                else
+                                {
+                                    ruleFailureCount++;
+                                    status = "Failed: Civil 3D returned false; review the rule DLL/Event Viewer";
+                                }
+                            }
+                            catch (System.Exception exception)
+                            {
+                                ruleFailureCount++;
+                                status = "Failed: " + OneLine(exception.Message);
+                            }
+                            reportRows.Add(new List<string>
+                            {
+                                "Pipe",
+                                SafeName(pipe.Name, pipe.Handle.ToString()),
+                                ruleSet,
+                                surface.Name,
+                                status
+                            });
                         }
-                        catch
+                        catch (System.Exception exception)
                         {
                             ruleFailureCount++;
+                            reportRows.Add(new List<string>
+                            {
+                                "Pipe",
+                                pipeId.Handle.ToString(),
+                                "-",
+                                surface.Name,
+                                "Failed before rule evaluation: " + OneLine(exception.Message)
+                            });
                         }
                     }
 
@@ -96,12 +160,46 @@ namespace CETools.Civil3D
                                 structure.RuleSetStyleId = structureRuleSetId;
                             structureCount++;
 
-                            try { structure.ApplyRules(); }
-                            catch { ruleFailureCount++; }
+                            string ruleSet = ReadName(
+                                transaction,
+                                structure.RuleSetStyleId,
+                                "<No structure rule set>");
+                            string status;
+                            try
+                            {
+                                bool applied = structure.ApplyRules();
+                                if (applied) status = "Applied";
+                                else
+                                {
+                                    ruleFailureCount++;
+                                    status = "Failed: Civil 3D returned false; review the rule DLL/Event Viewer";
+                                }
+                            }
+                            catch (System.Exception exception)
+                            {
+                                ruleFailureCount++;
+                                status = "Failed: " + OneLine(exception.Message);
+                            }
+                            reportRows.Add(new List<string>
+                            {
+                                "Structure",
+                                SafeName(structure.Name, structure.Handle.ToString()),
+                                ruleSet,
+                                surface.Name,
+                                status
+                            });
                         }
-                        catch
+                        catch (System.Exception exception)
                         {
                             ruleFailureCount++;
+                            reportRows.Add(new List<string>
+                            {
+                                "Structure",
+                                structureId.Handle.ToString(),
+                                "-",
+                                surface.Name,
+                                "Failed before rule evaluation: " + OneLine(exception.Message)
+                            });
                         }
                     }
 
@@ -118,6 +216,46 @@ namespace CETools.Civil3D
                 error = exception.Message;
                 return false;
             }
+        }
+
+        private static string ReadName(
+            Transaction transaction,
+            ObjectId id,
+            string fallback)
+        {
+            if (transaction == null || id.IsNull || !id.IsValid || id.IsErased)
+                return fallback;
+            try
+            {
+                DBObject value = transaction.GetObject(id, OpenMode.ForRead, false);
+                PropertyInfo property = value == null
+                    ? null
+                    : value.GetType().GetProperty(
+                        "Name",
+                        BindingFlags.Instance | BindingFlags.Public);
+                string name = property == null || !property.CanRead
+                    ? string.Empty
+                    : Convert.ToString(
+                        property.GetValue(value, null),
+                        CultureInfo.CurrentCulture);
+                return string.IsNullOrWhiteSpace(name) ? fallback : name;
+            }
+            catch
+            {
+                return fallback;
+            }
+        }
+
+        private static string SafeName(string value, string fallback)
+        {
+            return string.IsNullOrWhiteSpace(value) ? fallback : value;
+        }
+
+        private static string OneLine(string value)
+        {
+            return string.IsNullOrWhiteSpace(value)
+                ? "Unknown Civil 3D rule error"
+                : value.Replace('\r', ' ').Replace('\n', ' ').Trim();
         }
     }
 }

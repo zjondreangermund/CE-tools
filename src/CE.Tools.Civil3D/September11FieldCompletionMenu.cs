@@ -87,9 +87,9 @@ namespace CETools.Civil3D
                         "Create corridor information as a dynamically refreshed MLeader, MText or COGO point. Choose 1.8, 2.0, 2.5, 3.5 or 5.0 mm paper height and an optional small circle at the reference/leader start.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
-                        "Sewer Engineering Audit - Inverts / Cover / Depth",
+                        "Sewer Integrity Audit - Connections / Rules / Levels",
                         "CE_SEWAUDITLIMITS",
-                        "Review every pipe and manhole in one gravity network: inside inverts, outside-crown cover, slopes, connected-invert drops, rim-to-sump depth and sump clearance. Results open in a grid and can be inserted as a drawing table; the audit does not change the network.",
+                        "Review every pipe and structure in one gravity network, including exact open pipe ends, isolated/terminal structures, assigned rule sets and reference surfaces, inside inverts, outside-crown cover, slopes, drops, depth and sump clearance. The audit is read-only.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
                         "Sewer Profiles / Long Sections",
@@ -97,9 +97,14 @@ namespace CETools.Civil3D
                         "Create one isolated existing-ground profile view per CE sewer branch, add matching pipes and structures, link the selected band data, and review the result in a grid or DWG table.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
+                        "Connect Open Sewer Pipe Ends",
+                        "CE_SEWCONNECTPARTS",
+                        "Connect open pipe starts/ends to the nearest compatible existing structure in the same network within a chosen tolerance. Existing connections and source parts are retained.",
+                        "02 Sewer"),
+                    new DisciplineWorkflowAction(
                         "Sewer Surface / Rules Recalculation",
                         "CE_SEWRECALC",
-                        "Re-link a gravity network to one surface, apply its rules, then optionally queue sewer profiles only after the network transaction commits.",
+                        "Re-link a gravity network to one surface, apply pipe and structure rules, show every part result/error in a grid or DWG table, then optionally queue sewer profiles only after the transaction commits.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
                         "Synchronise Annotation Scale",

@@ -523,6 +523,7 @@ namespace CETools.Civil3D
             int structures;
             int ruleFailures;
             string error;
+            List<IList<string>> ruleRows;
             bool linked = September10SewerAuditRuntime.LinkExistingPartsToSurface(
                 document,
                 networkId,
@@ -532,7 +533,8 @@ namespace CETools.Civil3D
                 out pipes,
                 out structures,
                 out ruleFailures,
-                out error);
+                out error,
+                out ruleRows);
             if (!linked)
             {
                 editor.WriteMessage("\nCE_SEWRECALC failed. No partial surface/rule recalculation was committed. {0}", error);
@@ -546,6 +548,18 @@ namespace CETools.Civil3D
                 pipes,
                 structures,
                 ruleFailures);
+            GridReportPresenter.ShowReportAndOfferTable(
+                document,
+                "CE Tools - Sewer Pipe / Structure Rule Results",
+                ruleFailures == 0
+                    ? "Civil 3D accepted the selected surface and rule application for every editable pipe and structure."
+                    : "One or more Civil 3D rules failed. The affected part and returned error are listed below; failures that return false may also write details to Civil 3D Event Viewer.",
+                new List<string>
+                {
+                    "Object", "Name", "Rule Set", "Reference Surface", "Result"
+                },
+                ruleRows,
+                "CE SEWER PIPE / STRUCTURE RULE RESULTS");
 
             if (string.Equals(model.Text("After"), "Open CE_SEWPROFILE after commit", StringComparison.OrdinalIgnoreCase))
             {
