@@ -28,7 +28,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Field Completion",
-                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, safe/dynamic feature-line linking and stepped offsets, multi-alignment label sets, road profile band labels, read-only sewer engineering audits, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
+                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, safe/dynamic feature-line linking and stepped offsets, multi-alignment label sets, road profile band labels, corridor feature-line extraction, read-only sewer engineering audits, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction(
@@ -75,6 +75,11 @@ namespace CETools.Civil3D
                         "Road Profile Band Set - Show Labels",
                         "CE_ROADBANDLABELS",
                         "Choose one existing Civil 3D profile-view band set, apply it to multiple selected road profile views and force Show Labels on for every imported top/bottom band item.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Corridor Feature Lines - Select Codes",
+                        "CE_CORRIDORFEATURELINES",
+                        "Export individual grading feature lines from selected corridor centre, edge, kerb, sidewalk, shoulder, toe or exact point codes. Choose dynamic links in the popup and review or insert the extraction register as a DWG table.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
                         "Sewer Engineering Audit - Inverts / Cover / Depth",
