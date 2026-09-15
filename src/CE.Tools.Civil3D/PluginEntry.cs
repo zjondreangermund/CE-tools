@@ -198,7 +198,8 @@ namespace CETools.Civil3D
                         Cmd("Create Road Alignments", "CE_ROADALIGN ", "Create sequential linked road alignments from selected polylines."),
                         Cmd("Create Road Profiles", "CE_ROADPROFILES ", "Create existing-ground profiles and ordered profile views."),
                         Cmd("Create CE Road Assembly", "CE_ASSEMBLYCREATE ", "Create the Civil 3D assembly used by road corridor regions."),
-                        Cmd("Create Road Corridors", "CE_ROADCORRIDORS ", "Create one corridor for each CE road alignment/profile pair."),
+                        Cmd("Create Road Corridors", "CE_ROADCORRIDORS ", "Create one source-preserving corridor for each CE road alignment/profile pair."),
+                        Cmd("Complete Road Corridors", "CE_ROADCORRIDORCOMPLETE ", "Apply supported regions, frequencies, targets, surfaces, boundaries, visibility and automatic rebuild settings."),
                         Cmd("Road Production Information", "CE_ROADPRODUCTIONINFO ", "Review road alignments, profiles, corridors and styles."),
                         Cmd("Road BOQ", "CE_BOQROAD ", "Create the road bill of quantities."),
                         Cmd("Road Design Report", "CE_REPORTROAD ", "Generate the road design report."))));
