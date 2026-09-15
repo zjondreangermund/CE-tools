@@ -8,6 +8,7 @@ on:
       - 'scripts/Repair-September10-SewerAuditSequenceDynamicMultiDimension-Core-Civil3D2023.ps1'
       - 'scripts/Repair-September10-CompileFix-SewerAuditSequence-Civil3D2023.ps1'
       - 'scripts/Validate-September15SewerEngineeringAudit.py'
+      - 'scripts/Validate-September15SewerIntegrityRules.py'
       - 'scripts/Validate-September15SewerProfileLongSections.py'
       - 'src/CE.Tools.Civil3D/September10DynamicMultiDimensionManager.cs'
       - 'src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs'
@@ -95,3 +96,7 @@ jobs:
       - name: Validate sewer profile and long-section completion
         shell: powershell
         run: python scripts\Validate-September15SewerProfileLongSections.py
+
+      - name: Validate sewer integrity and per-part rule results
+        shell: powershell
+        run: python scripts\Validate-September15SewerIntegrityRules.py
