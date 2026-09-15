@@ -1636,11 +1636,10 @@ namespace CETools.Civil3D
                 styleId,
                 "BandSetStyleId", "ProfileViewBandSetStyleId");
             if (bands == null) return applied;
-            if (replace)
-            {
-                InvokeNoArgument(bands,
-                    "Clear", "RemoveAll", "ClearAll", "EraseAll");
-            }
+            // Do not clear the existing band rows before a compatible import has
+            // succeeded. Some Civil 3D 2023 builds expose Clear but not the same
+            // import overload, which previously left otherwise valid long
+            // sections with an empty band collection.
             foreach (string name in new[]
             {
                 top ? "ImportTopBandSetStyle" : "ImportBandSetStyle",

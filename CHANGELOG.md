@@ -19,6 +19,9 @@ All notable CE Tools changes will be recorded here.
 - Corridor annotations now support MLeader, MText and COGO output at the shared
   1.8/2.0/2.5/3.5/5.0 mm paper heights, can draw a circle at the reference or
   leader start, and refresh their corridor counts/status through the stored link.
+- Sewer profile production now creates and commits each branch long section in
+  isolation, links gravity-network parts and band data after the view exists,
+  and presents a branch register in a grid with optional DWG-table placement.
 
 ### Changed
 
@@ -31,6 +34,8 @@ All notable CE Tools changes will be recorded here.
 - Sewer audit cover violations are counted once per pipe instead of once per
   failed sample, and the audit remains read-only so surface/rule recalculation is
   available only through its separate command.
+- Profile band refresh no longer clears existing band rows before confirming a
+  compatible Civil 3D import path, preventing blank long-section bands.
 
 ## 0.61.0-alpha — 2026-08-04
 

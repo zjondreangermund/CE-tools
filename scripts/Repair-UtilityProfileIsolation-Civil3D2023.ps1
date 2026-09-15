@@ -112,7 +112,13 @@ $newSewer = @'
                 parts,
                 skipped);
 '@
-Replace-Once -Path $sewer -Old $oldSewer -New $newSewer -Description 'isolate sewer profile creation per branch'
+$sewerText = [System.IO.File]::ReadAllText($sewer)
+if ($sewerText.Contains('CE_SEWPROFILE skipped {0}: {1}')) {
+    Write-Host 'Already integrated: isolate sewer profile creation per branch' -ForegroundColor DarkGreen
+}
+else {
+    Replace-Once -Path $sewer -Old $oldSewer -New $newSewer -Description 'isolate sewer profile creation per branch'
+}
 
 $oldStorm = @'
             try

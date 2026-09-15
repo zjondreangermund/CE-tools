@@ -28,7 +28,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Field Completion",
-                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, safe/dynamic feature-line linking and stepped offsets, multi-alignment label sets, road profile band labels, corridor feature-line extraction, read-only sewer engineering audits, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
+                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, safe/dynamic feature-line linking and stepped offsets, multi-alignment label sets, road profile band labels, corridor feature-line extraction, sewer long sections and read-only engineering audits, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction(
@@ -90,6 +90,11 @@ namespace CETools.Civil3D
                         "Sewer Engineering Audit - Inverts / Cover / Depth",
                         "CE_SEWAUDITLIMITS",
                         "Review every pipe and manhole in one gravity network: inside inverts, outside-crown cover, slopes, connected-invert drops, rim-to-sump depth and sump clearance. Results open in a grid and can be inserted as a drawing table; the audit does not change the network.",
+                        "02 Sewer"),
+                    new DisciplineWorkflowAction(
+                        "Sewer Profiles / Long Sections",
+                        "CE_SEWPROFILE",
+                        "Create one isolated existing-ground profile view per CE sewer branch, add matching pipes and structures, link the selected band data, and review the result in a grid or DWG table.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
                         "Sewer Surface / Rules Recalculation",
