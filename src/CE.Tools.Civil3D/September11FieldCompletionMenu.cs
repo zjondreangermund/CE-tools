@@ -28,7 +28,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Field Completion",
-                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, safe/dynamic feature-line linking and stepped offsets, multi-alignment label sets, road profile band labels, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
+                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, safe/dynamic feature-line linking and stepped offsets, multi-alignment label sets, road profile band labels, read-only sewer engineering audits, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction(
@@ -76,6 +76,11 @@ namespace CETools.Civil3D
                         "CE_ROADBANDLABELS",
                         "Choose one existing Civil 3D profile-view band set, apply it to multiple selected road profile views and force Show Labels on for every imported top/bottom band item.",
                         "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Sewer Engineering Audit - Inverts / Cover / Depth",
+                        "CE_SEWAUDITLIMITS",
+                        "Review every pipe and manhole in one gravity network: inside inverts, outside-crown cover, slopes, connected-invert drops, rim-to-sump depth and sump clearance. Results open in a grid and can be inserted as a drawing table; the audit does not change the network.",
+                        "02 Sewer"),
                     new DisciplineWorkflowAction(
                         "Sewer Surface / Rules Recalculation",
                         "CE_SEWRECALC",
