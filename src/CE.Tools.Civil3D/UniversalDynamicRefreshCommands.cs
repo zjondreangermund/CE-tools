@@ -150,6 +150,7 @@ namespace CETools.Civil3D
                 try { result.SegmentLabelSources += DynamicSegmentLabelManager.RefreshAll(document); }
                 catch { result.Warnings++; }
                 try { DynamicMultiDimensionManager.RefreshAll(document); }
+                catch { result.Warnings++; }
                 try { result.MetadataAttributes += ProductionMetadataDynamicManager.Refresh(document); }
                 catch { result.Warnings++; }
                 try { FinalFeatureLineReportCommands.RefreshAll(document); }
