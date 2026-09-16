@@ -169,12 +169,15 @@ $featurePath = Join-Path $src 'August17ProductionFeatureLineCommands.cs'
 $feature = Read-Text $featurePath
 foreach ($marker in @(
     '"CE_CORRIDORFEATURELINES"',
-    'ExportAsGradingFeatureLine(ObjectId.Null, dynamic)',
     '"CE_PLATFORMFEATURELINESLOPE"',
     'CivilFeatureLine.Create(string.Empty, temporaryId)',
     'PreferredLoCentralMeridian',
     'TryInsertRegisteredClientBookTitleBlock')) {
     if (-not $feature.Contains($marker)) { throw "August 17 source marker missing: $marker" }
+}
+if (-not ($feature.Contains('ExportAsGradingFeatureLine(exportSiteId, dynamic)') -or
+          $feature.Contains('ExportAsGradingFeatureLine(ObjectId.Null, dynamic)'))) {
+    throw 'August 17 source marker missing: corridor grading feature-line export call.'
 }
 $centres = Read-Text $centresPath
 foreach ($marker in @('"CE_NAMIBIALO"','"CE_PROJECTCOMPANYSTANDARDSAVE"','"CE_PROJECTSETUPCHOICE2"','"CE_DRAWINGREGISTERPROJECTSYNC"','"CE_PLATFORMFEATURELINESLOPE"')) {
