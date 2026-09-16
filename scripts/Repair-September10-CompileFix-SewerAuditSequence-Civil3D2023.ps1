@@ -161,17 +161,26 @@ foreach ($required in @(
 }
 WriteText $profilePath $profile
 
-# August21PlatformRelativeFatalSafety snapshots store AutoCAD ColorIndex as an int,
-# while ApplyColour intentionally accepts a Civil/AutoCAD short ACI value. Convert
-# only at the call boundary so the snapshot model remains unchanged.
+# Civil 3D 2023 exposes Entity.ColorIndex as an int, while the stored snapshot and
+# ApplyColour helper use the short ACI value. Normalize both the snapshot capture
+# and restore call after every earlier staged rewrite so CS0266 cannot reappear.
 $platform = ReadText $platformPath
+$legacyColourCapture = '                        ColorIndex = child.ColorIndex,'
+$compatibleColourCapture = '                        ColorIndex = (short)child.ColorIndex,'
+if ($platform.Contains($legacyColourCapture)) {
+    $platform = $platform.Replace($legacyColourCapture,$compatibleColourCapture)
+}
+if (-not $platform.Contains($compatibleColourCapture)) {
+    throw 'September 16 compile-fix could not normalize the platform ColorIndex snapshot capture.'
+}
+
 $legacyColourCall = '                    ApplyColour(document, candidateId, old.ColorIndex);'
 $compatibleColourCall = '                    ApplyColour(document, candidateId, (short)old.ColorIndex);'
 if ($platform.Contains($legacyColourCall)) {
     $platform = $platform.Replace($legacyColourCall,$compatibleColourCall)
 }
 if (-not $platform.Contains($compatibleColourCall)) {
-    throw 'September 16 compile-fix could not normalize the platform ColorIndex call.'
+    throw 'September 16 compile-fix could not normalize the platform ColorIndex restore call.'
 }
 WriteText $platformPath $platform
 
@@ -179,4 +188,4 @@ Write-Host 'September 10/16 Civil 3D 2023 compile compatibility applied.' -Foreg
 Write-Host ' - Legacy audit surface linking uses the non-interactive helper; the current engineering audit remains read-only.'
 Write-Host ' - CandidatePath node/edge storage is mutable for in-place side-branch reversal.'
 Write-Host ' - CE_SEWPROFILE owns its alignment recovery list; CE_SEWSEQMAIN no longer references civilDocument.'
-Write-Host ' - Platform feature-line colour restore converts AutoCAD ColorIndex to short at the API boundary.'
+Write-Host ' - Platform feature-line ColorIndex capture/restore converts AutoCAD int ACI values to short safely.'
