@@ -21,12 +21,14 @@ namespace CETools.Civil3D
             TrySetObjectId(profileView, "StyleId", profileViewStyleId);
             TrySetObjectId(profileView, "ProfileViewStyleId", profileViewStyleId);
 
-            if (TrySetObjectId(profileView, "BandSetStyleId", bandSetStyleId) ||
-                TrySetObjectId(profileView, "ProfileViewBandSetStyleId", bandSetStyleId))
-            {
-                return;
-            }
+            // Setting the band-set style id alone is not enough in Civil 3D 2023.
+            // The band collection must also import the selected set so that the
+            // individual band items/labels are rebuilt immediately.  Do not return
+            // early when one of the compatibility properties accepts the style id.
+            TrySetObjectId(profileView, "BandSetStyleId", bandSetStyleId);
+            TrySetObjectId(profileView, "ProfileViewBandSetStyleId", bandSetStyleId);
 
+            if (bandSetStyleId.IsNull || !bandSetStyleId.IsValid) return;
             object bands = ReadProperty(profileView, "Bands");
             if (bands == null) return;
             foreach (string methodName in new[]
