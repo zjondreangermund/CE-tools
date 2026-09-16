@@ -247,7 +247,25 @@ namespace CETools.Civil3D
         {
             try
             {
-                var arc = new Arc(definition.Start, definition.Mid, definition.End);
+                double startAngle = Math.Atan2(
+                    definition.Start.Y - definition.Centre.Y,
+                    definition.Start.X - definition.Centre.X);
+                double midAngle = Math.Atan2(
+                    definition.Mid.Y - definition.Centre.Y,
+                    definition.Mid.X - definition.Centre.X);
+                double endAngle = Math.Atan2(
+                    definition.End.Y - definition.Centre.Y,
+                    definition.End.X - definition.Centre.X);
+
+                // AutoCAD 2023 Arc has no three-point constructor. Choose the
+                // counter-clockwise endpoint order whose sweep contains Mid so the
+                // generated geometry is the intended bellmouth quarter-circle.
+                double endSweep = PositiveSweep(startAngle, endAngle);
+                double midSweep = PositiveSweep(startAngle, midAngle);
+                Arc arc = midSweep <= endSweep + Tol
+                    ? new Arc(definition.Centre, Vector3d.ZAxis, radius, startAngle, endAngle)
+                    : new Arc(definition.Centre, Vector3d.ZAxis, radius, endAngle, startAngle);
+
                 arc.SetDatabaseDefaults(database);
                 arc.LayerId = layerId;
                 arc.Color = Color.FromColorIndex(ColorMethod.ByLayer, 256);
@@ -260,6 +278,15 @@ namespace CETools.Civil3D
                 return id;
             }
             catch { return ObjectId.Null; }
+        }
+
+        private static double PositiveSweep(double fromAngle, double toAngle)
+        {
+            double sweep = toAngle - fromAngle;
+            double fullTurn = Math.PI * 2.0;
+            while (sweep < 0.0) sweep += fullTurn;
+            while (sweep >= fullTurn) sweep -= fullTurn;
+            return sweep;
         }
 
         private static void CreateLabel(Database database, Transaction transaction, BlockTableRecord space, ObjectId layerId, Point3d position, string value, double paperHeight, ObjectId arcId, Point3d junction)
