@@ -21,8 +21,9 @@ namespace CETools.Civil3D
     /// <summary>
     /// Renames either complete gravity pipe networks or one selected start-to-end path.
     /// Complete-network mode decomposes tree-shaped networks into branches, beginning
-    /// with the longest route from the highest-rim structure and then processing the
-    /// remaining branches from longest to shortest.
+    /// with the longest route directed from its free/high end toward the lowest-rim
+    /// outlet, then processing remaining branches from their free ends toward
+    /// the already-owned downstream junction.
     /// </summary>
     public sealed class SewerSequenceCommands
     {
@@ -393,7 +394,7 @@ namespace CETools.Civil3D
 
             BranchPlan primary = allBranches
                 .Where(branch => branch.IsComponentMain)
-                .OrderByDescending(branch => branch.ComponentRootRim)
+                .OrderBy(branch => branch.ComponentRootRim)
                 .ThenByDescending(branch => branch.Length)
                 .ThenBy(branch => branch.SortHandle)
                 .First();
@@ -421,8 +422,11 @@ namespace CETools.Civil3D
             IDictionary<ObjectId, GraphNode> nodes,
             IDictionary<ObjectId, GraphEdge> edges)
         {
+            // The component root is the downstream outlet/lowest rim. Root paths
+            // are later oriented highest endpoint first, so every branch progresses
+            // toward this low point instead of away from it.
             ObjectId rootId = componentNodes
-                .OrderByDescending(id => nodes[id].RimElevation)
+                .OrderBy(id => nodes[id].RimElevation)
                 .ThenBy(id => id.Handle.Value)
                 .First();
 
@@ -551,6 +555,20 @@ namespace CETools.Civil3D
                 {
                     throw new InvalidOperationException(
                         "The network topology could not be decomposed into continuous branches.");
+                }
+
+                // A later side branch can share its first endpoint with a branch
+                // already assigned above. Reverse that branch so numbering starts
+                // at its free end and progresses toward the downstream junction.
+                if (result.Count > 0 && selected.NodeIds.Count > 1)
+                {
+                    bool firstEndpointAlreadyAssigned = assignedStructures.Contains(selected.NodeIds[0]);
+                    bool lastEndpointAlreadyAssigned = assignedStructures.Contains(selected.NodeIds[selected.NodeIds.Count - 1]);
+                    if (firstEndpointAlreadyAssigned && !lastEndpointAlreadyAssigned)
+                    {
+                        ReverseInPlace(selected.NodeIds);
+                        ReverseInPlace(selected.EdgeIds);
+                    }
                 }
 
                 var structuresToRename = new List<ObjectId>();
