@@ -86,17 +86,19 @@ namespace CETools.Civil3D
 
             string mode = settings.Text("Type");
             string requestedStyle = settings.Text("DimStyle");
-            double offsetPaper = settings.Double("Offset", 8.0);
-            double leaderPaper = settings.Double("ArcLeader", 6.0);
-            double offset = PaperAnnotationScale.ModelDistance(document.Database, offsetPaper);
-            double leader = PaperAnnotationScale.ModelDistance(document.Database, leaderPaper);
+            double offset = PaperAnnotationScale.ModelDistance(
+                document.Database,
+                settings.Double("Offset", 8.0));
+            double leader = PaperAnnotationScale.ModelDistance(
+                document.Database,
+                settings.Double("ArcLeader", 6.0));
 
             DynamicMultiDimensionManager.BeginCommand(
                 document,
                 !string.Equals(settings.Text("Dynamic"), "Disabled", StringComparison.OrdinalIgnoreCase),
                 mode,
-                offsetPaper,
-                leaderPaper);
+                settings.Double("Offset", 8.0),
+                settings.Double("ArcLeader", 6.0));
 
             int sources = 0;
             int dimensions = 0;
