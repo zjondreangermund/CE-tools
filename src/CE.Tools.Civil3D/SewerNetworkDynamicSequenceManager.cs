@@ -375,9 +375,9 @@ namespace CETools.Civil3D
                         usedEdges,
                         queue);
                     if (branch == null || branch.Edges.Count == 0) continue;
-                    // Side branches are discovered from the already-owned parent
-                    // junction outward. Reverse them so .1 begins at the free end
-                    // and the sequence progresses toward the low outlet/main.
+                    // WalkBranchSegment begins at the already-owned junction and walks
+                    // outward. Reverse every side branch so .1 starts at its free end
+                    // and numbering progresses toward the parent/main branch.
                     branch.Nodes.Reverse();
                     branch.Edges.Reverse();
                     result.Add(branch);
