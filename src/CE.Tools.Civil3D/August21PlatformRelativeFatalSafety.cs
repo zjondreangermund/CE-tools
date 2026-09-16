@@ -1257,7 +1257,28 @@ namespace CETools.Civil3D
                 }
             }
             catch { }
-            featureLine.SetPointElevation(index, elevation);
+            // Civil 3D's integer setter addresses PI points, not the AllPoints
+            // collection used by the sampling code.  Passing an AllPoints index
+            // therefore throws eInvalidInput/out-of-range whenever elevation
+            // points are present.  Prefer the coordinate overload exposed by
+            // newer hosts and map back to the PI collection on older hosts.
+            MethodInfo pointSetter = featureLine.GetType().GetMethod(
+                "SetPointElevation",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                new[] { typeof(Point3d), typeof(double) },
+                null);
+            if (pointSetter != null)
+            {
+                pointSetter.Invoke(featureLine, new object[] { point, elevation });
+                return;
+            }
+
+            Point3dCollection piPoints = featureLine.GetPoints(FeatureLinePointType.PIPoint);
+            int piIndex = ClosestIndex(piPoints, point);
+            if (piIndex < 0)
+                throw new InvalidOperationException("The feature line has no writable PI point at the sampled location.");
+            featureLine.SetPointElevation(piIndex, elevation);
         }
 
         private static int ClosestIndex(Point3dCollection points, Point3d target)
