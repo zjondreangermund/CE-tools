@@ -1,0 +1,24 @@
+name: September 16 field comments
+
+on:
+  pull_request:
+    paths:
+      - 'src/CE.Tools.Civil3D/**'
+      - 'scripts/Validate-September16FieldComments.py'
+      - '.github/workflows/sep16-field-comments.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'src/CE.Tools.Civil3D/**'
+      - 'scripts/Validate-September16FieldComments.py'
+
+jobs:
+  static-regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Validate September 16 completion
+        run: python scripts/Validate-September16FieldComments.py
