@@ -33,7 +33,7 @@ checks = {
         "progresses toward the downstream junction",
     ],
     "src/CE.Tools.Civil3D/SewerNetworkDynamicSequenceManager.cs": [
-        "Side branches are discovered from the already-owned parent",
+        "WalkBranchSegment begins at the already-owned junction",
         "branch.Nodes.Reverse();",
         "branch.Edges.Reverse();",
     ],
