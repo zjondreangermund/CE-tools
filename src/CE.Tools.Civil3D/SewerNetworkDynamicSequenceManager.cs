@@ -375,7 +375,11 @@ namespace CETools.Civil3D
                         usedEdges,
                         queue);
                     if (branch == null || branch.Edges.Count == 0) continue;
-                    OrientHighToLow(branch, topology);
+                    // Side branches are discovered from the already-owned parent
+                    // junction outward. Reverse them so .1 begins at the free end
+                    // and the sequence progresses toward the low outlet/main.
+                    branch.Nodes.Reverse();
+                    branch.Edges.Reverse();
                     result.Add(branch);
                 }
             }
