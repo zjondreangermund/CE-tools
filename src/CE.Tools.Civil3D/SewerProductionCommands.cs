@@ -71,20 +71,6 @@ namespace CETools.Civil3D
             Editor editor = document.Editor;
             Database database = document.Database;
 
-            List<SewerAlignmentRecord> records;
-            using (Transaction alignmentRead = database.TransactionManager.StartTransaction())
-                records = ReadGeneratedAlignments(civilDocument, alignmentRead);
-            if (records.Count == 0)
-            {
-                editor.WriteMessage(
-                    "\nCE_SEWPROFILE found no CE sewer alignments. Alignment creation has been queued first; profile creation will resume after CE_SEWALIGN finishes.");
-                CeSequentialCommandRunner.Start(
-                    document,
-                    new[] { "CE_SEWALIGN", "CE_SEWPROFILE" },
-                    "CE sewer alignment + profile recovery");
-                return;
-            }
-
             PromptEntityOptions partOptions = new PromptEntityOptions(
                 "\nSelect one sewer pipe or structure from the network: ");
             PromptEntityResult partResult = editor.GetEntity(partOptions);
@@ -475,6 +461,16 @@ namespace CETools.Civil3D
 
             Editor editor = document.Editor;
             Database database = document.Database;
+
+            List<SewerAlignmentRecord> records;
+            using (Transaction alignmentRead = database.TransactionManager.StartTransaction())
+                records = ReadGeneratedAlignments(civilDocument, alignmentRead);
+            if (records.Count == 0)
+            {
+                editor.WriteMessage(
+                    "\nCE_SEWPROFILE found no tagged CE sewer alignments. Run CE_SEWALIGN once, then run CE_SEWPROFILE again after alignment creation has completed.");
+                return;
+            }
 
             List<SurfaceChoice> surfaceChoices =
                 WorkflowRepairCommands.ReadSurfaceChoices(document);

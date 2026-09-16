@@ -1688,6 +1688,17 @@ namespace CETools.Civil3D
                 {
                     if (item == null) continue;
                     bool changed = false;
+                    try
+                    {
+                        PropertyInfo showLabels = item.GetType().GetProperty(
+                            "ShowLabels", BindingFlags.Public | BindingFlags.Instance);
+                        if (showLabels != null && showLabels.CanWrite && showLabels.PropertyType == typeof(bool))
+                        {
+                            showLabels.SetValue(item, true, null);
+                            changed = true;
+                        }
+                    }
+                    catch { }
                     changed = SetObjectId(item, alignmentId,
                         "AlignmentId", "ParentAlignmentId") || changed;
                     if (profiles.Count > 0)
@@ -1705,6 +1716,15 @@ namespace CETools.Civil3D
                             "NetworkId", "PipeNetworkId", "DataSourceId", "SourceId") || changed;
                     }
                     if (changed) linked++;
+                }
+                string setterName = methodName.StartsWith("Get", StringComparison.Ordinal)
+                    ? "Set" + methodName.Substring(3)
+                    : string.Empty;
+                foreach (MethodInfo setter in bands.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (!string.Equals(setter.Name, setterName, StringComparison.Ordinal) ||
+                        setter.GetParameters().Length != 1) continue;
+                    try { setter.Invoke(bands, new[] { returned }); break; } catch { }
                 }
             }
             InvokeNoArgument(bands,

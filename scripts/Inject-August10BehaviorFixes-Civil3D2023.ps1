@@ -173,10 +173,12 @@ Replace-Once -Path $surface -Old $oldRetryPlan -New $newRetryPlan -Description '
 # Direct ribbon access to the final behaviour commands.
 $oldAssemblyRibbon = @'
                         Cmd("Create CE Road Assembly", "CE_ASSEMBLYCREATE ", "Create a named Civil 3D road assembly at a selected insertion point."),
+                        Cmd("Copy Assembly Between Drawings (Safe)", "CE_ASSEMBLYCOPYSAFE ", "Clone an assembly between open drawings without using the clipboard, which can freeze Civil 3D."),
                         Cmd("Assembly Register", "CE_ASSEMBLYREPORT ", "Review every assembly, style and subassembly count."),
 '@
 $newAssemblyRibbon = @'
                         Cmd("Create CE Road Assembly", "CE_ASSEMBLYCREATE ", "Create a named Civil 3D road assembly at a selected insertion point and show its visible linked marker."),
+                        Cmd("Copy Assembly Between Drawings (Safe)", "CE_ASSEMBLYCOPYSAFE ", "Clone an assembly between open drawings without using the clipboard, which can freeze Civil 3D."),
                         Cmd("Refresh Assembly Markers", "CE_ASSEMBLYMARKERS ", "Create visible location markers for existing Civil 3D assemblies that have no obvious model-space graphics."),
                         Cmd("Assembly Register", "CE_ASSEMBLYREPORT ", "Review every assembly, style and subassembly count."),
 '@

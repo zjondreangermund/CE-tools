@@ -141,7 +141,11 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
 
-            CommentAutoRefreshManager.MarkPending();
+            // Appearance-only edits must not start the linked-feature-line rebuild
+            // pipeline while Civil 3D is still releasing the selected objects.  That
+            // rebuild replaces linked feature lines and was the source of the
+            // repeated eLockViolation messages reported after this command.
+            try { document.Database.TransactionManager.QueueForGraphicsFlush(); } catch { }
             document.Editor.Regen();
             document.Editor.WriteMessage(
                 "\nCE_FLAPPEARANCE complete. Feature lines updated={0}; site assignments={1}; rejected={2}; colour={3}.",

@@ -35,6 +35,7 @@ namespace CETools.Civil3D
                 new List<DisciplineWorkflowAction>
                 {
                     Action("Create CE road assembly", "CE_ASSEMBLYCREATE", "Create a named Civil 3D roadway assembly at a selected location.", "1 — Create"),
+                    Action("Copy assembly between drawings (safe)", "CE_ASSEMBLYCOPYSAFE", "Clone from another open drawing without clipboard copy/paste, avoiding the Civil 3D freeze path.", "1 — Create"),
                     Action("Assembly register", "CE_ASSEMBLYREPORT", "Review all assemblies, styles and subassembly counts.", "2 — Review"),
                     Action("Create road corridors", "CE_ROADCORRIDORS", "Use a selected assembly with CE road alignment/profile pairs.", "3 — Corridors"),
                     Action("Road production workflow", "CE_ROADPRODUCTION", "Open the complete ordered road workflow.", "3 — Corridors"),

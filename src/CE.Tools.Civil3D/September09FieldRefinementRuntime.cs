@@ -181,6 +181,9 @@ namespace CETools.Civil3D
             settings.AddChoice("Facing", "02 Reserve detection", "Closed-boundary pairing", "Facing parcel sides only",
                 "For closed parcel data, reject same-side parallel edges by checking parcel-centroid facing. Open sources are paired geometrically.",
                 new[] { "Facing parcel sides only", "All parallel boundaries" });
+            settings.AddChoice("CentreOutput", "04 Output", "Road-centre polyline joining", "Join every continuous branch",
+                "Joins every end-to-end centre segment into one polyline per continuous branch. T/X networks remain separate branches because one polyline cannot contain branching topology.",
+                new[] { "Join every continuous branch", "Keep individual centre segments" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             double minWidth = Math.Max(0.001, settings.Double("MinWidth", 4.0));
@@ -216,7 +219,10 @@ namespace CETools.Civil3D
             ExtendCentreEndpoints(candidates, join);
             List<NetworkSegment> split = SplitAtAllIntersections(candidates);
             SnapNetworkNodes(split, Math.Max(0.01, Math.Min(0.10, join * 0.01)));
-            List<List<Point2d>> chains = TraceNetworkChains(split);
+            bool joinContinuous = string.Equals(settings.Text("CentreOutput"), "Join every continuous branch", StringComparison.OrdinalIgnoreCase);
+            List<List<Point2d>> chains = joinContinuous
+                ? TraceNetworkChains(split)
+                : split.Select(segment => new List<Point2d> { segment.A, segment.B }).ToList();
 
             if (chains.Count == 0)
             {
@@ -249,8 +255,8 @@ namespace CETools.Civil3D
             }
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_ROADRESERVECENTRELINES JOINED complete. Sources={0}; joined centre polylines={1}; filleted direction changes={2}; T/X junctions share exact endpoints; source boundaries unchanged.",
-                sources.Count, created, filleted);
+                "\nCE_ROADRESERVECENTRELINES complete. Sources={0}; centre polylines={1}; output={2}; filleted direction changes={3}; T/X junctions share exact endpoints; source boundaries unchanged.",
+                sources.Count, created, joinContinuous ? "one polyline per continuous branch" : "individual segments", filleted);
         }
 
         private static List<ObjectId> SelectBoundaryObjects(Document document, bool closedAllowed, bool openAllowed)

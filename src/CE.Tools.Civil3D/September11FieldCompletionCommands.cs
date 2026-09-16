@@ -505,10 +505,23 @@ namespace CETools.Civil3D
             model.AddChoice("Surface", "01 Surface", "Reference surface", preferredSurface,
                 "Surface assigned to every pipe and structure before Civil 3D rules are evaluated.",
                 surfaces.Select(item => item.Name).ToArray());
+            model.AddChoice("RuleMode", "02 Rules", "Rule input", "Enter CE rule values manually",
+                "Enter the engineering values here, or use installed Civil 3D pipe/structure rule-set styles.",
+                new[] { "Enter CE rule values manually", "Use Civil 3D rule sets" });
+            model.AddPositiveDouble("MinSlope", "02 Rules", "Minimum slope (%)", 1.0, "Minimum absolute pipe grade.");
+            model.AddPositiveDouble("MaxSlope", "02 Rules", "Maximum slope (%)", 12.0, "Maximum absolute pipe grade.");
+            model.AddPositiveDouble("MinCover", "02 Rules", "Minimum cover (m)", 0.834, "Minimum cover from surface to pipe crown.");
+            model.AddPositiveDouble("MaxCover", "02 Rules", "Maximum cover (m)", 10.0, "Maximum permitted pipe cover.");
+            model.AddPositiveDouble("MinLength", "02 Rules", "Minimum pipe length (m)", 2.440, "Shorter pipes are reported for topology review.");
+            model.AddPositiveDouble("MaxLength", "02 Rules", "Maximum pipe length (m)", 100.0, "Longer pipes are reported for topology review.");
             model.AddChoice("PipeRules", "02 Rules", "Pipe rule set", pipeChoices[0],
                 "Choose a named Civil 3D pipe rule set, or keep the current/default rule set.", pipeChoices);
             model.AddChoice("StructureRules", "02 Rules", "Structure rule set", structureChoices[0],
                 "Choose a named Civil 3D structure rule set, or keep the current/default rule set.", structureChoices);
+            model.AddDouble("SumpDepth", "02 Rules", "Sump depth (m)", 0.0, "Depth below the lowest connected pipe invert.");
+            model.AddChoice("DropReference", "02 Rules", "Drop reference location", "Crown", "Reference used for drop checks.", new[] { "Crown", "Invert" });
+            model.AddPositiveDouble("DropValue", "02 Rules", "Minimum drop value (m)", 0.050, "Desired minimum drop through structures.");
+            model.AddPositiveDouble("MaxDrop", "02 Rules", "Maximum drop value (m)", 3.0, "Larger drops are reported for review.");
             model.AddChoice("After", "03 Profiles", "After recalculation", "Return to drawing",
                 "For profile stability, CE_SEWPROFILE is queued only after the network surface/rule transaction has committed.",
                 new[] { "Return to drawing", "Open CE_SEWPROFILE after commit" });
@@ -524,17 +537,22 @@ namespace CETools.Civil3D
             int ruleFailures;
             string error;
             List<IList<string>> ruleRows;
-            bool linked = September10SewerAuditRuntime.LinkExistingPartsToSurface(
-                document,
-                networkId,
-                surface.Id,
-                pipeRuleId,
-                structureRuleId,
-                out pipes,
-                out structures,
-                out ruleFailures,
-                out error,
-                out ruleRows);
+            bool manualRules = string.Equals(model.Text("RuleMode"), "Enter CE rule values manually", StringComparison.OrdinalIgnoreCase);
+            bool linked = manualRules
+                ? September09SewerSurfaceRulesRuntime.ApplyManualRulesToNetwork(
+                    document, networkId, surface.Id, model,
+                    out pipes, out structures, out ruleFailures, out error, out ruleRows)
+                : September10SewerAuditRuntime.LinkExistingPartsToSurface(
+                    document,
+                    networkId,
+                    surface.Id,
+                    pipeRuleId,
+                    structureRuleId,
+                    out pipes,
+                    out structures,
+                    out ruleFailures,
+                    out error,
+                    out ruleRows);
             if (!linked)
             {
                 editor.WriteMessage("\nCE_SEWRECALC failed. No partial surface/rule recalculation was committed. {0}", error);
@@ -543,17 +561,22 @@ namespace CETools.Civil3D
 
             editor.Regen();
             editor.WriteMessage(
-                "\nCE_SEWRECALC complete. Surface='{0}'; pipes recalculated={1}; structures recalculated={2}; rule failures={3}. Surface/rule writes are committed before any profile command starts.",
+                "\nCE_SEWRECALC complete. Surface='{0}'; pipes recalculated={1}; structures recalculated={2}; review warnings/failures={3}; mode={4}. Surface/rule writes are committed before any profile command starts.",
                 surface.Name,
                 pipes,
                 structures,
-                ruleFailures);
+                ruleFailures,
+                manualRules ? "Manual CE values" : "Civil 3D rule sets");
             GridReportPresenter.ShowReportAndOfferTable(
                 document,
                 "CE Tools - Sewer Pipe / Structure Rule Results",
                 ruleFailures == 0
-                    ? "Civil 3D accepted the selected surface and rule application for every editable pipe and structure."
-                    : "One or more Civil 3D rules failed. The affected part and returned error are listed below; failures that return false may also write details to Civil 3D Event Viewer.",
+                    ? (manualRules
+                        ? "CE Tools applied the entered slope, cover and sump values to every editable part; length/drop topology checks passed."
+                        : "Civil 3D accepted the selected surface and rule application for every editable pipe and structure.")
+                    : (manualRules
+                        ? "Manual values were applied where safe. Review the listed length, cover, drop or read-only geometry warnings."
+                        : "One or more Civil 3D rules failed. The affected part and returned error are listed below; failures that return false may also write details to Civil 3D Event Viewer."),
                 new List<string>
                 {
                     "Object", "Name", "Rule Set", "Reference Surface", "Result"
@@ -674,12 +697,10 @@ namespace CETools.Civil3D
         internal static void RoadReserveCentrePolylines(Document document)
         {
             if (document == null) return;
-            HashSet<ObjectId> before = ReadRoadCentrePolylineIds(document.Database);
+            // The production runtime now owns the user's joined/separate output
+            // choice and preserves fillet bulges.  Running the legacy straight-
+            // segment cleanup here discarded that choice and skipped curves.
             September09FieldEngineeringRuntime.RoadReserveCentrePolylines(document);
-            HashSet<ObjectId> after = ReadRoadCentrePolylineIds(document.Database);
-            after.ExceptWith(before);
-            if (after.Count > 0)
-                CleanRoadCentreIds(document, after.ToList(), "newly generated road centres");
         }
 
         internal static void CleanExistingRoadCentres(Document document)
