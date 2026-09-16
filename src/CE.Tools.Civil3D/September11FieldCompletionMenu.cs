@@ -28,7 +28,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Field Completion",
-                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, safe/dynamic feature-line linking and stepped offsets, multi-alignment label sets, road profile band labels, corridor feature-line extraction, sewer long sections and read-only engineering audits, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
+                "Current field workflows for manual dynamic refresh, strict road-centre BC/EC cleanup, safe/dynamic feature-line linking and stepped offsets, multi-alignment label sets, road profile band labels, batch T/cross bellmouth creation, corridor junction splitting, fully dynamic dimensions, corridor feature-line extraction, sewer long sections and read-only engineering audits, sewer recalculation/profile safety, automatic drawing-scale annotation synchronisation, project style presets, Namibia coordinates, Google Earth linework and joined hatch outer boundaries.",
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction(
@@ -75,6 +75,26 @@ namespace CETools.Civil3D
                         "Road Profile Band Set - Show Labels",
                         "CE_ROADBANDLABELS",
                         "Choose one existing Civil 3D profile-view band set, apply it to multiple selected road profile views and force Show Labels on for every imported top/bottom band item.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Batch T/Cross Junction Bellmouths",
+                        "CE_ROADJUNCTIONBATCH",
+                        "Select all road-centre lines, polylines or feature lines once. Detect every T/cross intersection, create all bellmouths using separate main/side half-widths and one radius, then number them in a single batch.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Split Multiple Corridors at Junctions",
+                        "CE_ROADJUNCTIONCONSTRUCTION",
+                        "Use all CE junction geometry to split multiple selected corridor regions at every bellmouth limit, with configurable station clustering and extra split distance.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Corridor Frequencies / Targets / Slopes",
+                        "CE_ROADCORRIDORCOMPLETE",
+                        "Select multiple corridors, choose the target surface, set tangent/curve/spiral/vertical/target frequencies, rebuild TOP/DATUM surfaces and refresh cut/fill slope patterns.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Dynamic Dimensions - All Types",
+                        "CE_MULTIDIM",
+                        "Create aligned, horizontal, vertical, angular, radius and arc-length dimensions linked to multiple selected polylines or Civil 3D feature lines.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
                         "Corridor Feature Lines - Select Codes",

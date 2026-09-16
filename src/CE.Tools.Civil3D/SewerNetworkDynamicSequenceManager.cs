@@ -375,7 +375,11 @@ namespace CETools.Civil3D
                         usedEdges,
                         queue);
                     if (branch == null || branch.Edges.Count == 0) continue;
-                    OrientHighToLow(branch, topology);
+                    // WalkBranchSegment begins at the already-owned junction and walks
+                    // outward. Reverse every side branch so .1 starts at its free end
+                    // and numbering progresses toward the parent/main branch.
+                    branch.Nodes.Reverse();
+                    branch.Edges.Reverse();
                     result.Add(branch);
                 }
             }
