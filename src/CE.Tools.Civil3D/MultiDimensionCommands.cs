@@ -64,6 +64,10 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "ArcLeader", "02 Placement", "Radius leader extension (paper mm)", 6.0,
                 "Leader extension beyond a polyline arc for radius dimensions.");
+            settings.AddChoice(
+                "Dynamic", "03 Dynamic", "Dynamic update", "Enabled",
+                "Enabled keeps every generated aligned, horizontal, vertical, angular, radius and arc-length dimension linked to its source polyline or Civil 3D feature line.",
+                new[] { "Enabled", "Disabled" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             PromptSelectionResult selection = document.Editor.SelectImplied();
@@ -82,12 +86,17 @@ namespace CETools.Civil3D
 
             string mode = settings.Text("Type");
             string requestedStyle = settings.Text("DimStyle");
-            double offset = PaperAnnotationScale.ModelDistance(
-                document.Database,
-                settings.Double("Offset", 8.0));
-            double leader = PaperAnnotationScale.ModelDistance(
-                document.Database,
-                settings.Double("ArcLeader", 6.0));
+            double offsetPaper = settings.Double("Offset", 8.0);
+            double leaderPaper = settings.Double("ArcLeader", 6.0);
+            double offset = PaperAnnotationScale.ModelDistance(document.Database, offsetPaper);
+            double leader = PaperAnnotationScale.ModelDistance(document.Database, leaderPaper);
+
+            DynamicMultiDimensionManager.BeginCommand(
+                document,
+                !string.Equals(settings.Text("Dynamic"), "Disabled", StringComparison.OrdinalIgnoreCase),
+                mode,
+                offsetPaper,
+                leaderPaper);
 
             int sources = 0;
             int dimensions = 0;
@@ -123,11 +132,13 @@ namespace CETools.Civil3D
                         try { entity = transaction.GetObject(id, OpenMode.ForRead, false) as Entity; }
                         catch { failed++; continue; }
                         if (entity == null) { skippedSources++; continue; }
+                        DynamicMultiDimensionManager.ClearCurrentSource();
 
                         Polyline polyline = entity as Polyline;
                         if (polyline != null)
                         {
                             sources++;
+                            DynamicMultiDimensionManager.BeginSource(transaction, polyline, mode, styleId);
                             ProcessPolyline(
                                 document.Database,
                                 transaction,
@@ -147,6 +158,7 @@ namespace CETools.Civil3D
                         if (featureLine != null && featureLine.GetType() == typeof(CivilFeatureLine))
                         {
                             sources++;
+                            DynamicMultiDimensionManager.BeginSource(transaction, featureLine, mode, styleId);
                             ProcessFeatureLine(
                                 document.Database,
                                 transaction,
@@ -182,6 +194,63 @@ namespace CETools.Civil3D
                 skippedGeometry,
                 failed,
                 outputStyleName);
+        }
+
+        internal static int RebuildDynamicSource(
+            Document document,
+            ObjectId sourceId,
+            string mode,
+            string styleName,
+            double offsetPaper,
+            double leaderPaper)
+        {
+            if (document == null || sourceId.IsNull) return -1;
+            int created = 0;
+            int skipped = 0;
+            int failed = 0;
+
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                Entity source = transaction.GetObject(sourceId, OpenMode.ForRead, false) as Entity;
+                if (source == null) return -1;
+
+                DimStyleTable styles = transaction.GetObject(
+                    document.Database.DimStyleTableId,
+                    OpenMode.ForRead,
+                    false) as DimStyleTable;
+                if (styles == null || string.IsNullOrWhiteSpace(styleName) || !styles.Has(styleName)) return -1;
+
+                ObjectId styleId = styles[styleName];
+                BlockTableRecord space = transaction.GetObject(
+                    source.OwnerId,
+                    OpenMode.ForWrite,
+                    false) as BlockTableRecord;
+                if (space == null) return -1;
+
+                double offset = PaperAnnotationScale.ModelDistance(document.Database, Math.Max(offsetPaper, 0.0));
+                double leader = PaperAnnotationScale.ModelDistance(document.Database, Math.Max(leaderPaper, 0.0));
+                DynamicMultiDimensionManager.BeginRebuildSource(
+                    transaction, source, mode, styleId, offsetPaper, leaderPaper);
+
+                Polyline polyline = source as Polyline;
+                if (polyline != null)
+                {
+                    ProcessPolyline(document.Database, transaction, space, polyline, mode, styleId, offset, leader,
+                        ref created, ref skipped, ref failed);
+                }
+                else
+                {
+                    CivilFeatureLine featureLine = source as CivilFeatureLine;
+                    if (featureLine == null || featureLine.GetType() != typeof(CivilFeatureLine)) return -1;
+                    ProcessFeatureLine(document.Database, transaction, space, featureLine, mode, styleId, offset,
+                        ref created, ref skipped, ref failed);
+                }
+
+                transaction.Commit();
+            }
+
+            DynamicMultiDimensionManager.ClearCurrentSource();
+            return created;
         }
 
         private static void ProcessPolyline(
@@ -390,7 +459,9 @@ namespace CETools.Civil3D
             dimension.SetDatabaseDefaults(database);
             space.AppendEntity(dimension);
             transaction.AddNewlyCreatedDBObject(dimension, true);
-            try { dimension.SetFromStyle(); } catch { PaperAnnotationScale.SetAnnotative(dimension); }
+            try { dimension.SetFromStyle(); } catch { }
+            PaperAnnotationScale.SetAnnotative(dimension);
+            DynamicMultiDimensionManager.CaptureOutput(transaction, dimension);
             created++;
         }
 
