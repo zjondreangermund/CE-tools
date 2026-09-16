@@ -110,6 +110,12 @@ namespace CETools.Civil3D
                                 pipe.RuleSetStyleId,
                                 "<No pipe rule set>");
                             string status;
+                            if (pipeRuleSetId.IsNull || pipe.RuleSetStyleId.IsNull)
+                            {
+                                ruleFailureCount++;
+                                status = "Not applied: no valid pipe rule set is assigned";
+                            }
+                            else
                             try
                             {
                                 bool applied = pipe.ApplyRules();
@@ -165,6 +171,12 @@ namespace CETools.Civil3D
                                 structure.RuleSetStyleId,
                                 "<No structure rule set>");
                             string status;
+                            if (structureRuleSetId.IsNull || structure.RuleSetStyleId.IsNull)
+                            {
+                                ruleFailureCount++;
+                                status = "Not applied: no valid structure rule set is assigned";
+                            }
+                            else
                             try
                             {
                                 bool applied = structure.ApplyRules();

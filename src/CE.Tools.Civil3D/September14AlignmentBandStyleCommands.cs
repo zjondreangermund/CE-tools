@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -48,6 +49,26 @@ namespace CETools.Civil3D
                 styles);
             if (choice == null) return;
 
+            List<StyleChoice> alignmentStyles = ReadAlignmentStyles(document.Database, civilDocument);
+            StyleChoice alignmentStyle = alignmentStyles.Count == 0
+                ? null
+                : ChooseStyle(
+                    document,
+                    "CE Tools - Alignment Styles",
+                    "Optionally apply an existing alignment display style together with the label set.",
+                    "Alignment style",
+                    alignmentStyles);
+            if (alignmentStyles.Count > 0 && alignmentStyle == null) return;
+
+            var intervalSettings = new ProductionSettingsDialogModel(
+                "CE Tools - Alignment Label Intervals",
+                "Set the station-label intervals after importing the selected label set. Unsupported label groups are left unchanged.");
+            intervalSettings.AddPositiveDouble("Major", "01 Intervals", "Major label interval", 20.0, "Major station label spacing in drawing units.");
+            intervalSettings.AddPositiveDouble("Minor", "01 Intervals", "Minor label interval", 5.0, "Minor station label spacing in drawing units.");
+            if (!DisciplineWorkflowDialogs.EditSettings(intervalSettings)) return;
+            double majorInterval = intervalSettings.Double("Major", 20.0);
+            double minorInterval = intervalSettings.Double("Minor", 5.0);
+
             PromptSelectionResult selection = GetSelection(
                 document.Editor,
                 "\nSelect one or more Civil 3D alignments to receive the label set: ");
@@ -76,6 +97,8 @@ namespace CETools.Civil3D
                     }
 
                     alignment.ImportLabelSet(choice.Id);
+                    if (alignmentStyle != null) alignment.StyleId = alignmentStyle.Id;
+                    ApplyLabelIntervals(alignment, majorInterval, minorInterval);
                     applied++;
                 }
 
@@ -83,7 +106,7 @@ namespace CETools.Civil3D
             }
 
             document.Editor.WriteMessage(
-                "\nCE_ALIGNLABELSETMULTI complete. Label set '{0}' applied to {1} alignment(s); skipped {2} non-editable/non-alignment object(s).",
+                "\nCE_ALIGNLABELSETMULTI complete. Label set '{0}', alignment style and major/minor intervals applied to {1} alignment(s); skipped {2} non-editable/non-alignment object(s).",
                 choice.Name,
                 applied,
                 skipped);
@@ -125,6 +148,7 @@ namespace CETools.Civil3D
             int applied = 0;
             int bandsEnabled = 0;
             int skipped = 0;
+            var profileViewIds = new List<ObjectId>();
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 foreach (SelectedObject selected in selection.Value)
@@ -146,12 +170,35 @@ namespace CETools.Civil3D
                     }
 
                     profileView.Bands.ImportBandSetStyle(choice.Id);
-                    bandsEnabled += EnableBandLabels(profileView);
+                    profileViewIds.Add(profileView.ObjectId);
                     applied++;
                 }
 
                 transaction.Commit();
             }
+
+            // Civil 3D materialises imported band items only after the import
+            // transaction commits.  Reopen the views before changing ShowLabels;
+            // doing both in one transaction leaves the labels hidden until the
+            // user manually re-imports the band set in Profile View Properties.
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in profileViewIds)
+                {
+                    ProfileView profileView = transaction.GetObject(id, OpenMode.ForWrite, false) as ProfileView;
+                    if (profileView == null || profileView.IsReferenceObject) continue;
+                    bandsEnabled += EnableBandLabels(profileView);
+                    try { profileView.RecordGraphicsModified(true); } catch { }
+                }
+                transaction.Commit();
+            }
+            try
+            {
+                document.Database.TransactionManager.QueueForGraphicsFlush();
+                document.Editor.Regen();
+                AcApplication.UpdateScreen();
+            }
+            catch { }
 
             document.Editor.WriteMessage(
                 "\nCE_ROADBANDLABELS complete. Band set '{0}' applied to {1} profile view(s); Show Labels enabled on {2} band item(s); skipped {3} non-editable/non-profile-view object(s).",
@@ -230,6 +277,48 @@ namespace CETools.Civil3D
             }
             result.Sort((left, right) => StringComparer.CurrentCultureIgnoreCase.Compare(left.Name, right.Name));
             return result;
+        }
+
+        private static List<StyleChoice> ReadAlignmentStyles(Database database, CivilDocument civilDocument)
+        {
+            var result = new List<StyleChoice>();
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                AlignmentStyleCollection collection = civilDocument.Styles.AlignmentStyles;
+                for (int index = 0; index < collection.Count; index++)
+                {
+                    ObjectId id = collection[index];
+                    AlignmentStyle style = transaction.GetObject(id, OpenMode.ForRead, false) as AlignmentStyle;
+                    if (style != null && !string.IsNullOrWhiteSpace(style.Name))
+                        result.Add(new StyleChoice(style.Name, id));
+                }
+            }
+            result.Sort((left, right) => StringComparer.CurrentCultureIgnoreCase.Compare(left.Name, right.Name));
+            return result;
+        }
+
+        private static void ApplyLabelIntervals(CivilAlignment alignment, double major, double minor)
+        {
+            MethodInfo getter = alignment.GetType().GetMethod("GetLabelGroupIds", Type.EmptyTypes);
+            object value = getter == null ? null : getter.Invoke(alignment, null);
+            IEnumerable<ObjectId> ids = value as IEnumerable<ObjectId>;
+            if (ids == null) return;
+            Transaction transaction = alignment.Database.TransactionManager.TopTransaction;
+            if (transaction == null) return;
+            foreach (ObjectId id in ids)
+            {
+                DBObject group = transaction.GetObject(id, OpenMode.ForWrite, false);
+                string name = group == null ? string.Empty : group.GetType().Name;
+                double interval = name.IndexOf("Minor", StringComparison.OrdinalIgnoreCase) >= 0 ? minor : major;
+                foreach (string propertyName in new[] { "Increment", "StationIncrement", "MajorStationInterval", "MinorStationInterval" })
+                {
+                    PropertyInfo property = group == null ? null : group.GetType().GetProperty(propertyName);
+                    if (property != null && property.CanWrite && property.PropertyType == typeof(double))
+                    {
+                        try { property.SetValue(group, interval, null); } catch { }
+                    }
+                }
+            }
         }
 
         private static StyleChoice ChooseStyle(

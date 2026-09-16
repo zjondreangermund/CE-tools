@@ -128,6 +128,7 @@ namespace CETools.Civil3D
                         continue;
                     }
 
+                    ApplyColour(document, candidateId, old.ColorIndex);
                     WriteRelation(document, candidateId, old.Link);
                     VerifyFeatureLine(document, candidateId);
                     if (!CommitCandidateSwap(document, old, candidateId, out error))
@@ -896,6 +897,7 @@ namespace CETools.Civil3D
                         LayerId = child.LayerId,
                         StyleName = child.StyleName,
                         SiteId = child.SiteId,
+                        ColorIndex = child.ColorIndex,
                         Link = relation
                     });
                 }
@@ -1217,6 +1219,25 @@ namespace CETools.Civil3D
             return candidate;
         }
 
+        private static void ApplyColour(Document document, ObjectId id, short colourIndex)
+        {
+            if (document == null || id.IsNull) return;
+            try
+            {
+                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine featureLine = OpenFeatureLine(transaction, id, OpenMode.ForWrite);
+                    if (featureLine != null)
+                    {
+                        featureLine.ColorIndex = colourIndex;
+                        try { featureLine.RecordGraphicsModified(true); } catch { }
+                    }
+                    transaction.Commit();
+                }
+            }
+            catch { }
+        }
+
         private static string UniqueName(string requested, ISet<string> names)
         {
             string baseName = string.IsNullOrWhiteSpace(requested) ? "CE-FEATURE-LINE" : requested.Trim();
@@ -1496,6 +1517,7 @@ namespace CETools.Civil3D
             internal ObjectId LayerId;
             internal string StyleName;
             internal ObjectId SiteId;
+            internal short ColorIndex;
             internal Relation Link;
         }
 
