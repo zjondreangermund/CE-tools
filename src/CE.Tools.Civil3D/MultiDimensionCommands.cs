@@ -93,19 +93,19 @@ namespace CETools.Civil3D
                 document.Database,
                 settings.Double("ArcLeader", 6.0));
 
-            DynamicMultiDimensionManager.BeginCommand(
-                document,
-                !string.Equals(settings.Text("Dynamic"), "Disabled", StringComparison.OrdinalIgnoreCase),
-                mode,
-                settings.Double("Offset", 8.0),
-                settings.Double("ArcLeader", 6.0));
-
             int sources = 0;
             int dimensions = 0;
             int skippedSources = 0;
             int skippedGeometry = 0;
             int failed = 0;
             string outputStyleName = string.Empty;
+
+            DynamicMultiDimensionManager.BeginCommand(
+                document,
+                !string.Equals(settings.Text("Dynamic"), "Disabled", StringComparison.OrdinalIgnoreCase),
+                mode,
+                settings.Double("Offset", 8.0),
+                settings.Double("ArcLeader", 6.0));
 
             try
             {
