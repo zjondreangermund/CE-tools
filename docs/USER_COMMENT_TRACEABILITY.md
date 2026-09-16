@@ -42,4 +42,35 @@ This register prevents the requirements gathered during Civil 3D 2023 testing fr
 - Replacing every remaining advanced command-line settings prompt with a dialog remains ongoing. The principal production, parking, quantity, hydraulic, survey/profile and drawing-production launchers are now window-driven; specialist geometry inputs and several older utility settings still use Civil 3D prompts.
 - Public code signing remains release-pipeline work. A safe in-product update check and a Windows Civil 3D GitHub workflow now exist; automatic binary replacement remains intentionally disabled until signed releases and a configured self-hosted Civil3D2023 runner are available.
 
+## September 16 field-comment completion
+
+The following comments are represented in canonical source and protected by
+`scripts/Validate-September16FieldComments.py`:
+
+- `CE_ROADJUNCTIONBATCH` detects every unique T/cross intersection across one
+  multiple selection of road-centre curves, creates all bellmouth returns in one
+  transaction, accepts independent main-road/side-road half-widths, one radius,
+  duplicate clustering and T-endpoint tolerance, and keeps every source curve
+  read-only.
+- `CE_ROADJUNCTIONCONSTRUCTION` remains the next explicit corridor operation:
+  choose all CE junction geometry, select multiple corridors, then apply the
+  configured station-cluster and extra before/after split distances.
+- `CE_ROADCORRIDORCOMPLETE` remains the single multiple-corridor front door for
+  target surface selection, tangent/curve/spiral/vertical/target frequencies,
+  TOP/DATUM surfaces and cut/fill slope-pattern rebuilding.
+- `CE_MULTIDIM` now owns its dynamic option and link capture in canonical source;
+  aligned, horizontal, vertical, angular, radius and arc-length outputs rebuild
+  from moved/grip-edited polylines and Civil 3D feature lines through the universal
+  refresh manager.
+- Whole-network and deferred sewer sequence paths now start at free/high branch
+  ends and progress toward the lowest-rim outlet/previously-owned downstream
+  junction.
+- Sewer rule recalculation remains explicit and transactional. A failing Civil 3D
+  rule is isolated and reported per part; it is never treated as a successful
+  calculation and never triggers network mutation from Application.Idle.
+
+These source completions still require a clean Civil 3D 2023 build and drawing
+acceptance for Autodesk API geometry, profile bands, target mapping, corridor
+regions/slope patterns and third-party rule DLL behaviour.
+
 The source regression gate is `scripts/Validate-UserCommentCoverage.py`.
