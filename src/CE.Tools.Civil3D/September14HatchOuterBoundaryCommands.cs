@@ -1,6 +1,8 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.Colors;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -161,7 +163,10 @@ namespace CETools.Civil3D
                 try { loop = hatch.GetLoopAt(index); }
                 catch { skippedLoops++; continue; }
 
-                if (loop == null || !loop.IsPolyline || loop.Polyline == null || loop.Polyline.Count < 2)
+                if (loop == null ||
+                    (loop.IsPolyline
+                        ? loop.Polyline == null || loop.Polyline.Count < 2
+                        : loop.Curves == null || loop.Curves.Count < 2))
                 {
                     skippedLoops++;
                     continue;
@@ -188,6 +193,31 @@ namespace CETools.Civil3D
 
         private static void AppendLoopEdges(HatchLoop loop, List<BoundaryEdge> edges, ref int skippedLoops)
         {
+            if (!loop.IsPolyline)
+            {
+                int before = edges.Count;
+                foreach (object curve in (IEnumerable)loop.Curves)
+                {
+                    if (curve == null) continue;
+                    PropertyInfo startProperty = curve.GetType().GetProperty("StartPoint");
+                    PropertyInfo endProperty = curve.GetType().GetProperty("EndPoint");
+                    if (startProperty == null || endProperty == null) continue;
+                    object startValue = startProperty.GetValue(curve, null);
+                    object endValue = endProperty.GetValue(curve, null);
+                    if (!(startValue is Point2d) || !(endValue is Point2d)) continue;
+                    Point2d start = (Point2d)startValue;
+                    Point2d end = (Point2d)endValue;
+                    if (start.GetDistanceTo(end) <= PointTolerance) continue;
+                    // Edge-defined hatches (the common associative-hatch form)
+                    // previously produced no output at all. Preserve their exact
+                    // vertices; curved edges are conservatively represented by
+                    // their chord when a bulge is not exposed by the host API.
+                    edges.Add(new BoundaryEdge(start, end, 0.0));
+                }
+                if (edges.Count == before) skippedLoops++;
+                return;
+            }
+
             var vertices = new List<BulgeVertex>();
             foreach (BulgeVertex vertex in loop.Polyline) vertices.Add(vertex);
 

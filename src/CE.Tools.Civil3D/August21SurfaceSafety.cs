@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
@@ -219,13 +220,16 @@ namespace CETools.Civil3D
                     int count = Math.Min(
                         current == null ? 0 : current.Count,
                         sampled.Count);
+                    var updated = new Point3dCollection();
                     for (int index = 0; index < count; index++)
                     {
-                        if (!sampled[index].HasValue) continue;
-                        if (Math.Abs(current[index].Z - sampled[index].Value) <= Tolerance)
-                            continue;
-                        featureLine.SetPointElevation(index, sampled[index].Value);
+                        Point3d point = current[index];
+                        updated.Add(sampled[index].HasValue
+                            ? new Point3d(point.X, point.Y, sampled[index].Value)
+                            : point);
                     }
+                    ApplyPointElevations(featureLine, updated);
+                    TryLinkRelativeToSurface(featureLine, surfaceId);
                     try { featureLine.RecordGraphicsModified(true); } catch { }
                     writeFeatureLine.Commit();
                 }
@@ -251,6 +255,71 @@ namespace CETools.Civil3D
             catch { }
             August21GraphicsRefreshManager.MarkDirty();
             return true;
+        }
+
+        private static void ApplyPointElevations(
+            CivilFeatureLine featureLine,
+            Point3dCollection points)
+        {
+            if (featureLine == null || points == null || points.Count == 0) return;
+
+            // SetPointElevation(int, ...) is not consistent across Civil 3D host
+            // versions: some releases address PI points while others address the
+            // combined point collection.  The bulk API accepts coordinates and is
+            // therefore stable for closed lines and lines with elevation points.
+            MethodInfo bulk = featureLine.GetType().GetMethod(
+                "SetPointsElevation",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                new[] { typeof(Point3dCollection) },
+                null);
+            if (bulk != null)
+            {
+                bulk.Invoke(featureLine, new object[] { points });
+                return;
+            }
+
+            MethodInfo byPoint = featureLine.GetType().GetMethod(
+                "SetPointElevation",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                new[] { typeof(Point3d), typeof(double) },
+                null);
+            if (byPoint != null)
+            {
+                foreach (Point3d point in points)
+                    byPoint.Invoke(featureLine, new object[] { point, point.Z });
+                return;
+            }
+
+            throw new InvalidOperationException(
+                "This Civil 3D host exposes no coordinate-safe feature-line elevation writer.");
+        }
+
+        private static void TryLinkRelativeToSurface(
+            CivilFeatureLine featureLine,
+            ObjectId surfaceId)
+        {
+            if (featureLine == null || surfaceId.IsNull) return;
+            try
+            {
+                PropertyInfo surfaceProperty = featureLine.GetType().GetProperty(
+                    "RelativeSurfaceId",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (surfaceProperty == null || !surfaceProperty.CanWrite ||
+                    surfaceProperty.PropertyType != typeof(ObjectId))
+                    return;
+                surfaceProperty.SetValue(featureLine, surfaceId, null);
+
+                Point3dCollection points = featureLine.GetPoints(FeatureLinePointType.PIPoint);
+                foreach (Point3d point in points)
+                    featureLine.SetPointRelativeElevation(point, true, 0.0);
+            }
+            catch
+            {
+                // Absolute elevations have already been applied. Older hosts that
+                // do not expose RelativeSurfaceId remain valid but non-dynamic.
+            }
         }
 
         internal static bool TrySampleElevations(

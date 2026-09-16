@@ -12,6 +12,7 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil;
+using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
@@ -73,6 +74,7 @@ namespace CETools.Civil3D
 
             bool all = string.Equals(settings.Text("Scope"), "All", StringComparison.OrdinalIgnoreCase);
             bool dynamic = IsYes(settings.Text("Dynamic"));
+            ObjectId exportSiteId = ResolveExportSite();
             var seen = new HashSet<int>();
             int scanned = 0;
             int matched = 0;
@@ -104,7 +106,7 @@ namespace CETools.Civil3D
                             matched++;
                             try
                             {
-                                ObjectId id = line.ExportAsGradingFeatureLine(ObjectId.Null, dynamic);
+                                ObjectId id = line.ExportAsGradingFeatureLine(exportSiteId, dynamic);
                                 if (!id.IsNull)
                                 {
                                     created++;
@@ -376,6 +378,28 @@ namespace CETools.Civil3D
                 dynamic ? "Yes" : "No",
                 status
             };
+        }
+
+        private static ObjectId ResolveExportSite()
+        {
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (civilDocument == null) return ObjectId.Null;
+            try
+            {
+                ObjectId first = civilDocument.GetSiteIds().Cast<ObjectId>().FirstOrDefault();
+                if (!first.IsNull) return first;
+
+                MethodInfo create = typeof(Site).GetMethod(
+                    "Create",
+                    BindingFlags.Public | BindingFlags.Static,
+                    null,
+                    new[] { typeof(CivilDocument), typeof(string) },
+                    null);
+                if (create == null) return ObjectId.Null;
+                object result = create.Invoke(null, new object[] { civilDocument, "CE-CORRIDOR-FEATURE-LINES" });
+                return result is ObjectId ? (ObjectId)result : ObjectId.Null;
+            }
+            catch { return ObjectId.Null; }
         }
 
         private static string ClassifyCode(string code)

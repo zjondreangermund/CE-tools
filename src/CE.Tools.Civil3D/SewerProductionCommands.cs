@@ -71,6 +71,20 @@ namespace CETools.Civil3D
             Editor editor = document.Editor;
             Database database = document.Database;
 
+            List<SewerAlignmentRecord> records;
+            using (Transaction alignmentRead = database.TransactionManager.StartTransaction())
+                records = ReadGeneratedAlignments(civilDocument, alignmentRead);
+            if (records.Count == 0)
+            {
+                editor.WriteMessage(
+                    "\nCE_SEWPROFILE found no CE sewer alignments. Alignment creation has been queued first; profile creation will resume after CE_SEWALIGN finishes.");
+                CeSequentialCommandRunner.Start(
+                    document,
+                    new[] { "CE_SEWALIGN", "CE_SEWPROFILE" },
+                    "CE sewer alignment + profile recovery");
+                return;
+            }
+
             PromptEntityOptions partOptions = new PromptEntityOptions(
                 "\nSelect one sewer pipe or structure from the network: ");
             PromptEntityResult partResult = editor.GetEntity(partOptions);
@@ -483,17 +497,6 @@ namespace CETools.Civil3D
                 "\nSpecify the upper-left insertion point for the first sewer profile view: ");
             if (pointResult.Status != PromptStatus.OK)
                 return;
-
-            List<SewerAlignmentRecord> records;
-            using (Transaction transaction = database.TransactionManager.StartTransaction())
-                records = ReadGeneratedAlignments(civilDocument, transaction);
-
-            if (records.Count == 0)
-            {
-                editor.WriteMessage(
-                    "\nCE_SEWPROFILE: no CE-generated sewer alignments were found. Run CE_SEWALIGN first.");
-                return;
-            }
 
             editor.WriteMessage(
                 "\nCE_SEWPROFILE preview. Branch alignments: {0}; views per row: {1}.",

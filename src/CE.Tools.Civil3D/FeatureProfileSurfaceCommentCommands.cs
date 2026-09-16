@@ -134,6 +134,7 @@ namespace CETools.Civil3D
                     }
 
                     featureLine.ColorIndex = window.ColourIndex;
+                    try { featureLine.RecordGraphicsModified(true); } catch { }
                     changed++;
                     if (ApplySite(featureLine, window.SelectedSiteId)) siteChanged++;
                 }
@@ -767,8 +768,27 @@ namespace CETools.Civil3D
                     null,
                     siteId.IsNull ? Type.EmptyTypes : new[] { typeof(ObjectId) },
                     null);
+                if (method != null)
+                {
+                    method.Invoke(featureLine, siteId.IsNull ? null : new object[] { siteId });
+                    return true;
+                }
+
+                // Civil 3D 2023 exposes site moves as static FeatureLine methods
+                // taking the feature-line ObjectId (and, for MoveToSite, SiteId).
+                Type[] signature = siteId.IsNull
+                    ? new[] { typeof(ObjectId) }
+                    : new[] { typeof(ObjectId), typeof(ObjectId) };
+                method = typeof(CivilFeatureLine).GetMethod(
+                    methodName,
+                    BindingFlags.Public | BindingFlags.Static,
+                    null,
+                    signature,
+                    null);
                 if (method == null) return false;
-                method.Invoke(featureLine, siteId.IsNull ? null : new object[] { siteId });
+                method.Invoke(null, siteId.IsNull
+                    ? new object[] { featureLine.ObjectId }
+                    : new object[] { featureLine.ObjectId, siteId });
                 return true;
             }
             catch

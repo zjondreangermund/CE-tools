@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -696,7 +697,7 @@ namespace CETools.Civil3D
                 Point3d point = points[index];
                 Point3d sourcePoint = source.GetClosestPointTo(
                     new Point3d(point.X, point.Y, 0.0), Vector3d.ZAxis, false);
-                child.SetPointElevation(index, sourcePoint.Z + verticalOffset);
+                SetElevationAtPoint(child, point, sourcePoint.Z + verticalOffset);
             }
 
             Point3dCollection sourceElevationPoints = source.GetPoints(
@@ -708,15 +709,33 @@ namespace CETools.Civil3D
                     double parameter = source.GetParameterAtPoint(sourcePoint);
                     Point3d target = child.GetPointAtParameter(parameter);
                     child.InsertElevationPoint(target);
-                    Point3dCollection updated = child.GetPoints(FeatureLinePointType.AllPoints);
-                    int index = ClosestIndex(updated, target);
-                    child.SetPointElevation(index, sourcePoint.Z + verticalOffset);
+                    SetElevationAtPoint(child, target, sourcePoint.Z + verticalOffset);
                 }
                 catch (ArgumentException)
                 {
                     // A PI or elevation point already exists at this location.
                 }
             }
+        }
+
+        private static void SetElevationAtPoint(CivilFeatureLine featureLine, Point3d point, double elevation)
+        {
+            MethodInfo method = featureLine.GetType().GetMethod(
+                "SetPointElevation",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                new[] { typeof(Point3d), typeof(double) },
+                null);
+            if (method != null)
+            {
+                method.Invoke(featureLine, new object[] { point, elevation });
+                return;
+            }
+
+            Point3dCollection piPoints = featureLine.GetPoints(FeatureLinePointType.PIPoint);
+            int index = ClosestIndex(piPoints, point);
+            if (index < 0) throw new InvalidOperationException("No writable feature-line PI point was found.");
+            featureLine.SetPointElevation(index, elevation);
         }
 
         private static Polyline BuildPlanPolyline(CivilFeatureLine source)

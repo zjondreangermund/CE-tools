@@ -627,13 +627,23 @@ namespace CETools.Civil3D
             {
                 if (target == null) continue;
                 if (TrySetObjectId(target, surfaceId, "TargetId", "SurfaceId")) changed++;
-                object ids = ReadProperty(target, "TargetIds") ?? ReadProperty(target, "ObjectIds");
+                object ids = ReadProperty(target, "TargetIds") ??
+                             ReadProperty(target, "ObjectIds") ??
+                             ReadProperty(target, "SurfaceTargetIds");
                 ObjectIdCollection collection = ids as ObjectIdCollection;
                 if (collection != null)
                 {
                     collection.Clear();
                     collection.Add(surfaceId);
                     changed++;
+                }
+                else
+                {
+                    var selected = new ObjectIdCollection { surfaceId };
+                    if (Invoke(target, "SetTargets", selected) ||
+                        Invoke(target, "SetTargetIds", selected) ||
+                        Invoke(target, "SetSurfaceTargets", selected))
+                        changed++;
                 }
             }
             if (targets != null) Invoke(region, "SetTargets", targets);

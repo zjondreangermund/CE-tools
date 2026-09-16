@@ -26,6 +26,14 @@ checks = {
         "CrossReturns(",
         "TReturns(",
         "CE_ROADJUNCTIONCONSTRUCTION",
+        '"Bellmouth geometry"',
+        'new[] { "Polylines", "Arcs" }',
+    ],
+    "src/CE.Tools.Civil3D/September16RuntimeRecoveryCommands.cs": [
+        '"CE_ALIGNREVERSEMULTI"',
+        '"CE_SURFACESTYLEMULTI"',
+        '"CE_ASSEMBLYCOPYSAFE"',
+        "WblockCloneObjects(",
     ],
     "src/CE.Tools.Civil3D/SewerSequenceCommands.cs": [
         "OrderBy(id => nodes[id].RimElevation)",

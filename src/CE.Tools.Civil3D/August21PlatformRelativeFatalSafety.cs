@@ -128,6 +128,7 @@ namespace CETools.Civil3D
                         continue;
                     }
 
+                    ApplyColour(document, candidateId, old.ColorIndex);
                     WriteRelation(document, candidateId, old.Link);
                     VerifyFeatureLine(document, candidateId);
                     if (!CommitCandidateSwap(document, old, candidateId, out error))
@@ -896,6 +897,7 @@ namespace CETools.Civil3D
                         LayerId = child.LayerId,
                         StyleName = child.StyleName,
                         SiteId = child.SiteId,
+                        ColorIndex = child.ColorIndex,
                         Link = relation
                     });
                 }
@@ -1217,6 +1219,25 @@ namespace CETools.Civil3D
             return candidate;
         }
 
+        private static void ApplyColour(Document document, ObjectId id, short colourIndex)
+        {
+            if (document == null || id.IsNull) return;
+            try
+            {
+                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine featureLine = OpenFeatureLine(transaction, id, OpenMode.ForWrite);
+                    if (featureLine != null)
+                    {
+                        featureLine.ColorIndex = colourIndex;
+                        try { featureLine.RecordGraphicsModified(true); } catch { }
+                    }
+                    transaction.Commit();
+                }
+            }
+            catch { }
+        }
+
         private static string UniqueName(string requested, ISet<string> names)
         {
             string baseName = string.IsNullOrWhiteSpace(requested) ? "CE-FEATURE-LINE" : requested.Trim();
@@ -1257,7 +1278,28 @@ namespace CETools.Civil3D
                 }
             }
             catch { }
-            featureLine.SetPointElevation(index, elevation);
+            // Civil 3D's integer setter addresses PI points, not the AllPoints
+            // collection used by the sampling code.  Passing an AllPoints index
+            // therefore throws eInvalidInput/out-of-range whenever elevation
+            // points are present.  Prefer the coordinate overload exposed by
+            // newer hosts and map back to the PI collection on older hosts.
+            MethodInfo pointSetter = featureLine.GetType().GetMethod(
+                "SetPointElevation",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                new[] { typeof(Point3d), typeof(double) },
+                null);
+            if (pointSetter != null)
+            {
+                pointSetter.Invoke(featureLine, new object[] { point, elevation });
+                return;
+            }
+
+            Point3dCollection piPoints = featureLine.GetPoints(FeatureLinePointType.PIPoint);
+            int piIndex = ClosestIndex(piPoints, point);
+            if (piIndex < 0)
+                throw new InvalidOperationException("The feature line has no writable PI point at the sampled location.");
+            featureLine.SetPointElevation(piIndex, elevation);
         }
 
         private static int ClosestIndex(Point3dCollection points, Point3d target)
@@ -1475,6 +1517,7 @@ namespace CETools.Civil3D
             internal ObjectId LayerId;
             internal string StyleName;
             internal ObjectId SiteId;
+            internal short ColorIndex;
             internal Relation Link;
         }
 

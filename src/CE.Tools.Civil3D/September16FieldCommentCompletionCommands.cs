@@ -51,6 +51,9 @@ namespace CETools.Civil3D
                 "First junction number in the batch.");
             model.AddPositiveDouble("TextHeight", "03 Numbering", "Paper text height", 2.5,
                 "Annotative label height.");
+            model.AddChoice("Output", "04 Output", "Bellmouth geometry", "Polylines",
+                "Create lightweight polylines for direct joining/editing, or native arcs.",
+                new[] { "Polylines", "Arcs" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             PromptSelectionResult selected = document.Editor.SelectImplied();
@@ -75,6 +78,7 @@ namespace CETools.Civil3D
             double textHeight = model.Double("TextHeight", 2.5);
             string prefix = CleanPrefix(model.Text("Prefix"));
             int startNumber = model.Integer("Start", 1);
+            bool polylines = string.Equals(model.Text("Output"), "Polylines", StringComparison.OrdinalIgnoreCase);
             int created = 0;
             int junctions = 0;
             int failedPairs = 0;
@@ -138,7 +142,7 @@ namespace CETools.Civil3D
                     foreach (ReturnDefinition definition in definitions)
                     {
                         returnNumber++;
-                        ObjectId arcId = CreateReturn(document.Database, transaction, space, layerId, definition, radius);
+                        ObjectId arcId = CreateReturn(document.Database, transaction, space, layerId, definition, radius, polylines);
                         if (arcId.IsNull) continue;
                         string label = prefix + junctionNumber.ToString(CultureInfo.InvariantCulture) + "." +
                             returnNumber.ToString(CultureInfo.InvariantCulture);
@@ -243,7 +247,7 @@ namespace CETools.Civil3D
             return new ReturnDefinition { Centre = centre, Start = start, Mid = middle, End = end };
         }
 
-        private static ObjectId CreateReturn(Database database, Transaction transaction, BlockTableRecord space, ObjectId layerId, ReturnDefinition definition, double radius)
+        private static ObjectId CreateReturn(Database database, Transaction transaction, BlockTableRecord space, ObjectId layerId, ReturnDefinition definition, double radius, bool asPolyline)
         {
             try
             {
@@ -262,16 +266,31 @@ namespace CETools.Civil3D
                 // generated geometry is the intended bellmouth quarter-circle.
                 double endSweep = PositiveSweep(startAngle, endAngle);
                 double midSweep = PositiveSweep(startAngle, midAngle);
-                Arc arc = midSweep <= endSweep + Tol
-                    ? new Arc(definition.Centre, Vector3d.ZAxis, radius, startAngle, endAngle)
-                    : new Arc(definition.Centre, Vector3d.ZAxis, radius, endAngle, startAngle);
+                bool forward = midSweep <= endSweep + Tol;
+                Entity output;
+                if (asPolyline)
+                {
+                    Point3d first = forward ? definition.Start : definition.End;
+                    Point3d last = forward ? definition.End : definition.Start;
+                    double sweep = forward ? endSweep : PositiveSweep(endAngle, startAngle);
+                    var polyline = new Polyline(2);
+                    polyline.AddVertexAt(0, new Point2d(first.X, first.Y), Math.Tan(sweep / 4.0), 0.0, 0.0);
+                    polyline.AddVertexAt(1, new Point2d(last.X, last.Y), 0.0, 0.0, 0.0);
+                    output = polyline;
+                }
+                else
+                {
+                    output = forward
+                        ? new Arc(definition.Centre, Vector3d.ZAxis, radius, startAngle, endAngle)
+                        : new Arc(definition.Centre, Vector3d.ZAxis, radius, endAngle, startAngle);
+                }
 
-                arc.SetDatabaseDefaults(database);
-                arc.LayerId = layerId;
-                arc.Color = Color.FromColorIndex(ColorMethod.ByLayer, 256);
-                ObjectId id = space.AppendEntity(arc);
-                transaction.AddNewlyCreatedDBObject(arc, true);
-                arc.XData = new ResultBuffer(
+                output.SetDatabaseDefaults(database);
+                output.LayerId = layerId;
+                output.Color = Color.FromColorIndex(ColorMethod.ByLayer, 256);
+                ObjectId id = space.AppendEntity(output);
+                transaction.AddNewlyCreatedDBObject(output, true);
+                output.XData = new ResultBuffer(
                     new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
                     new TypedValue((int)DxfCode.ExtendedDataAsciiString, "BATCH"),
                     new TypedValue((int)DxfCode.ExtendedDataReal, radius));
