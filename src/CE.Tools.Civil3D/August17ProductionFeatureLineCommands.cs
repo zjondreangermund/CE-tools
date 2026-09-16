@@ -125,14 +125,33 @@ namespace CETools.Civil3D
                                 }
                                 else
                                 {
-                                    failed++;
-                                    rows.Add(BuildExportRow(corridor, baseline, code, dynamic, "Export returned no object"));
+                                    ObjectId fallback = CreateStaticFallback(line, exportSiteId, transaction, document.Database);
+                                    if (!fallback.IsNull)
+                                    {
+                                        created++;
+                                        rows.Add(BuildCreatedFallbackRow(corridor, baseline, code, fallback, "Native export returned no object; static geometry fallback created"));
+                                    }
+                                    else
+                                    {
+                                        failed++;
+                                        rows.Add(BuildExportRow(corridor, baseline, code, dynamic, "Export returned no object"));
+                                    }
                                 }
                             }
-                            catch
+                            catch (System.Exception exception)
                             {
-                                failed++;
-                                rows.Add(BuildExportRow(corridor, baseline, code, dynamic, "Failed"));
+                                ObjectId fallback = CreateStaticFallback(line, exportSiteId, transaction, document.Database);
+                                if (!fallback.IsNull)
+                                {
+                                    created++;
+                                    rows.Add(BuildCreatedFallbackRow(corridor, baseline, code, fallback,
+                                        "Static fallback created after native export failed: " + exception.Message));
+                                }
+                                else
+                                {
+                                    failed++;
+                                    rows.Add(BuildExportRow(corridor, baseline, code, dynamic, "Failed: " + exception.Message));
+                                }
                             }
                         }
                     }
@@ -378,6 +397,53 @@ namespace CETools.Civil3D
                 dynamic ? "Yes" : "No",
                 status
             };
+        }
+
+        private static IList<string> BuildCreatedFallbackRow(
+            Corridor corridor, Baseline baseline, string code, ObjectId id, string status)
+        {
+            return new List<string>
+            {
+                corridor == null ? "-" : Display(corridor.Name),
+                baseline == null ? "-" : Display(baseline.Name),
+                Display(code),
+                ClassifyCode(code),
+                "CE-" + Display(code),
+                id.IsNull ? "-" : id.Handle.ToString(),
+                "No (static fallback)",
+                status
+            };
+        }
+
+        private static ObjectId CreateStaticFallback(
+            CorridorFeatureLine source,
+            ObjectId siteId,
+            Transaction transaction,
+            Database database)
+        {
+            if (source == null || transaction == null || database == null) return ObjectId.Null;
+            try
+            {
+                var points = new Point3dCollection();
+                foreach (FeatureLinePoint point in source.FeatureLinePoints)
+                    if (point != null) points.Add(point.XYZ);
+                if (points.Count < 2) return ObjectId.Null;
+
+                BlockTableRecord space = transaction.GetObject(database.CurrentSpaceId, OpenMode.ForWrite, false) as BlockTableRecord;
+                if (space == null) return ObjectId.Null;
+                var temporary = new Polyline3d(Poly3dType.SimplePoly, points, false);
+                temporary.SetDatabaseDefaults(database);
+                ObjectId temporaryId = space.AppendEntity(temporary);
+                transaction.AddNewlyCreatedDBObject(temporary, true);
+                string safeCode = Regex.Replace(source.CodeName ?? "FEATURE", "[^A-Za-z0-9_-]", "-");
+                string name = "CE-" + safeCode + "-" + Guid.NewGuid().ToString("N").Substring(0, 6);
+                ObjectId result = siteId.IsNull
+                    ? CivilFeatureLine.Create(name, temporaryId)
+                    : CivilFeatureLine.Create(name, temporaryId, siteId);
+                temporary.Erase();
+                return result;
+            }
+            catch { return ObjectId.Null; }
         }
 
         private static ObjectId ResolveExportSite()

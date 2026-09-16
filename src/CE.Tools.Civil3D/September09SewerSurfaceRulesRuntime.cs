@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -329,6 +330,15 @@ namespace CETools.Civil3D
             settings.AddChoice("Surface", "01 Surface", "Reference surface", surfaces[0].Name,
                 "Surface assigned to RefSurfaceId on every selected pipe and structure.",
                 surfaces.Select(item => item.Name).ToArray());
+            settings.AddChoice("RuleMode", "02 Pipe rules", "Rule input", "Enter CE rule values manually",
+                "Manual values are applied directly to editable network geometry; named mode uses installed Civil 3D rule-set styles.",
+                new[] { "Enter CE rule values manually", "Use Civil 3D rule sets" });
+            settings.AddPositiveDouble("MinSlope", "02 Pipe rules", "Minimum slope (%)", 1.0, "Minimum absolute pipe grade.");
+            settings.AddPositiveDouble("MaxSlope", "02 Pipe rules", "Maximum slope (%)", 12.0, "Maximum absolute pipe grade.");
+            settings.AddPositiveDouble("MinCover", "02 Pipe rules", "Minimum cover (m)", 0.834, "Minimum cover from the selected surface to the pipe crown.");
+            settings.AddPositiveDouble("MaxCover", "02 Pipe rules", "Maximum cover (m)", 10.0, "Maximum allowed cover; violations are reported.");
+            settings.AddPositiveDouble("MinLength", "02 Pipe rules", "Minimum pipe length (m)", 2.440, "Short pipes are reported because structure positions are preserved.");
+            settings.AddPositiveDouble("MaxLength", "02 Pipe rules", "Maximum pipe length (m)", 100.0, "Long pipes are reported because adding structures is a topology edit.");
             settings.AddChoice("PipeRules", "02 Pipe rules", "Apply pipe rules", "Apply selected rule set",
                 "Apply the selected pipe rule set after assigning the surface.",
                 new[] { "Apply selected rule set", "Do not apply pipe rules" });
@@ -339,6 +349,10 @@ namespace CETools.Civil3D
                 new[] { "Apply selected rule set", "Do not apply structure rules" });
             settings.AddChoice("StructureRuleSet", "03 Structure rules", "Structure rule set", structureChoices[0],
                 "Named Civil 3D Structure Rule Set for selected structures.", structureChoices);
+            settings.AddDouble("SumpDepth", "03 Structure rules", "Sump depth (m)", 0.0, "Depth below the lowest connected pipe invert.");
+            settings.AddChoice("DropReference", "03 Structure rules", "Drop reference location", "Crown", "Reference for structure drop checks.", new[] { "Crown", "Invert" });
+            settings.AddPositiveDouble("DropValue", "03 Structure rules", "Minimum drop value (m)", 0.050, "Minimum desired drop through a structure.");
+            settings.AddPositiveDouble("MaxDrop", "03 Structure rules", "Maximum drop value (m)", 3.0, "Maximum allowed drop; larger values are reported.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             NamedId surface = FindNamed(surfaces, settings.Text("Surface"));
@@ -347,15 +361,19 @@ namespace CETools.Civil3D
             ObjectId structureRuleSetId = ResolveRuleChoice(structureRuleSets, settings.Text("StructureRuleSet"));
             bool applyPipeRules = string.Equals(settings.Text("PipeRules"), "Apply selected rule set", StringComparison.OrdinalIgnoreCase);
             bool applyStructureRules = string.Equals(settings.Text("StructureRules"), "Apply selected rule set", StringComparison.OrdinalIgnoreCase);
+            bool manualRules = string.Equals(settings.Text("RuleMode"), "Enter CE rule values manually", StringComparison.OrdinalIgnoreCase);
 
             int pipes = 0;
             int structures = 0;
             int pipeRules = 0;
             int structureRules = 0;
+            int manualAdjusted = 0;
+            int manualWarnings = 0;
             int skipped = 0;
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
+                CivilSurface selectedSurface = transaction.GetObject(surface.Id, OpenMode.ForRead, false) as CivilSurface;
                 foreach (ObjectId id in partIds)
                 {
                     try
@@ -366,16 +384,26 @@ namespace CETools.Civil3D
                         CivilPipe pipe = part as CivilPipe;
                         if (pipe != null)
                         {
-                            if (!pipeRuleSetId.IsNull) pipe.RuleSetStyleId = pipeRuleSetId;
-                            if (applyPipeRules) { try { if (pipe.ApplyRules()) pipeRules++; } catch { } }
+                            if (manualRules)
+                                ApplyManualPipeRules(pipe, selectedSurface, settings, ref manualAdjusted, ref manualWarnings);
+                            else
+                            {
+                                if (!pipeRuleSetId.IsNull) pipe.RuleSetStyleId = pipeRuleSetId;
+                                if (applyPipeRules) { try { if (pipe.ApplyRules()) pipeRules++; } catch { } }
+                            }
                             pipes++;
                             continue;
                         }
                         CivilStructure structure = part as CivilStructure;
                         if (structure != null)
                         {
-                            if (!structureRuleSetId.IsNull) structure.RuleSetStyleId = structureRuleSetId;
-                            if (applyStructureRules) { try { if (structure.ApplyRules()) structureRules++; } catch { } }
+                            if (manualRules)
+                                ApplyManualStructureRules(structure, transaction, settings, ref manualAdjusted, ref manualWarnings);
+                            else
+                            {
+                                if (!structureRuleSetId.IsNull) structure.RuleSetStyleId = structureRuleSetId;
+                                if (applyStructureRules) { try { if (structure.ApplyRules()) structureRules++; } catch { } }
+                            }
                             structures++;
                             continue;
                         }
@@ -388,8 +416,8 @@ namespace CETools.Civil3D
 
             editor.Regen();
             editor.WriteMessage(
-                "\nCE_SEWLINKSURFACE complete. Surface='{0}'; pipes linked={1}; structures linked={2}; pipe rules applied={3}; structure rules applied={4}; skipped={5}.",
-                surface.Name, pipes, structures, pipeRules, structureRules, skipped);
+                "\nCE_SEWLINKSURFACE complete. Surface='{0}'; pipes linked={1}; structures linked={2}; pipe rules applied={3}; structure rules applied={4}; manual adjustments={5}; manual review warnings={6}; skipped={7}.",
+                surface.Name, pipes, structures, pipeRules, structureRules, manualAdjusted, manualWarnings, skipped);
         }
 
         internal static void CreateBranchAlignmentsSafe(Document document, CivilDocument civilDocument)
@@ -462,6 +490,247 @@ namespace CETools.Civil3D
             editor.WriteMessage("\nCE_SEWALIGN complete. Alignments created/refreshed={0}; skipped/failed={1}.", created, failed);
         }
 
+        internal static bool ApplyManualRulesToNetwork(
+            Document document,
+            ObjectId networkId,
+            ObjectId surfaceId,
+            ProductionSettingsDialogModel settings,
+            out int pipes,
+            out int structures,
+            out int warnings,
+            out string error,
+            out List<IList<string>> rows)
+        {
+            pipes = 0;
+            structures = 0;
+            warnings = 0;
+            error = string.Empty;
+            rows = new List<IList<string>>();
+            if (document == null || networkId.IsNull || surfaceId.IsNull || settings == null)
+            { error = "A network, surface and manual-rule settings are required."; return false; }
+            try
+            {
+                using (DocumentLock documentLock = document.LockDocument())
+                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                {
+                    CivilNetwork network = transaction.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
+                    CivilSurface surface = transaction.GetObject(surfaceId, OpenMode.ForRead, false) as CivilSurface;
+                    if (network == null || surface == null) throw new InvalidOperationException("The selected network or surface is no longer available.");
+                    foreach (ObjectId pipeId in network.GetPipeIds())
+                    {
+                        CivilPipe pipe = transaction.GetObject(pipeId, OpenMode.ForWrite, false) as CivilPipe;
+                        if (pipe == null || pipe.IsReferenceObject) continue;
+                        pipe.RefSurfaceId = surfaceId;
+                        int beforeWarnings = warnings;
+                        int adjusted = 0;
+                        ApplyManualPipeRules(pipe, surface, settings, ref adjusted, ref warnings);
+                        pipes++;
+                        rows.Add(new List<string>
+                        {
+                            "Pipe", pipe.Name ?? pipeId.Handle.ToString(), "Manual CE values",
+                            surface.Name, adjusted > 0 ? (warnings == beforeWarnings ? "Applied" : "Applied; review warning") : "Review required"
+                        });
+                    }
+                    foreach (ObjectId structureId in network.GetStructureIds())
+                    {
+                        CivilStructure structure = transaction.GetObject(structureId, OpenMode.ForWrite, false) as CivilStructure;
+                        if (structure == null || structure.IsReferenceObject) continue;
+                        structure.RefSurfaceId = surfaceId;
+                        int beforeWarnings = warnings;
+                        int adjusted = 0;
+                        ApplyManualStructureRules(structure, transaction, settings, ref adjusted, ref warnings);
+                        structures++;
+                        rows.Add(new List<string>
+                        {
+                            "Structure", structure.Name ?? structureId.Handle.ToString(), "Manual CE values",
+                            surface.Name, adjusted > 0 ? (warnings == beforeWarnings ? "Applied" : "Applied; review warning") : "Review required"
+                        });
+                    }
+                    transaction.Commit();
+                }
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                error = exception.Message;
+                return false;
+            }
+        }
+
+        private static void ApplyManualPipeRules(
+            CivilPipe pipe,
+            CivilSurface surface,
+            ProductionSettingsDialogModel settings,
+            ref int adjusted,
+            ref int warnings)
+        {
+            Point3d start;
+            Point3d end;
+            if (pipe == null || surface == null ||
+                !TryReadPoint(pipe, "StartPoint", out start) ||
+                !TryReadPoint(pipe, "EndPoint", out end))
+            {
+                warnings++;
+                return;
+            }
+
+            double run = Math.Sqrt(Math.Pow(end.X - start.X, 2.0) + Math.Pow(end.Y - start.Y, 2.0));
+            if (run < settings.Double("MinLength", 2.440) || run > settings.Double("MaxLength", 100.0))
+                warnings++;
+            if (run <= PointTolerance) { warnings++; return; }
+
+            double minimumSlope = Math.Abs(settings.Double("MinSlope", 1.0)) / 100.0;
+            double maximumSlope = Math.Max(minimumSlope, Math.Abs(settings.Double("MaxSlope", 12.0)) / 100.0);
+            double minimumCover = Math.Max(0.0, settings.Double("MinCover", 0.834));
+            double maximumCover = Math.Max(minimumCover, settings.Double("MaxCover", 10.0));
+            double diameter = Math.Max(0.0, ReadDouble(pipe,
+                "OuterDiameterOrWidth", "InnerDiameterOrWidth", "Diameter"));
+            double radius = diameter * 0.5;
+            double startSurface;
+            double endSurface;
+            try
+            {
+                startSurface = surface.FindElevationAtXY(start.X, start.Y);
+                endSurface = surface.FindElevationAtXY(end.X, end.Y);
+            }
+            catch { warnings++; return; }
+
+            double startZ = startSurface - minimumCover - radius;
+            double naturalEndZ = endSurface - minimumCover - radius;
+            double direction = naturalEndZ <= startZ ? -1.0 : 1.0;
+            double slope = Math.Abs(naturalEndZ - startZ) / run;
+            slope = Math.Max(minimumSlope, Math.Min(maximumSlope, slope));
+            double endZ = startZ + direction * slope * run;
+            double resultingEndCover = endSurface - (endZ + radius);
+            if (resultingEndCover < minimumCover - 1e-6 || resultingEndCover > maximumCover + 1e-6)
+                warnings++;
+
+            if (TrySetPoint(pipe, "StartPoint", new Point3d(start.X, start.Y, startZ)) &&
+                TrySetPoint(pipe, "EndPoint", new Point3d(end.X, end.Y, endZ)))
+                adjusted++;
+            else
+                warnings++;
+        }
+
+        private static void ApplyManualStructureRules(
+            CivilStructure structure,
+            Transaction transaction,
+            ProductionSettingsDialogModel settings,
+            ref int adjusted,
+            ref int warnings)
+        {
+            object connected = ReadReflectedProperty(structure, "ConnectedPipeIds") ??
+                               InvokeReflected(structure, "GetConnectedPipeIds");
+            var pipeIds = new List<ObjectId>();
+            System.Collections.IEnumerable values = connected as System.Collections.IEnumerable;
+            if (values != null)
+                foreach (object value in values)
+                    if (value is ObjectId) pipeIds.Add((ObjectId)value);
+
+            double lowestInvert = double.PositiveInfinity;
+            var dropLevels = new List<double>();
+            bool useCrown = string.Equals(settings.Text("DropReference"), "Crown", StringComparison.OrdinalIgnoreCase);
+            foreach (ObjectId id in pipeIds)
+            {
+                CivilPipe pipe = transaction.GetObject(id, OpenMode.ForRead, false) as CivilPipe;
+                Point3d point;
+                bool atStart = pipe != null && pipe.StartStructureId == structure.ObjectId;
+                bool atEnd = pipe != null && pipe.EndStructureId == structure.ObjectId;
+                if (!atStart && !atEnd) continue;
+                if (TryReadPoint(pipe, atStart ? "StartPoint" : "EndPoint", out point))
+                {
+                    double diameter = Math.Max(0.0, ReadDouble(pipe,
+                        "OuterDiameterOrWidth", "InnerDiameterOrWidth", "Diameter"));
+                    double radius = diameter * 0.5;
+                    double invert = point.Z - radius;
+                    lowestInvert = Math.Min(lowestInvert, invert);
+                    dropLevels.Add(useCrown ? point.Z + radius : invert);
+                }
+            }
+            if (double.IsInfinity(lowestInvert)) { warnings++; return; }
+
+            double sumpDepth = Math.Max(0.0, settings.Double("SumpDepth", 0.0));
+            if (TrySetDoubleProperty(structure, "SumpElevation", lowestInvert - sumpDepth)) adjusted++;
+            else warnings++;
+
+            // Length/topology and excessive-drop conditions are intentionally
+            // review warnings; CE Tools does not move structures or add/delete
+            // pipes behind the user's back.
+            double minimumDrop = Math.Max(0.0, settings.Double("DropValue", 0.050));
+            double maximumDrop = Math.Max(minimumDrop, settings.Double("MaxDrop", 3.0));
+            if (dropLevels.Count >= 2)
+            {
+                double drop = dropLevels.Max() - dropLevels.Min();
+                if (drop < minimumDrop - 1e-6 || drop > maximumDrop + 1e-6) warnings++;
+            }
+        }
+
+        private static bool TryReadPoint(object target, string name, out Point3d point)
+        {
+            point = Point3d.Origin;
+            object value = ReadReflectedProperty(target, name);
+            if (!(value is Point3d)) return false;
+            point = (Point3d)value;
+            return true;
+        }
+
+        private static bool TrySetPoint(object target, string name, Point3d value)
+        {
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite || property.PropertyType != typeof(Point3d)) return false;
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static bool TrySetDoubleProperty(object target, string name, double value)
+        {
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite || property.PropertyType != typeof(double)) return false;
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static double ReadDouble(object target, params string[] names)
+        {
+            foreach (string name in names)
+            {
+                object value = ReadReflectedProperty(target, name);
+                if (value == null) continue;
+                try { return Convert.ToDouble(value, CultureInfo.InvariantCulture); } catch { }
+            }
+            return 0.0;
+        }
+
+        private static object ReadReflectedProperty(object target, string name)
+        {
+            if (target == null) return null;
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                return property == null ? null : property.GetValue(target, null);
+            }
+            catch { return null; }
+        }
+
+        private static object InvokeReflected(object target, string name)
+        {
+            if (target == null) return null;
+            try
+            {
+                MethodInfo method = target.GetType().GetMethod(name, BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+                return method == null ? null : method.Invoke(target, null);
+            }
+            catch { return null; }
+        }
+
         private static bool CreateOneAlignmentSafely(Database database, CivilDocument civilDocument, BranchPath branch)
         {
             if (branch == null || branch.Points == null || branch.Points.Count < 2) return false;
@@ -517,6 +786,7 @@ namespace CETools.Civil3D
 
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
+                EnsureRegApp(database, transaction, "CE_TOOLS_SEWALIGN");
                 CivilAlignment created = transaction.GetObject(newAlignmentId, OpenMode.ForWrite, false) as CivilAlignment;
                 if (created == null) throw new InvalidOperationException("Civil 3D did not return the created alignment.");
 
@@ -532,9 +802,30 @@ namespace CETools.Civil3D
                 desiredName = MakeUniqueAlignmentName(civilDocument, transaction, desiredName, newAlignmentId);
                 created.Name = desiredName;
                 created.Description = "CE sewer alignment - " + branch.BranchName;
+                string networkHandle = string.Empty;
+                if (branch.PipeIds.Count > 0)
+                {
+                    CivilPipe sourcePipe = transaction.GetObject(branch.PipeIds[0], OpenMode.ForRead, false) as CivilPipe;
+                    if (sourcePipe != null && !sourcePipe.NetworkId.IsNull)
+                        networkHandle = sourcePipe.NetworkId.Handle.ToString();
+                }
+                created.XData = new ResultBuffer(
+                    new TypedValue((int)DxfCode.ExtendedDataRegAppName, "CE_TOOLS_SEWALIGN"),
+                    new TypedValue((int)DxfCode.ExtendedDataAsciiString, networkHandle + "|" + branch.BranchName),
+                    new TypedValue((int)DxfCode.ExtendedDataAsciiString, "Alignment"));
                 transaction.Commit();
             }
             return true;
+        }
+
+        private static void EnsureRegApp(Database database, Transaction transaction, string name)
+        {
+            RegAppTable applications = transaction.GetObject(database.RegAppTableId, OpenMode.ForRead, false) as RegAppTable;
+            if (applications == null || applications.Has(name)) return;
+            applications.UpgradeOpen();
+            var record = new RegAppTableRecord { Name = name };
+            applications.Add(record);
+            transaction.AddNewlyCreatedDBObject(record, true);
         }
 
         private static ObjectId EnsureStructure(

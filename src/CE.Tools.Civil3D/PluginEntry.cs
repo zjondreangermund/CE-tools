@@ -178,6 +178,7 @@ namespace CETools.Civil3D
                         "Create and review Civil 3D road assemblies before corridor generation.",
                         Cmd("Assembly Workflow", "CE_ASSEMBLYTOOLS ", "Open the ordered CE assembly workflow."),
                         Cmd("Create CE Road Assembly", "CE_ASSEMBLYCREATE ", "Create a named Civil 3D road assembly at a selected insertion point."),
+                        Cmd("Copy Assembly Between Drawings (Safe)", "CE_ASSEMBLYCOPYSAFE ", "Clone an assembly between open drawings without using the clipboard, which can freeze Civil 3D."),
                         Cmd("Assembly Register", "CE_ASSEMBLYREPORT ", "Review every assembly, style and subassembly count."),
                         Cmd("Project Style Centre", "CE_PROJECTSTYLES ", "Select the project assembly, corridor and code-set styles."),
                         Cmd("Create Road Corridors", "CE_ROADCORRIDORS ", "Create corridors using CE road alignment/profile pairs and the selected assembly."))));
@@ -198,6 +199,7 @@ namespace CETools.Civil3D
                         Cmd("Create Road Alignments", "CE_ROADALIGN ", "Create sequential linked road alignments from selected polylines."),
                         Cmd("Create Road Profiles", "CE_ROADPROFILES ", "Create existing-ground profiles and ordered profile views."),
                         Cmd("Create CE Road Assembly", "CE_ASSEMBLYCREATE ", "Create the Civil 3D assembly used by road corridor regions."),
+                        Cmd("Copy Assembly Between Drawings (Safe)", "CE_ASSEMBLYCOPYSAFE ", "Clone an assembly between open drawings without clipboard copy/paste."),
                         Cmd("Create Road Corridors", "CE_ROADCORRIDORS ", "Create one source-preserving corridor for each CE road alignment/profile pair."),
                         Cmd("Complete Road Corridors", "CE_ROADCORRIDORCOMPLETE ", "Apply supported regions, frequencies, targets, surfaces, boundaries, visibility and automatic rebuild settings."),
                         Cmd("Road Production Information", "CE_ROADPRODUCTIONINFO ", "Review road alignments, profiles, corridors and styles."),

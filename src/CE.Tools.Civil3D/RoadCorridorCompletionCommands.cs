@@ -45,6 +45,8 @@ namespace CETools.Civil3D
             if (document == null) return;
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (civilDocument == null) return;
+            ProjectStyleSelection project = ProjectStyleCenterCommands.ReadSelection(document.Database);
+            RoadProductionSettings road = RoadProductionSettings.Read(document.Database);
 
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Final Road Design Profiles",
@@ -54,6 +56,14 @@ namespace CETools.Civil3D
             model.AddDouble("MaxGrade", "01 Vertical Design", "Maximum grade (%)", 8.0, "Absolute maximum grade used between sampled PVIs.");
             model.AddPositiveInteger("Intervals", "02 Sampling", "Design intervals", 8, "Number of equal station intervals used to seed editable design PVIs.");
             model.AddText("Suffix", "03 Naming", "Design profile suffix", "FG", "Final profiles are named Road-FG by default.");
+            model.AddChoice("ProfileStyle", "04 Civil 3D Styles", "Final profile line style",
+                RoadStyle(road, project, "Profile Style"),
+                "Choose the installed Civil 3D line style used by every generated final road profile.",
+                CivilStyleCatalogV2.ReadNames(document.Database, civilDocument, "Profile Style"));
+            model.AddChoice("ProfileLabelStyle", "04 Civil 3D Styles", "Final profile label set",
+                RoadStyle(road, project, "Profile Label Set Style"),
+                "Choose the label set applied to every generated final road profile.",
+                CivilStyleCatalogV2.ReadNames(document.Database, civilDocument, "Profile Label Set Style"));
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             double offset = model.Double("Offset", 0.15);
@@ -61,8 +71,6 @@ namespace CETools.Civil3D
             double maximumGrade = Math.Max(Math.Abs(model.Double("MaxGrade", 8.0)) / 100.0, minimumGrade);
             int intervals = Math.Max(model.Integer("Intervals", 8), 2);
             string suffix = string.IsNullOrWhiteSpace(model.Text("Suffix")) ? "FG" : model.Text("Suffix").Trim();
-            ProjectStyleSelection project = ProjectStyleCenterCommands.ReadSelection(document.Database);
-            RoadProductionSettings road = RoadProductionSettings.Read(document.Database);
             int created = 0;
             int viewsUpdated = 0;
             var rows = new List<IList<string>>();
@@ -74,11 +82,11 @@ namespace CETools.Civil3D
                     string actualStyle;
                     ObjectId styleId = CivilStyleCatalogV2.ResolveStyleId(
                         document.Database, civilDocument, "Profile Style",
-                        RoadStyle(road, project, "Profile Style"), transaction, out actualStyle);
+                        model.Text("ProfileStyle"), transaction, out actualStyle);
                     string actualLabels;
                     ObjectId labelSetId = CivilStyleCatalogV2.ResolveStyleId(
                         document.Database, civilDocument, "Profile Label Set Style",
-                        RoadStyle(road, project, "Profile Label Set Style"), transaction, out actualLabels);
+                        model.Text("ProfileLabelStyle"), transaction, out actualLabels);
                     ObjectId layerId = GetOrCreateLayer(document.Database, transaction,
                         string.IsNullOrWhiteSpace(road.ProfileLayer) ? "CE-ROAD-DESIGN-PROFILE" : road.ProfileLayer);
 
@@ -98,7 +106,7 @@ namespace CETools.Civil3D
                             "CE final road profile | NGL={0} | offset={1:R} | grade-range={2:R}-{3:R}",
                             ngl.Name, offset, minimumGrade, maximumGrade);
                         created++;
-                        int bound = BindDesignToProfileViews(document.Database, alignmentId, ngl.ObjectId, profileId, transaction);
+                        int bound = BindDesignToProfileViews(document.Database, alignment, profileId, transaction);
                         viewsUpdated += bound;
                         rows.Add(new List<string>
                         {
@@ -185,6 +193,7 @@ namespace CETools.Civil3D
             RoadCorridorCompletionOptions options = new RoadCorridorCompletionOptions
             {
                 TargetSurfaceId = surfacePicker.Selected.Id,
+                TargetSurfaceName = surfacePicker.Selected.Name,
                 TopSurfaceName = SafeName(model.Text("TopName"), "CE-TOP"),
                 BottomSurfaceName = SafeName(model.Text("BottomName"), "CE-BOTTOM"),
                 AssemblyName = model.Text("Assembly"),
@@ -211,7 +220,7 @@ namespace CETools.Civil3D
                     result.Targets, result.Surfaces, result.Boundaries,
                     result.VisibilitySettings, result.AutomaticRebuildSettings,
                     result.SlopePatterns, result.Rebuilt, result.Warnings),
-                new List<string> { "Corridor", "Baselines", "Regions", "Frequencies", "Targets", "Surfaces", "Boundaries", "Visible", "Auto Rebuild", "Slope Patterns", "Status" },
+                new List<string> { "Corridor", "Target Surface", "Baselines", "Regions", "Frequencies", "Targets", "Surfaces", "Boundaries", "Visible", "Auto Rebuild", "Slope Patterns", "Status" },
                 result.Rows,
                 "CE TOOLS ROAD CORRIDOR COMPLETION REGISTER");
         }
@@ -320,6 +329,7 @@ namespace CETools.Civil3D
                     result.Rows.Add(new List<string>
                     {
                         name,
+                        string.IsNullOrWhiteSpace(options.TargetSurfaceName) ? "-" : options.TargetSurfaceName,
                         (result.Baselines - beforeBaseline).ToString(CultureInfo.CurrentCulture),
                         (result.Regions - beforeRegion).ToString(CultureInfo.CurrentCulture),
                         (result.FrequencySettings - beforeFrequency).ToString(CultureInfo.CurrentCulture),
@@ -466,8 +476,14 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static int BindDesignToProfileViews(Database database, ObjectId alignmentId, ObjectId nglId, ObjectId designId, Transaction transaction)
+        private static int BindDesignToProfileViews(Database database, CivilAlignment alignment, ObjectId designId, Transaction transaction)
         {
+            if (alignment == null) return 0;
+            ObjectId alignmentId = alignment.ObjectId;
+            ObjectId leftId = FindRoadRoleProfile(alignment, transaction, "LEFT", "HL");
+            ObjectId rightId = FindRoadRoleProfile(alignment, transaction, "RIGHT", "HR");
+            if (leftId.IsNull) leftId = designId;
+            if (rightId.IsNull) rightId = designId;
             int updated = 0;
             BlockTableRecord model = transaction.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(database), OpenMode.ForRead, false) as BlockTableRecord;
             if (model == null) return 0;
@@ -479,10 +495,23 @@ namespace CETools.Civil3D
                 if (value == null || value.GetType().Name.IndexOf("ProfileView", StringComparison.OrdinalIgnoreCase) < 0) continue;
                 ObjectId linkedAlignment = ReadObjectId(value, "AlignmentId");
                 if (!linkedAlignment.IsNull && linkedAlignment != alignmentId) continue;
-                ProfileViewBandDataBinder.Bind(value, nglId, designId, ObjectId.Null);
+                ProfileViewBandDataBinder.BindRoad(value, leftId, designId, rightId, designId);
                 updated++;
             }
             return updated;
+        }
+
+        private static ObjectId FindRoadRoleProfile(CivilAlignment alignment, Transaction transaction, params string[] tokens)
+        {
+            foreach (ObjectId id in alignment.GetProfileIds())
+            {
+                CivilProfile profile = transaction.GetObject(id, OpenMode.ForRead, false) as CivilProfile;
+                if (profile == null) continue;
+                string identity = ((profile.Name ?? string.Empty) + " " + (profile.Description ?? string.Empty)).ToUpperInvariant();
+                if (tokens.Any(token => identity.IndexOf(token, StringComparison.OrdinalIgnoreCase) >= 0))
+                    return id;
+            }
+            return ObjectId.Null;
         }
 
         private static List<string> ReadAssemblyNames(Document document, CivilDocument civilDocument)
@@ -626,7 +655,16 @@ namespace CETools.Civil3D
             foreach (object target in CivilStyleDiscovery.Enumerate(targets))
             {
                 if (target == null) continue;
-                if (TrySetObjectId(target, surfaceId, "TargetId", "SurfaceId")) changed++;
+                string identity = (Convert.ToString(ReadProperty(target, "TargetType"), CultureInfo.InvariantCulture) + " " +
+                    Convert.ToString(ReadProperty(target, "LogicalName"), CultureInfo.InvariantCulture) + " " +
+                    Convert.ToString(ReadProperty(target, "Name"), CultureInfo.InvariantCulture)).Trim().ToUpperInvariant();
+                if (identity.Length > 0 &&
+                    identity.IndexOf("SURFACE", StringComparison.Ordinal) < 0 &&
+                    identity.IndexOf("ELEVATION", StringComparison.Ordinal) < 0 &&
+                    identity.IndexOf("DAYLIGHT", StringComparison.Ordinal) < 0)
+                    continue;
+
+                bool assigned = TrySetObjectId(target, surfaceId, "TargetId", "SurfaceId");
                 object ids = ReadProperty(target, "TargetIds") ??
                              ReadProperty(target, "ObjectIds") ??
                              ReadProperty(target, "SurfaceTargetIds");
@@ -635,7 +673,7 @@ namespace CETools.Civil3D
                 {
                     collection.Clear();
                     collection.Add(surfaceId);
-                    changed++;
+                    assigned = true;
                 }
                 else
                 {
@@ -643,10 +681,12 @@ namespace CETools.Civil3D
                     if (Invoke(target, "SetTargets", selected) ||
                         Invoke(target, "SetTargetIds", selected) ||
                         Invoke(target, "SetSurfaceTargets", selected))
-                        changed++;
+                        assigned = true;
                 }
+                if (assigned) changed++;
             }
-            if (targets != null) Invoke(region, "SetTargets", targets);
+            if (targets != null && !Invoke(region, "SetTargets", targets))
+                Invoke(region, "ApplyTargets", targets);
             return changed;
         }
 
@@ -943,6 +983,7 @@ namespace CETools.Civil3D
     internal sealed class RoadCorridorCompletionOptions
     {
         internal ObjectId TargetSurfaceId { get; set; }
+        internal string TargetSurfaceName { get; set; }
         internal string AssemblyName { get; set; }
         internal string TopSurfaceName { get; set; }
         internal string BottomSurfaceName { get; set; }
