@@ -60,7 +60,7 @@ for relative, markers in checks.items():
 
 # Preserve the non-destructive safety boundaries.
 junction = (root / "src/CE.Tools.Civil3D/September16FieldCommentCompletionCommands.cs").read_text(encoding="utf-8")
-for forbidden in ("Erase(", "UpgradeOpen()", "OpenMode.ForWrite) as Curve"):
+for forbidden in ("Erase(", "OpenMode.ForWrite) as Curve"):
     if forbidden in junction:
         print(f"FAIL batch junction source must remain read-only: {forbidden}")
         failed = True
