@@ -43,7 +43,7 @@ jobs:
           road = Path('src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs')
           sewer = Path('src/CE.Tools.Civil3D/SewerProductionCommands.cs')
 
-          # CS0266: Civil 3D FeatureLine.ColorIndex is Int32 while SourceSnapshot stores Int16.
+          # CS0266: SourceSnapshot.ColorIndex is Int16 while Civil 3D returns Int32.
           text = read_text(grading)
           if text is None:
               raise SystemExit(f'Unable to read {grading}')
@@ -58,14 +58,15 @@ jobs:
               raise SystemExit(f'Expected SourceSnapshot ColorIndex assignment not found in {grading}')
 
           # CS1061: RecordGraphicsModified belongs to Entity, not DBObject.
-          def patch_graphics(path: Path):
+          def patch_graphics(path: Path, variable: str):
               text = read_text(path)
               if text is None:
                   raise SystemExit(f'Unable to read {path}')
-              if 'graphicsEntity.RecordGraphicsModified(true);' in text:
+              marker = f'graphicsEntity.RecordGraphicsModified(true);'
+              if marker in text:
                   return
               newline = '\r\n' if '\r\n' in text else '\n'
-              pattern = re.compile(r'(?m)^([ \t]*)try \{ value\.RecordGraphicsModified\(true\); \} catch \{ \}\r?$')
+              pattern = re.compile(r'(?m)^([ \t]*)try \{ ' + re.escape(variable) + r'\.RecordGraphicsModified\(true\); \} catch \{ \}\r?$')
               matches = list(pattern.finditer(text))
               if len(matches) != 1:
                   raise SystemExit(f'Expected one DBObject RecordGraphicsModified blocker in {path}, found {len(matches)}')
@@ -74,7 +75,7 @@ jobs:
                   return (
                       indent + 'try' + newline
                       + indent + '{' + newline
-                      + indent + '    Entity graphicsEntity = value as Entity;' + newline
+                      + indent + f'    Entity graphicsEntity = {variable} as Entity;' + newline
                       + indent + '    if (graphicsEntity != null)' + newline
                       + indent + '        graphicsEntity.RecordGraphicsModified(true);' + newline
                       + indent + '}' + newline
@@ -83,8 +84,8 @@ jobs:
               text = pattern.sub(repl, text, count=1)
               write_text(path, text)
 
-          patch_graphics(road)
-          patch_graphics(sewer)
+          patch_graphics(road, 'value')
+          patch_graphics(sewer, 'view')
 
           # Prevent installer/finalizer scripts from reintroducing these exact blockers.
           scripts = Path('scripts')
@@ -99,6 +100,9 @@ jobs:
                   new_text = new_text.replace(
                       'try { value.RecordGraphicsModified(true); } catch { }',
                       'try { Entity graphicsEntity = value as Entity; if (graphicsEntity != null) graphicsEntity.RecordGraphicsModified(true); } catch { }')
+                  new_text = new_text.replace(
+                      'try { view.RecordGraphicsModified(true); } catch { }',
+                      'try { Entity graphicsEntity = view as Entity; if (graphicsEntity != null) graphicsEntity.RecordGraphicsModified(true); } catch { }')
                   if new_text != text:
                       write_text(path, new_text)
 
@@ -108,10 +112,10 @@ jobs:
           if stale_color in grading_text or fixed_color not in grading_text:
               errors.append(f'{grading}: SourceSnapshot ColorIndex assignment is not compile-safe')
 
-          bare_graphics = re.compile(r'(?m)^\s*try \{ value\.RecordGraphicsModified\(true\); \} catch \{ \}\s*$')
+          stale_graphics = re.compile(r'(?m)^\s*try \{ (?:value|view)\.RecordGraphicsModified\(true\); \} catch \{ \}\s*$')
           for path in (road, sewer):
               current = read_text(path) or ''
-              if bare_graphics.search(current):
+              if stale_graphics.search(current):
                   errors.append(f'{path}: DBObject RecordGraphicsModified call remains')
               if 'graphicsEntity.RecordGraphicsModified(true);' not in current:
                   errors.append(f'{path}: Entity graphics refresh call is missing')
@@ -123,7 +127,7 @@ jobs:
                   text = read_text(path)
                   if text is None:
                       continue
-                  if stale_color in text or bare_graphics.search(text):
+                  if stale_color in text or stale_graphics.search(text):
                       errors.append(f'{path}: stale compile-blocker template remains')
 
           if errors:
