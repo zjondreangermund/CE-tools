@@ -69,12 +69,26 @@ if ($flood.Contains($oldLowPointCall)) {
 
 # Create a native Civil 3D Catchment as part of the same CE command. Keep CE plan
 # graphics even when a drawing has no catchment style; the bridge reports that
-# condition without corrupting source terrain or centreline objects.
+# condition without corrupting source terrain or centreline objects. The September
+# 17 field-failure repair changed CreateDrawingOutput to accept Document so support
+# both the new and historical invocation shapes.
 $nativeCall = '                FloodNativeCatchmentBridge.TryCreate(document.Database, result);'
 if (-not $flood.Contains($nativeCall)) {
-    $anchor = '                CreateDrawingOutput(document.Database, result);'
-    $index = $flood.IndexOf($anchor,[StringComparison]::Ordinal)
-    if ($index -lt 0) {
+    $anchors = @(
+        '                CreateDrawingOutput(document, result);',
+        '                CreateDrawingOutput(document.Database, result);'
+    )
+    $anchor = $null
+    $index = -1
+    foreach ($candidate in $anchors) {
+        $candidateIndex = $flood.IndexOf($candidate,[StringComparison]::Ordinal)
+        if ($candidateIndex -ge 0) {
+            $anchor = $candidate
+            $index = $candidateIndex
+            break
+        }
+    }
+    if ($index -lt 0 -or [string]::IsNullOrEmpty($anchor)) {
         throw 'August 24 Flood Production native Catchment insertion anchor missing.'
     }
     $insertAt = $index + $anchor.Length
