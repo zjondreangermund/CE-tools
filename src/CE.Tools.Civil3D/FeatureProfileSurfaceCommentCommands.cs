@@ -120,6 +120,7 @@ namespace CETools.Civil3D
             int changed = 0;
             int siteChanged = 0;
             int rejected = 0;
+            var changedIds = new List<ObjectId>();
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 foreach (SelectedObject selected in selection.Value)
@@ -136,10 +137,20 @@ namespace CETools.Civil3D
                     featureLine.ColorIndex = window.ColourIndex;
                     try { featureLine.RecordGraphicsModified(true); } catch { }
                     changed++;
-                    if (ApplySite(featureLine, window.SelectedSiteId)) siteChanged++;
+                    changedIds.Add(featureLine.ObjectId);
                 }
                 transaction.Commit();
             }
+
+            // Native site moves must run after the object write transaction closes.
+            // Opening the same feature line ForWrite and then asking Civil 3D's
+            // static MoveToSite API to reopen it is why every assignment returned 0.
+            foreach (ObjectId id in changedIds)
+                if (ApplySite(id, window.SelectedSiteId)) siteChanged++;
+
+            August23PlatformDynamicGradingCommands.SynchronizeLinkedAppearance(
+                document,
+                changedIds);
 
             // Appearance-only edits must not start the linked-feature-line rebuild
             // pipeline while Civil 3D is still releasing the selected objects.  That
@@ -761,29 +772,26 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static bool ApplySite(CivilFeatureLine featureLine, ObjectId siteId)
+        private static bool ApplySite(ObjectId featureLineId, ObjectId siteId)
         {
             try
             {
-                string methodName = siteId.IsNull ? "MoveToNoneSite" : "MoveToSite";
-                MethodInfo method = featureLine.GetType().GetMethod(
-                    methodName,
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null,
-                    siteId.IsNull ? Type.EmptyTypes : new[] { typeof(ObjectId) },
-                    null);
-                if (method != null)
+                if (featureLineId.IsNull || featureLineId.Database == null) return false;
+                using (Transaction transaction = featureLineId.Database.TransactionManager.StartTransaction())
                 {
-                    method.Invoke(featureLine, siteId.IsNull ? null : new object[] { siteId });
-                    return true;
+                    CivilFeatureLine current = transaction.GetObject(
+                        featureLineId,
+                        OpenMode.ForRead,
+                        false) as CivilFeatureLine;
+                    if (current != null && current.SiteId == siteId) return true;
                 }
-
+                string methodName = siteId.IsNull ? "MoveToNoneSite" : "MoveToSite";
                 // Civil 3D 2023 exposes site moves as static FeatureLine methods
                 // taking the feature-line ObjectId (and, for MoveToSite, SiteId).
                 Type[] signature = siteId.IsNull
                     ? new[] { typeof(ObjectId) }
                     : new[] { typeof(ObjectId), typeof(ObjectId) };
-                method = typeof(CivilFeatureLine).GetMethod(
+                MethodInfo method = typeof(CivilFeatureLine).GetMethod(
                     methodName,
                     BindingFlags.Public | BindingFlags.Static,
                     null,
@@ -791,8 +799,8 @@ namespace CETools.Civil3D
                     null);
                 if (method == null) return false;
                 method.Invoke(null, siteId.IsNull
-                    ? new object[] { featureLine.ObjectId }
-                    : new object[] { featureLine.ObjectId, siteId });
+                    ? new object[] { featureLineId }
+                    : new object[] { featureLineId, siteId });
                 return true;
             }
             catch

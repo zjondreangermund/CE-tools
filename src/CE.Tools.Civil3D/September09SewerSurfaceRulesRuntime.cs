@@ -650,7 +650,17 @@ namespace CETools.Civil3D
             if (double.IsInfinity(lowestInvert)) { warnings++; return; }
 
             double sumpDepth = Math.Max(0.0, settings.Double("SumpDepth", 0.0));
-            if (TrySetDoubleProperty(structure, "SumpElevation", lowestInvert - sumpDepth)) adjusted++;
+            // Civil 3D stores the displayed sump differently according to
+            // ControlSumpBy. Set the control mode first, then its depth value, and
+            // also provide the corresponding absolute elevation for hosts that do
+            // not expose SumpDepth as a public property.
+            TrySetEnumProperty(structure, "ControlSumpBy", "Depth", "ByDepth");
+            bool depthSet = TrySetDoubleProperty(structure, "SumpDepth", sumpDepth);
+            bool elevationSet = TrySetDoubleProperty(
+                structure,
+                "SumpElevation",
+                lowestInvert - sumpDepth);
+            if (depthSet || elevationSet) adjusted++;
             else warnings++;
 
             // Length/topology and excessive-drop conditions are intentionally
@@ -696,6 +706,33 @@ namespace CETools.Civil3D
                 return true;
             }
             catch { return false; }
+        }
+
+        private static bool TrySetEnumProperty(
+            object target,
+            string name,
+            params string[] values)
+        {
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    name,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite || !property.PropertyType.IsEnum)
+                    return false;
+                foreach (string value in values)
+                {
+                    try
+                    {
+                        object parsed = Enum.Parse(property.PropertyType, value, true);
+                        property.SetValue(target, parsed, null);
+                        return true;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return false;
         }
 
         private static double ReadDouble(object target, params string[] names)

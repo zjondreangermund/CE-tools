@@ -131,7 +131,7 @@ namespace CETools.Civil3D
                     invertRl);
 
                 if (!ShowPreCreateReview(result)) return;
-                CreateDrawingOutput(document.Database, result);
+                CreateDrawingOutput(document, result);
                 August21DisplayRefresh.Flush(document);
                 ShowHydraflowReview(result);
                 editor.WriteMessage(
@@ -485,16 +485,18 @@ namespace CETools.Civil3D
                 "Create Flood Design");
         }
 
-        private static void CreateDrawingOutput(Database database, FloodDesignResult result)
+        private static void CreateDrawingOutput(Document document, FloodDesignResult result)
         {
+            Database database = document.Database;
+            using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
-                EnsureLayer(database, transaction, OutputLayer);
+                ObjectId layerId = EnsureLayer(database, transaction, OutputLayer);
                 BlockTableRecord space = transaction.GetObject(database.CurrentSpaceId, OpenMode.ForWrite, false) as BlockTableRecord;
                 if (space == null) throw new InvalidOperationException("Current drawing space is unavailable.");
 
                 var lowCircle = new Circle(result.LowPoint.Point, Vector3d.ZAxis, 2.0 * result.Settings.UnitsPerMetre);
-                AddEntity(space, transaction, lowCircle);
+                AddEntity(database, space, transaction, lowCircle, layerId);
 
                 var route = new Polyline();
                 for (int i = 0; i < result.Route.Count; i++)
@@ -502,18 +504,18 @@ namespace CETools.Civil3D
                     Point3d point = SurfaceHydrologyCommands.CellPoint(result.Sample, result.Route[i].Index, false);
                     route.AddVertexAt(route.NumberOfVertices, new Point2d(point.X, point.Y), 0.0, 0.0, 0.0);
                 }
-                AddEntity(space, transaction, route);
                 Point3d routeMid = PointAlongPolyline(route, route.Length * 0.5);
+                AddEntity(database, space, transaction, route, layerId);
                 AddText(space, transaction, routeMid,
                     result.Settings.Description + " WATERCOURSE\\P" +
                     (result.RouteSummary.LengthMetres / 1000.0).ToString("0.###", CultureInfo.CurrentCulture) + " km | S=" +
                     (result.RouteSummary.SlopeDecimal * 100.0).ToString("0.###", CultureInfo.CurrentCulture) + "%",
-                    result.Settings);
+                    result.Settings, database, layerId);
 
                 ISet<int> catchmentSet = new HashSet<int>(result.Catchment.Select(item => item.Index));
                 foreach (GridCell cell in result.Catchment)
                     foreach (PlanEdge edge in ExposedEdges(result.Sample, cell, catchmentSet))
-                        AddEntity(space, transaction, new Line(edge.Start, edge.End));
+                        AddEntity(database, space, transaction, new Line(edge.Start, edge.End), layerId);
 
                 Point3d areaLabelPoint = AverageCatchmentPoint(result.Sample, result.Catchment);
                 int dp = result.Settings.DesignReturnPeriod;
@@ -523,9 +525,9 @@ namespace CETools.Civil3D
                     "i" + dp + "=" + result.Intensities[dp].ToString("0.##", CultureInfo.CurrentCulture) + " mm/h | " +
                     "C=" + result.Settings.RunoffCoefficient.ToString("0.###", CultureInfo.CurrentCulture) + " | " +
                     "Q" + dp + "=" + result.Flows[dp].ToString("0.###", CultureInfo.CurrentCulture) + " m³/s",
-                    result.Settings);
+                    result.Settings, database, layerId);
 
-                AddText(space, transaction, result.LowPoint.Point + new Vector3d(3.0 * result.Settings.UnitsPerMetre, 3.0 * result.Settings.UnitsPerMetre, 0.0), BuildLowPointText(result), result.Settings);
+                AddText(space, transaction, result.LowPoint.Point + new Vector3d(3.0 * result.Settings.UnitsPerMetre, 3.0 * result.Settings.UnitsPerMetre, 0.0), BuildLowPointText(result), result.Settings, database, layerId);
                 transaction.Commit();
             }
         }
@@ -577,34 +579,36 @@ namespace CETools.Civil3D
             return new Point3d(x / count, y / count, z / count);
         }
 
-        private static void AddText(BlockTableRecord space, Transaction transaction, Point3d point, string text, FloodDesignSettings settings)
+        private static void AddText(BlockTableRecord space, Transaction transaction, Point3d point, string text, FloodDesignSettings settings, Database database, ObjectId layerId)
         {
             var mtext = new MText
             {
                 Location = point,
                 Contents = text,
                 TextHeight = Math.Max(0.1, settings.PaperTextHeight * settings.UnitsPerMetre),
-                Attachment = AttachmentPoint.MiddleCenter,
-                Layer = OutputLayer
+                Attachment = AttachmentPoint.MiddleCenter
             };
-            AddEntity(space, transaction, mtext);
+            AddEntity(database, space, transaction, mtext, layerId);
         }
 
-        private static void AddEntity(BlockTableRecord space, Transaction transaction, Entity entity)
+        private static void AddEntity(Database database, BlockTableRecord space, Transaction transaction, Entity entity, ObjectId layerId)
         {
-            entity.Layer = OutputLayer;
+            entity.SetDatabaseDefaults(database);
+            entity.LayerId = layerId;
             space.AppendEntity(entity);
             transaction.AddNewlyCreatedDBObject(entity, true);
         }
 
-        private static void EnsureLayer(Database database, Transaction transaction, string name)
+        private static ObjectId EnsureLayer(Database database, Transaction transaction, string name)
         {
             LayerTable table = transaction.GetObject(database.LayerTableId, OpenMode.ForRead, false) as LayerTable;
-            if (table == null || table.Has(name)) return;
+            if (table == null) return ObjectId.Null;
+            if (table.Has(name)) return table[name];
             table.UpgradeOpen();
             var layer = new LayerTableRecord { Name = name };
-            table.Add(layer);
+            ObjectId id = table.Add(layer);
             transaction.AddNewlyCreatedDBObject(layer, true);
+            return id;
         }
 
         private static Point3d PointAlongPolyline(Polyline polyline, double distance)

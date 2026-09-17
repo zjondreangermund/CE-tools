@@ -1373,97 +1373,116 @@ namespace CETools.Civil3D
 
             try
             {
+                var prepared = new List<ObjectId>();
                 using (DocumentLock documentLock = document.LockDocument())
-                using (Transaction transaction =
-                    document.Database.TransactionManager.StartTransaction())
                 {
-                    string resolved;
-                    ObjectId primaryId = CivilStyleCatalogV2.ResolveStyleId(
-                        document.Database,
-                        civilDocument,
-                        "Profile View Band Set Style",
-                        primaryName,
-                        transaction,
-                        out resolved);
-                    if (primaryId.IsNull && autoImport)
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
                     {
-                        transaction.Abort();
-                        result.StylesImported += ImportBundledStyles(document);
-                        return Apply(
-                            document,
-                            viewIds,
-                            primaryName,
-                            secondaryName,
-                            replace,
-                            false,
-                            result);
-                    }
-                    ObjectId secondaryId = ObjectId.Null;
-                    if (Useful(secondaryName))
-                    {
-                        secondaryId = CivilStyleCatalogV2.ResolveStyleId(
+                        string resolved;
+                        ObjectId primaryId = CivilStyleCatalogV2.ResolveStyleId(
                             document.Database,
                             civilDocument,
                             "Profile View Band Set Style",
-                            secondaryName,
+                            primaryName,
                             transaction,
                             out resolved);
+                        if (primaryId.IsNull && autoImport)
+                        {
+                            transaction.Abort();
+                            result.StylesImported += ImportBundledStyles(document);
+                            return Apply(
+                                document,
+                                viewIds,
+                                primaryName,
+                                secondaryName,
+                                replace,
+                                false,
+                                result);
+                        }
+                        ObjectId secondaryId = ObjectId.Null;
+                        if (Useful(secondaryName))
+                        {
+                            secondaryId = CivilStyleCatalogV2.ResolveStyleId(
+                                document.Database,
+                                civilDocument,
+                                "Profile View Band Set Style",
+                                secondaryName,
+                                transaction,
+                                out resolved);
+                        }
+
+                        foreach (ObjectId viewId in viewIds.Distinct())
+                        {
+                            DBObject view;
+                            try
+                            {
+                                view = transaction.GetObject(
+                                    viewId,
+                                    OpenMode.ForWrite,
+                                    false);
+                            }
+                            catch
+                            {
+                                result.Skipped++;
+                                continue;
+                            }
+                            if (view == null || view.GetType().Name.IndexOf(
+                                    "ProfileView",
+                                    StringComparison.OrdinalIgnoreCase) < 0)
+                            {
+                                result.Skipped++;
+                                continue;
+                            }
+                            result.ProfileViews++;
+                            if (ApplyBandSet(
+                                    view,
+                                    primaryId,
+                                    replace,
+                                    false)) result.BandSetsApplied++;
+                            if (!secondaryId.IsNull && ApplyBandSet(
+                                    view,
+                                    secondaryId,
+                                    false,
+                                    true)) result.BandSetsApplied++;
+                            prepared.Add(viewId);
+                        }
+                        transaction.Commit();
                     }
 
-                    foreach (ObjectId viewId in viewIds.Distinct())
+                    // Imported band rows and profile views must be committed before
+                    // their live profiles/network parts are assigned.
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
                     {
-                        DBObject view;
-                        try
+                        foreach (ObjectId viewId in prepared)
                         {
-                            view = transaction.GetObject(
+                            DBObject view = transaction.GetObject(
                                 viewId,
                                 OpenMode.ForWrite,
                                 false);
-                        }
-                        catch
-                        {
-                            result.Skipped++;
-                            continue;
-                        }
-                        if (view == null || view.GetType().Name.IndexOf(
-                                "ProfileView",
-                                StringComparison.OrdinalIgnoreCase) < 0)
-                        {
-                            result.Skipped++;
-                            continue;
-                        }
-                        ObjectId alignmentId = ReadObjectId(
-                            view,
-                            "AlignmentId", "ParentAlignmentId");
-                        List<ObjectId> profiles = ReadProfiles(
-                            transaction,
-                            alignmentId);
-                        ObjectId networkId = ReadLinkedNetwork(
-                            document.Database,
-                            view);
-                        result.ProfileViews++;
-                        if (ApplyBandSet(
+                            ObjectId alignmentId = ReadObjectId(
                                 view,
-                                primaryId,
-                                replace,
-                                false)) result.BandSetsApplied++;
-                        if (!secondaryId.IsNull && ApplyBandSet(
+                                "AlignmentId", "ParentAlignmentId");
+                            List<ObjectId> profiles = ReadProfiles(
+                                transaction,
+                                alignmentId);
+                            ObjectId networkId = ReadLinkedNetwork(
+                                document.Database,
+                                view);
+                            result.BandItemsLinked += LinkBandItems(
                                 view,
-                                secondaryId,
-                                false,
-                                true)) result.BandSetsApplied++;
-                        result.BandItemsLinked += LinkBandItems(
-                            view,
-                            alignmentId,
-                            profiles,
-                            networkId);
-                        result.NetworkPartsAdded += AddNetworkParts(
-                            transaction,
-                            networkId,
-                            viewId,
-                            ReadBranchName(view));
+                                alignmentId,
+                                profiles,
+                                networkId);
+                            result.NetworkPartsAdded += AddNetworkParts(
+                                transaction,
+                                networkId,
+                                viewId,
+                                ReadBranchName(view));
+                        }
+                        transaction.Commit();
                     }
-                    transaction.Commit();
                 }
             }
             catch (System.Exception exception)

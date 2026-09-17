@@ -74,6 +74,7 @@ namespace CETools.Civil3D
             int created = 0;
             int viewsUpdated = 0;
             var rows = new List<IList<string>>();
+            var createdProfiles = new List<KeyValuePair<ObjectId, ObjectId>>();
 
             try
             {
@@ -106,16 +107,37 @@ namespace CETools.Civil3D
                             "CE final road profile | NGL={0} | offset={1:R} | grade-range={2:R}-{3:R}",
                             ngl.Name, offset, minimumGrade, maximumGrade);
                         created++;
-                        int bound = BindDesignToProfileViews(document.Database, alignment, profileId, transaction);
-                        viewsUpdated += bound;
+                        createdProfiles.Add(new KeyValuePair<ObjectId, ObjectId>(alignmentId, profileId));
                         rows.Add(new List<string>
                         {
                             alignment.Name, ngl.Name, name,
                             offset.ToString("N3", CultureInfo.CurrentCulture),
                             (minimumGrade * 100.0).ToString("N2", CultureInfo.CurrentCulture),
                             (maximumGrade * 100.0).ToString("N2", CultureInfo.CurrentCulture),
-                            bound.ToString(CultureInfo.CurrentCulture)
+                            "0"
                         });
+                    }
+                    transaction.Commit();
+                }
+
+                // Profile and profile-view band sources are materialised by Civil
+                // only after the profile-creation transaction commits.
+                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                {
+                    for (int index = 0; index < createdProfiles.Count; index++)
+                    {
+                        KeyValuePair<ObjectId, ObjectId> item = createdProfiles[index];
+                        CivilAlignment alignment = transaction.GetObject(
+                            item.Key,
+                            OpenMode.ForRead,
+                            false) as CivilAlignment;
+                        int bound = BindDesignToProfileViews(
+                            document.Database,
+                            alignment,
+                            item.Value,
+                            transaction);
+                        viewsUpdated += bound;
+                        rows[index][6] = bound.ToString(CultureInfo.CurrentCulture);
                     }
                     transaction.Commit();
                 }
@@ -496,6 +518,7 @@ namespace CETools.Civil3D
                 ObjectId linkedAlignment = ReadObjectId(value, "AlignmentId");
                 if (!linkedAlignment.IsNull && linkedAlignment != alignmentId) continue;
                 ProfileViewBandDataBinder.BindRoad(value, leftId, designId, rightId, designId);
+                try { value.RecordGraphicsModified(true); } catch { }
                 updated++;
             }
             return updated;
@@ -665,6 +688,11 @@ namespace CETools.Civil3D
                     continue;
 
                 bool assigned = TrySetObjectId(target, surfaceId, "TargetId", "SurfaceId");
+                var selected = new ObjectIdCollection { surfaceId };
+                assigned = TrySetObjectIdCollection(
+                    target,
+                    selected,
+                    "TargetIds", "ObjectIds", "SurfaceTargetIds") || assigned;
                 object ids = ReadProperty(target, "TargetIds") ??
                              ReadProperty(target, "ObjectIds") ??
                              ReadProperty(target, "SurfaceTargetIds");
@@ -677,7 +705,6 @@ namespace CETools.Civil3D
                 }
                 else
                 {
-                    var selected = new ObjectIdCollection { surfaceId };
                     if (Invoke(target, "SetTargets", selected) ||
                         Invoke(target, "SetTargetIds", selected) ||
                         Invoke(target, "SetSurfaceTargets", selected))
@@ -688,6 +715,31 @@ namespace CETools.Civil3D
             if (targets != null && !Invoke(region, "SetTargets", targets))
                 Invoke(region, "ApplyTargets", targets);
             return changed;
+        }
+
+        private static bool TrySetObjectIdCollection(
+            object target,
+            ObjectIdCollection value,
+            params string[] names)
+        {
+            if (target == null || value == null) return false;
+            foreach (string name in names)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(
+                        name,
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (property != null && property.CanWrite &&
+                        property.PropertyType.IsInstanceOfType(value))
+                    {
+                        property.SetValue(target, value, null);
+                        return true;
+                    }
+                }
+                catch { }
+            }
+            return false;
         }
 
         private static int ApplyAssemblyFrequencies(
@@ -1020,8 +1072,8 @@ namespace CETools.Civil3D
     internal sealed class CivilChoice
     {
         internal CivilChoice(ObjectId id, string name) { Id = id; Name = name ?? string.Empty; }
-        internal ObjectId Id { get; private set; }
-        internal string Name { get; private set; }
+        public ObjectId Id { get; private set; }
+        public string Name { get; private set; }
         public override string ToString() { return Name; }
     }
 
@@ -1049,6 +1101,11 @@ namespace CETools.Civil3D
             root.Children.Add(heading);
             _list = new System.Windows.Controls.ListBox { ItemsSource = choices == null ? new List<CivilChoice>() : choices.ToList(), DisplayMemberPath = "Name" };
             if (_list.Items.Count > 0) _list.SelectedIndex = 0;
+            _list.MouseDoubleClick += delegate
+            {
+                Selected = _list.SelectedItem as CivilChoice;
+                if (Selected != null) { Accepted = true; DialogResult = true; }
+            };
             root.Children.Add(_list);
         }
         internal bool Accepted { get; private set; }

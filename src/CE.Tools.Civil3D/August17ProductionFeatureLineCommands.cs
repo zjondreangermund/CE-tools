@@ -4,7 +4,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Reflection;
-using System.Runtime.CompilerServices;
+using System.Text;
 using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -75,7 +75,7 @@ namespace CETools.Civil3D
             bool all = string.Equals(settings.Text("Scope"), "All", StringComparison.OrdinalIgnoreCase);
             bool dynamic = IsYes(settings.Text("Dynamic"));
             ObjectId exportSiteId = ResolveExportSite();
-            var seen = new HashSet<int>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             int scanned = 0;
             int matched = 0;
             int created = 0;
@@ -94,15 +94,16 @@ namespace CETools.Civil3D
 
                     foreach (Baseline baseline in corridor.Baselines)
                     {
-                        foreach (CorridorFeatureLine line in EnumerateBaselineFeatureLines(baseline))
+                        foreach (CorridorFeatureLine line in EnumerateBaselineFeatureLines(baseline)
+                            .OrderBy(item => CodePriority(item == null ? string.Empty : item.CodeName)))
                         {
                             if (line == null) continue;
-                            int identity = RuntimeHelpers.GetHashCode(line);
-                            if (!seen.Add(identity)) continue;
                             scanned++;
 
                             string code = line.CodeName ?? string.Empty;
                             if (!all && !MatchesRequestedGroup(code, settings, exactCodes)) continue;
+                            string identity = corridorId.Handle.ToString() + ":" + GeometryFingerprint(line);
+                            if (!seen.Add(identity)) continue;
                             matched++;
                             try
                             {
@@ -382,6 +383,47 @@ namespace CETools.Civil3D
             if (IsYes(settings.Text("Toe")) && ContainsAny(normalized, "TOE", "DAYLIGHT", "CUT", "FILL")) return true;
             if (IsYes(settings.Text("Other")) && !IsKnownGroup(normalized)) return true;
             return false;
+        }
+
+        private static int CodePriority(string code)
+        {
+            string normalized = Regex.Replace((code ?? string.Empty).ToUpperInvariant(), "[^A-Z0-9]", string.Empty);
+            if (normalized.Contains("SUBBASE") || normalized.Contains("DATUM")) return 30;
+            if (normalized.Contains("FILL") || normalized.Contains("CUT")) return 20;
+            return 0;
+        }
+
+        private static string GeometryFingerprint(CorridorFeatureLine line)
+        {
+            if (line == null) return Guid.NewGuid().ToString("N");
+            var points = new List<Point3d>();
+            try
+            {
+                foreach (FeatureLinePoint point in line.FeatureLinePoints)
+                    if (point != null) points.Add(point.XYZ);
+            }
+            catch { }
+            if (points.Count == 0) return Guid.NewGuid().ToString("N");
+
+            string forward = PointSequenceKey(points);
+            points.Reverse();
+            string reverse = PointSequenceKey(points);
+            return string.CompareOrdinal(forward, reverse) <= 0 ? forward : reverse;
+        }
+
+        private static string PointSequenceKey(IEnumerable<Point3d> points)
+        {
+            var builder = new StringBuilder();
+            foreach (Point3d point in points)
+            {
+                long x = (long)Math.Round(point.X * 1000.0, MidpointRounding.AwayFromZero);
+                long y = (long)Math.Round(point.Y * 1000.0, MidpointRounding.AwayFromZero);
+                builder.Append(x.ToString(CultureInfo.InvariantCulture));
+                builder.Append(',');
+                builder.Append(y.ToString(CultureInfo.InvariantCulture));
+                builder.Append(';');
+            }
+            return builder.ToString();
         }
 
         private static IList<string> BuildExportRow(Corridor corridor, Baseline baseline, string code, bool dynamic, string status)
