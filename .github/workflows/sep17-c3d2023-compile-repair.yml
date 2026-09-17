@@ -1,0 +1,151 @@
+name: Sep17 Civil 3D 2023 compile repair
+
+on:
+  push:
+    branches:
+      - fix/sep17-c3d2023-compile
+
+permissions:
+  contents: write
+
+jobs:
+  repair:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repair branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Patch Civil 3D 2023 compile blockers and stale repair templates
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          ROOT = Path('.')
+          changed = []
+
+          def read_text(path: Path):
+              try:
+                  with path.open('r', encoding='utf-8', newline='') as fh:
+                      return fh.read()
+              except (UnicodeDecodeError, OSError):
+                  return None
+
+          def write_text(path: Path, text: str):
+              with path.open('w', encoding='utf-8', newline='') as fh:
+                  fh.write(text)
+              changed.append(str(path))
+
+          # 1) ColorIndex is Int32 in the Autodesk API; the stored ACI variable is Int16.
+          grading = Path('src/CE.Tools.Civil3D/August23PlatformDynamicGradingCommands.cs')
+          text = read_text(grading)
+          if text is None:
+              raise SystemExit(f'Unable to read {grading}')
+          stale_color = 'short aci = source.ColorIndex;'
+          fixed_color = 'short aci = (short)source.ColorIndex;'
+          if stale_color in text:
+              if text.count(stale_color) != 1:
+                  raise SystemExit(f'Expected one ColorIndex compile blocker in {grading}, found {text.count(stale_color)}')
+              text = text.replace(stale_color, fixed_color)
+              write_text(grading, text)
+          elif fixed_color not in text:
+              raise SystemExit(f'Expected ColorIndex assignment not found in {grading}')
+
+          # 2/3) RecordGraphicsModified belongs to Entity, not DBObject.
+          def patch_graphics(path: Path):
+              text = read_text(path)
+              if text is None:
+                  raise SystemExit(f'Unable to read {path}')
+              if 'graphicsEntity.RecordGraphicsModified(true);' in text:
+                  return
+              newline = '\r\n' if '\r\n' in text else '\n'
+              pattern = re.compile(r'(?m)^([ \t]*)value\.RecordGraphicsModified\(true\);\r?$')
+              matches = list(pattern.finditer(text))
+              if len(matches) != 1:
+                  raise SystemExit(f'Expected one DBObject RecordGraphicsModified compile blocker in {path}, found {len(matches)}')
+              def repl(match):
+                  indent = match.group(1)
+                  return (
+                      indent + 'Entity graphicsEntity = value as Entity;' + newline
+                      + indent + 'if (graphicsEntity != null)' + newline
+                      + indent + '    graphicsEntity.RecordGraphicsModified(true);'
+                  )
+              text = pattern.sub(repl, text, count=1)
+              write_text(path, text)
+
+          road = Path('src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs')
+          sewer = Path('src/CE.Tools.Civil3D/SewerProductionCommands.cs')
+          patch_graphics(road)
+          patch_graphics(sewer)
+
+          # Keep late installer/finalizer/repair scripts from re-introducing the exact stale source.
+          # Only touch script files containing these exact obsolete source fragments.
+          script_color_old = stale_color
+          script_color_new = fixed_color
+          script_graphics_old = 'value.RecordGraphicsModified(true);'
+          script_graphics_new = '((Entity)value).RecordGraphicsModified(true);'
+          scripts = Path('scripts')
+          if scripts.exists():
+              for path in scripts.rglob('*'):
+                  if not path.is_file():
+                      continue
+                  text = read_text(path)
+                  if text is None:
+                      continue
+                  new_text = text.replace(script_color_old, script_color_new)
+                  new_text = new_text.replace(script_graphics_old, script_graphics_new)
+                  if new_text != text:
+                      write_text(path, new_text)
+
+          # Validate the three authoritative source fixes.
+          grading_text = read_text(grading) or ''
+          road_text = read_text(road) or ''
+          sewer_text = read_text(sewer) or ''
+          errors = []
+          if stale_color in grading_text or fixed_color not in grading_text:
+              errors.append('ColorIndex assignment is not Civil 3D 2023 compile-safe')
+          for path, current in ((road, road_text), (sewer, sewer_text)):
+              if re.search(r'(?m)^\s*value\.RecordGraphicsModified\(true\);\s*$', current):
+                  errors.append(f'{path}: DBObject RecordGraphicsModified call remains')
+              if 'graphicsEntity.RecordGraphicsModified(true);' not in current:
+                  errors.append(f'{path}: Entity graphics refresh call is missing')
+
+          # Also ensure no known late script can put these exact old fragments back.
+          if scripts.exists():
+              for path in scripts.rglob('*'):
+                  if not path.is_file():
+                      continue
+                  text = read_text(path)
+                  if text is None:
+                      continue
+                  if script_color_old in text or script_graphics_old in text:
+                      errors.append(f'{path}: stale compile-blocker template remains')
+
+          if errors:
+              print('\n'.join(errors), file=sys.stderr)
+              raise SystemExit(1)
+
+          print('Patched/verified Civil 3D 2023 compile blockers:')
+          if changed:
+              for item in changed:
+                  print(f'  - {item}')
+          else:
+              print('  - source was already compile-safe')
+          PY
+
+      - name: Commit repair and remove one-shot workflow
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/sep17-c3d2023-compile-repair.yml
+          git add src/CE.Tools.Civil3D/August23PlatformDynamicGradingCommands.cs \
+                  src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs \
+                  src/CE.Tools.Civil3D/SewerProductionCommands.cs \
+                  scripts
+          git commit -m "Fix Civil 3D 2023 compile blockers"
+          git push origin HEAD:fix/sep17-c3d2023-compile
