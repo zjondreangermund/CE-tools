@@ -45,12 +45,13 @@ jobs:
           road = Path('src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs')
           sewer = Path('src/CE.Tools.Civil3D/SewerProductionCommands.cs')
 
-          # CS0266: Autodesk ColorIndex is Int32; the persisted ACI value is Int16.
+          stale_color = 'short aci = source.ColorIndex;'
+          fixed_color = 'short aci = (short)source.ColorIndex;'
+
+          # CS0266: ColorIndex is Int32; the saved ACI value is Int16.
           text = read_text(grading)
           if text is None:
               raise SystemExit(f'Unable to read {grading}')
-          stale_color = 'short aci = source.ColorIndex;'
-          fixed_color = 'short aci = (short)source.ColorIndex;'
           if stale_color in text:
               if text.count(stale_color) != 1:
                   raise SystemExit(f'Expected one ColorIndex blocker in {grading}, found {text.count(stale_color)}')
@@ -59,7 +60,7 @@ jobs:
           elif fixed_color not in text:
               raise SystemExit(f'Expected ColorIndex assignment not found in {grading}')
 
-          # CS1061: RecordGraphicsModified is an Entity API, not a DBObject API.
+          # CS1061: RecordGraphicsModified belongs to Entity, not DBObject.
           def patch_graphics(path: Path):
               text = read_text(path)
               if text is None:
@@ -84,7 +85,7 @@ jobs:
           patch_graphics(road)
           patch_graphics(sewer)
 
-          # Prevent late installer/finalizer scripts from restoring these exact stale fragments.
+          # Stop late installer/finalizer scripts from restoring the exact obsolete fragments.
           scripts = Path('scripts')
           if scripts.exists():
               for path in scripts.rglob('*'):
@@ -98,19 +99,21 @@ jobs:
                   if new_text != text:
                       write_text(path, new_text)
 
-          # Authoritative validation before commit.
+          # Validate authoritative source files.
           grading_text = read_text(grading) or ''
           road_text = read_text(road) or ''
           sewer_text = read_text(sewer) or ''
           errors = []
           if stale_color in grading_text or fixed_color not in grading_text:
               errors.append(f'{grading}: ColorIndex assignment is not compile-safe')
+          bare_graphics = re.compile(r'(?m)^\s*value\.RecordGraphicsModified\(true\);\s*$')
           for path, current in ((road, road_text), (sewer, sewer_text)):
-              if re.search(r'(?m)^\s*value\.RecordGraphicsModified\(true\);\s*$', current):
+              if bare_graphics.search(current):
                   errors.append(f'{path}: DBObject RecordGraphicsModified call remains')
               if 'graphicsEntity.RecordGraphicsModified(true);' not in current:
                   errors.append(f'{path}: Entity graphics refresh call is missing')
 
+          # In scripts, only a bare generated source line is stale; the explicit Entity cast is valid.
           if scripts.exists():
               for path in scripts.rglob('*'):
                   if not path.is_file():
@@ -118,7 +121,7 @@ jobs:
                   text = read_text(path)
                   if text is None:
                       continue
-                  if stale_color in text or 'value.RecordGraphicsModified(true);' in text:
+                  if stale_color in text or bare_graphics.search(text):
                       errors.append(f'{path}: stale compile-blocker template remains')
 
           if errors:
