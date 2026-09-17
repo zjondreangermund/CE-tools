@@ -25,7 +25,6 @@ jobs:
           import re
           import sys
 
-          ROOT = Path('.')
           changed = []
 
           def read_text(path: Path):
@@ -40,22 +39,25 @@ jobs:
                   fh.write(text)
               changed.append(str(path))
 
-          # 1) ColorIndex is Int32 in the Autodesk API; the stored ACI variable is Int16.
           grading = Path('src/CE.Tools.Civil3D/August23PlatformDynamicGradingCommands.cs')
+          road = Path('src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs')
+          sewer = Path('src/CE.Tools.Civil3D/SewerProductionCommands.cs')
+
+          # CS0266: Civil 3D FeatureLine.ColorIndex is Int32 while SourceSnapshot stores Int16.
           text = read_text(grading)
           if text is None:
               raise SystemExit(f'Unable to read {grading}')
-          stale_color = 'short aci = source.ColorIndex;'
-          fixed_color = 'short aci = (short)source.ColorIndex;'
+          stale_color = 'ColorIndex = source.ColorIndex,'
+          fixed_color = 'ColorIndex = (short)source.ColorIndex,'
           if stale_color in text:
               if text.count(stale_color) != 1:
-                  raise SystemExit(f'Expected one ColorIndex compile blocker in {grading}, found {text.count(stale_color)}')
-              text = text.replace(stale_color, fixed_color)
+                  raise SystemExit(f'Expected one SourceSnapshot ColorIndex blocker in {grading}, found {text.count(stale_color)}')
+              text = text.replace(stale_color, fixed_color, 1)
               write_text(grading, text)
           elif fixed_color not in text:
-              raise SystemExit(f'Expected ColorIndex assignment not found in {grading}')
+              raise SystemExit(f'Expected SourceSnapshot ColorIndex assignment not found in {grading}')
 
-          # 2/3) RecordGraphicsModified belongs to Entity, not DBObject.
+          # CS1061: RecordGraphicsModified belongs to Entity, not DBObject.
           def patch_graphics(path: Path):
               text = read_text(path)
               if text is None:
@@ -63,31 +65,28 @@ jobs:
               if 'graphicsEntity.RecordGraphicsModified(true);' in text:
                   return
               newline = '\r\n' if '\r\n' in text else '\n'
-              pattern = re.compile(r'(?m)^([ \t]*)value\.RecordGraphicsModified\(true\);\r?$')
+              pattern = re.compile(r'(?m)^([ \t]*)try \{ value\.RecordGraphicsModified\(true\); \} catch \{ \}\r?$')
               matches = list(pattern.finditer(text))
               if len(matches) != 1:
-                  raise SystemExit(f'Expected one DBObject RecordGraphicsModified compile blocker in {path}, found {len(matches)}')
+                  raise SystemExit(f'Expected one DBObject RecordGraphicsModified blocker in {path}, found {len(matches)}')
               def repl(match):
                   indent = match.group(1)
                   return (
-                      indent + 'Entity graphicsEntity = value as Entity;' + newline
-                      + indent + 'if (graphicsEntity != null)' + newline
-                      + indent + '    graphicsEntity.RecordGraphicsModified(true);'
+                      indent + 'try' + newline
+                      + indent + '{' + newline
+                      + indent + '    Entity graphicsEntity = value as Entity;' + newline
+                      + indent + '    if (graphicsEntity != null)' + newline
+                      + indent + '        graphicsEntity.RecordGraphicsModified(true);' + newline
+                      + indent + '}' + newline
+                      + indent + 'catch { }'
                   )
               text = pattern.sub(repl, text, count=1)
               write_text(path, text)
 
-          road = Path('src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs')
-          sewer = Path('src/CE.Tools.Civil3D/SewerProductionCommands.cs')
           patch_graphics(road)
           patch_graphics(sewer)
 
-          # Keep late installer/finalizer/repair scripts from re-introducing the exact stale source.
-          # Only touch script files containing these exact obsolete source fragments.
-          script_color_old = stale_color
-          script_color_new = fixed_color
-          script_graphics_old = 'value.RecordGraphicsModified(true);'
-          script_graphics_new = '((Entity)value).RecordGraphicsModified(true);'
+          # Prevent installer/finalizer scripts from reintroducing these exact blockers.
           scripts = Path('scripts')
           if scripts.exists():
               for path in scripts.rglob('*'):
@@ -96,25 +95,27 @@ jobs:
                   text = read_text(path)
                   if text is None:
                       continue
-                  new_text = text.replace(script_color_old, script_color_new)
-                  new_text = new_text.replace(script_graphics_old, script_graphics_new)
+                  new_text = text.replace(stale_color, fixed_color)
+                  new_text = new_text.replace(
+                      'try { value.RecordGraphicsModified(true); } catch { }',
+                      'try { Entity graphicsEntity = value as Entity; if (graphicsEntity != null) graphicsEntity.RecordGraphicsModified(true); } catch { }')
                   if new_text != text:
                       write_text(path, new_text)
 
-          # Validate the three authoritative source fixes.
-          grading_text = read_text(grading) or ''
-          road_text = read_text(road) or ''
-          sewer_text = read_text(sewer) or ''
+          # Authoritative validation.
           errors = []
+          grading_text = read_text(grading) or ''
           if stale_color in grading_text or fixed_color not in grading_text:
-              errors.append('ColorIndex assignment is not Civil 3D 2023 compile-safe')
-          for path, current in ((road, road_text), (sewer, sewer_text)):
-              if re.search(r'(?m)^\s*value\.RecordGraphicsModified\(true\);\s*$', current):
+              errors.append(f'{grading}: SourceSnapshot ColorIndex assignment is not compile-safe')
+
+          bare_graphics = re.compile(r'(?m)^\s*try \{ value\.RecordGraphicsModified\(true\); \} catch \{ \}\s*$')
+          for path in (road, sewer):
+              current = read_text(path) or ''
+              if bare_graphics.search(current):
                   errors.append(f'{path}: DBObject RecordGraphicsModified call remains')
               if 'graphicsEntity.RecordGraphicsModified(true);' not in current:
                   errors.append(f'{path}: Entity graphics refresh call is missing')
 
-          # Also ensure no known late script can put these exact old fragments back.
           if scripts.exists():
               for path in scripts.rglob('*'):
                   if not path.is_file():
@@ -122,18 +123,17 @@ jobs:
                   text = read_text(path)
                   if text is None:
                       continue
-                  if script_color_old in text or script_graphics_old in text:
+                  if stale_color in text or bare_graphics.search(text):
                       errors.append(f'{path}: stale compile-blocker template remains')
 
           if errors:
               print('\n'.join(errors), file=sys.stderr)
               raise SystemExit(1)
 
-          print('Patched/verified Civil 3D 2023 compile blockers:')
-          if changed:
-              for item in changed:
-                  print(f'  - {item}')
-          else:
+          print('Civil 3D 2023 compile blockers patched/verified:')
+          for item in changed:
+              print(f'  - {item}')
+          if not changed:
               print('  - source was already compile-safe')
           PY
 
