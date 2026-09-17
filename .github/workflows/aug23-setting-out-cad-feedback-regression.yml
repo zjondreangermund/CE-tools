@@ -1,179 +1,147 @@
 name: August 23 Setting-Out CAD Feedback
 
 on:
-  workflow_dispatch:
-  pull_request:
-    branches: [ main ]
-    paths:
-      - 'src/CE.Tools.Civil3D/VertexSettingOutCommands.cs'
-      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
-      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
-      - 'src/CE.Tools.Civil3D/August11ProductionCentreCommands.cs'
-      - 'src/CE.Tools.Civil3D/August14ProductionCentres.cs'
-      - 'scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
-      - 'scripts/Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1'
-      - 'scripts/Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1'
-      - 'scripts/Repair-August23-GridSettingAnchorPreflight-Civil3D2023.ps1'
-      - 'scripts/Run-August23-SettingOutCadFeedback-Civil3D2023.ps1'
-      - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
-      - '.github/workflows/aug23-setting-out-cad-feedback-regression.yml'
   push:
-    branches: [ main ]
+    branches:
+      - fix/sep17-c3d2023-compile
     paths:
-      - 'src/CE.Tools.Civil3D/VertexSettingOutCommands.cs'
-      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
-      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
-      - 'src/CE.Tools.Civil3D/August11ProductionCentreCommands.cs'
-      - 'src/CE.Tools.Civil3D/August14ProductionCentres.cs'
-      - 'scripts/Repair-August21-PlatformPageOrderMultiDimensionTrim-Civil3D2023.ps1'
-      - 'scripts/Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1'
-      - 'scripts/Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1'
-      - 'scripts/Repair-August23-GridSettingAnchorPreflight-Civil3D2023.ps1'
-      - 'scripts/Run-August23-SettingOutCadFeedback-Civil3D2023.ps1'
-      - 'scripts/Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
       - '.github/workflows/aug23-setting-out-cad-feedback-regression.yml'
+
+permissions:
+  contents: write
 
 jobs:
-  staged-setting-out-cad:
-    runs-on: windows-latest
-    timeout-minutes: 20
+  repair-c3d2023-compile:
+    runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Check out repair branch
         uses: actions/checkout@v4
-
-      - name: Create staged repository copy
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $stage = Join-Path $env:RUNNER_TEMP 'ce-tools-aug23-setting-out-cad'
-          if (Test-Path $stage) { Remove-Item $stage -Recurse -Force }
-          New-Item -ItemType Directory -Force -Path $stage | Out-Null
-          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'src') -Destination $stage -Recurse -Force
-          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'scripts') -Destination $stage -Recurse -Force
-          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'tests') -Destination $stage -Recurse -Force
-          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'global.json') -Destination $stage -Force
-          Copy-Item -Path (Join-Path $env:GITHUB_WORKSPACE 'Directory.Build.targets') -Destination $stage -Force
-          "STAGE=$stage" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-      - name: Parse August 23 repair scripts
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          foreach ($name in @(
-            'Repair-August23-SettingOutCadFeedback-Civil3D2023.ps1',
-            'Repair-August23-SettingOutCadFeedbackIdempotence-Civil3D2023.ps1',
-            'Repair-August23-GridSettingAnchorPreflight-Civil3D2023.ps1',
-            'Run-August23-SettingOutCadFeedback-Civil3D2023.ps1')) {
-            $path = Join-Path $env:STAGE ('scripts\' + $name)
-            $tokens=$null; $errors=$null
-            [System.Management.Automation.Language.Parser]::ParseFile($path,[ref]$tokens,[ref]$errors) | Out-Null
-            if ($errors -and $errors.Count -gt 0) {
-              throw ($name + ': ' + (($errors | ForEach-Object { 'line ' + $_.Extent.StartLineNumber + ': ' + $_.Message }) -join ' | '))
-            }
-          }
-
-      - name: Reproduce tester source state and staged Prefix drift
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $vertex = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\VertexSettingOutCommands.cs') -Raw
-          $gridPath = Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
-          $grid = Get-Content -LiteralPath $gridPath -Raw
-          $dimension = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs') -Raw
-          $production = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August11ProductionCentreCommands.cs') -Raw
-          if ($vertex.Contains('SetDimensionDoubleOverride(dimension, "Dimasz", 3.0);')) { throw 'Vertex radial-size tester state is already repaired.' }
-          if ($grid.Contains('"NG LEVEL"') -or $grid.Contains('"Points + full grid lines"')) { throw 'Grid tester state is already repaired.' }
-          if (-not $grid.Contains('"POINT", "SOURCE", "X", "Y", "Z", "MODE"')) { throw 'Old Grid Z-column state not found.' }
-          if (-not $dimension.Contains('featureLine.GetType() == typeof(CivilFeatureLine)')) { throw 'Restrictive FeatureLine tester state not found.' }
-          if ($production.Contains('"CAD PRODUCTION", "CE_CADPRODUCTION"')) { throw 'CAD Production is already routed from the Production Centre.' }
-
-          $oldPrefix = @'
-            settings.AddText(
-                "Prefix", "02 Numbering", "Point prefix", "G",
-                "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
-'@ -replace "`r?`n","`r`n"
-          $newPrefix = @'
-            settings.AddText(
-                "Prefix",
-                "04 Numbering",
-                "Grid point prefix",
-                "G",
-                "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
-'@ -replace "`r?`n","`r`n"
-          $grid = $grid -replace "`r?`n","`r`n"
-          if (-not $grid.Contains($oldPrefix)) { throw 'Canonical Grid Prefix setting not found before staged drift injection.' }
-          $grid = $grid.Replace($oldPrefix,$newPrefix)
-          [IO.File]::WriteAllText($gridPath,$grid,(New-Object Text.UTF8Encoding($false)))
-          Write-Host 'Tester-reported setting-out/CAD state plus non-canonical Grid Prefix anchor reproduced.' -ForegroundColor Green
-
-      - name: Run final build boundary twice
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $apply = Join-Path $env:STAGE 'scripts\Apply-August21-CrossDisciplineFatalSafety-BeforeBuild.ps1'
-          & $apply -RepoRoot $env:STAGE
-          & $apply -RepoRoot $env:STAGE
-
-      - name: Verify tester feedback fixes
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          $vertex = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\VertexSettingOutCommands.cs') -Raw
-          $grid = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs') -Raw
-          $dimension = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs') -Raw
-          $production = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August11ProductionCentreCommands.cs') -Raw
-          $productionV3 = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August14ProductionCentres.cs') -Raw
-
-          foreach ($marker in @(
-            'ResetCogoLabel(point);',
-            'ResetCogoLabel(cogo);',
-            'SetDimensionDoubleOverride(dimension, "Dimasz", 3.0);',
-            'SetDimensionDoubleOverride(dimension, "Dimtxt", 1.8);',
-            'AcApplication.UpdateScreen()')) {
-            if (-not $vertex.Contains($marker)) { throw "Vertex Setting-Out marker missing: $marker" }
-          }
-
-          foreach ($marker in @(
-            '"Points + full grid lines"',
-            'GridColorIndex',
-            '"NG LEVEL"',
-            '"DESIGN LEVEL"',
-            'FindElevationAtXY',
-            'LineHandles',
-            'ClipVertical(',
-            'ClipHorizontal(',
-            'ResetCogoLabel(point);')) {
-            if (-not $grid.Contains($marker)) { throw "Dynamic Grid marker missing: $marker" }
-          }
-          if ($grid.Contains('"POINT", "SOURCE", "X", "Y", "Z"')) { throw 'Dynamic Grid old Z column survived.' }
-          $syncCount = ([regex]::Matches($grid,'SyncGridLines\(document\.Database, transaction, sources, link\); // CE_AUG23_GRID_SYNC')).Count
-          if ($syncCount -ne 2) { throw "Dynamic Grid idempotence failed; expected two create/refresh sync calls, found $syncCount." }
-          $gridSettingCount = ([regex]::Matches($grid,[regex]::Escape('"GridLines", "01 Grid"'))).Count
-          if ($gridSettingCount -ne 1) { throw "Dynamic Grid line setting expected once after repeated finalization; found $gridSettingCount." }
-
-          foreach ($marker in @(
-            'ProcessConstructionLine(',
-            'Entity source,',
-            'Line line = source as Line;',
-            'Xline xline = source as Xline;',
-            'CivilFeatureLine featureLine = source as CivilFeatureLine;',
-            'polylines, FeatureLines or construction lines/XLINEs')) {
-            if (-not $dimension.Contains($marker)) { throw "Multiple Dimensions marker missing: $marker" }
-          }
-          if ($dimension.Contains('featureLine.GetType() == typeof(CivilFeatureLine)')) { throw 'Multiple Dimensions still rejects compatible FeatureLines.' }
-
-          foreach ($entry in @($production,$productionV3)) {
-            if (-not $entry.Contains('"CAD PRODUCTION", "CE_CADPRODUCTION"')) { throw 'CAD Production route missing from a Production Centre.' }
-          }
-          Write-Host 'Setting-Out, Grid, Multiple Dimensions and CAD Production feedback guards passed.' -ForegroundColor Green
-
-      - name: Set up .NET
-        uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 8.0.x
+          fetch-depth: 0
 
-      - name: Parse final staged Civil 3D C# syntax
-        shell: pwsh
+      - name: Patch compile blockers and stale repair templates
+        shell: bash
         run: |
-          $ErrorActionPreference = 'Stop'
-          dotnet run --project (Join-Path $env:STAGE 'tests\CE.Tools.CSharpSyntax.Tests\CE.Tools.CSharpSyntax.Tests.csproj') -c Release -- $env:STAGE
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          changed = []
+
+          def read_text(path: Path):
+              try:
+                  with path.open('r', encoding='utf-8', newline='') as fh:
+                      return fh.read()
+              except (UnicodeDecodeError, OSError):
+                  return None
+
+          def write_text(path: Path, text: str):
+              with path.open('w', encoding='utf-8', newline='') as fh:
+                  fh.write(text)
+              changed.append(str(path))
+
+          grading = Path('src/CE.Tools.Civil3D/August23PlatformDynamicGradingCommands.cs')
+          road = Path('src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs')
+          sewer = Path('src/CE.Tools.Civil3D/SewerProductionCommands.cs')
+
+          # CS0266: Autodesk ColorIndex is Int32; the persisted ACI value is Int16.
+          text = read_text(grading)
+          if text is None:
+              raise SystemExit(f'Unable to read {grading}')
+          stale_color = 'short aci = source.ColorIndex;'
+          fixed_color = 'short aci = (short)source.ColorIndex;'
+          if stale_color in text:
+              if text.count(stale_color) != 1:
+                  raise SystemExit(f'Expected one ColorIndex blocker in {grading}, found {text.count(stale_color)}')
+              text = text.replace(stale_color, fixed_color)
+              write_text(grading, text)
+          elif fixed_color not in text:
+              raise SystemExit(f'Expected ColorIndex assignment not found in {grading}')
+
+          # CS1061: RecordGraphicsModified is an Entity API, not a DBObject API.
+          def patch_graphics(path: Path):
+              text = read_text(path)
+              if text is None:
+                  raise SystemExit(f'Unable to read {path}')
+              if 'graphicsEntity.RecordGraphicsModified(true);' in text:
+                  return
+              newline = '\r\n' if '\r\n' in text else '\n'
+              pattern = re.compile(r'(?m)^([ \t]*)value\.RecordGraphicsModified\(true\);\r?$')
+              matches = list(pattern.finditer(text))
+              if len(matches) != 1:
+                  raise SystemExit(f'Expected one DBObject graphics blocker in {path}, found {len(matches)}')
+              def repl(match):
+                  indent = match.group(1)
+                  return (
+                      indent + 'Entity graphicsEntity = value as Entity;' + newline
+                      + indent + 'if (graphicsEntity != null)' + newline
+                      + indent + '    graphicsEntity.RecordGraphicsModified(true);'
+                  )
+              text = pattern.sub(repl, text, count=1)
+              write_text(path, text)
+
+          patch_graphics(road)
+          patch_graphics(sewer)
+
+          # Prevent late installer/finalizer scripts from restoring these exact stale fragments.
+          scripts = Path('scripts')
+          if scripts.exists():
+              for path in scripts.rglob('*'):
+                  if not path.is_file():
+                      continue
+                  text = read_text(path)
+                  if text is None:
+                      continue
+                  new_text = text.replace(stale_color, fixed_color)
+                  new_text = new_text.replace('value.RecordGraphicsModified(true);', '((Entity)value).RecordGraphicsModified(true);')
+                  if new_text != text:
+                      write_text(path, new_text)
+
+          # Authoritative validation before commit.
+          grading_text = read_text(grading) or ''
+          road_text = read_text(road) or ''
+          sewer_text = read_text(sewer) or ''
+          errors = []
+          if stale_color in grading_text or fixed_color not in grading_text:
+              errors.append(f'{grading}: ColorIndex assignment is not compile-safe')
+          for path, current in ((road, road_text), (sewer, sewer_text)):
+              if re.search(r'(?m)^\s*value\.RecordGraphicsModified\(true\);\s*$', current):
+                  errors.append(f'{path}: DBObject RecordGraphicsModified call remains')
+              if 'graphicsEntity.RecordGraphicsModified(true);' not in current:
+                  errors.append(f'{path}: Entity graphics refresh call is missing')
+
+          if scripts.exists():
+              for path in scripts.rglob('*'):
+                  if not path.is_file():
+                      continue
+                  text = read_text(path)
+                  if text is None:
+                      continue
+                  if stale_color in text or 'value.RecordGraphicsModified(true);' in text:
+                      errors.append(f'{path}: stale compile-blocker template remains')
+
+          if errors:
+              print('\n'.join(errors), file=sys.stderr)
+              raise SystemExit(1)
+
+          print('Civil 3D 2023 compile blockers patched/verified:')
+          for item in changed:
+              print('  - ' + item)
+          PY
+
+      - name: Restore workflow files and commit repair
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin main
+          git checkout origin/main -- .github/workflows/aug23-setting-out-cad-feedback-regression.yml
+          git rm -f .github/workflows/sep17-c3d2023-compile-repair.yml
+          git add src/CE.Tools.Civil3D/August23PlatformDynamicGradingCommands.cs \
+                  src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs \
+                  src/CE.Tools.Civil3D/SewerProductionCommands.cs \
+                  scripts \
+                  .github/workflows/aug23-setting-out-cad-feedback-regression.yml
+          git commit -m "Fix Civil 3D 2023 compile blockers"
+          git push origin HEAD:fix/sep17-c3d2023-compile
