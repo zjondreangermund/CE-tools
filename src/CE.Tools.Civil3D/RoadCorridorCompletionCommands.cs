@@ -518,7 +518,13 @@ namespace CETools.Civil3D
                 ObjectId linkedAlignment = ReadObjectId(value, "AlignmentId");
                 if (!linkedAlignment.IsNull && linkedAlignment != alignmentId) continue;
                 ProfileViewBandDataBinder.BindRoad(value, leftId, designId, rightId, designId);
-                try { value.RecordGraphicsModified(true); } catch { }
+                try
+                {
+                    Entity graphicsEntity = value as Entity;
+                    if (graphicsEntity != null)
+                        graphicsEntity.RecordGraphicsModified(true);
+                }
+                catch { }
                 updated++;
             }
             return updated;

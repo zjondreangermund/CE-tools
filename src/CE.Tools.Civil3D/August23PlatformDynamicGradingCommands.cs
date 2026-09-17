@@ -931,7 +931,7 @@ namespace CETools.Civil3D
                         LayerId = source.LayerId,
                         SiteId = source.SiteId,
                         StyleName = source.StyleName,
-                        ColorIndex = source.ColorIndex,
+                        ColorIndex = (short)source.ColorIndex,
                         Closed = source.Closed,
                         Points = collection.Cast<Point3d>().ToList()
                     };

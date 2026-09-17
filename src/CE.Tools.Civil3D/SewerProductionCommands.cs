@@ -1230,7 +1230,13 @@ namespace CETools.Civil3D
                         binding.ProfileId,
                         ObjectId.Null,
                         binding.NetworkId);
-                    try { view.RecordGraphicsModified(true); } catch { }
+                    try
+                    {
+                        Entity graphicsEntity = view as Entity;
+                        if (graphicsEntity != null)
+                            graphicsEntity.RecordGraphicsModified(true);
+                    }
+                    catch { }
                 }
                 transaction.Commit();
             }
