@@ -5,6 +5,7 @@ using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
+using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
@@ -139,12 +140,20 @@ namespace CETools.Civil3D
 
             try
             {
+                Database staging;
                 using (DocumentLock sourceLock = source.LockDocument())
                 {
                     var ids = new ObjectIdCollection { assembly.Id };
+                    staging = source.Database.Wblock(ids, Point3d.Origin);
+                }
+                using (staging)
+                {
+                    ObjectIdCollection stagedAssemblies = ReadAssemblyIds(staging);
+                    if (stagedAssemblies.Count == 0)
+                        throw new InvalidOperationException("The source assembly could not be staged safely.");
                     var mapping = new IdMapping();
-                    source.Database.WblockCloneObjects(
-                        ids,
+                    staging.WblockCloneObjects(
+                        stagedAssemblies,
                         target.Database.CurrentSpaceId,
                         mapping,
                         DuplicateRecordCloning.Ignore,
@@ -180,6 +189,27 @@ namespace CETools.Civil3D
                 }
             }
             return result.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
+
+        private static ObjectIdCollection ReadAssemblyIds(Database database)
+        {
+            var result = new ObjectIdCollection();
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord space = transaction.GetObject(
+                    SymbolUtilityServices.GetBlockModelSpaceId(database),
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (space == null) return result;
+                foreach (ObjectId id in space)
+                {
+                    DBObject value = transaction.GetObject(id, OpenMode.ForRead, false);
+                    if (value != null && value.GetType().Name.IndexOf(
+                            "Assembly", StringComparison.OrdinalIgnoreCase) >= 0)
+                        result.Add(id);
+                }
+            }
+            return result;
         }
 
         private static PromptSelectionResult Selection(Editor editor, string message)

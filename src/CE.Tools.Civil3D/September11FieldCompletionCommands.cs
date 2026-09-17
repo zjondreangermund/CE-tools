@@ -700,7 +700,7 @@ namespace CETools.Civil3D
             // The production runtime now owns the user's joined/separate output
             // choice and preserves fillet bulges.  Running the legacy straight-
             // segment cleanup here discarded that choice and skipped curves.
-            September09FieldEngineeringRuntime.RoadReserveCentrePolylines(document);
+            September09FieldRefinementRuntime.RoadReserveCentrePolylines(document);
         }
 
         internal static void CleanExistingRoadCentres(Document document)

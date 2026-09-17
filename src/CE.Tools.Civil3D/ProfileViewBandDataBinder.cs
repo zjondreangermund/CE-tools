@@ -82,6 +82,9 @@ namespace CETools.Civil3D
                         rightProfileId, finalDesignProfileId, networkId, roadRoles))
                     updated++;
             }
+            InvokeNoArguments(bands, "Update");
+            InvokeNoArguments(bands, "Rebuild");
+            InvokeNoArguments(bands, "Refresh");
             return updated;
         }
 

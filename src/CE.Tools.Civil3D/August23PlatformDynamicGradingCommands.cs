@@ -263,6 +263,48 @@ namespace CETools.Civil3D
             return refreshed;
         }
 
+        internal static int SynchronizeLinkedAppearance(
+            Document document,
+            IEnumerable<ObjectId> sourceIds)
+        {
+            if (document == null || document.Database == null || sourceIds == null)
+                return 0;
+            var pairs = new List<KeyValuePair<ObjectId, ObjectId>>();
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId sourceId in sourceIds.Distinct())
+                {
+                    CivilFeatureLine source = OpenFeatureLine(transaction, sourceId, OpenMode.ForRead);
+                    if (source == null) continue;
+                    GradeLink link;
+                    if (!TryReadGradeLink(source, transaction, out link) || link == null) continue;
+                    ObjectId childId = ResolveHandle(document.Database, link.ChildHandle);
+                    if (!childId.IsNull)
+                        pairs.Add(new KeyValuePair<ObjectId, ObjectId>(sourceId, childId));
+                }
+            }
+
+            int changed = 0;
+            foreach (KeyValuePair<ObjectId, ObjectId> pair in pairs)
+            {
+                try
+                {
+                    using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                    {
+                        CivilFeatureLine source = OpenFeatureLine(transaction, pair.Key, OpenMode.ForRead);
+                        CivilFeatureLine child = OpenFeatureLine(transaction, pair.Value, OpenMode.ForWrite);
+                        if (source == null || child == null) continue;
+                        child.Color = source.Color;
+                        try { child.RecordGraphicsModified(true); } catch { }
+                        transaction.Commit();
+                        changed++;
+                    }
+                }
+                catch { }
+            }
+            return changed;
+        }
+
         private static GradeBuildResult BuildOrRefreshGrade(Document document, ObjectId sourceId, GradeLink requested, bool explicitCommand)
         {
             var result = new GradeBuildResult();
@@ -655,6 +697,7 @@ namespace CETools.Civil3D
                     if (featureLine == null || featureLine.IsReferenceObject)
                         throw new InvalidOperationException("Civil 3D did not return an editable daylight feature line.");
                     if (!source.LayerId.IsNull) featureLine.LayerId = source.LayerId;
+                    featureLine.ColorIndex = source.ColorIndex;
                     if (!string.IsNullOrWhiteSpace(source.StyleName))
                     {
                         try { featureLine.StyleName = source.StyleName; } catch { }
@@ -888,6 +931,7 @@ namespace CETools.Civil3D
                         LayerId = source.LayerId,
                         SiteId = source.SiteId,
                         StyleName = source.StyleName,
+                        ColorIndex = source.ColorIndex,
                         Closed = source.Closed,
                         Points = collection.Cast<Point3d>().ToList()
                     };
@@ -1258,6 +1302,7 @@ namespace CETools.Civil3D
             internal ObjectId LayerId { get; set; }
             internal ObjectId SiteId { get; set; }
             internal string StyleName { get; set; }
+            internal short ColorIndex { get; set; }
             internal bool Closed { get; set; }
             internal List<Point3d> Points { get; set; }
         }

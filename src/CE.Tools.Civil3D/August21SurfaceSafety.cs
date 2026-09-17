@@ -30,8 +30,6 @@ namespace CETools.Civil3D
     /// </summary>
     internal static class August21SurfaceSafety
     {
-        private const double Tolerance = 0.000001;
-
         internal static ObjectId ResolveFreshSurfaceId(Document document, string surfaceName)
         {
             if (document == null || document.Database == null ||
@@ -215,20 +213,12 @@ namespace CETools.Civil3D
                         return false;
                     }
 
-                    Point3dCollection current = featureLine.GetPoints(
+                    Point3dCollection currentPi = featureLine.GetPoints(
                         FeatureLinePointType.PIPoint);
                     int count = Math.Min(
-                        current == null ? 0 : current.Count,
+                        currentPi == null ? 0 : currentPi.Count,
                         sampled.Count);
-                    var updated = new Point3dCollection();
-                    for (int index = 0; index < count; index++)
-                    {
-                        Point3d point = current[index];
-                        updated.Add(sampled[index].HasValue
-                            ? new Point3d(point.X, point.Y, sampled[index].Value)
-                            : point);
-                    }
-                    ApplyPointElevations(featureLine, updated);
+                    ApplyPointElevations(featureLine, currentPi, sampled, count);
                     TryLinkRelativeToSurface(featureLine, surfaceId);
                     try { featureLine.RecordGraphicsModified(true); } catch { }
                     writeFeatureLine.Commit();
@@ -259,41 +249,40 @@ namespace CETools.Civil3D
 
         private static void ApplyPointElevations(
             CivilFeatureLine featureLine,
-            Point3dCollection points)
+            Point3dCollection piPoints,
+            IList<double?> elevations,
+            int count)
         {
-            if (featureLine == null || points == null || points.Count == 0) return;
-
-            // SetPointElevation(int, ...) is not consistent across Civil 3D host
-            // versions: some releases address PI points while others address the
-            // combined point collection.  The bulk API accepts coordinates and is
-            // therefore stable for closed lines and lines with elevation points.
-            MethodInfo bulk = featureLine.GetType().GetMethod(
-                "SetPointsElevation",
-                BindingFlags.Public | BindingFlags.Instance,
-                null,
-                new[] { typeof(Point3dCollection) },
-                null);
-            if (bulk != null)
-            {
-                bulk.Invoke(featureLine, new object[] { points });
+            if (featureLine == null || piPoints == null || elevations == null || count <= 0)
                 return;
-            }
 
-            MethodInfo byPoint = featureLine.GetType().GetMethod(
+            // SetPointsElevation expects the host's complete point collection, so a
+            // PI-only collection raises ArgumentOutOfRangeException. Prefer the
+            // coordinate overload where available; otherwise the integer overload
+            // is bounded explicitly by the PI collection it addresses.
+            MethodInfo pointSetter = featureLine.GetType().GetMethod(
                 "SetPointElevation",
                 BindingFlags.Public | BindingFlags.Instance,
                 null,
                 new[] { typeof(Point3d), typeof(double) },
                 null);
-            if (byPoint != null)
+            int written = 0;
+            for (int piIndex = 0; piIndex < count; piIndex++)
             {
-                foreach (Point3d point in points)
-                    byPoint.Invoke(featureLine, new object[] { point, point.Z });
-                return;
+                if (!elevations[piIndex].HasValue) continue;
+                if (pointSetter != null)
+                    pointSetter.Invoke(featureLine, new object[]
+                    {
+                        piPoints[piIndex],
+                        elevations[piIndex].Value
+                    });
+                else
+                    featureLine.SetPointElevation(piIndex, elevations[piIndex].Value);
+                written++;
             }
-
-            throw new InvalidOperationException(
-                "This Civil 3D host exposes no coordinate-safe feature-line elevation writer.");
+            if (written == 0)
+                throw new InvalidOperationException(
+                    "No sampled PI point could be matched to a writable feature-line point.");
         }
 
         private static void TryLinkRelativeToSurface(

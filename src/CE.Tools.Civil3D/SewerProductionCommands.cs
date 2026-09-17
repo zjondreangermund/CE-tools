@@ -1089,6 +1089,7 @@ namespace CETools.Civil3D
             viewsCreated = 0;
             partsAdded = 0;
             bandItemsLinked = 0;
+            var bindings = new List<SewerProfileBinding>();
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
                 EnsureRegApp(database, transaction, ProfileRegAppName);
@@ -1166,17 +1167,14 @@ namespace CETools.Civil3D
                     viewsCreated++;
 
                     ObjectId networkId = ObjectId.Null;
-                    if (TryGetObjectId(database, record.NetworkHandle, out networkId))
+                    TryGetObjectId(database, record.NetworkHandle, out networkId);
+                    bindings.Add(new SewerProfileBinding
                     {
-                        var network = transaction.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
-                        if (network != null)
-                            partsAdded += AddBranchParts(network, record.BranchName, viewId, transaction);
-                    }
-                    bandItemsLinked += ProfileViewBandDataBinder.Bind(
-                        view,
-                        profileId,
-                        ObjectId.Null,
-                        networkId);
+                        BranchName = record.BranchName,
+                        ProfileId = profileId,
+                        ProfileViewId = viewId,
+                        NetworkId = networkId
+                    });
 
                     var title = new MText();
                     title.SetDatabaseDefaults(database);
@@ -1201,6 +1199,49 @@ namespace CETools.Civil3D
                 }
                 transaction.Commit();
             }
+
+            // Civil 3D materialises profile-view band collections and native
+            // network-part display links only after the creating transaction has
+            // committed. Editing them in that same transaction triggers the native
+            // dbobji eNotOpenForWrite abort seen in the field.
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                foreach (SewerProfileBinding binding in bindings)
+                {
+                    DBObject view = transaction.GetObject(
+                        binding.ProfileViewId,
+                        OpenMode.ForWrite,
+                        false);
+                    if (!binding.NetworkId.IsNull)
+                    {
+                        var network = transaction.GetObject(
+                            binding.NetworkId,
+                            OpenMode.ForRead,
+                            false) as CivilNetwork;
+                        if (network != null)
+                            partsAdded += AddBranchParts(
+                                network,
+                                binding.BranchName,
+                                binding.ProfileViewId,
+                                transaction);
+                    }
+                    bandItemsLinked += ProfileViewBandDataBinder.Bind(
+                        view,
+                        binding.ProfileId,
+                        ObjectId.Null,
+                        binding.NetworkId);
+                    try { view.RecordGraphicsModified(true); } catch { }
+                }
+                transaction.Commit();
+            }
+        }
+
+        private sealed class SewerProfileBinding
+        {
+            internal string BranchName { get; set; }
+            internal ObjectId ProfileId { get; set; }
+            internal ObjectId ProfileViewId { get; set; }
+            internal ObjectId NetworkId { get; set; }
         }
 
         private static int AddBranchParts(
