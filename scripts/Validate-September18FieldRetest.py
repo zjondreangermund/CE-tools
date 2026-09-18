@@ -54,7 +54,7 @@ for relative, markers in checks.items():
 profile = (ROOT / "src/CE.Tools.Civil3D/SewerProductionCommands.cs").read_text(encoding="utf-8")
 if "private static int AddBranchParts(" in profile:
     errors.append("legacy shared-transaction AddBranchParts implementation is still present")
-if "binding.ProfileViewId,\n                        OpenMode.ForWrite" in profile and "partsAdded += AddBranchParts" in profile:
+if "binding.ProfileViewId,\n                        OpenMode.ForWrite" in profile and "partsAdded += AddBranchParts(" in profile:
     errors.append("profile view is still held open ForWrite while native parts are added")
 
 assembly = (ROOT / "src/CE.Tools.Civil3D/September16RuntimeRecoveryCommands.cs").read_text(encoding="utf-8")
