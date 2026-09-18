@@ -28,7 +28,10 @@ checks = {
     "src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs": [
         'RoadNumberedSurfaceNames',
         'ResolveRoadSurfaceName',
-        '"TOP-RD-01, BOTTOM-RD-01, TOP-RD-02, BOTTOM-RD-02',
+        'TOP-RD-01',
+        'BOTTOM-RD-01',
+        'TOP-RD-02',
+        'BOTTOM-RD-02',
     ],
     "src/CE.Tools.Civil3D/August17ProductionFeatureLineCommands.cs": [
         'normal independent Civil 3D feature lines',
@@ -73,7 +76,7 @@ if 'X-LIMIT' not in junction:
     errors.append("cross-junction closure generation is missing")
 
 road = (ROOT / "src/CE.Tools.Civil3D/September18RoadJunctionCompletionCommands.cs").read_text(encoding="utf-8")
-if 'Cross junctions are not trimmed' not in road:
+if 'Cross-junction corridors are not trimmed' not in road:
     errors.append("T-junction corridor trimming must explicitly preserve cross junctions")
 if 'outletElevation <= upstreamElevation' not in road:
     errors.append("pipe slope command must leave already-correct outlet slopes unchanged")
