@@ -6,6 +6,7 @@ using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
 using Autodesk.AutoCAD.ApplicationServices;
+using Autodesk.AutoCAD.Colors;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
@@ -118,6 +119,7 @@ namespace CETools.Civil3D
             if (!window.Accepted) return;
 
             int changed = 0;
+            int styleChanged = 0;
             int siteChanged = 0;
             int rejected = 0;
             var changedIds = new List<ObjectId>();
@@ -135,6 +137,20 @@ namespace CETools.Civil3D
                     }
 
                     featureLine.ColorIndex = window.ColourIndex;
+
+                    // Civil feature-line styles override the AutoCAD entity
+                    // colour in plan/model display. Assign a CE colour-specific
+                    // sibling style so the selected colour is visible on screen
+                    // as well as in Properties.
+                    ObjectId colourStyleId = ResolveFeatureLineColourStyle(
+                        document,
+                        featureLine,
+                        window.ColourIndex,
+                        transaction);
+                    if (!colourStyleId.IsNull &&
+                        TrySetObjectIdProperty(featureLine, "StyleId", colourStyleId))
+                        styleChanged++;
+
                     try { featureLine.RecordGraphicsModified(true); } catch { }
                     changed++;
                     changedIds.Add(featureLine.ObjectId);
@@ -159,8 +175,9 @@ namespace CETools.Civil3D
             try { document.Database.TransactionManager.QueueForGraphicsFlush(); } catch { }
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_FLAPPEARANCE complete. Feature lines updated={0}; site assignments={1}; rejected={2}; colour={3}.",
+                "\nCE_FLAPPEARANCE complete. Feature lines updated={0}; visible colour styles={1}; site assignments={2}; rejected={3}; colour={4}.",
                 changed,
+                styleChanged,
                 siteChanged,
                 rejected,
                 window.ColourIndex);
@@ -770,6 +787,250 @@ namespace CETools.Civil3D
                 }
             }
             return result;
+        }
+
+        private static ObjectId ResolveFeatureLineColourStyle(
+            Document document,
+            CivilFeatureLine featureLine,
+            int colourIndex,
+            Transaction transaction)
+        {
+            if (document == null ||
+                featureLine == null ||
+                transaction == null ||
+                colourIndex < 1 ||
+                colourIndex > 255)
+                return ObjectId.Null;
+
+            ObjectId currentStyleId = ReadObjectIdProperty(
+                featureLine,
+                "StyleId");
+            if (currentStyleId.IsNull) return ObjectId.Null;
+
+            DBObject currentStyle = null;
+            try
+            {
+                currentStyle = transaction.GetObject(
+                    currentStyleId,
+                    OpenMode.ForRead,
+                    false);
+            }
+            catch { }
+            if (currentStyle == null) return ObjectId.Null;
+
+            string currentName = ReadText(
+                currentStyle,
+                "Name",
+                "Basic");
+            string safeBase = new string(currentName
+                .Where(character =>
+                    char.IsLetterOrDigit(character) ||
+                    character == '-' ||
+                    character == '_')
+                .ToArray());
+            if (string.IsNullOrWhiteSpace(safeBase))
+                safeBase = "Basic";
+            if (safeBase.Length > 50)
+                safeBase = safeBase.Substring(0, 50);
+
+            string targetName = "CE-FL-ACI-" +
+                colourIndex.ToString(CultureInfo.InvariantCulture) +
+                "-" + safeBase;
+
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            ObjectId existing = FindFeatureLineStyleId(
+                civilDocument,
+                targetName,
+                transaction);
+            if (!existing.IsNull)
+            {
+                ApplyFeatureLineStyleColour(
+                    transaction,
+                    existing,
+                    colourIndex);
+                return existing;
+            }
+
+            try
+            {
+                MethodInfo copy = currentStyle.GetType().GetMethod(
+                    "CopyAsSibling",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    new[] { typeof(string) },
+                    null);
+                if (copy == null) return ObjectId.Null;
+                object result = copy.Invoke(
+                    currentStyle,
+                    new object[] { targetName });
+                ObjectId created = result is ObjectId
+                    ? (ObjectId)result
+                    : ObjectId.Null;
+                if (created.IsNull) return ObjectId.Null;
+
+                ApplyFeatureLineStyleColour(
+                    transaction,
+                    created,
+                    colourIndex);
+                return created;
+            }
+            catch
+            {
+                return FindFeatureLineStyleId(
+                    civilDocument,
+                    targetName,
+                    transaction);
+            }
+        }
+
+        private static ObjectId FindFeatureLineStyleId(
+            CivilDocument civilDocument,
+            string name,
+            Transaction transaction)
+        {
+            if (civilDocument == null ||
+                transaction == null ||
+                string.IsNullOrWhiteSpace(name))
+                return ObjectId.Null;
+
+            object styles = ReadPropertyValue(
+                civilDocument,
+                "Styles");
+            object collection = ReadPropertyValue(
+                styles,
+                "FeatureLineStyles");
+            foreach (object value in CivilStyleDiscovery.Enumerate(collection))
+            {
+                ObjectId id = value is ObjectId
+                    ? (ObjectId)value
+                    : value is DBObject
+                        ? ((DBObject)value).ObjectId
+                        : ObjectId.Null;
+                if (id.IsNull || id.IsErased) continue;
+                try
+                {
+                    DBObject style = transaction.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false);
+                    if (string.Equals(
+                            ReadText(style, "Name", string.Empty),
+                            name,
+                            StringComparison.OrdinalIgnoreCase))
+                        return id;
+                }
+                catch { }
+            }
+            return ObjectId.Null;
+        }
+
+        private static void ApplyFeatureLineStyleColour(
+            Transaction transaction,
+            ObjectId styleId,
+            int colourIndex)
+        {
+            if (transaction == null || styleId.IsNull) return;
+            DBObject style = null;
+            try
+            {
+                style = transaction.GetObject(
+                    styleId,
+                    OpenMode.ForWrite,
+                    false);
+            }
+            catch { }
+            if (style == null) return;
+
+            Color colour = Color.FromColorIndex(
+                ColorMethod.ByAci,
+                (short)colourIndex);
+
+            foreach (string methodName in new[]
+            {
+                "GetFeatureLineDisplayStylePlan",
+                "GetFeatureLineDisplayStyleModel",
+                "GetDisplayStyleProfile"
+            })
+            {
+                try
+                {
+                    MethodInfo method = style.GetType().GetMethod(
+                        methodName,
+                        BindingFlags.Public | BindingFlags.Instance,
+                        null,
+                        Type.EmptyTypes,
+                        null);
+                    object display = method == null
+                        ? null
+                        : method.Invoke(style, null);
+                    if (display == null) continue;
+
+                    PropertyInfo colourProperty = display.GetType().GetProperty(
+                        "Color",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (colourProperty != null &&
+                        colourProperty.CanWrite &&
+                        colourProperty.PropertyType.IsInstanceOfType(colour))
+                        colourProperty.SetValue(display, colour, null);
+
+                    PropertyInfo visibleProperty = display.GetType().GetProperty(
+                        "Visible",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (visibleProperty != null &&
+                        visibleProperty.CanWrite &&
+                        visibleProperty.PropertyType == typeof(bool))
+                        visibleProperty.SetValue(display, true, null);
+                }
+                catch { }
+            }
+        }
+
+        private static ObjectId ReadObjectIdProperty(
+            object target,
+            string name)
+        {
+            object value = ReadPropertyValue(target, name);
+            return value is ObjectId
+                ? (ObjectId)value
+                : ObjectId.Null;
+        }
+
+        private static bool TrySetObjectIdProperty(
+            object target,
+            string name,
+            ObjectId value)
+        {
+            if (target == null || value.IsNull) return false;
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    name,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null ||
+                    !property.CanWrite ||
+                    property.PropertyType != typeof(ObjectId))
+                    return false;
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static object ReadPropertyValue(
+            object target,
+            string name)
+        {
+            if (target == null) return null;
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    name,
+                    BindingFlags.Public | BindingFlags.Instance);
+                return property == null
+                    ? null
+                    : property.GetValue(target, null);
+            }
+            catch { return null; }
         }
 
         private static bool ApplySite(ObjectId featureLineId, ObjectId siteId)

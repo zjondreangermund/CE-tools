@@ -215,11 +215,11 @@ namespace CETools.Civil3D
 
                     Point3dCollection currentPi = featureLine.GetPoints(
                         FeatureLinePointType.PIPoint);
-                    int count = Math.Min(
-                        currentPi == null ? 0 : currentPi.Count,
-                        sampled.Count);
-                    ApplyPointElevations(featureLine, currentPi, sampled, count);
-                    TryLinkRelativeToSurface(featureLine, surfaceId);
+                    ApplyPointElevations(
+                        featureLine,
+                        currentPi,
+                        sourcePoints,
+                        sampled);
                     try { featureLine.RecordGraphicsModified(true); } catch { }
                     writeFeatureLine.Commit();
                 }
@@ -230,12 +230,43 @@ namespace CETools.Civil3D
                 return false;
             }
 
+            // Make the surface relationship in its own transaction after the
+            // absolute PI elevations are safely committed.  This avoids the
+            // out-of-range/zero-elevation state seen when Civil 3D 2023 is asked to
+            // switch the same freshly-created points to relative mode while they
+            // are still being rewritten.
+            TryLinkRelativeToSurface(
+                document,
+                featureLineId,
+                surfaceId);
+
+            string verificationError;
+            if (!VerifyAppliedElevations(
+                    document,
+                    featureLineId,
+                    sourcePoints,
+                    sampled,
+                    out verificationError))
+            {
+                // Keep a correct absolute feature line even if the host rejects
+                // relative-to-surface state.  A separate committed retry uses
+                // fresh PI coordinates and therefore cannot address stale indexes.
+                if (!RetryAbsoluteElevations(
+                        document,
+                        featureLineId,
+                        sourcePoints,
+                        sampled,
+                        out verificationError))
+                {
+                    error = verificationError;
+                    return false;
+                }
+            }
+
             // Civil 3D's native AssignElevationsFromSurface(..., true) is not used
             // here because it can keep the Surface object active while Civil mutates
             // the feature line. The UI option is retained, but fatal-safe creation
-            // intentionally updates existing PI points only. Intermediate TIN break
-            // insertion can be added later without reintroducing the crash-prone
-            // native mutation path.
+            // intentionally updates existing PI points only.
             try
             {
                 document.Database.TransactionManager.QueueForGraphicsFlush();
@@ -249,65 +280,283 @@ namespace CETools.Civil3D
 
         private static void ApplyPointElevations(
             CivilFeatureLine featureLine,
-            Point3dCollection piPoints,
-            IList<double?> elevations,
-            int count)
+            Point3dCollection currentPi,
+            IList<Point3d> sampledPoints,
+            IList<double?> elevations)
         {
-            if (featureLine == null || piPoints == null || elevations == null || count <= 0)
+            if (featureLine == null ||
+                currentPi == null ||
+                sampledPoints == null ||
+                elevations == null)
                 return;
 
-            // SetPointsElevation expects the host's complete point collection, so a
-            // PI-only collection raises ArgumentOutOfRangeException. Prefer the
-            // coordinate overload where available; otherwise the integer overload
-            // is bounded explicitly by the PI collection it addresses.
-            MethodInfo pointSetter = featureLine.GetType().GetMethod(
-                "SetPointElevation",
-                BindingFlags.Public | BindingFlags.Instance,
-                null,
-                new[] { typeof(Point3d), typeof(double) },
-                null);
             int written = 0;
-            for (int piIndex = 0; piIndex < count; piIndex++)
+            int count = Math.Min(sampledPoints.Count, elevations.Count);
+            for (int sampleIndex = 0; sampleIndex < count; sampleIndex++)
             {
-                if (!elevations[piIndex].HasValue) continue;
-                if (pointSetter != null)
-                    pointSetter.Invoke(featureLine, new object[]
-                    {
-                        piPoints[piIndex],
-                        elevations[piIndex].Value
-                    });
-                else
-                    featureLine.SetPointElevation(piIndex, elevations[piIndex].Value);
+                if (!elevations[sampleIndex].HasValue) continue;
+                int piIndex = ClosestPlanPointIndex(
+                    currentPi,
+                    sampledPoints[sampleIndex]);
+                if (piIndex < 0 || piIndex >= currentPi.Count) continue;
+
+                featureLine.SetPointElevation(
+                    piIndex,
+                    elevations[sampleIndex].Value);
                 written++;
             }
+
             if (written == 0)
                 throw new InvalidOperationException(
-                    "No sampled PI point could be matched to a writable feature-line point.");
+                    "No sampled surface elevation could be matched to a writable feature-line PI point.");
         }
 
-        private static void TryLinkRelativeToSurface(
-            CivilFeatureLine featureLine,
+        private static int ClosestPlanPointIndex(
+            Point3dCollection points,
+            Point3d target)
+        {
+            if (points == null || points.Count == 0) return -1;
+            int best = -1;
+            double bestDistance = double.MaxValue;
+            for (int index = 0; index < points.Count; index++)
+            {
+                double dx = points[index].X - target.X;
+                double dy = points[index].Y - target.Y;
+                double distance = (dx * dx) + (dy * dy);
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = index;
+                }
+            }
+            return best;
+        }
+
+        private static bool TryLinkRelativeToSurface(
+            Document document,
+            ObjectId featureLineId,
             ObjectId surfaceId)
         {
-            if (featureLine == null || surfaceId.IsNull) return;
+            if (document == null ||
+                featureLineId.IsNull ||
+                surfaceId.IsNull)
+                return false;
+
             try
             {
-                PropertyInfo surfaceProperty = featureLine.GetType().GetProperty(
-                    "RelativeSurfaceId",
-                    BindingFlags.Public | BindingFlags.Instance);
-                if (surfaceProperty == null || !surfaceProperty.CanWrite ||
-                    surfaceProperty.PropertyType != typeof(ObjectId))
-                    return;
-                surfaceProperty.SetValue(featureLine, surfaceId, null);
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine featureLine = transaction.GetObject(
+                        featureLineId,
+                        OpenMode.ForWrite,
+                        false) as CivilFeatureLine;
+                    if (featureLine == null || featureLine.IsReferenceObject)
+                        return false;
 
-                Point3dCollection points = featureLine.GetPoints(FeatureLinePointType.PIPoint);
-                foreach (Point3d point in points)
-                    featureLine.SetPointRelativeElevation(point, true, 0.0);
+                    PropertyInfo surfaceProperty = featureLine.GetType().GetProperty(
+                        "RelativeSurfaceId",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (surfaceProperty == null ||
+                        !surfaceProperty.CanWrite ||
+                        surfaceProperty.PropertyType != typeof(ObjectId))
+                        return false;
+
+                    surfaceProperty.SetValue(featureLine, surfaceId, null);
+
+                    Point3dCollection points = featureLine.GetPoints(
+                        FeatureLinePointType.PIPoint);
+                    int linked = 0;
+                    if (points != null)
+                    {
+                        // Always use a fresh point collection after the absolute
+                        // elevation transaction. SetPointRelativeElevation requires
+                        // a point that is actually on the current feature line.
+                        foreach (Point3d point in points.Cast<Point3d>().ToList())
+                        {
+                            try
+                            {
+                                featureLine.SetPointRelativeElevation(
+                                    point,
+                                    true,
+                                    0.0);
+                                linked++;
+                            }
+                            catch { }
+                        }
+                    }
+
+                    try { featureLine.RecordGraphicsModified(true); } catch { }
+                    transaction.Commit();
+                    return linked > 0;
+                }
             }
-            catch
+            catch { return false; }
+        }
+
+        private static bool VerifyAppliedElevations(
+            Document document,
+            ObjectId featureLineId,
+            IList<Point3d> sampledPoints,
+            IList<double?> elevations,
+            out string error)
+        {
+            error = string.Empty;
+            if (document == null ||
+                featureLineId.IsNull ||
+                sampledPoints == null ||
+                elevations == null)
             {
-                // Absolute elevations have already been applied. Older hosts that
-                // do not expose RelativeSurfaceId remain valid but non-dynamic.
+                error = "Feature-line elevation verification could not start.";
+                return false;
+            }
+
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine featureLine = transaction.GetObject(
+                        featureLineId,
+                        OpenMode.ForRead,
+                        false) as CivilFeatureLine;
+                    if (featureLine == null)
+                    {
+                        error = "The created feature line could not be reopened for elevation verification.";
+                        return false;
+                    }
+
+                    Point3dCollection currentPi = featureLine.GetPoints(
+                        FeatureLinePointType.PIPoint);
+                    int checkedCount = 0;
+                    int count = Math.Min(sampledPoints.Count, elevations.Count);
+                    for (int index = 0; index < count; index++)
+                    {
+                        if (!elevations[index].HasValue) continue;
+                        int piIndex = ClosestPlanPointIndex(
+                            currentPi,
+                            sampledPoints[index]);
+                        if (piIndex < 0 || piIndex >= currentPi.Count) continue;
+
+                        double actual = currentPi[piIndex].Z;
+                        double expected = elevations[index].Value;
+                        if (double.IsNaN(actual) ||
+                            double.IsInfinity(actual) ||
+                            Math.Abs(actual - expected) > 0.05)
+                        {
+                            error = string.Format(
+                                CultureInfo.CurrentCulture,
+                                "Surface elevation verification failed at XY {0:0.###},{1:0.###}. Expected Z={2:0.###}; feature-line Z={3:0.###}.",
+                                sampledPoints[index].X,
+                                sampledPoints[index].Y,
+                                expected,
+                                actual);
+                            return false;
+                        }
+                        checkedCount++;
+                    }
+
+                    if (checkedCount == 0)
+                    {
+                        error = "No feature-line PI elevation could be verified against the selected surface.";
+                        return false;
+                    }
+                }
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                error = "Feature-line elevation verification failed: " + exception.Message;
+                return false;
+            }
+        }
+
+        private static bool RetryAbsoluteElevations(
+            Document document,
+            ObjectId featureLineId,
+            IList<Point3d> sampledPoints,
+            IList<double?> elevations,
+            out string error)
+        {
+            error = string.Empty;
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine featureLine = transaction.GetObject(
+                        featureLineId,
+                        OpenMode.ForWrite,
+                        false) as CivilFeatureLine;
+                    if (featureLine == null || featureLine.IsReferenceObject)
+                    {
+                        error = "The feature line is not editable during the absolute-elevation retry.";
+                        return false;
+                    }
+
+                    Point3dCollection currentPi = featureLine.GetPoints(
+                        FeatureLinePointType.PIPoint);
+                    int count = Math.Min(sampledPoints.Count, elevations.Count);
+                    int written = 0;
+                    for (int index = 0; index < count; index++)
+                    {
+                        if (!elevations[index].HasValue) continue;
+                        int piIndex = ClosestPlanPointIndex(
+                            currentPi,
+                            sampledPoints[index]);
+                        if (piIndex < 0 || piIndex >= currentPi.Count) continue;
+
+                        Point3d currentPoint = currentPi[piIndex];
+                        try
+                        {
+                            if (featureLine.IsElevationRelativeToSurface(currentPoint))
+                            {
+                                featureLine.SetPointRelativeElevation(
+                                    currentPoint,
+                                    false,
+                                    elevations[index].Value);
+                            }
+                            else
+                            {
+                                featureLine.SetPointElevation(
+                                    piIndex,
+                                    elevations[index].Value);
+                            }
+                            written++;
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                featureLine.SetPointElevation(
+                                    piIndex,
+                                    elevations[index].Value);
+                                written++;
+                            }
+                            catch { }
+                        }
+                    }
+
+                    if (written == 0)
+                    {
+                        error = "Civil 3D rejected every sampled feature-line elevation.";
+                        return false;
+                    }
+                    try { featureLine.RecordGraphicsModified(true); } catch { }
+                    transaction.Commit();
+                }
+
+                return VerifyAppliedElevations(
+                    document,
+                    featureLineId,
+                    sampledPoints,
+                    elevations,
+                    out error);
+            }
+            catch (System.Exception exception)
+            {
+                error = "Absolute feature-line elevation retry failed: " + exception.Message;
+                return false;
             }
         }
 

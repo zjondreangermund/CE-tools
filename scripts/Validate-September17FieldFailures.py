@@ -8,8 +8,9 @@ root = Path(__file__).resolve().parents[1]
 checks = {
     "src/CE.Tools.Civil3D/August21SurfaceSafety.cs": [
         "FeatureLinePointType.PIPoint",
-        "new[] { typeof(Point3d), typeof(double) }",
-        "featureLine.SetPointElevation(piIndex",
+        "ClosestPlanPointIndex(",
+        "featureLine.SetPointElevation(",
+        "VerifyAppliedElevations(",
     ],
     "src/CE.Tools.Civil3D/FeatureProfileSurfaceCommentCommands.cs": [
         "ApplySite(id, window.SelectedSiteId)",

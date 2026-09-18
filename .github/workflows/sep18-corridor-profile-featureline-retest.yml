@@ -1,0 +1,36 @@
+name: September 18 corridor profile feature-line retest
+
+on:
+  pull_request:
+    paths:
+      - "src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs"
+      - "src/CE.Tools.Civil3D/ProfileViewBandDataBinder.cs"
+      - "src/CE.Tools.Civil3D/August17ProductionFeatureLineCommands.cs"
+      - "src/CE.Tools.Civil3D/August21SurfaceSafety.cs"
+      - "src/CE.Tools.Civil3D/FeatureProfileSurfaceCommentCommands.cs"
+      - "src/CE.Tools.Civil3D/August23PlatformDynamicGradingCommands.cs"
+      - "scripts/Validate-September18CorridorProfileFeatureLineRetest.py"
+      - ".github/workflows/sep18-corridor-profile-featureline-retest.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/CE.Tools.Civil3D/RoadCorridorCompletionCommands.cs"
+      - "src/CE.Tools.Civil3D/ProfileViewBandDataBinder.cs"
+      - "src/CE.Tools.Civil3D/August17ProductionFeatureLineCommands.cs"
+      - "src/CE.Tools.Civil3D/August21SurfaceSafety.cs"
+      - "src/CE.Tools.Civil3D/FeatureProfileSurfaceCommentCommands.cs"
+      - "src/CE.Tools.Civil3D/August23PlatformDynamicGradingCommands.cs"
+      - "scripts/Validate-September18CorridorProfileFeatureLineRetest.py"
+      - ".github/workflows/sep18-corridor-profile-featureline-retest.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Validate corridor/profile/feature-line retest fixes
+        run: python scripts/Validate-September18CorridorProfileFeatureLineRetest.py

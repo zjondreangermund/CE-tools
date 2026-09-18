@@ -97,6 +97,7 @@ namespace CETools.Civil3D
             int matched = 0;
             int created = 0;
             int failed = 0;
+            int sidewalkMatched = 0;
             var rows = new List<IList<string>>();
 
             using (DocumentLock documentLock = document.LockDocument())
@@ -119,6 +120,8 @@ namespace CETools.Civil3D
 
                             string code = line.CodeName ?? string.Empty;
                             if (!all && !MatchesRequestedGroup(code, settings, exactCodes)) continue;
+                            if (string.Equals(ClassifyCode(code), "Sidewalk / Shoulder", StringComparison.OrdinalIgnoreCase))
+                                sidewalkMatched++;
                             string identity = corridorId.Handle.ToString() + ":" + GeometryFingerprint(line);
                             if (!seen.Add(identity)) continue;
                             matched++;
@@ -191,8 +194,8 @@ namespace CETools.Civil3D
                 "CE Tools - Corridor Feature-Line Extraction",
                 string.Format(
                     CultureInfo.CurrentCulture,
-                    "Corridors={0}; source feature lines scanned={1}; matched={2}; created={3}; failed={4}; dynamic links={5}.",
-                    corridorIds.Distinct().Count(), scanned, matched, created, failed, dynamic ? "Yes" : "No"),
+                    "Corridors={0}; source feature lines scanned={1}; matched={2}; sidewalk/shoulder source lines={3}; created={4}; failed={5}; dynamic links={6}.",
+                    corridorIds.Distinct().Count(), scanned, matched, sidewalkMatched, created, failed, dynamic ? "Yes" : "No"),
                 new List<string> { "Corridor", "Baseline", "Point Code", "Group", "Exported Feature Line", "Handle", "Dynamic", "Status" },
                 rows,
                 "CE TOOLS CORRIDOR FEATURE LINES");
@@ -401,7 +404,13 @@ namespace CETools.Civil3D
             if (IsYes(settings.Text("BottomKerb")) && ContainsAny(normalized, "BOTTOMKERB", "BOTTOMCURB", "BOK", "GUTTER", "FLOWLINE")) return true;
             if (IsYes(settings.Text("TopKerb")) && ContainsAny(normalized, "TOPKERB", "TOPCURB", "TOK", "TOC")) return true;
             if (IsYes(settings.Text("BackKerb")) && ContainsAny(normalized, "BACKKERB", "BACKCURB", "BCK")) return true;
-            if (IsYes(settings.Text("Sidewalk")) && ContainsAny(normalized, "SIDEWALK", "WALK", "SHOULDER", "SHLDR", "HINGE")) return true;
+            if (IsYes(settings.Text("Sidewalk")) && ContainsAny(
+                normalized,
+                "SIDEWALK", "SIDEWALKIN", "SIDEWALKOUT",
+                "SDWK", "SWLK",
+                "WALK", "WALKIN", "WALKOUT", "WALKEDGE",
+                "FOOTPATH", "FOOTWAY", "PAVEDWALK",
+                "SHOULDER", "SHLDR", "HINGE", "VERGEEDGE")) return true;
             if (IsYes(settings.Text("Toe")) && ContainsAny(normalized, "TOE", "DAYLIGHT", "CUT", "FILL")) return true;
             if (IsYes(settings.Text("Other")) && !IsKnownGroup(normalized)) return true;
             return false;
@@ -602,7 +611,12 @@ namespace CETools.Civil3D
             if (ContainsAny(normalized, "BOTTOMKERB", "BOTTOMCURB", "BOK", "GUTTER", "FLOWLINE")) return "Bottom Kerb / Gutter";
             if (ContainsAny(normalized, "TOPKERB", "TOPCURB", "TOK", "TOC")) return "Top Kerb";
             if (ContainsAny(normalized, "BACKKERB", "BACKCURB", "BCK")) return "Back Kerb";
-            if (ContainsAny(normalized, "SIDEWALK", "WALK", "SHOULDER", "SHLDR", "HINGE")) return "Sidewalk / Shoulder";
+            if (ContainsAny(
+                normalized,
+                "SIDEWALK", "SDWK", "SWLK",
+                "WALK", "WALKEDGE", "FOOTPATH", "FOOTWAY", "PAVEDWALK",
+                "SHOULDER", "SHLDR", "HINGE", "VERGEEDGE"))
+                return "Sidewalk / Shoulder";
             if (ContainsAny(normalized, "TOE", "DAYLIGHT", "CUT", "FILL")) return "Toe / Daylight";
             return "Other";
         }
@@ -617,7 +631,11 @@ namespace CETools.Civil3D
             return ContainsAny(normalized,
                 "CENTER", "CENTRE", "CROWN", "BASELINE", "CL", "ETW", "EOP", "EDGE", "PAVEEDGE", "EDGEPAVE",
                 "BOTTOMKERB", "BOTTOMCURB", "BOK", "GUTTER", "FLOWLINE", "TOPKERB", "TOPCURB", "TOK", "TOC",
-                "BACKKERB", "BACKCURB", "BCK", "SIDEWALK", "WALK", "SHOULDER", "SHLDR", "HINGE", "TOE", "DAYLIGHT", "CUT", "FILL");
+                "BACKKERB", "BACKCURB", "BCK",
+                "SIDEWALK", "SDWK", "SWLK", "WALK", "WALKEDGE",
+                "FOOTPATH", "FOOTWAY", "PAVEDWALK",
+                "SHOULDER", "SHLDR", "HINGE", "VERGEEDGE",
+                "TOE", "DAYLIGHT", "CUT", "FILL");
         }
 
         private static bool ContainsAny(string value, params string[] terms)

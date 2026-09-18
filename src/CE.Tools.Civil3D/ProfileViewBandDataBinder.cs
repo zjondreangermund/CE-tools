@@ -112,23 +112,50 @@ namespace CETools.Civil3D
                 : finalDesignProfileId;
             if (roadRoles)
             {
-                if (identity.Contains("LEFT") && !leftProfileId.IsNull)
+                bool leftBand =
+                    identity.Contains("LEFT") ||
+                    identity.Contains("LHS") ||
+                    identity.Contains(" HL ") ||
+                    identity.EndsWith(" HL", StringComparison.Ordinal);
+                bool rightBand =
+                    identity.Contains("RIGHT") ||
+                    identity.Contains("RHS") ||
+                    identity.Contains(" HR ") ||
+                    identity.EndsWith(" HR", StringComparison.Ordinal);
+                bool centreBand =
+                    identity.Contains("CENTRE") ||
+                    identity.Contains("CENTER") ||
+                    identity.Contains("CENTRELINE") ||
+                    identity.Contains("CENTERLINE");
+                bool verticalBand =
+                    identity.Contains("VERTICAL") ||
+                    identity.Contains("CREST") ||
+                    identity.Contains("SAG") ||
+                    identity.Contains("GRADE BREAK") ||
+                    identity.Contains("GRADEBREAK");
+                bool horizontalBand =
+                    identity.Contains("HORIZONTAL");
+
+                if (leftBand && !leftProfileId.IsNull)
                     primaryProfileId = leftProfileId;
-                else if (identity.Contains("RIGHT") && !rightProfileId.IsNull)
+                else if (rightBand && !rightProfileId.IsNull)
                     primaryProfileId = rightProfileId;
-                else if ((identity.Contains("VERTICAL") || identity.Contains("CURVE")) &&
-                         !finalDesignProfileId.IsNull)
+                else if ((centreBand || verticalBand) && !finalDesignProfileId.IsNull)
                     primaryProfileId = finalDesignProfileId;
-                if (identity.Contains("VERTICAL") || identity.Contains("CURVE"))
+
+                // Horizontal-curve rows belong to alignment geometry. Do not
+                // accidentally overwrite them with the final road profile merely
+                // because their style name contains the word "Curve".
+                if (verticalBand && !horizontalBand)
                     secondaryProfileId = primaryProfileId;
             }
 
-            PropertyInfo showLabels = item.GetType().GetProperty(
-                "ShowLabels", BindingFlags.Public | BindingFlags.Instance);
-            if (showLabels != null && showLabels.CanWrite && showLabels.PropertyType == typeof(bool))
-            {
-                try { showLabels.SetValue(item, true, null); changed = true; } catch { }
-            }
+            changed = SetBooleanIfAvailable(item, true,
+                "ShowLabels",
+                "DisplayLabels",
+                "LabelsVisible",
+                "Visible",
+                "IsVisible") || changed;
             foreach (PropertyInfo property in item.GetType().GetProperties(
                 BindingFlags.Public | BindingFlags.Instance))
             {
@@ -175,6 +202,32 @@ namespace CETools.Civil3D
                 try
                 {
                     method.Invoke(item, new object[] { source });
+                    changed = true;
+                }
+                catch { }
+            }
+            return changed;
+        }
+
+        private static bool SetBooleanIfAvailable(
+            object target,
+            bool value,
+            params string[] names)
+        {
+            if (target == null || names == null) return false;
+            bool changed = false;
+            foreach (string name in names)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(
+                        name,
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (property == null ||
+                        !property.CanWrite ||
+                        property.PropertyType != typeof(bool))
+                        continue;
+                    property.SetValue(target, value, null);
                     changed = true;
                 }
                 catch { }
