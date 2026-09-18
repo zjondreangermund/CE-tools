@@ -241,11 +241,11 @@ namespace CETools.Civil3D
                 document,
                 "CE Tools - Road Corridor Completion",
                 string.Format(CultureInfo.CurrentCulture,
-                    "Corridors={0}; baselines={1}; regions={2}; frequency values={3}; targets={4}; surfaces={5}; boundaries={6}; visibility settings={7}; automatic rebuild={8}; slope patterns={9}; rebuilt={10}; warnings={11}.",
+                    "Corridors={0}; baselines={1}; regions={2}; frequency values={3}; targets={4}; surfaces={5}; boundaries={6}; visibility settings={7}; automatic rebuild={8}; slope patterns={9}; rebuilt={10}; profile-view bindings={11}; warnings={12}.",
                     result.Corridors, result.Baselines, result.Regions, result.FrequencySettings,
                     result.Targets, result.Surfaces, result.Boundaries,
                     result.VisibilitySettings, result.AutomaticRebuildSettings,
-                    result.SlopePatterns, result.Rebuilt, result.Warnings),
+                    result.SlopePatterns, result.Rebuilt, result.ProfileViewBindings, result.Warnings),
                 new List<string> { "Corridor", "Target Surface", "Baselines", "Regions", "Frequencies", "Targets", "Surfaces", "Boundaries", "Visible", "Auto Rebuild", "Slope Patterns", "Status" },
                 result.Rows,
                 "CE TOOLS ROAD CORRIDOR COMPLETION REGISTER");
@@ -259,8 +259,7 @@ namespace CETools.Civil3D
             var result = new RoadCorridorCompletionResult();
             if (document == null || civilDocument == null || options == null) return result;
             object collection = ReadProperty(civilDocument, "CorridorCollection");
-            IEnumerable values = collection as IEnumerable;
-            if (values == null)
+            if (collection == null)
             {
                 result.Warnings++;
                 return result;
@@ -275,9 +274,25 @@ namespace CETools.Civil3D
                 string codeSetName;
                 ObjectId codeSetStyleId = ResolveOptionalStyle(document.Database, civilDocument, road, project, "Code Set Style", transaction, out codeSetName);
 
-                foreach (object item in values)
+                List<ObjectId> corridorIds = ReadCorridorIds(
+                    collection,
+                    document.Database,
+                    transaction);
+
+                if (corridorIds.Count == 0)
+                    corridorIds.AddRange(CreateMissingRoadCorridors(
+                        collection,
+                        civilDocument,
+                        document.Database,
+                        transaction,
+                        options,
+                        ref result));
+
+                if (corridorIds.Count == 0)
+                    result.Warnings++;
+
+                foreach (ObjectId id in corridorIds.Distinct())
                 {
-                    ObjectId id = item is ObjectId ? (ObjectId)item : item is DBObject ? ((DBObject)item).ObjectId : ObjectId.Null;
                     if (id.IsNull || id.IsErased) continue;
                     DBObject corridor;
                     try { corridor = transaction.GetObject(id, OpenMode.ForWrite, false); }
@@ -378,6 +393,21 @@ namespace CETools.Civil3D
                 }
                 transaction.Commit();
             }
+
+            // Corridor feature-line profiles only become reliable after the
+            // corridor rebuild transaction has committed.  Build/bind the left
+            // road-edge, centre design, right road-edge and vertical-curve data
+            // sources in a separate phase so the profile-view band rows display
+            // actual design-road values instead of empty labels.
+            result.ProfileViewBindings += RefreshRoadRoleProfilesAndBands(
+                document,
+                civilDocument);
+            try
+            {
+                document.Database.TransactionManager.QueueForGraphicsFlush();
+                document.Editor.Regen();
+            }
+            catch { }
             return result;
         }
 
@@ -660,6 +690,642 @@ namespace CETools.Civil3D
                 if(!string.IsNullOrWhiteSpace(requested) && string.Equals(name,requested,StringComparison.OrdinalIgnoreCase)) return id;
             }
             return first;
+        }
+
+        private static List<ObjectId> ReadCorridorIds(
+            object collection,
+            Database database,
+            Transaction transaction)
+        {
+            var result = new HashSet<ObjectId>();
+            foreach (object item in CivilStyleDiscovery.Enumerate(collection))
+            {
+                ObjectId id = item is ObjectId
+                    ? (ObjectId)item
+                    : item is DBObject ? ((DBObject)item).ObjectId : ObjectId.Null;
+                if (!id.IsNull && !id.IsErased) result.Add(id);
+            }
+
+            // Civil 3D 2023 CorridorCollection is not consistently exposed as
+            // System.Collections.IEnumerable.  Model-space class discovery is the
+            // fallback that prevents the completion report from returning
+            // Corridors=0 while valid corridors are visible in the drawing.
+            try
+            {
+                BlockTableRecord model = transaction.GetObject(
+                    SymbolUtilityServices.GetBlockModelSpaceId(database),
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (model != null)
+                {
+                    foreach (ObjectId id in model)
+                    {
+                        if (id.IsNull || id.IsErased) continue;
+                        string className = id.ObjectClass == null
+                            ? string.Empty
+                            : (id.ObjectClass.Name ?? string.Empty);
+                        if (className.IndexOf("CORRIDOR", StringComparison.OrdinalIgnoreCase) >= 0)
+                            result.Add(id);
+                    }
+                }
+            }
+            catch { }
+
+            return result.ToList();
+        }
+
+        private static IEnumerable<ObjectId> CreateMissingRoadCorridors(
+            object collection,
+            CivilDocument civilDocument,
+            Database database,
+            Transaction transaction,
+            RoadCorridorCompletionOptions options,
+            ref RoadCorridorCompletionResult result)
+        {
+            var created = new List<ObjectId>();
+            if (collection == null || civilDocument == null || database == null || transaction == null)
+                return created;
+
+            ObjectId assemblyId = FindAssemblyId(
+                civilDocument,
+                transaction,
+                options == null ? string.Empty : options.AssemblyName);
+            if (assemblyId.IsNull)
+            {
+                result.Warnings++;
+                return created;
+            }
+
+            var existingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            foreach (ObjectId existingId in ReadCorridorIds(collection, database, transaction))
+            {
+                try
+                {
+                    DBObject existing = transaction.GetObject(existingId, OpenMode.ForRead, false);
+                    string existingName = Convert.ToString(
+                        ReadProperty(existing, "Name"),
+                        CultureInfo.CurrentCulture);
+                    if (!string.IsNullOrWhiteSpace(existingName))
+                        existingNames.Add(existingName);
+                }
+                catch { }
+            }
+
+            foreach (ObjectId alignmentId in civilDocument.GetAlignmentIds())
+            {
+                CivilAlignment alignment = null;
+                try
+                {
+                    alignment = transaction.GetObject(
+                        alignmentId,
+                        OpenMode.ForRead,
+                        false) as CivilAlignment;
+                }
+                catch { }
+                if (alignment == null || !IsCeRoadAlignment(alignment)) continue;
+
+                CivilProfile profile = FindDesignProfile(alignment, transaction) ??
+                                       FindNglProfile(alignment, transaction);
+                if (profile == null)
+                {
+                    result.Warnings++;
+                    continue;
+                }
+
+                string root = (alignment.Name ?? "RD") + "-CORRIDOR";
+                string name = root;
+                int suffix = 2;
+                while (existingNames.Contains(name))
+                    name = root + "-" + suffix++.ToString(CultureInfo.InvariantCulture);
+
+                try
+                {
+                    ObjectId corridorId = AddCorridorByReflection(
+                        collection,
+                        name,
+                        (alignment.Name ?? "RD") + "-BASELINE",
+                        alignment.ObjectId,
+                        profile.ObjectId,
+                        assemblyId);
+                    if (corridorId.IsNull) continue;
+                    existingNames.Add(name);
+                    created.Add(corridorId);
+                }
+                catch
+                {
+                    result.Warnings++;
+                }
+            }
+
+            return created;
+        }
+
+        private static CivilProfile FindDesignProfile(
+            CivilAlignment alignment,
+            Transaction transaction)
+        {
+            if (alignment == null) return null;
+            CivilProfile fallback = null;
+            foreach (ObjectId id in alignment.GetProfileIds())
+            {
+                CivilProfile profile = null;
+                try { profile = transaction.GetObject(id, OpenMode.ForRead, false) as CivilProfile; }
+                catch { }
+                if (profile == null) continue;
+                string identity = ((profile.Name ?? string.Empty) + " " +
+                    (profile.Description ?? string.Empty)).ToUpperInvariant();
+                if (identity.Contains("LEFT EDGE") || identity.Contains("RIGHT EDGE") ||
+                    identity.Contains("LEFT-EDGE") || identity.Contains("RIGHT-EDGE"))
+                    continue;
+                if (fallback == null) fallback = profile;
+                if (identity.Contains("-FG") || identity.Contains(" FINAL") ||
+                    identity.Contains("FINAL ROAD") || identity.Contains("CE FINAL ROAD"))
+                    return profile;
+            }
+            return fallback;
+        }
+
+        private static ObjectId AddCorridorByReflection(
+            object collection,
+            string corridorName,
+            string baselineName,
+            ObjectId alignmentId,
+            ObjectId profileId,
+            ObjectId assemblyId)
+        {
+            if (collection == null) return ObjectId.Null;
+            System.Exception lastError = null;
+            foreach (MethodInfo method in collection.GetType()
+                .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                .Where(item => string.Equals(item.Name, "Add", StringComparison.OrdinalIgnoreCase))
+                .OrderBy(item => item.GetParameters().Length))
+            {
+                object[] arguments;
+                if (!TryBuildCorridorArguments(
+                    method.GetParameters(),
+                    corridorName,
+                    baselineName,
+                    alignmentId,
+                    profileId,
+                    assemblyId,
+                    out arguments)) continue;
+                try
+                {
+                    object value = method.Invoke(collection, arguments);
+                    if (value is ObjectId) return (ObjectId)value;
+                    DBObject dbObject = value as DBObject;
+                    if (dbObject != null) return dbObject.ObjectId;
+                }
+                catch (TargetInvocationException exception)
+                {
+                    lastError = exception.InnerException ?? exception;
+                }
+                catch (System.Exception exception)
+                {
+                    lastError = exception;
+                }
+            }
+            if (lastError != null) throw lastError;
+            return ObjectId.Null;
+        }
+
+        private static bool TryBuildCorridorArguments(
+            ParameterInfo[] parameters,
+            string corridorName,
+            string baselineName,
+            ObjectId alignmentId,
+            ObjectId profileId,
+            ObjectId assemblyId,
+            out object[] arguments)
+        {
+            arguments = new object[parameters.Length];
+            int stringIndex = 0;
+            ObjectId[] fallback = { alignmentId, profileId, assemblyId };
+            int fallbackIndex = 0;
+            for (int index = 0; index < parameters.Length; index++)
+            {
+                ParameterInfo parameter = parameters[index];
+                string parameterName = (parameter.Name ?? string.Empty).ToLowerInvariant();
+                if (parameter.ParameterType == typeof(string))
+                {
+                    if (parameterName.Contains("baseline")) arguments[index] = baselineName;
+                    else if (parameterName.Contains("corridor")) arguments[index] = corridorName;
+                    else arguments[index] = stringIndex++ == 0 ? corridorName : baselineName;
+                }
+                else if (parameter.ParameterType == typeof(ObjectId))
+                {
+                    if (parameterName.Contains("alignment")) arguments[index] = alignmentId;
+                    else if (parameterName.Contains("profile")) arguments[index] = profileId;
+                    else if (parameterName.Contains("assembly")) arguments[index] = assemblyId;
+                    else if (fallbackIndex < fallback.Length) arguments[index] = fallback[fallbackIndex++];
+                    else return false;
+                }
+                else if (parameter.ParameterType == typeof(bool))
+                    arguments[index] = false;
+                else if (parameter.HasDefaultValue)
+                    arguments[index] = parameter.DefaultValue;
+                else
+                    return false;
+            }
+            return true;
+        }
+
+        private static int RefreshRoadRoleProfilesAndBands(
+            Document document,
+            CivilDocument civilDocument)
+        {
+            if (document == null || civilDocument == null) return 0;
+            int updated = 0;
+
+            try
+            {
+                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                {
+                    object collection = ReadProperty(civilDocument, "CorridorCollection");
+                    List<ObjectId> corridorIds = ReadCorridorIds(
+                        collection,
+                        document.Database,
+                        transaction);
+                    if (corridorIds.Count == 0) return 0;
+
+                    foreach (ObjectId corridorId in corridorIds)
+                    {
+                        Corridor corridor = null;
+                        try
+                        {
+                            corridor = transaction.GetObject(
+                                corridorId,
+                                OpenMode.ForRead,
+                                false) as Corridor;
+                        }
+                        catch { }
+                        if (corridor == null) continue;
+
+                        foreach (Baseline baseline in corridor.Baselines)
+                        {
+                            ObjectId alignmentId = ReadObjectId(baseline, "AlignmentId");
+                            if (alignmentId.IsNull)
+                                alignmentId = ReadObjectId(baseline, "AlignmentObjectId");
+                            CivilAlignment alignment = alignmentId.IsNull
+                                ? null
+                                : transaction.GetObject(
+                                    alignmentId,
+                                    OpenMode.ForRead,
+                                    false) as CivilAlignment;
+                            if (alignment == null || !IsCeRoadAlignment(alignment)) continue;
+
+                            CivilProfile design = FindDesignProfile(alignment, transaction);
+                            if (design == null) continue;
+
+                            CorridorFeatureLine leftLine;
+                            CorridorFeatureLine rightLine;
+                            ResolveRoadEdgeFeatureLines(
+                                alignment,
+                                baseline,
+                                out leftLine,
+                                out rightLine);
+
+                            ObjectId leftProfileId = EnsureCorridorEdgeProfile(
+                                alignment,
+                                design,
+                                leftLine,
+                                "LEFT-EDGE",
+                                transaction);
+                            ObjectId rightProfileId = EnsureCorridorEdgeProfile(
+                                alignment,
+                                design,
+                                rightLine,
+                                "RIGHT-EDGE",
+                                transaction);
+
+                            if (leftProfileId.IsNull) leftProfileId = design.ObjectId;
+                            if (rightProfileId.IsNull) rightProfileId = design.ObjectId;
+
+                            updated += BindRoadRolesToProfileViews(
+                                document.Database,
+                                alignment.ObjectId,
+                                leftProfileId,
+                                design.ObjectId,
+                                rightProfileId,
+                                design.ObjectId,
+                                transaction);
+                        }
+                    }
+                    transaction.Commit();
+                }
+            }
+            catch
+            {
+                // Corridor/profile creation remains committed even when a drawing
+                // exposes a band API that cannot be rebound programmatically.
+            }
+
+            return updated;
+        }
+
+        private static int BindRoadRolesToProfileViews(
+            Database database,
+            ObjectId alignmentId,
+            ObjectId leftProfileId,
+            ObjectId centreProfileId,
+            ObjectId rightProfileId,
+            ObjectId finalProfileId,
+            Transaction transaction)
+        {
+            int updated = 0;
+            BlockTableRecord model = transaction.GetObject(
+                SymbolUtilityServices.GetBlockModelSpaceId(database),
+                OpenMode.ForRead,
+                false) as BlockTableRecord;
+            if (model == null) return 0;
+
+            foreach (ObjectId id in model)
+            {
+                DBObject view = null;
+                try { view = transaction.GetObject(id, OpenMode.ForWrite, false); }
+                catch { }
+                if (view == null ||
+                    view.GetType().Name.IndexOf("ProfileView", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+
+                ObjectId linkedAlignment = ReadObjectId(view, "AlignmentId");
+                if (!linkedAlignment.IsNull && linkedAlignment != alignmentId) continue;
+
+                int bound = ProfileViewBandDataBinder.BindRoad(
+                    view,
+                    leftProfileId,
+                    centreProfileId,
+                    rightProfileId,
+                    finalProfileId);
+                if (bound > 0) updated++;
+                try
+                {
+                    Entity entity = view as Entity;
+                    if (entity != null) entity.RecordGraphicsModified(true);
+                }
+                catch { }
+            }
+            return updated;
+        }
+
+        private static ObjectId EnsureCorridorEdgeProfile(
+            CivilAlignment alignment,
+            CivilProfile design,
+            CorridorFeatureLine featureLine,
+            string role,
+            Transaction transaction)
+        {
+            if (alignment == null || design == null || featureLine == null)
+                return ObjectId.Null;
+
+            string roleToken = role.Replace("-", " ");
+            foreach (ObjectId id in alignment.GetProfileIds())
+            {
+                CivilProfile existing = null;
+                try { existing = transaction.GetObject(id, OpenMode.ForRead, false) as CivilProfile; }
+                catch { }
+                if (existing == null) continue;
+                string identity = ((existing.Name ?? string.Empty) + " " +
+                    (existing.Description ?? string.Empty)).ToUpperInvariant();
+                if (identity.Contains(role.ToUpperInvariant()) ||
+                    identity.Contains(roleToken.ToUpperInvariant()))
+                    return existing.ObjectId;
+            }
+
+            ObjectId styleId = ReadObjectId(design, "StyleId");
+            ObjectId labelSetId = ReadObjectId(design, "LabelSetId");
+            if (labelSetId.IsNull)
+                labelSetId = ReadObjectId(design, "LabelSetStyleId");
+            if (styleId.IsNull || labelSetId.IsNull) return ObjectId.Null;
+
+            string name = (alignment.Name ?? "RD") + "-" + role;
+            try
+            {
+                ObjectId id = CivilProfile.CreateFromFeatureLine(
+                    name,
+                    featureLine,
+                    alignment.ObjectId,
+                    design.LayerId,
+                    styleId,
+                    labelSetId);
+                CivilProfile created = transaction.GetObject(
+                    id,
+                    OpenMode.ForWrite,
+                    false) as CivilProfile;
+                if (created != null)
+                    created.Description = "CE road " + roleToken +
+                        " profile from corridor feature line " +
+                        (featureLine.CodeName ?? string.Empty);
+                return id;
+            }
+            catch
+            {
+                return ObjectId.Null;
+            }
+        }
+
+        private static void ResolveRoadEdgeFeatureLines(
+            CivilAlignment alignment,
+            Baseline baseline,
+            out CorridorFeatureLine left,
+            out CorridorFeatureLine right)
+        {
+            left = null;
+            right = null;
+            double leftMagnitude = double.NegativeInfinity;
+            double rightMagnitude = double.NegativeInfinity;
+
+            foreach (CorridorFeatureLine line in EnumerateBaselineFeatureLines(baseline))
+            {
+                if (line == null || !IsRoadEdgeCode(line.CodeName)) continue;
+                Point3d representative;
+                if (!TryRepresentativePoint(line, out representative)) continue;
+
+                double station;
+                double offset;
+                if (!TryStationOffset(alignment, representative, out station, out offset))
+                    continue;
+
+                double magnitude = Math.Abs(offset);
+                if (offset < -0.001 && magnitude > leftMagnitude)
+                {
+                    left = line;
+                    leftMagnitude = magnitude;
+                }
+                else if (offset > 0.001 && magnitude > rightMagnitude)
+                {
+                    right = line;
+                    rightMagnitude = magnitude;
+                }
+            }
+        }
+
+        private static bool IsRoadEdgeCode(string code)
+        {
+            string value = (code ?? string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty)
+                .Replace(" ", string.Empty)
+                .ToUpperInvariant();
+            return value.Contains("ETW") ||
+                   value.Contains("EOP") ||
+                   value.Contains("PAVEEDGE") ||
+                   value.Contains("EDGEPAVE") ||
+                   value.Contains("ROADEDGE") ||
+                   value.Contains("TRAVELEDGE") ||
+                   value.Contains("TRAVELWAYEDGE");
+        }
+
+        private static bool TryRepresentativePoint(
+            CorridorFeatureLine line,
+            out Point3d point)
+        {
+            point = Point3d.Origin;
+            try
+            {
+                List<Point3d> points = line.FeatureLinePoints
+                    .Cast<FeatureLinePoint>()
+                    .Where(item => item != null)
+                    .Select(item => item.XYZ)
+                    .ToList();
+                if (points.Count == 0) return false;
+                point = points[points.Count / 2];
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static IEnumerable<CorridorFeatureLine> EnumerateBaselineFeatureLines(
+            Baseline baseline)
+        {
+            if (baseline == null) yield break;
+            foreach (CorridorFeatureLine line in EnumerateFeatureContainer(
+                baseline.MainBaselineFeatureLines))
+                yield return line;
+
+            PropertyInfo offsetProperty = baseline.GetType().GetProperty(
+                "OffsetBaselineFeatureLinesCol",
+                BindingFlags.Public | BindingFlags.Instance);
+            object offsets = offsetProperty == null
+                ? null
+                : offsetProperty.GetValue(baseline, null);
+            foreach (object value in EnumerateObjects(offsets))
+                foreach (CorridorFeatureLine line in EnumerateFeatureContainer(value))
+                    yield return line;
+        }
+
+        private static IEnumerable<CorridorFeatureLine> EnumerateFeatureContainer(
+            object container)
+        {
+            if (container == null) yield break;
+            PropertyInfo mapProperty = container.GetType().GetProperty(
+                "FeatureLineCollectionMap",
+                BindingFlags.Public | BindingFlags.Instance);
+            object map = mapProperty == null ? null : mapProperty.GetValue(container, null);
+            foreach (object collection in EnumerateObjects(map))
+                foreach (CorridorFeatureLine line in FindCorridorFeatureLines(collection))
+                    yield return line;
+        }
+
+        private static IEnumerable<CorridorFeatureLine> FindCorridorFeatureLines(
+            object value)
+        {
+            if (value == null) yield break;
+            CorridorFeatureLine direct = value as CorridorFeatureLine;
+            if (direct != null)
+            {
+                yield return direct;
+                yield break;
+            }
+
+            PropertyInfo valueProperty = value.GetType().GetProperty(
+                "Value",
+                BindingFlags.Public | BindingFlags.Instance);
+            if (valueProperty != null)
+            {
+                object nested = valueProperty.GetValue(value, null);
+                foreach (CorridorFeatureLine line in FindCorridorFeatureLines(nested))
+                    yield return line;
+                yield break;
+            }
+
+            foreach (object nested in EnumerateObjects(value))
+                foreach (CorridorFeatureLine line in FindCorridorFeatureLines(nested))
+                    yield return line;
+        }
+
+        private static IEnumerable<object> EnumerateObjects(object value)
+        {
+            IEnumerable enumerable = value as IEnumerable;
+            if (enumerable == null || value is string) yield break;
+            foreach (object item in enumerable) yield return item;
+        }
+
+        private static bool TryStationOffset(
+            CivilAlignment alignment,
+            Point3d point,
+            out double station,
+            out double offset)
+        {
+            station = 0.0;
+            offset = double.MaxValue;
+            if (alignment == null) return false;
+
+            foreach (MethodInfo method in alignment.GetType().GetMethods(
+                BindingFlags.Public | BindingFlags.Instance)
+                .Where(item => item.Name == "StationOffset"))
+            {
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length < 4) continue;
+                object[] arguments = new object[parameters.Length];
+                int doubleInput = 0;
+                var byRefIndexes = new List<int>();
+                bool usable = true;
+
+                for (int index = 0; index < parameters.Length; index++)
+                {
+                    Type parameterType = parameters[index].ParameterType;
+                    Type effective = parameterType.IsByRef
+                        ? parameterType.GetElementType()
+                        : parameterType;
+                    if (effective == typeof(double))
+                    {
+                        if (parameterType.IsByRef)
+                        {
+                            arguments[index] = 0.0;
+                            byRefIndexes.Add(index);
+                        }
+                        else
+                        {
+                            arguments[index] = doubleInput++ == 0
+                                ? point.X
+                                : point.Y;
+                        }
+                    }
+                    else if (parameters[index].HasDefaultValue)
+                        arguments[index] = parameters[index].DefaultValue;
+                    else
+                    {
+                        usable = false;
+                        break;
+                    }
+                }
+
+                if (!usable || byRefIndexes.Count < 2) continue;
+                try
+                {
+                    method.Invoke(alignment, arguments);
+                    station = Convert.ToDouble(
+                        arguments[byRefIndexes[0]],
+                        CultureInfo.InvariantCulture);
+                    offset = Convert.ToDouble(
+                        arguments[byRefIndexes[1]],
+                        CultureInfo.InvariantCulture);
+                    return true;
+                }
+                catch { }
+            }
+            return false;
         }
 
         private static string ResolveRoadSurfaceName(
@@ -1122,6 +1788,7 @@ namespace CETools.Civil3D
         internal int AutomaticRebuildSettings { get; set; }
         internal int SlopePatterns { get; set; }
         internal int Rebuilt { get; set; }
+        internal int ProfileViewBindings { get; set; }
         internal int Warnings { get; set; }
         internal List<IList<string>> Rows { get; private set; }
     }
