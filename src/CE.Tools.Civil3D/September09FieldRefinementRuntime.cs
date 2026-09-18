@@ -528,7 +528,25 @@ namespace CETools.Civil3D
             var used = new HashSet<int>();
             var chains = new List<List<Point2d>>();
 
-            foreach (int startNode in adjacency.Keys.Where(n => adjacency[n].Count != 2).OrderBy(n => n))
+            // Start at true road ends first. When a chain reaches a T/X node,
+            // continue through the straightest opposite edge instead of stopping
+            // there. This keeps the main road as one joined polyline while the
+            // side road terminates at a T-junction; at a cross junction the two
+            // straight-through roads remain two independent joined polylines.
+            foreach (int startNode in adjacency.Keys.Where(n => adjacency[n].Count == 1).OrderBy(n => n))
+            {
+                foreach (int edgeIndex in adjacency[startNode].ToArray())
+                {
+                    if (used.Contains(edgeIndex)) continue;
+                    List<Point2d> chain = TraceChain(startNode, edgeIndex, nodes, edges, adjacency, used);
+                    if (chain.Count >= 2) chains.Add(chain);
+                }
+            }
+
+            // Networks without free ends (or any remaining junction arms) are
+            // resolved after the terminal chains have claimed their natural
+            // straight-through continuations.
+            foreach (int startNode in adjacency.Keys.Where(n => adjacency[n].Count > 2).OrderBy(n => n))
             {
                 foreach (int edgeIndex in adjacency[startNode].ToArray())
                 {
@@ -546,7 +564,13 @@ namespace CETools.Civil3D
             return chains;
         }
 
-        private static List<Point2d> TraceChain(int startNode, int startEdge, IList<Point2d> nodes, IList<GraphEdge> edges, IDictionary<int, List<int>> adjacency, ISet<int> used)
+        private static List<Point2d> TraceChain(
+            int startNode,
+            int startEdge,
+            IList<Point2d> nodes,
+            IList<GraphEdge> edges,
+            IDictionary<int, List<int>> adjacency,
+            ISet<int> used)
         {
             var points = new List<Point2d> { nodes[startNode] };
             int node = startNode;
@@ -556,13 +580,68 @@ namespace CETools.Civil3D
                 used.Add(edge);
                 int next = edges[edge].Other(node);
                 points.Add(nodes[next]);
-                if (!adjacency.ContainsKey(next) || adjacency[next].Count != 2) break;
-                int candidate = adjacency[next].FirstOrDefault(e => !used.Contains(e));
-                if (used.Contains(candidate)) break;
+
+                int candidate = ChooseRoadContinuation(
+                    node,
+                    next,
+                    edge,
+                    nodes,
+                    edges,
+                    adjacency,
+                    used);
+                if (candidate < 0) break;
+
                 node = next;
                 edge = candidate;
             }
             return RemoveConsecutiveDuplicates(points, 1e-6);
+        }
+
+        private static int ChooseRoadContinuation(
+            int previousNode,
+            int junctionNode,
+            int incomingEdge,
+            IList<Point2d> nodes,
+            IList<GraphEdge> edges,
+            IDictionary<int, List<int>> adjacency,
+            ISet<int> used)
+        {
+            List<int> connected;
+            if (!adjacency.TryGetValue(junctionNode, out connected) || connected == null)
+                return -1;
+
+            List<int> available = connected
+                .Where(index => index != incomingEdge && !used.Contains(index))
+                .ToList();
+            if (available.Count == 0) return -1;
+            if (connected.Count == 2) return available[0];
+
+            Vector2d back = nodes[previousNode] - nodes[junctionNode];
+            if (back.Length <= Tol) return -1;
+            back = back.GetNormal();
+
+            int bestEdge = -1;
+            double bestDot = double.MaxValue;
+            foreach (int candidate in available)
+            {
+                int other = edges[candidate].Other(junctionNode);
+                Vector2d forward = nodes[other] - nodes[junctionNode];
+                if (forward.Length <= Tol) continue;
+                forward = forward.GetNormal();
+
+                // Opposite outward vectors have dot=-1 and represent the same
+                // road continuing through the junction. A 120-degree included
+                // angle (dot=-0.5) is the maximum deflection accepted at a
+                // branching node; sharper turns are treated as separate roads.
+                double dot = back.DotProduct(forward);
+                if (dot < bestDot)
+                {
+                    bestDot = dot;
+                    bestEdge = candidate;
+                }
+            }
+
+            return bestEdge >= 0 && bestDot <= -0.5 ? bestEdge : -1;
         }
 
         private static Polyline BuildFilletedPolyline(IList<Point2d> points, double radius, out int filleted)
