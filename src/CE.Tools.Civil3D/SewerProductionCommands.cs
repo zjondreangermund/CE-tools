@@ -1202,29 +1202,30 @@ namespace CETools.Civil3D
 
             // Civil 3D materialises profile-view band collections and native
             // network-part display links only after the creating transaction has
-            // committed. Editing them in that same transaction triggers the native
-            // dbobji eNotOpenForWrite abort seen in the field.
-            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            // committed.  Keep native AddToProfileView and band edits in separate
+            // transactions as well: AddToProfileView can internally edit the
+            // profile view, so holding that view open ForWrite at the same time is
+            // a known Civil 3D 2023 dbobji eNotOpenForWrite abort path.
+            RepairLegacyRelativeStructureSumps(database, bindings);
+
+            foreach (SewerProfileBinding binding in bindings)
             {
-                foreach (SewerProfileBinding binding in bindings)
+                if (!binding.NetworkId.IsNull)
+                    partsAdded += AddBranchPartsSafely(
+                        database,
+                        binding.NetworkId,
+                        binding.BranchName,
+                        binding.ProfileViewId);
+            }
+
+            foreach (SewerProfileBinding binding in bindings)
+            {
+                using (Transaction transaction = database.TransactionManager.StartTransaction())
                 {
                     DBObject view = transaction.GetObject(
                         binding.ProfileViewId,
                         OpenMode.ForWrite,
                         false);
-                    if (!binding.NetworkId.IsNull)
-                    {
-                        var network = transaction.GetObject(
-                            binding.NetworkId,
-                            OpenMode.ForRead,
-                            false) as CivilNetwork;
-                        if (network != null)
-                            partsAdded += AddBranchParts(
-                                network,
-                                binding.BranchName,
-                                binding.ProfileViewId,
-                                transaction);
-                    }
                     bandItemsLinked += ProfileViewBandDataBinder.Bind(
                         view,
                         binding.ProfileId,
@@ -1237,8 +1238,8 @@ namespace CETools.Civil3D
                             graphicsEntity.RecordGraphicsModified(true);
                     }
                     catch { }
+                    transaction.Commit();
                 }
-                transaction.Commit();
             }
         }
 
@@ -1250,28 +1251,223 @@ namespace CETools.Civil3D
             internal ObjectId NetworkId { get; set; }
         }
 
-        private static int AddBranchParts(
-            CivilNetwork network,
+        private static int AddBranchPartsSafely(
+            Database database,
+            ObjectId networkId,
             string branchName,
-            ObjectId viewId,
-            Transaction transaction)
+            ObjectId viewId)
         {
-            int count = 0;
-            foreach (ObjectId pipeId in network.GetPipeIds())
+            if (database == null || networkId.IsNull || viewId.IsNull) return 0;
+
+            var partIds = new List<ObjectId>();
+            using (Transaction read = database.TransactionManager.StartTransaction())
             {
-                var pipe = transaction.GetObject(pipeId, OpenMode.ForWrite, false) as CivilPipe;
-                if (pipe != null && string.Equals(pipe.Description, branchName, StringComparison.OrdinalIgnoreCase) &&
-                    TryAddToProfileView(pipe, viewId))
-                    count++;
+                CivilNetwork network = read.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
+                if (network == null) return 0;
+
+                foreach (ObjectId pipeId in network.GetPipeIds())
+                {
+                    CivilPipe pipe = read.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe;
+                    if (pipe != null &&
+                        string.Equals(pipe.Description, branchName, StringComparison.OrdinalIgnoreCase))
+                        partIds.Add(pipeId);
+                }
+                foreach (ObjectId structureId in network.GetStructureIds())
+                {
+                    CivilStructure structure = read.GetObject(structureId, OpenMode.ForRead, false) as CivilStructure;
+                    if (structure != null &&
+                        string.Equals(structure.Description, branchName, StringComparison.OrdinalIgnoreCase))
+                        partIds.Add(structureId);
+                }
             }
-            foreach (ObjectId structureId in network.GetStructureIds())
+
+            int count = 0;
+            foreach (ObjectId partId in partIds.Distinct())
             {
-                var structure = transaction.GetObject(structureId, OpenMode.ForWrite, false) as CivilStructure;
-                if (structure != null && string.Equals(structure.Description, branchName, StringComparison.OrdinalIgnoreCase) &&
-                    TryAddToProfileView(structure, viewId))
-                    count++;
+                try
+                {
+                    // One native part per transaction. Do not open the ProfileView
+                    // here; Civil 3D's AddToProfileView implementation owns the
+                    // internal write-open/graphics update of the view.
+                    using (Transaction write = database.TransactionManager.StartTransaction())
+                    {
+                        DBObject part = write.GetObject(partId, OpenMode.ForWrite, false);
+                        if (part != null && TryAddToProfileView(part, viewId))
+                        {
+                            write.Commit();
+                            count++;
+                        }
+                    }
+                }
+                catch
+                {
+                    // Keep the remainder of the branch isolated from one bad part.
+                }
             }
             return count;
+        }
+
+        private static int RepairLegacyRelativeStructureSumps(
+            Database database,
+            IEnumerable<SewerProfileBinding> bindings)
+        {
+            if (database == null || bindings == null) return 0;
+            var networkIds = bindings
+                .Where(item => item != null && !item.NetworkId.IsNull)
+                .Select(item => item.NetworkId)
+                .Distinct()
+                .ToList();
+            int repaired = 0;
+
+            foreach (ObjectId networkId in networkIds)
+            {
+                try
+                {
+                    using (Transaction transaction = database.TransactionManager.StartTransaction())
+                    {
+                        CivilNetwork network = transaction.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
+                        if (network == null) continue;
+
+                        var inverts = new Dictionary<ObjectId, List<double>>();
+                        foreach (ObjectId pipeId in network.GetPipeIds())
+                        {
+                            CivilPipe pipe = transaction.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe;
+                            if (pipe == null) continue;
+                            double inside = ReadProfileFiniteDouble(
+                                pipe,
+                                "InnerDiameterOrWidth",
+                                "InnerDiameter",
+                                "Diameter");
+                            double radius = IsProfileFinite(inside) && inside > 0.0 ? inside * 0.5 : 0.0;
+                            AddProfileInvert(inverts, pipe.StartStructureId, pipe.StartPoint.Z - radius);
+                            AddProfileInvert(inverts, pipe.EndStructureId, pipe.EndPoint.Z - radius);
+                        }
+
+                        foreach (ObjectId structureId in network.GetStructureIds())
+                        {
+                            List<double> values;
+                            if (!inverts.TryGetValue(structureId, out values) || values == null || values.Count == 0)
+                                continue;
+
+                            double lowestInvert = values.Min();
+                            CivilStructure structure = transaction.GetObject(structureId, OpenMode.ForWrite, false) as CivilStructure;
+                            if (structure == null) continue;
+
+                            double rawElevation = ReadProfileFiniteDouble(structure, "SumpElevation");
+                            double rawDepth = ReadProfileFiniteDouble(structure, "SumpDepth");
+                            bool looksRelative =
+                                IsProfileFinite(rawElevation) &&
+                                Math.Abs(rawElevation) <= 50.0 &&
+                                Math.Abs(lowestInvert - rawElevation) > 50.0;
+                            if (!looksRelative) continue;
+
+                            double depth = IsProfileFinite(rawDepth)
+                                ? Math.Abs(rawDepth)
+                                : Math.Abs(rawElevation);
+                            double absoluteElevation = lowestInvert - Math.Max(0.0, depth);
+
+                            TrySetProfileEnum(
+                                structure,
+                                "ControlSumpBy",
+                                "Elevation",
+                                "ByElevation",
+                                "SumpElevation");
+                            if (TrySetProfileDouble(structure, "SumpElevation", absoluteElevation))
+                                repaired++;
+                        }
+                        transaction.Commit();
+                    }
+                }
+                catch
+                {
+                    // Profile creation can still continue; the native profile-view
+                    // part binding remains transaction-isolated below.
+                }
+            }
+            return repaired;
+        }
+
+        private static void AddProfileInvert(
+            IDictionary<ObjectId, List<double>> values,
+            ObjectId structureId,
+            double elevation)
+        {
+            if (structureId.IsNull || !IsProfileFinite(elevation)) return;
+            List<double> list;
+            if (!values.TryGetValue(structureId, out list))
+            {
+                list = new List<double>();
+                values[structureId] = list;
+            }
+            list.Add(elevation);
+        }
+
+        private static bool IsProfileFinite(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value);
+        }
+
+        private static double ReadProfileFiniteDouble(object target, params string[] propertyNames)
+        {
+            if (target == null || propertyNames == null) return double.NaN;
+            foreach (string propertyName in propertyNames)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(
+                        propertyName,
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (property == null || !property.CanRead) continue;
+                    double value = Convert.ToDouble(
+                        property.GetValue(target, null),
+                        CultureInfo.InvariantCulture);
+                    if (IsProfileFinite(value)) return value;
+                }
+                catch { }
+            }
+            return double.NaN;
+        }
+
+        private static bool TrySetProfileDouble(object target, string propertyName, double value)
+        {
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite || property.PropertyType != typeof(double))
+                    return false;
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static bool TrySetProfileEnum(
+            object target,
+            string propertyName,
+            params string[] names)
+        {
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite || !property.PropertyType.IsEnum)
+                    return false;
+                foreach (string name in names)
+                {
+                    try
+                    {
+                        object value = Enum.Parse(property.PropertyType, name, true);
+                        property.SetValue(target, value, null);
+                        return true;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return false;
         }
 
         private static bool TryAddToProfileView(DBObject part, ObjectId viewId)
