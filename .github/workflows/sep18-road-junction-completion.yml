@@ -1,0 +1,26 @@
+name: September 18 road junction completion
+
+on:
+  pull_request:
+    paths:
+      - "src/CE.Tools.Civil3D/**"
+      - "scripts/Validate-September18RoadJunctionCompletion.py"
+      - ".github/workflows/sep18-road-junction-completion.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/CE.Tools.Civil3D/**"
+      - "scripts/Validate-September18RoadJunctionCompletion.py"
+      - ".github/workflows/sep18-road-junction-completion.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Validate September 18 road and junction completion
+        run: python scripts/Validate-September18RoadJunctionCompletion.py
