@@ -650,17 +650,32 @@ namespace CETools.Civil3D
             if (double.IsInfinity(lowestInvert)) { warnings++; return; }
 
             double sumpDepth = Math.Max(0.0, settings.Double("SumpDepth", 0.0));
-            // Civil 3D stores the displayed sump differently according to
-            // ControlSumpBy. Set the control mode first, then its depth value, and
-            // also provide the corresponding absolute elevation for hosts that do
-            // not expose SumpDepth as a public property.
-            TrySetEnumProperty(structure, "ControlSumpBy", "Depth", "ByDepth");
-            bool depthSet = TrySetDoubleProperty(structure, "SumpDepth", sumpDepth);
-            bool elevationSet = TrySetDoubleProperty(
+            double absoluteSumpElevation = lowestInvert - sumpDepth;
+
+            // Civil 3D 2023 can expose SumpElevation as the signed relative
+            // sump offset while ControlSumpBy is Depth.  That produced values such
+            // as -0.080 in the audit and, more importantly, could leave profile
+            // view structure extents hundreds of metres below the network datum.
+            // Use absolute-elevation control first so the stored geometry is
+            // unambiguous.  Fall back to a positive depth only when this host does
+            // not expose an editable SumpElevation property.
+            bool elevationMode = TrySetEnumProperty(
                 structure,
-                "SumpElevation",
-                lowestInvert - sumpDepth);
-            if (depthSet || elevationSet) adjusted++;
+                "ControlSumpBy",
+                "Elevation",
+                "ByElevation",
+                "SumpElevation");
+            bool elevationSet = elevationMode &&
+                TrySetDoubleProperty(structure, "SumpElevation", absoluteSumpElevation);
+
+            bool depthSet = false;
+            if (!elevationSet)
+            {
+                TrySetEnumProperty(structure, "ControlSumpBy", "Depth", "ByDepth", "SumpDepth");
+                depthSet = TrySetDoubleProperty(structure, "SumpDepth", Math.Abs(sumpDepth));
+            }
+
+            if (elevationSet || depthSet) adjusted++;
             else warnings++;
 
             // Length/topology and excessive-drop conditions are intentionally
