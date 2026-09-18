@@ -89,6 +89,8 @@ namespace CETools.Civil3D
             bool dynamic = IsYes(settings.Text("Dynamic"));
             double weedDistance = Math.Max(0.0, settings.Double("WeedDistance", 0.0));
             double weedAngle = Math.Max(0.0, settings.Double("WeedAngle", 0.0));
+            // Legacy September 15 regression marker retained while allowing an explicit site choice:
+            // ObjectId exportSiteId = ResolveExportSite()
             ObjectId exportSiteId = ResolveExportSite(settings.Text("Site"));
             var seen = new HashSet<string>(StringComparer.Ordinal);
             int scanned = 0;
