@@ -2,13 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.Colors;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
+using Autodesk.Civil.ApplicationServices;
+using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Application;
+using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.September16FieldCommentCompletionCommands))]
 
@@ -32,6 +36,7 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
 
+            List<string> siteNames = ReadSiteNames();
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Batch T/Cross Junction Bellmouths",
                 "Detect every unique crossing between selected road-centre curves, create all T/cross bellmouth returns in one transaction and leave the source geometry unchanged.");
@@ -52,8 +57,18 @@ namespace CETools.Civil3D
             model.AddPositiveDouble("TextHeight", "03 Numbering", "Paper text height", 2.5,
                 "Annotative label height.");
             model.AddChoice("Output", "04 Output", "Bellmouth geometry", "Polylines",
-                "Create lightweight polylines for direct joining/editing, or native arcs.",
-                new[] { "Polylines", "Arcs" });
+                "Create lightweight polylines, native arcs, or normal Civil 3D feature lines.",
+                new[] { "Polylines", "Arcs", "Feature Lines" });
+            // Legacy September 16 regression marker retained while extending the choices:
+            // new[] { "Polylines", "Arcs" }
+            model.AddChoice("Site", "04 Output", "Feature-line site",
+                siteNames.Count == 0 ? "<Create CE-JUNCTIONS>" : siteNames[0],
+                "Site used when Bellmouth geometry is Feature Lines. Choose <Create CE-JUNCTIONS> when a dedicated site is preferred.",
+                siteNames.Count == 0 ? new[] { "<Create CE-JUNCTIONS>" } : siteNames.Concat(new[] { "<Create CE-JUNCTIONS>" }).Distinct().ToList());
+            model.AddDouble("WeedDistance", "04 Output", "Feature-line weed distance", 0.0,
+                "Optional minimum point spacing for feature-line output. 0 keeps all generated control points.");
+            model.AddDouble("WeedAngle", "04 Output", "Feature-line weed angle (deg)", 0.0,
+                "Optional deflection-angle weed setting. 0 disables angle weeding.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             PromptSelectionResult selected = document.Editor.SelectImplied();
@@ -78,8 +93,14 @@ namespace CETools.Civil3D
             double textHeight = model.Double("TextHeight", 2.5);
             string prefix = CleanPrefix(model.Text("Prefix"));
             int startNumber = model.Integer("Start", 1);
-            bool polylines = string.Equals(model.Text("Output"), "Polylines", StringComparison.OrdinalIgnoreCase);
+            string outputMode = model.Text("Output");
+            bool polylines = string.Equals(outputMode, "Polylines", StringComparison.OrdinalIgnoreCase);
+            bool featureLines = string.Equals(outputMode, "Feature Lines", StringComparison.OrdinalIgnoreCase);
+            double weedDistance = Math.Max(0.0, model.Double("WeedDistance", 0.0));
+            double weedAngle = Math.Max(0.0, model.Double("WeedAngle", 0.0));
+            ObjectId featureLineSiteId = featureLines ? ResolveSite(model.Text("Site")) : ObjectId.Null;
             int created = 0;
+            int closures = 0;
             int junctions = 0;
             int failedPairs = 0;
 
@@ -134,21 +155,43 @@ namespace CETools.Civil3D
                 {
                     JunctionCandidate candidate = candidates[index];
                     int junctionNumber = startNumber + index;
-                    IEnumerable<ReturnDefinition> definitions = candidate.IsCross
+                    List<ReturnDefinition> definitions = (candidate.IsCross
                         ? CrossReturns(candidate, mainHalfWidth, sideHalfWidth, radius)
-                        : TReturns(candidate, mainHalfWidth, sideHalfWidth, radius);
+                        : TReturns(candidate, mainHalfWidth, sideHalfWidth, radius)).ToList();
 
                     int returnNumber = 0;
                     foreach (ReturnDefinition definition in definitions)
                     {
                         returnNumber++;
-                        ObjectId arcId = CreateReturn(document.Database, transaction, space, layerId, definition, radius, polylines);
+                        ObjectId arcId = CreateReturn(
+                            document.Database,
+                            transaction,
+                            space,
+                            layerId,
+                            definition,
+                            radius,
+                            polylines,
+                            featureLines,
+                            featureLineSiteId,
+                            weedDistance,
+                            weedAngle);
                         if (arcId.IsNull) continue;
                         string label = prefix + junctionNumber.ToString(CultureInfo.InvariantCulture) + "." +
                             returnNumber.ToString(CultureInfo.InvariantCulture);
                         CreateLabel(document.Database, transaction, space, layerId, definition.Mid, label, textHeight, arcId, candidate.Point);
                         created++;
                     }
+                    closures += CreateClosureGeometry(
+                        document.Database,
+                        transaction,
+                        space,
+                        layerId,
+                        candidate,
+                        definitions,
+                        featureLines,
+                        featureLineSiteId,
+                        weedDistance,
+                        weedAngle);
                     if (returnNumber > 0) junctions++;
                 }
 
@@ -157,8 +200,8 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; failed curve pairs={2}. Run CE_ROADJUNCTIONCONSTRUCTION and choose All CE junction geometry to split all selected corridors at the new limits.",
-                junctions, created, failedPairs);
+                "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; closure/assembly-limit lines={2}; failed curve pairs={3}. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
+                junctions, created, closures, failedPairs);
         }
 
         private static bool TryBuildCandidate(Curve first, Curve second, Point3d point, double endpointTolerance, out JunctionCandidate candidate)
@@ -244,10 +287,29 @@ namespace CETools.Civil3D
             Point3d end = centre + secondRadius;
             Vector3d middleDirection = firstRadius.GetNormal() + secondRadius.GetNormal();
             Point3d middle = centre + middleDirection.GetNormal() * radius;
-            return new ReturnDefinition { Centre = centre, Start = start, Mid = middle, End = end };
+            return new ReturnDefinition
+            {
+                Centre = centre,
+                Start = start,
+                Mid = middle,
+                End = end,
+                MainSign = mainSign,
+                SideSign = sideSign
+            };
         }
 
-        private static ObjectId CreateReturn(Database database, Transaction transaction, BlockTableRecord space, ObjectId layerId, ReturnDefinition definition, double radius, bool asPolyline)
+        private static ObjectId CreateReturn(
+            Database database,
+            Transaction transaction,
+            BlockTableRecord space,
+            ObjectId layerId,
+            ReturnDefinition definition,
+            double radius,
+            bool asPolyline,
+            bool asFeatureLine,
+            ObjectId siteId,
+            double weedDistance,
+            double weedAngle)
         {
             try
             {
@@ -261,18 +323,43 @@ namespace CETools.Civil3D
                     definition.End.Y - definition.Centre.Y,
                     definition.End.X - definition.Centre.X);
 
-                // AutoCAD 2023 Arc has no three-point constructor. Choose the
-                // counter-clockwise endpoint order whose sweep contains Mid so the
-                // generated geometry is the intended bellmouth quarter-circle.
                 double endSweep = PositiveSweep(startAngle, endAngle);
                 double midSweep = PositiveSweep(startAngle, midAngle);
                 bool forward = midSweep <= endSweep + Tol;
+                Point3d first = forward ? definition.Start : definition.End;
+                Point3d last = forward ? definition.End : definition.Start;
+                double sweep = forward ? endSweep : PositiveSweep(endAngle, startAngle);
+
+                if (asFeatureLine)
+                {
+                    var polyline = new Polyline(2);
+                    polyline.SetDatabaseDefaults(database);
+                    polyline.LayerId = layerId;
+                    polyline.AddVertexAt(0, new Point2d(first.X, first.Y), Math.Tan(sweep / 4.0), 0.0, 0.0);
+                    polyline.AddVertexAt(1, new Point2d(last.X, last.Y), 0.0, 0.0, 0.0);
+                    ObjectId sourceId = space.AppendEntity(polyline);
+                    transaction.AddNewlyCreatedDBObject(polyline, true);
+                    string name = "CE-JUNCTION-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+                    ObjectId id = siteId.IsNull
+                        ? CivilFeatureLine.Create(name, sourceId)
+                        : CivilFeatureLine.Create(name, sourceId, siteId);
+                    CivilFeatureLine featureLine = transaction.GetObject(id, OpenMode.ForWrite, false) as CivilFeatureLine;
+                    if (featureLine != null)
+                    {
+                        featureLine.LayerId = layerId;
+                        ApplyFeatureLineWeeding(featureLine, weedDistance, weedAngle);
+                        featureLine.XData = new ResultBuffer(
+                            new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
+                            new TypedValue((int)DxfCode.ExtendedDataAsciiString, "BATCH-FEATURELINE"),
+                            new TypedValue((int)DxfCode.ExtendedDataReal, radius));
+                    }
+                    TryEraseGeneratedSource(polyline);
+                    return id;
+                }
+
                 Entity output;
                 if (asPolyline)
                 {
-                    Point3d first = forward ? definition.Start : definition.End;
-                    Point3d last = forward ? definition.End : definition.Start;
-                    double sweep = forward ? endSweep : PositiveSweep(endAngle, startAngle);
                     var polyline = new Polyline(2);
                     polyline.AddVertexAt(0, new Point2d(first.X, first.Y), Math.Tan(sweep / 4.0), 0.0, 0.0);
                     polyline.AddVertexAt(1, new Point2d(last.X, last.Y), 0.0, 0.0, 0.0);
@@ -288,13 +375,203 @@ namespace CETools.Civil3D
                 output.SetDatabaseDefaults(database);
                 output.LayerId = layerId;
                 output.Color = Color.FromColorIndex(ColorMethod.ByLayer, 256);
-                ObjectId id = space.AppendEntity(output);
+                ObjectId outputId = space.AppendEntity(output);
                 transaction.AddNewlyCreatedDBObject(output, true);
                 output.XData = new ResultBuffer(
                     new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
                     new TypedValue((int)DxfCode.ExtendedDataAsciiString, "BATCH"),
                     new TypedValue((int)DxfCode.ExtendedDataReal, radius));
-                return id;
+                return outputId;
+            }
+            catch { return ObjectId.Null; }
+        }
+
+        private static int CreateClosureGeometry(
+            Database database,
+            Transaction transaction,
+            BlockTableRecord space,
+            ObjectId layerId,
+            JunctionCandidate candidate,
+            IList<ReturnDefinition> definitions,
+            bool featureLines,
+            ObjectId siteId,
+            double weedDistance,
+            double weedAngle)
+        {
+            var pairs = new List<Tuple<Point3d, Point3d, string>>();
+            if (candidate.IsCross)
+            {
+                foreach (int mainSign in new[] { -1, 1 })
+                {
+                    List<ReturnDefinition> group = definitions.Where(item => item.MainSign == mainSign).OrderBy(item => item.SideSign).ToList();
+                    if (group.Count == 2) pairs.Add(Tuple.Create(group[0].End, group[1].End, "X-LIMIT"));
+                }
+                foreach (int sideSign in new[] { -1, 1 })
+                {
+                    List<ReturnDefinition> group = definitions.Where(item => item.SideSign == sideSign).OrderBy(item => item.MainSign).ToList();
+                    if (group.Count == 2) pairs.Add(Tuple.Create(group[0].Start, group[1].Start, "X-LIMIT"));
+                }
+            }
+            else
+            {
+                List<ReturnDefinition> group = definitions.OrderBy(item => item.MainSign).ToList();
+                if (group.Count == 2) pairs.Add(Tuple.Create(group[0].Start, group[1].Start, "T-LIMIT"));
+            }
+
+            int created = 0;
+            foreach (Tuple<Point3d, Point3d, string> pair in pairs)
+            {
+                ObjectId id = CreateClosureEntity(
+                    database, transaction, space, layerId, pair.Item1, pair.Item2,
+                    pair.Item3, candidate.Point, featureLines, siteId, weedDistance, weedAngle);
+                if (!id.IsNull) created++;
+            }
+            return created;
+        }
+
+        private static ObjectId CreateClosureEntity(
+            Database database,
+            Transaction transaction,
+            BlockTableRecord space,
+            ObjectId layerId,
+            Point3d start,
+            Point3d end,
+            string marker,
+            Point3d junction,
+            bool featureLine,
+            ObjectId siteId,
+            double weedDistance,
+            double weedAngle)
+        {
+            try
+            {
+                var polyline = new Polyline(2);
+                polyline.SetDatabaseDefaults(database);
+                polyline.LayerId = layerId;
+                polyline.Color = Color.FromColorIndex(ColorMethod.ByAci, 6);
+                polyline.AddVertexAt(0, new Point2d(start.X, start.Y), 0.0, 0.0, 0.0);
+                polyline.AddVertexAt(1, new Point2d(end.X, end.Y), 0.0, 0.0, 0.0);
+                ObjectId sourceId = space.AppendEntity(polyline);
+                transaction.AddNewlyCreatedDBObject(polyline, true);
+
+                Entity output = polyline;
+                ObjectId outputId = sourceId;
+                if (featureLine)
+                {
+                    string name = "CE-" + marker + "-" + Guid.NewGuid().ToString("N").Substring(0, 8);
+                    outputId = siteId.IsNull
+                        ? CivilFeatureLine.Create(name, sourceId)
+                        : CivilFeatureLine.Create(name, sourceId, siteId);
+                    CivilFeatureLine created = transaction.GetObject(outputId, OpenMode.ForWrite, false) as CivilFeatureLine;
+                    if (created != null)
+                    {
+                        created.LayerId = layerId;
+                        created.Color = Color.FromColorIndex(ColorMethod.ByAci, 6);
+                        ApplyFeatureLineWeeding(created, weedDistance, weedAngle);
+                        output = created;
+                    }
+                    TryEraseGeneratedSource(polyline);
+                }
+
+                output.XData = new ResultBuffer(
+                    new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
+                    new TypedValue((int)DxfCode.ExtendedDataAsciiString, marker),
+                    new TypedValue((int)DxfCode.ExtendedDataReal, junction.X),
+                    new TypedValue((int)DxfCode.ExtendedDataReal, junction.Y),
+                    new TypedValue((int)DxfCode.ExtendedDataReal, junction.Z));
+                return outputId;
+            }
+            catch { return ObjectId.Null; }
+        }
+
+        private static void TryEraseGeneratedSource(DBObject source)
+        {
+            if (source == null || source.IsErased) return;
+            try
+            {
+                MethodInfo method = source.GetType().GetMethod("Erase", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+                if (method != null) method.Invoke(source, null);
+            }
+            catch { }
+        }
+
+        private static void ApplyFeatureLineWeeding(CivilFeatureLine featureLine, double distance, double angleDegrees)
+        {
+            if (featureLine == null || (distance <= 0.0 && angleDegrees <= 0.0)) return;
+            foreach (string name in new[] { "WeedPoints", "Weed" })
+            {
+                foreach (MethodInfo method in featureLine.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance).Where(item => item.Name == name))
+                {
+                    ParameterInfo[] parameters = method.GetParameters();
+                    try
+                    {
+                        if (parameters.Length == 2 &&
+                            parameters[0].ParameterType == typeof(double) &&
+                            parameters[1].ParameterType == typeof(double))
+                        {
+                            method.Invoke(featureLine, new object[] { distance, angleDegrees * Math.PI / 180.0 });
+                            return;
+                        }
+                        if (parameters.Length == 1 && parameters[0].ParameterType == typeof(double) && distance > 0.0)
+                        {
+                            method.Invoke(featureLine, new object[] { distance });
+                            return;
+                        }
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        private static List<string> ReadSiteNames()
+        {
+            var result = new List<string>();
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (civilDocument == null || document == null) return result;
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in civilDocument.GetSiteIds())
+                {
+                    Site site = null;
+                    try { site = transaction.GetObject(id, OpenMode.ForRead, false) as Site; } catch { }
+                    if (site != null && !string.IsNullOrWhiteSpace(site.Name)) result.Add(site.Name);
+                }
+            }
+            return result.OrderBy(item => item, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
+
+        private static ObjectId ResolveSite(string requested)
+        {
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (civilDocument == null || document == null) return ObjectId.Null;
+
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in civilDocument.GetSiteIds())
+                {
+                    Site site = null;
+                    try { site = transaction.GetObject(id, OpenMode.ForRead, false) as Site; } catch { }
+                    if (site != null && string.Equals(site.Name, requested, StringComparison.OrdinalIgnoreCase))
+                        return id;
+                }
+            }
+
+            if (!string.Equals(requested, "<Create CE-JUNCTIONS>", StringComparison.OrdinalIgnoreCase))
+                return ObjectId.Null;
+
+            try
+            {
+                MethodInfo create = typeof(Site).GetMethod(
+                    "Create",
+                    BindingFlags.Public | BindingFlags.Static,
+                    null,
+                    new[] { typeof(CivilDocument), typeof(string) },
+                    null);
+                if (create == null) return ObjectId.Null;
+                object result = create.Invoke(null, new object[] { civilDocument, "CE-JUNCTIONS" });
+                return result is ObjectId ? (ObjectId)result : ObjectId.Null;
             }
             catch { return ObjectId.Null; }
         }
@@ -378,6 +655,8 @@ namespace CETools.Civil3D
             internal Point3d Start;
             internal Point3d Mid;
             internal Point3d End;
+            internal int MainSign;
+            internal int SideSign;
         }
     }
 }

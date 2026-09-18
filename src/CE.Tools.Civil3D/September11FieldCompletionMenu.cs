@@ -82,6 +82,31 @@ namespace CETools.Civil3D
                         "Select all road-centre lines, polylines or feature lines once. Detect every T/cross intersection, create all bellmouths using separate main/side half-widths and one radius, then number them in a single batch.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
+                        "Reverse Multiple Road Alignments + Profiles",
+                        "CE_ROADALIGNREVERSEMULTI",
+                        "Reverse selected Civil 3D road alignments and refresh their associated profiles, profile views and corridor rebuilds in the same workflow.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "T-Junction Assembly Limits / Remove Short Regions",
+                        "CE_ROADTJUNCTIONASSEMBLYLIMITS",
+                        "Use the magenta T-junction closure lines from the batch bellmouth command as side-road assembly/region limits and remove the short terminal region between the junction and road edge. Cross junctions are left continuous.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Road TOP/BOTTOM Surface Names",
+                        "CE_ROADSURFACENAMES",
+                        "Rename corridor surfaces by their actual road alignment: TOP-RD-01, BOTTOM-RD-01, TOP-RD-02, BOTTOM-RD-02 and so on.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "TOP/BOTTOM Surfaces in Selected Profile Views",
+                        "CE_ROADTOPBOTTOMPROFILE",
+                        "Add TOP-RD/BOTTOM-RD surface profiles to selected road profile views so crossing and T-junction surface levels are visible.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Junction End Points to Road TOP Surfaces",
+                        "CE_JUNCTIONENDPOINTSTOTOPSURFACES",
+                        "Paste generated junction return/closure endpoints into each covering TOP-RD surface using supported Civil 3D surface-vertex APIs.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
                         "Split Multiple Corridors at Junctions",
                         "CE_ROADJUNCTIONCONSTRUCTION",
                         "Use all CE junction geometry to split multiple selected corridor regions at every bellmouth limit, with configurable station clustering and extra split distance.",
@@ -125,6 +150,11 @@ namespace CETools.Civil3D
                         "Sewer Surface / Rules Recalculation",
                         "CE_SEWRECALC",
                         "Re-link a gravity network to one surface, apply pipe and structure rules, show every part result/error in a grid or DWG table, then optionally queue sewer profiles only after the transaction commits.",
+                        "02 Sewer"),
+                    new DisciplineWorkflowAction(
+                        "Reverse Multiple Pipe Slopes to Outlet",
+                        "CE_PIPESLOPETOOUTLET",
+                        "Select multiple gravity pipes, specify the low point/outlet, and reverse only those pipe end elevations that currently fall away from the outlet.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
                         "Synchronise Annotation Scale",

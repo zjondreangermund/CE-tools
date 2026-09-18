@@ -193,8 +193,11 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Complete Road Corridors",
                 "Create or repair supported corridor production settings: baselines, regions, assemblies, frequencies, targets, TOP/DATUM surfaces, boundaries, visibility, slope patterns and rebuild behavior.");
-            model.AddText("TopName", "01 Corridor Surfaces", "Top surface name", "CE-TOP", "Corridor top surface name.");
-            model.AddText("BottomName", "01 Corridor Surfaces", "Bottom surface name", "CE-BOTTOM", "Corridor bottom/datum surface name.");
+            model.AddText("TopName", "01 Corridor Surfaces", "Top surface fallback name", "CE-TOP", "Fallback name used only when a road number cannot be resolved.");
+            model.AddText("BottomName", "01 Corridor Surfaces", "Bottom surface fallback name", "CE-BOTTOM", "Fallback name used only when a road number cannot be resolved.");
+            model.AddChoice("RoadNumberedSurfaceNames", "01 Corridor Surfaces", "Name surfaces by road number", "Enabled",
+                "Create/repair corridor surfaces as TOP-RD-01, BOTTOM-RD-01, TOP-RD-02, BOTTOM-RD-02 and so on, using each baseline alignment name.",
+                new[] { "Enabled", "Disabled" });
             List<string> assemblyNames = ReadAssemblyNames(document, civilDocument);
             model.AddChoice("Assembly", "00 Baseline and Region", "Assembly for missing corridor regions",
                 assemblyNames.Count == 0 ? string.Empty : assemblyNames[0],
@@ -218,6 +221,7 @@ namespace CETools.Civil3D
                 TargetSurfaceName = surfacePicker.Selected.Name,
                 TopSurfaceName = SafeName(model.Text("TopName"), "CE-TOP"),
                 BottomSurfaceName = SafeName(model.Text("BottomName"), "CE-BOTTOM"),
+                UseRoadNumberedSurfaceNames = string.Equals(model.Text("RoadNumberedSurfaceNames"), "Enabled", StringComparison.OrdinalIgnoreCase),
                 AssemblyName = model.Text("Assembly"),
                 TopCodes = SplitCodes(model.Text("TopCodes"), new[] { "Top", "Pave" }),
                 BottomCodes = SplitCodes(model.Text("BottomCodes"), new[] { "Datum", "Subgrade" }),
@@ -340,8 +344,14 @@ namespace CETools.Civil3D
                     }
 
                     object corridorSurfaces = ReadProperty(corridor, "CorridorSurfaces") ?? ReadProperty(corridor, "Surfaces");
-                    object top = EnsureCorridorSurface(corridorSurfaces, options.TopSurfaceName, options.TopCodes, options.AddBoundary, ref result);
-                    object bottom = EnsureCorridorSurface(corridorSurfaces, options.BottomSurfaceName, options.BottomCodes, options.AddBoundary, ref result);
+                    string topSurfaceName = options.UseRoadNumberedSurfaceNames
+                        ? ResolveRoadSurfaceName("TOP", corridor, baselines, transaction, options.TopSurfaceName)
+                        : options.TopSurfaceName;
+                    string bottomSurfaceName = options.UseRoadNumberedSurfaceNames
+                        ? ResolveRoadSurfaceName("BOTTOM", corridor, baselines, transaction, options.BottomSurfaceName)
+                        : options.BottomSurfaceName;
+                    object top = EnsureCorridorSurface(corridorSurfaces, topSurfaceName, options.TopCodes, options.AddBoundary, ref result);
+                    object bottom = EnsureCorridorSurface(corridorSurfaces, bottomSurfaceName, options.BottomCodes, options.AddBoundary, ref result);
                     if (top != null) Invoke(top, "Rebuild");
                     if (bottom != null) Invoke(bottom, "Rebuild");
                     if (options.EnableSlopePatterns) result.SlopePatterns += EnableSlopePatterns(corridor);
@@ -650,6 +660,46 @@ namespace CETools.Civil3D
                 if(!string.IsNullOrWhiteSpace(requested) && string.Equals(name,requested,StringComparison.OrdinalIgnoreCase)) return id;
             }
             return first;
+        }
+
+        private static string ResolveRoadSurfaceName(
+            string prefix,
+            DBObject corridor,
+            object baselines,
+            Transaction transaction,
+            string fallback)
+        {
+            foreach (object baseline in CivilStyleDiscovery.Enumerate(baselines))
+            {
+                ObjectId alignmentId = ReadObjectId(baseline, "AlignmentId");
+                if (alignmentId.IsNull) alignmentId = ReadObjectId(baseline, "AlignmentObjectId");
+                if (alignmentId.IsNull) continue;
+                CivilAlignment alignment = null;
+                try { alignment = transaction.GetObject(alignmentId, OpenMode.ForRead, false) as CivilAlignment; }
+                catch { }
+                if (alignment == null) continue;
+                string road = NormalizeRoadSurfaceSuffix(alignment.Name);
+                if (!string.IsNullOrWhiteSpace(road)) return prefix + "-" + road;
+            }
+
+            string corridorName = Convert.ToString(ReadProperty(corridor, "Name"), CultureInfo.CurrentCulture);
+            string corridorRoad = NormalizeRoadSurfaceSuffix(corridorName);
+            return string.IsNullOrWhiteSpace(corridorRoad) ? fallback : prefix + "-" + corridorRoad;
+        }
+
+        private static string NormalizeRoadSurfaceSuffix(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            int index = value.IndexOf("RD-", StringComparison.OrdinalIgnoreCase);
+            if (index < 0) return null;
+            int digitStart = index + 3;
+            int digitEnd = digitStart;
+            while (digitEnd < value.Length && char.IsDigit(value[digitEnd])) digitEnd++;
+            if (digitEnd <= digitStart) return null;
+            int number;
+            if (!int.TryParse(value.Substring(digitStart, digitEnd - digitStart), NumberStyles.Integer, CultureInfo.InvariantCulture, out number))
+                return null;
+            return "RD-" + number.ToString("00", CultureInfo.InvariantCulture);
         }
 
         private static object EnsureCorridorSurface(object collection, string name, IEnumerable<string> codes, bool boundary, ref RoadCorridorCompletionResult result)
@@ -1045,6 +1095,7 @@ namespace CETools.Civil3D
         internal string AssemblyName { get; set; }
         internal string TopSurfaceName { get; set; }
         internal string BottomSurfaceName { get; set; }
+        internal bool UseRoadNumberedSurfaceNames { get; set; }
         internal IList<string> TopCodes { get; set; }
         internal IList<string> BottomCodes { get; set; }
         internal bool AddBoundary { get; set; }
