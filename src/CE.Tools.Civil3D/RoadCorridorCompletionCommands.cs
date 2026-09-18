@@ -671,8 +671,8 @@ namespace CETools.Civil3D
         {
             foreach (object baseline in CivilStyleDiscovery.Enumerate(baselines))
             {
-                ObjectId alignmentId = ReadObjectId(ReadProperty(baseline, "AlignmentId"));
-                if (alignmentId.IsNull) alignmentId = ReadObjectId(ReadProperty(baseline, "AlignmentObjectId"));
+                ObjectId alignmentId = ReadObjectId(baseline, "AlignmentId");
+                if (alignmentId.IsNull) alignmentId = ReadObjectId(baseline, "AlignmentObjectId");
                 if (alignmentId.IsNull) continue;
                 CivilAlignment alignment = null;
                 try { alignment = transaction.GetObject(alignmentId, OpenMode.ForRead, false) as CivilAlignment; }
