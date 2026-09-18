@@ -970,9 +970,12 @@ namespace CETools.Civil3D
                     double lowInvert = elevations.Count == 0 ? double.NaN : elevations.Min();
                     double drop = elevations.Count < 2 ? double.NaN : highInvert - lowInvert;
                     double rim = ReadFiniteDouble(structure, "RimElevation");
-                    double sump = ReadFiniteDouble(structure, "SumpElevation");
+                    double sumpDepth;
+                    double sump = ResolveAbsoluteSumpElevation(structure, lowInvert, out sumpDepth);
                     double depth = IsFinite(rim) && IsFinite(sump) ? rim - sump : double.NaN;
-                    double sumpClearance = IsFinite(lowInvert) && IsFinite(sump) ? lowInvert - sump : double.NaN;
+                    double sumpClearance = IsFinite(lowInvert) && IsFinite(sump)
+                        ? Math.Max(0.0, lowInvert - sump)
+                        : double.NaN;
                     var issues = new List<string>();
                     string ruleSet = ReadNamedObject(
                         transaction,
@@ -1111,6 +1114,49 @@ namespace CETools.Civil3D
                 catch { }
             }
             return double.NaN;
+        }
+
+        private static double ResolveAbsoluteSumpElevation(
+            CivilStructure structure,
+            double lowestConnectedInvert,
+            out double sumpDepth)
+        {
+            sumpDepth = double.NaN;
+            if (structure == null) return double.NaN;
+
+            double rawDepth = ReadFiniteDouble(structure, "SumpDepth");
+            if (IsFinite(rawDepth))
+                sumpDepth = Math.Abs(rawDepth);
+
+            double rawElevation = ReadFiniteDouble(structure, "SumpElevation");
+
+            if (IsFinite(lowestConnectedInvert))
+            {
+                // When Civil 3D controls the structure by depth, some 2023 builds
+                // expose SumpElevation as the signed relative offset (for example
+                // -0.080) instead of the absolute project elevation. Prefer the
+                // explicit positive SumpDepth in that mode and reconstruct the
+                // absolute sump level from the connected pipe invert.
+                if (IsFinite(sumpDepth) && sumpDepth <= 50.0)
+                    return lowestConnectedInvert - sumpDepth;
+
+                if (IsFinite(rawElevation))
+                {
+                    if (Math.Abs(rawElevation - lowestConnectedInvert) <= 50.0)
+                    {
+                        sumpDepth = Math.Max(0.0, lowestConnectedInvert - rawElevation);
+                        return rawElevation;
+                    }
+
+                    if (Math.Abs(rawElevation) <= 50.0)
+                    {
+                        sumpDepth = Math.Abs(rawElevation);
+                        return lowestConnectedInvert - sumpDepth;
+                    }
+                }
+            }
+
+            return rawElevation;
         }
 
         private static double ReadFiniteDouble(object value, params string[] propertyNames)

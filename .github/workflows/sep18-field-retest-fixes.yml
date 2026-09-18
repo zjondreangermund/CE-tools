@@ -1,0 +1,34 @@
+name: September 18 field retest fixes
+
+on:
+  pull_request:
+    paths:
+      - "src/CE.Tools.Civil3D/September09SewerSurfaceRulesRuntime.cs"
+      - "src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs"
+      - "src/CE.Tools.Civil3D/SewerProductionCommands.cs"
+      - "src/CE.Tools.Civil3D/September09FieldRefinementRuntime.cs"
+      - "src/CE.Tools.Civil3D/September16RuntimeRecoveryCommands.cs"
+      - "scripts/Validate-September18FieldRetest.py"
+      - ".github/workflows/sep18-field-retest-fixes.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "src/CE.Tools.Civil3D/September09SewerSurfaceRulesRuntime.cs"
+      - "src/CE.Tools.Civil3D/August24FieldCompletionCommands.cs"
+      - "src/CE.Tools.Civil3D/SewerProductionCommands.cs"
+      - "src/CE.Tools.Civil3D/September09FieldRefinementRuntime.cs"
+      - "src/CE.Tools.Civil3D/September16RuntimeRecoveryCommands.cs"
+      - "scripts/Validate-September18FieldRetest.py"
+      - ".github/workflows/sep18-field-retest-fixes.yml"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Validate September 18 field retest fixes
+        run: python scripts/Validate-September18FieldRetest.py

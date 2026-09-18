@@ -42,7 +42,8 @@ checks = {
         "entity.LayerId = layerId",
     ],
     "src/CE.Tools.Civil3D/September16RuntimeRecoveryCommands.cs": [
-        "source.Database.Wblock(ids, Point3d.Origin)",
+        "detached.ReadDwgFile(",
+        "detached.Wblock(",
         "ReadAssemblyIds(staging)",
     ],
 }

@@ -116,11 +116,15 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Safe Assembly Copy",
-                "Clone an assembly directly between open drawing databases without using the clipboard, avoiding Civil 3D copy/paste freezes.");
+                "Clone an assembly through a detached side database instead of clipboard copy/paste or a live cross-document clone. This keeps both open Civil 3D documents out of the native deep-clone lock path that can freeze the application.");
             settings.AddChoice("Drawing", "01 Source", "Source drawing", sources[0].Name,
-                "Open source drawing containing the assembly.", sources.Select(item => item.Name).ToArray());
+                "Open source drawing containing the assembly. Save that drawing before copying so the detached reader receives the current assembly.",
+                sources.Select(item => item.Name).ToArray());
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
-            Document source = sources.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Drawing"), StringComparison.CurrentCultureIgnoreCase));
+            Document source = sources.FirstOrDefault(item => string.Equals(
+                item.Name,
+                settings.Text("Drawing"),
+                StringComparison.CurrentCultureIgnoreCase));
             if (source == null) return;
 
             List<NamedId> assemblies = ReadAssemblies(source);
@@ -129,42 +133,83 @@ namespace CETools.Civil3D
                 target.Editor.WriteMessage("\nNo Civil 3D assemblies were found in the selected source drawing.");
                 return;
             }
+
             var assemblySettings = new ProductionSettingsDialogModel(
                 "CE Tools - Safe Assembly Copy",
-                "Select the assembly to clone with its dependent objects.");
+                "Select the assembly to clone from the saved source DWG through a detached side database.");
             assemblySettings.AddChoice("Assembly", "01 Source", "Assembly", assemblies[0].Name,
                 "Assembly from the source drawing.", assemblies.Select(item => item.Name).ToArray());
             if (!DisciplineWorkflowDialogs.EditSettings(assemblySettings)) return;
-            NamedId assembly = assemblies.FirstOrDefault(item => string.Equals(item.Name, assemblySettings.Text("Assembly"), StringComparison.CurrentCultureIgnoreCase));
+            NamedId assembly = assemblies.FirstOrDefault(item => string.Equals(
+                item.Name,
+                assemblySettings.Text("Assembly"),
+                StringComparison.CurrentCultureIgnoreCase));
             if (assembly == null) return;
 
+            string sourceFile = source.Database.Filename;
+            if (string.IsNullOrWhiteSpace(sourceFile))
+            {
+                target.Editor.WriteMessage(
+                    "\nCE_ASSEMBLYCOPYSAFE stopped safely. Save the source drawing first; the detached side-database copy does not read an unsaved live document.");
+                return;
+            }
+
+            Handle assemblyHandle = assembly.Id.Handle;
             try
             {
-                Database staging;
-                using (DocumentLock sourceLock = source.LockDocument())
+                // Do not lock or clone from the live source Document. Civil 3D's
+                // deep-clone dependency graph can re-enter the UI/document manager
+                // and freeze when two live drawing databases are involved.
+                using (var detached = new Database(false, true))
                 {
-                    var ids = new ObjectIdCollection { assembly.Id };
-                    staging = source.Database.Wblock(ids, Point3d.Origin);
+                    detached.ReadDwgFile(
+                        sourceFile,
+                        FileOpenMode.OpenForReadAndAllShare,
+                        true,
+                        null);
+                    detached.CloseInput(true);
+
+                    ObjectId detachedAssemblyId = detached.GetObjectId(
+                        false,
+                        assemblyHandle,
+                        0);
+                    if (detachedAssemblyId.IsNull || detachedAssemblyId.IsErased)
+                        throw new InvalidOperationException(
+                            "The selected assembly was not found in the saved source DWG. Save the source drawing and retry.");
+
+                    Database staging = detached.Wblock(
+                        new ObjectIdCollection { detachedAssemblyId },
+                        Point3d.Origin);
+                    using (staging)
+                    {
+                        ObjectIdCollection stagedAssemblies = ReadAssemblyIds(staging);
+                        if (stagedAssemblies.Count == 0)
+                            throw new InvalidOperationException(
+                                "The detached source assembly could not be staged safely.");
+
+                        using (DocumentLock targetLock = target.LockDocument())
+                        {
+                            var mapping = new IdMapping();
+                            staging.WblockCloneObjects(
+                                stagedAssemblies,
+                                target.Database.CurrentSpaceId,
+                                mapping,
+                                DuplicateRecordCloning.Ignore,
+                                false);
+                        }
+                    }
                 }
-                using (staging)
-                {
-                    ObjectIdCollection stagedAssemblies = ReadAssemblyIds(staging);
-                    if (stagedAssemblies.Count == 0)
-                        throw new InvalidOperationException("The source assembly could not be staged safely.");
-                    var mapping = new IdMapping();
-                    staging.WblockCloneObjects(
-                        stagedAssemblies,
-                        target.Database.CurrentSpaceId,
-                        mapping,
-                        DuplicateRecordCloning.Ignore,
-                        false);
-                }
+
                 target.Editor.Regen();
-                target.Editor.WriteMessage("\nCE_ASSEMBLYCOPYSAFE complete. Assembly '{0}' cloned without clipboard copy/paste.", assembly.Name);
+                target.Editor.WriteMessage(
+                    "\nCE_ASSEMBLYCOPYSAFE complete. Assembly '{0}' cloned through a detached side database; no clipboard or live source-database clone was used.",
+                    assembly.Name);
             }
             catch (System.Exception exception)
             {
-                target.Editor.WriteMessage("\nCE_ASSEMBLYCOPYSAFE stopped safely: {0}", exception.Message);
+                target.Editor.WriteMessage(
+                    "\nCE_ASSEMBLYCOPYSAFE stopped safely without a live cross-document clone: {0}",
+                    exception.Message);
             }
         }
 
