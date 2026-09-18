@@ -64,43 +64,80 @@ namespace CETools.Civil3D
             if (selection.Status != PromptStatus.OK || selection.Value == null) return;
 
             int linked = 0;
+            int cloned = 0;
             int skipped = 0;
-            foreach (ObjectId featureLineId in selection.Value.GetObjectIds().Distinct())
+            foreach (ObjectId selectedId in selection.Value.GetObjectIds().Distinct())
             {
                 string error;
-                if (!IsEditableFeatureLine(document.Database, featureLineId, out error))
+                ObjectId featureLineId = selectedId;
+                bool editable = IsEditableFeatureLine(
+                    document.Database,
+                    selectedId,
+                    out error);
+
+                // Dynamic corridor exports / Auto Corridor Feature Lines can be
+                // readable but intentionally non-editable.  Drape those by first
+                // making one independent normal feature-line copy of their current
+                // 3D geometry instead of rejecting the entire batch.
+                if (!editable)
                 {
-                    skipped++;
-                    document.Editor.WriteMessage("\nDrape skipped. " + error);
-                    continue;
+                    ObjectId cloneId;
+                    if (!TryCreateEditableDrapeCopy(
+                            document,
+                            selectedId,
+                            out cloneId,
+                            out error))
+                    {
+                        skipped++;
+                        document.Editor.WriteMessage(
+                            "\nDrape skipped. " + error);
+                        continue;
+                    }
+                    featureLineId = cloneId;
+                    cloned++;
                 }
 
-                if (!August21SurfaceSafety.TryApplyFeatureLineElevations(document, featureLineId, selectedSurface.Name, intermediate, out error))
+                if (!August21SurfaceSafety.TryApplyFeatureLineElevations(
+                        document,
+                        featureLineId,
+                        selectedSurface.Name,
+                        intermediate,
+                        out error))
                 {
                     skipped++;
-                    document.Editor.WriteMessage("\nDrape skipped safely. " + error);
+                    document.Editor.WriteMessage(
+                        "\nDrape skipped safely. " + error);
                     continue;
                 }
 
                 try
                 {
-                    WriteDirectDrapeLink(document.Database, featureLineId, new DirectDrapeLink
-                    {
-                        SurfaceHandle = selectedSurface.ObjectId.Handle.ToString(),
-                        Intermediate = intermediate
-                    });
+                    WriteDirectDrapeLink(
+                        document.Database,
+                        featureLineId,
+                        new DirectDrapeLink
+                        {
+                            SurfaceHandle = selectedSurface.ObjectId.Handle.ToString(),
+                            Intermediate = intermediate
+                        });
                     linked++;
                 }
                 catch (System.Exception exception)
                 {
                     skipped++;
-                    document.Editor.WriteMessage("\nDrape geometry was kept, but its persistent link could not be written. " + exception.Message);
+                    document.Editor.WriteMessage(
+                        "\nDrape geometry was kept, but its persistent link could not be written. " +
+                        exception.Message);
                 }
             }
 
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
-            document.Editor.WriteMessage("\nCE_PLATFORMDRAPEMULTI complete. Dynamic links={0}; skipped={1}.", linked, skipped);
+            document.Editor.WriteMessage(
+                "\nCE_PLATFORMDRAPEMULTI complete. Dynamic links={0}; read-only/Auto feature lines cloned={1}; skipped={2}.",
+                linked,
+                cloned,
+                skipped);
         }
 
         [CommandMethod("CE_TOOLS", "CE_PLATFORMGRADETOSURFACE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -942,6 +979,179 @@ namespace CETools.Civil3D
             {
                 error = exception.Message;
                 return false;
+            }
+        }
+
+        private static bool TryCreateEditableDrapeCopy(
+            Document document,
+            ObjectId sourceId,
+            out ObjectId featureLineId,
+            out string error)
+        {
+            featureLineId = ObjectId.Null;
+            error = string.Empty;
+            if (document == null ||
+                document.Database == null ||
+                sourceId.IsNull ||
+                sourceId.IsErased)
+            {
+                error = "The selected feature-line source is unavailable.";
+                return false;
+            }
+
+            List<Point3d> points;
+            bool closed;
+            ObjectId sourceLayerId;
+            string sourceStyleName;
+            short sourceColour;
+            string sourceName;
+            try
+            {
+                using (Transaction read =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine source = OpenFeatureLine(
+                        read,
+                        sourceId,
+                        OpenMode.ForRead);
+                    if (source == null)
+                    {
+                        error = "The selected object is not a readable Civil 3D feature line.";
+                        return false;
+                    }
+
+                    Point3dCollection collection = source.GetPoints(
+                        FeatureLinePointType.AllPoints);
+                    if (collection == null || collection.Count < 2)
+                    {
+                        error = "The selected feature line has too few readable points to clone.";
+                        return false;
+                    }
+
+                    points = collection.Cast<Point3d>().ToList();
+                    if (points.Any(point => !Finite(point)))
+                    {
+                        error = "The selected feature line contains a non-finite coordinate.";
+                        return false;
+                    }
+
+                    closed = source.Closed;
+                    sourceLayerId = source.LayerId;
+                    sourceStyleName = source.StyleName;
+                    sourceColour = (short)source.ColorIndex;
+                    sourceName = source.Name;
+                }
+            }
+            catch (System.Exception exception)
+            {
+                error = "The selected feature line could not be read for an editable copy: " +
+                    exception.Message;
+                return false;
+            }
+
+            ObjectId outputLayerId = sourceLayerId;
+            try
+            {
+                using (Transaction layerRead =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    LayerTableRecord layer = sourceLayerId.IsNull
+                        ? null
+                        : layerRead.GetObject(
+                            sourceLayerId,
+                            OpenMode.ForRead,
+                            false) as LayerTableRecord;
+                    if (layer != null && layer.IsLocked)
+                        outputLayerId = document.Database.Clayer;
+                }
+            }
+            catch
+            {
+                outputLayerId = document.Database.Clayer;
+            }
+
+            ObjectId temporaryId = ObjectId.Null;
+            try
+            {
+                using (Transaction createTemporary =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    BlockTableRecord model = createTemporary.GetObject(
+                        SymbolUtilityServices.GetBlockModelSpaceId(document.Database),
+                        OpenMode.ForWrite,
+                        false) as BlockTableRecord;
+                    if (model == null)
+                        throw new InvalidOperationException(
+                            "Model space could not be opened for the editable drape copy.");
+
+                    var temporary = new Polyline3d(
+                        Poly3dType.SimplePoly,
+                        new Point3dCollection(points.ToArray()),
+                        closed);
+                    temporary.SetDatabaseDefaults(document.Database);
+                    if (!outputLayerId.IsNull)
+                        temporary.LayerId = outputLayerId;
+                    temporaryId = model.AppendEntity(temporary);
+                    createTemporary.AddNewlyCreatedDBObject(temporary, true);
+                    createTemporary.Commit();
+                }
+
+                string cloneName = UniqueFeatureLineName(
+                    document.Database,
+                    SafeName(sourceName, "AUTO-FEATURE-LINE") + "-DRAPE",
+                    ObjectId.Null);
+
+                using (Transaction createFeature =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    featureLineId = CivilFeatureLine.Create(
+                        cloneName,
+                        temporaryId);
+                    CivilFeatureLine featureLine = OpenFeatureLine(
+                        createFeature,
+                        featureLineId,
+                        OpenMode.ForWrite);
+                    if (featureLine == null || featureLine.IsReferenceObject)
+                        throw new InvalidOperationException(
+                            "Civil 3D did not return an editable normal feature-line copy.");
+
+                    if (!outputLayerId.IsNull)
+                        featureLine.LayerId = outputLayerId;
+                    featureLine.ColorIndex = sourceColour;
+                    if (!string.IsNullOrWhiteSpace(sourceStyleName))
+                    {
+                        try { featureLine.StyleName = sourceStyleName; }
+                        catch { }
+                    }
+
+                    Point3dCollection verification = featureLine.GetPoints(
+                        FeatureLinePointType.AllPoints);
+                    if (verification == null ||
+                        verification.Count < 2 ||
+                        verification.Cast<Point3d>().Any(point => !Finite(point)))
+                        throw new InvalidOperationException(
+                            "The editable feature-line copy failed geometry verification.");
+
+                    createFeature.Commit();
+                }
+
+                Cleanup(document.Database, temporaryId);
+                temporaryId = ObjectId.Null;
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                error = "A normal editable feature-line copy could not be created: " +
+                    exception.Message;
+                if (!featureLineId.IsNull)
+                    Cleanup(document.Database, featureLineId);
+                featureLineId = ObjectId.Null;
+                return false;
+            }
+            finally
+            {
+                if (!temporaryId.IsNull)
+                    Cleanup(document.Database, temporaryId);
             }
         }
 
