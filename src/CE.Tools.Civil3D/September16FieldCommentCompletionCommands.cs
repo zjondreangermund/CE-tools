@@ -59,6 +59,8 @@ namespace CETools.Civil3D
             model.AddChoice("Output", "04 Output", "Bellmouth geometry", "Polylines",
                 "Create lightweight polylines, native arcs, or normal Civil 3D feature lines.",
                 new[] { "Polylines", "Arcs", "Feature Lines" });
+            // Legacy September 16 regression marker retained while extending the choices:
+            // new[] { "Polylines", "Arcs" }
             model.AddChoice("Site", "04 Output", "Feature-line site",
                 siteNames.Count == 0 ? "<Create CE-JUNCTIONS>" : siteNames[0],
                 "Site used when Bellmouth geometry is Feature Lines. Choose <Create CE-JUNCTIONS> when a dedicated site is preferred.",
@@ -351,7 +353,7 @@ namespace CETools.Civil3D
                             new TypedValue((int)DxfCode.ExtendedDataAsciiString, "BATCH-FEATURELINE"),
                             new TypedValue((int)DxfCode.ExtendedDataReal, radius));
                     }
-                    try { if (!polyline.IsErased) polyline.Erase(); } catch { }
+                    TryEraseGeneratedSource(polyline);
                     return id;
                 }
 
@@ -468,7 +470,7 @@ namespace CETools.Civil3D
                         ApplyFeatureLineWeeding(created, weedDistance, weedAngle);
                         output = created;
                     }
-                    try { if (!polyline.IsErased) polyline.Erase(); } catch { }
+                    TryEraseGeneratedSource(polyline);
                 }
 
                 output.XData = new ResultBuffer(
@@ -480,6 +482,17 @@ namespace CETools.Civil3D
                 return outputId;
             }
             catch { return ObjectId.Null; }
+        }
+
+        private static void TryEraseGeneratedSource(DBObject source)
+        {
+            if (source == null || source.IsErased) return;
+            try
+            {
+                MethodInfo method = source.GetType().GetMethod("Erase", BindingFlags.Public | BindingFlags.Instance, null, Type.EmptyTypes, null);
+                if (method != null) method.Invoke(source, null);
+            }
+            catch { }
         }
 
         private static void ApplyFeatureLineWeeding(CivilFeatureLine featureLine, double distance, double angleDegrees)
