@@ -33,6 +33,7 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
 
+            List<string> siteNames = ReadSiteNames();
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Corridor Feature Lines",
                 "Create individual grading feature lines from selected corridor feature-line codes. Choose All or the required road components; exported lines can remain dynamically linked to the corridor.");
@@ -48,7 +49,19 @@ namespace CETools.Civil3D
             settings.AddChoice("Toe", "02 Groups", "Toe / daylight lines", "Yes", "Include toe, daylight, cut and fill codes.", new[] { "Yes", "No" });
             settings.AddChoice("Other", "02 Groups", "Other / unclassified codes", "No", "Include corridor point codes that do not match one of the named engineering groups.", new[] { "Yes", "No" });
             settings.AddText("ExactCodes", "02 Groups", "Exact point codes", string.Empty, "Optional comma-separated Civil 3D point codes. This stays in the popup instead of opening a command-line text prompt.");
-            settings.AddChoice("Dynamic", "03 Output", "Link exported feature lines to corridor", "Yes", "Yes keeps Civil 3D's dynamic corridor relationship; No creates independent grading feature lines.", new[] { "Yes", "No" });
+            settings.AddChoice("Dynamic", "03 Output", "Feature-line relationship", "Yes",
+                "Yes creates dynamically linked corridor feature lines. No creates normal independent Civil 3D feature lines for all selected corridors.",
+                new[] { "Yes", "No" });
+            settings.AddChoice("Site", "03 Output", "Output feature-line site",
+                siteNames.Count == 0 ? "<Create CE-CORRIDOR-FEATURE-LINES>" : siteNames[0],
+                "Place exported feature lines in the selected Civil 3D site.",
+                siteNames.Count == 0
+                    ? new[] { "<Create CE-CORRIDOR-FEATURE-LINES>" }
+                    : siteNames.Concat(new[] { "<Create CE-CORRIDOR-FEATURE-LINES>" }).Distinct().ToList());
+            settings.AddDouble("WeedDistance", "03 Output", "Normal feature-line weed distance", 0.0,
+                "Optional minimum point spacing applied to independent feature lines. 0 keeps source corridor vertices.");
+            settings.AddDouble("WeedAngle", "03 Output", "Normal feature-line weed angle (deg)", 0.0,
+                "Optional deflection-angle weed setting for independent feature lines. 0 disables angle weeding.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             HashSet<string> exactCodes = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -74,7 +87,9 @@ namespace CETools.Civil3D
 
             bool all = string.Equals(settings.Text("Scope"), "All", StringComparison.OrdinalIgnoreCase);
             bool dynamic = IsYes(settings.Text("Dynamic"));
-            ObjectId exportSiteId = ResolveExportSite();
+            double weedDistance = Math.Max(0.0, settings.Double("WeedDistance", 0.0));
+            double weedAngle = Math.Max(0.0, settings.Double("WeedAngle", 0.0));
+            ObjectId exportSiteId = ResolveExportSite(settings.Text("Site"));
             var seen = new HashSet<string>(StringComparer.Ordinal);
             int scanned = 0;
             int matched = 0;
@@ -111,7 +126,8 @@ namespace CETools.Civil3D
                                 if (!id.IsNull)
                                 {
                                     created++;
-                                    CivilFeatureLine exported = transaction.GetObject(id, OpenMode.ForRead, false) as CivilFeatureLine;
+                                    CivilFeatureLine exported = transaction.GetObject(id, dynamic ? OpenMode.ForRead : OpenMode.ForWrite, false) as CivilFeatureLine;
+                                    if (!dynamic && exported != null) ApplyFeatureLineWeeding(exported, weedDistance, weedAngle);
                                     rows.Add(new List<string>
                                     {
                                         Display(corridor.Name),
@@ -129,6 +145,8 @@ namespace CETools.Civil3D
                                     ObjectId fallback = CreateStaticFallback(line, exportSiteId, transaction, document.Database);
                                     if (!fallback.IsNull)
                                     {
+                                        CivilFeatureLine fallbackFeature = transaction.GetObject(fallback, OpenMode.ForWrite, false) as CivilFeatureLine;
+                                        if (fallbackFeature != null) ApplyFeatureLineWeeding(fallbackFeature, weedDistance, weedAngle);
                                         created++;
                                         rows.Add(BuildCreatedFallbackRow(corridor, baseline, code, fallback, "Native export returned no object; static geometry fallback created"));
                                     }
@@ -144,6 +162,8 @@ namespace CETools.Civil3D
                                 ObjectId fallback = CreateStaticFallback(line, exportSiteId, transaction, document.Database);
                                 if (!fallback.IsNull)
                                 {
+                                    CivilFeatureLine fallbackFeature = transaction.GetObject(fallback, OpenMode.ForWrite, false) as CivilFeatureLine;
+                                    if (fallbackFeature != null) ApplyFeatureLineWeeding(fallbackFeature, weedDistance, weedAngle);
                                     created++;
                                     rows.Add(BuildCreatedFallbackRow(corridor, baseline, code, fallback,
                                         "Static fallback created after native export failed: " + exception.Message));
@@ -488,15 +508,46 @@ namespace CETools.Civil3D
             catch { return ObjectId.Null; }
         }
 
-        private static ObjectId ResolveExportSite()
+        private static List<string> ReadSiteNames()
+        {
+            var result = new List<string>();
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (civilDocument == null || document == null) return result;
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in civilDocument.GetSiteIds())
+                {
+                    Site site = null;
+                    try { site = transaction.GetObject(id, OpenMode.ForRead, false) as Site; } catch { }
+                    if (site != null && !string.IsNullOrWhiteSpace(site.Name)) result.Add(site.Name);
+                }
+            }
+            return result.OrderBy(item => item, StringComparer.CurrentCultureIgnoreCase).ToList();
+        }
+
+        private static ObjectId ResolveExportSite(string requested)
         {
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
-            if (civilDocument == null) return ObjectId.Null;
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (civilDocument == null || document == null) return ObjectId.Null;
+
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in civilDocument.GetSiteIds())
+                {
+                    Site site = null;
+                    try { site = transaction.GetObject(id, OpenMode.ForRead, false) as Site; } catch { }
+                    if (site != null && string.Equals(site.Name, requested, StringComparison.OrdinalIgnoreCase))
+                        return id;
+                }
+            }
+
+            if (!string.Equals(requested, "<Create CE-CORRIDOR-FEATURE-LINES>", StringComparison.OrdinalIgnoreCase))
+                return ObjectId.Null;
+
             try
             {
-                ObjectId first = civilDocument.GetSiteIds().Cast<ObjectId>().FirstOrDefault();
-                if (!first.IsNull) return first;
-
                 MethodInfo create = typeof(Site).GetMethod(
                     "Create",
                     BindingFlags.Public | BindingFlags.Static,
@@ -508,6 +559,37 @@ namespace CETools.Civil3D
                 return result is ObjectId ? (ObjectId)result : ObjectId.Null;
             }
             catch { return ObjectId.Null; }
+        }
+
+        private static void ApplyFeatureLineWeeding(CivilFeatureLine featureLine, double distance, double angleDegrees)
+        {
+            if (featureLine == null || (distance <= 0.0 && angleDegrees <= 0.0)) return;
+            foreach (string methodName in new[] { "WeedPoints", "Weed" })
+            {
+                foreach (MethodInfo method in featureLine.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                    .Where(item => item.Name == methodName))
+                {
+                    ParameterInfo[] parameters = method.GetParameters();
+                    try
+                    {
+                        if (parameters.Length == 2 &&
+                            parameters[0].ParameterType == typeof(double) &&
+                            parameters[1].ParameterType == typeof(double))
+                        {
+                            method.Invoke(featureLine, new object[] { distance, angleDegrees * Math.PI / 180.0 });
+                            return;
+                        }
+                        if (parameters.Length == 1 &&
+                            parameters[0].ParameterType == typeof(double) &&
+                            distance > 0.0)
+                        {
+                            method.Invoke(featureLine, new object[] { distance });
+                            return;
+                        }
+                    }
+                    catch { }
+                }
+            }
         }
 
         private static string ClassifyCode(string code)
