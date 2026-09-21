@@ -515,6 +515,23 @@ namespace CETools.Civil3D
             surface.OverhangCorrection = correction;
             surface.IsBuild = true;
             surface.Description = description;
+
+            object boundaries = ReadProperty(surface, "Boundaries");
+            var boundaryItems = EnumerateObjects(boundaries).ToList();
+            for (int index = boundaryItems.Count - 1; index >= 0; index--)
+            {
+                if (IsCorridorBoundary(boundaryItems[index])) continue;
+                if (!TryInvoke(boundaries, "Remove", boundaryItems[index]))
+                    TryInvoke(boundaries, "RemoveAt", index);
+            }
+            if (boundaries != null &&
+                !EnumerateObjects(boundaries).Any(IsCorridorBoundary))
+            {
+                TryInvoke(
+                    boundaries,
+                    "AddCorridorExtentsBoundary",
+                    surface.Name + "-OUTER");
+            }
         }
 
         private static int EnsureSlopePatterns(Corridor corridor, ObjectId styleId)
