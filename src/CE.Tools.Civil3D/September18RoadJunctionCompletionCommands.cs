@@ -66,6 +66,10 @@ namespace CETools.Civil3D
                     if (alignment == null) continue;
 
                     string name = alignment.Name;
+                    double stationStart = alignment.StartingStation;
+                    double stationEnd = alignment.EndingStation;
+                    Dictionary<ObjectId, List<FinalProfilePvi>> finalProfilePvis =
+                        CaptureFinalProfilePvis(alignment, transaction);
                     if (!TryInvoke(alignment, "Reverse"))
                     {
                         failed++;
@@ -74,6 +78,25 @@ namespace CETools.Civil3D
                     }
 
                     reversed++;
+
+                    // Civil 3D reverses NGL/surface profiles with the alignment,
+                    // but layout/final road profiles can retain their original PVI
+                    // station order. Re-map only those final design profiles so left,
+                    // centre and right road elevations continue in the new direction.
+                    foreach (KeyValuePair<ObjectId, List<FinalProfilePvi>> item in finalProfilePvis)
+                    {
+                        CivilProfile finalProfile = SafeOpen<CivilProfile>(
+                            transaction,
+                            item.Key,
+                            OpenMode.ForWrite);
+                        if (finalProfile != null)
+                            ReverseFinalProfilePvis(
+                                finalProfile,
+                                item.Value,
+                                stationStart,
+                                stationEnd);
+                    }
+
                     int localProfiles = 0;
                     int localViews = 0;
                     int localCorridors = 0;
@@ -620,6 +643,118 @@ namespace CETools.Civil3D
                 "CE PIPE SLOPE OUTLET REGISTER");
         }
 
+        private static Dictionary<ObjectId, List<FinalProfilePvi>> CaptureFinalProfilePvis(
+            CivilAlignment alignment,
+            Transaction transaction)
+        {
+            var result = new Dictionary<ObjectId, List<FinalProfilePvi>>();
+            if (alignment == null || transaction == null) return result;
+
+            foreach (ObjectId profileId in alignment.GetProfileIds())
+            {
+                CivilProfile profile = SafeOpen<CivilProfile>(
+                    transaction,
+                    profileId,
+                    OpenMode.ForRead);
+                if (profile == null || !IsFinalRoadProfile(profile)) continue;
+
+                var snapshots = new List<FinalProfilePvi>();
+                foreach (ProfilePVI pvi in CivilStyleDiscovery.Enumerate(profile.PVIs)
+                    .OfType<ProfilePVI>()
+                    .OrderBy(item => item.Station))
+                {
+                    try { snapshots.Add(new FinalProfilePvi(pvi.Station, pvi.Elevation)); }
+                    catch { }
+                }
+                if (snapshots.Count >= 2) result[profileId] = snapshots;
+            }
+            return result;
+        }
+
+        private static bool IsFinalRoadProfile(CivilProfile profile)
+        {
+            string identity = ((profile.Name ?? string.Empty) + " " +
+                (profile.Description ?? string.Empty)).ToUpperInvariant();
+            return identity.Contains("-FG") ||
+                   identity.Contains("FINAL") ||
+                   identity.Contains("CE FINAL ROAD");
+        }
+
+        private static bool ReverseFinalProfilePvis(
+            CivilProfile profile,
+            IList<FinalProfilePvi> original,
+            double stationStart,
+            double stationEnd)
+        {
+            if (profile == null || original == null || original.Count < 2)
+                return false;
+
+            List<ProfilePVI> live = CivilStyleDiscovery.Enumerate(profile.PVIs)
+                .OfType<ProfilePVI>()
+                .OrderBy(item => item.Station)
+                .ToList();
+            if (live.Count != original.Count) return false;
+
+            double expectedFirst = stationStart + stationEnd - original[original.Count - 1].Station;
+            if (Math.Abs(live[0].Station - expectedFirst) <= StationTolerance)
+                return false; // already transformed by Civil 3D
+
+            bool changed = true;
+            for (int index = 0; index < live.Count; index++)
+            {
+                FinalProfilePvi source = original[original.Count - 1 - index];
+                changed = TrySetPviValues(
+                    live[index],
+                    stationStart + stationEnd - source.Station,
+                    source.Elevation) && changed;
+            }
+            return changed;
+        }
+
+        private static bool TrySetPviValues(
+            ProfilePVI pvi,
+            double station,
+            double elevation)
+        {
+            if (pvi == null) return false;
+            bool stationSet = false;
+            bool elevationSet = false;
+
+            try
+            {
+                PropertyInfo stationProperty = pvi.GetType().GetProperty(
+                    "Station",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (stationProperty != null && stationProperty.CanWrite &&
+                    stationProperty.PropertyType == typeof(double))
+                {
+                    stationProperty.SetValue(pvi, station, null);
+                    stationSet = true;
+                }
+            }
+            catch { }
+
+            try
+            {
+                PropertyInfo elevationProperty = pvi.GetType().GetProperty(
+                    "Elevation",
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (elevationProperty != null && elevationProperty.CanWrite &&
+                    elevationProperty.PropertyType == typeof(double))
+                {
+                    elevationProperty.SetValue(pvi, elevation, null);
+                    elevationSet = true;
+                }
+            }
+            catch { }
+
+            if (!stationSet)
+                stationSet = TryInvoke(pvi, "SetStation", station);
+            if (!elevationSet)
+                elevationSet = TryInvoke(pvi, "SetElevation", elevation);
+            return stationSet && elevationSet;
+        }
+
         private static Document ActiveDocument()
         {
             return AcApplication.DocumentManager.MdiActiveDocument;
@@ -1114,6 +1249,17 @@ namespace CETools.Civil3D
                 }
             }
             return false;
+        }
+
+        private sealed class FinalProfilePvi
+        {
+            internal FinalProfilePvi(double station, double elevation)
+            {
+                Station = station;
+                Elevation = elevation;
+            }
+            internal double Station { get; private set; }
+            internal double Elevation { get; private set; }
         }
 
         private sealed class TJunctionLimit
