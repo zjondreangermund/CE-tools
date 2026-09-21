@@ -1,5 +1,8 @@
 using System;
+using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Globalization;
 using System.Linq;
 using Autodesk.AutoCAD.ApplicationServices;
@@ -182,42 +185,59 @@ namespace CETools.Civil3D
                     try { corridor.Rebuild(); }
                     catch { warnings++; }
 
-                    try
-                    {
-                        CorridorSurface top = EnsureSurface(corridor, "CE-TOP");
-                        ConfigureSurface(
-                            top,
-                            "Top",
-                            OverhangCorrectionType.TopLinks,
-                            "CE road TOP surface | Links: Top | Overhang: Top Links");
-                        topSurfaces++;
-                    }
-                    catch (System.Exception exception)
+                    string roadSurfaceSuffix = ResolveRoadSurfaceSuffix(corridor, transaction);
+                    if (string.IsNullOrWhiteSpace(roadSurfaceSuffix))
                     {
                         warnings++;
                         document.Editor.WriteMessage(
-                            "\n{0}: CE-TOP surface warning: {1}",
-                            corridor.Name,
-                            exception.Message);
+                            "\n{0}: road-numbered TOP/BOTTOM surfaces were skipped because the road name could not be resolved.",
+                            corridor.Name);
                     }
+                    else
+                    {
+                        string topSurfaceName = "TOP-" + roadSurfaceSuffix;
+                        string bottomSurfaceName = "BOTTOM-" + roadSurfaceSuffix;
+                        RemoveLegacyGenericSurfaces(corridor, topSurfaceName, bottomSurfaceName);
 
-                    try
-                    {
-                        CorridorSurface bottom = EnsureSurface(corridor, "CE-BOTTOM");
-                        ConfigureSurface(
-                            bottom,
-                            "Datum",
-                            OverhangCorrectionType.BottomLinks,
-                            "CE road BOTTOM surface | Links: Datum | Overhang: Bottom Links");
-                        bottomSurfaces++;
-                    }
-                    catch (System.Exception exception)
-                    {
-                        warnings++;
-                        document.Editor.WriteMessage(
-                            "\n{0}: CE-BOTTOM surface warning: {1}",
-                            corridor.Name,
-                            exception.Message);
+                        try
+                        {
+                            CorridorSurface top = EnsureSurface(corridor, topSurfaceName);
+                            ConfigureSurface(
+                                top,
+                                "Top",
+                                OverhangCorrectionType.TopLinks,
+                                "CE road TOP surface | Links: Top | Overhang: Top Links");
+                            topSurfaces++;
+                        }
+                        catch (System.Exception exception)
+                        {
+                            warnings++;
+                            document.Editor.WriteMessage(
+                                "\n{0}: {1} surface warning: {2}",
+                                corridor.Name,
+                                topSurfaceName,
+                                exception.Message);
+                        }
+
+                        try
+                        {
+                            CorridorSurface bottom = EnsureSurface(corridor, bottomSurfaceName);
+                            ConfigureSurface(
+                                bottom,
+                                "Datum",
+                                OverhangCorrectionType.BottomLinks,
+                                "CE road BOTTOM surface | Links: Datum | Overhang: Bottom Links");
+                            bottomSurfaces++;
+                        }
+                        catch (System.Exception exception)
+                        {
+                            warnings++;
+                            document.Editor.WriteMessage(
+                                "\n{0}: {1} surface warning: {2}",
+                                corridor.Name,
+                                bottomSurfaceName,
+                                exception.Message);
+                        }
                     }
 
                     try
@@ -317,6 +337,156 @@ namespace CETools.Civil3D
                 {
                     error = second.Message;
                 }
+            }
+            return false;
+        }
+
+        private static string ResolveRoadSurfaceSuffix(
+            Corridor corridor,
+            Transaction transaction)
+        {
+            if (corridor == null || transaction == null) return null;
+            foreach (Baseline baseline in corridor.Baselines)
+            {
+                ObjectId alignmentId = ReadObjectId(baseline, "AlignmentId");
+                if (alignmentId.IsNull)
+                    alignmentId = ReadObjectId(baseline, "AlignmentObjectId");
+                if (alignmentId.IsNull) continue;
+                CivilAlignment alignment = null;
+                try { alignment = transaction.GetObject(alignmentId, OpenMode.ForRead, false) as CivilAlignment; }
+                catch { }
+                if (alignment == null || !IsRoadAlignment(alignment)) continue;
+                string suffix = NormalizeRoadSurfaceSuffix(alignment.Name);
+                if (!string.IsNullOrWhiteSpace(suffix)) return suffix;
+            }
+            return NormalizeRoadSurfaceSuffix(corridor.Name);
+        }
+
+        private static string NormalizeRoadSurfaceSuffix(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return null;
+            int index = value.IndexOf("RD-", StringComparison.OrdinalIgnoreCase);
+            if (index < 0) return null;
+            int start = index + 3;
+            int end = start;
+            while (end < value.Length && char.IsDigit(value[end])) end++;
+            int number;
+            if (end <= start ||
+                !int.TryParse(value.Substring(start, end - start),
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out number))
+                return null;
+            return "RD-" + number.ToString("00", CultureInfo.InvariantCulture);
+        }
+
+        private static void RemoveLegacyGenericSurfaces(
+            Corridor corridor,
+            string topSurfaceName,
+            string bottomSurfaceName)
+        {
+            if (corridor == null) return;
+            object collection = corridor.CorridorSurfaces;
+            var surfaces = EnumerateObjects(collection).ToList();
+            foreach (object surface in surfaces)
+            {
+                string name = Convert.ToString(
+                    ReadProperty(surface, "Name"),
+                    CultureInfo.CurrentCulture);
+                if (!IsLegacyGenericSurface(name) ||
+                    string.Equals(name, topSurfaceName, StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(name, bottomSurfaceName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                TryInvoke(collection, "Remove", surface);
+            }
+
+            foreach (object surface in EnumerateObjects(collection).ToList())
+            {
+                object boundaries = ReadProperty(surface, "Boundaries");
+                var items = EnumerateObjects(boundaries).ToList();
+                for (int index = items.Count - 1; index >= 0; index--)
+                {
+                    if (IsCorridorBoundary(items[index])) continue;
+                    if (!TryInvoke(boundaries, "Remove", items[index]))
+                        TryInvoke(boundaries, "RemoveAt", index);
+                }
+            }
+        }
+
+        private static bool IsLegacyGenericSurface(string name)
+        {
+            string value = (name ?? string.Empty).Trim();
+            return string.Equals(value, "CE-TOP", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(value, "CE-BOTTOM", StringComparison.OrdinalIgnoreCase) ||
+                   value.StartsWith("CE-TOP (", StringComparison.OrdinalIgnoreCase) ||
+                   value.StartsWith("CE-BOTTOM (", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsCorridorBoundary(object boundary)
+        {
+            string identity = (
+                boundary.GetType().Name + " " +
+                Convert.ToString(ReadProperty(boundary, "Name"), CultureInfo.CurrentCulture) + " " +
+                Convert.ToString(ReadProperty(boundary, "Description"), CultureInfo.CurrentCulture))
+                .ToUpperInvariant();
+            return identity.Contains("CORRIDOR") ||
+                   identity.Contains("EXTENTS") ||
+                   identity.Contains("OUTER");
+        }
+
+        private static IEnumerable<object> EnumerateObjects(object value)
+        {
+            IEnumerable enumerable = value as IEnumerable;
+            if (enumerable == null || value is string) yield break;
+            foreach (object item in enumerable) yield return item;
+        }
+
+        private static object ReadProperty(object target, string name)
+        {
+            if (target == null) return null;
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    name,
+                    BindingFlags.Public | BindingFlags.Instance);
+                return property == null ? null : property.GetValue(target, null);
+            }
+            catch { return null; }
+        }
+
+        private static ObjectId ReadObjectId(object target, string name)
+        {
+            object value = ReadProperty(target, name);
+            return value is ObjectId ? (ObjectId)value : ObjectId.Null;
+        }
+
+        private static bool TryInvoke(object target, string name, params object[] supplied)
+        {
+            if (target == null) return false;
+            foreach (MethodInfo method in target.GetType().GetMethods(
+                BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!string.Equals(method.Name, name, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length != supplied.Length) continue;
+                bool valid = true;
+                for (int index = 0; index < parameters.Length; index++)
+                {
+                    if (supplied[index] == null) continue;
+                    if (!parameters[index].ParameterType.IsInstanceOfType(supplied[index]))
+                    {
+                        valid = false;
+                        break;
+                    }
+                }
+                if (!valid) continue;
+                try
+                {
+                    method.Invoke(target, supplied);
+                    return true;
+                }
+                catch { }
             }
             return false;
         }
