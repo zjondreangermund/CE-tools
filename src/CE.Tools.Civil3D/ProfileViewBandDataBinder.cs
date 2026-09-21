@@ -52,6 +52,13 @@ namespace CETools.Civil3D
             if (bands == null) bands = ReadProperty(profileView, "BandItems");
             if (bands == null) return 0;
 
+            // Labels can be disabled at both the profile-view and band-item
+            // levels. Rebinding only the data sources leaves the rows empty in
+            // Civil 3D 2023 even though the band set appears in Properties.
+            SetBooleanIfAvailable(profileView, true,
+                "ShowLabels", "DisplayLabels", "LabelsVisible",
+                "ShowBandLabels", "BandLabelsVisible");
+
             int updated = 0;
             var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
             foreach (string methodName in new[]
@@ -116,11 +123,13 @@ namespace CETools.Civil3D
                     identity.Contains("LEFT") ||
                     identity.Contains("LHS") ||
                     identity.Contains(" HL ") ||
+                    identity.Contains("HL") ||
                     identity.EndsWith(" HL", StringComparison.Ordinal);
                 bool rightBand =
                     identity.Contains("RIGHT") ||
                     identity.Contains("RHS") ||
                     identity.Contains(" HR ") ||
+                    identity.Contains("HR") ||
                     identity.EndsWith(" HR", StringComparison.Ordinal);
                 bool centreBand =
                     identity.Contains("CENTRE") ||
@@ -154,6 +163,8 @@ namespace CETools.Civil3D
                 "ShowLabels",
                 "DisplayLabels",
                 "LabelsVisible",
+                "ShowBandLabels",
+                "BandLabelsVisible",
                 "Visible",
                 "IsVisible") || changed;
             foreach (PropertyInfo property in item.GetType().GetProperties(
