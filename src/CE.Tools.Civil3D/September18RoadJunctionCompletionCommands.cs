@@ -708,7 +708,71 @@ namespace CETools.Civil3D
                     stationStart + stationEnd - source.Station,
                     source.Elevation) && changed;
             }
-            return changed;
+
+            // ProfilePVI.Station is read-only in some Civil 3D 2023 builds.
+            // Rebuild the PVI collection only when the live wrappers cannot be
+            // moved directly; this keeps NGL profiles untouched.
+            return changed || RebuildFinalProfilePvis(
+                profile,
+                original,
+                stationStart,
+                stationEnd);
+        }
+
+        private static bool RebuildFinalProfilePvis(
+            CivilProfile profile,
+            IList<FinalProfilePvi> original,
+            double stationStart,
+            double stationEnd)
+        {
+            object pvis = profile == null ? null : profile.PVIs;
+            if (pvis == null) return false;
+
+            int count = CivilStyleDiscovery.Enumerate(pvis).Count();
+            for (int index = count - 1; index >= 0; index--)
+            {
+                if (!TryInvoke(pvis, "RemoveAt", index) &&
+                    !TryInvoke(pvis, "RemovePVI", index))
+                    return false;
+            }
+
+            MethodInfo add = pvis.GetType().GetMethods(
+                BindingFlags.Public | BindingFlags.Instance)
+                .FirstOrDefault(method =>
+                {
+                    if (method.Name.IndexOf("AddPVI", StringComparison.OrdinalIgnoreCase) < 0)
+                        return false;
+                    ParameterInfo[] parameters = method.GetParameters();
+                    return parameters.Length >= 2 &&
+                           parameters[0].ParameterType == typeof(double) &&
+                           parameters[1].ParameterType == typeof(double);
+                });
+            if (add == null) return false;
+
+            foreach (FinalProfilePvi source in original.Reverse())
+            {
+                ParameterInfo[] parameters = add.GetParameters();
+                object[] arguments = new object[parameters.Length];
+                arguments[0] = stationStart + stationEnd - source.Station;
+                arguments[1] = source.Elevation;
+                for (int index = 2; index < parameters.Length; index++)
+                {
+                    Type type = parameters[index].ParameterType;
+                    if (parameters[index].HasDefaultValue)
+                        arguments[index] = parameters[index].DefaultValue;
+                    else if (type == typeof(double))
+                        arguments[index] = 0.0;
+                    else if (type == typeof(bool))
+                        arguments[index] = false;
+                    else if (type.IsEnum)
+                        arguments[index] = Enum.GetValues(type).GetValue(0);
+                    else
+                        return false;
+                }
+                try { add.Invoke(pvis, arguments); }
+                catch { return false; }
+            }
+            return true;
         }
 
         private static bool TrySetPviValues(
