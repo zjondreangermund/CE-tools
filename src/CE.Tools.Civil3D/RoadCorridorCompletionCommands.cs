@@ -193,8 +193,8 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Complete Road Corridors",
                 "Create or repair supported corridor production settings: baselines, regions, assemblies, frequencies, targets, TOP/DATUM surfaces, boundaries, visibility, slope patterns and rebuild behavior.");
-            model.AddText("TopName", "01 Corridor Surfaces", "Top surface fallback name", "CE-TOP", "Fallback name used only when a road number cannot be resolved.");
-            model.AddText("BottomName", "01 Corridor Surfaces", "Bottom surface fallback name", "CE-BOTTOM", "Fallback name used only when a road number cannot be resolved.");
+            model.AddText("TopName", "01 Corridor Surfaces", "Top surface fallback name", "TOP-RD-01", "Fallback is road-numbered; generic CE-TOP surfaces are removed.");
+            model.AddText("BottomName", "01 Corridor Surfaces", "Bottom surface fallback name", "BOTTOM-RD-01", "Fallback is road-numbered; generic CE-BOTTOM surfaces are removed.");
             model.AddChoice("RoadNumberedSurfaceNames", "01 Corridor Surfaces", "Name surfaces by road number", "Enabled",
                 "Create/repair corridor surfaces as TOP-RD-01, BOTTOM-RD-01, TOP-RD-02, BOTTOM-RD-02 and so on, using each baseline alignment name.",
                 new[] { "Enabled", "Disabled" });
@@ -219,8 +219,8 @@ namespace CETools.Civil3D
             {
                 TargetSurfaceId = surfacePicker.Selected.Id,
                 TargetSurfaceName = surfacePicker.Selected.Name,
-                TopSurfaceName = SafeName(model.Text("TopName"), "CE-TOP"),
-                BottomSurfaceName = SafeName(model.Text("BottomName"), "CE-BOTTOM"),
+                TopSurfaceName = SafeName(model.Text("TopName"), "TOP-RD-01"),
+                BottomSurfaceName = SafeName(model.Text("BottomName"), "BOTTOM-RD-01"),
                 UseRoadNumberedSurfaceNames = string.Equals(model.Text("RoadNumberedSurfaceNames"), "Enabled", StringComparison.OrdinalIgnoreCase),
                 AssemblyName = model.Text("Assembly"),
                 TopCodes = SplitCodes(model.Text("TopCodes"), new[] { "Top", "Pave" }),
@@ -365,6 +365,7 @@ namespace CETools.Civil3D
                     string bottomSurfaceName = options.UseRoadNumberedSurfaceNames
                         ? ResolveRoadSurfaceName("BOTTOM", corridor, baselines, transaction, options.BottomSurfaceName)
                         : options.BottomSurfaceName;
+                    RemoveLegacyRoadSurfaces(corridorSurfaces, topSurfaceName, bottomSurfaceName, ref result);
                     object top = EnsureCorridorSurface(corridorSurfaces, topSurfaceName, options.TopCodes, options.AddBoundary, ref result);
                     object bottom = EnsureCorridorSurface(corridorSurfaces, bottomSurfaceName, options.BottomCodes, options.AddBoundary, ref result);
                     if (top != null) Invoke(top, "Rebuild");
@@ -557,6 +558,7 @@ namespace CETools.Civil3D
                 if (value == null || value.GetType().Name.IndexOf("ProfileView", StringComparison.OrdinalIgnoreCase) < 0) continue;
                 ObjectId linkedAlignment = ReadObjectId(value, "AlignmentId");
                 if (!linkedAlignment.IsNull && linkedAlignment != alignmentId) continue;
+                EnsureProfilesInProfileView(value, leftId, designId, rightId, designId);
                 ProfileViewBandDataBinder.BindRoad(value, leftId, designId, rightId, designId);
                 try
                 {
@@ -1023,6 +1025,37 @@ namespace CETools.Civil3D
             return updated;
         }
 
+        private static int EnsureProfilesInProfileView(
+            DBObject view,
+            params ObjectId[] profileIds)
+        {
+            if (view == null || profileIds == null) return 0;
+            var existing = new HashSet<ObjectId>();
+            object current = InvokeReturning(view, "GetProfileIds") ??
+                             ReadProperty(view, "ProfileIds") ??
+                             ReadProperty(view, "Profiles");
+            foreach (object item in CivilStyleDiscovery.Enumerate(current))
+            {
+                if (item is ObjectId) existing.Add((ObjectId)item);
+                else if (item is DBObject) existing.Add(((DBObject)item).ObjectId);
+            }
+
+            int added = 0;
+            foreach (ObjectId profileId in profileIds.Distinct())
+            {
+                if (profileId.IsNull || profileId.IsErased || existing.Contains(profileId))
+                    continue;
+                if (Invoke(view, "AddProfile", profileId) ||
+                    Invoke(view, "AddProfileId", profileId) ||
+                    Invoke(view, "Add", profileId))
+                {
+                    existing.Add(profileId);
+                    added++;
+                }
+            }
+            return added;
+        }
+
         private static int BindRoadRolesToProfileViews(
             Database database,
             ObjectId alignmentId,
@@ -1051,6 +1084,12 @@ namespace CETools.Civil3D
                 ObjectId linkedAlignment = ReadObjectId(view, "AlignmentId");
                 if (!linkedAlignment.IsNull && linkedAlignment != alignmentId) continue;
 
+                EnsureProfilesInProfileView(
+                    view,
+                    leftProfileId,
+                    centreProfileId,
+                    rightProfileId,
+                    finalProfileId);
                 int bound = ProfileViewBandDataBinder.BindRoad(
                     view,
                     leftProfileId,
@@ -1370,26 +1409,114 @@ namespace CETools.Civil3D
 
         private static object EnsureCorridorSurface(object collection, string name, IEnumerable<string> codes, bool boundary, ref RoadCorridorCompletionResult result)
         {
-            if (collection == null) { result.Warnings++; return null; }
+            if (collection == null || string.IsNullOrWhiteSpace(name))
+            {
+                result.Warnings++;
+                return null;
+            }
+
             object surface = CivilStyleDiscovery.Enumerate(collection)
-                .FirstOrDefault(item => string.Equals(Convert.ToString(ReadProperty(item, "Name"), CultureInfo.CurrentCulture), name, StringComparison.OrdinalIgnoreCase));
+                .FirstOrDefault(item => string.Equals(
+                    Convert.ToString(ReadProperty(item, "Name"), CultureInfo.CurrentCulture),
+                    name,
+                    StringComparison.OrdinalIgnoreCase));
             if (surface == null)
             {
                 surface = InvokeReturning(collection, "Add", name);
                 if (surface != null) result.Surfaces++;
             }
             if (surface == null) { result.Warnings++; return null; }
-            foreach (string code in codes)
+
+            foreach (string code in codes ?? Enumerable.Empty<string>())
             {
-                if (Invoke(surface, "AddLinkCode", code) || Invoke(surface, "AddCode", code)) { }
+                // Civil 3D 2023 drawings expose both one- and two-argument
+                // AddLinkCode overloads. Always try the explicit link overload so
+                // TOP-RD-07 receives Top and BOTTOM-RD-07 receives Datum.
+                if (!Invoke(surface, "AddLinkCode", code, true) &&
+                    !Invoke(surface, "AddLinkCode", code) &&
+                    !Invoke(surface, "AddCode", code))
+                {
+                    result.Warnings++;
+                }
             }
-            if (boundary)
+
+            object boundaries = ReadProperty(surface, "Boundaries");
+            int removed = RemoveNonCorridorBoundaries(boundaries);
+            result.Boundaries += removed;
+            if (boundary && boundaries != null &&
+                !CivilStyleDiscovery.Enumerate(boundaries).Any(IsCorridorBoundary))
             {
-                object boundaries = ReadProperty(surface, "Boundaries");
                 if (Invoke(boundaries, "AddCorridorExtentsBoundary", name + "-OUTER") ||
-                    Invoke(boundaries, "Add", name + "-OUTER")) result.Boundaries++;
+                    Invoke(boundaries, "Add", name + "-OUTER"))
+                    result.Boundaries++;
             }
             return surface;
+        }
+
+        private static int RemoveLegacyRoadSurfaces(
+            object collection,
+            string topSurfaceName,
+            string bottomSurfaceName,
+            ref RoadCorridorCompletionResult result)
+        {
+            if (collection == null) return 0;
+            var removals = CivilStyleDiscovery.Enumerate(collection)
+                .Where(item => item != null)
+                .Where(item =>
+                {
+                    string name = Convert.ToString(ReadProperty(item, "Name"), CultureInfo.CurrentCulture);
+                    return IsLegacyGenericSurface(name) &&
+                        !string.Equals(name, topSurfaceName, StringComparison.OrdinalIgnoreCase) &&
+                        !string.Equals(name, bottomSurfaceName, StringComparison.OrdinalIgnoreCase);
+                })
+                .ToList();
+
+            int removed = 0;
+            foreach (object item in removals)
+            {
+                if (Invoke(collection, "Remove", item) ||
+                    Invoke(collection, "RemoveAt", removals.IndexOf(item)))
+                    removed++;
+            }
+            return removed;
+        }
+
+        private static bool IsLegacyGenericSurface(string name)
+        {
+            string value = (name ?? string.Empty).Trim();
+            return string.Equals(value, "CE-TOP", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(value, "CE-BOTTOM", StringComparison.OrdinalIgnoreCase) ||
+                   value.StartsWith("CE-TOP (", StringComparison.OrdinalIgnoreCase) ||
+                   value.StartsWith("CE-BOTTOM (", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static int RemoveNonCorridorBoundaries(object boundaries)
+        {
+            if (boundaries == null) return 0;
+            var items = CivilStyleDiscovery.Enumerate(boundaries)
+                .Where(item => item != null)
+                .ToList();
+            int removed = 0;
+            for (int index = items.Count - 1; index >= 0; index--)
+            {
+                if (IsCorridorBoundary(items[index])) continue;
+                if (Invoke(boundaries, "Remove", items[index]) ||
+                    Invoke(boundaries, "RemoveAt", index))
+                    removed++;
+            }
+            return removed;
+        }
+
+        private static bool IsCorridorBoundary(object boundary)
+        {
+            string identity = (
+                boundary.GetType().Name + " " +
+                Convert.ToString(ReadProperty(boundary, "Name"), CultureInfo.CurrentCulture) + " " +
+                Convert.ToString(ReadProperty(boundary, "Description"), CultureInfo.CurrentCulture))
+                .ToUpperInvariant();
+            return identity.Contains("CORRIDOR") ||
+                   identity.Contains("EXTENTS") ||
+                   identity.Contains("OUTER");
         }
 
         private static int ApplySurfaceTargets(object region, ObjectId surfaceId)
