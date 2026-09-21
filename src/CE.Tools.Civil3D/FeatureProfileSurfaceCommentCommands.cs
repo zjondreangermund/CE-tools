@@ -136,6 +136,13 @@ namespace CETools.Civil3D
                         continue;
                     }
 
+                    Color requestedColour = Color.FromColorIndex(
+                        ColorMethod.ByAci,
+                        (short)window.ColourIndex);
+                    // Set both entity colour representations. Civil 3D feature-line
+                    // styles can override ColorIndex, while some 2023 drawings retain
+                    // the previous true-colour value unless Entity.Color is assigned.
+                    featureLine.Color = requestedColour;
                     featureLine.ColorIndex = window.ColourIndex;
 
                     // Civil feature-line styles override the AutoCAD entity
@@ -972,6 +979,51 @@ namespace CETools.Civil3D
                         colourProperty.CanWrite &&
                         colourProperty.PropertyType.IsInstanceOfType(colour))
                         colourProperty.SetValue(display, colour, null);
+
+                    PropertyInfo colourIndexProperty = display.GetType().GetProperty(
+                        "ColorIndex",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (colourIndexProperty != null && colourIndexProperty.CanWrite)
+                    {
+                        if (colourIndexProperty.PropertyType == typeof(short))
+                            colourIndexProperty.SetValue(display, (short)colourIndex, null);
+                        else if (colourIndexProperty.PropertyType == typeof(int))
+                            colourIndexProperty.SetValue(display, colourIndex, null);
+                    }
+
+                    // Feature-line display styles may expose colour through a setter
+                    // method rather than a writable property in Civil 3D 2023.
+                    foreach (MethodInfo setter in display.GetType().GetMethods(
+                        BindingFlags.Public | BindingFlags.Instance))
+                    {
+                        if (setter.Name.IndexOf("SetColor", StringComparison.OrdinalIgnoreCase) < 0 &&
+                            setter.Name.IndexOf("SetColour", StringComparison.OrdinalIgnoreCase) < 0)
+                            continue;
+                        ParameterInfo[] parameters = setter.GetParameters();
+                        if (parameters.Length != 1) continue;
+                        try
+                        {
+                            if (parameters[0].ParameterType.IsInstanceOfType(colour))
+                                setter.Invoke(display, new object[] { colour });
+                            else if (parameters[0].ParameterType == typeof(short))
+                                setter.Invoke(display, new object[] { (short)colourIndex });
+                            else if (parameters[0].ParameterType == typeof(int))
+                                setter.Invoke(display, new object[] { colourIndex });
+                        }
+                        catch { }
+                    }
+
+                    foreach (string propertyName in new[] { "UseLayerColor", "ByLayer", "UseLayerColour" })
+                    {
+                        PropertyInfo property = display.GetType().GetProperty(
+                            propertyName,
+                            BindingFlags.Public | BindingFlags.Instance);
+                        if (property != null && property.CanWrite &&
+                            property.PropertyType == typeof(bool))
+                        {
+                            try { property.SetValue(display, false, null); } catch { }
+                        }
+                    }
 
                     PropertyInfo visibleProperty = display.GetType().GetProperty(
                         "Visible",
