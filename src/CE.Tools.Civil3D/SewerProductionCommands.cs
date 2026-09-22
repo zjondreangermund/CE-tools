@@ -614,6 +614,67 @@ namespace CETools.Civil3D
                 "CE SEWER PROFILE / LONG-SECTION REGISTER");
         }
 
+        [CommandMethod("CE_SEWERSUMPFIX", CommandFlags.Modal | CommandFlags.Redraw)]
+        public void FixAllManholeSumpElevations()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (document == null || civilDocument == null) return;
+            int fixedCount = 0;
+            int skipped = 0;
+            using (DocumentLock documentLock = document.LockDocument())
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId networkId in civilDocument.GetPipeNetworkIds())
+                {
+                    CivilNetwork network = transaction.GetObject(
+                        networkId, OpenMode.ForRead, false) as CivilNetwork;
+                    if (network == null) { skipped++; continue; }
+                    var inverts = new Dictionary<ObjectId, List<double>>();
+                    foreach (ObjectId pipeId in network.GetPipeIds())
+                    {
+                        CivilPipe pipe = transaction.GetObject(
+                            pipeId, OpenMode.ForRead, false) as CivilPipe;
+                        if (pipe == null) continue;
+                        double inside = ReadProfileFiniteDouble(
+                            pipe, "InnerDiameterOrWidth", "InnerDiameter", "Diameter");
+                        double radius = IsProfileFinite(inside) && inside > 0.0
+                            ? inside * 0.5 : 0.0;
+                        AddProfileInvert(inverts, pipe.StartStructureId, pipe.StartPoint.Z - radius);
+                        AddProfileInvert(inverts, pipe.EndStructureId, pipe.EndPoint.Z - radius);
+                    }
+                    foreach (ObjectId structureId in network.GetStructureIds())
+                    {
+                        List<double> values;
+                        if (!inverts.TryGetValue(structureId, out values) ||
+                            values == null || values.Count == 0)
+                        { skipped++; continue; }
+                        CivilStructure structure = transaction.GetObject(
+                            structureId, OpenMode.ForWrite, false) as CivilStructure;
+                        if (structure == null) { skipped++; continue; }
+                        double target = values.Min() - 0.080;
+                        TrySetProfileEnum(
+                            structure, "ControlSumpBy",
+                            "Elevation", "ByElevation", "SumpElevation");
+                        bool changed = TrySetProfileDouble(
+                            structure, "SumpElevation", target);
+                        TrySetProfileDouble(structure, "SumpDepth", 0.080);
+                        if (changed)
+                        {
+                            fixedCount++;
+                            Entity entity = structure as Entity;
+                            if (entity != null) entity.RecordGraphicsModified(true);
+                        }
+                    }
+                }
+                transaction.Commit();
+            }
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_SEWERSUMPFIX complete. Absolute sump elevations fixed={0}; skipped={1}; sump clearance=0.080 m.",
+                fixedCount, skipped);
+        }
+
         [CommandMethod("CE_SEWINFO", CommandFlags.Modal)]
         public void ShowInformation()
         {
@@ -1353,18 +1414,9 @@ namespace CETools.Civil3D
                             CivilStructure structure = transaction.GetObject(structureId, OpenMode.ForWrite, false) as CivilStructure;
                             if (structure == null) continue;
 
-                            double rawElevation = ReadProfileFiniteDouble(structure, "SumpElevation");
-                            double rawDepth = ReadProfileFiniteDouble(structure, "SumpDepth");
-                            bool looksRelative =
-                                IsProfileFinite(rawElevation) &&
-                                Math.Abs(rawElevation) <= 50.0 &&
-                                Math.Abs(lowestInvert - rawElevation) > 50.0;
-                            if (!looksRelative) continue;
-
-                            double depth = IsProfileFinite(rawDepth)
-                                ? Math.Abs(rawDepth)
-                                : Math.Abs(rawElevation);
-                            double absoluteElevation = lowestInvert - Math.Max(0.0, depth);
+                            // SumpElevation is an absolute RL. Repair legacy
+                            // relative/negative values from the connected pipe inverts.
+                            double absoluteElevation = lowestInvert - 0.080;
 
                             TrySetProfileEnum(
                                 structure,
@@ -1551,6 +1603,14 @@ namespace CETools.Civil3D
                 }
                 else if (parameter.HasDefaultValue)
                     arguments[index] = parameter.DefaultValue;
+                else if (parameter.ParameterType.IsEnum)
+                    arguments[index] = Enum.GetValues(parameter.ParameterType).GetValue(0);
+                else if (parameter.ParameterType == typeof(bool))
+                    arguments[index] = false;
+                else if (parameter.ParameterType == typeof(double))
+                    arguments[index] = 0.0;
+                else if (parameter.ParameterType.IsValueType)
+                    arguments[index] = Activator.CreateInstance(parameter.ParameterType);
                 else
                     return false;
             }
