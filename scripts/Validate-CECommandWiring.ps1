@@ -106,7 +106,8 @@ $sequence = Text 'CeSequentialCommandRunner.cs'
 foreach ($token in @('CommandEnded += OnCommandEnded','CommandCancelled += OnCommandCancelled','CommandFailed += OnCommandFailed','AcApplication.Idle += OnIdle')) { Need ($sequence.Contains($token)) ('safe sequential command runner missing ' + $token) }
 $roadCorridor = Text 'RoadCorridorCompletionCommands.cs'
 Need ($roadCorridor.Contains('new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" }')) 'complete road-profile command sequence missing'
-Need ($roadCorridor.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }')) 'complete corridor command sequence missing'
+Need (($roadCorridor.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }') -or
+      $roadCorridor.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE", "CE_ROADCORRIDOROUTPUTFIX" }'))) 'complete corridor command sequence missing'
 $sewerAuto = Text 'SewerSequenceAutoProductionCommands.cs'
 Need ($sewerAuto.Contains('CeSequentialCommandRunner.Start')) 'Sewer sequence+production still bypasses safe sequential runner'
 Need ($sewerAuto.Contains('new List<string> { sequence, "CE_SEWALIGN" }')) 'Sewer sequence+production steps are incomplete'
