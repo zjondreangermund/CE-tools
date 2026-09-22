@@ -167,6 +167,12 @@ namespace CETools.Civil3D
                 "BandLabelsVisible",
                 "Visible",
                 "IsVisible") || changed;
+            changed = InvokeBooleanSetter(item, true,
+                "SetShowLabels",
+                "SetDisplayLabels",
+                "SetLabelsVisible",
+                "SetBandLabelsVisible",
+                "SetVisible") || changed;
             foreach (PropertyInfo property in item.GetType().GetProperties(
                 BindingFlags.Public | BindingFlags.Instance))
             {
@@ -216,6 +222,34 @@ namespace CETools.Civil3D
                     changed = true;
                 }
                 catch { }
+            }
+            return changed;
+        }
+
+        private static bool InvokeBooleanSetter(
+            object target,
+            bool value,
+            params string[] names)
+        {
+            if (target == null || names == null) return false;
+            bool changed = false;
+            foreach (string name in names)
+            {
+                foreach (MethodInfo method in target.GetType().GetMethods(
+                    BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (!string.Equals(method.Name, name, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    ParameterInfo[] parameters = method.GetParameters();
+                    if (parameters.Length != 1 || parameters[0].ParameterType != typeof(bool))
+                        continue;
+                    try
+                    {
+                        method.Invoke(target, new object[] { value });
+                        changed = true;
+                    }
+                    catch { }
+                }
             }
             return changed;
         }
