@@ -211,6 +211,7 @@ namespace CETools.Civil3D
             centreProfileId = ObjectId.Null;
             rightProfileId = ObjectId.Null;
             finalProfileId = ObjectId.Null;
+            ObjectId fallbackDesignProfileId = ObjectId.Null;
             if (alignment == null) return;
 
             foreach (ObjectId profileId in alignment.GetProfileIds())
@@ -223,18 +224,29 @@ namespace CETools.Civil3D
                 string identity = ((profile.Name ?? string.Empty) + " " +
                     (profile.Description ?? string.Empty)).ToUpperInvariant();
 
-                if (finalProfileId.IsNull &&
+                bool excluded = identity.Contains("NGL") ||
+                                identity.Contains("NATURAL") ||
+                                identity.Contains("EXIST") ||
+                                identity.Contains("GROUND") ||
+                                identity.Contains("SURFACE") ||
+                                identity.Contains("EG");
+                if (!excluded && fallbackDesignProfileId.IsNull)
+                    fallbackDesignProfileId = profileId;
+                if (finalProfileId.IsNull && !excluded &&
                     (identity.Contains("-FG") ||
                      identity.Contains("FINAL") ||
-                     identity.Contains("DESIGN")))
+                     identity.Contains("DESIGN") ||
+                     identity.Contains("ROAD")))
                     finalProfileId = profileId;
                 if (leftProfileId.IsNull &&
-                    (identity.Contains("LEFT") || identity.Contains(" HL") ||
-                     identity.Contains("HL-") || identity.Contains("LEFT-EDGE")))
+                    (identity.Contains("LEFT") || identity.Contains("LHS") ||
+                     identity.Contains(" HL") || identity.Contains("HL-") ||
+                     identity.Contains("LEFT-EDGE") || identity.Contains("LEFT EDGE")))
                     leftProfileId = profileId;
                 if (rightProfileId.IsNull &&
-                    (identity.Contains("RIGHT") || identity.Contains(" HR") ||
-                     identity.Contains("HR-") || identity.Contains("RIGHT-EDGE")))
+                    (identity.Contains("RIGHT") || identity.Contains("RHS") ||
+                     identity.Contains(" HR") || identity.Contains("HR-") ||
+                     identity.Contains("RIGHT-EDGE") || identity.Contains("RIGHT EDGE")))
                     rightProfileId = profileId;
                 if (centreProfileId.IsNull &&
                     (identity.Contains("CENTRE") || identity.Contains("CENTER") ||
@@ -242,8 +254,8 @@ namespace CETools.Civil3D
                     centreProfileId = profileId;
             }
 
+            if (finalProfileId.IsNull) finalProfileId = fallbackDesignProfileId;
             if (centreProfileId.IsNull) centreProfileId = finalProfileId;
-            if (finalProfileId.IsNull) finalProfileId = centreProfileId;
             if (leftProfileId.IsNull) leftProfileId = centreProfileId;
             if (rightProfileId.IsNull) rightProfileId = centreProfileId;
         }
