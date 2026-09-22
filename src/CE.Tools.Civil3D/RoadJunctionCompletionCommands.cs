@@ -63,6 +63,7 @@ namespace CETools.Civil3D
             int start = model.Integer("Start", 1);
             double cluster = Math.Max(model.Double("Cluster", 35.0), 0.001);
             double textPaper = Math.Max(model.Double("TextHeight", 2.5), 0.5);
+            string outputLayerName = SafeLayer(model.Text("Layer"), LayerName);
             bool clockwise = !string.Equals(model.Text("Direction"), "Counter-clockwise", StringComparison.OrdinalIgnoreCase);
             string groupOrder = model.Text("GroupOrder");
             bool pickStart = string.Equals(model.Text("StartMode"), "Pick start junction / return", StringComparison.OrdinalIgnoreCase);
@@ -110,6 +111,7 @@ namespace CETools.Civil3D
                 "Create linked bellmouth return curves. The junction receives a J-number and each return is numbered clockwise from the top-left return.");
             model.AddDouble("Radius", "01 Geometry", "Bellmouth radius", 10.0, "Design radius for every return.");
             model.AddDouble("Width", "01 Geometry", "Road half-width", 3.7, "Offset from each road centreline to the kerb/edge return.");
+            model.AddText("Layer", "01 Output", "Junction output layer", LayerName, "Layer for generated return arcs, labels and the T-junction closure line.");
             model.AddText("Prefix", "02 Numbering", "Junction prefix", "J", "Use J for J1.1, J1.2, J1.3 and J1.4.");
             model.AddPositiveInteger("Start", "02 Numbering", "Junction number", 1, "Junction number assigned to this intersection.");
             model.AddChoice("Direction", "02 Numbering", "Return order", "Clockwise", "Start at the top-left/NW return.", new[] { "Clockwise", "Counter-clockwise" });
@@ -147,7 +149,7 @@ namespace CETools.Civil3D
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 EnsureRegApp(document.Database, transaction);
-                ObjectId layerId = GetOrCreateLayer(document.Database, transaction);
+                ObjectId layerId = GetOrCreateLayer(document.Database, transaction, outputLayerName);
                 BlockTableRecord space = transaction.GetObject(document.Database.CurrentSpaceId, OpenMode.ForWrite, false) as BlockTableRecord;
                 if (space == null) return;
                 double[] quadrants = cross
@@ -176,6 +178,32 @@ namespace CETools.Civil3D
                     ObjectId textId = CreateLabel(document.Database, transaction, space, layerId, arc.GetPointAtParameter((arc.StartParam + arc.EndParam) * 0.5), label, textPaper, arcId, centre);
                     generated.Add(arcId);
                     generated.Add(textId);
+                }
+
+                if (!cross)
+                {
+                    // Close the T-mouth between the two outer return
+                    // tangencies, matching the magenta closure used by the
+                    // bulk junction command.
+                    Vector2d mainDirection = new Vector2d(
+                        Math.Cos(mainAngle.Value), Math.Sin(mainAngle.Value)).GetNormal();
+                    Vector2d sideDirection = new Vector2d(
+                        Math.Cos(sideAngle), Math.Sin(sideAngle)).GetNormal();
+                    if (mainDirection.DotProduct(sideDirection) < 0.0)
+                        sideDirection = -sideDirection;
+                    Point3d first = centre + new Vector3d(
+                        -mainDirection.X * (width + radius) + sideDirection.X * width,
+                        -mainDirection.Y * (width + radius) + sideDirection.Y * width,
+                        0.0);
+                    Point3d second = centre + new Vector3d(
+                        mainDirection.X * (width + radius) + sideDirection.X * width,
+                        mainDirection.Y * (width + radius) + sideDirection.Y * width,
+                        0.0);
+                    Line closure = new Line(first, second);
+                    closure.SetDatabaseDefaults(document.Database);
+                    closure.LayerId = layerId;
+                    space.AppendEntity(closure);
+                    transaction.AddNewlyCreatedDBObject(closure, true);
                 }
                 transaction.Commit();
             }
@@ -487,13 +515,35 @@ namespace CETools.Civil3D
 
         private static ObjectId GetOrCreateLayer(Database database, Transaction transaction)
         {
-            LayerTable layers = transaction.GetObject(database.LayerTableId, OpenMode.ForRead, false) as LayerTable;
-            if (layers.Has(LayerName)) return layers[LayerName];
+            return GetOrCreateLayer(database, transaction, LayerName);
+        }
+
+        private static ObjectId GetOrCreateLayer(
+            Database database,
+            Transaction transaction,
+            string requestedName)
+        {
+            string name = SafeLayer(requestedName, LayerName);
+            LayerTable layers = transaction.GetObject(
+                database.LayerTableId, OpenMode.ForRead, false) as LayerTable;
+            if (layers.Has(name)) return layers[name];
             layers.UpgradeOpen();
-            var layer = new LayerTableRecord { Name = LayerName, Color = Color.FromColorIndex(ColorMethod.ByAci, 3) };
+            var layer = new LayerTableRecord
+            {
+                Name = name,
+                Color = Color.FromColorIndex(ColorMethod.ByAci, 3)
+            };
             ObjectId id = layers.Add(layer);
             transaction.AddNewlyCreatedDBObject(layer, true);
             return id;
+        }
+
+        private static string SafeLayer(string value, string fallback)
+        {
+            string result = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+            foreach (char invalid in new[] { '<', '>', '/', '\\', '"', ':', ';', '?', '*', '|', '=', ',' })
+                result = result.Replace(invalid, '-');
+            return string.IsNullOrWhiteSpace(result) ? fallback : result;
         }
 
         private sealed class JunctionCurveItem
