@@ -1103,6 +1103,21 @@ namespace CETools.Civil3D
                         visibleProperty.CanWrite &&
                         visibleProperty.PropertyType == typeof(bool))
                         visibleProperty.SetValue(display, true, null);
+
+                    // Some Civil 3D 2023 builds return a detached display-style
+                    // wrapper. Commit the edited wrapper back to the parent style.
+                    foreach (MethodInfo setter in style.GetType().GetMethods(
+                        BindingFlags.Public | BindingFlags.Instance))
+                    {
+                        if (setter.Name.IndexOf("SetFeatureLineDisplayStyle", StringComparison.OrdinalIgnoreCase) < 0 &&
+                            setter.Name.IndexOf("SetDisplayStylePlan", StringComparison.OrdinalIgnoreCase) < 0)
+                            continue;
+                        ParameterInfo[] parameters = setter.GetParameters();
+                        if (parameters.Length != 1 ||
+                            !parameters[0].ParameterType.IsInstanceOfType(display))
+                            continue;
+                        try { setter.Invoke(style, new[] { display }); } catch { }
+                    }
                 }
                 catch { }
             }
