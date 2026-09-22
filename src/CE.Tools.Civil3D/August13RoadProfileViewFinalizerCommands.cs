@@ -111,18 +111,29 @@ namespace CETools.Civil3D
                                 viewStyleId,
                                 bandSetId);
 
-                            ObjectId surfaceProfileId;
-                            ObjectId designProfileId;
+                            ObjectId leftProfileId;
+                            ObjectId centreProfileId;
+                            ObjectId rightProfileId;
+                            ObjectId finalProfileId;
                             ResolveRoadProfiles(
                                 alignment,
                                 transaction,
-                                out surfaceProfileId,
-                                out designProfileId);
-                            bandItems += ProfileViewBandDataBinder.Bind(
+                                out leftProfileId,
+                                out centreProfileId,
+                                out rightProfileId,
+                                out finalProfileId);
+                            EnsureProfilesInProfileView(
                                 profileView,
-                                surfaceProfileId,
-                                designProfileId,
-                                ObjectId.Null);
+                                leftProfileId,
+                                centreProfileId,
+                                rightProfileId,
+                                finalProfileId);
+                            bandItems += ProfileViewBandDataBinder.BindRoad(
+                                profileView,
+                                leftProfileId,
+                                centreProfileId,
+                                rightProfileId,
+                                finalProfileId);
                             views++;
                         }
                         catch (System.Exception exception)
@@ -190,11 +201,15 @@ namespace CETools.Civil3D
         private static void ResolveRoadProfiles(
             CivilAlignment alignment,
             Transaction transaction,
-            out ObjectId surfaceProfileId,
-            out ObjectId designProfileId)
+            out ObjectId leftProfileId,
+            out ObjectId centreProfileId,
+            out ObjectId rightProfileId,
+            out ObjectId finalProfileId)
         {
-            surfaceProfileId = ObjectId.Null;
-            designProfileId = ObjectId.Null;
+            leftProfileId = ObjectId.Null;
+            centreProfileId = ObjectId.Null;
+            rightProfileId = ObjectId.Null;
+            finalProfileId = ObjectId.Null;
             if (alignment == null) return;
 
             foreach (ObjectId profileId in alignment.GetProfileIds())
@@ -205,37 +220,119 @@ namespace CETools.Civil3D
                     false) as CivilProfile;
                 if (profile == null) continue;
                 string identity = ((profile.Name ?? string.Empty) + " " +
-                                   (profile.Description ?? string.Empty)).ToUpperInvariant();
+                    (profile.Description ?? string.Empty)).ToUpperInvariant();
 
-                if (designProfileId.IsNull &&
+                if (finalProfileId.IsNull &&
                     (identity.Contains("-FG") ||
                      identity.Contains("FINAL") ||
                      identity.Contains("DESIGN")))
-                {
-                    designProfileId = profileId;
-                    continue;
-                }
-
-                if (surfaceProfileId.IsNull &&
-                    (identity.Contains("NGL") ||
-                     identity.Contains("EG") ||
-                     identity.Contains("EXIST") ||
-                     identity.Contains("SURFACE")))
-                {
-                    surfaceProfileId = profileId;
-                }
+                    finalProfileId = profileId;
+                if (leftProfileId.IsNull &&
+                    (identity.Contains("LEFT") || identity.Contains(" HL") ||
+                     identity.Contains("HL-") || identity.Contains("LEFT-EDGE")))
+                    leftProfileId = profileId;
+                if (rightProfileId.IsNull &&
+                    (identity.Contains("RIGHT") || identity.Contains(" HR") ||
+                     identity.Contains("HR-") || identity.Contains("RIGHT-EDGE")))
+                    rightProfileId = profileId;
+                if (centreProfileId.IsNull &&
+                    (identity.Contains("CENTRE") || identity.Contains("CENTER") ||
+                     identity.Contains("CENTRELINE") || identity.Contains("CENTERLINE")))
+                    centreProfileId = profileId;
             }
 
-            if (surfaceProfileId.IsNull || designProfileId.IsNull)
+            if (centreProfileId.IsNull) centreProfileId = finalProfileId;
+            if (finalProfileId.IsNull) finalProfileId = centreProfileId;
+            if (leftProfileId.IsNull) leftProfileId = centreProfileId;
+            if (rightProfileId.IsNull) rightProfileId = centreProfileId;
+        }
+
+        private static int EnsureProfilesInProfileView(
+            ProfileView profileView,
+            params ObjectId[] profileIds)
+        {
+            if (profileView == null || profileIds == null) return 0;
+            HashSet<ObjectId> existing = new HashSet<ObjectId>();
+            object current = InvokeNoArguments(profileView, "GetProfileIds") ??
+                ReadProperty(profileView, "ProfileIds") ??
+                ReadProperty(profileView, "Profiles");
+            foreach (object value in CivilStyleDiscovery.Enumerate(current))
             {
-                foreach (ObjectId profileId in alignment.GetProfileIds())
+                if (value is ObjectId) existing.Add((ObjectId)value);
+                else if (value is DBObject) existing.Add(((DBObject)value).ObjectId);
+            }
+
+            int added = 0;
+            foreach (ObjectId id in profileIds.Distinct())
+            {
+                if (id.IsNull || existing.Contains(id)) continue;
+                if (Invoke(profileView, "AddProfile", id) ||
+                    Invoke(profileView, "AddProfileId", id))
                 {
-                    if (surfaceProfileId.IsNull && profileId != designProfileId)
-                        surfaceProfileId = profileId;
-                    else if (designProfileId.IsNull && profileId != surfaceProfileId)
-                        designProfileId = profileId;
+                    existing.Add(id);
+                    added++;
                 }
             }
+            return added;
+        }
+
+        private static object ReadProperty(object target, string name)
+        {
+            if (target == null) return null;
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    name,
+                    BindingFlags.Public | BindingFlags.Instance);
+                return property == null ? null : property.GetValue(target, null);
+            }
+            catch { return null; }
+        }
+
+        private static object InvokeNoArguments(object target, string name)
+        {
+            if (target == null) return null;
+            try
+            {
+                MethodInfo method = target.GetType().GetMethod(
+                    name,
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+                return method == null ? null : method.Invoke(target, null);
+            }
+            catch { return null; }
+        }
+
+        private static bool Invoke(object target, string name, params object[] arguments)
+        {
+            if (target == null) return false;
+            foreach (MethodInfo method in target.GetType().GetMethods(
+                BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!string.Equals(method.Name, name, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length != arguments.Length) continue;
+                bool compatible = true;
+                for (int index = 0; index < parameters.Length; index++)
+                {
+                    if (!parameters[index].ParameterType.IsInstanceOfType(arguments[index]))
+                    {
+                        compatible = false;
+                        break;
+                    }
+                }
+                if (!compatible) continue;
+                try
+                {
+                    method.Invoke(target, arguments);
+                    return true;
+                }
+                catch { }
+            }
+            return false;
         }
 
         private static ObjectId ReadObjectIdProperty(object target, string propertyName)
