@@ -1006,6 +1006,14 @@ namespace CETools.Civil3D
             }
         }
 
+        private static string SafeLayer(string value, string fallback)
+        {
+            string result = string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
+            foreach (char invalid in new[] { '<', '>', '/', '\\', '"', ':', ';', '?', '*', '|', '=', ',' })
+                result = result.Replace(invalid, '-');
+            return string.IsNullOrWhiteSpace(result) ? fallback : result;
+        }
+
         private static void WriteLink(Entity entity, Transaction transaction, RoadLink link)
         {
             if (entity.ExtensionDictionary.IsNull) entity.CreateExtensionDictionary();
