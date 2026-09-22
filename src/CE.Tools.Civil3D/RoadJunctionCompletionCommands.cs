@@ -142,6 +142,7 @@ namespace CETools.Civil3D
             string prefix = CleanPrefix(model.Text("Prefix"), "J");
             int junction = model.Integer("Start", 1);
             double textPaper = Math.Max(model.Double("TextHeight", 2.5), 0.5);
+            string outputLayerName = SafeLayer(model.Text("Layer"), LayerName);
             bool clockwise = !string.Equals(model.Text("Direction"), "Counter-clockwise", StringComparison.OrdinalIgnoreCase);
             int count = cross ? 4 : 2;
             var generated = new List<ObjectId>();
