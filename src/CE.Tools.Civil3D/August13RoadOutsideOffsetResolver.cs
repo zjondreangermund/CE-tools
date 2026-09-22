@@ -27,6 +27,29 @@ namespace CETools.Civil3D
             Database database,
             IList<Polyline> fallbackCentres)
         {
+            return ChooseDirectionalOffset(
+                source, distance, transaction, database, fallbackCentres, true);
+        }
+
+        internal static Curve ChooseInsideOffset(
+            Polyline source,
+            double distance,
+            Transaction transaction,
+            Database database,
+            IList<Polyline> fallbackCentres)
+        {
+            return ChooseDirectionalOffset(
+                source, distance, transaction, database, fallbackCentres, false);
+        }
+
+        private static Curve ChooseDirectionalOffset(
+            Polyline source,
+            double distance,
+            Transaction transaction,
+            Database database,
+            IList<Polyline> fallbackCentres,
+            bool outside)
+        {
             if (source == null || transaction == null || database == null || distance <= Tol)
                 return null;
 
@@ -71,8 +94,11 @@ namespace CETools.Civil3D
                     // centreline and remain on the same side of it as its source.
                     // This also rejects a very large offset that crosses the road
                     // centre and lands farther away on the opposite carriageway.
-                    bool outward = gain > minimumGain && sameSideFraction >= 0.60;
-                    if (outward && gain > bestGain)
+                    bool eligible = outside
+                        ? gain > minimumGain && sameSideFraction >= 0.60
+                        : gain < -minimumGain && sameSideFraction >= 0.60;
+                    bool better = outside ? gain > bestGain : gain < bestGain;
+                    if (eligible && better)
                     {
                         if (best != null) best.Dispose();
                         best = candidate;
@@ -91,7 +117,7 @@ namespace CETools.Civil3D
             // no CE parent chain can be resolved, but score several points rather
             // than a single midpoint so junctions are less likely to flip sides.
             Curve fallbackBest = null;
-            double fallbackScore = double.MinValue;
+            double fallbackScore = outside ? double.MinValue : double.MaxValue;
             foreach (Curve candidate in candidates)
             {
                 double score = AverageDistanceToNearestCentre(candidate, fallbackCentres);
