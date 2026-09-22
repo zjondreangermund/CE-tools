@@ -193,7 +193,8 @@ namespace CETools.Civil3D
             model.AddChoice("Type", "01 Selection", "Junction type", "T and Cross", "Create both detected junction types or only one type.", new[] { "T and Cross", "T only", "Cross only" });
             model.AddPositiveDouble("Radius", "02 Geometry", "Bellmouth radius", 10.0, "Return radius.");
             model.AddPositiveDouble("HalfWidth", "02 Geometry", "Default road half-width", 3.7, "Used when a centreline has no generated edge offset to infer its half-width.");
-            model.AddChoice("Replace", "03 Output", "Existing generated junctions", "Replace existing", "Replace prior CE bulk-junction arcs or keep them.", new[] { "Replace existing", "Keep existing" });
+            model.AddText("Layer", "03 Output", "Junction output layer", JunctionLayer, "Layer for generated T/cross return arcs and T-junction closure lines.");
+            model.AddChoice("Replace", "03 Output", "Existing generated junctions", "Replace existing", "Replace prior CE bulk-junction arcs and T-closure lines or keep them.", new[] { "Replace existing", "Keep existing" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             List<ObjectId> centerIds = ResolveRoadScope(document, "CENTER", model.Text("Scope"), "\nSelect road centreline polylines: ");
@@ -210,13 +211,18 @@ namespace CETools.Civil3D
             int tCount = 0;
             int crossCount = 0;
             int arcs = 0;
+            int tClosures = 0;
 
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 BlockTableRecord space = GetModelSpace(document.Database, transaction, OpenMode.ForWrite);
-                ObjectId layerId = GetOrCreateLayer(document.Database, transaction, JunctionLayer);
+                string outputLayerName = SafeLayer(model.Text("Layer"), JunctionLayer);
+                ObjectId layerId = GetOrCreateLayer(document.Database, transaction, outputLayerName);
                 if (string.Equals(model.Text("Replace"), "Replace existing", StringComparison.OrdinalIgnoreCase))
+                {
                     EraseByKind(space, transaction, "JUNCTION_ARC");
+                    EraseByKind(space, transaction, "JUNCTION_T_CLOSURE");
+                }
 
                 List<Polyline> roads = centerIds
                     .Select(id => transaction.GetObject(id, OpenMode.ForRead, false) as Polyline)
@@ -270,6 +276,45 @@ namespace CETools.Civil3D
                                 });
                                 arcs++;
                             }
+
+                            // A T-junction needs a transverse closure between the
+                            // two outer return tangencies. Without this line the
+                            // two returns remain visually open on the side-road
+                            // mouth; this is the magenta closure shown in plan.
+                            if (isT)
+                            {
+                                Vector2d ux = x.GetNormal();
+                                Vector2d uy = y.GetNormal();
+                                double tangentOffset = halfWidth;
+                                double longitudinal = halfWidth + radius;
+                                Point3d first = point +
+                                    new Vector3d(
+                                        -ux.X * longitudinal + uy.X * tangentOffset,
+                                        -ux.Y * longitudinal + uy.Y * tangentOffset,
+                                        0.0);
+                                Point3d second = point +
+                                    new Vector3d(
+                                        ux.X * longitudinal + uy.X * tangentOffset,
+                                        ux.Y * longitudinal + uy.Y * tangentOffset,
+                                        0.0);
+                                Line closure = new Line(first, second);
+                                closure.SetDatabaseDefaults(document.Database);
+                                closure.LayerId = layerId;
+                                space.AppendEntity(closure);
+                                transaction.AddNewlyCreatedDBObject(closure, true);
+                                WriteLink(closure, transaction, new RoadLink
+                                {
+                                    Kind = "JUNCTION_T_CLOSURE",
+                                    ParentHandle = main.Handle.ToString(),
+                                    SourceHandles = main.Handle + "," + side.Handle,
+                                    Offset = radius,
+                                    Width = halfWidth * 2.0,
+                                    Group = group,
+                                    Name = "T-CLOSURE"
+                                });
+                                tClosures++;
+                            }
+
                             if (isT) tCount++; else crossCount++;
                         }
                     }
@@ -277,7 +322,7 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
             document.Editor.Regen();
-            document.Editor.WriteMessage("\nCE_ROADJUNCTIONBULK complete. T-junctions={0}; cross-junctions={1}; return arcs={2}.", tCount, crossCount, arcs);
+            document.Editor.WriteMessage("\nCE_ROADJUNCTIONBULK complete. T-junctions={0}; cross-junctions={1}; return arcs={2}; T closures={3}; layer={4}.", tCount, crossCount, arcs, tClosures, SafeLayer(model.Text("Layer"), JunctionLayer));
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONTRIM", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
