@@ -78,7 +78,8 @@ Need ($sequence.Contains('CommandEnded += OnCommandEnded')) 'sequential runner d
 Need ($sequence.Contains('CommandCancelled += OnCommandCancelled')) 'sequential runner does not stop safely on cancellation'
 Need ($roadCorridor.Contains('CeSequentialCommandRunner.Start')) 'CE_ROADPROFILEFULL/CE_ROADCORRIDORFULL are not using safe command sequencing'
 Need ($roadCorridor.Contains('new[] { "CE_ROADPROFILES", "CE_ROADDESIGNPROFILE", "CE_ROADVERTICALCURVES" }')) 'CE_ROADPROFILEFULL sequence is incomplete'
-Need ($roadCorridor.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }')) 'CE_ROADCORRIDORFULL sequence is incomplete'
+Need (($roadCorridor.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }') -or
+      $roadCorridor.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE", "CE_ROADCORRIDOROUTPUTFIX" }'))) 'CE_ROADCORRIDORFULL sequence is incomplete'
 Need (-not $roadCorridor.Contains('SendStringToExecute("CE_ROADPROFILES CE_ROADDESIGNPROFILE')) 'unsafe road-profile multi-command input string remains'
 Need (-not $roadCorridor.Contains('SendStringToExecute("CE_ROADCORRIDORS CE_ROADCORRIDORCOMPLETE')) 'unsafe road-corridor multi-command input string remains'
 Need ($roadCorridor.Contains('GetProperty("Visible"')) 'corridor completion does not attempt to restore visibility'
