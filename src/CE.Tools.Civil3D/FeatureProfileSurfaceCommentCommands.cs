@@ -117,6 +117,18 @@ namespace CETools.Civil3D
             var window = new FeatureLineAppearanceWindow(sites);
             AcApplication.ShowModalWindow(window);
             if (!window.Accepted) return;
+            if (!string.IsNullOrWhiteSpace(window.NewSiteName))
+            {
+                ObjectId newSiteId = TryCreateSite(
+                    document, window.NewSiteName.Trim());
+                if (newSiteId.IsNull)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_FLAPPEARANCE cancelled. The requested Civil 3D site could not be created.");
+                    return;
+                }
+                window.SelectedSiteId = newSiteId;
+            }
 
             int changed = 0;
             int styleChanged = 0;
@@ -777,6 +789,65 @@ namespace CETools.Civil3D
             return result.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
 
+        private static ObjectId TryCreateSite(Document document, string name)
+        {
+            if (document == null || string.IsNullOrWhiteSpace(name)) return ObjectId.Null;
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (civilDocument == null) return ObjectId.Null;
+
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (MethodInfo method in typeof(CivilSite).GetMethods(
+                    BindingFlags.Public | BindingFlags.Static)
+                    .Where(item => string.Equals(
+                        item.Name, "Create", StringComparison.OrdinalIgnoreCase)))
+                {
+                    ParameterInfo[] parameters = method.GetParameters();
+                    object[] arguments = new object[parameters.Length];
+                    bool supported = true;
+                    for (int index = 0; index < parameters.Length; index++)
+                    {
+                        Type type = parameters[index].ParameterType;
+                        string parameterName = (parameters[index].Name ?? string.Empty).ToLowerInvariant();
+                        if (type == typeof(string))
+                            arguments[index] = name;
+                        else if (type == typeof(CivilDocument))
+                            arguments[index] = civilDocument;
+                        else if (type == typeof(ObjectId))
+                            arguments[index] = ObjectId.Null;
+                        else if (parameters[index].HasDefaultValue)
+                            arguments[index] = parameters[index].DefaultValue;
+                        else if (type == typeof(bool))
+                            arguments[index] = false;
+                        else if (type.IsEnum)
+                            arguments[index] = Enum.GetValues(type).GetValue(0);
+                        else
+                        {
+                            supported = false;
+                            break;
+                        }
+                    }
+                    if (!supported) continue;
+                    try
+                    {
+                        object result = method.Invoke(null, arguments);
+                        ObjectId id = result is ObjectId
+                            ? (ObjectId)result
+                            : result is CivilSite
+                                ? ((CivilSite)result).ObjectId
+                                : ObjectId.Null;
+                        if (!id.IsNull)
+                        {
+                            transaction.Commit();
+                            return id;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            return ObjectId.Null;
+        }
+
         internal static List<CivilObjectChoice> ReadSites(Document document)
         {
             var result = new List<CivilObjectChoice>
@@ -1342,16 +1413,17 @@ namespace CETools.Civil3D
     {
         private readonly TextBox _colour;
         private readonly ComboBox _site;
+        private readonly TextBox _newSite;
         public FeatureLineAppearanceWindow(IEnumerable<CivilObjectChoice> sites)
         {
             Title = "CE Tools - Feature Line Colour and Site";
             Width = 520;
-            Height = 280;
+            Height = 340;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             var grid = new Grid { Margin = new Thickness(18) };
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
             grid.ColumnDefinitions.Add(new ColumnDefinition());
-            for (int index = 0; index < 3; index++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int index = 0; index < 4; index++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             Content = grid;
 
             AddLabel(grid, "AutoCAD colour index (1-255)", 0);
@@ -1367,8 +1439,14 @@ namespace CETools.Civil3D
             Grid.SetColumn(_site, 1);
             grid.Children.Add(_site);
 
+            AddLabel(grid, "New site name (optional)", 2);
+            _newSite = new TextBox { Margin = new Thickness(8), MinWidth = 260 };
+            Grid.SetRow(_newSite, 2);
+            Grid.SetColumn(_newSite, 1);
+            grid.Children.Add(_newSite);
+
             var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(8) };
-            Grid.SetRow(buttons, 2);
+            Grid.SetRow(buttons, 3);
             Grid.SetColumnSpan(buttons, 2);
             grid.Children.Add(buttons);
             var cancel = new Button { Content = "Cancel", Width = 90, Margin = new Thickness(8), IsCancel = true };
@@ -1394,7 +1472,8 @@ namespace CETools.Civil3D
 
         public bool Accepted { get; private set; }
         public int ColourIndex { get; private set; }
-        public ObjectId SelectedSiteId { get; private set; }
+        public ObjectId SelectedSiteId { get; set; }
+        public string NewSiteName { get; private set; }
 
         private static void AddLabel(Grid grid, string text, int row)
         {
