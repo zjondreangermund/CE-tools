@@ -90,23 +90,25 @@ Replace-Once -Path $assembly -Old $oldAssemblyMarker -New $newAssemblyMarker -De
 $oldJunctionSettings = @'
             model.AddPositiveDouble("Radius", "02 Geometry", "Bellmouth radius", 10.0, "Return radius.");
             model.AddPositiveDouble("HalfWidth", "02 Geometry", "Default road half-width", 3.7, "Used when a centreline has no generated edge offset to infer its half-width.");
+            model.AddText("Layer", "03 Output", "Junction output layer", JunctionLayer, "Layer for generated T/cross return arcs and T-junction closure lines.");
 '@
 $newJunctionSettings = @'
             model.AddPositiveDouble("Radius", "02 Geometry", "Bellmouth radius", 10.0, "Return radius.");
             model.AddChoice("Geometry", "02 Geometry", "Return geometry", "Arcs", "Keep native Arc returns or convert the completed T/cross-junction return groups to lightweight-polyline arc segments.", new[] { "Arcs", "Polylines" });
             model.AddPositiveDouble("HalfWidth", "02 Geometry", "Default road half-width", 3.7, "Used when a centreline has no generated edge offset to infer its half-width.");
+            model.AddText("Layer", "03 Output", "Junction output layer", JunctionLayer, "Layer for generated T/cross return arcs and T-junction closure lines.");
 '@
 Replace-Once -Path $roadLayout -Old $oldJunctionSettings -New $newJunctionSettings -Description 'add Arc/Polyline option to bulk T/cross junctions'
 
 $oldJunctionEnd = @'
             document.Editor.Regen();
-            document.Editor.WriteMessage("\nCE_ROADJUNCTIONBULK complete. T-junctions={0}; cross-junctions={1}; return arcs={2}.", tCount, crossCount, arcs);
+            document.Editor.WriteMessage("\nCE_ROADJUNCTIONBULK complete. T-junctions={0}; cross-junctions={1}; return arcs={2}; T closures={3}; layer={4}.", tCount, crossCount, arcs, tClosures, SafeLayer(model.Text("Layer"), JunctionLayer));
 '@
 $newJunctionEnd = @'
             if (string.Equals(model.Text("Geometry"), "Polylines", StringComparison.OrdinalIgnoreCase))
                 AugustJunctionReturnRuntime.ConvertGenerated(document, null);
             document.Editor.Regen();
-            document.Editor.WriteMessage("\nCE_ROADJUNCTIONBULK complete. T-junctions={0}; cross-junctions={1}; return objects={2}; geometry={3}.", tCount, crossCount, arcs, model.Text("Geometry"));
+            document.Editor.WriteMessage("\nCE_ROADJUNCTIONBULK complete. T-junctions={0}; cross-junctions={1}; return objects={2}; geometry={3}; T closures={4}; layer={5}.", tCount, crossCount, arcs, model.Text("Geometry"), tClosures, SafeLayer(model.Text("Layer"), JunctionLayer));
 '@
 Replace-Once -Path $roadLayout -Old $oldJunctionEnd -New $newJunctionEnd -Description 'convert completed junction groups to requested polyline returns'
 
