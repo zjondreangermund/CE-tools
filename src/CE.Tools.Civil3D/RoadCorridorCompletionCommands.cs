@@ -165,7 +165,7 @@ namespace CETools.Civil3D
             if (document == null) return;
             CeSequentialCommandRunner.Start(
                 document,
-                new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" },
+                new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE", "CE_ROADCORRIDOROUTPUTFIX" },
                 "CE complete road-corridor workflow");
         }
 
