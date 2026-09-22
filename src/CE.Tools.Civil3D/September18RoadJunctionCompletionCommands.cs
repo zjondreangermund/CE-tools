@@ -17,6 +17,7 @@ using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilProfile = Autodesk.Civil.DatabaseServices.Profile;
 using CivilProfileView = Autodesk.Civil.DatabaseServices.ProfileView;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
+using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.September18RoadJunctionCompletionCommands))]
 
@@ -159,6 +160,62 @@ namespace CETools.Civil3D
                 new[] { "ALIGNMENT", "REVERSED", "PROFILES", "PROFILE VIEWS", "CORRIDORS", "STATUS" },
                 rows,
                 "CE ROAD ALIGNMENT REVERSE REGISTER");
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_ROADPROFILEVIEWREVERSEMULTI", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void ReverseMultipleSelectedDesignProfileViews()
+        {
+            Document document = ActiveDocument();
+            if (document == null) return;
+            List<ObjectId> viewIds = SelectObjects(
+                document,
+                "\nSelect design road profile views to reverse: ",
+                obj => obj is CivilProfileView);
+            if (viewIds.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_ROADPROFILEVIEWREVERSEMULTI cancelled. No profile views selected.");
+                return;
+            }
+
+            int changed = 0;
+            int skipped = 0;
+            using (DocumentLock documentLock = document.LockDocument())
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId viewId in viewIds.Distinct())
+                {
+                    CivilProfileView view = SafeOpen<CivilProfileView>(transaction, viewId, OpenMode.ForWrite);
+                    if (view == null) { skipped++; continue; }
+                    ObjectId alignmentId = ReadObjectId(ReadProperty(view, "AlignmentId"));
+                    CivilAlignment alignment = SafeOpen<CivilAlignment>(transaction, alignmentId, OpenMode.ForRead);
+                    if (alignment == null) { skipped++; continue; }
+
+                    Dictionary<ObjectId, List<FinalProfilePvi>> profiles =
+                        CaptureFinalProfilePvis(alignment, transaction);
+                    bool local = false;
+                    foreach (KeyValuePair<ObjectId, List<FinalProfilePvi>> item in profiles)
+                    {
+                        CivilProfile profile = SafeOpen<CivilProfile>(transaction, item.Key, OpenMode.ForWrite);
+                        if (profile == null) continue;
+                        if (ReverseFinalProfilePvis(profile, item.Value,
+                                alignment.StartingStation, alignment.EndingStation))
+                            local = true;
+                    }
+
+                    if (TryInvoke(view, "Rebuild") || TryInvoke(view, "Update") ||
+                        TryInvoke(view, "UpdateDisplay"))
+                        local = true;
+                    Entity entity = view as Entity;
+                    if (entity != null) entity.RecordGraphicsModified(true);
+                    if (local) changed++; else skipped++;
+                }
+                transaction.Commit();
+            }
+
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_ROADPROFILEVIEWREVERSEMULTI complete. Views changed={0}; skipped={1}.",
+                changed, skipped);
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADSURFACENAMES", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -317,6 +374,9 @@ namespace CETools.Civil3D
                                 styleId,
                                 labelSetId);
                             if (newProfileId.IsNull) throw new InvalidOperationException("Civil 3D returned no profile ObjectId.");
+                            if (!TryInvoke(view, "AddProfile", newProfileId) &&
+                                !TryInvoke(view, "AddProfileId", newProfileId))
+                                throw new InvalidOperationException("The TOP/BOTTOM profile was created but could not be added to the selected profile view.");
                             created++;
                             existingNames.Add(profileName);
                             rows.Add(new List<string> { view.Name, alignment.Name, surface.Name, profileName, "Created" });
@@ -342,6 +402,68 @@ namespace CETools.Civil3D
                 new[] { "PROFILE VIEW", "ALIGNMENT", "SURFACE", "PROFILE", "STATUS" },
                 rows,
                 "CE ROAD TOP BOTTOM PROFILE REGISTER");
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONFEATURELINESTOP", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void PasteSelectedJunctionFeatureLinesToRoadTopSurfaces()
+        {
+            Document document = ActiveDocument();
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (document == null || civilDocument == null) return;
+
+            List<ObjectId> featureIds = SelectObjects(
+                document,
+                "\nSelect road-junction feature lines to paste to all road TOP surfaces: ",
+                obj => obj is CivilFeatureLine);
+            if (featureIds.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_ROADJUNCTIONFEATURELINESTOP cancelled. No feature lines selected.");
+                return;
+            }
+
+            int surfaces = 0;
+            int vertices = 0;
+            using (DocumentLock documentLock = document.LockDocument())
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                var points = new List<Point3d>();
+                foreach (ObjectId id in featureIds.Distinct())
+                {
+                    CivilFeatureLine line = SafeOpen<CivilFeatureLine>(transaction, id, OpenMode.ForRead);
+                    if (line == null) continue;
+                    try
+                    {
+                        foreach (Point3d point in line.GetPoints(FeatureLinePointType.AllPoints))
+                            points.Add(new Point3d(point.X, point.Y, point.Z));
+                    }
+                    catch { }
+                }
+
+                foreach (ObjectId surfaceId in civilDocument.GetSurfaceIds())
+                {
+                    CivilSurface surface = SafeOpen<CivilSurface>(transaction, surfaceId, OpenMode.ForWrite);
+                    if (surface == null ||
+                        !IsRoadTopBottomSurface(surface.Name) ||
+                        !surface.Name.StartsWith("TOP-", StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    int local = 0;
+                    foreach (Point3d point in points)
+                        if (TryAddSurfaceVertex(surface, point)) local++;
+                    if (local > 0)
+                    {
+                        surfaces++;
+                        vertices += local;
+                        TryInvoke(surface, "Rebuild");
+                        surface.RecordGraphicsModified(true);
+                    }
+                }
+                transaction.Commit();
+            }
+
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_ROADJUNCTIONFEATURELINESTOP complete. Selected feature lines={0}; TOP surfaces updated={1}; vertices pasted={2}.",
+                featureIds.Count, surfaces, vertices);
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADTJUNCTIONASSEMBLYLIMITS", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -677,7 +799,8 @@ namespace CETools.Civil3D
                 (profile.Description ?? string.Empty)).ToUpperInvariant();
             return identity.Contains("-FG") ||
                    identity.Contains("FINAL") ||
-                   identity.Contains("CE FINAL ROAD");
+                   identity.Contains("CE FINAL ROAD") ||
+                   (identity.Contains("DESIGN") && !identity.Contains("NGL"));
         }
 
         private static bool ReverseFinalProfilePvis(
@@ -693,7 +816,8 @@ namespace CETools.Civil3D
                 .OfType<ProfilePVI>()
                 .OrderBy(item => item.Station)
                 .ToList();
-            if (live.Count != original.Count) return false;
+            if (live.Count != original.Count)
+                return RebuildFinalProfilePvis(profile, original, stationStart, stationEnd);
 
             double expectedFirst = stationStart + stationEnd - original[original.Count - 1].Station;
             if (Math.Abs(live[0].Station - expectedFirst) <= StationTolerance)
@@ -1002,6 +1126,14 @@ namespace CETools.Civil3D
                 }
                 else if (parameter.HasDefaultValue)
                     arguments[index] = parameter.DefaultValue;
+                else if (parameter.ParameterType.IsEnum)
+                    arguments[index] = Enum.GetValues(parameter.ParameterType).GetValue(0);
+                else if (parameter.ParameterType == typeof(bool))
+                    arguments[index] = false;
+                else if (parameter.ParameterType == typeof(double))
+                    arguments[index] = 0.0;
+                else if (parameter.ParameterType.IsValueType)
+                    arguments[index] = Activator.CreateInstance(parameter.ParameterType);
                 else
                     return false;
             }
