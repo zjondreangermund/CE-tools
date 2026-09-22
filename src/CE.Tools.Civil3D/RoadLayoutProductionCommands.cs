@@ -392,9 +392,14 @@ namespace CETools.Civil3D
             {
                 BlockTableRecord space = GetModelSpace(document.Database, transaction, OpenMode.ForWrite);
                 ObjectId layerId = GetOrCreateLayer(document.Database, transaction, LabelLayer);
+                // Number horizontal roads first, from top to bottom, then
+                // vertical roads from left to right. This is the requested plan
+                // reading order when all road-centre polylines are selected.
                 var ordered = roads.Select(id => transaction.GetObject(id, OpenMode.ForRead, false) as Polyline)
                     .Where(poly => poly != null)
-                    .OrderByDescending(poly => MidPoint(poly).Y)
+                    .OrderBy(poly => RoadOrderGroup(poly))
+                    .ThenBy(poly => RoadOrderPrimary(poly))
+                    .ThenBy(poly => MidPoint(poly).Y)
                     .ThenBy(poly => MidPoint(poly).X)
                     .ToList();
                 int index = 0;
@@ -1083,6 +1088,25 @@ namespace CETools.Civil3D
             double fromTopClockwise = Math.PI * 0.5 - angle;
             while (fromTopClockwise < 0.0) fromTopClockwise += Math.PI * 2.0;
             return fromTopClockwise;
+        }
+
+        private static int RoadOrderGroup(Polyline polyline)
+        {
+            if (polyline == null) return 2;
+            try
+            {
+                Extents3d extents = polyline.GeometricExtents;
+                double width = Math.Abs(extents.MaxPoint.X - extents.MinPoint.X);
+                double height = Math.Abs(extents.MaxPoint.Y - extents.MinPoint.Y);
+                return width >= height ? 0 : 1;
+            }
+            catch { return 2; }
+        }
+
+        private static double RoadOrderPrimary(Polyline polyline)
+        {
+            Point3d mid = MidPoint(polyline);
+            return RoadOrderGroup(polyline) == 0 ? -mid.Y : mid.X;
         }
 
         private sealed class BoundarySegment
