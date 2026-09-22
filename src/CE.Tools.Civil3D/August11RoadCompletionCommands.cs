@@ -138,8 +138,9 @@ namespace CETools.Civil3D
                 "Create only the offset side that is farther away from the nearest CE road centreline. This removes the need to guess Positive or Negative offset direction.");
             model.AddChoice("Source", "01 Source", "Source geometry", "Road edges", "Choose road edges or sidewalk/shoulder edges.", new[] { "Road edges", "Sidewalk / shoulder edges" });
             model.AddChoice("Scope", "01 Source", "Scope", "Selected", "Process selected source geometry or all matching CE geometry.", new[] { "Selected", "All" });
-            model.AddPositiveDouble("Distance", "02 Offset", "Outside offset distance", 1.5, "Offset distance in drawing units.");
-            model.AddText("Layer", "03 Output", "Output layer", "CE-ROAD-OUTSIDE-OFFSET", "Layer for generated outside offsets.");
+            model.AddPositiveDouble("Distance", "02 Offset", "Offset distance", 1.5, "Offset distance in drawing units.");
+            model.AddChoice("Side", "02 Offset", "Offset side", "Outside", "Choose the side relative to the parent road centreline.", new[] { "Outside", "Inside" });
+            model.AddText("Layer", "03 Output", "Output layer", "CE-ROAD-OFFSET", "Layer for generated offsets.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             string sourceLayer = string.Equals(model.Text("Source"), "Road edges", StringComparison.OrdinalIgnoreCase) ? EdgeLayer : ShoulderLayer;
             List<ObjectId> sources = ResolveLayerPolylines(document, sourceLayer, model.Text("Scope"));
