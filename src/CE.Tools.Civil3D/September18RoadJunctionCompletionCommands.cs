@@ -188,6 +188,8 @@ namespace CETools.Civil3D
                     CivilProfileView view = SafeOpen<CivilProfileView>(transaction, viewId, OpenMode.ForWrite);
                     if (view == null) { skipped++; continue; }
                     ObjectId alignmentId = ReadObjectId(ReadProperty(view, "AlignmentId"));
+                    if (alignmentId.IsNull)
+                        alignmentId = ReadObjectId(InvokeReturning(view, "GetAlignmentId"));
                     CivilAlignment alignment = SafeOpen<CivilAlignment>(transaction, alignmentId, OpenMode.ForRead);
                     if (alignment == null) { skipped++; continue; }
 
@@ -888,10 +890,18 @@ namespace CETools.Civil3D
         {
             string identity = ((profile.Name ?? string.Empty) + " " +
                 (profile.Description ?? string.Empty)).ToUpperInvariant();
-            return identity.Contains("-FG") ||
-                   identity.Contains("FINAL") ||
-                   identity.Contains("CE FINAL ROAD") ||
-                   (identity.Contains("DESIGN") && !identity.Contains("NGL"));
+            bool excluded = identity.Contains("NGL") ||
+                            identity.Contains("NATURAL") ||
+                            identity.Contains("EXIST") ||
+                            identity.Contains("GROUND") ||
+                            identity.Contains("SURFACE") ||
+                            identity.Contains("EG");
+            return !excluded &&
+                   (identity.Contains("-FG") ||
+                    identity.Contains("FINAL") ||
+                    identity.Contains("CE FINAL ROAD") ||
+                    identity.Contains("DESIGN") ||
+                    identity.Contains("ROAD"));
         }
 
         private static bool ReverseFinalProfilePvis(
@@ -1166,25 +1176,52 @@ namespace CETools.Civil3D
             ObjectId styleId,
             ObjectId labelSetId)
         {
-            Type type = typeof(CivilAlignment).Assembly.GetType("Autodesk.Civil.DatabaseServices.Profile", true);
-            foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Static)
+            // Civil 3D 2023 exposes the six-argument overload directly. The
+            // previous reflection-only path swallowed the real API exception
+            // and reported every row as "no compatible overload".
+            try
+            {
+                ObjectId direct = CivilProfile.CreateFromSurface(
+                    name, alignmentId, surfaceId, layerId, styleId, labelSetId);
+                if (!direct.IsNull) return direct;
+            }
+            catch (System.Exception directException)
+            {
+                // Keep probing below; the final message includes the actual
+                // Civil 3D reason instead of hiding it behind overload text.
+                lastProfileException = directException;
+            }
+
+            Type type = typeof(CivilAlignment).Assembly.GetType(
+                "Autodesk.Civil.DatabaseServices.Profile", true);
+            foreach (MethodInfo method in type.GetMethods(
+                BindingFlags.Public | BindingFlags.Static)
                 .Where(item => item.Name == "CreateFromSurface")
                 .OrderBy(item => item.GetParameters().Length))
             {
                 object[] arguments;
-                if (!BuildProfileArguments(method.GetParameters(), name, alignmentId, surfaceId, layerId, styleId, labelSetId, out arguments))
+                if (!BuildProfileArguments(
+                    method.GetParameters(), name, alignmentId, surfaceId,
+                    layerId, styleId, labelSetId, out arguments))
                     continue;
                 try
                 {
                     object result = method.Invoke(null, arguments);
                     if (result is ObjectId) return (ObjectId)result;
                 }
-                catch (TargetInvocationException)
+                catch (TargetInvocationException exception)
                 {
+                    lastProfileException = exception.InnerException ?? exception;
                 }
             }
-            throw new InvalidOperationException("No compatible Profile.CreateFromSurface overload was found.");
+            string detail = lastProfileException == null
+                ? string.Empty
+                : " Last Civil 3D error: " + lastProfileException.Message;
+            throw new InvalidOperationException(
+                "No compatible Profile.CreateFromSurface overload was found." + detail);
         }
+
+        private static System.Exception lastProfileException;
 
         private static bool BuildProfileArguments(
             ParameterInfo[] parameters,
