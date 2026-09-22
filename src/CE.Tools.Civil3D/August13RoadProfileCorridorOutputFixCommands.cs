@@ -540,39 +540,85 @@ namespace CETools.Civil3D
             CorridorSlopePatternCollection patterns = corridor.SlopePatterns;
             if (patterns == null) return 0;
 
+            // Civil 3D retains old slope-pattern rows when a corridor is rebuilt.
+            // Remove every existing row first, then recreate only the two requested
+            // engineering pairs on each side: EPS -> Daylight_Cut and
+            // EPS -> Daylight_Fill.
+            List<object> existing = EnumerateObjects(patterns).ToList();
+            for (int index = existing.Count - 1; index >= 0; index--)
+            {
+                if (!TryInvoke(patterns, "Remove", existing[index]))
+                    TryInvoke(patterns, "RemoveAt", index);
+            }
+
             int added = 0;
             foreach (Baseline baseline in corridor.Baselines)
             {
                 if (baseline == null) continue;
                 List<CorridorFeatureLine> lines = ReadFeatureLines(baseline);
-                if (lines.Count < 2) continue;
-
-                List<CorridorFeatureLine> outer = lines
-                    .Where(item => IsOuterSlopeCode(item.CodeName))
+                List<CorridorFeatureLine> eps = lines
+                    .Where(item => IsSlopeCode(item.CodeName, "EPS"))
                     .ToList();
-                if (outer.Count == 0) continue;
+                List<CorridorFeatureLine> cut = lines
+                    .Where(item => IsSlopeCode(item.CodeName, "DAYLIGHT_CUT"))
+                    .ToList();
+                List<CorridorFeatureLine> fill = lines
+                    .Where(item => IsSlopeCode(item.CodeName, "DAYLIGHT_FILL"))
+                    .ToList();
 
-                foreach (CorridorFeatureLine outerLine in outer)
+                foreach (CorridorFeatureLine hinge in eps)
                 {
-                    double outerOffset = AverageOffset(outerLine);
-                    CorridorFeatureLine innerLine = lines
-                        .Where(item => !ReferenceEquals(item, outerLine))
-                        .Where(item => IsInnerSlopeCode(item.CodeName))
-                        .Where(item => SameSide(AverageOffset(item), outerOffset))
-                        .Where(item => Math.Abs(AverageOffset(item)) < Math.Abs(outerOffset) - 0.001)
-                        .OrderBy(item => Math.Abs(Math.Abs(outerOffset) - Math.Abs(AverageOffset(item))))
-                        .FirstOrDefault();
-                    if (innerLine == null) continue;
-                    if (HasSlopePattern(patterns, innerLine, outerLine)) continue;
-
-                    CorridorSlopePattern pattern = patterns.Add(innerLine, outerLine, styleId);
-                    if (pattern == null) continue;
-                    pattern.StartStation = baseline.StartStation;
-                    pattern.EndStation = baseline.EndStation;
-                    added++;
+                    double hingeOffset = AverageOffset(hinge);
+                    CorridorFeatureLine cutLine = FindSameSideSlopeLine(cut, hingeOffset);
+                    CorridorFeatureLine fillLine = FindSameSideSlopeLine(fill, hingeOffset);
+                    foreach (CorridorFeatureLine outer in new[] { cutLine, fillLine })
+                    {
+                        if (outer == null) continue;
+                        try
+                        {
+                            CorridorSlopePattern pattern = patterns.Add(hinge, outer, styleId);
+                            if (pattern == null) continue;
+                            pattern.StartStation = baseline.StartStation;
+                            pattern.EndStation = baseline.EndStation;
+                            added++;
+                        }
+                        catch { }
+                    }
                 }
             }
             return added;
+        }
+
+        private static CorridorFeatureLine FindSameSideSlopeLine(
+            IEnumerable<CorridorFeatureLine> candidates,
+            double hingeOffset)
+        {
+            if (candidates == null) return null;
+            List<CorridorFeatureLine> values = candidates
+                .Where(item => item != null)
+                .Where(item => Math.Abs(hingeOffset) < 0.001 ||
+                    Math.Abs(AverageOffset(item)) < 0.001 ||
+                    Math.Sign(AverageOffset(item)) == Math.Sign(hingeOffset))
+                .ToList();
+            if (values.Count == 0) return null;
+            return values
+                .OrderBy(item => Math.Abs(AverageOffset(item) - hingeOffset))
+                .FirstOrDefault();
+        }
+
+        private static bool IsSlopeCode(string value, string expected)
+        {
+            string normal = (value ?? string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty)
+                .Replace(" ", string.Empty)
+                .ToUpperInvariant();
+            string target = (expected ?? string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty)
+                .Replace(" ", string.Empty)
+                .ToUpperInvariant();
+            return string.Equals(normal, target, StringComparison.OrdinalIgnoreCase);
         }
 
         private static List<CorridorFeatureLine> ReadFeatureLines(Baseline baseline)
