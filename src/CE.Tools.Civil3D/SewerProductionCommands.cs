@@ -1505,6 +1505,21 @@ namespace CETools.Civil3D
             catch { return false; }
         }
 
+        private static object ReadProperty(object target, string propertyName)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(propertyName)) return null;
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                return property == null || !property.CanRead
+                    ? null
+                    : property.GetValue(target, null);
+            }
+            catch { return null; }
+        }
+
         private static bool IsElevationControlled(DBObject structure)
         {
             object value = ReadProperty(structure, "ControlSumpBy");
