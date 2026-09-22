@@ -1121,6 +1121,13 @@ namespace CETools.Civil3D
                 }
                 catch { }
             }
+            try
+            {
+                Entity styleEntity = style as Entity;
+                if (styleEntity != null) styleEntity.RecordGraphicsModified(true);
+            }
+            catch { }
+
         }
 
         private static ObjectId ReadObjectIdProperty(
