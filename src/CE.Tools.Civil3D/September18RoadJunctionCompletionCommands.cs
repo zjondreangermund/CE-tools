@@ -765,6 +765,96 @@ namespace CETools.Civil3D
                 "CE PIPE SLOPE OUTLET REGISTER");
         }
 
+        [CommandMethod("CE_TOOLS", "CE_PIPESLOPEJUNCTIONFIX", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void FixPipeSlopesAtJunctions()
+        {
+            Document document = ActiveDocument();
+            if (document == null) return;
+            List<ObjectId> pipeIds = SelectObjects(
+                document,
+                "\nSelect sewer pipes whose junction elevations must be levelled: ",
+                obj => obj != null &&
+                    obj.GetType().Name.Equals("Pipe", StringComparison.OrdinalIgnoreCase));
+            if (pipeIds.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_PIPESLOPEJUNCTIONFIX cancelled. No pipes selected.");
+                return;
+            }
+
+            var junctions = new Dictionary<ObjectId, List<PipeEndpoint>>();
+            using (DocumentLock documentLock = document.LockDocument())
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId pipeId in pipeIds.Distinct())
+                {
+                    DBObject pipe = SafeOpen<DBObject>(
+                        transaction, pipeId, OpenMode.ForRead);
+                    if (pipe == null) continue;
+                    ObjectId startStructure = ReadObjectId(
+                        ReadProperty(pipe, "StartStructureId"));
+                    ObjectId endStructure = ReadObjectId(
+                        ReadProperty(pipe, "EndStructureId"));
+                    object startValue = ReadProperty(pipe, "StartPoint");
+                    object endValue = ReadProperty(pipe, "EndPoint");
+                    if (!(startValue is Point3d) || !(endValue is Point3d)) continue;
+                    AddPipeEndpoint(
+                        junctions, startStructure,
+                        new PipeEndpoint(pipeId, true, (Point3d)startValue));
+                    AddPipeEndpoint(
+                        junctions, endStructure,
+                        new PipeEndpoint(pipeId, false, (Point3d)endValue));
+                }
+
+                int changed = 0;
+                foreach (KeyValuePair<ObjectId, List<PipeEndpoint>> group in junctions)
+                {
+                    if (group.Key.IsNull || group.Value == null || group.Value.Count < 2)
+                        continue;
+                    double junctionElevation = group.Value.Min(item => item.Point.Z);
+                    foreach (PipeEndpoint endpoint in group.Value)
+                    {
+                        DBObject pipe = SafeOpen<DBObject>(
+                            transaction, endpoint.PipeId, OpenMode.ForWrite);
+                        if (pipe == null) continue;
+                        Point3d point = new Point3d(
+                            endpoint.Point.X,
+                            endpoint.Point.Y,
+                            junctionElevation);
+                        bool applied = endpoint.Start
+                            ? TrySetProperty(pipe, "StartPoint", point)
+                            : TrySetProperty(pipe, "EndPoint", point);
+                        if (applied)
+                        {
+                            changed++;
+                            TryInvoke(pipe, "ApplyRules");
+                            Entity entity = pipe as Entity;
+                            if (entity != null) entity.RecordGraphicsModified(true);
+                        }
+                    }
+                }
+                transaction.Commit();
+                document.Editor.Regen();
+                document.Editor.WriteMessage(
+                    "\nCE_PIPESLOPEJUNCTIONFIX complete. Junction endpoints levelled={0}; junctions processed={1}.",
+                    changed, junctions.Count);
+            }
+        }
+
+        private static void AddPipeEndpoint(
+            IDictionary<ObjectId, List<PipeEndpoint>> groups,
+            ObjectId structureId,
+            PipeEndpoint endpoint)
+        {
+            if (structureId.IsNull || endpoint == null) return;
+            List<PipeEndpoint> values;
+            if (!groups.TryGetValue(structureId, out values))
+            {
+                values = new List<PipeEndpoint>();
+                groups[structureId] = values;
+            }
+            values.Add(endpoint);
+        }
+
         private static Dictionary<ObjectId, List<FinalProfilePvi>> CaptureFinalProfilePvis(
             CivilAlignment alignment,
             Transaction transaction)
@@ -1445,6 +1535,19 @@ namespace CETools.Civil3D
                 }
             }
             return false;
+        }
+
+        private sealed class PipeEndpoint
+        {
+            internal PipeEndpoint(ObjectId pipeId, bool start, Point3d point)
+            {
+                PipeId = pipeId;
+                Start = start;
+                Point = point;
+            }
+            internal ObjectId PipeId { get; private set; }
+            internal bool Start { get; private set; }
+            internal Point3d Point { get; private set; }
         }
 
         private sealed class FinalProfilePvi
