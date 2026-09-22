@@ -1173,39 +1173,55 @@ namespace CETools.Civil3D
 
         private static bool ApplySite(ObjectId featureLineId, ObjectId siteId)
         {
+            if (featureLineId.IsNull || featureLineId.Database == null) return false;
             try
             {
-                if (featureLineId.IsNull || featureLineId.Database == null) return false;
                 using (Transaction transaction = featureLineId.Database.TransactionManager.StartTransaction())
                 {
                     CivilFeatureLine current = transaction.GetObject(
-                        featureLineId,
-                        OpenMode.ForRead,
-                        false) as CivilFeatureLine;
+                        featureLineId, OpenMode.ForWrite, false) as CivilFeatureLine;
+                    if (current == null) return false;
+                    if (current.SiteId == siteId) return true;
+                    if (TrySetObjectIdProperty(current, "SiteId", siteId))
+                    {
+                        current.RecordGraphicsModified(true);
+                        transaction.Commit();
+                    }
+                }
+
+                using (Transaction verify = featureLineId.Database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine current = verify.GetObject(
+                        featureLineId, OpenMode.ForRead, false) as CivilFeatureLine;
                     if (current != null && current.SiteId == siteId) return true;
                 }
+
                 string methodName = siteId.IsNull ? "MoveToNoneSite" : "MoveToSite";
-                // Civil 3D 2023 exposes site moves as static FeatureLine methods
-                // taking the feature-line ObjectId (and, for MoveToSite, SiteId).
-                Type[] signature = siteId.IsNull
-                    ? new[] { typeof(ObjectId) }
-                    : new[] { typeof(ObjectId), typeof(ObjectId) };
-                MethodInfo method = typeof(CivilFeatureLine).GetMethod(
-                    methodName,
-                    BindingFlags.Public | BindingFlags.Static,
-                    null,
-                    signature,
-                    null);
-                if (method == null) return false;
-                method.Invoke(null, siteId.IsNull
-                    ? new object[] { featureLineId }
-                    : new object[] { featureLineId, siteId });
-                return true;
+                foreach (MethodInfo method in typeof(CivilFeatureLine).GetMethods(
+                    BindingFlags.Public | BindingFlags.Static))
+                {
+                    if (!string.Equals(method.Name, methodName,
+                        StringComparison.OrdinalIgnoreCase)) continue;
+                    ParameterInfo[] parameters = method.GetParameters();
+                    if (parameters.Length != (siteId.IsNull ? 1 : 2)) continue;
+                    object[] arguments = siteId.IsNull
+                        ? new object[] { featureLineId }
+                        : new object[] { featureLineId, siteId };
+                    try
+                    {
+                        method.Invoke(null, arguments);
+                        using (Transaction verify = featureLineId.Database.TransactionManager.StartTransaction())
+                        {
+                            CivilFeatureLine current = verify.GetObject(
+                                featureLineId, OpenMode.ForRead, false) as CivilFeatureLine;
+                            if (current != null && current.SiteId == siteId) return true;
+                        }
+                    }
+                    catch { }
+                }
             }
-            catch
-            {
-                return false;
-            }
+            catch { }
+            return false;
         }
 
         internal static CivilObjectChoice PickObject(string title, string subtitle, IList<CivilObjectChoice> choices)
