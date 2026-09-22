@@ -92,6 +92,12 @@ namespace CETools.Civil3D
             InvokeNoArguments(bands, "Update");
             InvokeNoArguments(bands, "Rebuild");
             InvokeNoArguments(bands, "Refresh");
+            try
+            {
+                Entity entity = profileView as Entity;
+                if (entity != null) entity.RecordGraphicsModified(true);
+            }
+            catch { }
             return updated;
         }
 
