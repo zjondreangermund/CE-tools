@@ -1513,12 +1513,36 @@ namespace CETools.Civil3D
             if (value == null || string.IsNullOrWhiteSpace(name)) return false;
             try
             {
-                PropertyInfo property = value.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
-                if (property == null || !property.CanWrite) return false;
-                property.SetValue(value, propertyValue, null);
-                return true;
+                PropertyInfo property = value.GetType().GetProperty(
+                    name, BindingFlags.Public | BindingFlags.Instance);
+                if (property != null && property.CanWrite)
+                {
+                    property.SetValue(value, propertyValue, null);
+                    return true;
+                }
             }
-            catch { return false; }
+            catch { }
+
+            // Pipe endpoint properties are read-only in some Civil 3D
+            // versions; use the corresponding mutator when available.
+            string setterName = "Set" + name;
+            foreach (MethodInfo method in value.GetType().GetMethods(
+                BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!string.Equals(method.Name, setterName,
+                    StringComparison.OrdinalIgnoreCase)) continue;
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length != 1 || propertyValue == null ||
+                    !parameters[0].ParameterType.IsInstanceOfType(propertyValue))
+                    continue;
+                try
+                {
+                    method.Invoke(value, new[] { propertyValue });
+                    return true;
+                }
+                catch { }
+            }
+            return false;
         }
 
         private static object InvokeReturning(object value, string methodName)
