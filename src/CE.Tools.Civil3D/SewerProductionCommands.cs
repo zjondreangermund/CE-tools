@@ -653,12 +653,22 @@ namespace CETools.Civil3D
                             structureId, OpenMode.ForWrite, false) as CivilStructure;
                         if (structure == null) { skipped++; continue; }
                         double target = values.Min() - 0.080;
+                        // Select absolute elevation mode first. Writing SumpDepth
+                        // afterwards switches Civil 3D back to depth control and
+                        // produces the observed -0.080m / 900m+ results.
                         TrySetProfileEnum(
                             structure, "ControlSumpBy",
                             "Elevation", "ByElevation", "SumpElevation");
                         bool changed = TrySetProfileDouble(
                             structure, "SumpElevation", target);
-                        TrySetProfileDouble(structure, "SumpDepth", 0.080);
+                        if (!IsElevationControlled(structure))
+                        {
+                            TrySetProfileEnum(
+                                structure, "ControlSumpBy",
+                                "Elevation", "ByElevation", "SumpElevation");
+                            changed = TrySetProfileDouble(
+                                structure, "SumpElevation", target) || changed;
+                        }
                         if (changed)
                         {
                             fixedCount++;
@@ -1493,6 +1503,13 @@ namespace CETools.Civil3D
                 return true;
             }
             catch { return false; }
+        }
+
+        private static bool IsElevationControlled(DBObject structure)
+        {
+            object value = ReadProperty(structure, "ControlSumpBy");
+            string text = Convert.ToString(value, CultureInfo.InvariantCulture) ?? string.Empty;
+            return text.IndexOf("ELEV", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool TrySetProfileEnum(
