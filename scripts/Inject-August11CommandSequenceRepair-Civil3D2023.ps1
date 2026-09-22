@@ -55,7 +55,8 @@ if ($text.Contains($oldCorridor)) {
     Write-Host 'Sequenced CE_ROADCORRIDORFULL one command at a time.' -ForegroundColor Green
 }
 elseif (-not ($text.Contains('CeSequentialCommandRunner.Start(') -and
-             $text.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }'))) {
+             ($text.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }') -or
+              $text.Contains('new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE", "CE_ROADCORRIDOROUTPUTFIX" }')))) {
     throw 'CE_ROADCORRIDORFULL interactive command chain marker was not found.'
 }
 WriteText $roadCorridor $text
