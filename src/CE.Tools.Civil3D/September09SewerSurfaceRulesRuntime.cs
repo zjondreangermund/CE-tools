@@ -350,7 +350,8 @@ namespace CETools.Civil3D
             settings.AddChoice("StructureRuleSet", "03 Structure rules", "Structure rule set", structureChoices[0],
                 "Named Civil 3D Structure Rule Set for selected structures.", structureChoices);
             settings.AddDouble("SumpDepth", "03 Structure rules", "Sump depth (m)", 0.500, "Manual depth below the lowest connected pipe invert; absolute elevation control is used when Civil 3D exposes it.");
-            settings.AddChoice("DropReference", "03 Structure rules", "Drop reference location", "Crown", "Reference for structure drop checks.", new[] { "Crown", "Invert" });
+            settings.AddChoice("DropHandling", "03 Structure rules", "Drop handling", "Apply drop corrections", "Apply the minimum/maximum drop rule at each manhole where the endpoint cover range still permits a correction.", new[] { "Apply drop corrections", "Report only" });
+            settings.AddChoice("DropReference", "03 Structure rules", "Drop reference location", "Crown", "Reference for structure drop checks and corrections.", new[] { "Crown", "Invert" });
             settings.AddPositiveDouble("DropValue", "03 Structure rules", "Minimum drop value (m)", 0.050, "Minimum desired drop through a structure.");
             settings.AddPositiveDouble("MaxDrop", "03 Structure rules", "Maximum drop value (m)", 3.0, "Maximum allowed drop; larger values are reported.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
@@ -698,6 +699,7 @@ namespace CETools.Civil3D
 
             double lowestInvert = double.PositiveInfinity;
             var dropLevels = new List<double>();
+            var endpoints = new List<StructurePipeEndpoint>();
             bool useCrown = string.Equals(settings.Text("DropReference"), "Crown", StringComparison.OrdinalIgnoreCase);
             foreach (ObjectId id in pipeIds)
             {
@@ -713,7 +715,16 @@ namespace CETools.Civil3D
                     double radius = diameter * 0.5;
                     double invert = point.Z - radius;
                     lowestInvert = Math.Min(lowestInvert, invert);
-                    dropLevels.Add(useCrown ? point.Z + radius : invert);
+                    double referenceLevel = useCrown ? point.Z + radius : invert;
+                    dropLevels.Add(referenceLevel);
+                    endpoints.Add(new StructurePipeEndpoint
+                    {
+                        PipeId = id,
+                        AtStart = atStart,
+                        Point = point,
+                        Radius = radius,
+                        ReferenceLevel = referenceLevel
+                    });
                 }
             }
             if (double.IsInfinity(lowestInvert)) { warnings++; return; }
@@ -803,10 +814,85 @@ namespace CETools.Civil3D
             // pipes behind the user's back.
             double minimumDrop = Math.Max(0.0, settings.Double("DropValue", 0.050));
             double maximumDrop = Math.Max(minimumDrop, settings.Double("MaxDrop", 3.0));
-            if (dropLevels.Count >= 2)
+            if (endpoints.Count >= 2)
             {
-                double drop = dropLevels.Max() - dropLevels.Min();
-                if (drop < minimumDrop - 1e-6 || drop > maximumDrop + 1e-6) warnings++;
+                double high = endpoints.Max(item => item.ReferenceLevel);
+                double low = endpoints.Min(item => item.ReferenceLevel);
+                double drop = high - low;
+                if (drop < minimumDrop - 1e-6 || drop > maximumDrop + 1e-6)
+                {
+                    bool applyDrop = string.Equals(
+                        settings.Text("DropHandling"),
+                        "Apply drop corrections",
+                        StringComparison.OrdinalIgnoreCase);
+                    if (applyDrop)
+                    {
+                        double targetLow = drop < minimumDrop
+                            ? high - minimumDrop
+                            : high - maximumDrop;
+                        StructurePipeEndpoint endpoint = endpoints
+                            .OrderBy(item => item.ReferenceLevel)
+                            .First();
+                        double delta = targetLow - endpoint.ReferenceLevel;
+                        if (TryAdjustStructureEndpoint(
+                            endpoint,
+                            transaction,
+                            surface,
+                            minimumCover,
+                            maximumCover,
+                            delta))
+                        {
+                            adjusted++;
+                            endpoint.ReferenceLevel += delta;
+                            low = endpoint.ReferenceLevel;
+                            drop = high - low;
+                        }
+                    }
+                    if (drop < minimumDrop - 1e-6 ||
+                        drop > maximumDrop + 1e-6)
+                        warnings++;
+                }
+            }
+        }
+
+        private static bool TryAdjustStructureEndpoint(
+            StructurePipeEndpoint endpoint,
+            Transaction transaction,
+            CivilSurface surface,
+            double minimumCover,
+            double maximumCover,
+            double delta)
+        {
+            if (endpoint == null || transaction == null || surface == null ||
+                endpoint.PipeId.IsNull)
+                return false;
+            try
+            {
+                CivilPipe pipe = transaction.GetObject(
+                    endpoint.PipeId,
+                    OpenMode.ForWrite,
+                    false) as CivilPipe;
+                if (pipe == null) return false;
+                Point3d point = endpoint.AtStart
+                    ? pipe.StartPoint
+                    : pipe.EndPoint;
+                Point3d proposed = new Point3d(
+                    point.X,
+                    point.Y,
+                    point.Z + delta);
+                double ground = surface.FindElevationAtXY(point.X, point.Y);
+                double cover = ground - (proposed.Z + endpoint.Radius);
+                if (double.IsNaN(cover) || double.IsInfinity(cover) ||
+                    cover < minimumCover - 1e-6 ||
+                    cover > maximumCover + 1e-6)
+                    return false;
+                return endpoint.AtStart
+                    ? TrySetPoint(pipe, "StartPoint", proposed)
+                    : TrySetPoint(pipe, "EndPoint", proposed);
+            }
+            catch
+            {
+                return false;
             }
         }
 
@@ -1492,6 +1578,15 @@ namespace CETools.Civil3D
         {
             internal ObjectId SourceId;
             internal List<Point3d> Points = new List<Point3d>();
+        }
+
+        private sealed class StructurePipeEndpoint
+        {
+            internal ObjectId PipeId;
+            internal bool AtStart;
+            internal Point3d Point;
+            internal double Radius;
+            internal double ReferenceLevel;
         }
 
         private sealed class PipeRecord
