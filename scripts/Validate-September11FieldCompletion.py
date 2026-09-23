@@ -133,6 +133,20 @@ required_menu = [
     '"CE_GOOGLEEARTHLINEWORK"',
     '"CE_HATCHOUTERBOUNDARY"',
     'open OR closed 2D/3D polylines',
+    '"CE_ROADPROFILEVIEWREVERSEMULTI"',
+    '"CE_PROFILELABELSETMULTI"',
+    '"CE_PROFILEVIEWSTYLEMULTI"',
+    '"CE_ROADTOPBOTTOMPROFILE"',
+    '"CE_ROADJUNCTIONFEATURELINESTOP"',
+    '"CE_JUNCTIONENDPOINTSTOTOPSURFACES"',
+    '"CE_ROADJUNCTIONBULK"',
+    '"CE_ROADTJUNCTIONASSEMBLYLIMITS"',
+    '"CE_SEWERSUMPFIX"',
+    '"CE_SEWPROFILE"',
+    '"CE_PIPESLOPEJUNCTIONFIX"',
+    '"CE_ROADALIGNREVERSEMULTI"',
+    '"CE_FLAPPEARANCE"',
+    'Latest field-completion additions are kept in this front door',
 ]
 for token in required_menu:
     if token not in menu:
