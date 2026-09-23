@@ -248,6 +248,206 @@ namespace CETools.Civil3D
                         "Feature-Line Colour and Site Assignment",
                         "CE_FLAPPEARANCE",
                         "Apply feature-line colour/style and assign an existing or newly named Civil 3D site.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_PLATFORMDRAPEMULTI",
+                        "CE_PLATFORMDRAPEMULTI",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_PLATFORMGRADETOSURFACE",
+                        "CE_PLATFORMGRADETOSURFACE",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_FLCLOSEGAP",
+                        "CE_FLCLOSEGAP",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_PLATFORMCONSTANTGRADE",
+                        "CE_PLATFORMCONSTANTGRADE",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_PLATFORMCLOSEGAPS",
+                        "CE_PLATFORMCLOSEGAPS",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_CADSUPPLEMENTARY",
+                        "CE_CADSUPPLEMENTARY",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SURVEYFIELDSUPPLEMENTARY",
+                        "CE_SURVEYFIELDSUPPLEMENTARY",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SEWERFIELDSUPPLEMENTARY",
+                        "CE_SEWERFIELDSUPPLEMENTARY",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_PLATFORMFIELDSUPPLEMENTARY",
+                        "CE_PLATFORMFIELDSUPPLEMENTARY",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_ROADFIELDSUPPLEMENTARY",
+                        "CE_ROADFIELDSUPPLEMENTARY",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SEWSEQAUTOALIGN",
+                        "CE_SEWSEQAUTOALIGN",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SEWSEQNETWORKPRODUCTION",
+                        "CE_SEWSEQNETWORKPRODUCTION",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SEWSEQMAINPRODUCTION",
+                        "CE_SEWSEQMAINPRODUCTION",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SEWSURFACERIMS",
+                        "CE_SEWSURFACERIMS",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_PLATFORMFIXEDMINSLOPE",
+                        "CE_PLATFORMFIXEDMINSLOPE",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_FLRELADOPT",
+                        "CE_FLRELADOPT",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_FEATURELINESLOPEARROWS",
+                        "CE_FEATURELINESLOPEARROWS",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SLOPEARROWSREFRESH",
+                        "CE_SLOPEARROWSREFRESH",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SITEGRIDPRESENTATION",
+                        "CE_SITEGRIDPRESENTATION",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SURFACESLOPEARROWS",
+                        "CE_SURFACESLOPEARROWS",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_ROADHATCHSIDES",
+                        "CE_ROADHATCHSIDES",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_ROADELEVMATCH",
+                        "CE_ROADELEVMATCH",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_ROADELEVMATCHREFRESH",
+                        "CE_ROADELEVMATCHREFRESH",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_CLOSEOPENMULTI",
+                        "CE_CLOSEOPENMULTI",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_MULTISTRETCHFL",
+                        "CE_MULTISTRETCHFL",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SURVEYCONSTRUCTIONOFFSET",
+                        "CE_SURVEYCONSTRUCTIONOFFSET",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SURVEYMIDCONSTRUCTION",
+                        "CE_SURVEYMIDCONSTRUCTION",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_FEATURELINECROSSFALLARROWS",
+                        "CE_FEATURELINECROSSFALLARROWS",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_CONNECTENDPOINTS",
+                        "CE_CONNECTENDPOINTS",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_DYNAMICSLOPESREFRESH",
+                        "CE_DYNAMICSLOPESREFRESH",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_MULTIFILLET",
+                        "CE_MULTIFILLET",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_GRIDDIFFERENCE",
+                        "CE_GRIDDIFFERENCE",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_CONSTRUCTIONFILLET",
+                        "CE_CONSTRUCTIONFILLET",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SLOPEANNOTATIONS",
+                        "CE_SLOPEANNOTATIONS",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SEWLINKSURFACE",
+                        "CE_SEWLINKSURFACE",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_ROADCENTRECLEAN",
+                        "CE_ROADCENTRECLEAN",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_HATCHBOUNDARIES",
+                        "CE_HATCHBOUNDARIES",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_ALIGNREVERSEMULTI",
+                        "CE_ALIGNREVERSEMULTI",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SURFACESTYLEMULTI",
+                        "CE_SURFACESTYLEMULTI",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_ASSEMBLYCOPYSAFE",
+                        "CE_ASSEMBLYCOPYSAFE",
+                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
                         "06 Latest Field Completion")
                 });
         }
