@@ -340,14 +340,36 @@ namespace CETools.Civil3D
                     CivilAlignment alignment = SafeOpen<CivilAlignment>(transaction, alignmentId, OpenMode.ForRead);
                     if (alignment == null) continue;
 
-                    ObjectId templateProfileId = ReadObjectIds(InvokeReturning(alignment, "GetProfileIds")).FirstOrDefault();
-                    DBObject templateProfile = templateProfileId.IsNull
-                        ? null
-                        : SafeOpen<DBObject>(transaction, templateProfileId, OpenMode.ForRead);
-                    ObjectId layerId = templateProfile is Entity ? ((Entity)templateProfile).LayerId : document.Database.Clayer;
+                    ObjectId templateProfileId = ObjectId.Null;
+                    DBObject templateProfile = null;
+                    foreach (ObjectId candidateId in ReadObjectIds(InvokeReturning(alignment, "GetProfileIds")))
+                    {
+                        DBObject candidate = SafeOpen<DBObject>(
+                            transaction, candidateId, OpenMode.ForRead);
+                        if (candidate == null) continue;
+                        ObjectId candidateStyle = ReadObjectId(ReadProperty(candidate, "StyleId"));
+                        if (templateProfile == null || !candidateStyle.IsNull)
+                        {
+                            templateProfileId = candidateId;
+                            templateProfile = candidate;
+                        }
+                        if (!candidateStyle.IsNull) break;
+                    }
+                    ObjectId layerId = templateProfile is Entity
+                        ? ((Entity)templateProfile).LayerId
+                        : document.Database.Clayer;
                     ObjectId styleId = ReadObjectId(ReadProperty(templateProfile, "StyleId"));
                     ObjectId labelSetId = ReadObjectId(ReadProperty(templateProfile, "LabelSetId"));
-                    if (labelSetId.IsNull) labelSetId = ReadObjectId(ReadProperty(templateProfile, "LabelSetStyleId"));
+                    if (labelSetId.IsNull)
+                        labelSetId = ReadObjectId(ReadProperty(templateProfile, "LabelSetStyleId"));
+                    if (styleId.IsNull)
+                        styleId = civilDocument.Styles.ProfileStyles.Cast<ObjectId>().FirstOrDefault();
+                    if (labelSetId.IsNull)
+                        labelSetId = civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles
+                            .Cast<ObjectId>().FirstOrDefault();
+                    if (styleId.IsNull || labelSetId.IsNull)
+                        throw new InvalidOperationException(
+                            "The drawing contains no usable Profile Style and Profile Label Set Style.");
 
                     HashSet<string> existingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (ObjectId profileId in ReadObjectIds(InvokeReturning(alignment, "GetProfileIds")))
