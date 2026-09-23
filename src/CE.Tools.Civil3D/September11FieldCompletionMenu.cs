@@ -220,6 +220,11 @@ namespace CETools.Civil3D
                         "Create all T/cross bellmouth returns in one transaction, close T-junctions with the magenta closure line and write the configured output layer.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
+                        "Batch T/Cross Bellmouths - Feature-Line Output",
+                        "CE_ROADJUNCTIONBATCH",
+                        "Create every detected T/cross bellmouth in one transaction, join every T-junction return pair with the magenta endpoint closure and optionally output normal Civil 3D feature lines.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
                         "T-Junction Assembly Limits",
                         "CE_ROADTJUNCTIONASSEMBLYLIMITS",
                         "Use magenta T-junction closure lines as assembly limits and remove only eligible short terminal regions.",
