@@ -1612,11 +1612,16 @@ namespace CETools.Civil3D
                     if (result is ObjectId)
                         return (ObjectId)result;
                 }
-                catch (TargetInvocationException)
+                catch (TargetInvocationException exception)
                 {
+                    lastProfileException = exception.InnerException ?? exception;
                 }
             }
-            throw new InvalidOperationException("No compatible Profile.CreateFromSurface overload was found.");
+            string detail = lastProfileException == null
+                ? string.Empty
+                : " Last Civil 3D error: " + lastProfileException.Message;
+            throw new InvalidOperationException(
+                "No compatible Profile.CreateFromSurface overload was found." + detail);
         }
 
         private static bool BuildProfileArguments(
