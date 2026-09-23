@@ -110,93 +110,110 @@ namespace CETools.Civil3D
             if (document == null) return;
             PromptSelectionResult selection = GetSelection(
                 document.Editor,
-                "\nSelect Civil 3D feature lines to assign colour and site: ");
+                "\nSelect Civil 3D feature lines to assign colour, layer and site: ");
             if (selection.Status != PromptStatus.OK) return;
 
             List<CivilObjectChoice> sites = ReadSites(document);
             var window = new FeatureLineAppearanceWindow(sites);
             AcApplication.ShowModalWindow(window);
             if (!window.Accepted) return;
-            if (!string.IsNullOrWhiteSpace(window.NewSiteName))
-            {
-                ObjectId newSiteId = TryCreateSite(
-                    document, window.NewSiteName.Trim());
-                if (newSiteId.IsNull)
-                {
-                    document.Editor.WriteMessage(
-                        "\nCE_FLAPPEARANCE cancelled. The requested Civil 3D site could not be created.");
-                    return;
-                }
-                window.SelectedSiteId = newSiteId;
-            }
 
             int changed = 0;
             int styleChanged = 0;
             int siteChanged = 0;
+            int layerChanged = 0;
             int rejected = 0;
             var changedIds = new List<ObjectId>();
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+
+            // Keep site creation, feature-line writes and site moves under one
+            // document lock. Civil 3D 2023 otherwise reports a successful
+            // property write but leaves the feature line in the original site.
+            using (DocumentLock documentLock = document.LockDocument())
             {
-                foreach (SelectedObject selected in selection.Value)
+                if (!string.IsNullOrWhiteSpace(window.NewSiteName))
                 {
-                    CivilFeatureLine featureLine = selected == null || selected.ObjectId.IsNull
-                        ? null
-                        : transaction.GetObject(selected.ObjectId, OpenMode.ForWrite, false) as CivilFeatureLine;
-                    if (featureLine == null)
-                    {
-                        rejected++;
-                        continue;
-                    }
-
-                    Color requestedColour = Color.FromColorIndex(
-                        ColorMethod.ByAci,
-                        (short)window.ColourIndex);
-                    // Set both entity colour representations. Civil 3D feature-line
-                    // styles can override ColorIndex, while some 2023 drawings retain
-                    // the previous true-colour value unless Entity.Color is assigned.
-                    featureLine.Color = requestedColour;
-                    featureLine.ColorIndex = window.ColourIndex;
-
-                    // Civil feature-line styles override the AutoCAD entity
-                    // colour in plan/model display. Assign a CE colour-specific
-                    // sibling style so the selected colour is visible on screen
-                    // as well as in Properties.
-                    ObjectId colourStyleId = ResolveFeatureLineColourStyle(
+                    ObjectId newSiteId = TryCreateSite(
                         document,
-                        featureLine,
-                        window.ColourIndex,
-                        transaction);
-                    if (!colourStyleId.IsNull &&
-                        TrySetObjectIdProperty(featureLine, "StyleId", colourStyleId))
-                        styleChanged++;
-
-                    try { featureLine.RecordGraphicsModified(true); } catch { }
-                    changed++;
-                    changedIds.Add(featureLine.ObjectId);
+                        window.NewSiteName.Trim());
+                    if (newSiteId.IsNull)
+                    {
+                        document.Editor.WriteMessage(
+                            "\nCE_FLAPPEARANCE cancelled. The requested Civil 3D site could not be created.");
+                        return;
+                    }
+                    window.SelectedSiteId = newSiteId;
                 }
-                transaction.Commit();
-            }
 
-            // Native site moves must run after the object write transaction closes.
-            // Opening the same feature line ForWrite and then asking Civil 3D's
-            // static MoveToSite API to reopen it is why every assignment returned 0.
-            foreach (ObjectId id in changedIds)
-                if (ApplySite(id, window.SelectedSiteId)) siteChanged++;
+                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                {
+                    string requestedLayer = (window.LayerName ?? string.Empty).Trim();
+                    ObjectId layerId = string.IsNullOrWhiteSpace(requestedLayer)
+                        ? ObjectId.Null
+                        : GetOrCreateLayer(document.Database, transaction, requestedLayer);
+
+                    foreach (SelectedObject selected in selection.Value)
+                    {
+                        CivilFeatureLine featureLine = selected == null || selected.ObjectId.IsNull
+                            ? null
+                            : transaction.GetObject(selected.ObjectId, OpenMode.ForWrite, false) as CivilFeatureLine;
+                        if (featureLine == null)
+                        {
+                            rejected++;
+                            continue;
+                        }
+
+                        Color requestedColour = Color.FromColorIndex(
+                            ColorMethod.ByAci,
+                            (short)window.ColourIndex);
+                        // Set both entity colour representations. Civil 3D feature-line
+                        // styles can override ColorIndex, while some 2023 drawings retain
+                        // the previous true-colour value unless Entity.Color is assigned.
+                        featureLine.Color = requestedColour;
+                        featureLine.ColorIndex = window.ColourIndex;
+
+                        if (!layerId.IsNull)
+                        {
+                            try
+                            {
+                                featureLine.LayerId = layerId;
+                                layerChanged++;
+                            }
+                            catch { }
+                        }
+
+                        // Civil feature-line styles override entity colour in plan/model
+                        // display. Use a colour-specific sibling style when the API allows it.
+                        ObjectId colourStyleId = ResolveFeatureLineColourStyle(
+                            document,
+                            featureLine,
+                            window.ColourIndex,
+                            transaction);
+                        if (!colourStyleId.IsNull &&
+                            TrySetObjectIdProperty(featureLine, "StyleId", colourStyleId))
+                            styleChanged++;
+
+                        try { featureLine.RecordGraphicsModified(true); } catch { }
+                        changed++;
+                        changedIds.Add(featureLine.ObjectId);
+                    }
+                    transaction.Commit();
+                }
+
+                foreach (ObjectId id in changedIds)
+                    if (ApplySite(id, window.SelectedSiteId)) siteChanged++;
+            }
 
             August23PlatformDynamicGradingCommands.SynchronizeLinkedAppearance(
                 document,
                 changedIds);
 
-            // Appearance-only edits must not start the linked-feature-line rebuild
-            // pipeline while Civil 3D is still releasing the selected objects.  That
-            // rebuild replaces linked feature lines and was the source of the
-            // repeated eLockViolation messages reported after this command.
             try { document.Database.TransactionManager.QueueForGraphicsFlush(); } catch { }
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_FLAPPEARANCE complete. Feature lines updated={0}; visible colour styles={1}; site assignments={2}; rejected={3}; colour={4}.",
+                "\nCE_FLAPPEARANCE complete. Feature lines updated={0}; visible colour styles={1}; layers={2}; site assignments={3}; rejected={4}; colour={5}.",
                 changed,
                 styleChanged,
+                layerChanged,
                 siteChanged,
                 rejected,
                 window.ColourIndex);
@@ -848,6 +865,38 @@ namespace CETools.Civil3D
             return ObjectId.Null;
         }
 
+        private static ObjectId GetOrCreateLayer(
+            Database database,
+            Transaction transaction,
+            string requested)
+        {
+            if (database == null ||
+                transaction == null ||
+                string.IsNullOrWhiteSpace(requested))
+                return ObjectId.Null;
+
+            try
+            {
+                LayerTable table = transaction.GetObject(
+                    database.LayerTableId,
+                    OpenMode.ForRead,
+                    false) as LayerTable;
+                if (table == null) return ObjectId.Null;
+                string name = requested.Trim();
+                if (table.Has(name)) return table[name];
+
+                table.UpgradeOpen();
+                LayerTableRecord layer = new LayerTableRecord { Name = name };
+                ObjectId id = table.Add(layer);
+                transaction.AddNewlyCreatedDBObject(layer, true);
+                return id;
+            }
+            catch
+            {
+                return ObjectId.Null;
+            }
+        }
+
         internal static List<CivilObjectChoice> ReadSites(Document document)
         {
             var result = new List<CivilObjectChoice>
@@ -1452,16 +1501,19 @@ namespace CETools.Civil3D
         private readonly TextBox _colour;
         private readonly ComboBox _site;
         private readonly TextBox _newSite;
+        private readonly TextBox _layer;
+
         public FeatureLineAppearanceWindow(IEnumerable<CivilObjectChoice> sites)
         {
-            Title = "CE Tools - Feature Line Colour and Site";
-            Width = 520;
-            Height = 340;
+            Title = "CE Tools - Feature Line Colour, Layer and Site";
+            Width = 560;
+            Height = 400;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             var grid = new Grid { Margin = new Thickness(18) };
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(170) });
+            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(190) });
             grid.ColumnDefinitions.Add(new ColumnDefinition());
-            for (int index = 0; index < 4; index++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int index = 0; index < 5; index++)
+                grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             Content = grid;
 
             AddLabel(grid, "AutoCAD colour index (1-255)", 0);
@@ -1471,36 +1523,78 @@ namespace CETools.Civil3D
             grid.Children.Add(_colour);
 
             AddLabel(grid, "Civil 3D site", 1);
-            _site = new ComboBox { ItemsSource = sites.ToList(), Margin = new Thickness(8), MinWidth = 260 };
+            _site = new ComboBox
+            {
+                ItemsSource = sites.ToList(),
+                Margin = new Thickness(8),
+                MinWidth = 280
+            };
             if (_site.Items.Count > 0) _site.SelectedIndex = 0;
             Grid.SetRow(_site, 1);
             Grid.SetColumn(_site, 1);
             grid.Children.Add(_site);
 
             AddLabel(grid, "New site name (optional)", 2);
-            _newSite = new TextBox { Margin = new Thickness(8), MinWidth = 260 };
+            _newSite = new TextBox { Margin = new Thickness(8), MinWidth = 280 };
             Grid.SetRow(_newSite, 2);
             Grid.SetColumn(_newSite, 1);
             grid.Children.Add(_newSite);
 
-            var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right, Margin = new Thickness(8) };
-            Grid.SetRow(buttons, 3);
+            AddLabel(grid, "Feature-line layer (optional)", 3);
+            _layer = new TextBox { Margin = new Thickness(8), MinWidth = 280 };
+            Grid.SetRow(_layer, 3);
+            Grid.SetColumn(_layer, 1);
+            grid.Children.Add(_layer);
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(8)
+            };
+            Grid.SetRow(buttons, 4);
             Grid.SetColumnSpan(buttons, 2);
             grid.Children.Add(buttons);
-            var cancel = new Button { Content = "Cancel", Width = 90, Margin = new Thickness(8), IsCancel = true };
+
+            var cancel = new Button
+            {
+                Content = "Cancel",
+                Width = 90,
+                Margin = new Thickness(8),
+                IsCancel = true
+            };
             cancel.Click += delegate { Close(); };
             buttons.Children.Add(cancel);
-            var apply = new Button { Content = "Apply", Width = 100, Margin = new Thickness(8), IsDefault = true };
+
+            var apply = new Button
+            {
+                Content = "Apply",
+                Width = 100,
+                Margin = new Thickness(8),
+                IsDefault = true
+            };
             apply.Click += delegate
             {
                 int colour;
-                if (!int.TryParse(_colour.Text, NumberStyles.Integer, CultureInfo.InvariantCulture, out colour) || colour < 1 || colour > 255)
+                if (!int.TryParse(
+                        _colour.Text,
+                        NumberStyles.Integer,
+                        CultureInfo.InvariantCulture,
+                        out colour) ||
+                    colour < 1 ||
+                    colour > 255)
                 {
-                    MessageBox.Show("Enter an AutoCAD colour index from 1 to 255.", "CE Tools", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    MessageBox.Show(
+                        "Enter an AutoCAD colour index from 1 to 255.",
+                        "CE Tools",
+                        MessageBoxButton.OK,
+                        MessageBoxImage.Warning);
                     return;
                 }
+
                 ColourIndex = colour;
                 NewSiteName = (_newSite.Text ?? string.Empty).Trim();
+                LayerName = (_layer.Text ?? string.Empty).Trim();
                 CivilObjectChoice choice = _site.SelectedItem as CivilObjectChoice;
                 SelectedSiteId = choice == null ? ObjectId.Null : choice.ObjectId;
                 Accepted = true;
@@ -1513,10 +1607,16 @@ namespace CETools.Civil3D
         public int ColourIndex { get; private set; }
         public ObjectId SelectedSiteId { get; set; }
         public string NewSiteName { get; private set; }
+        public string LayerName { get; private set; }
 
         private static void AddLabel(Grid grid, string text, int row)
         {
-            var label = new TextBlock { Text = text, Margin = new Thickness(8), VerticalAlignment = VerticalAlignment.Center };
+            var label = new TextBlock
+            {
+                Text = text,
+                Margin = new Thickness(8),
+                VerticalAlignment = VerticalAlignment.Center
+            };
             Grid.SetRow(label, row);
             Grid.SetColumn(label, 0);
             grid.Children.Add(label);
