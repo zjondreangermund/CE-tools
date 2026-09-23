@@ -64,8 +64,8 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Feature Line Appearance / Site",
                         "CE_FLAPPEARANCE",
-                        "Apply the existing multi-feature-line colour, feature-line style and optional Civil 3D Site assignment workflow.",
-                        "01 Feature Lines"),
+                        "Apply explicit feature-line colour, layer and Civil 3D Site assignment with visible plan graphics.",
+                        "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Alignment Label Set - Multiple Alignments",
                         "CE_ALIGNLABELSETMULTI",
