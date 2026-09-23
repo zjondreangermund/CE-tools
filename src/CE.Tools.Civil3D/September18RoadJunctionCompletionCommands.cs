@@ -309,6 +309,8 @@ namespace CETools.Civil3D
                 "Add TOP-RD-xx and BOTTOM-RD-xx surfaces as surface profiles to the alignments behind the selected profile views. Surface gaps remain gaps; only actual crossing coverage is drawn.");
             model.AddText("Roads", "01 Surfaces", "Road numbers", "ALL",
                 "ALL uses every TOP-RD/BOTTOM-RD surface. Or enter comma-separated road names such as RD-01,RD-05.");
+            model.AddText("Layer", "01 Surfaces", "Surface-profile layer", "CE-ROAD-SURFACE-PROFILES",
+                "Layer for the generated TOP/BOTTOM surface profiles.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             HashSet<string> requestedRoads = ParseRoadFilter(model.Text("Roads"));
 
@@ -355,9 +357,14 @@ namespace CETools.Civil3D
                         }
                         if (!candidateStyle.IsNull) break;
                     }
-                    ObjectId layerId = templateProfile is Entity
+                    ObjectId templateLayerId = templateProfile is Entity
                         ? ((Entity)templateProfile).LayerId
                         : document.Database.Clayer;
+                    ObjectId layerId = GetOrCreateLayer(
+                        document.Database,
+                        transaction,
+                        model.Text("Layer"),
+                        templateLayerId);
                     ObjectId templateStyleId = ReadObjectId(ReadProperty(templateProfile, "StyleId"));
                     ObjectId templateLabelSetId = ReadObjectId(ReadProperty(templateProfile, "LabelSetId"));
                     if (templateLabelSetId.IsNull)
@@ -1191,6 +1198,37 @@ namespace CETools.Civil3D
             if (value == null) return "-";
             string name = Convert.ToString(ReadProperty(value, "Name"), CultureInfo.CurrentCulture);
             return string.IsNullOrWhiteSpace(name) ? value.Handle.ToString() : name;
+        }
+
+        private static ObjectId GetOrCreateLayer(
+            Database database,
+            Transaction transaction,
+            string requested,
+            ObjectId fallback)
+        {
+            string name = string.IsNullOrWhiteSpace(requested)
+                ? string.Empty
+                : requested.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                return fallback;
+            try
+            {
+                LayerTable table = transaction.GetObject(
+                    database.LayerTableId,
+                    OpenMode.ForRead,
+                    false) as LayerTable;
+                if (table == null) return fallback;
+                if (table.Has(name)) return table[name];
+                table.UpgradeOpen();
+                LayerTableRecord layer = new LayerTableRecord { Name = name };
+                ObjectId id = table.Add(layer);
+                transaction.AddNewlyCreatedDBObject(layer, true);
+                return id;
+            }
+            catch
+            {
+                return fallback;
+            }
         }
 
         private static bool IsGroundProfileIdentity(string identity)
