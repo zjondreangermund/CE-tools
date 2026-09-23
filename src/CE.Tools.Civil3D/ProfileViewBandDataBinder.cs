@@ -23,8 +23,11 @@ namespace CETools.Civil3D
             if (bands == null) bands = ReadProperty(profileView, "BandItems");
             if (bands == null) return 0;
 
-            return BindInternal(profileView, surfaceProfileId, designProfileId,
-                designProfileId, designProfileId, surfaceProfileId, networkId, false);
+            ObjectId sewerProfileId = designProfileId.IsNull
+                ? surfaceProfileId
+                : designProfileId;
+            return BindInternal(profileView, surfaceProfileId, sewerProfileId,
+                sewerProfileId, sewerProfileId, surfaceProfileId, networkId, false);
         }
 
         internal static int BindRoad(
