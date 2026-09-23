@@ -1139,7 +1139,9 @@ namespace CETools.Civil3D
             {
                 try
                 {
-                    style.RecordGraphicsModified(true);
+                    Entity styleEntity = style as Entity;
+                    if (styleEntity != null)
+                        styleEntity.RecordGraphicsModified(true);
                 }
                 catch { }
                 return;
