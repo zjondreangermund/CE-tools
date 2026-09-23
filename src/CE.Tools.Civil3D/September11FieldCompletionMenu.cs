@@ -180,7 +180,75 @@ namespace CETools.Civil3D
                         "Joined Hatch Outer Boundary",
                         "CE_HATCHOUTERBOUNDARY",
                         "Select attached hatches and create one outside closed polyline for the connected hatch set by removing shared internal hatch edges. Disconnected hatch clusters receive one perimeter each.",
-                        "05 CAD")
+                        "05 CAD"),
+
+                    // Latest field-completion additions are kept in this front door
+                    // as soon as their source command files are added or updated.
+                    new DisciplineWorkflowAction(
+                        "Reverse Selected Design Profile Views",
+                        "CE_ROADPROFILEVIEWREVERSEMULTI",
+                        "Reverse multiple selected final design profile views, recover their parent road alignments, reverse the final design PVIs and refresh the views.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Assign Profile Label Sets to Multiple Final Profiles",
+                        "CE_PROFILELABELSETMULTI",
+                        "Apply one Civil 3D profile label-set style to multiple selected final design profiles and refresh their labels.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Assign Profile View Styles to Multiple Views",
+                        "CE_PROFILEVIEWSTYLEMULTI",
+                        "Apply one Civil 3D profile-view style to multiple selected profile views and regenerate their display.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Road TOP/BOTTOM Surface Profiles",
+                        "CE_ROADTOPBOTTOMPROFILE",
+                        "Add road TOP and BOTTOM surface profiles to selected profile views using valid Civil 3D 2023 profile styles and label sets.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Drape Junction Feature Lines to Road TOP Surfaces",
+                        "CE_ROADJUNCTIONFEATURELINESTOP",
+                        "Drape multiple selected junction feature lines to every matching road TOP surface and paste their valid elevated vertices into those surfaces.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Junction Endpoints to All TOP Surfaces",
+                        "CE_JUNCTIONENDPOINTSTOTOPSURFACES",
+                        "Paste generated junction closure endpoints into every covering road TOP surface.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Batch T/Cross Junction Bellmouths and T-Closures",
+                        "CE_ROADJUNCTIONBULK",
+                        "Create all T/cross bellmouth returns in one transaction, close T-junctions with the magenta closure line and write the configured output layer.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "T-Junction Assembly Limits",
+                        "CE_ROADTJUNCTIONASSEMBLYLIMITS",
+                        "Use magenta T-junction closure lines as assembly limits and remove only eligible short terminal regions.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Manual Manhole Sump Elevations",
+                        "CE_SEWERSUMPFIX",
+                        "Choose the manual sump depth below the lowest connected pipe invert and write absolute elevation-controlled manhole sumps.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Sewer Profiles / Long Sections",
+                        "CE_SEWPROFILE",
+                        "Create sewer profile views and bind their data without the unsafe global band refresh that caused the Civil 3D 2023 write-open abort.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Level Sewer Junction Pipe Ends",
+                        "CE_PIPESLOPEJUNCTIONFIX",
+                        "Repair selected sewer pipe endpoint jumps at common junction structures while preserving the pipe network.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Reverse Multiple Road Alignments and Profiles",
+                        "CE_ROADALIGNREVERSEMULTI",
+                        "Reverse selected road alignments and refresh their associated profiles, profile views and corridors.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Feature-Line Colour and Site Assignment",
+                        "CE_FLAPPEARANCE",
+                        "Apply feature-line colour/style and assign an existing or newly named Civil 3D site.",
+                        "06 Latest Field Completion")
                 });
         }
     }
