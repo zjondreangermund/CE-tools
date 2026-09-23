@@ -8,6 +8,7 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
+using Autodesk.Civil.DatabaseServices.Styles;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilProfile = Autodesk.Civil.DatabaseServices.Profile;
@@ -204,7 +205,7 @@ namespace CETools.Civil3D
 
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Assign Profile Label Sets",
-                "Apply one Civil 3D profile label-set style to all selected final design profiles. This writes the label-set ObjectId and refreshes the profile graphics.");
+                "Apply one Civil 3D profile label-set style to the selected profiles by rebuilding their profile-view label groups. Existing profile geometry and PVIs are unchanged.");
             model.AddChoice(
                 "LabelSet", "01 Labels", "Profile label set", names[0],
                 "Choose the label-set style to apply to every selected final design profile.",
@@ -213,6 +214,10 @@ namespace CETools.Civil3D
 
             int applied = 0;
             int failed = 0;
+            int viewsUpdated = 0;
+            int labelGroupsCreated = 0;
+            int drawFlagsEnabled = 0;
+
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
@@ -224,33 +229,368 @@ namespace CETools.Civil3D
                     model.Text("LabelSet"),
                     transaction,
                     out actual);
+                ProfileLabelSetStyle labelSet = labelSetId.IsNull
+                    ? null
+                    : transaction.GetObject(labelSetId, OpenMode.ForRead, false) as ProfileLabelSetStyle;
+                if (labelSet == null)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_PROFILELABELSETMULTI cancelled. The selected profile label-set style could not be opened.");
+                    return;
+                }
 
                 foreach (ObjectId id in profileIds.Distinct())
                 {
                     CivilProfile profile = transaction.GetObject(
-                        id, OpenMode.ForWrite, false) as CivilProfile;
+                        id, OpenMode.ForRead, false) as CivilProfile;
                     if (profile == null)
                     {
                         failed++;
                         continue;
                     }
-                    bool ok = TrySetObjectIdProperty(profile, "LabelSetId", labelSetId) ||
-                              TrySetObjectIdProperty(profile, "LabelSetStyleId", labelSetId);
-                    if (ok)
-                    {
-                        Entity entity = profile as Entity;
-                        if (entity != null) entity.RecordGraphicsModified(true);
-                        applied++;
-                    }
-                    else failed++;
+
+                    int profileViews;
+                    int profileGroups;
+                    int profileDrawFlags;
+                    bool ok = TryApplyProfileLabelSet(
+                        transaction,
+                        profile,
+                        labelSet,
+                        out profileViews,
+                        out profileGroups,
+                        out profileDrawFlags);
+                    viewsUpdated += profileViews;
+                    labelGroupsCreated += profileGroups;
+                    drawFlagsEnabled += profileDrawFlags;
+                    if (ok) applied++; else failed++;
                 }
                 transaction.Commit();
+
+                document.Editor.Regen();
+                document.Editor.WriteMessage(
+                    "\nCE_PROFILELABELSETMULTI complete. Profiles updated={0}; failed={1}; profile views updated={2}; label groups created={3}; profile draws enabled={4}; label set={5}.",
+                    applied,
+                    failed,
+                    viewsUpdated,
+                    labelGroupsCreated,
+                    drawFlagsEnabled,
+                    actual);
+            }
+        }
+
+        private static bool TryApplyProfileLabelSet(
+            Transaction transaction,
+            CivilProfile profile,
+            ProfileLabelSetStyle labelSet,
+            out int viewsUpdated,
+            out int labelGroupsCreated,
+            out int drawFlagsEnabled)
+        {
+            viewsUpdated = 0;
+            labelGroupsCreated = 0;
+            drawFlagsEnabled = 0;
+            if (profile == null || labelSet == null) return false;
+
+            CivilAlignment alignment = null;
+            try
+            {
+                alignment = transaction.GetObject(
+                    profile.AlignmentId,
+                    OpenMode.ForRead,
+                    false) as CivilAlignment;
+            }
+            catch
+            {
+                return false;
+            }
+            if (alignment == null) return false;
+
+            foreach (ObjectId profileViewId in alignment.GetProfileViewIds())
+            {
+                ProfileView profileView = null;
+                try
+                {
+                    profileView = transaction.GetObject(
+                        profileViewId,
+                        OpenMode.ForWrite,
+                        false) as ProfileView;
+                }
+                catch
+                {
+                    continue;
+                }
+                if (profileView == null) continue;
+
+                ProfileOverride matchingOverride = null;
+                try
+                {
+                    foreach (ProfileOverride profileOverride in profileView.GraphOverrides)
+                    {
+                        if (profileOverride != null &&
+                            profileOverride.ProfileId == profile.ObjectId)
+                        {
+                            matchingOverride = profileOverride;
+                            break;
+                        }
+                    }
+                }
+                catch
+                {
+                    matchingOverride = null;
+                }
+                if (matchingOverride == null) continue;
+
+                try
+                {
+                    if (!matchingOverride.Draw)
+                    {
+                        matchingOverride.Draw = true;
+                        drawFlagsEnabled++;
+                    }
+
+                    int created = ApplyProfileLabelSetToView(
+                        transaction,
+                        profileView,
+                        profileViewId,
+                        profile.ObjectId,
+                        labelSet);
+                    if (created > 0)
+                    {
+                        viewsUpdated++;
+                        labelGroupsCreated += created;
+                    }
+                }
+                catch
+                {
+                    // A damaged or incompatible profile view must not stop the
+                    // remaining selected profiles from being processed.
+                }
             }
 
-            document.Editor.Regen();
-            document.Editor.WriteMessage(
-                "\nCE_PROFILELABELSETMULTI complete. Profiles updated={0}; failed={1}; label set={2}.",
-                applied, failed, model.Text("LabelSet"));
+            return viewsUpdated > 0;
+        }
+
+        private static int ApplyProfileLabelSetToView(
+            Transaction transaction,
+            ProfileView profileView,
+            ObjectId profileViewId,
+            ObjectId profileId,
+            ProfileLabelSetStyle labelSet)
+        {
+            if (profileView == null || labelSet == null || labelSet.Count == 0)
+                return 0;
+
+            ProfileViewStyle profileViewStyle = transaction.GetObject(
+                profileView.StyleId,
+                OpenMode.ForRead,
+                false) as ProfileViewStyle;
+            if (profileViewStyle == null) return 0;
+
+            ObjectIdCollection existingGroups =
+                ProfileLabelGroup.GetAvailableLabelGroupIds(
+                    ProfileLabelGroup.GetClass(typeof(ProfileLabelGroup)),
+                    profileViewId,
+                    profileId,
+                    true);
+            foreach (ObjectId existingId in existingGroups)
+            {
+                try
+                {
+                    ProfileLabelGroup existing = transaction.GetObject(
+                        existingId,
+                        OpenMode.ForWrite,
+                        false) as ProfileLabelGroup;
+                    if (existing != null) existing.Erase();
+                }
+                catch
+                {
+                    // An orphaned label group is not allowed to block the
+                    // valid groups from the selected label set.
+                }
+            }
+
+            int created = 0;
+            for (int index = labelSet.Count - 1; index >= 0; index--)
+            {
+                ProfileLabelSetItem item;
+                try { item = labelSet[index]; }
+                catch { continue; }
+                if (item == null || item.LabelStyleId.IsNull) continue;
+
+                foreach (ObjectId groupId in CreateProfileLabelGroups(
+                    profileViewId,
+                    profileId,
+                    profileViewStyle,
+                    item))
+                {
+                    if (groupId.IsNull) continue;
+                    ApplyProfileLabelGroupSettings(
+                        transaction,
+                        groupId,
+                        item);
+                    created++;
+                }
+            }
+
+            profileView.RecordGraphicsModified(true);
+            return created;
+        }
+
+        private static List<ObjectId> CreateProfileLabelGroups(
+            ObjectId profileViewId,
+            ObjectId profileId,
+            ProfileViewStyle profileViewStyle,
+            ProfileLabelSetItem item)
+        {
+            var result = new List<ObjectId>();
+            if (item == null || item.LabelStyleId.IsNull) return result;
+
+            switch (item.LabelStyleType)
+            {
+                case LabelStyleType.ProfileMajorStation:
+                    TryAddProfileLabelGroup(
+                        result,
+                        () => ProfileStationLabelGroup.CreateMajor(
+                            profileViewId,
+                            profileId,
+                            item.LabelStyleId,
+                            profileViewStyle.BottomAxis.MajorTickStyle.Interval));
+                    break;
+
+                case LabelStyleType.ProfileMinorStation:
+                    TryAddProfileLabelGroup(
+                        result,
+                        () => ProfileMinorStationLabelGroup.Create(
+                            profileViewId,
+                            item.LabelStyleId,
+                            profileViewStyle.BottomAxis.MinorTickStyle.Interval));
+                    break;
+
+                case LabelStyleType.ProfileHorizontalGeometryPoint:
+                    TryAddProfileLabelGroup(
+                        result,
+                        () => ProfileHorizontalGeometryPointLabelGroup.Create(
+                            profileViewId,
+                            profileId,
+                            item.LabelStyleId));
+                    break;
+
+                case LabelStyleType.ProfileGradeBreaks:
+                    TryAddProfileLabelGroup(
+                        result,
+                        () => ProfilePVILabelGroup.Create(
+                            profileViewId,
+                            profileId,
+                            item.LabelStyleId));
+                    break;
+
+                case LabelStyleType.ProfileLine:
+                    TryAddProfileLabelGroup(
+                        result,
+                        () => ProfileLineLabelGroup.Create(
+                            profileViewId,
+                            profileId,
+                            item.LabelStyleId));
+                    break;
+
+                case LabelStyleType.ProfileCrestCurve:
+                    TryAddProfileLabelGroup(
+                        result,
+                        () => ProfileCrestCurveLabelGroup.Create(
+                            profileViewId,
+                            profileId,
+                            item.LabelStyleId));
+                    break;
+
+                case LabelStyleType.ProfileSagCurve:
+                    TryAddProfileLabelGroup(
+                        result,
+                        () => ProfileSagCurveLabelGroup.Create(
+                            profileViewId,
+                            profileId,
+                            item.LabelStyleId));
+                    break;
+
+                case LabelStyleType.ProfileCurve:
+                    // Civil 3D exposes separate crest and sag groups for a
+                    // generic "Profile Curve" label-set item.
+                    TryAddProfileLabelGroup(
+                        result,
+                        () => ProfileCrestCurveLabelGroup.Create(
+                            profileViewId,
+                            profileId,
+                            item.LabelStyleId));
+                    TryAddProfileLabelGroup(
+                        result,
+                        () => ProfileSagCurveLabelGroup.Create(
+                            profileViewId,
+                            profileId,
+                            item.LabelStyleId));
+                    break;
+            }
+
+            return result;
+        }
+
+        private static void TryAddProfileLabelGroup(
+            IList<ObjectId> result,
+            Func<ObjectId> factory)
+        {
+            try
+            {
+                ObjectId id = factory();
+                if (!id.IsNull) result.Add(id);
+            }
+            catch
+            {
+                // Keep unsupported label-set item types isolated.
+            }
+        }
+
+        private static void ApplyProfileLabelGroupSettings(
+            Transaction transaction,
+            ObjectId groupId,
+            ProfileLabelSetItem item)
+        {
+            try
+            {
+                ProfileLabelGroup group = transaction.GetObject(
+                    groupId,
+                    OpenMode.ForWrite,
+                    false) as ProfileLabelGroup;
+                if (group != null)
+                {
+                    group.DefaultDimensionAnchorOption =
+                        (Autodesk.Civil.DimensionAnchorOptionType)item.DimensionAnchorOption;
+                    group.DefaultDimensionAnchorValue = item.DimensionAnchorValue;
+                }
+            }
+            catch
+            {
+            }
+
+            try
+            {
+                ProfileHorizontalGeometryPointLabelGroup geometryGroup =
+                    transaction.GetObject(
+                        groupId,
+                        OpenMode.ForWrite,
+                        false) as ProfileHorizontalGeometryPointLabelGroup;
+                if (geometryGroup == null) return;
+
+                var options = geometryGroup.GetGeometryPointsOptions();
+                var labeledPoints = item.GetLabeledAlignmentGeometryPoints();
+                options.UnSelectAll();
+                foreach (var pair in labeledPoints)
+                {
+                    try { options[pair.Key].Selected = true; }
+                    catch { }
+                }
+                geometryGroup.SetGeometryPointsOptions(options);
+            }
+            catch
+            {
+            }
         }
 
         [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWSTYLEMULTI", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
