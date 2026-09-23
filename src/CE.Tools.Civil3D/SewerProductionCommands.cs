@@ -654,7 +654,7 @@ namespace CETools.Civil3D
                         CivilStructure structure = transaction.GetObject(
                             structureId, OpenMode.ForWrite, false) as CivilStructure;
                         if (structure == null) { skipped++; continue; }
-                        double target = values.Min() - 0.080;
+                        double target = values.Min() - manualSumpDepth;
                         // Select absolute elevation mode first. Writing SumpDepth
                         // afterwards switches Civil 3D back to depth control and
                         // produces the observed -0.080m / 900m+ results.
@@ -1428,7 +1428,7 @@ namespace CETools.Civil3D
 
                             // SumpElevation is an absolute RL. Repair legacy
                             // relative/negative values from the connected pipe inverts.
-                            double absoluteElevation = lowestInvert - manualSumpDepth;
+                            double absoluteElevation = lowestInvert - 0.080;
 
                             TrySetProfileEnum(
                                 structure,
