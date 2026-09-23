@@ -425,48 +425,65 @@ namespace CETools.Civil3D
             }
 
             int surfaces = 0;
+            int draped = 0;
             int vertices = 0;
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                var points = new List<Point3d>();
-                foreach (ObjectId id in featureIds.Distinct())
-                {
-                    CivilFeatureLine line = SafeOpen<CivilFeatureLine>(transaction, id, OpenMode.ForRead);
-                    if (line == null) continue;
-                    try
-                    {
-                        foreach (Point3d point in line.GetPoints(FeatureLinePointType.AllPoints))
-                            points.Add(new Point3d(point.X, point.Y, point.Z));
-                    }
-                    catch { }
-                }
-
+                List<CivilSurface> topSurfaces = new List<CivilSurface>();
                 foreach (ObjectId surfaceId in civilDocument.GetSurfaceIds())
                 {
                     CivilSurface surface = SafeOpen<CivilSurface>(transaction, surfaceId, OpenMode.ForWrite);
                     if (surface == null ||
-                        !IsRoadTopBottomSurface(surface.Name) ||
                         !surface.Name.StartsWith("TOP-", StringComparison.OrdinalIgnoreCase))
                         continue;
-                    int local = 0;
-                    foreach (Point3d point in points)
-                        if (TryAddSurfaceVertex(surface, point)) local++;
-                    if (local > 0)
+                    topSurfaces.Add(surface);
+                }
+
+                foreach (ObjectId featureId in featureIds.Distinct())
+                {
+                    CivilFeatureLine line = SafeOpen<CivilFeatureLine>(
+                        transaction, featureId, OpenMode.ForWrite);
+                    if (line == null) continue;
+
+                    foreach (CivilSurface surface in topSurfaces)
                     {
-                        surfaces++;
-                        vertices += local;
-                        TryInvoke(surface, "Rebuild");
-                        surface.RecordGraphicsModified(true);
+                        if (TryAssignFeatureLineElevations(line, surface))
+                            draped++;
+                        int local = 0;
+                        try
+                        {
+                            foreach (Point3d point in line.GetPoints(FeatureLinePointType.AllPoints))
+                            {
+                                double elevation;
+                                if (!TryFindSurfaceElevation(surface, point.X, point.Y, out elevation))
+                                    continue;
+                                if (TryAddSurfaceVertex(
+                                    surface,
+                                    new Point3d(point.X, point.Y, elevation)))
+                                    local++;
+                            }
+                        }
+                        catch { }
+
+                        if (local > 0)
+                        {
+                            surfaces++;
+                            vertices += local;
+                            TryInvoke(surface, "Rebuild");
+                            surface.RecordGraphicsModified(true);
+                        }
                     }
+
+                    line.RecordGraphicsModified(true);
                 }
                 transaction.Commit();
             }
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_ROADJUNCTIONFEATURELINESTOP complete. Selected feature lines={0}; TOP surfaces updated={1}; vertices pasted={2}.",
-                featureIds.Count, surfaces, vertices);
+                "\nCE_ROADJUNCTIONFEATURELINESTOP complete. Selected feature lines={0}; TOP surfaces processed={1}; feature lines draped={2}; vertices pasted={3}.",
+                featureIds.Count, surfaces, draped, vertices);
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADTJUNCTIONASSEMBLYLIMITS", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -1439,6 +1456,102 @@ namespace CETools.Civil3D
             Point3d plan = new Point3d(point.X, point.Y, 0.0);
             if (!points.Any(existing => PlanDistance(existing, plan) <= 0.001))
                 points.Add(plan);
+        }
+
+        private static bool TryAssignFeatureLineElevations(
+            CivilFeatureLine line,
+            CivilSurface surface)
+        {
+            if (line == null || surface == null) return false;
+            foreach (string methodName in new[]
+            {
+                "AssignElevationsFromSurface",
+                "AssignElevationsFromSurfaceId",
+                "DrapeToSurface"
+            })
+            {
+                if (TryInvoke(line, methodName, surface.ObjectId) ||
+                    TryInvoke(line, methodName, surface))
+                    return true;
+            }
+
+            bool changed = false;
+            int index = 0;
+            try
+            {
+                foreach (Point3d point in line.GetPoints(FeatureLinePointType.AllPoints))
+                {
+                    double elevation;
+                    if (!TryFindSurfaceElevation(surface, point.X, point.Y, out elevation))
+                    {
+                        index++;
+                        continue;
+                    }
+                    if (TrySetFeatureLinePointElevation(line, index, elevation))
+                        changed = true;
+                    index++;
+                }
+            }
+            catch { }
+            return changed;
+        }
+
+        private static bool TryFindSurfaceElevation(
+            CivilSurface surface,
+            double x,
+            double y,
+            out double elevation)
+        {
+            elevation = 0.0;
+            if (surface == null) return false;
+            try
+            {
+                elevation = surface.FindElevationAtXY(x, y);
+                return !double.IsNaN(elevation) && !double.IsInfinity(elevation);
+            }
+            catch { return false; }
+        }
+
+        private static bool TrySetFeatureLinePointElevation(
+            CivilFeatureLine line,
+            int index,
+            double elevation)
+        {
+            foreach (MethodInfo method in line.GetType().GetMethods(
+                BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (method.Name.IndexOf("SetPointElevation",
+                    StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length == 2 &&
+                    parameters[0].ParameterType == typeof(int) &&
+                    parameters[1].ParameterType == typeof(double))
+                {
+                    try
+                    {
+                        method.Invoke(line, new object[] { index, elevation });
+                        return true;
+                    }
+                    catch { }
+                }
+                if (parameters.Length == 3 &&
+                    parameters[0].ParameterType == typeof(FeatureLinePointType) &&
+                    parameters[1].ParameterType == typeof(int) &&
+                    parameters[2].ParameterType == typeof(double))
+                {
+                    try
+                    {
+                        method.Invoke(line, new object[]
+                        {
+                            FeatureLinePointType.AllPoints, index, elevation
+                        });
+                        return true;
+                    }
+                    catch { }
+                }
+            }
+            return false;
         }
 
         private static bool TryAddSurfaceVertex(CivilSurface surface, Point3d point)
