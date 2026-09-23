@@ -16,7 +16,6 @@ presets = (root / "src/CE.Tools.Civil3D/August11DisciplineStylePresetCommands.cs
 required_source = [
     '"CE_ROADCENTRECLEAN"',
     '"CE_GOOGLEEARTHLINEWORK"',
-    '"CE_HATCHBOUNDARIES"',
     '"CE_SEWRECALC"',
     '"CE_SURVEYLOCATIONNAMIBIA"',
     'Separate line strings',
