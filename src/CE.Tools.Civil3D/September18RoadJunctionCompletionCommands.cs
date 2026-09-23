@@ -71,7 +71,7 @@ namespace CETools.Civil3D
                     double stationStart = alignment.StartingStation;
                     double stationEnd = alignment.EndingStation;
                     Dictionary<ObjectId, List<FinalProfilePvi>> finalProfilePvis =
-                        CaptureFinalProfilePvis(alignment, transaction);
+                        CaptureFinalProfilePvis(alignment, transaction, null);
                     if (!TryInvoke(alignment, "Reverse"))
                     {
                         failed++;
@@ -194,7 +194,7 @@ namespace CETools.Civil3D
                     if (alignment == null) { skipped++; continue; }
 
                     Dictionary<ObjectId, List<FinalProfilePvi>> profiles =
-                        CaptureFinalProfilePvis(alignment, transaction);
+                        CaptureFinalProfilePvis(alignment, transaction, view);
                     bool local = false;
                     foreach (KeyValuePair<ObjectId, List<FinalProfilePvi>> item in profiles)
                     {
@@ -358,18 +358,28 @@ namespace CETools.Civil3D
                     ObjectId layerId = templateProfile is Entity
                         ? ((Entity)templateProfile).LayerId
                         : document.Database.Clayer;
-                    ObjectId styleId = ReadObjectId(ReadProperty(templateProfile, "StyleId"));
-                    ObjectId labelSetId = ReadObjectId(ReadProperty(templateProfile, "LabelSetId"));
-                    if (labelSetId.IsNull)
-                        labelSetId = ReadObjectId(ReadProperty(templateProfile, "LabelSetStyleId"));
-                    if (styleId.IsNull)
-                        styleId = civilDocument.Styles.ProfileStyles.Cast<ObjectId>().FirstOrDefault();
-                    if (labelSetId.IsNull)
-                        labelSetId = civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles
-                            .Cast<ObjectId>().FirstOrDefault();
-                    if (styleId.IsNull || labelSetId.IsNull)
-                        throw new InvalidOperationException(
-                            "The drawing contains no usable Profile Style and Profile Label Set Style.");
+                    ObjectId templateStyleId = ReadObjectId(ReadProperty(templateProfile, "StyleId"));
+                    ObjectId templateLabelSetId = ReadObjectId(ReadProperty(templateProfile, "LabelSetId"));
+                    if (templateLabelSetId.IsNull)
+                        templateLabelSetId = ReadObjectId(ReadProperty(templateProfile, "LabelSetStyleId"));
+                    string templateStyleName = ReadObjectName(transaction, templateStyleId);
+                    string templateLabelSetName = ReadObjectName(transaction, templateLabelSetId);
+                    string resolvedStyleName;
+                    string resolvedLabelSetName;
+                    ObjectId styleId = CivilStyleCatalogV2.ResolveStyleId(
+                        document.Database,
+                        civilDocument,
+                        "Profile Style",
+                        templateStyleName,
+                        transaction,
+                        out resolvedStyleName);
+                    ObjectId labelSetId = CivilStyleCatalogV2.ResolveStyleId(
+                        document.Database,
+                        civilDocument,
+                        "Profile Label Set Style",
+                        templateLabelSetName,
+                        transaction,
+                        out resolvedLabelSetName);
 
                     HashSet<string> existingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
                     foreach (ObjectId profileId in ReadObjectIds(InvokeReturning(alignment, "GetProfileIds")))
@@ -899,12 +909,26 @@ namespace CETools.Civil3D
 
         private static Dictionary<ObjectId, List<FinalProfilePvi>> CaptureFinalProfilePvis(
             CivilAlignment alignment,
-            Transaction transaction)
+            Transaction transaction,
+            CivilProfileView selectedView)
         {
             var result = new Dictionary<ObjectId, List<FinalProfilePvi>>();
             if (alignment == null || transaction == null) return result;
 
-            foreach (ObjectId profileId in alignment.GetProfileIds())
+            IEnumerable<ObjectId> candidateIds = alignment.GetProfileIds();
+            if (selectedView != null)
+            {
+                var viewIds = new List<ObjectId>();
+                foreach (string member in new[] { "GetProfileIds", "GetProfiles" })
+                    viewIds.AddRange(ReadObjectIds(InvokeReturning(selectedView, member)));
+                foreach (string property in new[] { "ProfileIds", "Profiles" })
+                    viewIds.AddRange(ReadObjectIds(ReadProperty(selectedView, property)));
+                viewIds = viewIds.Where(id => !id.IsNull).Distinct().ToList();
+                if (viewIds.Count > 0)
+                    candidateIds = viewIds;
+            }
+
+            foreach (ObjectId profileId in candidateIds)
             {
                 CivilProfile profile = SafeOpen<CivilProfile>(
                     transaction,
@@ -929,17 +953,8 @@ namespace CETools.Civil3D
         {
             string identity = ((profile.Name ?? string.Empty) + " " +
                 (profile.Description ?? string.Empty)).ToUpperInvariant();
-            bool excluded = identity.Contains("NGL") ||
-                            identity.Contains("NATURAL") ||
-                            identity.Contains("EXIST") ||
-                            identity.Contains("GROUND") ||
-                            identity.Contains("SURFACE");
-            return !excluded &&
-                   (identity.Contains("-FG") ||
-                    identity.Contains("FINAL") ||
-                    identity.Contains("CE FINAL ROAD") ||
-                    identity.Contains("DESIGN") ||
-                    identity.Contains("ROAD"));
+            bool excluded = IsGroundProfileIdentity(identity);
+            return !excluded && IsFinalDesignProfileIdentity(identity);
         }
 
         private static bool ReverseFinalProfilePvis(
@@ -991,11 +1006,16 @@ namespace CETools.Civil3D
             object pvis = profile == null ? null : profile.PVIs;
             if (pvis == null) return false;
 
-            int count = CivilStyleDiscovery.Enumerate(pvis).Count();
-            for (int index = count - 1; index >= 0; index--)
+            List<ProfilePVI> live = CivilStyleDiscovery.Enumerate(pvis)
+                .OfType<ProfilePVI>()
+                .OrderBy(item => item.Station)
+                .ToList();
+            for (int index = live.Count - 1; index >= 0; index--)
             {
-                if (!TryInvoke(pvis, "RemoveAt", index) &&
-                    !TryInvoke(pvis, "RemovePVI", index))
+                ProfilePVI item = live[index];
+                if (!TryInvoke(pvis, "RemovePVI", item) &&
+                    !TryInvoke(pvis, "Remove", item) &&
+                    !TryInvoke(pvis, "RemoveAt", index))
                     return false;
             }
 
@@ -1173,6 +1193,52 @@ namespace CETools.Civil3D
             return string.IsNullOrWhiteSpace(name) ? value.Handle.ToString() : name;
         }
 
+        private static bool IsGroundProfileIdentity(string identity)
+        {
+            string value = (identity ?? string.Empty).ToUpperInvariant();
+            return value.Contains("NGL") ||
+                   value.Contains("NATURAL") ||
+                   value.Contains("EXIST") ||
+                   value.Contains("GROUND") ||
+                   value.Contains("SURFACE") ||
+                   ContainsProfileToken(value, "EG");
+        }
+
+        private static bool IsFinalDesignProfileIdentity(string identity)
+        {
+            string value = (identity ?? string.Empty).ToUpperInvariant();
+            return !IsGroundProfileIdentity(value) &&
+                   (ContainsProfileToken(value, "FG") ||
+                    value.Contains("FINAL") ||
+                    value.Contains("DESIGN") ||
+                    value.Contains("PROPOSED") ||
+                    value.Contains("ROAD"));
+        }
+
+        private static bool ContainsProfileToken(string identity, string token)
+        {
+            string value = (identity ?? string.Empty)
+                .Replace("-", " ")
+                .Replace("_", " ")
+                .Replace("/", " ")
+                .Replace(".", " ");
+            string padded = " " + value + " ";
+            return padded.IndexOf(
+                " " + (token ?? string.Empty).Trim() + " ",
+                StringComparison.OrdinalIgnoreCase) >= 0;
+        }
+
+        private static string ReadObjectName(Transaction transaction, ObjectId id)
+        {
+            if (transaction == null || id.IsNull) return string.Empty;
+            try
+            {
+                DBObject value = transaction.GetObject(id, OpenMode.ForRead, false);
+                return Convert.ToString(ReadProperty(value, "Name"), CultureInfo.CurrentCulture) ?? string.Empty;
+            }
+            catch { return string.Empty; }
+        }
+
         private static bool IsRoadTopBottomSurface(string name)
         {
             return !string.IsNullOrWhiteSpace(name) &&
@@ -1214,6 +1280,7 @@ namespace CETools.Civil3D
             ObjectId styleId,
             ObjectId labelSetId)
         {
+            lastProfileException = null;
             // Civil 3D 2023 exposes the six-argument overload directly. The
             // previous reflection-only path swallowed the real API exception
             // and reported every row as "no compatible overload".
@@ -1287,7 +1354,6 @@ namespace CETools.Civil3D
                     else if (parameterName.Contains("layer")) arguments[index] = layerId;
                     else if (parameterName.Contains("label")) arguments[index] = labelSetId;
                     else if (parameterName.Contains("style")) arguments[index] = styleId;
-                    else if (fallbackIndex < fallback.Length) arguments[index] = fallback[fallbackIndex++];
                     else return false;
                 }
                 else if (parameter.HasDefaultValue)
