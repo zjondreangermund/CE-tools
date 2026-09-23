@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
@@ -171,6 +172,150 @@ namespace CETools.Civil3D
                     "\nCE_ROADPROFILEVIEWFINAL failed. {0}",
                     exception.Message);
             }
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_PROFILELABELSETMULTI", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void AssignProfileLabelSetToMultipleFinalProfiles()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (document == null || civilDocument == null) return;
+
+            List<ObjectId> profileIds = SelectObjects(
+                document,
+                "\nSelect final design profiles for the label set: ",
+                obj => obj is CivilProfile);
+            if (profileIds.Count == 0) return;
+
+            IList<string> names = CivilStyleCatalogV2.ReadNames(
+                document.Database, civilDocument, "Profile Label Set Style");
+            if (names.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_PROFILELABELSETMULTI cancelled. No profile label-set styles were found.");
+                return;
+            }
+
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - Assign Profile Label Sets",
+                "Apply one Civil 3D profile label-set style to all selected final design profiles. This writes the label-set ObjectId and refreshes the profile graphics.");
+            model.AddChoice(
+                "LabelSet", "01 Labels", "Profile label set", names[0],
+                "Choose the label-set style to apply to every selected final design profile.",
+                names.ToArray());
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+
+            int applied = 0;
+            int failed = 0;
+            using (DocumentLock documentLock = document.LockDocument())
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                string actual;
+                ObjectId labelSetId = CivilStyleCatalogV2.ResolveStyleId(
+                    document.Database,
+                    civilDocument,
+                    "Profile Label Set Style",
+                    model.Text("LabelSet"),
+                    transaction,
+                    out actual);
+
+                foreach (ObjectId id in profileIds.Distinct())
+                {
+                    CivilProfile profile = transaction.GetObject(
+                        id, OpenMode.ForWrite, false) as CivilProfile;
+                    if (profile == null)
+                    {
+                        failed++;
+                        continue;
+                    }
+                    bool ok = TrySetObjectIdProperty(profile, "LabelSetId", labelSetId) ||
+                              TrySetObjectIdProperty(profile, "LabelSetStyleId", labelSetId);
+                    if (ok)
+                    {
+                        Entity entity = profile as Entity;
+                        if (entity != null) entity.RecordGraphicsModified(true);
+                        applied++;
+                    }
+                    else failed++;
+                }
+                transaction.Commit();
+            }
+
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_PROFILELABELSETMULTI complete. Profiles updated={0}; failed={1}; label set={2}.",
+                applied, failed, model.Text("LabelSet"));
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWSTYLEMULTI", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void AssignProfileViewStyleToMultipleViews()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (document == null || civilDocument == null) return;
+
+            List<ObjectId> viewIds = SelectObjects(
+                document,
+                "\nSelect profile views for the profile-view style: ",
+                obj => obj is ProfileView);
+            if (viewIds.Count == 0) return;
+
+            IList<string> names = CivilStyleCatalogV2.ReadNames(
+                document.Database, civilDocument, "Profile View Style");
+            if (names.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_PROFILEVIEWSTYLEMULTI cancelled. No profile-view styles were found.");
+                return;
+            }
+
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - Assign Profile View Styles",
+                "Apply one Civil 3D profile-view style to all selected profile views and regenerate their display.");
+            model.AddChoice(
+                "Style", "01 Style", "Profile view style", names[0],
+                "Choose the profile-view style to apply to every selected view.",
+                names.ToArray());
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+
+            int applied = 0;
+            int failed = 0;
+            using (DocumentLock documentLock = document.LockDocument())
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                string actual;
+                ObjectId styleId = CivilStyleCatalogV2.ResolveStyleId(
+                    document.Database,
+                    civilDocument,
+                    "Profile View Style",
+                    model.Text("Style"),
+                    transaction,
+                    out actual);
+
+                foreach (ObjectId id in viewIds.Distinct())
+                {
+                    ProfileView view = transaction.GetObject(
+                        id, OpenMode.ForWrite, false) as ProfileView;
+                    if (view == null)
+                    {
+                        failed++;
+                        continue;
+                    }
+                    if (TrySetObjectIdProperty(view, "StyleId", styleId) ||
+                        TrySetObjectIdProperty(view, "ProfileViewStyleId", styleId))
+                    {
+                        TryInvoke(view, "Rebuild");
+                        Entity entity = view as Entity;
+                        if (entity != null) entity.RecordGraphicsModified(true);
+                        applied++;
+                    }
+                    else failed++;
+                }
+                transaction.Commit();
+            }
+
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWSTYLEMULTI complete. Views updated={0}; failed={1}; style={2}.",
+                applied, failed, model.Text("Style"));
         }
 
         private static string ChooseRoadProfileViewStyle(
@@ -363,6 +508,93 @@ namespace CETools.Civil3D
             {
                 return ObjectId.Null;
             }
+        }
+
+        private static List<ObjectId> SelectObjects(
+            Document document,
+            string prompt,
+            Func<DBObject, bool> predicate)
+        {
+            PromptSelectionResult selected = document.Editor.SelectImplied();
+            if (selected.Status != PromptStatus.OK ||
+                selected.Value == null || selected.Value.Count == 0)
+            {
+                selected = document.Editor.GetSelection(new PromptSelectionOptions
+                {
+                    MessageForAdding = prompt,
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
+            }
+            document.Editor.SetImpliedSelection(new ObjectId[0]);
+            if (selected.Status != PromptStatus.OK || selected.Value == null)
+                return new List<ObjectId>();
+
+            var result = new List<ObjectId>();
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in selected.Value.GetObjectIds())
+                {
+                    DBObject value = null;
+                    try { value = transaction.GetObject(id, OpenMode.ForRead, false); }
+                    catch { }
+                    if (value != null && predicate(value)) result.Add(id);
+                }
+            }
+            return result;
+        }
+
+        private static bool TrySetObjectIdProperty(
+            object target,
+            string propertyName,
+            ObjectId value)
+        {
+            if (target == null || value.IsNull) return false;
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite ||
+                    property.PropertyType != typeof(ObjectId))
+                    return false;
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static bool TryInvoke(object target, string name, params object[] arguments)
+        {
+            if (target == null) return false;
+            foreach (MethodInfo method in target.GetType().GetMethods(
+                BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!string.Equals(method.Name, name, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                ParameterInfo[] parameters = method.GetParameters();
+                if (parameters.Length != (arguments == null ? 0 : arguments.Length))
+                    continue;
+                bool compatible = true;
+                for (int index = 0; index < parameters.Length; index++)
+                {
+                    if (arguments[index] == null ||
+                        !parameters[index].ParameterType.IsInstanceOfType(arguments[index]))
+                    {
+                        compatible = false;
+                        break;
+                    }
+                }
+                if (!compatible) continue;
+                try
+                {
+                    method.Invoke(target, arguments);
+                    return true;
+                }
+                catch { }
+            }
+            return false;
         }
 
         private static bool IsRoadAlignment(CivilAlignment alignment)
