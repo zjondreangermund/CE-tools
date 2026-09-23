@@ -296,6 +296,7 @@ namespace CETools.Civil3D
                                     new Vector3d(
                                         ux.X * longitudinal + uy.X * tangentOffset,
                                         ux.Y * longitudinal + uy.Y * tangentOffset,
+                                        0.0);
                                 Line closure = new Line(first, second);
                                 closure.SetDatabaseDefaults(document.Database);
                                 closure.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(
