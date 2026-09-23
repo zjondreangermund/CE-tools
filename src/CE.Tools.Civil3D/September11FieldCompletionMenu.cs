@@ -77,9 +77,9 @@ namespace CETools.Civil3D
                         "Choose one existing Civil 3D profile-view band set, apply it to multiple selected road profile views and force Show Labels on for every imported top/bottom band item.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
-                        "Batch T/Cross Junction Bellmouths",
-                        "CE_ROADJUNCTIONBATCH",
-                        "Select all road-centre lines, polylines or feature lines once. Detect every T/cross intersection, create all bellmouths using separate main/side half-widths and one radius, then number them in a single batch.",
+                        "Batch T/Cross Junction Bellmouths and T-Closures",
+                        "CE_ROADJUNCTIONBULK",
+                        "Detect every T/cross intersection, create all bellmouth returns, close every T-junction with the magenta line and write the configured junction layer.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
                         "Reverse Multiple Road Alignments + Profiles",
@@ -427,11 +427,6 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Recent - CE_ROADCENTRECLEAN",
                         "CE_ROADCENTRECLEAN",
-                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
-                        "06 Latest Field Completion"),
-                    new DisciplineWorkflowAction(
-                        "Recent - CE_HATCHBOUNDARIES",
-                        "CE_HATCHBOUNDARIES",
                         "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
