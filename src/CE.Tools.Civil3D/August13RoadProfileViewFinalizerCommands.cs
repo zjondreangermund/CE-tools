@@ -373,8 +373,7 @@ namespace CETools.Civil3D
                                 identity.Contains("NATURAL") ||
                                 identity.Contains("EXIST") ||
                                 identity.Contains("GROUND") ||
-                                identity.Contains("SURFACE") ||
-                                identity.Contains("EG");
+                                identity.Contains("SURFACE");
                 if (!excluded && fallbackDesignProfileId.IsNull)
                     fallbackDesignProfileId = profileId;
                 if (finalProfileId.IsNull && !excluded &&
