@@ -14,6 +14,7 @@ using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
+using Autodesk.Civil.DatabaseServices.Styles;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
@@ -189,7 +190,7 @@ namespace CETools.Civil3D
                             window.ColourIndex,
                             transaction);
                         if (!colourStyleId.IsNull &&
-                            TrySetObjectIdProperty(featureLine, "StyleId", colourStyleId))
+                            TrySetFeatureLineStyleId(featureLine, colourStyleId))
                             styleChanged++;
 
                         try { featureLine.RecordGraphicsModified(true); } catch { }
@@ -980,19 +981,33 @@ namespace CETools.Civil3D
 
             try
             {
-                MethodInfo copy = currentStyle.GetType().GetMethod(
-                    "CopyAsSibling",
-                    BindingFlags.Public | BindingFlags.Instance,
-                    null,
-                    new[] { typeof(string) },
-                    null);
-                if (copy == null) return ObjectId.Null;
-                object result = copy.Invoke(
-                    currentStyle,
-                    new object[] { targetName });
-                ObjectId created = result is ObjectId
-                    ? (ObjectId)result
-                    : ObjectId.Null;
+                ObjectId created = ObjectId.Null;
+                FeatureLineStyle typedStyle = currentStyle as FeatureLineStyle;
+                if (typedStyle != null)
+                {
+                    // Use the Civil 3D API directly. Reflection can miss an
+                    // inherited StyleBase method on some Civil 3D 2023 builds.
+                    created = typedStyle.CopyAsSibling(targetName);
+                }
+                else
+                {
+                    MethodInfo copy = currentStyle.GetType().GetMethod(
+                        "CopyAsSibling",
+                        BindingFlags.Public | BindingFlags.Instance,
+                        null,
+                        new[] { typeof(string) },
+                        null);
+                    if (copy != null)
+                    {
+                        object result = copy.Invoke(
+                            currentStyle,
+                            new object[] { targetName });
+                        created = result is ObjectId
+                            ? (ObjectId)result
+                            : ObjectId.Null;
+                    }
+                }
+
                 if (created.IsNull) return ObjectId.Null;
 
                 ApplyFeatureLineStyleColour(
@@ -1051,6 +1066,52 @@ namespace CETools.Civil3D
             return ObjectId.Null;
         }
 
+        private static bool TryApplyTypedFeatureLineStyleColour(
+            FeatureLineStyle style,
+            Color colour)
+        {
+            if (style == null || colour == null) return false;
+            bool changed = false;
+
+            try
+            {
+                DisplayStyle plan = style.GetFeatureLineDisplayStylePlan();
+                if (plan != null)
+                {
+                    plan.Color = colour;
+                    plan.Visible = true;
+                    changed = true;
+                }
+            }
+            catch { }
+
+            try
+            {
+                DisplayStyle model = style.GetFeatureLineDisplayStyleModel();
+                if (model != null)
+                {
+                    model.Color = colour;
+                    model.Visible = true;
+                    changed = true;
+                }
+            }
+            catch { }
+
+            try
+            {
+                DisplayStyle profile = style.GetDisplayStyleProfile();
+                if (profile != null)
+                {
+                    profile.Color = colour;
+                    profile.Visible = true;
+                    changed = true;
+                }
+            }
+            catch { }
+
+            return changed;
+        }
+
         private static void ApplyFeatureLineStyleColour(
             Transaction transaction,
             ObjectId styleId,
@@ -1071,6 +1132,18 @@ namespace CETools.Civil3D
             Color colour = Color.FromColorIndex(
                 ColorMethod.ByAci,
                 (short)colourIndex);
+
+            FeatureLineStyle typedStyle = style as FeatureLineStyle;
+            if (typedStyle != null &&
+                TryApplyTypedFeatureLineStyleColour(typedStyle, colour))
+            {
+                try
+                {
+                    style.RecordGraphicsModified(true);
+                }
+                catch { }
+                return;
+            }
 
             foreach (string methodName in new[]
             {
@@ -1187,6 +1260,19 @@ namespace CETools.Civil3D
             return value is ObjectId
                 ? (ObjectId)value
                 : ObjectId.Null;
+        }
+
+        private static bool TrySetFeatureLineStyleId(
+            CivilFeatureLine featureLine,
+            ObjectId styleId)
+        {
+            if (featureLine == null || styleId.IsNull) return false;
+
+            // StyleId is the Civil 3D 2023 property. Keep the alternate names
+            // for verticals/builds that expose the same relationship differently.
+            return TrySetObjectIdProperty(featureLine, "StyleId", styleId) ||
+                   TrySetObjectIdProperty(featureLine, "FeatureLineStyleId", styleId) ||
+                   TrySetObjectIdProperty(featureLine, "Style", styleId);
         }
 
         private static bool TrySetObjectIdProperty(
