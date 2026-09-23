@@ -1500,6 +1500,7 @@ namespace CETools.Civil3D
                     return;
                 }
                 ColourIndex = colour;
+                NewSiteName = (_newSite.Text ?? string.Empty).Trim();
                 CivilObjectChoice choice = _site.SelectedItem as CivilObjectChoice;
                 SelectedSiteId = choice == null ? ObjectId.Null : choice.ObjectId;
                 Accepted = true;
