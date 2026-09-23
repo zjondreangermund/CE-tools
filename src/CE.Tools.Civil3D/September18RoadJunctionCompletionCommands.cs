@@ -1551,6 +1551,18 @@ namespace CETools.Civil3D
             CivilSurface surface)
         {
             if (line == null || surface == null) return false;
+            bool changed = false;
+
+            // Use the typed Civil 3D 2023 call first. The previous reflected
+            // implementation returned as soon as the method was found, even
+            // when Civil 3D left the feature-line vertices at elevation 0.000.
+            try
+            {
+                line.AssignElevationsFromSurface(surface.ObjectId, true);
+                changed = true;
+            }
+            catch { }
+
             foreach (string methodName in new[]
             {
                 "AssignElevationsFromSurface",
@@ -1560,10 +1572,13 @@ namespace CETools.Civil3D
             {
                 if (TryInvoke(line, methodName, surface.ObjectId) ||
                     TryInvoke(line, methodName, surface))
-                    return true;
+                    changed = true;
             }
 
-            bool changed = false;
+            // Always verify the actual vertex elevations by sampling the
+            // selected TOP surface. This also repairs hosts where the managed
+            // AssignElevationsFromSurface wrapper reports success but does not
+            // persist the point elevations.
             int index = 0;
             try
             {
