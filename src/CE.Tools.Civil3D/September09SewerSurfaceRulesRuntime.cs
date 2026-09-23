@@ -336,7 +336,7 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble("MinSlope", "02 Pipe rules", "Minimum slope (%)", 1.0, "Minimum absolute pipe grade.");
             settings.AddPositiveDouble("MaxSlope", "02 Pipe rules", "Maximum slope (%)", 12.0, "Maximum absolute pipe grade.");
             settings.AddPositiveDouble("MinCover", "02 Pipe rules", "Minimum cover (m)", 0.834, "Minimum cover from the selected surface to the pipe crown.");
-            settings.AddPositiveDouble("MaxCover", "02 Pipe rules", "Maximum cover (m)", 10.0, "Maximum allowed cover; violations are reported.");
+            settings.AddPositiveDouble("MaxCover", "02 Pipe rules", "Maximum cover (m)", 10.0, "Maximum allowed cover; pipe endpoints are clamped into the permitted cover range.");
             settings.AddPositiveDouble("MinLength", "02 Pipe rules", "Minimum pipe length (m)", 2.440, "Short pipes are reported because structure positions are preserved.");
             settings.AddPositiveDouble("MaxLength", "02 Pipe rules", "Maximum pipe length (m)", 100.0, "Long pipes are reported because adding structures is a topology edit.");
             settings.AddChoice("PipeRules", "02 Pipe rules", "Apply pipe rules", "Apply selected rule set",
@@ -349,7 +349,7 @@ namespace CETools.Civil3D
                 new[] { "Apply selected rule set", "Do not apply structure rules" });
             settings.AddChoice("StructureRuleSet", "03 Structure rules", "Structure rule set", structureChoices[0],
                 "Named Civil 3D Structure Rule Set for selected structures.", structureChoices);
-            settings.AddDouble("SumpDepth", "03 Structure rules", "Sump depth (m)", 0.0, "Depth below the lowest connected pipe invert.");
+            settings.AddDouble("SumpDepth", "03 Structure rules", "Sump depth (m)", 0.500, "Manual depth below the lowest connected pipe invert; absolute elevation control is used when Civil 3D exposes it.");
             settings.AddChoice("DropReference", "03 Structure rules", "Drop reference location", "Crown", "Reference for structure drop checks.", new[] { "Crown", "Invert" });
             settings.AddPositiveDouble("DropValue", "03 Structure rules", "Minimum drop value (m)", 0.050, "Minimum desired drop through a structure.");
             settings.AddPositiveDouble("MaxDrop", "03 Structure rules", "Maximum drop value (m)", 3.0, "Maximum allowed drop; larger values are reported.");
@@ -398,7 +398,7 @@ namespace CETools.Civil3D
                         if (structure != null)
                         {
                             if (manualRules)
-                                ApplyManualStructureRules(structure, transaction, settings, ref manualAdjusted, ref manualWarnings);
+                                ApplyManualStructureRules(structure, transaction, selectedSurface, settings, ref manualAdjusted, ref manualWarnings);
                             else
                             {
                                 if (!structureRuleSetId.IsNull) structure.RuleSetStyleId = structureRuleSetId;
@@ -538,7 +538,7 @@ namespace CETools.Civil3D
                         structure.RefSurfaceId = surfaceId;
                         int beforeWarnings = warnings;
                         int adjusted = 0;
-                        ApplyManualStructureRules(structure, transaction, settings, ref adjusted, ref warnings);
+                        ApplyManualStructureRules(structure, transaction, surface, settings, ref adjusted, ref warnings);
                         structures++;
                         rows.Add(new List<string>
                         {
@@ -595,26 +595,95 @@ namespace CETools.Civil3D
             }
             catch { warnings++; return; }
 
-            double startZ = startSurface - minimumCover - radius;
-            double naturalEndZ = endSurface - minimumCover - radius;
-            double direction = naturalEndZ <= startZ ? -1.0 : 1.0;
-            double slope = Math.Abs(naturalEndZ - startZ) / run;
-            slope = Math.Max(minimumSlope, Math.Min(maximumSlope, slope));
-            double endZ = startZ + direction * slope * run;
-            double resultingEndCover = endSurface - (endZ + radius);
-            if (resultingEndCover < minimumCover - 1e-6 || resultingEndCover > maximumCover + 1e-6)
+            if (double.IsNaN(startSurface) || double.IsInfinity(startSurface) ||
+                double.IsNaN(endSurface) || double.IsInfinity(endSurface))
+            {
+                warnings++;
+                return;
+            }
+
+            double startMinimumZ = startSurface - maximumCover - radius;
+            double startMaximumZ = startSurface - minimumCover - radius;
+            double endMinimumZ = endSurface - maximumCover - radius;
+            double endMaximumZ = endSurface - minimumCover - radius;
+            double naturalStartZ = startMaximumZ;
+            double naturalEndZ = endMaximumZ;
+            double direction = naturalEndZ <= naturalStartZ ? -1.0 : 1.0;
+
+            var candidates = new List<double>();
+            AddPipeRuleCandidate(candidates, startMinimumZ, startMinimumZ, startMaximumZ);
+            AddPipeRuleCandidate(candidates, startMaximumZ, startMinimumZ, startMaximumZ);
+            AddPipeRuleCandidate(candidates, naturalStartZ, startMinimumZ, startMaximumZ);
+            foreach (double endBoundary in new[] { endMinimumZ, endMaximumZ })
+                foreach (double slopeBoundary in new[] { minimumSlope, maximumSlope })
+                    AddPipeRuleCandidate(
+                        candidates,
+                        endBoundary - direction * slopeBoundary * run,
+                        startMinimumZ,
+                        startMaximumZ);
+
+            double bestStartZ = naturalStartZ;
+            double bestEndZ = Math.Max(endMinimumZ, Math.Min(endMaximumZ, naturalEndZ));
+            double bestPenalty = double.PositiveInfinity;
+            foreach (double candidateStartZ in candidates.Distinct())
+            {
+                double requestedSlope = Math.Abs(naturalEndZ - candidateStartZ) / run;
+                double slope = Math.Max(minimumSlope, Math.Min(maximumSlope, requestedSlope));
+                double candidateEndZ = candidateStartZ + direction * slope * run;
+                candidateEndZ = Math.Max(endMinimumZ, Math.Min(endMaximumZ, candidateEndZ));
+                double actualSlope = Math.Abs(candidateEndZ - candidateStartZ) / run;
+                double penalty =
+                    RangePenalty(actualSlope, minimumSlope, maximumSlope) * 100.0 +
+                    Math.Abs(candidateStartZ - naturalStartZ) +
+                    Math.Abs(candidateEndZ - naturalEndZ);
+                if (penalty < bestPenalty)
+                {
+                    bestPenalty = penalty;
+                    bestStartZ = candidateStartZ;
+                    bestEndZ = candidateEndZ;
+                }
+            }
+
+            double finalSlope = Math.Abs(bestEndZ - bestStartZ) / run;
+            if (finalSlope < minimumSlope - 1e-6 || finalSlope > maximumSlope + 1e-6)
                 warnings++;
 
-            if (TrySetPoint(pipe, "StartPoint", new Point3d(start.X, start.Y, startZ)) &&
-                TrySetPoint(pipe, "EndPoint", new Point3d(end.X, end.Y, endZ)))
+            Point3d newStart = new Point3d(start.X, start.Y, bestStartZ);
+            Point3d newEnd = new Point3d(end.X, end.Y, bestEndZ);
+            bool startSet = TrySetPoint(pipe, "StartPoint", newStart);
+            bool endSet = TrySetPoint(pipe, "EndPoint", newEnd);
+            if (startSet && endSet)
                 adjusted++;
             else
+            {
+                if (startSet) TrySetPoint(pipe, "StartPoint", start);
+                if (endSet) TrySetPoint(pipe, "EndPoint", end);
                 warnings++;
+            }
+        }
+
+        private static void AddPipeRuleCandidate(
+            IList<double> candidates,
+            double value,
+            double minimum,
+            double maximum)
+        {
+            if (candidates == null || double.IsNaN(value) || double.IsInfinity(value))
+                return;
+            candidates.Add(Math.Max(minimum, Math.Min(maximum, value)));
+        }
+
+        private static double RangePenalty(double value, double minimum, double maximum)
+        {
+            if (value < minimum) return minimum - value;
+            if (value > maximum) return value - maximum;
+            return 0.0;
         }
 
         private static void ApplyManualStructureRules(
             CivilStructure structure,
             Transaction transaction,
+            CivilSurface surface,
             ProductionSettingsDialogModel settings,
             ref int adjusted,
             ref int warnings)
