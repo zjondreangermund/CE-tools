@@ -98,6 +98,10 @@ namespace CETools.Civil3D
                         if (profileView == null) continue;
 
                         ObjectId alignmentId = ReadObjectIdProperty(profileView, "AlignmentId");
+                        if (alignmentId.IsNull)
+                            alignmentId = ReadObjectIdProperty(profileView, "ParentAlignmentId");
+                        if (alignmentId.IsNull)
+                            alignmentId = ReadObjectIdProperty(profileView, "ParentAlignment");
                         CivilAlignment alignment = alignmentId.IsNull
                             ? null
                             : transaction.GetObject(
@@ -501,7 +505,20 @@ namespace CETools.Civil3D
                     target.GetType().GetProperty(propertyName);
                 if (property == null) return ObjectId.Null;
                 object value = property.GetValue(target, null);
-                return value is ObjectId ? (ObjectId)value : ObjectId.Null;
+                if (value is ObjectId) return (ObjectId)value;
+                DBObject databaseObject = value as DBObject;
+                if (databaseObject != null) return databaseObject.ObjectId;
+                if (value != null)
+                {
+                    PropertyInfo objectIdProperty = value.GetType().GetProperty(
+                        "ObjectId",
+                        BindingFlags.Public | BindingFlags.Instance);
+                    object raw = objectIdProperty == null
+                        ? null
+                        : objectIdProperty.GetValue(value, null);
+                    if (raw is ObjectId) return (ObjectId)raw;
+                }
+                return ObjectId.Null;
             }
             catch
             {
