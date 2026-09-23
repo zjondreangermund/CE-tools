@@ -77,7 +77,7 @@ namespace CETools.Civil3D
                         "Choose one existing Civil 3D profile-view band set, apply it to multiple selected road profile views and force Show Labels on for every imported top/bottom band item.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
-                        "Batch T/Cross Junction Bellmouths and T-Closures",
+                        "Batch T/Cross Junction Bellmouths",
                         "CE_ROADJUNCTIONBULK",
                         "Detect every T/cross intersection, create all bellmouth returns, close every T-junction with the magenta line and write the configured junction layer.",
                         "01 Roads"),
