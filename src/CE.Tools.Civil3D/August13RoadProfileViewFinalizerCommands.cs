@@ -117,6 +117,7 @@ namespace CETools.Civil3D
                                 viewStyleId,
                                 bandSetId);
 
+                            ObjectId groundProfileId;
                             ObjectId leftProfileId;
                             ObjectId centreProfileId;
                             ObjectId rightProfileId;
@@ -124,6 +125,7 @@ namespace CETools.Civil3D
                             ResolveRoadProfiles(
                                 alignment,
                                 transaction,
+                                out groundProfileId,
                                 out leftProfileId,
                                 out centreProfileId,
                                 out rightProfileId,
@@ -136,6 +138,7 @@ namespace CETools.Civil3D
                                 finalProfileId);
                             bandItems += ProfileViewBandDataBinder.BindRoad(
                                 profileView,
+                                groundProfileId,
                                 leftProfileId,
                                 centreProfileId,
                                 rightProfileId,
@@ -351,15 +354,18 @@ namespace CETools.Civil3D
         private static void ResolveRoadProfiles(
             CivilAlignment alignment,
             Transaction transaction,
+            out ObjectId groundProfileId,
             out ObjectId leftProfileId,
             out ObjectId centreProfileId,
             out ObjectId rightProfileId,
             out ObjectId finalProfileId)
         {
+            groundProfileId = ObjectId.Null;
             leftProfileId = ObjectId.Null;
             centreProfileId = ObjectId.Null;
             rightProfileId = ObjectId.Null;
             finalProfileId = ObjectId.Null;
+            ObjectId fallbackGroundProfileId = ObjectId.Null;
             ObjectId fallbackDesignProfileId = ObjectId.Null;
             if (alignment == null) return;
 
@@ -373,39 +379,70 @@ namespace CETools.Civil3D
                 string identity = ((profile.Name ?? string.Empty) + " " +
                     (profile.Description ?? string.Empty)).ToUpperInvariant();
 
-                bool excluded = identity.Contains("NGL") ||
-                                identity.Contains("NATURAL") ||
-                                identity.Contains("EXIST") ||
-                                identity.Contains("GROUND") ||
-                                identity.Contains("SURFACE");
+                bool ground = IsGroundProfileIdentity(identity);
+                bool excluded = ground;
+                if (ground && fallbackGroundProfileId.IsNull)
+                    fallbackGroundProfileId = profileId;
                 if (!excluded && fallbackDesignProfileId.IsNull)
                     fallbackDesignProfileId = profileId;
-                if (finalProfileId.IsNull && !excluded &&
-                    (identity.Contains("-FG") ||
-                     identity.Contains("FINAL") ||
-                     identity.Contains("DESIGN") ||
-                     identity.Contains("ROAD")))
+                if (finalProfileId.IsNull && IsFinalDesignProfileIdentity(identity))
                     finalProfileId = profileId;
-                if (leftProfileId.IsNull &&
+                if (!excluded && leftProfileId.IsNull &&
                     (identity.Contains("LEFT") || identity.Contains("LHS") ||
                      identity.Contains(" HL") || identity.Contains("HL-") ||
                      identity.Contains("LEFT-EDGE") || identity.Contains("LEFT EDGE")))
                     leftProfileId = profileId;
-                if (rightProfileId.IsNull &&
+                if (!excluded && rightProfileId.IsNull &&
                     (identity.Contains("RIGHT") || identity.Contains("RHS") ||
                      identity.Contains(" HR") || identity.Contains("HR-") ||
                      identity.Contains("RIGHT-EDGE") || identity.Contains("RIGHT EDGE")))
                     rightProfileId = profileId;
-                if (centreProfileId.IsNull &&
+                if (!excluded && centreProfileId.IsNull &&
                     (identity.Contains("CENTRE") || identity.Contains("CENTER") ||
                      identity.Contains("CENTRELINE") || identity.Contains("CENTERLINE")))
                     centreProfileId = profileId;
             }
 
+            if (groundProfileId.IsNull) groundProfileId = fallbackGroundProfileId;
             if (finalProfileId.IsNull) finalProfileId = fallbackDesignProfileId;
             if (centreProfileId.IsNull) centreProfileId = finalProfileId;
             if (leftProfileId.IsNull) leftProfileId = centreProfileId;
             if (rightProfileId.IsNull) rightProfileId = centreProfileId;
+        }
+
+        private static bool IsGroundProfileIdentity(string identity)
+        {
+            string value = (identity ?? string.Empty).ToUpperInvariant();
+            return value.Contains("NGL") ||
+                   value.Contains("NATURAL") ||
+                   value.Contains("EXIST") ||
+                   value.Contains("GROUND") ||
+                   value.Contains("SURFACE") ||
+                   ContainsProfileToken(value, "EG");
+        }
+
+        private static bool IsFinalDesignProfileIdentity(string identity)
+        {
+            string value = (identity ?? string.Empty).ToUpperInvariant();
+            return !IsGroundProfileIdentity(value) &&
+                   (ContainsProfileToken(value, "FG") ||
+                    value.Contains("FINAL") ||
+                    value.Contains("DESIGN") ||
+                    value.Contains("PROPOSED") ||
+                    value.Contains("ROAD"));
+        }
+
+        private static bool ContainsProfileToken(string identity, string token)
+        {
+            string value = (identity ?? string.Empty)
+                .Replace("-", " ")
+                .Replace("_", " ")
+                .Replace("/", " ")
+                .Replace(".", " ");
+            string padded = " " + value + " ";
+            return padded.IndexOf(
+                " " + (token ?? string.Empty).Trim() + " ",
+                StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static int EnsureProfilesInProfileView(
