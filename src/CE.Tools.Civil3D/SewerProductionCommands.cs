@@ -620,6 +620,16 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (document == null || civilDocument == null) return;
+
+            var sumpSettings = new ProductionSettingsDialogModel(
+                "CE Tools - Manhole Sump Elevations",
+                "Set one absolute sump depth below the lowest connected pipe invert. Civil 3D is forced into elevation control so the legacy -0.080m relative-depth value cannot return.");
+            sumpSettings.AddPositiveDouble(
+                "SumpDepth", "01 Sump", "Manual sump depth (m)", 0.500,
+                "Depth below the lowest connected pipe invert. This is applied to every connected manhole.");
+            if (!DisciplineWorkflowDialogs.EditSettings(sumpSettings)) return;
+            double manualSumpDepth = Math.Max(0.0, sumpSettings.Double("SumpDepth", 0.500));
+
             int fixedCount = 0;
             int skipped = 0;
             using (DocumentLock documentLock = document.LockDocument())
@@ -1426,7 +1436,7 @@ namespace CETools.Civil3D
 
                             // SumpElevation is an absolute RL. Repair legacy
                             // relative/negative values from the connected pipe inverts.
-                            double absoluteElevation = lowestInvert - 0.080;
+                            double absoluteElevation = lowestInvert - manualSumpDepth;
 
                             TrySetProfileEnum(
                                 structure,
