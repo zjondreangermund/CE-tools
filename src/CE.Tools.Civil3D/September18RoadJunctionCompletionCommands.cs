@@ -922,7 +922,8 @@ namespace CETools.Civil3D
             var result = new Dictionary<ObjectId, List<FinalProfilePvi>>();
             if (alignment == null || transaction == null) return result;
 
-            IEnumerable<ObjectId> candidateIds = alignment.GetProfileIds();
+            IEnumerable<ObjectId> candidateIds =
+                alignment.GetProfileIds().Cast<ObjectId>();
             if (selectedView != null)
             {
                 var viewIds = new List<ObjectId>();

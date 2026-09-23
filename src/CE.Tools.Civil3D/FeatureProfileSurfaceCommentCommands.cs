@@ -1099,12 +1099,53 @@ namespace CETools.Civil3D
 
             try
             {
-                DisplayStyle profile = style.GetDisplayStyleProfile();
-                if (profile != null)
+                // Civil 3D 2023 exposes GetDisplayStyleProfile with a
+                // FeatureLineDisplayStyleProfileType argument. Invoke the
+                // available overload(s) reflectively so this remains compatible
+                // with the installed Civil 3D API build.
+                foreach (MethodInfo method in style.GetType().GetMethods(
+                    BindingFlags.Public | BindingFlags.Instance))
                 {
-                    profile.Color = colour;
-                    profile.Visible = true;
-                    changed = true;
+                    if (!string.Equals(
+                            method.Name,
+                            "GetDisplayStyleProfile",
+                            StringComparison.Ordinal))
+                        continue;
+
+                    ParameterInfo[] parameters = method.GetParameters();
+                    if (parameters.Length == 0)
+                    {
+                        DisplayStyle profile =
+                            method.Invoke(style, null) as DisplayStyle;
+                        if (profile != null)
+                        {
+                            profile.Color = colour;
+                            profile.Visible = true;
+                            changed = true;
+                        }
+                    }
+                    else if (parameters.Length == 1 &&
+                             parameters[0].ParameterType.IsEnum)
+                    {
+                        foreach (object profileType in Enum.GetValues(
+                            parameters[0].ParameterType))
+                        {
+                            try
+                            {
+                                DisplayStyle profile =
+                                    method.Invoke(
+                                        style,
+                                        new[] { profileType }) as DisplayStyle;
+                                if (profile != null)
+                                {
+                                    profile.Color = colour;
+                                    profile.Visible = true;
+                                    changed = true;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
                 }
             }
             catch { }

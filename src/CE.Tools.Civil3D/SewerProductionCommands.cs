@@ -1586,7 +1586,7 @@ namespace CETools.Civil3D
             ObjectId styleId,
             ObjectId labelSetId)
         {
-            lastProfileException = null;
+            System.Exception lastProfileException = null;
             try
             {
                 ObjectId direct = CivilProfile.CreateFromSurface(
