@@ -457,7 +457,7 @@ namespace CETools.Civil3D
             Document document,
             CivilDocument civilDocument)
         {
-            var result = new List<string> { "<Sitelss> - Do not assign to a Civil 3D site" };
+            var result = new List<string> { "<Siteless> - Do not assign to a Civil 3D site" };
             using (Transaction transaction =
                 document.Database.TransactionManager.StartTransaction())
             {
