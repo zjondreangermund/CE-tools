@@ -147,8 +147,13 @@ for token in (
     require(runtime, token, "profile band batch/data linkage")
 require(
     sewer_production,
+    "Do not run a second global band refresh here.",
+    "guarded profile-band refresh boundary after sewer profile production",
+)
+forbid(
+    sewer_production,
     "ProfileViewBandRuntimeManager.RefreshAll(document);",
-    "automatic profile band refresh after sewer profile production",
+    "unsafe global profile-band refresh inside sewer profile production",
 )
 
 # The universal cycle is quiescent and covers all final linked outputs.
