@@ -171,7 +171,7 @@ namespace CETools.Civil3D
             model.AddChoice("Source", "01 Source", "Source road geometry", "Road centrelines", "Choose the CE road geometry family to offset.", new[] { "Road centrelines", "Road edges", "Sidewalk / shoulder edges" });
             model.AddChoice("Scope", "01 Source", "Scope", "Selected", "Process only selected source objects or every matching CE source in model space.", new[] { "Selected", "All" });
             model.AddPositiveDouble("Distance", "02 Offset", "Offset distance", 1.0, "Drawing-unit offset distance.");
-            model.AddChoice("Side", "02 Offset", "Offset side", "Both sides", "Create positive, negative or both offset sides.", new[] { "Both sides", "Positive side", "Negative side" });
+            model.AddChoice("Side", "02 Offset", "Offset side", "Both sides", "Choose both sides or the side inside/outside the linked parent road.", new[] { "Both sides", "Inside", "Outside", "Positive side", "Negative side" });
             model.AddText("Layer", "03 Output", "Output layer", "CE-ROAD-OFFSET", "Layer for the generated offset geometry.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             string kind = string.Equals(model.Text("Source"), "Road edges", StringComparison.OrdinalIgnoreCase)
@@ -296,9 +296,10 @@ namespace CETools.Civil3D
                                     new Vector3d(
                                         ux.X * longitudinal + uy.X * tangentOffset,
                                         ux.Y * longitudinal + uy.Y * tangentOffset,
-                                        0.0);
                                 Line closure = new Line(first, second);
                                 closure.SetDatabaseDefaults(document.Database);
+                                closure.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(
+                                    Autodesk.AutoCAD.Colors.ColorMethod.ByAci, 6);
                                 closure.LayerId = layerId;
                                 space.AppendEntity(closure);
                                 transaction.AddNewlyCreatedDBObject(closure, true);
@@ -666,18 +667,22 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(title, "Create linked offsets for all or selected CE road geometry.");
             model.AddChoice("Scope", "01 Selection", "Scope", "All", "Use all matching CE road objects or selected objects only.", new[] { "All", "Selected" });
             model.AddPositiveDouble("Distance", "02 Offset", label, defaultDistance, "Drawing-unit offset distance.");
-            model.AddChoice("Side", "02 Offset", "Sides", "Both sides", "Create both sides or one signed side.", new[] { "Both sides", "Positive side", "Negative side" });
+            model.AddChoice("Side", "02 Offset", "Sides", "Both sides", "Choose both sides or the side inside/outside the linked parent road.", new[] { "Both sides", "Inside", "Outside", "Positive side", "Negative side" });
+            model.AddText("Layer", "03 Output", "Output layer", outputLayer, "Layer for generated offset feature geometry.");
             model.AddChoice("Replace", "03 Output", "Existing linked children", "Replace existing", "Replace prior linked children from each processed source.", new[] { "Replace existing", "Keep existing" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
-            RunOffset(document, sourceKind, outputLayer, outputKind, model.Text("Scope"), model.Double("Distance", defaultDistance), model.Text("Side"), string.Equals(model.Text("Replace"), "Replace existing", StringComparison.OrdinalIgnoreCase));
+            RunOffset(document, sourceKind, model.Text("Layer"), outputKind, model.Text("Scope"), model.Double("Distance", defaultDistance), model.Text("Side"), string.Equals(model.Text("Replace"), "Replace existing", StringComparison.OrdinalIgnoreCase));
         }
 
         private static void RunOffset(Document document, string sourceKind, string outputLayer, string outputKind, string scope, double distance, string side, bool replace)
         {
             List<ObjectId> sourceIds = ResolveRoadScope(document, sourceKind, scope, "\nSelect CE road source objects: ");
             if (sourceIds.Count == 0) return;
-            bool positive = !string.Equals(side, "Negative side", StringComparison.OrdinalIgnoreCase);
-            bool negative = !string.Equals(side, "Positive side", StringComparison.OrdinalIgnoreCase);
+            bool both = string.Equals(side, "Both sides", StringComparison.OrdinalIgnoreCase);
+            bool inside = string.Equals(side, "Inside", StringComparison.OrdinalIgnoreCase);
+            bool outside = string.Equals(side, "Outside", StringComparison.OrdinalIgnoreCase);
+            bool positive = string.Equals(side, "Positive side", StringComparison.OrdinalIgnoreCase);
+            bool negative = string.Equals(side, "Negative side", StringComparison.OrdinalIgnoreCase);
             int created = 0;
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
@@ -688,7 +693,18 @@ namespace CETools.Civil3D
                     Curve source = transaction.GetObject(sourceId, OpenMode.ForRead, false) as Curve;
                     if (source == null) continue;
                     if (replace) EraseChildren(space, transaction, outputKind, source.Handle.ToString());
-                    foreach (double signed in new[] { positive ? distance : double.NaN, negative ? -distance : double.NaN }.Where(value => !double.IsNaN(value)))
+
+                    RoadLink sourceLink;
+                    TryReadLink(source, transaction, out sourceLink);
+                    foreach (double signed in ResolveOffsetSigns(
+                        source,
+                        sourceLink,
+                        distance,
+                        both,
+                        inside,
+                        outside,
+                        positive,
+                        negative))
                     {
                         DBObjectCollection offsets;
                         try { offsets = source.GetOffsetCurves(signed); }
@@ -719,6 +735,49 @@ namespace CETools.Civil3D
             }
             document.Editor.Regen();
             document.Editor.WriteMessage("\nCE road offset complete. {0} objects created on {1}.", created, outputLayer);
+        }
+
+        private static IEnumerable<double> ResolveOffsetSigns(
+            Curve source,
+            RoadLink sourceLink,
+            double distance,
+            bool both,
+            bool inside,
+            bool outside,
+            bool positive,
+            bool negative)
+        {
+            distance = Math.Abs(distance);
+            if (distance <= Tol) yield break;
+
+            if (both || (!inside && !outside && !positive && !negative))
+            {
+                yield return distance;
+                yield return -distance;
+                yield break;
+            }
+
+            if (positive)
+            {
+                yield return distance;
+                yield break;
+            }
+            if (negative)
+            {
+                yield return -distance;
+                yield break;
+            }
+
+            // For a linked edge/shoulder, the stored signed parent offset tells
+            // us which side is already outside. Inside is toward the parent
+            // centreline; outside continues away from it. A centreline has no
+            // parent side, so use negative=inside and positive=outside as the
+            // deterministic drawing-side convention.
+            double parentOffset = sourceLink == null ? 0.0 : sourceLink.Offset;
+            double sign = Math.Abs(parentOffset) > Tol
+                ? Math.Sign(parentOffset)
+                : 1.0;
+            yield return (inside ? -sign : sign) * distance;
         }
 
         private static List<ObjectId> ResolveRoadScope(Document document, string kind, string scope, string prompt)
