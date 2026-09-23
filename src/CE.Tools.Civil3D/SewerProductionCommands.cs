@@ -1282,6 +1282,8 @@ namespace CETools.Civil3D
             // committed. Keep AddToProfileView and band edits in separate
             // transactions. Profile generation does not rewrite network sumps;
             // CE_SEWRECALC / CE_SEWERSUMPFIX owns manual sump and cover rules.
+            RepairLegacyRelativeStructureSumps(database, bindings);
+
             foreach (SewerProfileBinding binding in bindings)
             {
                 if (!binding.NetworkId.IsNull)
@@ -1427,9 +1429,18 @@ namespace CETools.Civil3D
                             CivilStructure structure = transaction.GetObject(structureId, OpenMode.ForWrite, false) as CivilStructure;
                             if (structure == null) continue;
 
-                            // SumpElevation is an absolute RL. Repair legacy
-                            // relative/negative values from the connected pipe inverts.
-                            double absoluteElevation = lowestInvert - 0.080;
+                            double rawElevation = ReadProfileFiniteDouble(structure, "SumpElevation");
+                            double rawDepth = ReadProfileFiniteDouble(structure, "SumpDepth");
+                            bool looksRelative =
+                                IsProfileFinite(rawElevation) &&
+                                Math.Abs(rawElevation) <= 50.0 &&
+                                Math.Abs(lowestInvert - rawElevation) > 50.0;
+                            if (!looksRelative) continue;
+
+                            double depth = IsProfileFinite(rawDepth)
+                                ? Math.Abs(rawDepth)
+                                : Math.Abs(rawElevation);
+                            double absoluteElevation = lowestInvert - Math.Max(0.0, depth);
 
                             TrySetProfileEnum(
                                 structure,
