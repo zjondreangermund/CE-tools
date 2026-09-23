@@ -12,6 +12,7 @@ using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
+using CivilProfile = Autodesk.Civil.DatabaseServices.Profile;
 using CivilNetwork = Autodesk.Civil.DatabaseServices.Network;
 using CivilPipe = Autodesk.Civil.DatabaseServices.Pipe;
 using CivilStructure = Autodesk.Civil.DatabaseServices.Structure;
@@ -683,8 +684,8 @@ namespace CETools.Civil3D
             }
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_SEWERSUMPFIX complete. Absolute sump elevations fixed={0}; skipped={1}; sump clearance=0.080 m.",
-                fixedCount, skipped);
+                "\nCE_SEWERSUMPFIX complete. Absolute sump elevations fixed={0}; skipped={1}; manual sump depth={2:0.###} m.",
+                fixedCount, skipped, manualSumpDepth);
         }
 
         [CommandMethod("CE_SEWINFO", CommandFlags.Modal)]
@@ -1235,7 +1236,10 @@ namespace CETools.Civil3D
                         bandId,
                         viewStyleId);
                     DBObject view = transaction.GetObject(viewId, OpenMode.ForWrite, false);
-                    ProfileStyleLinker.Apply(view, viewStyleId, bandId);
+                    // ProfileView.Create already receives the validated style and
+                    // band-set IDs. Reapplying the band collection while the view
+                    // is still in its creation transaction reopens native Civil 3D
+                    // wrappers and caused eNotOpenForWrite in CE_SEWPROFILE.
                     WriteProfileTag(view, record.BranchKey, "ProfileView");
                     viewsCreated++;
 
@@ -1275,12 +1279,9 @@ namespace CETools.Civil3D
 
             // Civil 3D materialises profile-view band collections and native
             // network-part display links only after the creating transaction has
-            // committed.  Keep native AddToProfileView and band edits in separate
-            // transactions as well: AddToProfileView can internally edit the
-            // profile view, so holding that view open ForWrite at the same time is
-            // a known Civil 3D 2023 dbobji eNotOpenForWrite abort path.
-            RepairLegacyRelativeStructureSumps(database, bindings);
-
+            // committed. Keep AddToProfileView and band edits in separate
+            // transactions. Profile generation does not rewrite network sumps;
+            // CE_SEWRECALC / CE_SEWERSUMPFIX owns manual sump and cover rules.
             foreach (SewerProfileBinding binding in bindings)
             {
                 if (!binding.NetworkId.IsNull)
@@ -1585,6 +1586,18 @@ namespace CETools.Civil3D
             ObjectId styleId,
             ObjectId labelSetId)
         {
+            lastProfileException = null;
+            try
+            {
+                ObjectId direct = CivilProfile.CreateFromSurface(
+                    name, alignmentId, surfaceId, layerId, styleId, labelSetId);
+                if (!direct.IsNull) return direct;
+            }
+            catch (System.Exception directException)
+            {
+                lastProfileException = directException;
+            }
+
             Type type = typeof(CivilAlignment).Assembly.GetType("Autodesk.Civil.DatabaseServices.Profile", true);
             foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Static)
                 .Where(item => item.Name == "CreateFromSurface")
@@ -1617,8 +1630,6 @@ namespace CETools.Civil3D
             out object[] arguments)
         {
             arguments = new object[parameters.Length];
-            ObjectId[] fallback = { alignmentId, surfaceId, layerId, styleId, labelSetId };
-            int fallbackIndex = 0;
             for (int index = 0; index < parameters.Length; index++)
             {
                 ParameterInfo parameter = parameters[index];
@@ -1632,7 +1643,6 @@ namespace CETools.Civil3D
                     else if (parameterName.Contains("layer")) arguments[index] = layerId;
                     else if (parameterName.Contains("label")) arguments[index] = labelSetId;
                     else if (parameterName.Contains("style")) arguments[index] = styleId;
-                    else if (fallbackIndex < fallback.Length) arguments[index] = fallback[fallbackIndex++];
                     else return false;
                 }
                 else if (parameter.HasDefaultValue)
