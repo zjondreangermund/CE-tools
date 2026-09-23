@@ -24,7 +24,7 @@ namespace CETools.Civil3D
             if (bands == null) return 0;
 
             return BindInternal(profileView, surfaceProfileId, designProfileId,
-                designProfileId, designProfileId, networkId, false);
+                designProfileId, designProfileId, surfaceProfileId, networkId, false);
         }
 
         internal static int BindRoad(
@@ -34,8 +34,26 @@ namespace CETools.Civil3D
             ObjectId rightProfileId,
             ObjectId finalDesignProfileId)
         {
+            return BindRoad(
+                profileView,
+                ObjectId.Null,
+                leftProfileId,
+                centreProfileId,
+                rightProfileId,
+                finalDesignProfileId);
+        }
+
+        internal static int BindRoad(
+            DBObject profileView,
+            ObjectId groundProfileId,
+            ObjectId leftProfileId,
+            ObjectId centreProfileId,
+            ObjectId rightProfileId,
+            ObjectId finalDesignProfileId)
+        {
             return BindInternal(profileView, leftProfileId, centreProfileId,
-                rightProfileId, finalDesignProfileId, ObjectId.Null, true);
+                rightProfileId, finalDesignProfileId, groundProfileId,
+                ObjectId.Null, true);
         }
 
         private static int BindInternal(
@@ -44,6 +62,7 @@ namespace CETools.Civil3D
             ObjectId centreProfileId,
             ObjectId rightProfileId,
             ObjectId finalDesignProfileId,
+            ObjectId groundProfileId,
             ObjectId networkId,
             bool roadRoles)
         {
@@ -73,11 +92,17 @@ namespace CETools.Civil3D
                 {
                     if (item == null || visited.Contains(item)) continue;
                     visited.Add(item);
-                    if (AssignSources(item, leftProfileId, centreProfileId,
-                            rightProfileId, finalDesignProfileId, networkId, roadRoles))
+                    if (AssignSources(item, groundProfileId, leftProfileId,
+                            centreProfileId, rightProfileId, finalDesignProfileId,
+                            networkId, roadRoles))
                         updated++;
                 }
-                CommitCollection(bands, methodName, collection);
+                // Civil 3D 2023 can return a read-only wrapper for the band
+                // collection immediately after a profile view is created. Do not
+                // call SetTop/SetBottom or a collection-level refresh here; those
+                // native writes were the eNotOpenForWrite abort path in
+                // CE_SEWPROFILE. Individual band-item properties are committed by
+                // the owning ProfileView transaction below.
             }
 
             // A few builds expose the band collection itself as the enumerable.
@@ -85,13 +110,14 @@ namespace CETools.Civil3D
             {
                 if (item == null || visited.Contains(item)) continue;
                 visited.Add(item);
-                if (AssignSources(item, leftProfileId, centreProfileId,
-                        rightProfileId, finalDesignProfileId, networkId, roadRoles))
+                if (AssignSources(item, groundProfileId, leftProfileId,
+                        centreProfileId, rightProfileId, finalDesignProfileId,
+                        networkId, roadRoles))
                     updated++;
             }
-            InvokeNoArguments(bands, "Update");
-            InvokeNoArguments(bands, "Rebuild");
-            InvokeNoArguments(bands, "Refresh");
+            // Do not invoke Update/Rebuild/Refresh on the band collection.
+            // Those methods reopen Civil 3D's internal collection and can abort
+            // with !dbobji.cpp@8671:eNotOpenForWrite in Civil 3D 2023.
             try
             {
                 Entity entity = profileView as Entity;
@@ -103,6 +129,7 @@ namespace CETools.Civil3D
 
         private static bool AssignSources(
             object item,
+            ObjectId groundProfileId,
             ObjectId leftProfileId,
             ObjectId centreProfileId,
             ObjectId rightProfileId,
@@ -125,6 +152,20 @@ namespace CETools.Civil3D
                 : finalDesignProfileId;
             if (roadRoles)
             {
+                bool groundBand =
+                    identity.Contains("GROUND") ||
+                    identity.Contains("NATURAL") ||
+                    identity.Contains("NGL") ||
+                    identity.Contains("EXIST") ||
+                    identity.Contains("SURFACE") ||
+                    identity.Contains("-EG") ||
+                    identity.Contains(" EG ") ||
+                    identity.EndsWith(" EG", StringComparison.Ordinal);
+                if (groundBand && !groundProfileId.IsNull)
+                {
+                    primaryProfileId = groundProfileId;
+                    secondaryProfileId = groundProfileId;
+                }
                 bool leftBand =
                     identity.Contains("LEFT") ||
                     identity.Contains("LHS") ||
@@ -152,17 +193,33 @@ namespace CETools.Civil3D
                     identity.Contains("HORIZONTAL");
 
                 if (leftBand && !leftProfileId.IsNull)
+                {
                     primaryProfileId = leftProfileId;
+                    secondaryProfileId = leftProfileId;
+                }
                 else if (rightBand && !rightProfileId.IsNull)
+                {
                     primaryProfileId = rightProfileId;
-                else if ((centreBand || verticalBand) && !finalDesignProfileId.IsNull)
+                    secondaryProfileId = rightProfileId;
+                }
+                else if (centreBand && !centreProfileId.IsNull)
+                {
+                    primaryProfileId = centreProfileId;
+                    secondaryProfileId = centreProfileId;
+                }
+                else if (verticalBand && !finalDesignProfileId.IsNull)
+                {
                     primaryProfileId = finalDesignProfileId;
+                    secondaryProfileId = finalDesignProfileId;
+                }
 
                 // Horizontal-curve rows belong to alignment geometry. Do not
                 // accidentally overwrite them with the final road profile merely
                 // because their style name contains the word "Curve".
                 if (verticalBand && !horizontalBand)
-                    secondaryProfileId = primaryProfileId;
+                    secondaryProfileId = finalDesignProfileId.IsNull
+                        ? primaryProfileId
+                        : finalDesignProfileId;
             }
 
             changed = SetBooleanIfAvailable(item, true,
