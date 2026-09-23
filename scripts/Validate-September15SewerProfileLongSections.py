@@ -14,7 +14,7 @@ required_sewer = [
     '"\\nCE_SEWPROFILE skipped {0}: {1}"',
     'out int bandItemsLinked',
     'bandItemsLinked += ProfileViewBandDataBinder.Bind(',
-    'ProfileViewBandRuntimeManager.RefreshAll(document)',
+    'Do not run a second global band refresh here.',
     'database.TransactionManager.QueueForGraphicsFlush();',
     'AcApplication.UpdateScreen();',
     'GridReportPresenter.ShowReportAndOfferTable(',
@@ -39,8 +39,10 @@ if command_text.count("CreateProfileObjects(") != 1:
     raise SystemExit("CE_SEWPROFILE must create each branch through one isolated call site.")
 if "for (int index = 0; index < records.Count; index++)" not in command_text:
     raise SystemExit("CE_SEWPROFILE no longer iterates branches independently.")
-if command_text.index("ProfileViewBandRuntimeManager.RefreshAll(document)") < command_text.index("for (int index"):
-    raise SystemExit("Band refresh must remain after all branch transactions.")
+if "ProfileViewBandRuntimeManager.RefreshAll(document)" in command_text:
+    raise SystemExit("CE_SEWPROFILE still performs an unsafe global band refresh.")
+if "Do not run a second global band refresh here." not in command_text:
+    raise SystemExit("CE_SEWPROFILE safety boundary marker is missing.")
 
 apply_band = re.search(
     r"private static bool ApplyBandSet\(.*?\n        \}\n\n        private static int LinkBandItems",
