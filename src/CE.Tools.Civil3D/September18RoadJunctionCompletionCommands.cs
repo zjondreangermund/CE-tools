@@ -187,9 +187,9 @@ namespace CETools.Civil3D
                 {
                     CivilProfileView view = SafeOpen<CivilProfileView>(transaction, viewId, OpenMode.ForWrite);
                     if (view == null) { skipped++; continue; }
-                    ObjectId alignmentId = ReadObjectId(ReadProperty(view, "AlignmentId"));
+                    ObjectId alignmentId = ResolveAlignmentId(view);
                     if (alignmentId.IsNull)
-                        alignmentId = ReadObjectId(InvokeReturning(view, "GetAlignmentId"));
+                        alignmentId = ReadObjectId(ReadProperty(view, "ParentAlignment"));
                     CivilAlignment alignment = SafeOpen<CivilAlignment>(transaction, alignmentId, OpenMode.ForRead);
                     if (alignment == null) { skipped++; continue; }
 
@@ -335,7 +335,7 @@ namespace CETools.Civil3D
                 {
                     CivilProfileView view = SafeOpen<CivilProfileView>(transaction, viewId, OpenMode.ForWrite);
                     if (view == null) continue;
-                    ObjectId alignmentId = ReadObjectId(ReadProperty(view, "AlignmentId"));
+                    ObjectId alignmentId = ResolveAlignmentId(view);
                     if (alignmentId.IsNull) continue;
                     CivilAlignment alignment = SafeOpen<CivilAlignment>(transaction, alignmentId, OpenMode.ForRead);
                     if (alignment == null) continue;
@@ -894,8 +894,7 @@ namespace CETools.Civil3D
                             identity.Contains("NATURAL") ||
                             identity.Contains("EXIST") ||
                             identity.Contains("GROUND") ||
-                            identity.Contains("SURFACE") ||
-                            identity.Contains("EG");
+                            identity.Contains("SURFACE");
             return !excluded &&
                    (identity.Contains("-FG") ||
                     identity.Contains("FINAL") ||
@@ -1474,7 +1473,38 @@ namespace CETools.Civil3D
 
         private static ObjectId ReadObjectId(object value)
         {
-            return value is ObjectId ? (ObjectId)value : ObjectId.Null;
+            if (value is ObjectId) return (ObjectId)value;
+            DBObject databaseObject = value as DBObject;
+            if (databaseObject != null) return databaseObject.ObjectId;
+            if (value == null) return ObjectId.Null;
+            try
+            {
+                PropertyInfo property = value.GetType().GetProperty(
+                    "ObjectId", BindingFlags.Public | BindingFlags.Instance);
+                object raw = property == null ? null : property.GetValue(value, null);
+                return raw is ObjectId ? (ObjectId)raw : ObjectId.Null;
+            }
+            catch { return ObjectId.Null; }
+        }
+
+        private static ObjectId ResolveAlignmentId(object view)
+        {
+            if (view == null) return ObjectId.Null;
+            foreach (string propertyName in new[]
+            {
+                "AlignmentId", "ParentAlignmentId", "AlignmentObjectId",
+                "ParentAlignment"
+            })
+            {
+                ObjectId id = ReadObjectId(ReadProperty(view, propertyName));
+                if (!id.IsNull) return id;
+            }
+            foreach (string methodName in new[] { "GetAlignmentId", "GetParentAlignmentId" })
+            {
+                ObjectId id = ReadObjectId(InvokeReturning(view, methodName));
+                if (!id.IsNull) return id;
+            }
+            return ObjectId.Null;
         }
 
         private static IEnumerable<ObjectId> ReadObjectIds(object value)
