@@ -572,20 +572,12 @@ namespace CETools.Civil3D
                 }
             }
 
+            // Do not run a second global band refresh here. Civil 3D 2023
+            // can return read-only band wrappers after profile creation; writing
+            // through that global collection caused the native eNotOpenForWrite
+            // abort shown by the sewer-profile command. Each view is already
+            // bound and committed by CreateProfileObjects.
             var bandRefresh = new ProfileBandRuntimeResult();
-            try
-            {
-                bandRefresh = ProfileViewBandRuntimeManager.RefreshAll(document);
-            }
-            catch (System.Exception exception)
-            {
-                bandRefresh.Warning = exception.Message;
-            }
-            if (!string.IsNullOrWhiteSpace(bandRefresh.Warning))
-            {
-                editor.WriteMessage(
-                    "\nCE_SEWPROFILE band refresh warning: " + bandRefresh.Warning);
-            }
             try
             {
                 database.TransactionManager.QueueForGraphicsFlush();
