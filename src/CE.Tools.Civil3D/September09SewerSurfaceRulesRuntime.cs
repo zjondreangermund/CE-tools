@@ -718,7 +718,19 @@ namespace CETools.Civil3D
             }
             if (double.IsInfinity(lowestInvert)) { warnings++; return; }
 
-            double sumpDepth = Math.Max(0.0, settings.Double("SumpDepth", 0.0));
+            double minimumCover = Math.Max(0.0, settings.Double("MinCover", 0.834));
+            double maximumCover = Math.Max(minimumCover, settings.Double("MaxCover", 10.0));
+            double surfaceRim = double.NaN;
+            Point3d structurePoint;
+            if (surface != null &&
+                (TryReadPoint(structure, "Position", out structurePoint) ||
+                 TryReadPoint(structure, "InsertionPoint", out structurePoint)))
+            {
+                try { surfaceRim = surface.FindElevationAtXY(structurePoint.X, structurePoint.Y); }
+                catch { surfaceRim = double.NaN; }
+            }
+
+            double sumpDepth = Math.Max(0.0, settings.Double("SumpDepth", 0.500));
             double absoluteSumpElevation = lowestInvert - sumpDepth;
 
             // Civil 3D 2023 can expose SumpElevation as the signed relative
@@ -746,6 +758,45 @@ namespace CETools.Civil3D
 
             if (elevationSet || depthSet) adjusted++;
             else warnings++;
+
+            // Keep the manhole rim tied to the selected surface where Civil 3D
+            // exposes a writable rim elevation. The resulting depth is then
+            // calculated from rim to the absolute sump, while pipe covers are
+            // checked again at every connected endpoint.
+            if (!double.IsNaN(surfaceRim) && !double.IsInfinity(surfaceRim))
+            {
+                if (!TrySetDoubleProperty(structure, "RimElevation", surfaceRim))
+                    warnings++;
+                double manholeDepth = surfaceRim - absoluteSumpElevation;
+                if (manholeDepth < -1e-6)
+                    warnings++;
+                else
+                    TrySetDoubleProperty(structure, "Depth", Math.Max(0.0, manholeDepth));
+
+                foreach (ObjectId id in pipeIds)
+                {
+                    CivilPipe pipe = transaction.GetObject(id, OpenMode.ForRead, false) as CivilPipe;
+                    Point3d point;
+                    bool atStart = pipe != null && pipe.StartStructureId == structure.ObjectId;
+                    bool atEnd = pipe != null && pipe.EndStructureId == structure.ObjectId;
+                    if (!atStart && !atEnd) continue;
+                    if (!TryReadPoint(pipe, atStart ? "StartPoint" : "EndPoint", out point))
+                    {
+                        warnings++;
+                        continue;
+                    }
+                    double diameter = Math.Max(0.0, ReadDouble(pipe,
+                        "OuterDiameterOrWidth", "InnerDiameterOrWidth", "Diameter"));
+                    double cover = surfaceRim - (point.Z + diameter * 0.5);
+                    if (cover < minimumCover - 1e-6 ||
+                        cover > maximumCover + 1e-6)
+                        warnings++;
+                }
+            }
+            else
+            {
+                warnings++;
+            }
 
             // Length/topology and excessive-drop conditions are intentionally
             // review warnings; CE Tools does not move structures or add/delete
