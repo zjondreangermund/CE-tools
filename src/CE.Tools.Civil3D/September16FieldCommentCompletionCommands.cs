@@ -59,6 +59,8 @@ namespace CETools.Civil3D
             model.AddChoice("Output", "04 Output", "Bellmouth geometry", "Polylines",
                 "Create lightweight polylines, native arcs, or normal Civil 3D feature lines.",
                 new[] { "Polylines", "Arcs", "Feature Lines" });
+            model.AddText("Layer", "04 Output", "Output layer", JunctionLayer,
+                "Layer for all generated bellmouth returns, magenta T-junction closures and junction labels.");
             // Legacy September 16 regression marker retained while extending the choices:
             // new[] { "Polylines", "Arcs" }
             model.AddChoice("Site", "04 Output", "Feature-line site",
@@ -98,9 +100,11 @@ namespace CETools.Civil3D
             bool featureLines = string.Equals(outputMode, "Feature Lines", StringComparison.OrdinalIgnoreCase);
             double weedDistance = Math.Max(0.0, model.Double("WeedDistance", 0.0));
             double weedAngle = Math.Max(0.0, model.Double("WeedAngle", 0.0));
+            string outputLayerName = CleanLayerName(model.Text("Layer"));
             ObjectId featureLineSiteId = featureLines ? ResolveSite(model.Text("Site")) : ObjectId.Null;
             int created = 0;
-            int closures = 0;
+            int tClosures = 0;
+            int crossLimitLines = 0;
             int junctions = 0;
             int failedPairs = 0;
 
@@ -120,7 +124,10 @@ namespace CETools.Civil3D
                     return;
                 }
 
-                ObjectId layerId = EnsureLayer(document.Database, transaction);
+                ObjectId layerId = EnsureLayer(
+                    document.Database,
+                    transaction,
+                    outputLayerName);
                 EnsureRegApp(document.Database, transaction);
                 BlockTableRecord space = transaction.GetObject(
                     document.Database.CurrentSpaceId,
@@ -181,7 +188,7 @@ namespace CETools.Civil3D
                         CreateLabel(document.Database, transaction, space, layerId, definition.Mid, label, textHeight, arcId, candidate.Point);
                         created++;
                     }
-                    closures += CreateClosureGeometry(
+                    int closureCount = CreateClosureGeometry(
                         document.Database,
                         transaction,
                         space,
@@ -192,6 +199,8 @@ namespace CETools.Civil3D
                         featureLineSiteId,
                         weedDistance,
                         weedAngle);
+                    if (candidate.IsCross) crossLimitLines += closureCount;
+                    else tClosures += closureCount;
                     if (returnNumber > 0) junctions++;
                 }
 
@@ -200,8 +209,8 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; closure/assembly-limit lines={2}; failed curve pairs={3}. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
-                junctions, created, closures, failedPairs);
+                "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction endpoint closures={2}; cross-junction limit lines={3}; failed curve pairs={4}; layer={5}. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
+                junctions, created, tClosures, crossLimitLines, failedPairs, outputLayerName);
         }
 
         private static bool TryBuildCandidate(Curve first, Curve second, Point3d point, double endpointTolerance, out JunctionCandidate candidate)
@@ -414,8 +423,21 @@ namespace CETools.Civil3D
             }
             else
             {
-                List<ReturnDefinition> group = definitions.OrderBy(item => item.MainSign).ToList();
-                if (group.Count == 2) pairs.Add(Tuple.Create(group[0].Start, group[1].Start, "T-LIMIT"));
+                // For a T-junction, Start is the side-road/kerb tangency for
+                // both returns. Connecting these two points produces the
+                // transverse magenta line shown across the road mouth; End is
+                // the main-road tangency and would leave the mouth open.
+                List<ReturnDefinition> group = definitions
+                    .OrderBy(item => item.MainSign)
+                    .ToList();
+                if (group.Count == 2 &&
+                    group[0].Start.DistanceTo(group[1].Start) > Tol)
+                {
+                    pairs.Add(Tuple.Create(
+                        group[0].Start,
+                        group[1].Start,
+                        "T-LIMIT"));
+                }
             }
 
             int created = 0;
@@ -608,16 +630,36 @@ namespace CETools.Civil3D
                 new TypedValue((int)DxfCode.ExtendedDataReal, junction.Z));
         }
 
-        private static ObjectId EnsureLayer(Database database, Transaction transaction)
+        private static ObjectId EnsureLayer(
+            Database database,
+            Transaction transaction,
+            string requestedName)
         {
-            LayerTable table = transaction.GetObject(database.LayerTableId, OpenMode.ForRead, false) as LayerTable;
-            if (table.Has(JunctionLayer)) return table[JunctionLayer];
+            string name = CleanLayerName(requestedName);
+            LayerTable table = transaction.GetObject(
+                database.LayerTableId,
+                OpenMode.ForRead,
+                false) as LayerTable;
+            if (table.Has(name)) return table[name];
+
             table.UpgradeOpen();
-            var record = new LayerTableRecord { Name = JunctionLayer, IsPlottable = true };
-            record.Color = Color.FromColorIndex(ColorMethod.ByAci, 3);
+            var record = new LayerTableRecord
+            {
+                Name = name,
+                IsPlottable = true
+            };
+            record.Color = Color.FromColorIndex(ColorMethod.ByAci, 6);
             ObjectId id = table.Add(record);
             transaction.AddNewlyCreatedDBObject(record, true);
             return id;
+        }
+
+        private static string CleanLayerName(string value)
+        {
+            string name = (value ?? string.Empty).Trim();
+            foreach (char invalid in new[] { '<', '>', '/', '\\', '"', ':', ';', '?', '*', '|', '=' })
+                name = name.Replace(invalid.ToString(), string.Empty);
+            return string.IsNullOrWhiteSpace(name) ? JunctionLayer : name;
         }
 
         private static void EnsureRegApp(Database database, Transaction transaction)
