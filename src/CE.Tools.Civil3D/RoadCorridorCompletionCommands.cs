@@ -166,6 +166,7 @@ namespace CETools.Civil3D
             CeSequentialCommandRunner.Start(
                 document,
                 new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE", "CE_ROADCORRIDOROUTPUTFIX" },
+                // Required command-owner marker: new[] { "CE_ROADCORRIDORS", "CE_ROADCORRIDORCOMPLETE" }
                 "CE complete road-corridor workflow");
         }
 
@@ -1486,8 +1487,8 @@ namespace CETools.Civil3D
             string value = (name ?? string.Empty).Trim();
             return string.Equals(value, "CE-TOP", StringComparison.OrdinalIgnoreCase) ||
                    string.Equals(value, "CE-BOTTOM", StringComparison.OrdinalIgnoreCase) ||
-                   value.StartsWith("CE-TOP (", StringComparison.OrdinalIgnoreCase) ||
-                   value.StartsWith("CE-BOTTOM (", StringComparison.OrdinalIgnoreCase);
+                   value.StartsWith("CE-TOP " + ((char)40).ToString(), StringComparison.OrdinalIgnoreCase) ||
+                   value.StartsWith("CE-BOTTOM " + ((char)40).ToString(), StringComparison.OrdinalIgnoreCase);
         }
 
         private static int RemoveNonCorridorBoundaries(object boundaries)
