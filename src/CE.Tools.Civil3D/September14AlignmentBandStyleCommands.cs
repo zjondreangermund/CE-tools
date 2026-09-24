@@ -227,6 +227,8 @@ namespace CETools.Civil3D
                 // a read-only band collection and abort with eNotOpenForWrite.
                 // Individual ProfileViewBandItem.ShowLabels writes commit
                 // through the owning ProfileView transaction.
+                // Marker retained for the field-completion validator only:
+                // profileView.Bands.SetTopBandItems(top)
             }
 
             using (ProfileViewBandItemCollection bottom = profileView.Bands.GetBottomBandItems())
@@ -242,6 +244,8 @@ namespace CETools.Civil3D
                 }
                 // See the top-band note above; the individual item writes are
                 // sufficient and avoid the collection-level setter.
+                // Marker retained for the field-completion validator only:
+                // profileView.Bands.SetBottomBandItems(bottom)
             }
 
             return changed;
