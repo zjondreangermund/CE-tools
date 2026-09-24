@@ -53,6 +53,18 @@ namespace CETools.Civil3D
             if (selection.Status != PromptStatus.OK || selection.Value == null || selection.Value.Count == 0)
                 return;
 
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Strict Road-Centre Cleanup",
+                "Remove only small-deflection intermediate line vertices. Endpoints and arc BC/EC transitions remain unchanged.");
+            settings.AddPositiveDouble(
+                "MinimumDeflection",
+                "01 Cleanup",
+                "Minimum deflection angle (degrees)",
+                1.0,
+                "A line-line vertex is removed when its deflection is at or below this angle. Larger bends are retained.");
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+            double minimumDeflection = Math.Max(0.0, settings.Double("MinimumDeflection", 1.0));
+
             int cleaned = 0;
             int unchanged = 0;
             int skippedClosed = 0;
@@ -84,7 +96,7 @@ namespace CETools.Civil3D
                                 continue;
                             }
 
-                            List<int> remove = FindRedundantVertices(polyline);
+                            List<int> remove = FindRedundantVertices(polyline, minimumDeflection);
                             if (remove.Count == 0)
                             {
                                 unchanged++;
@@ -111,15 +123,21 @@ namespace CETools.Civil3D
             }
 
             editor.WriteMessage(
-                "\nCE_ROADCENTRECLEANSTRICT complete. Cleaned={0}; vertices removed={1}; unchanged={2}; closed skipped={3}; failed={4}. Straight roads keep start/end only; arc roads keep BC/EC.",
+                "\nCE_ROADCENTRECLEANSTRICT complete. Cleaned={0}; vertices removed={1}; unchanged={2}; closed skipped={3}; failed={4}; minimum deflection={5:0.###} degrees. Straight roads keep start/end only; arc roads keep BC/EC.",
                 cleaned,
                 removedVertices,
                 unchanged,
                 skippedClosed,
-                failed);
+                failed,
+                minimumDeflection);
         }
 
         internal static List<int> FindRedundantVertices(Polyline polyline)
+        {
+            return FindRedundantVertices(polyline, 0.0);
+        }
+
+        internal static List<int> FindRedundantVertices(Polyline polyline, double minimumDeflectionDegrees)
         {
             var remove = new List<int>();
             if (polyline == null || polyline.Closed || polyline.NumberOfVertices <= 2)
@@ -143,7 +161,7 @@ namespace CETools.Civil3D
                 Point2d before = polyline.GetPoint2dAt(vertexIndex - 1);
                 Point2d current = polyline.GetPoint2dAt(vertexIndex);
                 Point2d after = polyline.GetPoint2dAt(vertexIndex + 1);
-                if (IsStraightThrough(before, current, after))
+                if (IsStraightThrough(before, current, after, minimumDeflectionDegrees))
                     remove.Add(vertexIndex);
             }
 
@@ -156,7 +174,7 @@ namespace CETools.Civil3D
             catch { return null; }
         }
 
-        private static bool IsStraightThrough(Point2d before, Point2d current, Point2d after)
+        private static bool IsStraightThrough(Point2d before, Point2d current, Point2d after, double minimumDeflectionDegrees)
         {
             Vector2d incoming = current - before;
             Vector2d outgoing = after - current;
@@ -168,7 +186,11 @@ namespace CETools.Civil3D
             double cross = incoming.X * outgoing.Y - incoming.Y * outgoing.X;
             double dot = incoming.X * outgoing.X + incoming.Y * outgoing.Y;
             double scale = incomingLength * outgoingLength;
-            return dot > 0.0 && Math.Abs(cross) <= DirectionTolerance * scale;
+            if (dot <= 0.0 || Math.Abs(cross) > DirectionTolerance * scale)
+                return false;
+            double cosine = Math.Max(-1.0, Math.Min(1.0, dot / scale));
+            double deflection = Math.Acos(cosine) * 180.0 / Math.PI;
+            return deflection <= Math.Max(0.0, minimumDeflectionDegrees) + 1e-10;
         }
     }
 }

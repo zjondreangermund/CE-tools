@@ -129,29 +129,70 @@ namespace CETools.Civil3D
             if (document == null) return;
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Multiple Platform Stepped Offsets",
-                "Closed platforms choose the outward offset side automatically. Open source feature lines use the positive offset side.");
-            settings.AddPositiveDouble("Horizontal", "Steps", "Horizontal step", 1.0, "Horizontal offset per step.");
-            settings.AddText("Vertical", "Steps", "Vertical step", "-0.500", "Signed vertical difference per step.");
-            settings.AddPositiveInteger("Count", "Steps", "Step count", 1, "Number of linked children per source.");
-            settings.AddText("Suffix", "Naming", "Child suffix", "STEP", "Used in generated feature-line names.");
+                "Create linked steps from multiple feature lines. Choose inside/outside, filter straight or curved sources, and define vertical change as elevation, grade, absolute level or a per-step variable list.");
+            settings.AddPositiveDouble("Horizontal", "01 Steps", "Horizontal step", 1.0, "Horizontal offset per step.");
+            settings.AddChoice("Side", "01 Steps", "Offset side", "Automatic",
+                "Closed lines use automatic outside by default. Inside reverses the closed-line side; for open lines Inside/Outside map to negative/positive offset sides.",
+                new[] { "Automatic", "Inside", "Outside", "Left / positive", "Right / negative" });
+            settings.AddChoice("Geometry", "02 Source geometry", "Feature-line geometry", "Straight and curved",
+                "Process all sources, only sources containing curved segments, or only straight sources.",
+                new[] { "Straight and curved", "Straight only", "Curved only" });
+            settings.AddChoice("VerticalMode", "03 Levels", "Vertical rule", "Elevation difference",
+                "Elevation difference is a signed vertical step; grade uses horizontal step x grade; absolute elevation targets the source reference level; variable uses cumulative values for each child.",
+                new[] { "Elevation difference", "Grade / slope (%)", "Absolute elevation", "Variable per step" });
+            settings.AddText("VerticalValue", "03 Levels", "Elevation / grade value", "-0.500",
+                "Signed elevation difference, grade percent, or absolute elevation depending on the vertical rule.");
+            settings.AddText("VariableValues", "03 Levels", "Variable values per step", "-0.500,-0.750,-1.000",
+                "Comma-separated cumulative vertical offsets for child 1, child 2, child 3 and so on.");
+            settings.AddPositiveInteger("Count", "04 Output", "Step count", 1, "Number of linked children per source.");
+            settings.AddText("Suffix", "04 Output", "Child suffix", "STEP", "Used in generated feature-line names.");
+            settings.AddText("Layer", "04 Output", "Output layer", "<Source layer>",
+                "Enter a layer name to create/use for generated children, or keep the source layer.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
-            double vertical;
-            if (!TryParseDouble(settings.Text("Vertical"), out vertical))
+
+            double verticalValue;
+            if (!TryParseDouble(settings.Text("VerticalValue"), out verticalValue))
             {
-                document.Editor.WriteMessage("\nCE_PLATFORMSTEPOFFSETS cancelled. Enter a valid vertical step.");
+                document.Editor.WriteMessage("\nCE_PLATFORMSTEPOFFSETS cancelled. Enter a valid elevation/grade value.");
                 return;
             }
+
+            List<double> variableValues = new List<double>();
+            if (string.Equals(settings.Text("VerticalMode"), "Variable per step", StringComparison.OrdinalIgnoreCase))
+            {
+                foreach (string value in (settings.Text("VariableValues") ?? string.Empty).Split(new[] { ',', ';' }, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    double parsed;
+                    if (TryParseDouble(value.Trim(), out parsed)) variableValues.Add(parsed);
+                }
+                if (variableValues.Count == 0)
+                {
+                    document.Editor.WriteMessage("\nCE_PLATFORMSTEPOFFSETS cancelled. Enter at least one variable vertical value.");
+                    return;
+                }
+            }
+
             PromptSelectionResult selection = SelectFeatureLines(document.Editor, "\nSelect multiple platform source feature lines: ");
             if (selection.Status != PromptStatus.OK || selection.Value == null) return;
             double horizontal = Math.Max(0.001, settings.Double("Horizontal", 1.0));
             int count = Math.Max(1, settings.Integer("Count", 1));
             string suffix = string.IsNullOrWhiteSpace(settings.Text("Suffix")) ? "STEP" : settings.Text("Suffix").Trim();
+            string geometry = settings.Text("Geometry");
+            string verticalMode = settings.Text("VerticalMode");
+            string side = settings.Text("Side");
             int created = 0;
             int skipped = 0;
+
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 BlockTableRecord space = ModelSpace(document.Database, transaction, OpenMode.ForWrite);
                 var names = new HashSet<string>(ReadFeatureLineNames(space, transaction), StringComparer.OrdinalIgnoreCase);
+                ObjectId outputLayerId = ObjectId.Null;
+                string outputLayer = settings.Text("Layer");
+                if (!string.IsNullOrWhiteSpace(outputLayer) &&
+                    !string.Equals(outputLayer, "<Source layer>", StringComparison.OrdinalIgnoreCase))
+                    outputLayerId = Layer(document.Database, transaction, outputLayer.Trim());
+
                 foreach (ObjectId id in selection.Value.GetObjectIds())
                 {
                     CivilFeatureLine source = OpenFeatureLine(transaction, id, OpenMode.ForRead);
@@ -160,14 +201,37 @@ namespace CETools.Civil3D
                     {
                         using (Polyline plan = BuildPlan(source))
                         {
-                            double sign = plan.Closed ? OutwardSign(plan, horizontal) : 1.0;
+                            bool curved = HasCurvedSegments(plan);
+                            if (string.Equals(geometry, "Curved only", StringComparison.OrdinalIgnoreCase) && !curved) { skipped++; continue; }
+                            if (string.Equals(geometry, "Straight only", StringComparison.OrdinalIgnoreCase) && curved) { skipped++; continue; }
+
+                            double automaticSign = plan.Closed ? OutwardSign(plan, horizontal) : 1.0;
+                            double sign = automaticSign;
+                            if (string.Equals(side, "Inside", StringComparison.OrdinalIgnoreCase))
+                                sign = -automaticSign;
+                            else if (string.Equals(side, "Left / positive", StringComparison.OrdinalIgnoreCase))
+                                sign = 1.0;
+                            else if (string.Equals(side, "Right / negative", StringComparison.OrdinalIgnoreCase))
+                                sign = -1.0;
+
+                            Point3dCollection sourcePoints = source.GetPoints(FeatureLinePointType.AllPoints);
+                            double referenceElevation = sourcePoints == null || sourcePoints.Count == 0 ? 0.0 : sourcePoints[0].Z;
                             string baseName = string.IsNullOrWhiteSpace(source.Name) ? "PLATFORM" : source.Name;
                             for (int step = 1; step <= count; step++)
                             {
                                 double offset = sign * horizontal * step;
-                                double dz = vertical * step;
+                                double dz;
+                                if (string.Equals(verticalMode, "Grade / slope (%)", StringComparison.OrdinalIgnoreCase))
+                                    dz = verticalValue / 100.0 * horizontal * step;
+                                else if (string.Equals(verticalMode, "Absolute elevation", StringComparison.OrdinalIgnoreCase))
+                                    dz = verticalValue - referenceElevation;
+                                else if (string.Equals(verticalMode, "Variable per step", StringComparison.OrdinalIgnoreCase))
+                                    dz = variableValues[Math.Min(step - 1, variableValues.Count - 1)];
+                                else
+                                    dz = verticalValue * step;
+
                                 string name = UniqueName(baseName + "-" + suffix + "-" + step.ToString(CultureInfo.InvariantCulture), names);
-                                ObjectId childId = CreateOffsetFeatureLine(source, plan, offset, dz, name, space, transaction);
+                                ObjectId childId = CreateOffsetFeatureLine(source, plan, offset, dz, name, space, transaction, outputLayerId);
                                 CivilFeatureLine child = OpenFeatureLine(transaction, childId, OpenMode.ForWrite);
                                 if (child != null) WriteStep(child, transaction, new StepRelation(source.Handle.ToString(), offset, dz, step));
                                 created++;
@@ -180,7 +244,7 @@ namespace CETools.Civil3D
             }
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
-            document.Editor.WriteMessage("\nCE_PLATFORMSTEPOFFSETS complete. Linked steps={0}; skipped={1}.", created, skipped);
+            document.Editor.WriteMessage("\nCE_PLATFORMSTEPOFFSETS complete. Linked steps={0}; skipped={1}; side={2}; geometry={3}; vertical rule={4}.", created, skipped, side, geometry, verticalMode);
         }
 
         [CommandMethod("CE_TOOLS", "CE_PLATFORMDRAPE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -721,7 +785,7 @@ namespace CETools.Civil3D
             try { table.RecordGraphicsModified(true); } catch { }
         }
 
-        private static ObjectId CreateOffsetFeatureLine(CivilFeatureLine source, Polyline plan, double offset, double dz, string name, BlockTableRecord space, Transaction transaction)
+        private static ObjectId CreateOffsetFeatureLine(CivilFeatureLine source, Polyline plan, double offset, double dz, string name, BlockTableRecord space, Transaction transaction, ObjectId outputLayerId)
         {
             DBObjectCollection collection = plan.GetOffsetCurves(offset);
             if (collection == null || collection.Count != 1)
@@ -732,13 +796,13 @@ namespace CETools.Civil3D
             Curve curve = collection[0] as Curve;
             if (curve == null) { Dispose(collection); throw new InvalidOperationException("Offset is not a usable curve."); }
             curve.SetDatabaseDefaults(source.Database);
-            curve.LayerId = source.LayerId;
+            curve.LayerId = outputLayerId.IsNull ? source.LayerId : outputLayerId;
             space.AppendEntity(curve);
             transaction.AddNewlyCreatedDBObject(curve, true);
             ObjectId id = source.SiteId.IsNull ? CivilFeatureLine.Create(name, curve.ObjectId) : CivilFeatureLine.Create(name, curve.ObjectId, source.SiteId);
             CivilFeatureLine child = OpenFeatureLine(transaction, id, OpenMode.ForWrite);
             if (child == null) throw new InvalidOperationException("Civil 3D did not return the feature line.");
-            child.LayerId = source.LayerId;
+            child.LayerId = outputLayerId.IsNull ? source.LayerId : outputLayerId;
             if (!string.IsNullOrWhiteSpace(source.StyleName)) child.StyleName = source.StyleName;
             Point3dCollection points = child.GetPoints(FeatureLinePointType.AllPoints);
             for (int index = 0; index < points.Count; index++)
@@ -1212,6 +1276,21 @@ namespace CETools.Civil3D
                 if (intersect) inside = !inside;
             }
             return inside;
+        }
+
+        private static bool HasCurvedSegments(Polyline plan)
+        {
+            if (plan == null) return false;
+            int count = plan.Closed ? plan.NumberOfVertices : Math.Max(0, plan.NumberOfVertices - 1);
+            for (int index = 0; index < count; index++)
+            {
+                try
+                {
+                    if (Math.Abs(plan.GetBulgeAt(index)) > 1e-9) return true;
+                }
+                catch { }
+            }
+            return false;
         }
 
         private static bool TryParseDouble(string value, out double result)

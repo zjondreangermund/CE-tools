@@ -448,6 +448,41 @@ namespace CETools.Civil3D
                         "Recent - CE_ASSEMBLYCOPYSAFE",
                         "CE_ASSEMBLYCOPYSAFE",
                         "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_PROFILEMOVEVERTICAL",
+                        "CE_PROFILEMOVEVERTICAL",
+                        "Move multiple selected design profiles up or down by a specified vertical distance.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SURFACEBATCHCONTROL",
+                        "CE_SURFACEBATCHCONTROL",
+                        "Rebuild multiple selected surfaces and switch automatic rebuilding on or off.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_CORRIDORBATCHCONTROL",
+                        "CE_CORRIDORBATCHCONTROL",
+                        "Select multiple corridors and control rebuild, layer, profile style and both-side cut/fill slope styles.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_PLATFORMSTEPOFFSETS",
+                        "CE_PLATFORMSTEPOFFSETS",
+                        "Create multi-source stepped feature-line offsets with inside/outside, straight/curved and grade/elevation rules.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_ROADCORRIDORCOMPLETE",
+                        "CE_ROADCORRIDORCOMPLETE",
+                        "Select corridors in the completion popup and apply surfaces, layers, profile and slope-pattern settings.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_ROADCENTRECLEANSTRICT",
+                        "CE_ROADCENTRECLEANSTRICT",
+                        "Clean straight road-centre vertices using a configurable minimum deflection angle.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_SEWERFROMCADASTRAL",
+                        "CE_SEWERFROMCADASTRAL",
+                        "Select the cadastral sewer analysis surface from the dropdown.",
                         "06 Latest Field Completion")
                 });
         }

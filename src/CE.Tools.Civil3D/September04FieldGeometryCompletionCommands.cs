@@ -825,6 +825,31 @@ namespace CETools.Civil3D
                 return;
             }
 
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Connect Multiple Endpoint Sides",
+                "Connect every open endpoint cluster or choose one side. Source Lines, Polylines and FeatureLines remain unchanged.");
+            settings.AddChoice(
+                "Mode",
+                "01 Endpoint selection",
+                "Endpoint sides",
+                "All endpoint clusters",
+                "All endpoint clusters creates one connector for every connected group. Pick one side preserves the focused single-side workflow.",
+                new[] { "All endpoint clusters", "Pick one endpoint side" });
+            settings.AddChoice(
+                "Output",
+                "02 Output",
+                "Connector geometry",
+                "Polylines",
+                "Create new lightweight polylines or new Civil 3D feature lines; selected sources are never replaced.",
+                new[] { "Polylines", "Feature Lines" });
+            settings.AddText(
+                "Layer",
+                "02 Output",
+                "Output layer",
+                "CE-CONNECTORS",
+                "Layer for all generated connector geometry.");
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+
             PromptDoubleOptions distanceOptions = new PromptDoubleOptions(
                 string.Format(CultureInfo.InvariantCulture, "\nMaximum distance between neighbouring endpoints <{0:0.###}>: ", _lastEndpointDistance));
             distanceOptions.AllowNegative = false;
@@ -835,41 +860,105 @@ namespace CETools.Civil3D
             if (distanceResult.Status != PromptStatus.OK) return;
             _lastEndpointDistance = Math.Max(Eps, distanceResult.Value);
 
-            PromptPointOptions sideOptions = new PromptPointOptions("\nPick near the endpoint side to connect, or press Enter for automatic closest cluster: ");
-            sideOptions.AllowNone = true;
-            PromptPointResult sideResult = editor.GetPoint(sideOptions);
-            Point3d? sidePick = sideResult.Status == PromptStatus.OK
-                ? (Point3d?)sideResult.Value.TransformBy(editor.CurrentUserCoordinateSystem)
-                : null;
-            if (sideResult.Status != PromptStatus.OK && sideResult.Status != PromptStatus.None) return;
+            List<List<Point3d>> clusters;
+            if (string.Equals(settings.Text("Mode"), "Pick one endpoint side", StringComparison.OrdinalIgnoreCase))
+            {
+                PromptPointOptions sideOptions = new PromptPointOptions("\nPick near the endpoint side to connect: ");
+                sideOptions.AllowNone = false;
+                PromptPointResult sideResult = editor.GetPoint(sideOptions);
+                if (sideResult.Status != PromptStatus.OK) return;
+                Point3d sidePick = sideResult.Value.TransformBy(editor.CurrentUserCoordinateSystem);
+                List<Point3d> chosen = ChooseConnectorEndpoints(sources, sidePick);
+                List<Point3d> cluster = LargestConnectedCluster(chosen, _lastEndpointDistance);
+                clusters = cluster.Count < 2
+                    ? new List<List<Point3d>>()
+                    : new List<List<Point3d>> { cluster };
+            }
+            else
+            {
+                var endpoints = new List<Point3d>();
+                foreach (ConnectorSource source in sources)
+                {
+                    endpoints.Add(source.Start);
+                    endpoints.Add(source.End);
+                }
+                clusters = ConnectedEndpointClusters(endpoints, _lastEndpointDistance);
+            }
 
-            List<Point3d> chosen = ChooseConnectorEndpoints(sources, sidePick);
-            List<Point3d> cluster = LargestConnectedCluster(chosen, _lastEndpointDistance);
-            if (cluster.Count < 2)
+            clusters = clusters
+                .Where(cluster => cluster != null && cluster.Count >= 2)
+                .Select(SortAlongPrincipalDirection)
+                .ToList();
+            if (clusters.Count == 0)
             {
                 editor.WriteMessage("\nCE_CONNECTENDPOINTS: no endpoint cluster met the {0:0.###} distance limit.", _lastEndpointDistance);
                 return;
             }
-            cluster = SortAlongPrincipalDirection(cluster);
 
-            ObjectId createdId = ObjectId.Null;
+            int created = 0;
+            int connected = 0;
             using (Transaction tr = document.Database.TransactionManager.StartTransaction())
             {
                 BlockTableRecord owner = tr.GetObject(document.Database.CurrentSpaceId, OpenMode.ForWrite, false) as BlockTableRecord;
                 if (owner == null) return;
-                var output = new Polyline(cluster.Count);
-                output.SetDatabaseDefaults(document.Database);
-                output.ColorIndex = 3; // requested green connector
-                for (int i = 0; i < cluster.Count; i++)
-                    output.AddVertexAt(i, new Point2d(cluster[i].X, cluster[i].Y), 0.0, 0.0, 0.0);
-                output.Closed = false;
-                owner.AppendEntity(output);
-                tr.AddNewlyCreatedDBObject(output, true);
-                createdId = output.ObjectId;
+
+                string layerName = string.IsNullOrWhiteSpace(settings.Text("Layer"))
+                    ? "CE-CONNECTORS"
+                    : settings.Text("Layer").Trim();
+                LayerTable layers = tr.GetObject(document.Database.LayerTableId, OpenMode.ForRead, false) as LayerTable;
+                ObjectId layerId = ObjectId.Null;
+                if (layers != null)
+                {
+                    if (layers.Has(layerName))
+                        layerId = layers[layerName];
+                    else
+                    {
+                        layers.UpgradeOpen();
+                        var layer = new LayerTableRecord { Name = layerName };
+                        layerId = layers.Add(layer);
+                        tr.AddNewlyCreatedDBObject(layer, true);
+                    }
+                }
+
+                for (int index = 0; index < clusters.Count; index++)
+                {
+                    List<Point3d> cluster = clusters[index];
+                    if (string.Equals(settings.Text("Output"), "Feature Lines", StringComparison.OrdinalIgnoreCase))
+                    {
+                        var points = new Point3dCollection();
+                        foreach (Point3d point in cluster) points.Add(point);
+                        var temporary = new Polyline3d(Poly3dType.SimplePoly, points, false);
+                        temporary.SetDatabaseDefaults(document.Database);
+                        if (!layerId.IsNull) temporary.LayerId = layerId;
+                        owner.AppendEntity(temporary);
+                        tr.AddNewlyCreatedDBObject(temporary, true);
+                        string name = "CE-ENDPOINT-CONNECTOR-" + Guid.NewGuid().ToString("N");
+                        ObjectId featureId = CivilFeatureLine.Create(name, temporary.ObjectId);
+                        CivilFeatureLine feature = tr.GetObject(featureId, OpenMode.ForWrite, false) as CivilFeatureLine;
+                        if (feature != null && !layerId.IsNull) feature.LayerId = layerId;
+                        if (!temporary.IsErased) temporary.Erase();
+                    }
+                    else
+                    {
+                        var output = new Polyline(cluster.Count);
+                        output.SetDatabaseDefaults(document.Database);
+                        if (!layerId.IsNull) output.LayerId = layerId;
+                        output.ColorIndex = 3;
+                        for (int pointIndex = 0; pointIndex < cluster.Count; pointIndex++)
+                            output.AddVertexAt(pointIndex, new Point2d(cluster[pointIndex].X, cluster[pointIndex].Y), 0.0, 0.0, 0.0);
+                        output.Closed = false;
+                        owner.AppendEntity(output);
+                        tr.AddNewlyCreatedDBObject(output, true);
+                    }
+                    created++;
+                    connected += cluster.Count;
+                }
                 tr.Commit();
             }
             August21DisplayRefresh.Flush(document);
-            editor.WriteMessage("\nCE_CONNECTENDPOINTS complete. New green polyline={0}; connected endpoints={1}. Original Lines/Polylines/FeatureLines were not changed. Press Enter to repeat with the previous distance.", createdId.IsNull ? "<none>" : createdId.Handle.ToString(), cluster.Count);
+            editor.WriteMessage(
+                "\nCE_CONNECTENDPOINTS complete. Connector objects={0}; connected endpoints={1}; clusters={2}; output={3}. Source Lines/Polylines/FeatureLines were not changed.",
+                created, connected, clusters.Count, settings.Text("Output"));
         }
 
         // ---------------------------------------------------------------------
@@ -1109,6 +1198,38 @@ namespace CETools.Civil3D
                 }
             }
             return sources.Select(s => PlanDistance(s.Start, bestSeed) <= PlanDistance(s.End, bestSeed) ? s.Start : s.End).ToList();
+        }
+
+        private static List<List<Point3d>> ConnectedEndpointClusters(
+            IList<Point3d> points,
+            double maximumDistance)
+        {
+            var result = new List<List<Point3d>>();
+            var remaining = new HashSet<int>(Enumerable.Range(0, points.Count));
+            while (remaining.Count > 0)
+            {
+                int seed = remaining.First();
+                remaining.Remove(seed);
+                var queue = new Queue<int>();
+                queue.Enqueue(seed);
+                var indices = new List<int> { seed };
+                while (queue.Count > 0)
+                {
+                    int current = queue.Dequeue();
+                    foreach (int candidate in remaining.ToArray())
+                    {
+                        if (PlanDistance(points[current], points[candidate]) <= maximumDistance)
+                        {
+                            remaining.Remove(candidate);
+                            queue.Enqueue(candidate);
+                            indices.Add(candidate);
+                        }
+                    }
+                }
+                List<Point3d> cluster = Unique3dPlan(indices.Select(index => points[index]));
+                if (cluster.Count >= 2) result.Add(cluster);
+            }
+            return result;
         }
 
         private static List<Point3d> LargestConnectedCluster(IList<Point3d> points, double maximumDistance)

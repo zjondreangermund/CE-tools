@@ -178,6 +178,17 @@ namespace CETools.Civil3D
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (civilDocument == null) return;
 
+            IList<CivilChoice> selectedCorridors = null;
+            List<CivilChoice> corridorChoices = FieldCompletionBatchUi.ReadCorridorChoices(document, civilDocument);
+            if (corridorChoices.Count > 0)
+            {
+                selectedCorridors = FieldCompletionBatchUi.PickMultiple(
+                    "CE Tools - Corridor Selection",
+                    "Select the corridors to complete. Only the selected corridors are processed.",
+                    corridorChoices);
+                if (selectedCorridors == null || selectedCorridors.Count == 0) return;
+            }
+
             List<CivilChoice> surfaces = ReadSurfaces(document, civilDocument);
             if (surfaces.Count == 0)
             {
@@ -199,6 +210,16 @@ namespace CETools.Civil3D
             model.AddChoice("RoadNumberedSurfaceNames", "01 Corridor Surfaces", "Name surfaces by road number", "Enabled",
                 "Create/repair corridor surfaces as TOP-RD-01, BOTTOM-RD-01, TOP-RD-02, BOTTOM-RD-02 and so on, using each baseline alignment name.",
                 new[] { "Enabled", "Disabled" });
+            model.AddText("CorridorLayer", "00 Selection / Output", "Corridor layer", "<Keep current>",
+                "Enter a layer name to create/use and assign to the selected corridors. Keep current leaves corridor layers unchanged.");
+            IList<string> profileStyles = FieldCompletionBatchUi.ReadStyleChoices(
+                document.Database, civilDocument, "Profile Style", "<Use drawing default>");
+            IList<string> slopeStyles = FieldCompletionBatchUi.ReadStyleChoices(
+                document.Database, civilDocument, "Slope Pattern Style", "<Use current>");
+            model.AddChoice("ProfileStyle", "00 Selection / Output", "Design profile style",
+                profileStyles[0],
+                "Apply the selected Civil 3D profile style to non-ground road profiles used by the selected corridors.",
+                profileStyles);
             List<string> assemblyNames = ReadAssemblyNames(document, civilDocument);
             model.AddChoice("Assembly", "00 Baseline and Region", "Assembly for missing corridor regions",
                 assemblyNames.Count == 0 ? string.Empty : assemblyNames[0],
@@ -212,12 +233,30 @@ namespace CETools.Civil3D
             model.AddPositiveDouble("CurveFrequency", "04 Assembly Frequencies", "Along horizontal curves (m)", 5.0, "Maximum spacing between applied assemblies along horizontal curves and spirals.");
             model.AddPositiveDouble("VerticalFrequency", "04 Assembly Frequencies", "Along vertical curves (m)", 5.0, "Maximum spacing between applied assemblies along profile curves.");
             model.AddChoice("Visible", "05 Display and Rebuild", "Ensure corridor display is visible", "Enabled", "Turn on the corridor entity and its layer without unlocking the layer.", new[] { "Enabled", "Disabled" });
-            model.AddChoice("AutoRebuild", "05 Display and Rebuild", "Automatic rebuild after source edits", "Enabled", "Use Civil 3D native automatic corridor rebuilding after alignment or profile edits.", new[] { "Enabled", "Disabled" });
+            model.AddChoice("AutoRebuild", "05 Display and Rebuild", "Automatic rebuild after source edits", "Enabled", "Switch Civil 3D native automatic corridor rebuilding on, off, or leave each corridor unchanged.", new[] { "Enabled", "Disabled", "Keep current" });
             model.AddChoice("Slope", "06 Slope Patterns", "Create/refresh slope patterns", "Enabled", "Enable available corridor slope-pattern collections and rebuild them.", new[] { "Enabled", "Disabled" });
+            model.AddChoice("LeftCutSlopeStyle", "06 Slope Patterns", "Left cut slope style", slopeStyles[0],
+                "Style for the left cut condition. Use current leaves the existing style unchanged.", slopeStyles);
+            model.AddChoice("LeftFillSlopeStyle", "06 Slope Patterns", "Left fill slope style", slopeStyles[0],
+                "Style for the left fill condition. Use current leaves the existing style unchanged.", slopeStyles);
+            model.AddChoice("RightCutSlopeStyle", "06 Slope Patterns", "Right cut slope style", slopeStyles[0],
+                "Style for the right cut condition. Use current leaves the existing style unchanged.", slopeStyles);
+            model.AddChoice("RightFillSlopeStyle", "06 Slope Patterns", "Right fill slope style", slopeStyles[0],
+                "Style for the right fill condition. Use current leaves the existing style unchanged.", slopeStyles);
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             RoadCorridorCompletionOptions options = new RoadCorridorCompletionOptions
             {
+                CorridorIds = selectedCorridors == null
+                    ? null
+                    : selectedCorridors.Select(item => item.Id).ToList(),
+                CorridorLayerName = model.Text("CorridorLayer"),
+                ProfileStyleName = model.Text("ProfileStyle"),
+                LeftCutSlopeStyle = model.Text("LeftCutSlopeStyle"),
+                LeftFillSlopeStyle = model.Text("LeftFillSlopeStyle"),
+                RightCutSlopeStyle = model.Text("RightCutSlopeStyle"),
+                RightFillSlopeStyle = model.Text("RightFillSlopeStyle"),
+                AutomaticRebuildMode = model.Text("AutoRebuild"),
                 TargetSurfaceId = surfacePicker.Selected.Id,
                 TargetSurfaceName = surfacePicker.Selected.Name,
                 TopSurfaceName = SafeName(model.Text("TopName"), "TOP-RD-01"),
@@ -274,13 +313,35 @@ namespace CETools.Civil3D
                 ObjectId corridorStyleId = ResolveOptionalStyle(document.Database, civilDocument, road, project, "Corridor Style", transaction, out corridorStyleName);
                 string codeSetName;
                 ObjectId codeSetStyleId = ResolveOptionalStyle(document.Database, civilDocument, road, project, "Code Set Style", transaction, out codeSetName);
-
-                List<ObjectId> corridorIds = ReadCorridorIds(
-                    collection,
+                ObjectId profileStyleId = FieldCompletionBatchUi.ResolveStyleId(
                     document.Database,
+                    civilDocument,
+                    "Profile Style",
+                    options.ProfileStyleName,
                     transaction);
+                ObjectId corridorLayerId = ObjectId.Null;
+                if (!string.IsNullOrWhiteSpace(options.CorridorLayerName) &&
+                    !string.Equals(options.CorridorLayerName, "<Keep current>", StringComparison.OrdinalIgnoreCase))
+                {
+                    try
+                    {
+                        corridorLayerId = GetOrCreateLayer(
+                            document.Database,
+                            transaction,
+                            options.CorridorLayerName.Trim());
+                    }
+                    catch { result.Warnings++; }
+                }
 
-                if (corridorIds.Count == 0)
+                bool explicitSelection = options.CorridorIds != null && options.CorridorIds.Count > 0;
+                List<ObjectId> corridorIds = explicitSelection
+                    ? options.CorridorIds.Where(id => !id.IsNull && !id.IsErased).ToList()
+                    : ReadCorridorIds(
+                        collection,
+                        document.Database,
+                        transaction);
+
+                if (!explicitSelection && corridorIds.Count == 0)
                     corridorIds.AddRange(CreateMissingRoadCorridors(
                         collection,
                         civilDocument,
@@ -315,15 +376,21 @@ namespace CETools.Civil3D
 
                     if (!corridorStyleId.IsNull) TrySetObjectId(corridor, corridorStyleId, "StyleId", "CorridorStyleId");
                     if (!codeSetStyleId.IsNull) TrySetObjectId(corridor, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle");
+                    if (!corridorLayerId.IsNull) TrySetObjectId(corridor, corridorLayerId, "LayerId");
                     if (options.EnsureVisible)
                     {
                         int visible = EnsureCorridorVisible(corridor, transaction);
                         result.VisibilitySettings += visible;
                         if (visible == 0) result.Warnings++;
                     }
-                    if (options.EnableAutomaticRebuild)
+                    bool automaticRequested = !string.IsNullOrWhiteSpace(options.AutomaticRebuildMode) &&
+                        !string.Equals(options.AutomaticRebuildMode, "Keep current", StringComparison.OrdinalIgnoreCase);
+                    if (automaticRequested || (string.IsNullOrWhiteSpace(options.AutomaticRebuildMode) && options.EnableAutomaticRebuild))
                     {
-                        if (TrySetBoolean(corridor, true, "RebuildAutomatic", "AutomaticRebuild"))
+                        bool automaticValue = automaticRequested
+                            ? string.Equals(options.AutomaticRebuildMode, "Enabled", StringComparison.OrdinalIgnoreCase)
+                            : true;
+                        if (TrySetBoolean(corridor, automaticValue, "RebuildAutomatic", "AutomaticRebuild"))
                             result.AutomaticRebuildSettings++;
                         else
                             result.Warnings++;
@@ -339,6 +406,16 @@ namespace CETools.Civil3D
                     {
                         if (baseline == null) continue;
                         result.Baselines++;
+                        if (!profileStyleId.IsNull)
+                        {
+                            ObjectId alignmentId = ReadObjectId(baseline, "AlignmentId");
+                            if (alignmentId.IsNull) alignmentId = ReadObjectId(baseline, "AlignmentObjectId");
+                            CivilAlignment alignment = null;
+                            try { alignment = transaction.GetObject(alignmentId, OpenMode.ForRead, false) as CivilAlignment; }
+                            catch { }
+                            if (alignment != null)
+                                ApplyProfileStyleToAlignment(alignment, profileStyleId, transaction);
+                        }
                         if (options.EnsureVisible &&
                             TrySetBoolean(baseline, true, "IsEnabled", "Enabled", "IsProcessed"))
                             result.VisibilitySettings++;
@@ -371,7 +448,7 @@ namespace CETools.Civil3D
                     object bottom = EnsureCorridorSurface(corridorSurfaces, bottomSurfaceName, options.BottomCodes, options.AddBoundary, ref result);
                     if (top != null) Invoke(top, "Rebuild");
                     if (bottom != null) Invoke(bottom, "Rebuild");
-                    if (options.EnableSlopePatterns) result.SlopePatterns += EnableSlopePatterns(corridor);
+                    if (options.EnableSlopePatterns) result.SlopePatterns += EnableSlopePatterns(corridor, options, document.Database, civilDocument, transaction);
                     bool rebuilt = Invoke(corridor, "Rebuild");
                     if (rebuilt) result.Rebuilt++;
                     else result.Warnings++;
@@ -1653,15 +1730,72 @@ namespace CETools.Civil3D
             return applied;
         }
 
-        private static int EnableSlopePatterns(object corridor)
+        private static int EnableSlopePatterns(
+            object corridor,
+            RoadCorridorCompletionOptions options,
+            Database database,
+            CivilDocument civilDocument,
+            Transaction transaction)
         {
             int changed = 0;
             object patterns = ReadProperty(corridor, "SlopePatterns");
+            var styleIds = new Dictionary<string, ObjectId>(StringComparer.OrdinalIgnoreCase);
+            styleIds["LeftCut"] = FieldCompletionBatchUi.ResolveStyleId(database, civilDocument, "Slope Pattern Style", options.LeftCutSlopeStyle, transaction);
+            styleIds["LeftFill"] = FieldCompletionBatchUi.ResolveStyleId(database, civilDocument, "Slope Pattern Style", options.LeftFillSlopeStyle, transaction);
+            styleIds["RightCut"] = FieldCompletionBatchUi.ResolveStyleId(database, civilDocument, "Slope Pattern Style", options.RightCutSlopeStyle, transaction);
+            styleIds["RightFill"] = FieldCompletionBatchUi.ResolveStyleId(database, civilDocument, "Slope Pattern Style", options.RightFillSlopeStyle, transaction);
+            string[] requested = { options.LeftCutSlopeStyle, options.LeftFillSlopeStyle, options.RightCutSlopeStyle, options.RightFillSlopeStyle };
+
             foreach (object pattern in CivilStyleDiscovery.Enumerate(patterns))
             {
                 if (pattern == null) continue;
+                string identity = FieldCompletionBatchUi.Identity(pattern);
+                string key = FieldCompletionBatchUi.SlopeStyleKey(identity);
+                if (string.IsNullOrWhiteSpace(key) &&
+                    requested.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1)
+                    key = "LeftCut";
+
+                ObjectId styleId;
+                if (!string.IsNullOrWhiteSpace(key) &&
+                    styleIds.TryGetValue(key, out styleId) &&
+                    !styleId.IsNull)
+                {
+                    string styleName = key == "LeftCut" ? options.LeftCutSlopeStyle :
+                        key == "LeftFill" ? options.LeftFillSlopeStyle :
+                        key == "RightCut" ? options.RightCutSlopeStyle :
+                        options.RightFillSlopeStyle;
+                    if (TrySetObjectId(pattern, styleId, "StyleId", "SlopePatternStyleId", "SlopeStyleId") ||
+                        TrySetString(pattern, styleName, "StyleName", "SlopePatternStyleName", "SlopeStyleName"))
+                        changed++;
+                }
                 if (TrySetBoolean(pattern, true, "Visible", "IsVisible", "Enabled")) changed++;
                 Invoke(pattern, "Rebuild");
+            }
+            return changed;
+        }
+
+        private static int ApplyProfileStyleToAlignment(
+            CivilAlignment alignment,
+            ObjectId styleId,
+            Transaction transaction)
+        {
+            if (alignment == null || styleId.IsNull) return 0;
+            int changed = 0;
+            foreach (ObjectId profileId in alignment.GetProfileIds())
+            {
+                CivilProfile profile = null;
+                try { profile = transaction.GetObject(profileId, OpenMode.ForWrite, false) as CivilProfile; }
+                catch { }
+                if (profile == null) continue;
+                string identity = ((profile.Name ?? string.Empty) + " " +
+                    (profile.Description ?? string.Empty)).ToUpperInvariant();
+                if (identity.Contains("NGL") ||
+                    identity.Contains("EG") ||
+                    identity.Contains("EXIST") ||
+                    identity.Contains("GROUND"))
+                    continue;
+                if (TrySetObjectId(profile, styleId, "StyleId", "ProfileStyleId"))
+                    changed++;
             }
             return changed;
         }
@@ -1747,6 +1881,26 @@ namespace CETools.Civil3D
         {
             object value = ReadProperty(target, name);
             return value is ObjectId ? (ObjectId)value : ObjectId.Null;
+        }
+
+        private static bool TrySetString(object target, string value, params string[] names)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(value) ||
+                value.StartsWith("<", StringComparison.OrdinalIgnoreCase)) return false;
+            foreach (string name in names)
+            {
+                try
+                {
+                    PropertyInfo property = target.GetType().GetProperty(name, BindingFlags.Public | BindingFlags.Instance);
+                    if (property != null && property.CanWrite && property.PropertyType == typeof(string))
+                    {
+                        property.SetValue(target, value, null);
+                        return true;
+                    }
+                }
+                catch { }
+            }
+            return false;
         }
 
         private static bool TrySetObjectId(object target, ObjectId value, params string[] names)
@@ -1884,6 +2038,14 @@ namespace CETools.Civil3D
 
     internal sealed class RoadCorridorCompletionOptions
     {
+        internal IList<ObjectId> CorridorIds { get; set; }
+        internal string CorridorLayerName { get; set; }
+        internal string ProfileStyleName { get; set; }
+        internal string LeftCutSlopeStyle { get; set; }
+        internal string LeftFillSlopeStyle { get; set; }
+        internal string RightCutSlopeStyle { get; set; }
+        internal string RightFillSlopeStyle { get; set; }
+        internal string AutomaticRebuildMode { get; set; }
         internal ObjectId TargetSurfaceId { get; set; }
         internal string TargetSurfaceName { get; set; }
         internal string AssemblyName { get; set; }

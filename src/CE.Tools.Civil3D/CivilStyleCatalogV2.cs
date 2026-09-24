@@ -33,6 +33,7 @@ namespace CETools.Civil3D
                 { "Profile View Style", new[] { "ProfileViewStyles" } },
                 { "Profile View Band Set Style", new[] { "ProfileViewBandSetStyles" } },
                 { "Profile View Label Style", new[] { "LabelStyles.ProfileViewLabelStyles" } },
+                { "Slope Pattern Style", new[] { "SlopePatternStyles", "SlopePatternsStyles" } },
                 { "Surface Style", new[] { "SurfaceStyles" } },
                 { "Surface Label Style", new[] { "LabelStyles.SurfaceLabelStyles" } },
                 { "Point Style", new[] { "PointStyles" } },

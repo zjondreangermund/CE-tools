@@ -7,6 +7,7 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
+using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
@@ -37,9 +38,25 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
 
+            List<CivilChoice> surfaceChoices = FieldCompletionBatchUi.ReadSurfaceChoices(
+                document,
+                CivilApplication.ActiveDocument);
+            if (surfaceChoices.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_SEWERFROMCADASTRAL cancelled. No Civil 3D surfaces were found.");
+                return;
+            }
+
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Sewer Route from Cadastral Data",
-                "Create connected preliminary sewer routes directly from cadastral erf boundaries. CE Tools analyses a selected Civil 3D surface, determines the site/network low point, and chooses the shortest practical route toward that low point. Midblock and Road-Reserve sewer remain separate dedicated commands.");
+                "Create connected preliminary sewer routes directly from cadastral erf boundaries. Select the analysis surface from the dropdown before route and low-point calculations. Midblock and Road-Reserve sewer remain separate dedicated commands.");
+            model.AddChoice(
+                "Surface",
+                "01 Cadastral",
+                "Analysis surface",
+                surfaceChoices[0].Name,
+                "Civil 3D surface used for cadastral route slope and site-low-point analysis.",
+                surfaceChoices.Select(item => item.Name));
             model.AddChoice("Scope", "01 Cadastral", "Erf boundaries", "Selected",
                 "Use selected closed cadastral erf polylines or all non-CE closed lightweight polylines in model space.",
                 new[] { "Selected", "All" });
@@ -71,7 +88,8 @@ namespace CETools.Civil3D
                 return;
             }
 
-            ObjectId surfaceId = PromptSurface(document);
+            CivilChoice selectedSurface = surfaceChoices.FirstOrDefault(item => string.Equals(item.Name, model.Text("Surface"), StringComparison.OrdinalIgnoreCase));
+            ObjectId surfaceId = selectedSurface == null ? ObjectId.Null : selectedSurface.Id;
             if (surfaceId.IsNull)
             {
                 document.Editor.WriteMessage("\nCE_SEWERFROMCADASTRAL cancelled. Select a Civil 3D surface so CE Tools can analyse slopes and the site low point.");

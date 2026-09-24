@@ -116,6 +116,7 @@ namespace CETools.Civil3D
                     A("CE-Elevation from Surface - Multiple Feature Lines", "CE_PLATFORMDRAPEMULTI", "Drape multiple feature lines dynamically to one selected surface.", "01 Feature lines"),
                     A("CE-Fixed / Minimum Slope - Feature Lines", "CE_PLATFORMFIXEDMINSLOPE", "Apply fixed/minimum slope to feature lines and optionally add intermediate points.", "02 Levels"),
                     A("CE-Stepped Offsets - Pick Inside / Outside Side", "CE_FLRELCREATE", "Create a linked stepped set and explicitly pick the offset side.", "03 Linked offsets"),
+                    A("CE-Stepped Offsets - Multiple / Grade / Curved", "CE_PLATFORMSTEPOFFSETS", "Create multiple linked steps with explicit inside/outside side, straight/curved filtering and grade/elevation rules.", "03 Linked offsets"),
                     A("CE-Link Existing Feature Lines to Source", "CE_FLRELLINKEXISTING", "Link multiple existing feature lines to one source so source edits rebuild them.", "03 Linked offsets"),
                     A("CE-Preserve Changed Linked Relationship", "CE_FLRELADOPT", "Adopt current edited child offsets as the new saved relationship.", "03 Linked offsets"),
                     A("CE-Grade Multiple Feature Lines to Surface", "CE_PLATFORMGRADETOSURFACE", "Dynamic cut/fill daylight grading to a selected surface.", "04 Grading"),
