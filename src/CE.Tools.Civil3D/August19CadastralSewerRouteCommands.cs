@@ -81,18 +81,18 @@ namespace CETools.Civil3D
                 new[] { "Replace existing", "Keep existing" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
-            List<ObjectId> parcelIds = ResolveParcels(document, model.Text("Scope"));
-            if (parcelIds.Count == 0)
-            {
-                document.Editor.WriteMessage("\nCE_SEWERFROMCADASTRAL: no closed cadastral erf polylines were found.");
-                return;
-            }
-
             CivilChoice selectedSurface = surfaceChoices.FirstOrDefault(item => string.Equals(item.Name, model.Text("Surface"), StringComparison.OrdinalIgnoreCase));
             ObjectId surfaceId = selectedSurface == null ? ObjectId.Null : selectedSurface.Id;
             if (surfaceId.IsNull)
             {
                 document.Editor.WriteMessage("\nCE_SEWERFROMCADASTRAL cancelled. Select a Civil 3D surface so CE Tools can analyse slopes and the site low point.");
+                return;
+            }
+
+            List<ObjectId> parcelIds = ResolveParcels(document, model.Text("Scope"));
+            if (parcelIds.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_SEWERFROMCADASTRAL: no closed cadastral erf polylines were found.");
                 return;
             }
 

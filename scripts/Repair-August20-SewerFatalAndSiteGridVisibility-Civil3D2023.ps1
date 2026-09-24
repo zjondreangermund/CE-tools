@@ -84,6 +84,61 @@ function MoveSurfaceResolutionBeforeSelection([string]$text,[string]$methodSigna
     return $text.Substring(0,$methodStart) + $method + $text.Substring($close+1)
 }
 
+
+function MoveCadastralSurfaceResolutionBeforeSelection([string]$text,[string]$methodSignature,[string]$selectionMarker,[string]$label) {
+    $methodStart = $text.IndexOf($methodSignature,[StringComparison]::Ordinal)
+    if ($methodStart -lt 0) { throw "August 20 hotfix command method not found: $label" }
+    $open = $text.IndexOf('{',$methodStart)
+    if ($open -lt 0) { throw "August 20 hotfix command opening brace not found: $label" }
+    $depth=0; $close=-1
+    for ($i=$open; $i -lt $text.Length; $i++) {
+        if ($text[$i] -eq '{') { $depth++ }
+        elseif ($text[$i] -eq '}') { $depth--; if ($depth -eq 0) { $close=$i; break } }
+    }
+    if ($close -lt 0) { throw "August 20 hotfix command closing brace not found: $label" }
+    $method = $text.Substring($methodStart,$close-$methodStart+1)
+    $selectionIndex = $method.IndexOf($selectionMarker,[StringComparison]::Ordinal)
+    if ($selectionIndex -lt 0) { throw "August 20 hotfix selection marker not found ($label): $selectionMarker" }
+
+    $legacyResolver = '            ObjectId surfaceId = August20SurfaceChoice.ResolveSurfaceId(document, model.Text("Surface"));'
+    if ($method.IndexOf($legacyResolver,[StringComparison]::Ordinal) -ge 0) {
+        return MoveSurfaceResolutionBeforeSelection $text $methodSignature $selectionMarker $label
+    }
+
+    $surfaceMarker = '            CivilChoice selectedSurface = surfaceChoices.FirstOrDefault('
+    $surfaceStart = $method.IndexOf($surfaceMarker,[StringComparison]::Ordinal)
+    if ($surfaceStart -lt 0) {
+        throw "August 20 hotfix newer Cadastral Surface mapping not found: $label"
+    }
+    $ifStart = $method.IndexOf('            if (surfaceId.IsNull)',$surfaceStart,[StringComparison]::Ordinal)
+    if ($ifStart -lt 0) { throw "August 20 hotfix newer Cadastral Surface validation block not found: $label" }
+    $braceOpen = $method.IndexOf('{',$ifStart)
+    if ($braceOpen -lt 0) { throw "August 20 hotfix newer Cadastral Surface validation opening brace not found: $label" }
+    $braceDepth=0; $braceClose=-1
+    for ($i=$braceOpen; $i -lt $method.Length; $i++) {
+        if ($method[$i] -eq '{') { $braceDepth++ }
+        elseif ($method[$i] -eq '}') { $braceDepth--; if ($braceDepth -eq 0) { $braceClose=$i; break } }
+    }
+    if ($braceClose -lt 0) { throw "August 20 hotfix newer Cadastral Surface validation closing brace not found: $label" }
+    $blockEnd = $braceClose + 1
+    while ($blockEnd -lt $method.Length -and [char]::IsWhiteSpace($method[$blockEnd])) { $blockEnd++ }
+    $surfaceBlock = $method.Substring($surfaceStart,$blockEnd-$surfaceStart)
+
+    if ($surfaceStart -gt $selectionIndex) {
+        $method = $method.Remove($surfaceStart,$blockEnd-$surfaceStart)
+        $selectionIndex = $method.IndexOf($selectionMarker,[StringComparison]::Ordinal)
+        if ($selectionIndex -lt 0) { throw "August 20 hotfix selection marker moved unexpectedly: $label" }
+        $method = $method.Insert($selectionIndex,$surfaceBlock + [Environment]::NewLine)
+    }
+
+    $finalSurface = $method.IndexOf($surfaceMarker,[StringComparison]::Ordinal)
+    $finalSelection = $method.IndexOf($selectionMarker,[StringComparison]::Ordinal)
+    if ($finalSurface -lt 0 -or $finalSelection -lt 0 -or $finalSurface -gt $finalSelection) {
+        throw "August 20 hotfix failed to resolve the newer selected Surface before polygon selection: $label"
+    }
+    return $text.Substring(0,$methodStart) + $method + $text.Substring($close+1)
+}
+
 $helperPath = Required 'August20SurfaceAndDimensionHelpers.cs'
 $cadastralPath = Required 'August19CadastralSewerRouteCommands.cs'
 $midblockPath = Required 'August11MidblockSewerProductionCommands.cs'
@@ -140,7 +195,15 @@ WriteText $helperPath $helper
 
 # Cadastral: resolve Surface before polygon selection and use guarded samples.
 $cadastral=ReadText $cadastralPath
-$cadastral=MoveSurfaceResolutionBeforeSelection $cadastral 'public void CreateSewerFromCadastral()' '            List<ObjectId> parcelIds = ResolveParcels(document, model.Text("Scope"));' 'Cadastral Sewer'
+if ($cadastral.Contains('FieldCompletionBatchUi.ReadSurfaceChoices')) {
+    # The current Cadastral command owns a typed surface-choice list. Keep that
+    # newer dropdown path and move its selected-surface mapping before parcel
+    # selection instead of replacing it with the compatibility resolver.
+    $cadastral=MoveCadastralSurfaceResolutionBeforeSelection $cadastral 'public void CreateSewerFromCadastral()' '            List<ObjectId> parcelIds = ResolveParcels(document, model.Text("Scope"));' 'Cadastral Sewer'
+}
+else {
+    $cadastral=MoveSurfaceResolutionBeforeSelection $cadastral 'public void CreateSewerFromCadastral()' '            List<ObjectId> parcelIds = ResolveParcels(document, model.Text("Scope"));' 'Cadastral Sewer'
+}
 $cadastralBody=@'
             return August20SurfaceChoice.TryElevationSafe(surface, point, out elevation);
 '@
@@ -206,8 +269,17 @@ foreach ($item in @(
     @{Name='Midblock';Path=$midblockPath;Method='public void CreateProductionRoutes()';Selection='List<ObjectId> parcelIds = ResolveParcels(document, model.Text("Scope"));'})) {
     $check=ReadText $item.Path
     $methodStart=$check.IndexOf($item.Method,[StringComparison]::Ordinal)
-    $surfaceIndex=$check.IndexOf('ObjectId surfaceId = August20SurfaceChoice.ResolveSurfaceId(document, model.Text("Surface"));',$methodStart,[StringComparison]::Ordinal)
     $selectionIndex=$check.IndexOf($item.Selection,$methodStart,[StringComparison]::Ordinal)
+    $surfaceIndex=-1
+    if ([string]::Equals($item.Name,'Cadastral',[StringComparison]::OrdinalIgnoreCase) -and $check.Contains('FieldCompletionBatchUi.ReadSurfaceChoices')) {
+        $surfaceIndex=$check.IndexOf('            CivilChoice selectedSurface = surfaceChoices.FirstOrDefault(',$methodStart,[StringComparison]::Ordinal)
+        if ($surfaceIndex -lt 0) {
+            $surfaceIndex=$check.IndexOf('ObjectId surfaceId = August20SurfaceChoice.ResolveSurfaceId(document, model.Text("Surface"));',$methodStart,[StringComparison]::Ordinal)
+        }
+    }
+    else {
+        $surfaceIndex=$check.IndexOf('ObjectId surfaceId = August20SurfaceChoice.ResolveSurfaceId(document, model.Text("Surface"));',$methodStart,[StringComparison]::Ordinal)
+    }
     if ($surfaceIndex -lt 0 -or $selectionIndex -lt 0 -or $surfaceIndex -gt $selectionIndex) { throw "August 20 $($item.Name) fatal-safety guard failed: Surface resolution is not before polygon selection." }
 }
 if (-not (ReadText $cadastralPath).Contains('August20SurfaceChoice.TryElevationSafe(surface, point, out elevation)')) { throw 'August 20 Cadastral safe elevation guard missing.' }
