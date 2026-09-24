@@ -200,6 +200,11 @@ namespace CETools.Civil3D
                         "Apply one Civil 3D profile-view style to multiple selected profile views and regenerate their display.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
+                        "Add Band Labels to Multiple Profile Views",
+                        "CE_PROFILEBANDLABELSMULTI",
+                        "Enable Show Labels on the top and bottom band items of multiple selected profile views without the Civil 3D 2023 collection-level write that can abort.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
                         "Road TOP/BOTTOM Surface Profiles",
                         "CE_ROADTOPBOTTOMPROFILE",
                         "Add road TOP and BOTTOM surface profiles to selected profile views using valid Civil 3D 2023 profile styles and label sets.",

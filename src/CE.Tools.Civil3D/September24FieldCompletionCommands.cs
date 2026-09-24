@@ -27,6 +27,115 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class September24FieldCompletionCommands
     {
+        [CommandMethod("CE_TOOLS", "CE_PROFILEBANDLABELSMULTI", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void AddBandLabelsToMultipleProfileViews()
+        {
+            Document document = ActiveDocument();
+            if (document == null) return;
+
+            PromptSelectionResult selection = SelectImpliedOrPrompt(
+                document.Editor,
+                "\nSelect multiple profile views for band labels: ");
+            if (selection.Status != PromptStatus.OK ||
+                selection.Value == null ||
+                selection.Value.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_PROFILEBANDLABELSMULTI cancelled. No profile views selected.");
+                return;
+            }
+            document.Editor.SetImpliedSelection(new ObjectId[0]);
+
+            int processed = 0;
+            int changed = 0;
+            int skipped = 0;
+            using (DocumentLock lockDocument = document.LockDocument())
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
+                {
+                    ProfileView profileView = null;
+                    try
+                    {
+                        profileView = transaction.GetObject(
+                            id,
+                            OpenMode.ForWrite,
+                            false) as ProfileView;
+                    }
+                    catch { }
+
+                    if (profileView == null || profileView.IsReferenceObject)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    changed += EnableProfileViewBandLabels(profileView);
+                    try { profileView.RecordGraphicsModified(true); } catch { }
+                    processed++;
+                }
+                transaction.Commit();
+            }
+
+            try
+            {
+                document.Database.TransactionManager.QueueForGraphicsFlush();
+                document.Editor.Regen();
+                AcApplication.UpdateScreen();
+            }
+            catch { }
+
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEBANDLABELSMULTI complete. Profile views processed={0}; band labels enabled={1}; skipped={2}.",
+                processed,
+                changed,
+                skipped);
+        }
+
+        private static int EnableProfileViewBandLabels(ProfileView profileView)
+        {
+            if (profileView == null) return 0;
+            int changed = 0;
+
+            try
+            {
+                using (ProfileViewBandItemCollection top =
+                    profileView.Bands.GetTopBandItems())
+                {
+                    for (int index = 0; index < top.Count; index++)
+                    {
+                        ProfileViewBandItem item = top[index];
+                        if (!item.ShowLabels)
+                        {
+                            item.ShowLabels = true;
+                            changed++;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            try
+            {
+                using (ProfileViewBandItemCollection bottom =
+                    profileView.Bands.GetBottomBandItems())
+                {
+                    for (int index = 0; index < bottom.Count; index++)
+                    {
+                        ProfileViewBandItem item = bottom[index];
+                        if (!item.ShowLabels)
+                        {
+                            item.ShowLabels = true;
+                            changed++;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            return changed;
+        }
+
         [CommandMethod("CE_TOOLS", "CE_PROFILEMOVEVERTICAL", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void MoveSelectedProfilesVertically()
         {
@@ -502,12 +611,38 @@ namespace CETools.Civil3D
                 editor.SetImpliedSelection(new ObjectId[0]);
                 return implied;
             }
-            return editor.GetSelection(new PromptSelectionOptions
+
+            PromptSelectionResult prompted = editor.GetSelection(new PromptSelectionOptions
             {
                 MessageForAdding = message,
                 AllowDuplicates = false,
                 RejectObjectsFromNonCurrentSpace = true
             });
+            if (prompted.Status == PromptStatus.OK &&
+                prompted.Value != null &&
+                prompted.Value.Count > 0)
+                return prompted;
+
+            try
+            {
+                MethodInfo method = editor.GetType().GetMethod(
+                    "SelectPrevious",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+                PromptSelectionResult previous = method == null
+                    ? null
+                    : method.Invoke(editor, null) as PromptSelectionResult;
+                if (previous != null &&
+                    previous.Status == PromptStatus.OK &&
+                    previous.Value != null &&
+                    previous.Value.Count > 0)
+                    return previous;
+            }
+            catch { }
+
+            return prompted;
         }
 
         private static bool TryInvokeNoArguments(object target, string name)

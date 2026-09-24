@@ -389,18 +389,28 @@ namespace CETools.Civil3D
                         out resolvedLabelSetName);
 
                     HashSet<string> existingNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    Dictionary<string, ObjectId> existingProfileIds =
+                        new Dictionary<string, ObjectId>(StringComparer.OrdinalIgnoreCase);
                     foreach (ObjectId profileId in ReadObjectIds(InvokeReturning(alignment, "GetProfileIds")))
                     {
                         DBObject existingProfile = SafeOpen<DBObject>(transaction, profileId, OpenMode.ForRead);
                         string existingName = Convert.ToString(ReadProperty(existingProfile, "Name"), CultureInfo.CurrentCulture);
-                        if (!string.IsNullOrWhiteSpace(existingName)) existingNames.Add(existingName);
+                        if (!string.IsNullOrWhiteSpace(existingName))
+                        {
+                            existingNames.Add(existingName);
+                            existingProfileIds[existingName] = profileId;
+                        }
                     }
+                    var targetProfileIds = new List<ObjectId>();
 
                     foreach (CivilSurface surface in surfaces)
                     {
                         string profileName = SafeProfileName(surface.Name + " @ " + alignment.Name);
                         if (existingNames.Contains(profileName))
                         {
+                            ObjectId existingProfileId;
+                            if (existingProfileIds.TryGetValue(profileName, out existingProfileId))
+                                targetProfileIds.Add(existingProfileId);
                             existing++;
                             rows.Add(new List<string> { view.Name, alignment.Name, surface.Name, profileName, "Already exists" });
                             continue;
@@ -416,11 +426,15 @@ namespace CETools.Civil3D
                                 styleId,
                                 labelSetId);
                             if (newProfileId.IsNull) throw new InvalidOperationException("Civil 3D returned no profile ObjectId.");
-                            if (!TryInvoke(view, "AddProfile", newProfileId) &&
-                                !TryInvoke(view, "AddProfileId", newProfileId))
-                                throw new InvalidOperationException("The TOP/BOTTOM profile was created but could not be added to the selected profile view.");
+                            // A profile created from a surface is automatically eligible
+                            // for the alignment's profile views. Civil 3D 2023 exposes
+                            // GraphOverrides for an already-materialised entry; it does
+                            // not expose an AddProfile overload on ProfileView.
+                            EnsureProfileVisibleInView(view, newProfileId);
                             created++;
                             existingNames.Add(profileName);
+                            existingProfileIds[profileName] = newProfileId;
+                            targetProfileIds.Add(newProfileId);
                             rows.Add(new List<string> { view.Name, alignment.Name, surface.Name, profileName, "Created" });
                         }
                         catch (System.Exception exception)
@@ -431,6 +445,9 @@ namespace CETools.Civil3D
                     }
 
                     TryInvoke(view, "Rebuild");
+                    foreach (ObjectId profileId in targetProfileIds.Distinct())
+                        EnsureProfileVisibleInView(view, profileId);
+                    TryInvoke(view, "Update");
                     view.RecordGraphicsModified(true);
                 }
                 transaction.Commit();
@@ -444,6 +461,27 @@ namespace CETools.Civil3D
                 new[] { "PROFILE VIEW", "ALIGNMENT", "SURFACE", "PROFILE", "STATUS" },
                 rows,
                 "CE ROAD TOP BOTTOM PROFILE REGISTER");
+        }
+
+        private static void EnsureProfileVisibleInView(
+            CivilProfileView view,
+            ObjectId profileId)
+        {
+            if (view == null || profileId.IsNull) return;
+            try
+            {
+                foreach (ProfileOverride profileOverride in view.GraphOverrides)
+                {
+                    if (profileOverride != null && profileOverride.ProfileId == profileId)
+                    {
+                        profileOverride.Draw = true;
+                        return;
+                    }
+                }
+            }
+            catch
+            {
+            }
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONFEATURELINESTOP", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -962,7 +1000,19 @@ namespace CETools.Civil3D
             string identity = ((profile.Name ?? string.Empty) + " " +
                 (profile.Description ?? string.Empty)).ToUpperInvariant();
             bool excluded = IsGroundProfileIdentity(identity);
-            return !excluded && IsFinalDesignProfileIdentity(identity);
+
+            // Profile views can contain unnamed/legacy cyan layout profiles
+            // that do not contain FG, FINAL, DESIGN or PROPOSED. For a selected
+            // design view, reverse every non-ground road profile while leaving
+            // TOP/BOTTOM surface profiles to Civil 3D's native station update.
+            return !excluded && !IsSurfaceProfileIdentity(identity);
+        }
+
+        private static bool IsSurfaceProfileIdentity(string identity)
+        {
+            string value = (identity ?? string.Empty).ToUpperInvariant();
+            return ContainsProfileToken(value, "TOP") ||
+                   ContainsProfileToken(value, "BOTTOM");
         }
 
         private static bool ReverseFinalProfilePvis(
@@ -1126,6 +1176,31 @@ namespace CETools.Civil3D
                     AllowDuplicates = false,
                     RejectObjectsFromNonCurrentSpace = true
                 });
+
+                // Civil 3D often reports the P(previous) response as a
+                // cancelled GetSelection. Retry the previous pick set before
+                // treating the command as cancelled.
+                if (selected.Status != PromptStatus.OK || selected.Value == null)
+                {
+                    try
+                    {
+                        MethodInfo method = document.Editor.GetType().GetMethod(
+                            "SelectPrevious",
+                            BindingFlags.Public | BindingFlags.Instance,
+                            null,
+                            Type.EmptyTypes,
+                            null);
+                        PromptSelectionResult previous = method == null
+                            ? null
+                            : method.Invoke(document.Editor, null) as PromptSelectionResult;
+                        if (previous != null &&
+                            previous.Status == PromptStatus.OK &&
+                            previous.Value != null &&
+                            previous.Value.Count > 0)
+                            selected = previous;
+                    }
+                    catch { }
+                }
             }
             document.Editor.SetImpliedSelection(new ObjectId[0]);
             if (selected.Status != PromptStatus.OK || selected.Value == null) return new List<ObjectId>();
@@ -1591,33 +1666,40 @@ namespace CETools.Civil3D
         {
             if (line == null || surface == null) return false;
             bool changed = false;
+            bool typedAssigned = false;
 
-            // Use the typed Civil 3D 2023 call first. The previous reflected
-            // implementation returned as soon as the method was found, even
-            // when Civil 3D left the feature-line vertices at elevation 0.000.
+            // The typed Civil 3D 2023 call is authoritative. Do not invoke a
+            // second reflected drape method after it succeeds: that can restore
+            // relative-to-surface vertices and leave Properties at 0.000.
             try
             {
                 line.AssignElevationsFromSurface(surface.ObjectId, true);
+                typedAssigned = true;
                 changed = true;
             }
             catch { }
 
-            foreach (string methodName in new[]
+            if (!typedAssigned)
             {
-                "AssignElevationsFromSurface",
-                "AssignElevationsFromSurfaceId",
-                "DrapeToSurface"
-            })
-            {
-                if (TryInvoke(line, methodName, surface.ObjectId) ||
-                    TryInvoke(line, methodName, surface))
-                    changed = true;
+                foreach (string methodName in new[]
+                {
+                    "AssignElevationsFromSurface",
+                    "AssignElevationsFromSurfaceId",
+                    "DrapeToSurface"
+                })
+                {
+                    if (TryInvoke(line, methodName, surface.ObjectId) ||
+                        TryInvoke(line, methodName, surface))
+                    {
+                        changed = true;
+                        break;
+                    }
+                }
             }
 
-            // Always verify the actual vertex elevations by sampling the
-            // selected TOP surface. This also repairs hosts where the managed
-            // AssignElevationsFromSurface wrapper reports success but does not
-            // persist the point elevations.
+            // Verify and persist absolute elevations at every feature-line
+            // vertex. This is the part that repairs the zero-elevation/zero-
+            // grade result after a successful-looking drape.
             int index = 0;
             try
             {
@@ -1629,12 +1711,33 @@ namespace CETools.Civil3D
                         index++;
                         continue;
                     }
-                    if (TrySetFeatureLinePointElevation(line, index, elevation))
-                        changed = true;
+
+                    bool applied = false;
+                    try
+                    {
+                        if (line.IsElevationRelativeToSurface(point))
+                            line.SetPointRelativeElevation(point, false, elevation);
+                        else
+                            line.SetPointElevation(index, elevation);
+                        applied = true;
+                    }
+                    catch
+                    {
+                        applied = TrySetFeatureLinePointElevation(line, index, elevation);
+                    }
+
+                    if (applied) changed = true;
                     index++;
                 }
             }
             catch { }
+
+            if (changed)
+            {
+                try { line.RecordGraphicsModified(true); } catch { }
+                TryInvoke(line, "Rebuild");
+                TryInvoke(line, "Update");
+            }
             return changed;
         }
 

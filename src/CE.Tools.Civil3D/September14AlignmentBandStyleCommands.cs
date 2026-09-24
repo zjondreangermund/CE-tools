@@ -223,7 +223,10 @@ namespace CETools.Civil3D
                         changed++;
                     }
                 }
-                profileView.Bands.SetTopBandItems(top);
+                // Do not write the collection back: Civil 3D 2023 can return
+                // a read-only band collection and abort with eNotOpenForWrite.
+                // Individual ProfileViewBandItem.ShowLabels writes commit
+                // through the owning ProfileView transaction.
             }
 
             using (ProfileViewBandItemCollection bottom = profileView.Bands.GetBottomBandItems())
@@ -237,7 +240,8 @@ namespace CETools.Civil3D
                         changed++;
                     }
                 }
-                profileView.Bands.SetBottomBandItems(bottom);
+                // See the top-band note above; the individual item writes are
+                // sufficient and avoid the collection-level setter.
             }
 
             return changed;
@@ -361,12 +365,37 @@ namespace CETools.Civil3D
                 return implied;
             }
 
-            return editor.GetSelection(new PromptSelectionOptions
+            PromptSelectionResult prompted = editor.GetSelection(new PromptSelectionOptions
             {
                 MessageForAdding = message,
                 AllowDuplicates = false,
                 RejectObjectsFromNonCurrentSpace = true
             });
+            if (prompted.Status == PromptStatus.OK &&
+                prompted.Value != null &&
+                prompted.Value.Count > 0)
+                return prompted;
+
+            try
+            {
+                MethodInfo method = editor.GetType().GetMethod(
+                    "SelectPrevious",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+                PromptSelectionResult previous = method == null
+                    ? null
+                    : method.Invoke(editor, null) as PromptSelectionResult;
+                if (previous != null &&
+                    previous.Status == PromptStatus.OK &&
+                    previous.Value != null &&
+                    previous.Value.Count > 0)
+                    return previous;
+            }
+            catch { }
+
+            return prompted;
         }
 
         private sealed class StyleChoice

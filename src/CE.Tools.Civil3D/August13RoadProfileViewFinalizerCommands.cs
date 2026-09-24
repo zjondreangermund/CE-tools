@@ -338,11 +338,9 @@ namespace CETools.Civil3D
                 {
                     matchingOverride = null;
                 }
-                if (matchingOverride == null) continue;
-
                 try
                 {
-                    if (!matchingOverride.Draw)
+                    if (matchingOverride != null && !matchingOverride.Draw)
                     {
                         matchingOverride.Draw = true;
                         drawFlagsEnabled++;

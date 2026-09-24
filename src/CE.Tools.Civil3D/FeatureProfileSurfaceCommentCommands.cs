@@ -208,7 +208,9 @@ namespace CETools.Civil3D
                 document,
                 changedIds);
 
+            try { document.Editor.SetImpliedSelection(new ObjectId[0]); } catch { }
             try { document.Database.TransactionManager.QueueForGraphicsFlush(); } catch { }
+            try { AcApplication.UpdateScreen(); } catch { }
             document.Editor.Regen();
             document.Editor.WriteMessage(
                 "\nCE_FLAPPEARANCE complete. Feature lines updated={0}; visible colour styles={1}; layers={2}; site assignments={3}; rejected={4}; colour={5}.",
@@ -1080,6 +1082,7 @@ namespace CETools.Civil3D
                 {
                     plan.Color = colour;
                     plan.Visible = true;
+                    DisableLayerColour(plan);
                     changed = true;
                 }
             }
@@ -1092,6 +1095,7 @@ namespace CETools.Civil3D
                 {
                     model.Color = colour;
                     model.Visible = true;
+                    DisableLayerColour(model);
                     changed = true;
                 }
             }
@@ -1121,6 +1125,7 @@ namespace CETools.Civil3D
                         {
                             profile.Color = colour;
                             profile.Visible = true;
+                            DisableLayerColour(profile);
                             changed = true;
                         }
                     }
@@ -1151,6 +1156,25 @@ namespace CETools.Civil3D
             catch { }
 
             return changed;
+        }
+
+        private static void DisableLayerColour(object display)
+        {
+            if (display == null) return;
+            foreach (string propertyName in new[] { "UseLayerColor", "ByLayer", "UseLayerColour" })
+            {
+                try
+                {
+                    PropertyInfo property = display.GetType().GetProperty(
+                        propertyName,
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (property != null &&
+                        property.CanWrite &&
+                        property.PropertyType == typeof(bool))
+                        property.SetValue(display, false, null);
+                }
+                catch { }
+            }
         }
 
         private static void ApplyFeatureLineStyleColour(
