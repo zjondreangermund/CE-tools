@@ -483,7 +483,7 @@ namespace CETools.Civil3D
                         "Recent - CE_SEWERFROMCADASTRAL",
                         "CE_SEWERFROMCADASTRAL",
                         "Select the cadastral sewer analysis surface from the dropdown.",
-                        "06 Latest Field Completion")
+                        "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Assign Corridor Settings to Multiple Corridors",
                         "CE_ROADCORRIDORASSIGNBATCH",

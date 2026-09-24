@@ -53,12 +53,10 @@ namespace CETools.Civil3D
                 document,
                 civilDocument);
             surfaces.Insert(0, new CivilChoice(ObjectId.Null, "<Keep current>"));
+            string targetSurfaceDefault = surfaces.Count > 1
+                ? surfaces[1].Name
+                : surfaces[0].Name;
 
-            IList<string> profileStyles = FieldCompletionBatchUi.ReadStyleChoices(
-                document.Database,
-                civilDocument,
-                "Profile Style",
-                "<Use drawing default>");
             IList<string> slopeStyles = FieldCompletionBatchUi.ReadStyleChoices(
                 document.Database,
                 civilDocument,
@@ -111,7 +109,7 @@ namespace CETools.Civil3D
                 "TargetSurface",
                 "03 Targets",
                 "Target surface",
-                surfaces[0].Name,
+                targetSurfaceDefault,
                 "Select the Civil 3D surface used by the corridor region targets.",
                 surfaces.Select(item => item.Name));
             model.AddText(
