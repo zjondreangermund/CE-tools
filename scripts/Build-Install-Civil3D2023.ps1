@@ -32,64 +32,6 @@ function Find-MSBuild {
     throw 'MSBuild was not found. Install Visual Studio 2022 Build Tools with .NET Framework 4.8 development tools.'
 }
 
-function Restore-V60SupportSources {
-    param([Parameter(Mandatory=$true)][string]$RepoRoot)
-    $archive = Join-Path $RepoRoot 'recovery\v60\missing-v60-sources.b64'
-    if (-not (Test-Path -LiteralPath $archive)) { return }
-    $targets = @(
-        'CommentPresentationCommands.cs',
-        'DynamicTypicalDetailEngine.cs',
-        'ProductionCommentCommands.cs'
-    )
-    $sourceRoot = Join-Path $RepoRoot 'src\CE.Tools.Civil3D'
-    $needsRestore = $false
-    foreach ($name in $targets) {
-        if (-not (Test-Path -LiteralPath (Join-Path $sourceRoot $name))) { $needsRestore = $true }
-    }
-    if (-not $needsRestore) { return }
-
-    $temp = Join-Path $env:TEMP ('CE-Tools-V60-Restore-' + [Guid]::NewGuid().ToString('N'))
-    New-Item -ItemType Directory -Force -Path $temp | Out-Null
-    try {
-        $zip = Join-Path $temp 'sources.zip'
-        $raw = [System.IO.File]::ReadAllText($archive)
-        $base64 = [System.Text.RegularExpressions.Regex]::Replace($raw, '[^A-Za-z0-9+/=]', '')
-        if ([string]::IsNullOrWhiteSpace($base64)) {
-            throw 'The staged V60 recovery archive is empty after Base64 normalization.'
-        }
-        $firstPadding = $base64.IndexOf('=')
-        if ($firstPadding -ge 0 -and $firstPadding -lt ($base64.Length - 2)) {
-            $body = $base64.Substring(0, $firstPadding).Replace('=', '')
-            $base64 = $body
-        }
-        $remainder = $base64.Length % 4
-        if ($remainder -eq 2) { $base64 += '==' }
-        elseif ($remainder -eq 3) { $base64 += '=' }
-        elseif ($remainder -eq 1) { throw 'The staged V60 recovery archive has an invalid Base64 length.' }
-
-        try {
-            $bytes = [Convert]::FromBase64String($base64)
-        }
-        catch {
-            throw "The staged V60 recovery archive could not be decoded after normalization. $($_.Exception.Message)"
-        }
-        if ($bytes.Length -lt 4 -or $bytes[0] -ne 0x50 -or $bytes[1] -ne 0x4B) {
-            throw 'The decoded V60 recovery archive is not a valid ZIP file.'
-        }
-        [IO.File]::WriteAllBytes($zip, $bytes)
-        Expand-Archive -LiteralPath $zip -DestinationPath $temp -Force
-        foreach ($name in $targets) {
-            $from = Join-Path $temp $name
-            if (-not (Test-Path -LiteralPath $from)) { throw "V60 recovery source missing from archive: $name" }
-            Copy-Item -LiteralPath $from -Destination (Join-Path $sourceRoot $name) -Force
-        }
-        Write-Host 'Restored remaining V60 support sources.' -ForegroundColor Green
-    }
-    finally {
-        Remove-Item $temp -Recurse -Force -ErrorAction SilentlyContinue
-    }
-}
-
 function Repair-Civil3D2023RibbonSource {
     param([Parameter(Mandatory=$true)][string]$RepoRoot)
     $plugin = Join-Path $RepoRoot 'src\CE.Tools.Civil3D\PluginEntry.cs'
@@ -181,12 +123,6 @@ if ([string]::IsNullOrWhiteSpace($SourceCommit)) {
     if ([string]::IsNullOrWhiteSpace($SourceCommit)) { $SourceCommit = 'UNKNOWN' }
 }
 
-try {
-    Restore-V60SupportSources -RepoRoot $repo
-}
-catch {
-    Write-Warning "Optional V60 source recovery was skipped: $($_.Exception.Message)"
-}
 Repair-Civil3D2023RibbonSource -RepoRoot $repo
 
 $msbuild = Find-MSBuild

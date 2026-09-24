@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate the reconciled V54/V60 command and support-source restoration."""
+"""Validate the merged command and support-source surface without runtime recovery."""
 
 from pathlib import Path
 import sys
@@ -9,7 +9,6 @@ CIVIL = ROOT / "src" / "CE.Tools.Civil3D"
 CORE = ROOT / "src" / "CE.Tools.Core"
 PLUGIN = CIVIL / "PluginEntry.cs"
 REFRESH = CIVIL / "RefreshAllCommands.cs"
-RECOVERY = ROOT / "scripts" / "Restore-V60-ChunkedSources.ps1"
 
 required_civil = (
     "AdvancedParkingPlanningCommands.cs",
@@ -56,14 +55,14 @@ required_core = (
 errors: list[str] = []
 for name in required_civil:
     if not (CIVIL / name).exists():
-        errors.append(f"Restored Civil 3D source is missing: {name}")
+        errors.append(f"Civil 3D source is missing: {name}")
 for name in required_core:
     if not (CORE / name).exists():
-        errors.append(f"Restored core source is missing: {name}")
+        errors.append(f"Core source is missing: {name}")
 if not (ROOT / "assets/engineering-library/engineering-assets.csv").exists():
     errors.append("The preserved engineering asset catalogue is missing")
 
-for path in (PLUGIN, REFRESH, RECOVERY):
+for path in (PLUGIN, REFRESH):
     if not path.exists():
         errors.append(f"Required integration file is missing: {path.relative_to(ROOT)}")
 if errors:
@@ -72,7 +71,6 @@ if errors:
 
 plugin = PLUGIN.read_text(encoding="utf-8")
 refresh = REFRESH.read_text(encoding="utf-8")
-recovery = RECOVERY.read_text(encoding="utf-8")
 
 for marker in (
     "ParkingOptionAutoRefreshManager.Initialize();",
@@ -83,7 +81,7 @@ for marker in (
     "AnnotationScaleSyncManager.Terminate();",
 ):
     if marker not in plugin:
-        errors.append(f"Restored manager lifecycle is missing: {marker}")
+        errors.append(f"Manager lifecycle is missing: {marker}")
 
 for command in (
     "CE_COORDPICKCONTINUOUS",
@@ -104,7 +102,7 @@ for command in (
     "CE_MODELREPORTTOOLS",
 ):
     if f'"{command} "' not in plugin:
-        errors.append(f"Restored ribbon/workflow launcher is missing: {command}")
+        errors.append(f"Ribbon/workflow launcher is missing: {command}")
 
 for marker in (
     "AlignmentAnnotationLinkStore.RefreshAll(document)",
@@ -117,15 +115,8 @@ for marker in (
     "ParkingReportLinkStore.RefreshAll(document)",
 ):
     if marker not in refresh:
-        errors.append(f"Shared refresh does not include restored link family: {marker}")
+        errors.append(f"Shared refresh does not include link family: {marker}")
 
-for marker in (
-    "Retained active source; recovery fallback not required",
-    "V54 recovery fallback not required",
-    "continue",
-):
-    if marker not in recovery:
-        errors.append(f"Recovery script can overwrite reconciled active source: {marker}")
 
 for path in tuple(CIVIL.glob("*.cs")) + tuple(CORE.glob("*.cs")):
     text = path.read_text(encoding="utf-8")
@@ -138,4 +129,4 @@ if errors:
         print(f"- {error}", file=sys.stderr)
     raise SystemExit(1)
 
-print("CE Tools restored 380+ command and support-source validation passed.")
+print("CE Tools merged 380+ command and support-source validation passed.")

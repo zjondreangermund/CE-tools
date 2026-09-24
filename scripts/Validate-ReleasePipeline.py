@@ -73,6 +73,18 @@ workflow = require(
     ("self-hosted", "Civil3D2023", "upload-artifact@v4", "New-CE-ToolsReleasePackage.ps1"),
 )
 
+
+# Keep the public source snapshot free of encoded recovery bundles. A clean
+# release must be reproducible from checked-in source files and the compiled
+# bundle; it must not reconstruct source code from committed payload chunks.
+forbidden_suffixes = (".b64", ".b64part")
+for candidate in ROOT.rglob("*"):
+    if not candidate.is_file() or ".git" in candidate.parts:
+        continue
+    relative = candidate.relative_to(ROOT).as_posix()
+    if candidate.name.lower().endswith(forbidden_suffixes) or ".b64part-" in candidate.name.lower():
+        errors.append(f"Encoded recovery payload must not be committed: {relative}")
+
 if release_source.count("[CommandMethod") < 5:
     errors.append("ReleaseInfoCommands.cs must retain the five release-management commands")
 if settings_source.count("[CommandMethod") < 3:

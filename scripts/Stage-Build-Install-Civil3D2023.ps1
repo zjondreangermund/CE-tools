@@ -70,7 +70,6 @@ foreach ($scriptFile in Get-ChildItem -LiteralPath $scriptFolder -Filter '*.ps1'
 }
 Write-Host 'All staged PowerShell scripts passed syntax preflight.' -ForegroundColor Green
 
-$restore = Join-Path $stageRoot 'scripts\Restore-V60-ChunkedSources.ps1'
 $repair = Join-Path $stageRoot 'scripts\Repair-Civil3D2023-Compatibility.ps1'
 $finalRepair = Join-Path $stageRoot 'scripts\Repair-V60-RemainingCompatibility.ps1'
 $productionExpansion = Join-Path $stageRoot 'scripts\Inject-ProductionExpansion-Civil3D2023.ps1'
@@ -100,9 +99,7 @@ $sanitize = Join-Path $stageRoot 'scripts\Sanitize-RestoredCSharpSources.ps1'
 $diagnose = Join-Path $stageRoot 'scripts\Diagnose-RoslynSourceCrash.ps1'
 $build = Join-Path $stageRoot 'scripts\Build-Install-Civil3D2023-DotNet.ps1'
 
-foreach ($required in @(
-    $restore,
-    $repair,
+foreach ($required in @(    $repair,
     $finalRepair,
     $productionExpansion,
     $augustBehavior,
@@ -136,9 +133,6 @@ foreach ($required in @(
     Unblock-File -LiteralPath $required -ErrorAction SilentlyContinue
 }
 
-Write-Host "`nChecking verified V60/V54 recovery fallbacks without overwriting active sources..." -ForegroundColor Cyan
-& $restore -RepoRoot $stageRoot
-$global:LASTEXITCODE = 0
 
 Write-Host "`nPreparing CE Tools sources for Civil 3D 2023..." -ForegroundColor Cyan
 & $repair -RepoRoot $stageRoot
