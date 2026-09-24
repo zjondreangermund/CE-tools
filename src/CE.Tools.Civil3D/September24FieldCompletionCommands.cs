@@ -808,10 +808,6 @@ namespace CETools.Civil3D
             return string.Empty;
         }
 
-        internal static bool TryInvokeNoArguments(object target, string name, params object[] ignored)
-        {
-            return TryInvokeNoArguments(target, name);
-        }
     }
 
     internal sealed class FieldCompletionMultiChoiceWindow : System.Windows.Window
