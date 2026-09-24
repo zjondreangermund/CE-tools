@@ -28,6 +28,17 @@ function ReplaceRequired([string]$text,[string]$old,[string]$new,[string]$label)
     $old = $old -replace "`r?`n", "`r`n"
     $new = $new -replace "`r?`n", "`r`n"
     if ($text.Contains($new)) { return $text }
+
+    # The cadastral surface dropdown may already be supplied by the current
+    # Field Completion implementation. In that state the historical August 20
+    # source anchors are intentionally absent; keep the newer implementation
+    # and continue with the remaining safety repairs.
+    if ($label.StartsWith('Cadastral ', [StringComparison]::OrdinalIgnoreCase) -and
+        $text.Contains('FieldCompletionBatchUi.ReadSurfaceChoices') -and
+        $text.Contains('"Surface"')) {
+        return $text
+    }
+
     if (-not $text.Contains($old)) { throw "August 20 anchor not found: $label" }
     return $text.Replace($old,$new)
 }

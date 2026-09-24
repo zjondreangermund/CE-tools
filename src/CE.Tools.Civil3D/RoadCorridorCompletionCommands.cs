@@ -272,7 +272,14 @@ namespace CETools.Civil3D
                 VerticalFrequency = model.Double("VerticalFrequency", 5.0),
                 EnsureVisible = string.Equals(model.Text("Visible"), "Enabled", StringComparison.OrdinalIgnoreCase),
                 EnableAutomaticRebuild = string.Equals(model.Text("AutoRebuild"), "Enabled", StringComparison.OrdinalIgnoreCase),
-                EnableSlopePatterns = string.Equals(model.Text("Slope"), "Enabled", StringComparison.OrdinalIgnoreCase)
+                EnableSlopePatterns = string.Equals(model.Text("Slope"), "Enabled", StringComparison.OrdinalIgnoreCase),
+                ManageCorridorSurfaces = true,
+                BoundaryMode = string.Equals(model.Text("Boundary"), "Enabled", StringComparison.OrdinalIgnoreCase)
+                    ? "Corridor extents"
+                    : "No boundary",
+                AssignAssemblyToExistingRegions = false,
+                RebuildCorridors = true,
+                RefreshProfileViews = true
             };
 
             RoadCorridorCompletionResult result = CompleteAll(document, civilDocument, options);
@@ -395,6 +402,19 @@ namespace CETools.Civil3D
                         else
                             result.Warnings++;
                     }
+                    ObjectId existingAssemblyId = ObjectId.Null;
+                    if (options.AssignAssemblyToExistingRegions)
+                    {
+                        existingAssemblyId = options.AssemblyId;
+                        if (existingAssemblyId.IsNull && !string.IsNullOrWhiteSpace(options.AssemblyName))
+                            existingAssemblyId = FindExactAssemblyId(
+                                civilDocument,
+                                document.Database,
+                                transaction,
+                                options.AssemblyName);
+                        if (existingAssemblyId.IsNull) result.Warnings++;
+                    }
+
                     object baselines = ReadProperty(corridor, "Baselines");
                     if (!CivilStyleDiscovery.Enumerate(baselines).Any())
                     {
@@ -428,30 +448,69 @@ namespace CETools.Civil3D
                                 TrySetBoolean(region, true, "IsEnabled", "Enabled", "IsProcessed"))
                                 result.VisibilitySettings++;
                             if (!codeSetStyleId.IsNull) TrySetObjectId(region, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle");
+                            if (!existingAssemblyId.IsNull)
+                            {
+                                int assignments = ApplyAssemblyToRegion(region, existingAssemblyId);
+                                result.AssemblyAssignments += assignments;
+                                if (assignments == 0) result.Warnings++;
+                            }
                             int frequencies = ApplyAssemblyFrequencies(region, options);
                             result.FrequencySettings += frequencies;
                             if (frequencies == 0) result.Warnings++;
                             if (options.ApplyTargets) result.Targets += ApplySurfaceTargets(region, options.TargetSurfaceId);
-                            Invoke(region, "Rebuild");
+                            if (options.RebuildCorridors) Invoke(region, "Rebuild");
                         }
                     }
 
-                    object corridorSurfaces = ReadProperty(corridor, "CorridorSurfaces") ?? ReadProperty(corridor, "Surfaces");
-                    string topSurfaceName = options.UseRoadNumberedSurfaceNames
-                        ? ResolveRoadSurfaceName("TOP", corridor, baselines, transaction, options.TopSurfaceName)
-                        : options.TopSurfaceName;
-                    string bottomSurfaceName = options.UseRoadNumberedSurfaceNames
-                        ? ResolveRoadSurfaceName("BOTTOM", corridor, baselines, transaction, options.BottomSurfaceName)
-                        : options.BottomSurfaceName;
-                    RemoveLegacyRoadSurfaces(corridorSurfaces, topSurfaceName, bottomSurfaceName, ref result);
-                    object top = EnsureCorridorSurface(corridorSurfaces, topSurfaceName, options.TopCodes, options.AddBoundary, ref result);
-                    object bottom = EnsureCorridorSurface(corridorSurfaces, bottomSurfaceName, options.BottomCodes, options.AddBoundary, ref result);
-                    if (top != null) Invoke(top, "Rebuild");
-                    if (bottom != null) Invoke(bottom, "Rebuild");
-                    if (options.EnableSlopePatterns) result.SlopePatterns += EnableSlopePatterns(corridor, options, document.Database, civilDocument, transaction);
-                    bool rebuilt = Invoke(corridor, "Rebuild");
-                    if (rebuilt) result.Rebuilt++;
-                    else result.Warnings++;
+                    if (options.ManageCorridorSurfaces)
+                    {
+                        object corridorSurfaces = ReadProperty(corridor, "CorridorSurfaces") ?? ReadProperty(corridor, "Surfaces");
+                        string topSurfaceName = options.UseRoadNumberedSurfaceNames
+                            ? ResolveRoadSurfaceName("TOP", corridor, baselines, transaction, options.TopSurfaceName)
+                            : options.TopSurfaceName;
+                        string bottomSurfaceName = options.UseRoadNumberedSurfaceNames
+                            ? ResolveRoadSurfaceName("BOTTOM", corridor, baselines, transaction, options.BottomSurfaceName)
+                            : options.BottomSurfaceName;
+                        string boundaryMode = string.IsNullOrWhiteSpace(options.BoundaryMode)
+                            ? (options.AddBoundary ? "Corridor extents" : "No boundary")
+                            : options.BoundaryMode;
+                        RemoveLegacyRoadSurfaces(corridorSurfaces, topSurfaceName, bottomSurfaceName, ref result);
+                        object top = EnsureCorridorSurface(
+                            corridorSurfaces,
+                            topSurfaceName,
+                            options.TopCodes,
+                            boundaryMode,
+                            ref result);
+                        object bottom = EnsureCorridorSurface(
+                            corridorSurfaces,
+                            bottomSurfaceName,
+                            options.BottomCodes,
+                            boundaryMode,
+                            ref result);
+                        if (options.RebuildCorridors)
+                        {
+                            if (top != null) Invoke(top, "Rebuild");
+                            if (bottom != null) Invoke(bottom, "Rebuild");
+                        }
+                    }
+
+                    bool slopeEnabled = options.EnableSlopePatterns ||
+                        string.Equals(options.SlopePatternMode, "Enabled", StringComparison.OrdinalIgnoreCase);
+                    bool slopeDisabled = string.Equals(
+                        options.SlopePatternMode,
+                        "Disabled",
+                        StringComparison.OrdinalIgnoreCase);
+                    if (slopeEnabled)
+                        result.SlopePatterns += EnableSlopePatterns(
+                            corridor,
+                            options,
+                            document.Database,
+                            civilDocument,
+                            transaction);
+                    else if (slopeDisabled)
+                        result.SlopePatterns += DisableSlopePatterns(corridor);
+
+                    bool rebuilt = options.RebuildCorridors && Invoke(corridor, "Rebuild");
                     result.Rows.Add(new List<string>
                     {
                         name,
@@ -478,9 +537,12 @@ namespace CETools.Civil3D
             // road-edge, centre design, right road-edge and vertical-curve data
             // sources in a separate phase so the profile-view band rows display
             // actual design-road values instead of empty labels.
-            result.ProfileViewBindings += RefreshRoadRoleProfilesAndBands(
-                document,
-                civilDocument);
+            if (options.RefreshProfileViews)
+            {
+                result.ProfileViewBindings += RefreshRoadRoleProfilesAndBands(
+                    document,
+                    civilDocument);
+            }
             try
             {
                 document.Database.TransactionManager.QueueForGraphicsFlush();
@@ -770,6 +832,81 @@ namespace CETools.Civil3D
                 if(!string.IsNullOrWhiteSpace(requested) && string.Equals(name,requested,StringComparison.OrdinalIgnoreCase)) return id;
             }
             return first;
+        }
+
+        private static ObjectId FindExactAssemblyId(
+            CivilDocument civilDocument,
+            Database database,
+            Transaction transaction,
+            string requested)
+        {
+            if (civilDocument == null || database == null || transaction == null ||
+                string.IsNullOrWhiteSpace(requested))
+                return ObjectId.Null;
+
+            foreach (ObjectId id in CivilAssemblyResolver.GetAssemblyIds(civilDocument, database))
+            {
+                if (id.IsNull || id.IsErased) continue;
+                try
+                {
+                    DBObject value = transaction.GetObject(id, OpenMode.ForRead, false);
+                    string name = Convert.ToString(
+                        ReadProperty(value, "Name"),
+                        CultureInfo.CurrentCulture);
+                    if (string.Equals(
+                        name,
+                        requested.Trim(),
+                        StringComparison.OrdinalIgnoreCase))
+                        return id;
+                }
+                catch { }
+            }
+            return ObjectId.Null;
+        }
+
+        private static int ApplyAssemblyToRegion(object region, ObjectId assemblyId)
+        {
+            if (region == null || assemblyId.IsNull) return 0;
+            if (FieldCompletionBatchUi.TrySetObjectId(
+                    region,
+                    assemblyId,
+                    "AssemblyId",
+                    "AssemblyObjectId",
+                    "AppliedAssemblyId"))
+                return 1;
+            return TryInvokeObjectId(
+                region,
+                assemblyId,
+                "SetAssembly",
+                "SetAssemblyId",
+                "ApplyAssembly") ? 1 : 0;
+        }
+
+        private static bool TryInvokeObjectId(object target, ObjectId value, params string[] names)
+        {
+            if (target == null || value.IsNull) return false;
+            foreach (string name in names)
+            {
+                foreach (MethodInfo method in target.GetType().GetMethods(
+                    BindingFlags.Public | BindingFlags.Instance)
+                    .Where(item => string.Equals(
+                        item.Name,
+                        name,
+                        StringComparison.OrdinalIgnoreCase)))
+                {
+                    ParameterInfo[] parameters = method.GetParameters();
+                    if (parameters.Length != 1 ||
+                        parameters[0].ParameterType != typeof(ObjectId))
+                        continue;
+                    try
+                    {
+                        method.Invoke(target, new object[] { value });
+                        return true;
+                    }
+                    catch { }
+                }
+            }
+            return false;
         }
 
         private static List<ObjectId> ReadCorridorIds(
@@ -1485,7 +1622,7 @@ namespace CETools.Civil3D
             return "RD-" + number.ToString("00", CultureInfo.InvariantCulture);
         }
 
-        private static object EnsureCorridorSurface(object collection, string name, IEnumerable<string> codes, bool boundary, ref RoadCorridorCompletionResult result)
+        private static object EnsureCorridorSurface(object collection, string name, IEnumerable<string> codes, string boundaryMode, ref RoadCorridorCompletionResult result)
         {
             if (collection == null || string.IsNullOrWhiteSpace(name))
             {
@@ -1519,9 +1656,23 @@ namespace CETools.Civil3D
             }
 
             object boundaries = ReadProperty(surface, "Boundaries");
+            string mode = string.IsNullOrWhiteSpace(boundaryMode)
+                ? "Keep current"
+                : boundaryMode.Trim();
+
+            if (string.Equals(mode, "Keep current", StringComparison.OrdinalIgnoreCase))
+                return surface;
+
+            if (string.Equals(mode, "No boundary", StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(mode, "Disabled", StringComparison.OrdinalIgnoreCase))
+            {
+                result.Boundaries += RemoveAllBoundaries(boundaries);
+                return surface;
+            }
+
             int removed = RemoveNonCorridorBoundaries(boundaries);
             result.Boundaries += removed;
-            if (boundary && boundaries != null &&
+            if (boundaries != null &&
                 !CivilStyleDiscovery.Enumerate(boundaries).Any(IsCorridorBoundary))
             {
                 if (Invoke(boundaries, "AddCorridorExtentsBoundary", name + "-OUTER") ||
@@ -1578,6 +1729,22 @@ namespace CETools.Civil3D
             for (int index = items.Count - 1; index >= 0; index--)
             {
                 if (IsCorridorBoundary(items[index])) continue;
+                if (Invoke(boundaries, "Remove", items[index]) ||
+                    Invoke(boundaries, "RemoveAt", index))
+                    removed++;
+            }
+            return removed;
+        }
+
+        private static int RemoveAllBoundaries(object boundaries)
+        {
+            if (boundaries == null) return 0;
+            var items = CivilStyleDiscovery.Enumerate(boundaries)
+                .Where(item => item != null)
+                .ToList();
+            int removed = 0;
+            for (int index = items.Count - 1; index >= 0; index--)
+            {
                 if (Invoke(boundaries, "Remove", items[index]) ||
                     Invoke(boundaries, "RemoveAt", index))
                     removed++;
@@ -1769,6 +1936,21 @@ namespace CETools.Civil3D
                         changed++;
                 }
                 if (TrySetBoolean(pattern, true, "Visible", "IsVisible", "Enabled")) changed++;
+                Invoke(pattern, "Rebuild");
+            }
+            return changed;
+        }
+
+        private static int DisableSlopePatterns(object corridor)
+        {
+            if (corridor == null) return 0;
+            object patterns = ReadProperty(corridor, "SlopePatterns");
+            int changed = 0;
+            foreach (object pattern in CivilStyleDiscovery.Enumerate(patterns))
+            {
+                if (pattern == null) continue;
+                if (TrySetBoolean(pattern, false, "Visible", "IsVisible", "Enabled"))
+                    changed++;
                 Invoke(pattern, "Rebuild");
             }
             return changed;
@@ -2049,6 +2231,14 @@ namespace CETools.Civil3D
         internal ObjectId TargetSurfaceId { get; set; }
         internal string TargetSurfaceName { get; set; }
         internal string AssemblyName { get; set; }
+        internal ObjectId AssemblyId { get; set; }
+        internal bool AssignAssemblyToExistingRegions { get; set; }
+        internal string BoundaryMode { get; set; }
+        internal bool ManageCorridorSurfaces { get; set; }
+        internal string SlopePatternMode { get; set; }
+        internal bool RebuildCorridors { get; set; }
+        internal bool RefreshProfileViews { get; set; }
+        internal ObjectId AssemblyIdForReport { get; set; }
         internal string TopSurfaceName { get; set; }
         internal string BottomSurfaceName { get; set; }
         internal bool UseRoadNumberedSurfaceNames { get; set; }
@@ -2070,6 +2260,7 @@ namespace CETools.Civil3D
         internal int Corridors { get; set; }
         internal int Baselines { get; set; }
         internal int Regions { get; set; }
+        internal int AssemblyAssignments { get; set; }
         internal int FrequencySettings { get; set; }
         internal int Targets { get; set; }
         internal int Surfaces { get; set; }

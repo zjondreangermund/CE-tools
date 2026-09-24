@@ -484,6 +484,11 @@ namespace CETools.Civil3D
                         "CE_SEWERFROMCADASTRAL",
                         "Select the cadastral sewer analysis surface from the dropdown.",
                         "06 Latest Field Completion")
+                    new DisciplineWorkflowAction(
+                        "Assign Corridor Settings to Multiple Corridors",
+                        "CE_ROADCORRIDORASSIGNBATCH",
+                        "Assign selected assemblies, assembly frequencies, surface targets, slope-pattern styles, slope-pattern visibility and corridor-extents boundaries to multiple selected corridors.",
+                        "06 Latest Field Completion"),
                 });
         }
     }
