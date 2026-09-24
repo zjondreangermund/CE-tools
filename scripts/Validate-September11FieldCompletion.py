@@ -124,7 +124,7 @@ required_menu = [
     '"CE_ALIGNLABELSETMULTI"',
     'Alignment Label Set - Multiple Alignments',
     '"CE_ROADBANDLABELS"',
-    'Road Profile Band Set - Show Labels',
+    'Import Road Band Set to Multiple Profile Views',
     '"CE_SEWRECALC"',
     '"CE_ANNOSCALESYNC"',
     'Automatic monitor now applies each changed drawing annotation scale',

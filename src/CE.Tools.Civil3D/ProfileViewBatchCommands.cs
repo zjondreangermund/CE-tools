@@ -1016,7 +1016,7 @@ namespace CETools.Civil3D
         {
             Title = "CE Tools - Profile View Batch Tools";
             Width = 460;
-            Height = 250;
+            Height = 285;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             var root = new StackPanel { Margin = new Thickness(18) };
@@ -1035,6 +1035,7 @@ namespace CETools.Civil3D
                 Margin = new Thickness(0, 0, 0, 12)
             });
             AddButton(root, "Batch styles, band sets and rebuild", "CE_PROFILEVIEWBATCH ");
+            AddButton(root, "Import Road Band Set + Show Labels", "CE_ROADBANDLABELS ");
             AddButton(root, "Fit all selected profile views", "CE_PROFILEVIEWFITALL ");
             AddButton(root, "Profile-view information", "CE_PROFILEVIEWBATCHINFO ");
         }

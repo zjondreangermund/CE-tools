@@ -6,6 +6,11 @@ All notable CE Tools changes will be recorded here.
 
 ### Added
 
+- Feature-line appearance now offers a searchable ACI 1–255 dropdown and applies
+  the selected color after assigning the matching Civil 3D display style.
+- Road band-set import now commits each selected profile view separately, links
+  band rows to their ground/left/centre/right/design profiles, and enables visible
+  labels. The workflow is available from Profile View Batch Tools.
 - Road corridor completion now exposes tangent, horizontal-curve and vertical-curve
   assembly frequencies, ensures selected corridor output is visible, and enables
   Civil 3D native automatic rebuild after alignment/profile edits.

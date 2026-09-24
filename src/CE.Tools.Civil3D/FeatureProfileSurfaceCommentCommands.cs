@@ -163,15 +163,6 @@ namespace CETools.Civil3D
                             continue;
                         }
 
-                        Color requestedColour = Color.FromColorIndex(
-                            ColorMethod.ByAci,
-                            (short)window.ColourIndex);
-                        // Set both entity colour representations. Civil 3D feature-line
-                        // styles can override ColorIndex, while some 2023 drawings retain
-                        // the previous true-colour value unless Entity.Color is assigned.
-                        featureLine.Color = requestedColour;
-                        featureLine.ColorIndex = window.ColourIndex;
-
                         if (!layerId.IsNull)
                         {
                             try
@@ -192,6 +183,16 @@ namespace CETools.Civil3D
                         if (!colourStyleId.IsNull &&
                             TrySetFeatureLineStyleId(featureLine, colourStyleId))
                             styleChanged++;
+
+                        // Apply the entity colour after changing its Civil 3D style.
+                        // The selected style controls plan display, while the entity
+                        // colour is what the Properties palette reports. Writing both
+                        // keeps the drawing display and Properties palette in sync.
+                        Color requestedColour = Color.FromColorIndex(
+                            ColorMethod.ByAci,
+                            (short)window.ColourIndex);
+                        featureLine.Color = requestedColour;
+                        featureLine.ColorIndex = window.ColourIndex;
 
                         try { featureLine.RecordGraphicsModified(true); } catch { }
                         changed++;
@@ -1651,7 +1652,7 @@ namespace CETools.Civil3D
 
     internal sealed class FeatureLineAppearanceWindow : Window
     {
-        private readonly TextBox _colour;
+        private readonly ComboBox _colour;
         private readonly ComboBox _site;
         private readonly TextBox _newSite;
         private readonly TextBox _layer;
@@ -1669,8 +1670,19 @@ namespace CETools.Civil3D
                 grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             Content = grid;
 
-            AddLabel(grid, "AutoCAD colour index (1-255)", 0);
-            _colour = new TextBox { Text = "7", Margin = new Thickness(8) };
+            AddLabel(grid, "AutoCAD colour", 0);
+            List<FeatureLineColourChoice> colourChoices = CreateColourChoices();
+            _colour = new ComboBox
+            {
+                ItemsSource = colourChoices,
+                DisplayMemberPath = "Name",
+                Margin = new Thickness(8),
+                MinWidth = 280,
+                IsEditable = false,
+                IsTextSearchEnabled = true,
+                ToolTip = "Choose an AutoCAD indexed colour (ACI 1–255)."
+            };
+            _colour.SelectedItem = colourChoices.FirstOrDefault(choice => choice.Index == 7);
             Grid.SetRow(_colour, 0);
             Grid.SetColumn(_colour, 1);
             grid.Children.Add(_colour);
@@ -1728,24 +1740,18 @@ namespace CETools.Civil3D
             };
             apply.Click += delegate
             {
-                int colour;
-                if (!int.TryParse(
-                        _colour.Text,
-                        NumberStyles.Integer,
-                        CultureInfo.InvariantCulture,
-                        out colour) ||
-                    colour < 1 ||
-                    colour > 255)
+                FeatureLineColourChoice colour = _colour.SelectedItem as FeatureLineColourChoice;
+                if (colour == null)
                 {
                     MessageBox.Show(
-                        "Enter an AutoCAD colour index from 1 to 255.",
+                        "Choose an AutoCAD colour from the list.",
                         "CE Tools",
                         MessageBoxButton.OK,
                         MessageBoxImage.Warning);
                     return;
                 }
 
-                ColourIndex = colour;
+                ColourIndex = colour.Index;
                 NewSiteName = (_newSite.Text ?? string.Empty).Trim();
                 LayerName = (_layer.Text ?? string.Empty).Trim();
                 CivilObjectChoice choice = _site.SelectedItem as CivilObjectChoice;
@@ -1761,6 +1767,48 @@ namespace CETools.Civil3D
         public ObjectId SelectedSiteId { get; set; }
         public string NewSiteName { get; private set; }
         public string LayerName { get; private set; }
+
+        private static List<FeatureLineColourChoice> CreateColourChoices()
+        {
+            var choices = new List<FeatureLineColourChoice>();
+            for (int index = 1; index <= 255; index++)
+            {
+                string name;
+                switch (index)
+                {
+                    case 1: name = "Red"; break;
+                    case 2: name = "Yellow"; break;
+                    case 3: name = "Green"; break;
+                    case 4: name = "Cyan"; break;
+                    case 5: name = "Blue"; break;
+                    case 6: name = "Magenta"; break;
+                    case 7: name = "White / Black"; break;
+                    case 8: name = "Dark gray"; break;
+                    case 9: name = "Light gray"; break;
+                    case 250: name = "Gray 1"; break;
+                    case 251: name = "Gray 2"; break;
+                    case 252: name = "Gray 3"; break;
+                    case 253: name = "Gray 4"; break;
+                    case 254: name = "Gray 5"; break;
+                    case 255: name = "Gray 6"; break;
+                    default: name = "ACI " + index.ToString(CultureInfo.InvariantCulture); break;
+                }
+                choices.Add(new FeatureLineColourChoice(index, name));
+            }
+            return choices;
+        }
+
+        private sealed class FeatureLineColourChoice
+        {
+            public FeatureLineColourChoice(int index, string name)
+            {
+                Index = index;
+                Name = index.ToString(CultureInfo.InvariantCulture) + " — " + name;
+            }
+
+            public int Index { get; private set; }
+            public string Name { get; private set; }
+        }
 
         private static void AddLabel(Grid grid, string text, int row)
         {

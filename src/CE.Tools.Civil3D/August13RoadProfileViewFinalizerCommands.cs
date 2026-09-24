@@ -689,7 +689,7 @@ namespace CETools.Civil3D
                 : current;
         }
 
-        private static void ResolveRoadProfiles(
+        internal static void ResolveRoadProfiles(
             CivilAlignment alignment,
             Transaction transaction,
             out ObjectId groundProfileId,

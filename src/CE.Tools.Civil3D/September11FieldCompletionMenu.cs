@@ -72,9 +72,9 @@ namespace CETools.Civil3D
                         "Choose one existing Civil 3D alignment label set style, then apply it to every selected editable alignment in one operation.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
-                        "Road Profile Band Set - Show Labels",
+                        "Import Road Band Set to Multiple Profile Views",
                         "CE_ROADBANDLABELS",
-                        "Choose one existing Civil 3D profile-view band set, apply it to multiple selected road profile views and force Show Labels on for every imported top/bottom band item.",
+                        "Choose a Civil 3D road band set, import and commit it to each selected profile view, bind each band to its matching road profile and turn on labels.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
                         "Batch T/Cross Junction Bellmouths",

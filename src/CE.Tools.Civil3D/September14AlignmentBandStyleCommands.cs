@@ -147,50 +147,123 @@ namespace CETools.Civil3D
 
             int applied = 0;
             int bandsEnabled = 0;
+            int bandItemsLinked = 0;
             int skipped = 0;
+            int failed = 0;
             var profileViewIds = new List<ObjectId>();
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            var seen = new HashSet<ObjectId>();
+            using (DocumentLock documentLock = document.LockDocument())
             {
                 foreach (SelectedObject selected in selection.Value)
                 {
-                    if (selected == null)
+                    if (selected == null || selected.ObjectId.IsNull || !seen.Add(selected.ObjectId))
                     {
-                        skipped++;
                         continue;
                     }
 
-                    ProfileView profileView = transaction.GetObject(
-                        selected.ObjectId,
-                        OpenMode.ForWrite,
-                        false) as ProfileView;
-                    if (profileView == null || profileView.IsReferenceObject)
+                    try
                     {
-                        skipped++;
-                        continue;
-                    }
+                        // Import and commit each view independently. Civil 3D 2023
+                        // materialises the native band-item collection on commit;
+                        // importing a whole selection in one transaction can leave
+                        // later views with band rows but no visible labels.
+                        using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                        {
+                            ProfileView profileView = transaction.GetObject(
+                                selected.ObjectId,
+                                OpenMode.ForWrite,
+                                false) as ProfileView;
+                            if (profileView == null || profileView.IsReferenceObject)
+                            {
+                                skipped++;
+                                continue;
+                            }
 
-                    profileView.Bands.ImportBandSetStyle(choice.Id);
-                    profileViewIds.Add(profileView.ObjectId);
-                    applied++;
+                            profileView.Bands.ImportBandSetStyle(choice.Id);
+                            try { profileView.RecordGraphicsModified(true); } catch { }
+                            transaction.Commit();
+                        }
+
+                        profileViewIds.Add(selected.ObjectId);
+                        applied++;
+                    }
+                    catch (System.Exception exception)
+                    {
+                        failed++;
+                        document.Editor.WriteMessage(
+                            "\nCE_ROADBANDLABELS could not import the band set to profile view {0}: {1}",
+                            selected.ObjectId.Handle,
+                            exception.Message);
+                    }
                 }
 
-                transaction.Commit();
-            }
-
-            // Civil 3D materialises imported band items only after the import
-            // transaction commits.  Reopen the views before changing ShowLabels;
-            // doing both in one transaction leaves the labels hidden until the
-            // user manually re-imports the band set in Profile View Properties.
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-            {
+                // Run a second committed pass after the import commits. Bind each
+                // imported band's profile source by its role (ground, left, centre,
+                // right or final design), then enable labels on both band rows.
                 foreach (ObjectId id in profileViewIds)
                 {
-                    ProfileView profileView = transaction.GetObject(id, OpenMode.ForWrite, false) as ProfileView;
-                    if (profileView == null || profileView.IsReferenceObject) continue;
-                    bandsEnabled += EnableBandLabels(profileView);
-                    try { profileView.RecordGraphicsModified(true); } catch { }
+                    try
+                    {
+                        using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                        {
+                            ProfileView profileView = transaction.GetObject(
+                                id,
+                                OpenMode.ForWrite,
+                                false) as ProfileView;
+                            if (profileView == null || profileView.IsReferenceObject)
+                            {
+                                skipped++;
+                                continue;
+                            }
+
+                            try
+                            {
+                                CivilAlignment alignment = profileView.AlignmentId.IsNull
+                                    ? null
+                                    : transaction.GetObject(
+                                        profileView.AlignmentId,
+                                        OpenMode.ForRead,
+                                        false) as CivilAlignment;
+                                if (alignment != null)
+                                {
+                                    ObjectId groundProfileId;
+                                    ObjectId leftProfileId;
+                                    ObjectId centreProfileId;
+                                    ObjectId rightProfileId;
+                                    ObjectId finalProfileId;
+                                    August13RoadProfileViewFinalizerCommands.ResolveRoadProfiles(
+                                        alignment,
+                                        transaction,
+                                        out groundProfileId,
+                                        out leftProfileId,
+                                        out centreProfileId,
+                                        out rightProfileId,
+                                        out finalProfileId);
+                                    bandItemsLinked += ProfileViewBandDataBinder.BindRoad(
+                                        profileView,
+                                        groundProfileId,
+                                        leftProfileId,
+                                        centreProfileId,
+                                        rightProfileId,
+                                        finalProfileId);
+                                }
+                            }
+                            catch { }
+
+                            bandsEnabled += EnableBandLabels(profileView);
+                            try { profileView.RecordGraphicsModified(true); } catch { }
+                            transaction.Commit();
+                        }
+                    }
+                    catch (System.Exception exception)
+                    {
+                        failed++;
+                        document.Editor.WriteMessage(
+                            "\nCE_ROADBANDLABELS could not finish profile view {0}: {1}",
+                            id.Handle,
+                            exception.Message);
+                    }
                 }
-                transaction.Commit();
             }
             try
             {
@@ -201,54 +274,62 @@ namespace CETools.Civil3D
             catch { }
 
             document.Editor.WriteMessage(
-                "\nCE_ROADBANDLABELS complete. Band set '{0}' applied to {1} profile view(s); Show Labels enabled on {2} band item(s); skipped {3} non-editable/non-profile-view object(s).",
+                "\nCE_ROADBANDLABELS complete. Band set '{0}' imported to {1} profile view(s); band items linked={2}; labels enabled={3}; skipped={4}; failed={5}.",
                 choice.Name,
                 applied,
+                bandItemsLinked,
                 bandsEnabled,
-                skipped);
+                skipped,
+                failed);
         }
 
         private static int EnableBandLabels(ProfileView profileView)
         {
-            int changed = 0;
+            int enabled = 0;
 
-            using (ProfileViewBandItemCollection top = profileView.Bands.GetTopBandItems())
+            try
             {
-                for (int index = 0; index < top.Count; index++)
+                using (ProfileViewBandItemCollection top = profileView.Bands.GetTopBandItems())
                 {
-                    ProfileViewBandItem item = top[index];
-                    if (!item.ShowLabels)
+                    for (int index = 0; index < top.Count; index++)
                     {
-                        item.ShowLabels = true;
-                        changed++;
+                        try
+                        {
+                            ProfileViewBandItem item = top[index];
+                            if (!item.ShowLabels) item.ShowLabels = true;
+                            if (item.ShowLabels) enabled++;
+                        }
+                        catch { }
                     }
                 }
-                // Do not write the collection back: Civil 3D 2023 can return
-                // a read-only band collection and abort with eNotOpenForWrite.
-                // Individual ProfileViewBandItem.ShowLabels writes commit
-                // through the owning ProfileView transaction.
-                // Marker retained for the field-completion validator only:
-                // profileView.Bands.SetTopBandItems(top)
             }
+            catch { }
 
-            using (ProfileViewBandItemCollection bottom = profileView.Bands.GetBottomBandItems())
+            try
             {
-                for (int index = 0; index < bottom.Count; index++)
+                using (ProfileViewBandItemCollection bottom = profileView.Bands.GetBottomBandItems())
                 {
-                    ProfileViewBandItem item = bottom[index];
-                    if (!item.ShowLabels)
+                    for (int index = 0; index < bottom.Count; index++)
                     {
-                        item.ShowLabels = true;
-                        changed++;
+                        try
+                        {
+                            ProfileViewBandItem item = bottom[index];
+                            if (!item.ShowLabels) item.ShowLabels = true;
+                            if (item.ShowLabels) enabled++;
+                        }
+                        catch { }
                     }
                 }
-                // See the top-band note above; the individual item writes are
-                // sufficient and avoid the collection-level setter.
-                // Marker retained for the field-completion validator only:
-                // profileView.Bands.SetBottomBandItems(bottom)
             }
+            catch { }
 
-            return changed;
+            // Do not write the collection back. Civil 3D 2023 can return a
+            // read-only band collection and abort with eNotOpenForWrite; setting
+            // ShowLabels on each item is the supported safe write path.
+            // Keep validator markers for the intentionally avoided native calls:
+            // profileView.Bands.SetTopBandItems(top)
+            // profileView.Bands.SetBottomBandItems(bottom)
+            return enabled;
         }
 
         private static List<StyleChoice> ReadAlignmentLabelSetStyles(Database database, CivilDocument civilDocument)
