@@ -17,18 +17,18 @@ jobs:
           $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
           $text = [IO.File]::ReadAllText($path) -replace "`r?`n","`r`n"
           $leader = @'
-            double leader = PaperAnnotationScale.ModelDistance(
-                document.Database,
-                settings.Double("ArcLeader", 6.0));
-'@ -replace "`r?`n","`r`n"
+                      double leader = PaperAnnotationScale.ModelDistance(
+                          document.Database,
+                          settings.Double("ArcLeader", 6.0));
+          '@ -replace "`r?`n","`r`n"
           $extra = @'
-            bool outputMillimetres = string.Equals(
-                settings.Text("ValueUnits"),
-                "Millimetres",
-                StringComparison.OrdinalIgnoreCase);
-            double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
-            double stagedCompatibilityProbe = measurementFactor;
-'@ -replace "`r?`n","`r`n"
+                      bool outputMillimetres = string.Equals(
+                          settings.Text("ValueUnits"),
+                          "Millimetres",
+                          StringComparison.OrdinalIgnoreCase);
+                      double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
+                      double stagedCompatibilityProbe = measurementFactor;
+          '@ -replace "`r?`n","`r`n"
           if (-not $text.Contains($leader)) { throw 'Raw ArcLeader anchor missing.' }
           $text = $text.Replace($leader,$leader + "`r`n" + $extra)
           [IO.File]::WriteAllText($path,$text,(New-Object Text.UTF8Encoding($false)))

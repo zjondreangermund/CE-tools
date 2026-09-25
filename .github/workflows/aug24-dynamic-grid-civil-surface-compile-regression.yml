@@ -42,33 +42,33 @@ jobs:
           $index = $text.IndexOf($marker,[StringComparison]::Ordinal)
           if ($index -lt 0) { throw 'Staged Dynamic Grid injection marker missing.' }
           $block = @'
-        private static List<string> ReadSurfaceNames(Database database, CivilDocument civil)
-        {
-            Surface surface = null;
-            return new List<string>();
-        }
+                  private static List<string> ReadSurfaceNames(Database database, CivilDocument civil)
+                  {
+                      Surface surface = null;
+                      return new List<string>();
+                  }
 
-        private static Surface OpenSurface(Database database, Transaction transaction, string handle)
-        {
-            return transaction.GetObject(ObjectId.Null, OpenMode.ForRead, false) as Surface;
-        }
+                  private static Surface OpenSurface(Database database, Transaction transaction, string handle)
+                  {
+                      return transaction.GetObject(ObjectId.Null, OpenMode.ForRead, false) as Surface;
+                  }
 
-        private static void ApplySurfaceLevels(Database database, Transaction transaction)
-        {
-            Surface ng = OpenSurface(database, transaction, string.Empty);
-            Surface design = OpenSurface(database, transaction, string.Empty);
-        }
+                  private static void ApplySurfaceLevels(Database database, Transaction transaction)
+                  {
+                      Surface ng = OpenSurface(database, transaction, string.Empty);
+                      Surface design = OpenSurface(database, transaction, string.Empty);
+                  }
 
-        private static double? SampleSurface(Surface surface, Point3d point)
-        {
-            return null;
-        }
+                  private static double? SampleSurface(Surface surface, Point3d point)
+                  {
+                      return null;
+                  }
 
-        private sealed class GridLineSpec
-        {
-        }
+                  private sealed class GridLineSpec
+                  {
+                  }
 
-'@ -replace "`r?`n", "`r`n"
+          '@ -replace "`r?`n", "`r`n"
           $text = $text.Insert($index,$block)
           [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))
           if (-not [regex]::IsMatch($text,'(?<![A-Za-z0-9_\.])Surface(?![A-Za-z0-9_])')) { throw 'Ambiguous Surface fixture was not established.' }

@@ -65,12 +65,12 @@ jobs:
           $match = [regex]::Match($text,$pattern)
           if (-not $match.Success) { throw 'Could not reproduce the late August 20 unit-factor position.' }
           $unit = @'
-            bool outputMillimetres = string.Equals(
-                settings.Text("ValueUnits"),
-                "Millimetres",
-                StringComparison.OrdinalIgnoreCase);
-            double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
-'@ -replace "`r?`n", "`r`n"
+                      bool outputMillimetres = string.Equals(
+                          settings.Text("ValueUnits"),
+                          "Millimetres",
+                          StringComparison.OrdinalIgnoreCase);
+                      double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
+          '@ -replace "`r?`n", "`r`n"
           $replacement = $match.Groups[1].Value + "`r`n" + $unit + $match.Groups[2].Value
           $text = $text.Substring(0,$match.Index) + $replacement + $text.Substring($match.Index + $match.Length)
           [System.IO.File]::WriteAllText($path,$text,(New-Object System.Text.UTF8Encoding($false)))

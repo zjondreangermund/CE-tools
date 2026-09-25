@@ -23,32 +23,32 @@ jobs:
           $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\MultiDimensionCommands.cs'
           $text = [IO.File]::ReadAllText($path) -replace "`r?`n","`r`n"
           $old = @'
-            double leader = PaperAnnotationScale.ModelDistance(
-                document.Database,
-                settings.Double("ArcLeader", 6.0));
+                      double leader = PaperAnnotationScale.ModelDistance(
+                          document.Database,
+                          settings.Double("ArcLeader", 6.0));
 
-            int sources = 0;
-'@ -replace "`r?`n","`r`n"
+                      int sources = 0;
+          '@ -replace "`r?`n","`r`n"
           $new = @'
-            double leader = PaperAnnotationScale.ModelDistance(
-                document.Database,
-                settings.Double("ArcLeader", 6.0));
-            bool outputMillimetres = string.Equals(
-                settings.Text("ValueUnits"),
-                "Millimetres",
-                StringComparison.OrdinalIgnoreCase);
-            double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
-            double latePresentationProbe = 42.0;
+                      double leader = PaperAnnotationScale.ModelDistance(
+                          document.Database,
+                          settings.Double("ArcLeader", 6.0));
+                      bool outputMillimetres = string.Equals(
+                          settings.Text("ValueUnits"),
+                          "Millimetres",
+                          StringComparison.OrdinalIgnoreCase);
+                      double measurementFactor = outputMillimetres ? 1000.0 : 1.0;
+                      double latePresentationProbe = 42.0;
 
-            if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))
-            {
-                // Earlier staged repair emitted the same dispatch with different formatting.
-                DimensionOpenPolylineChain(document, selection, requestedStyle);
-                return;
-            }
+                      if (string.Equals(mode, chain, StringComparison.OrdinalIgnoreCase))
+                      {
+                          // Earlier staged repair emitted the same dispatch with different formatting.
+                          DimensionOpenPolylineChain(document, selection, requestedStyle);
+                          return;
+                      }
 
-            int sources = 0;
-'@ -replace "`r?`n","`r`n"
+                      int sources = 0;
+          '@ -replace "`r?`n","`r`n"
           if (-not $text.Contains($old)) { throw 'Raw ArcLeader/sources anchor missing.' }
           $text = $text.Replace($old,$new)
           [IO.File]::WriteAllText($path,$text,(New-Object Text.UTF8Encoding($false)))

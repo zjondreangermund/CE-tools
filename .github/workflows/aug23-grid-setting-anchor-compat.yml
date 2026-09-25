@@ -24,18 +24,18 @@ jobs:
           $path = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August18DynamicGridSettingOutCommands.cs'
           $text = [IO.File]::ReadAllText($path) -replace "`r?`n","`r`n"
           $old = @'
-            settings.AddText(
-                "Prefix", "02 Numbering", "Point prefix", "G",
-                "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
-'@ -replace "`r?`n","`r`n"
+                      settings.AddText(
+                          "Prefix", "02 Numbering", "Point prefix", "G",
+                          "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
+          '@ -replace "`r?`n","`r`n"
           $new = @'
-            settings.AddText(
-                "Prefix",
-                "04 Numbering",
-                "Grid point prefix",
-                "G",
-                "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
-'@ -replace "`r?`n","`r`n"
+                      settings.AddText(
+                          "Prefix",
+                          "04 Numbering",
+                          "Grid point prefix",
+                          "G",
+                          "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
+          '@ -replace "`r?`n","`r`n"
           if (-not $text.Contains($old)) { throw 'Raw Grid Prefix setting anchor missing.' }
           $text = $text.Replace($old,$new)
           [IO.File]::WriteAllText($path,$text,(New-Object Text.UTF8Encoding($false)))

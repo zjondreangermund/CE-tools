@@ -52,17 +52,17 @@ jobs:
             $index = $text.IndexOf($marker,[StringComparison]::Ordinal)
             if ($index -lt 0) { throw 'CreateCogo marker missing while modelling Grid helper.' }
             $helper = @'
-        private static void SyncGridLines(
-            Database database,
-            Transaction transaction,
-            IList<GridSource> sources,
-            DynamicGridLink link)
-        {
-            // Regression-only staged helper: the production August 23 repair owns
-            // the real linked-line implementation. This models only its presence.
-        }
+                  private static void SyncGridLines(
+                      Database database,
+                      Transaction transaction,
+                      IList<GridSource> sources,
+                      DynamicGridLink link)
+                  {
+                      // Regression-only staged helper: the production August 23 repair owns
+                      // the real linked-line implementation. This models only its presence.
+                  }
 
-'@ -replace "`r?`n", "`r`n"
+          '@ -replace "`r?`n", "`r`n"
             $text = $text.Insert($index,$helper)
           }
 
