@@ -191,13 +191,7 @@ $siteGrid = $siteGrid.Replace(
     '                    _document.Editor.Regen();',
     '                    August21DisplayRefresh.Flush(_document);')
 
-$siteGridHelperAnchor = @'
-        private static Document Active()
-        {
-            return AcApplication.DocumentManager.MdiActiveDocument;
-        }
-'@ -replace "`n","`r`n"
-$siteGridHelperReplacement = @'
+$siteGridHelper = @'
         internal static bool IsLinkedSiteGridObject(
             Database database,
             ObjectId id)
@@ -229,31 +223,42 @@ $siteGridHelperReplacement = @'
                 return false;
             }
         }
-
-        private static Document Active()
-        {
-            return AcApplication.DocumentManager.MdiActiveDocument;
-        }
 '@ -replace "`n","`r`n"
-$siteGrid = ReplaceRequired $siteGrid $siteGridHelperAnchor $siteGridHelperReplacement 'site-grid linked-object filter helper'
+if (-not $siteGrid.Contains('internal static bool IsLinkedSiteGridObject(')) {
+    # August 12 staging has used several whitespace/layout variants of Active().
+    # Insert before a stable member declaration instead of requiring its body to
+    # match byte-for-byte.
+    $activeMember = [regex]::Match(
+        $siteGrid,
+        '(?m)^[ \t]*(?:private|internal)\s+static\s+Document\s+Active\s*\(\s*\)')
+    if (-not $activeMember.Success) {
+        $activeMember = [regex]::Match(
+            $siteGrid,
+            '(?m)^[ \t]*internal\s+sealed\s+class\s+SiteGridSettings\b')
+    }
+    if (-not $activeMember.Success) {
+        throw 'August 18 repair anchor not found: Site Grid command helper insertion point'
+    }
+    $siteGrid = $siteGrid.Insert($activeMember.Index,$siteGridHelper + "`r`n")
+}
 
-$runtimeTerminateAnchor = @'
-        private static void OnDocumentActivated(
-            object sender,
-            DocumentCollectionEventArgs args)
-'@ -replace "`n","`r`n"
-$runtimeTerminateReplacement = @'
+if (-not $siteGrid.Contains('internal static void AcknowledgeCurrentState()')) {
+    $documentActivated = [regex]::Match(
+        $siteGrid,
+        '(?m)^[ \t]*private\s+static\s+void\s+OnDocumentActivated\s*\(')
+    if (-not $documentActivated.Success) {
+        throw 'August 18 repair anchor not found: Site Grid runtime document-activation handler'
+    }
+    $runtimeTerminateReplacement = @'
         internal static void AcknowledgeCurrentState()
         {
             DirtyIds.Clear();
             _pending = false;
         }
 
-        private static void OnDocumentActivated(
-            object sender,
-            DocumentCollectionEventArgs args)
 '@ -replace "`n","`r`n"
-$siteGrid = ReplaceRequired $siteGrid $runtimeTerminateAnchor $runtimeTerminateReplacement 'site-grid acknowledge-current-state helper'
+    $siteGrid = $siteGrid.Insert($documentActivated.Index,$runtimeTerminateReplacement + "`r`n")
+}
 
 $siteGrid = AddSiteGridAcknowledgement $siteGrid 'CE_SITEGRID' $true
 $siteGrid = AddSiteGridAcknowledgement $siteGrid 'CE_SITEGRIDREFRESH' $false
