@@ -21,13 +21,21 @@ for marker in [
 appearance_command = appearance_source.split("public void FeatureLineAppearance()", 1)[1].split(
     '[CommandMethod("CE_TOOLS", "CE_FLVERTEXLABELS"', 1
 )[0]
-style_assignment = appearance_command.find(
-    "TrySetFeatureLineStyleId(featureLine, colourStyleId, transaction)"
+style_prepared = appearance_command.find(
+    "colourStylesByFeatureLine[featureLine.ObjectId] = colourStyleId;"
 )
 entity_colour = appearance_command.find("featureLine.Color = requestedColour;")
 aci_colour = appearance_command.find("featureLine.ColorIndex = window.ColourIndex;")
-if min(style_assignment, entity_colour, aci_colour) < 0 or not style_assignment < entity_colour < aci_colour:
-    raise SystemExit("Feature-line display style and entity ACI colour are not applied in sequence.")
+first_commit = appearance_command.find("transaction.Commit();", aci_colour)
+style_apply_pass = appearance_command.find(
+    "TrySetFeatureLineStyleId(\n                                featureLine,\n                                pair.Value,\n                                transaction)"
+)
+style_readback = appearance_command.find("string actualName = ReadText(featureLine, \"StyleName\", string.Empty);")
+verified_style_count = appearance_command.find("styleChanged++;", style_readback)
+if min(style_prepared, entity_colour, aci_colour, first_commit, style_apply_pass, style_readback, verified_style_count) < 0:
+    raise SystemExit("Feature-line color style preparation, committed assignment, or read-back verification is missing.")
+if not style_prepared < entity_colour < aci_colour < first_commit < style_apply_pass < style_readback < verified_style_count:
+    raise SystemExit("Feature-line color styles must be committed before assignment and counted only after read-back.")
 for marker in ["ResolveFeatureLineColourStyle(", "ApplyFeatureLineStyleColour(", "featureLine.RecordGraphicsModified(true)"]:
     if marker not in appearance_source:
         raise SystemExit(f"Feature-line visible colour marker missing: {marker}")
@@ -52,6 +60,9 @@ for marker in [
 ]:
     if marker not in style_assignment_helper:
         raise SystemExit(f"Feature-line style assignment read-back check missing: {marker}")
+
+if "OpenMode.ForWrite" not in style_resolution:
+    raise SystemExit("Feature-line source style is not opened writable before CopyAsSibling.")
 
 style_colour = appearance_source.split(
     "private static void ApplyFeatureLineStyleColour(", 1

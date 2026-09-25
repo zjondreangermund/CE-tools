@@ -125,6 +125,8 @@ namespace CETools.Civil3D
             int layerChanged = 0;
             int rejected = 0;
             var changedIds = new List<ObjectId>();
+            var colourStylesByFeatureLine = new Dictionary<ObjectId, ObjectId>();
+            var styleAssignmentFailures = new List<string>();
 
             // Keep site creation, feature-line writes and site moves under one
             // document lock. Civil 3D 2023 otherwise reports a successful
@@ -174,15 +176,21 @@ namespace CETools.Civil3D
                         }
 
                         // Civil feature-line styles override entity colour in plan/model
-                        // display. Use a colour-specific sibling style when the API allows it.
+                        // display. Prepare a colour-specific sibling style now, then
+                        // assign it to the feature line after this transaction commits.
+                        // Civil 3D 2023 can leave StyleName stale when a new style is
+                        // copied and assigned inside the same transaction.
                         ObjectId colourStyleId = ResolveFeatureLineColourStyle(
                             document,
                             featureLine,
                             window.ColourIndex,
                             transaction);
-                        if (!colourStyleId.IsNull &&
-                            TrySetFeatureLineStyleId(featureLine, colourStyleId, transaction))
-                            styleChanged++;
+                        if (!colourStyleId.IsNull)
+                            colourStylesByFeatureLine[featureLine.ObjectId] = colourStyleId;
+                        else
+                            styleAssignmentFailures.Add(
+                                "feature line " + featureLine.Handle +
+                                " has no available colour-specific style");
 
                         // Apply the entity colour after changing its Civil 3D style.
                         // The selected style controls plan display, while the entity
@@ -200,6 +208,101 @@ namespace CETools.Civil3D
                     }
                     transaction.Commit();
                 }
+
+                // Apply copied styles only after the style-creation transaction has
+                // committed. StyleId is write-only in Civil 3D 2023, so verify the
+                // assignment by reading the feature line's StyleName in a new
+                // transaction rather than trusting the in-transaction wrapper.
+                if (colourStylesByFeatureLine.Count > 0)
+                {
+                    using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                    {
+                        foreach (KeyValuePair<ObjectId, ObjectId> pair in colourStylesByFeatureLine)
+                        {
+                            CivilFeatureLine featureLine = null;
+                            try
+                            {
+                                featureLine = transaction.GetObject(
+                                    pair.Key,
+                                    OpenMode.ForWrite,
+                                    false) as CivilFeatureLine;
+                            }
+                            catch { }
+                            if (featureLine == null)
+                            {
+                                styleAssignmentFailures.Add(
+                                    "feature line " + pair.Key.Handle +
+                                    " could not be reopened for style assignment");
+                                continue;
+                            }
+
+                            bool assigned = TrySetFeatureLineStyleId(
+                                featureLine,
+                                pair.Value,
+                                transaction);
+                            if (assigned)
+                            {
+                                try { featureLine.RecordGraphicsModified(true); } catch { }
+                            }
+                        }
+                        transaction.Commit();
+                    }
+                }
+
+                foreach (KeyValuePair<ObjectId, ObjectId> pair in colourStylesByFeatureLine)
+                {
+                    try
+                    {
+                        using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                        {
+                            CivilFeatureLine featureLine = transaction.GetObject(
+                                pair.Key,
+                                OpenMode.ForRead,
+                                false) as CivilFeatureLine;
+                            if (featureLine == null)
+                            {
+                                styleAssignmentFailures.Add(
+                                    "feature line " + pair.Key.Handle +
+                                    " disappeared before style verification");
+                                transaction.Commit();
+                                continue;
+                            }
+                            DBObject style = transaction.GetObject(
+                                pair.Value,
+                                OpenMode.ForRead,
+                                false);
+                            string expectedName = ReadText(style, "Name", string.Empty);
+                            string actualName = ReadText(featureLine, "StyleName", string.Empty);
+                            if (!string.IsNullOrWhiteSpace(expectedName) &&
+                                string.Equals(actualName, expectedName,
+                                    StringComparison.OrdinalIgnoreCase))
+                            {
+                                styleChanged++;
+                            }
+                            else
+                            {
+                                styleAssignmentFailures.Add(string.Format(
+                                    CultureInfo.CurrentCulture,
+                                    "feature line {0} still uses style '{1}' instead of '{2}'",
+                                    pair.Key.Handle,
+                                    string.IsNullOrWhiteSpace(actualName) ? "<unknown>" : actualName,
+                                    string.IsNullOrWhiteSpace(expectedName) ? "<unknown>" : expectedName));
+                            }
+                            transaction.Commit();
+                        }
+                    }
+                    catch (System.Exception exception)
+                    {
+                        styleAssignmentFailures.Add(string.Format(
+                            CultureInfo.CurrentCulture,
+                            "feature line {0} style verification failed: {1}",
+                            pair.Key.Handle,
+                            exception.Message));
+                    }
+                }
+
+                foreach (string failure in styleAssignmentFailures)
+                    document.Editor.WriteMessage("\nCE_FLAPPEARANCE: {0}.", failure);
 
                 foreach (ObjectId id in changedIds)
                     if (ApplySite(id, window.SelectedSiteId)) siteChanged++;
@@ -961,7 +1064,7 @@ namespace CETools.Civil3D
             {
                 currentStyle = transaction.GetObject(
                     currentStyleId,
-                    OpenMode.ForRead,
+                    OpenMode.ForWrite,
                 false);
             }
             catch { }
