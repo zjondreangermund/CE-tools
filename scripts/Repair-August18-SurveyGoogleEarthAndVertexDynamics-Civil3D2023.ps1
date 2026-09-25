@@ -288,62 +288,72 @@ if (-not $siteGrid.Contains('dirty.RemoveWhere(id =>')) {
         $dirtyFilter)
 }
 
-$siteGridAutoRefreshOld = @'
-            _busy = true;
-            try
-            {
-                int refreshed =
-                    August12SurveySiteGridCommands.RefreshAll(
-                        _document,
-                        dirty);
-                if (refreshed > 0)
-                    August21DisplayRefresh.Flush(_document);
-            }
-            catch
-            {
-                // Dynamic refresh must never interrupt the active Civil 3D session.
-            }
-            finally
-            {
-                _busy = false;
-            }
-'@ -replace "`n","`r`n"
-$siteGridAutoRefreshNew = @'
-            _busy = true;
-            bool undoRecordingDisabled = false;
-            try
-            {
-                // A background dependency update is bookkeeping, not a user edit.
-                // Keep it out of AutoCAD's Undo dropdown.
-                try
-                {
-                    _document.Database.DisableUndoRecording(true);
-                    undoRecordingDisabled = true;
-                }
-                catch { }
+if (-not $siteGrid.Contains('_document.Database.DisableUndoRecording(true);')) {
+    $idleHandler = [regex]::Match(
+        $siteGrid,
+        '(?m)^[ \t]*private\s+static\s+void\s+OnIdle\s*\(')
+    if (-not $idleHandler.Success) {
+        throw 'August 18 repair anchor not found: Site Grid idle refresh handler'
+    }
+    $idleText = $siteGrid.Substring($idleHandler.Index)
+    $busyLine = [regex]::Match($idleText,'(?m)^[ \t]*_busy\s*=\s*true\s*;')
+    if (-not $busyLine.Success) {
+        throw 'August 18 repair anchor not found: Site Grid idle refresh busy guard'
+    }
+    $busyIndent = [regex]::Match($busyLine.Value,'^[ \t]*').Value
+    $busyAbsolute = $idleHandler.Index + $busyLine.Index
+    $siteGrid = $siteGrid.Insert(
+        $busyAbsolute + $busyLine.Length,
+        "`r`n" + $busyIndent + 'bool undoRecordingDisabled = false;')
 
-                int refreshed =
-                    August12SurveySiteGridCommands.RefreshAll(
-                        _document,
-                        dirty);
-                if (refreshed > 0)
-                    August21DisplayRefresh.Flush(_document);
-            }
-            catch
-            {
-                // Dynamic refresh must never interrupt the active Civil 3D session.
-            }
-            finally
-            {
-                if (undoRecordingDisabled)
-                {
-                    try { _document.Database.DisableUndoRecording(false); }
-                    catch { }
-                }
-                _busy = false;
-            }
-'@ -replace "`n","`r`n"
-$siteGrid = ReplaceRequired $siteGrid $siteGridAutoRefreshOld $siteGridAutoRefreshNew 'site-grid automatic refresh undo suppression'
+    $idleHandler = [regex]::Match(
+        $siteGrid,
+        '(?m)^[ \t]*private\s+static\s+void\s+OnIdle\s*\(')
+    $idleText = $siteGrid.Substring($idleHandler.Index)
+    $mainTry = [regex]::Match($idleText,'(?m)^[ \t]*try\s*\{')
+    if (-not $mainTry.Success) {
+        throw 'August 18 repair anchor not found: Site Grid idle refresh try block'
+    }
+    $tryIndent = [regex]::Match($mainTry.Value,'^[ \t]*').Value
+    $undoStart = @(
+        $tryIndent + '    // A background dependency update is bookkeeping, not a user edit.',
+        $tryIndent + '    // Keep it out of AutoCAD Undo/Redo.',
+        $tryIndent + '    try',
+        $tryIndent + '    {',
+        $tryIndent + '        _document.Database.DisableUndoRecording(true);',
+        $tryIndent + '        undoRecordingDisabled = true;',
+        $tryIndent + '    }',
+        $tryIndent + '    catch { }'
+    ) -join "`r`n"
+    $siteGrid = $siteGrid.Insert(
+        $idleHandler.Index + $mainTry.Index + $mainTry.Length,
+        "`r`n" + $undoStart + "`r`n")
+
+    $idleHandler = [regex]::Match(
+        $siteGrid,
+        '(?m)^[ \t]*private\s+static\s+void\s+OnIdle\s*\(')
+    $idleText = $siteGrid.Substring($idleHandler.Index)
+    $idleFinally = [regex]::Match($idleText,'(?m)^[ \t]*finally\s*\{')
+    if (-not $idleFinally.Success) {
+        throw 'August 18 repair anchor not found: Site Grid idle refresh finally block'
+    }
+    $busyReset = [regex]::Match(
+        $idleText.Substring($idleFinally.Index + $idleFinally.Length),
+        '(?m)^[ \t]*_busy\s*=\s*false\s*;')
+    if (-not $busyReset.Success) {
+        throw 'August 18 repair anchor not found: Site Grid idle refresh completion guard'
+    }
+    $resetIndent = [regex]::Match($busyReset.Value,'^[ \t]*').Value
+    $undoReset = @(
+        $resetIndent + 'if (undoRecordingDisabled)',
+        $resetIndent + '{',
+        $resetIndent + '    try { _document.Database.DisableUndoRecording(false); }',
+        $resetIndent + '    catch { }',
+        $resetIndent + '}'
+    ) -join "`r`n"
+    $resetAbsolute = $idleHandler.Index + $idleFinally.Index + $idleFinally.Length + $busyReset.Index
+    $siteGrid = $siteGrid.Insert($resetAbsolute,$undoReset + "`r`n")
+}
 WriteText $siteGridPath $siteGrid
 
 # The Site Grid has its own precise dependency manager. Do not also schedule the
