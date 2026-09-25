@@ -148,6 +148,8 @@ namespace CETools.Civil3D
             int applied = 0;
             int bandsEnabled = 0;
             int bandItemsLinked = 0;
+            int bandLinkWarnings = 0;
+            int roadSourceProfilesAlreadyInView = 0;
             int skipped = 0;
             int failed = 0;
             var profileViewIds = new List<ObjectId>();
@@ -239,14 +241,27 @@ namespace CETools.Civil3D
                                         out centreProfileId,
                                         out rightProfileId,
                                         out finalProfileId);
+                                    roadSourceProfilesAlreadyInView +=
+                                        ProfileViewBandDataBinder.CountRoadSourceProfilesAlreadyInView(
+                                            profileView,
+                                            groundProfileId,
+                                            leftProfileId,
+                                            centreProfileId,
+                                            rightProfileId,
+                                            finalProfileId);
+                                    int localLinkWarnings;
                                     bandItemsLinked += ProfileViewBandDataBinder.BindRoad(
                                         profileView,
                                         groundProfileId,
                                         leftProfileId,
                                         centreProfileId,
                                         rightProfileId,
-                                        finalProfileId);
+                                        finalProfileId,
+                                        out localLinkWarnings);
+                                    bandLinkWarnings += localLinkWarnings;
                                 }
+                                else
+                                    bandLinkWarnings++;
                             }
                             catch { }
 
@@ -273,14 +288,59 @@ namespace CETools.Civil3D
             }
             catch { }
 
+            int nativeBandLabelValues = 0;
+            int bandStylesWithoutLabelComponents = 0;
+            foreach (ObjectId id in profileViewIds)
+            {
+                try
+                {
+                    using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                    {
+                        ProfileView profileView = transaction.GetObject(
+                            id, OpenMode.ForRead, false) as ProfileView;
+                        if (profileView != null)
+                        {
+                            nativeBandLabelValues +=
+                                ProfileViewBandDataBinder.CountProfileDataBandLabelSubentities(
+                                    profileView, transaction);
+                            bandStylesWithoutLabelComponents +=
+                                ProfileViewBandDataBinder.CountBandStylesWithoutLabelComponents(
+                                    profileView, transaction);
+                        }
+                        transaction.Commit();
+                    }
+                }
+                catch { }
+            }
+
             document.Editor.WriteMessage(
-                "\nCE_ROADBANDLABELS complete. Band set '{0}' imported to {1} profile view(s); band items linked={2}; labels enabled={3}; skipped={4}; failed={5}.",
+                "\nCE_ROADBANDLABELS complete. Band set '{0}' imported to {1} profile view(s); verified band sources={2}; labels on={3}; native profile-band label values={4}; styles without label components={5}; source-link warnings={6}; skipped={7}; failed={8}; road source profiles already in graph={9}.",
                 choice.Name,
                 applied,
                 bandItemsLinked,
                 bandsEnabled,
+                nativeBandLabelValues,
+                bandStylesWithoutLabelComponents,
+                bandLinkWarnings,
                 skipped,
-                failed);
+                failed,
+                roadSourceProfilesAlreadyInView);
+            if (nativeBandLabelValues == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCivil 3D generated no native profile-band label values. Check each band's Profile 1/Profile 2 source and its band style label components; labels enabled alone does not confirm label values exist.");
+            }
+            if (bandLinkWarnings > 0)
+            {
+                document.Editor.WriteMessage(
+                    "\n{0} band source assignment(s) did not verify after write. Review the Profile 1/Profile 2 source fields on the selected profile view bands.",
+                    bandLinkWarnings);
+            }
+            if (roadSourceProfilesAlreadyInView > 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCivil 3D rejects a profile as a band source while that profile is already included in the same profile view. New road views now bind bands before adding graph profiles; an existing view with these profiles in its graph needs a non-displayed source profile to bind those rows.");
+            }
         }
 
         private static int EnableBandLabels(ProfileView profileView)
@@ -296,7 +356,8 @@ namespace CETools.Civil3D
                         try
                         {
                             ProfileViewBandItem item = top[index];
-                            if (!item.ShowLabels) item.ShowLabels = true;
+                            try { item.ShowLabels = false; } catch { }
+                            try { item.ShowLabels = true; } catch { }
                             if (item.ShowLabels) enabled++;
                         }
                         catch { }
@@ -314,7 +375,8 @@ namespace CETools.Civil3D
                         try
                         {
                             ProfileViewBandItem item = bottom[index];
-                            if (!item.ShowLabels) item.ShowLabels = true;
+                            try { item.ShowLabels = false; } catch { }
+                            try { item.ShowLabels = true; } catch { }
                             if (item.ShowLabels) enabled++;
                         }
                         catch { }

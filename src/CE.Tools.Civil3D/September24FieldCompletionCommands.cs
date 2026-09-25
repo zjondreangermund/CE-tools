@@ -54,8 +54,10 @@ namespace CETools.Civil3D
             int skippedProfileViews = 0;
             int failedProfileViews = 0;
             int bandBindingWarnings = 0;
+            int roadSourceProfilesAlreadyInView = 0;
             int viewsWithoutBandItems = 0;
             var seen = new HashSet<ObjectId>();
+            var processedProfileViewIds = new List<ObjectId>();
             using (DocumentLock lockDocument = document.LockDocument())
             {
                 foreach (ObjectId id in selection.Value.GetObjectIds())
@@ -134,16 +136,27 @@ namespace CETools.Civil3D
                                             out centreProfileId,
                                             out rightProfileId,
                                             out finalProfileId);
+                                        roadSourceProfilesAlreadyInView +=
+                                            ProfileViewBandDataBinder.CountRoadSourceProfilesAlreadyInView(
+                                                profileView,
+                                                groundProfileId,
+                                                leftProfileId,
+                                                centreProfileId,
+                                                rightProfileId,
+                                                finalProfileId);
+                                        int localSourceWarnings;
                                         int localRoadBandItemsBound = ProfileViewBandDataBinder.BindRoad(
                                             profileView,
                                             groundProfileId,
                                             leftProfileId,
                                             centreProfileId,
                                             rightProfileId,
-                                            finalProfileId);
+                                            finalProfileId,
+                                            out localSourceWarnings);
                                         roadBandItemsBound += localRoadBandItemsBound;
+                                        bandBindingWarnings += localSourceWarnings;
                                         if (localRoadBandItemsBound == 0)
-                                            bandBindingWarnings++;
+                                            bandBindingWarnings += localSourceWarnings == 0 ? 1 : 0;
                                     }
                                 }
                                 catch (System.Exception exception)
@@ -168,6 +181,7 @@ namespace CETools.Civil3D
                             try { profileView.RecordGraphicsModified(true); } catch { }
                             transaction.Commit();
                             processed++;
+                            processedProfileViewIds.Add(id);
                         }
                     }
                     catch (System.Exception exception)
@@ -189,22 +203,66 @@ namespace CETools.Civil3D
             }
             catch { }
 
+            int nativeBandLabelValues = 0;
+            int bandStylesWithoutLabelComponents = 0;
+            foreach (ObjectId id in processedProfileViewIds)
+            {
+                try
+                {
+                    using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                    {
+                        ProfileView profileView = transaction.GetObject(
+                            id, OpenMode.ForRead, false) as ProfileView;
+                        if (profileView != null)
+                        {
+                            nativeBandLabelValues +=
+                                ProfileViewBandDataBinder.CountProfileDataBandLabelSubentities(
+                                    profileView, transaction);
+                            bandStylesWithoutLabelComponents +=
+                                ProfileViewBandDataBinder.CountBandStylesWithoutLabelComponents(
+                                    profileView, transaction);
+                        }
+                        transaction.Commit();
+                    }
+                }
+                catch { }
+            }
+
             document.Editor.WriteMessage(
-                "\nCE_PROFILEBANDLABELSMULTI complete. Profile views processed={0}; band items found={1}; band items with labels on={2}; road band items rebound={3}; non-profile objects ignored={4}; profile views skipped={5}; views without band items={6}; failed={7}; band-link warnings={8}.",
+                "\nCE_PROFILEBANDLABELSMULTI complete. Profile views processed={0}; band items found={1}; band items with labels on={2}; verified road band sources={3}; native profile-band label values={4}; styles without label components={5}; non-profile objects ignored={6}; profile views skipped={7}; views without band items={8}; failed={9}; band-link warnings={10}; road source profiles already in graph={11}.",
                 processed,
                 bandItemsFound,
                 bandItemsEnabled,
                 roadBandItemsBound,
+                nativeBandLabelValues,
+                bandStylesWithoutLabelComponents,
                 nonProfileObjects,
                 skippedProfileViews,
                 viewsWithoutBandItems,
                 failedProfileViews,
-                bandBindingWarnings);
+                bandBindingWarnings,
+                roadSourceProfilesAlreadyInView);
             if (viewsWithoutBandItems > 0)
             {
                 document.Editor.WriteMessage(
                     "\n{0} selected profile view(s) have no band rows. Import the required band set to those views, then run this command again.",
                     viewsWithoutBandItems);
+            }
+            if (nativeBandLabelValues == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCivil 3D generated no native profile-band label values. Check each band's Profile 1/Profile 2 source and its band style label components; labels enabled alone does not confirm label values exist.");
+            }
+            if (bandBindingWarnings > 0)
+            {
+                document.Editor.WriteMessage(
+                    "\n{0} road band source assignment(s) did not verify after write. Review the Profile 1/Profile 2 source fields on the selected profile view bands.",
+                    bandBindingWarnings);
+            }
+            if (roadSourceProfilesAlreadyInView > 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCivil 3D rejects a profile as a band source while that profile is already included in the same profile view. New road views now bind bands before adding graph profiles; an existing view with these profiles in its graph needs a non-displayed source profile to bind those rows.");
             }
         }
 
@@ -228,6 +286,7 @@ namespace CETools.Civil3D
                         {
                             ProfileViewBandItem item = top[index];
                             itemsFound++;
+                            try { item.ShowLabels = false; } catch { }
                             try { item.ShowLabels = true; } catch { }
                             try { if (item.ShowLabels) labelsOn++; } catch { }
                         }
@@ -248,6 +307,7 @@ namespace CETools.Civil3D
                         {
                             ProfileViewBandItem item = bottom[index];
                             itemsFound++;
+                            try { item.ShowLabels = false; } catch { }
                             try { item.ShowLabels = true; } catch { }
                             try { if (item.ShowLabels) labelsOn++; } catch { }
                         }

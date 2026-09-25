@@ -12,6 +12,111 @@ namespace CETools.Civil3D
     /// </summary>
     internal static class ProfileViewBandDataBinder
     {
+        internal static int CountProfileDataBandLabelSubentities(
+            Autodesk.Civil.DatabaseServices.ProfileView profileView,
+            Transaction transaction)
+        {
+            if (profileView == null || transaction == null) return 0;
+            int count = 0;
+            try
+            {
+                ObjectIdCollection groups =
+                    Autodesk.Civil.DatabaseServices.ProfileDataBandLabelGroup.GetAvailableLabelGroupIds(
+                        profileView.ObjectId);
+                if (groups == null) return 0;
+                for (int index = 0; index < groups.Count; index++)
+                {
+                    try
+                    {
+                        Autodesk.Civil.DatabaseServices.ProfileDataBandLabelGroup group = transaction.GetObject(
+                            groups[index], OpenMode.ForRead, false)
+                            as Autodesk.Civil.DatabaseServices.ProfileDataBandLabelGroup;
+                        if (group != null) count += (int)group.SubEntityCount;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return count;
+        }
+
+        internal static int CountBandStylesWithoutLabelComponents(
+            Autodesk.Civil.DatabaseServices.ProfileView profileView,
+            Transaction transaction)
+        {
+            if (profileView == null || transaction == null) return 0;
+            int missing = 0;
+            var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            object bands = ReadProperty(profileView, "Bands");
+            if (bands == null) bands = ReadProperty(profileView, "BandItems");
+            if (bands == null) return 0;
+            foreach (string methodName in new[] { "GetTopBandItems", "GetBottomBandItems" })
+            {
+                object collection = InvokeNoArguments(bands, methodName);
+                foreach (object item in CivilStyleDiscovery.Enumerate(collection))
+                {
+                    if (item == null || visited.Contains(item)) continue;
+                    visited.Add(item);
+                    ObjectId styleId = ReadBandStyleId(item);
+                    if (styleId.IsNull) continue;
+                    bool hasLabelComponent = false;
+                    try
+                    {
+                        DBObject style = transaction.GetObject(
+                            styleId, OpenMode.ForRead, false);
+                        if (style == null) continue;
+                        foreach (PropertyInfo property in style.GetType().GetProperties(
+                            BindingFlags.Public | BindingFlags.Instance))
+                        {
+                            if (property.Name.IndexOf("LabelStyleId",
+                                    StringComparison.OrdinalIgnoreCase) < 0 ||
+                                property.PropertyType != typeof(ObjectId) ||
+                                property.GetIndexParameters().Length != 0)
+                                continue;
+                            try
+                            {
+                                object value = property.GetValue(style, null);
+                                if (value is ObjectId && !((ObjectId)value).IsNull)
+                                {
+                                    hasLabelComponent = true;
+                                    break;
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { continue; }
+                    if (!hasLabelComponent) missing++;
+                }
+            }
+            return missing;
+        }
+
+        internal static int CountRoadSourceProfilesAlreadyInView(
+            DBObject profileView,
+            params ObjectId[] profileIds)
+        {
+            if (profileView == null || profileIds == null || profileIds.Length == 0)
+                return 0;
+            object graphOverrides = ReadProperty(profileView, "GraphOverrides");
+            if (graphOverrides == null) return 0;
+            var displayed = new HashSet<ObjectId>();
+            foreach (object item in CivilStyleDiscovery.Enumerate(graphOverrides))
+            {
+                object value = ReadProperty(item, "ProfileId");
+                if (value is ObjectId && !((ObjectId)value).IsNull)
+                    displayed.Add((ObjectId)value);
+            }
+            int count = 0;
+            var seen = new HashSet<ObjectId>();
+            foreach (ObjectId id in profileIds)
+            {
+                if (id.IsNull || !seen.Add(id)) continue;
+                if (displayed.Contains(id)) count++;
+            }
+            return count;
+        }
+
         internal static int Bind(
             DBObject profileView,
             ObjectId surfaceProfileId,
@@ -26,8 +131,10 @@ namespace CETools.Civil3D
             ObjectId sewerProfileId = designProfileId.IsNull
                 ? surfaceProfileId
                 : designProfileId;
+            int sourceWarnings;
             return BindInternal(profileView, surfaceProfileId, sewerProfileId,
-                sewerProfileId, sewerProfileId, surfaceProfileId, networkId, false);
+                sewerProfileId, sewerProfileId, surfaceProfileId, networkId, false,
+                out sourceWarnings);
         }
 
         internal static int BindRoad(
@@ -54,9 +161,24 @@ namespace CETools.Civil3D
             ObjectId rightProfileId,
             ObjectId finalDesignProfileId)
         {
+            int sourceWarnings;
+            return BindRoad(profileView, groundProfileId, leftProfileId,
+                centreProfileId, rightProfileId, finalDesignProfileId,
+                out sourceWarnings);
+        }
+
+        internal static int BindRoad(
+            DBObject profileView,
+            ObjectId groundProfileId,
+            ObjectId leftProfileId,
+            ObjectId centreProfileId,
+            ObjectId rightProfileId,
+            ObjectId finalDesignProfileId,
+            out int sourceWarnings)
+        {
             return BindInternal(profileView, leftProfileId, centreProfileId,
                 rightProfileId, finalDesignProfileId, groundProfileId,
-                ObjectId.Null, true);
+                ObjectId.Null, true, out sourceWarnings);
         }
 
         internal static bool HasRoadBandRoles(
@@ -141,8 +263,10 @@ namespace CETools.Civil3D
             ObjectId finalDesignProfileId,
             ObjectId groundProfileId,
             ObjectId networkId,
-            bool roadRoles)
+            bool roadRoles,
+            out int sourceWarnings)
         {
+            sourceWarnings = 0;
             if (profileView == null) return 0;
             object bands = ReadProperty(profileView, "Bands");
             if (bands == null) bands = ReadProperty(profileView, "BandItems");
@@ -169,10 +293,14 @@ namespace CETools.Civil3D
                 {
                     if (item == null || visited.Contains(item)) continue;
                     visited.Add(item);
-                    if (AssignSources(item, groundProfileId, leftProfileId,
-                            centreProfileId, rightProfileId, finalDesignProfileId,
-                            networkId, roadRoles))
+                    bool sourceExpected;
+                    bool linked = AssignSources(item, groundProfileId, leftProfileId,
+                        centreProfileId, rightProfileId, finalDesignProfileId,
+                        networkId, roadRoles, out sourceExpected);
+                    if (linked)
                         updated++;
+                    else if (sourceExpected)
+                        sourceWarnings++;
                 }
                 // Civil 3D 2023 can return a read-only wrapper for the band
                 // collection immediately after a profile view is created. Do not
@@ -187,10 +315,14 @@ namespace CETools.Civil3D
             {
                 if (item == null || visited.Contains(item)) continue;
                 visited.Add(item);
-                if (AssignSources(item, groundProfileId, leftProfileId,
-                        centreProfileId, rightProfileId, finalDesignProfileId,
-                        networkId, roadRoles))
+                bool sourceExpected;
+                bool linked = AssignSources(item, groundProfileId, leftProfileId,
+                    centreProfileId, rightProfileId, finalDesignProfileId,
+                    networkId, roadRoles, out sourceExpected);
+                if (linked)
                     updated++;
+                else if (sourceExpected)
+                    sourceWarnings++;
             }
             // Do not invoke Update/Rebuild/Refresh on the band collection.
             // Those methods reopen Civil 3D's internal collection and can abort
@@ -212,9 +344,12 @@ namespace CETools.Civil3D
             ObjectId rightProfileId,
             ObjectId finalDesignProfileId,
             ObjectId networkId,
-            bool roadRoles)
+            bool roadRoles,
+            out bool sourceExpected)
         {
-            bool changed = false;
+            sourceExpected = false;
+            int sourceFieldsExpected = 0;
+            int sourceFieldsLinked = 0;
             string identity = GetBandIdentity(item);
             bool networkBand = identity.Contains("PIPE") ||
                                identity.Contains("NETWORK") ||
@@ -297,20 +432,19 @@ namespace CETools.Civil3D
                         : finalDesignProfileId;
             }
 
-            changed = SetBooleanIfAvailable(item, true,
+            SetBooleanIfAvailable(item, true,
                 "ShowLabels",
                 "DisplayLabels",
                 "LabelsVisible",
                 "ShowBandLabels",
-                "BandLabelsVisible",
-                "Visible",
-                "IsVisible") || changed;
-            changed = InvokeBooleanSetter(item, true,
+                "BandLabelsVisible");
+            SetBooleanIfAvailable(item, true, "Visible", "IsVisible");
+            InvokeBooleanSetter(item, true,
                 "SetShowLabels",
                 "SetDisplayLabels",
                 "SetLabelsVisible",
                 "SetBandLabelsVisible",
-                "SetVisible") || changed;
+                "SetVisible");
             foreach (PropertyInfo property in item.GetType().GetProperties(
                 BindingFlags.Public | BindingFlags.Instance))
             {
@@ -319,29 +453,53 @@ namespace CETools.Civil3D
                     continue;
                 string name = (property.Name ?? string.Empty).ToUpperInvariant();
                 ObjectId source = ObjectId.Null;
-                if (name.Contains("PROFILE2") || name.Contains("SECONDARY"))
-                    source = secondaryProfileId;
-                else if (name.Contains("DATASOURCE") && networkBand && !networkId.IsNull)
-                    source = networkId;
-                else if (name.Contains("PROFILE1") || name.Contains("PROFILE") ||
-                         name.Contains("DATASOURCE"))
-                    source = primaryProfileId;
-                else if (name.Contains("NETWORK"))
-                    source = networkId;
-                if (source.IsNull) continue;
-                try
+                bool recognized = false;
+                if (!networkBand &&
+                    (name.Contains("PROFILE2") || name.Contains("SECONDARY")))
                 {
-                    property.SetValue(item, source, null);
-                    changed = true;
+                    source = secondaryProfileId;
+                    recognized = true;
                 }
-                catch { }
+                else if (name.Contains("DATASOURCE"))
+                {
+                    if (networkBand && !networkId.IsNull)
+                    {
+                        source = networkId;
+                        recognized = true;
+                    }
+                }
+                else if (name.Contains("NETWORK"))
+                {
+                    if (!networkId.IsNull)
+                    {
+                        source = networkId;
+                        recognized = true;
+                    }
+                }
+                else if (!networkBand &&
+                    (name.Contains("PROFILE1") || name.Contains("PROFILE")))
+                {
+                    source = primaryProfileId;
+                    recognized = true;
+                }
+                else
+                    continue;
+
+                if (!recognized) continue;
+                sourceExpected = true;
+                sourceFieldsExpected++;
+                if (source.IsNull) continue;
+                if (TrySetObjectIdProperty(item, property, source))
+                    sourceFieldsLinked++;
             }
 
             foreach (MethodInfo method in item.GetType().GetMethods(
                 BindingFlags.Public | BindingFlags.Instance))
             {
-                if (method.Name.IndexOf("DataSource", StringComparison.OrdinalIgnoreCase) < 0 &&
-                    method.Name.IndexOf("Profile", StringComparison.OrdinalIgnoreCase) < 0)
+                if (!method.Name.StartsWith("Set", StringComparison.OrdinalIgnoreCase) ||
+                    (method.Name.IndexOf("DataSource", StringComparison.OrdinalIgnoreCase) < 0 &&
+                     method.Name.IndexOf("Profile", StringComparison.OrdinalIgnoreCase) < 0 &&
+                     method.Name.IndexOf("Network", StringComparison.OrdinalIgnoreCase) < 0))
                     continue;
                 ParameterInfo[] parameters = method.GetParameters();
                 if (parameters.Length != 1 || parameters[0].ParameterType != typeof(ObjectId))
@@ -350,18 +508,68 @@ namespace CETools.Civil3D
                 ObjectId source = name.Contains("2")
                     ? secondaryProfileId
                     : primaryProfileId;
-                if (name.Contains("NETWORK") ||
-                    (name.Contains("DATASOURCE") && networkBand))
+                bool networkSource = name.Contains("NETWORK") || name.Contains("DATASOURCE");
+                bool recognized = networkBand
+                    ? networkSource
+                    : name.Contains("PROFILE");
+                if (!recognized) continue;
+                if (networkSource)
+                {
+                    if (!networkBand || networkId.IsNull) continue;
                     source = networkId;
+                }
+                sourceExpected = true;
+                sourceFieldsExpected++;
                 if (source.IsNull) continue;
                 try
                 {
                     method.Invoke(item, new object[] { source });
-                    changed = true;
+                    ObjectId readback = ReadObjectIdFromMethodTarget(item, name);
+                    if (!readback.IsNull && readback == source)
+                        sourceFieldsLinked++;
                 }
                 catch { }
             }
-            return changed;
+            return sourceExpected && sourceFieldsExpected > 0 &&
+                   sourceFieldsLinked == sourceFieldsExpected;
+        }
+
+        private static bool TrySetObjectIdProperty(
+            object target,
+            PropertyInfo property,
+            ObjectId source)
+        {
+            if (target == null || property == null || source.IsNull) return false;
+            try
+            {
+                object existing = property.GetValue(target, null);
+                if (existing is ObjectId && (ObjectId)existing == source)
+                    return true;
+            }
+            catch { }
+            try
+            {
+                property.SetValue(target, source, null);
+                object readback = property.GetValue(target, null);
+                return readback is ObjectId && (ObjectId)readback == source;
+            }
+            catch { return false; }
+        }
+
+        private static ObjectId ReadObjectIdFromMethodTarget(object target, string setterName)
+        {
+            if (target == null || string.IsNullOrWhiteSpace(setterName))
+                return ObjectId.Null;
+            string name = setterName.ToUpperInvariant();
+            string propertyName = name.Contains("DATASOURCE") ? "DataSourceId" :
+                name.Contains("NETWORK") ? "NetworkId" :
+                name.Contains("PROFILE2") || name.Contains("SECONDARY") ? "Profile2Id" :
+                name.Contains("PROFILE1") || name.Contains("PROFILE") ? "Profile1Id" :
+                string.Empty;
+            object value = string.IsNullOrEmpty(propertyName)
+                ? null
+                : ReadProperty(target, propertyName);
+            return value is ObjectId ? (ObjectId)value : ObjectId.Null;
         }
 
         private static bool InvokeBooleanSetter(
@@ -464,6 +672,17 @@ namespace CETools.Civil3D
                 return Convert.ToString(ReadProperty(style, "Name"));
             }
             catch { return string.Empty; }
+        }
+
+        private static ObjectId ReadBandStyleId(object item)
+        {
+            foreach (string name in new[] { "BandStyleId", "StyleId" })
+            {
+                object value = ReadProperty(item, name);
+                if (value is ObjectId && !((ObjectId)value).IsNull)
+                    return (ObjectId)value;
+            }
+            return ObjectId.Null;
         }
 
         private static object InvokeNoArguments(object value, string name)

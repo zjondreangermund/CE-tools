@@ -131,15 +131,18 @@ namespace CETools.Civil3D
                                 out centreProfileId,
                                 out rightProfileId,
                                 out finalProfileId);
-                            EnsureProfilesInProfileView(
+                            bandItems += ProfileViewBandDataBinder.BindRoad(
                                 profileView,
+                                groundProfileId,
                                 leftProfileId,
                                 centreProfileId,
                                 rightProfileId,
                                 finalProfileId);
-                            bandItems += ProfileViewBandDataBinder.BindRoad(
+                            // Civil 3D rejects a band source profile while it is
+                            // already in this view's GraphOverrides. Bind first,
+                            // then add the same profiles for graph display.
+                            EnsureProfilesInProfileView(
                                 profileView,
-                                groundProfileId,
                                 leftProfileId,
                                 centreProfileId,
                                 rightProfileId,
