@@ -2,7 +2,7 @@
 
 All notable CE Tools changes will be recorded here.
 
-## Unreleased — 2026-09-15
+## Unreleased — 2026-09-25
 
 ### Added
 
@@ -11,6 +11,13 @@ All notable CE Tools changes will be recorded here.
 - Road band-set import now commits each selected profile view separately, links
   band rows to their ground/left/centre/right/design profiles, and enables visible
   labels. The workflow is available from Profile View Batch Tools.
+- Road TOP/BOTTOM profile creation now offers a road dropdown, rebuilds matching
+  corridors/surfaces before updating profiles, and refreshes existing profiles.
+- Junction feature-line draping now supports multiple selected lines, road
+  filtering and optional intermediate surface points, with boundary-safe elevation
+  sampling for both endpoints.
+- Stepped feature-line offsets can now be created from multiple selected source
+  lines, with each source set committed independently.
 - Road corridor completion now exposes tangent, horizontal-curve and vertical-curve
   assembly frequencies, ensures selected corridor output is visible, and enables
   Civil 3D native automatic rebuild after alignment/profile edits.
@@ -27,11 +34,17 @@ All notable CE Tools changes will be recorded here.
 - Sewer profile production now creates and commits each branch long section in
   isolation, links gravity-network parts and band data after the view exists,
   and presents a branch register in a grid with optional DWG-table placement.
+- Sewer long sections now include shared junction manholes in each connected
+  branch view, bind structure/manhole data bands to the sewer network, and report
+  band-link failures per branch instead of aborting profile creation.
 - The read-only sewer audit now identifies each open pipe end, isolated and
   terminal structures, missing pipe/structure rule sets and reference surfaces;
   sewer recalculation reports the Civil 3D rule result or error for every part.
 
 ### Changed
+
+- Pipe junction correction now levels inside inverts while accounting for pipe
+  diameters, avoiding apparent jumps between different-sized pipes at manholes.
 
 - Active road-production comments and workflow descriptions now distinguish
   source-preserving corridor creation from supported completion settings and

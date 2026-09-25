@@ -148,7 +148,9 @@ namespace CETools.Civil3D
                 ReadBandStyleName(item)).ToUpperInvariant();
             bool networkBand = identity.Contains("PIPE") ||
                                identity.Contains("NETWORK") ||
-                               identity.Contains("PRESSURE");
+                               identity.Contains("PRESSURE") ||
+                               identity.Contains("STRUCTURE") ||
+                               identity.Contains("MANHOLE");
             ObjectId primaryProfileId = centreProfileId;
             ObjectId secondaryProfileId = finalDesignProfileId.IsNull
                 ? centreProfileId

@@ -5,6 +5,7 @@ on:
     paths:
       - "src/CE.Tools.Civil3D/**"
       - "scripts/Validate-September18RoadJunctionCompletion.py"
+      - "scripts/Validate-September25RoadSewerProfileFixes.py"
       - ".github/workflows/sep18-road-junction-completion.yml"
   push:
     branches:
@@ -12,6 +13,7 @@ on:
     paths:
       - "src/CE.Tools.Civil3D/**"
       - "scripts/Validate-September18RoadJunctionCompletion.py"
+      - "scripts/Validate-September25RoadSewerProfileFixes.py"
       - ".github/workflows/sep18-road-junction-completion.yml"
 
 jobs:
@@ -24,3 +26,5 @@ jobs:
           python-version: "3.x"
       - name: Validate September 18 road and junction completion
         run: python scripts/Validate-September18RoadJunctionCompletion.py
+      - name: Validate September 25 road and sewer profile fixes
+        run: python scripts/Validate-September25RoadSewerProfileFixes.py

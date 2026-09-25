@@ -47,7 +47,7 @@ namespace CETools.Civil3D
                 });
         }
 
-        [CommandMethod("CE_TOOLS", "CE_FLRELCREATE", CommandFlags.Modal | CommandFlags.Redraw)]
+        [CommandMethod("CE_TOOLS", "CE_FLRELCREATE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void CreateCommand()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
@@ -88,17 +88,51 @@ namespace CETools.Civil3D
         private static void Create(Document document)
         {
             Editor editor = document.Editor;
-            PromptEntityResult sourceResult = PromptFeatureLine(editor, "\nSelect SOURCE feature line: ");
-            if (sourceResult.Status != PromptStatus.OK) return;
+            PromptSelectionResult selection = editor.SelectImplied();
+            if (selection.Status != PromptStatus.OK || selection.Value == null || selection.Value.Count == 0)
+            {
+                selection = editor.GetSelection(new PromptSelectionOptions
+                {
+                    MessageForAdding = "\nSelect one or more SOURCE feature lines for stepped offsets: ",
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
+            }
+            editor.SetImpliedSelection(new ObjectId[0]);
+            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+
+            List<ObjectId> sourceIds = new List<ObjectId>();
+            int rejected = 0;
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
+                {
+                    try
+                    {
+                        CivilFeatureLine source = OpenFeatureLine(transaction, id, OpenMode.ForRead);
+                        if (source == null)
+                        {
+                            rejected++;
+                            continue;
+                        }
+                        EnsureEditable(source, transaction);
+                        sourceIds.Add(id);
+                    }
+                    catch { rejected++; }
+                }
+            }
+            if (sourceIds.Count == 0)
+            {
+                editor.WriteMessage("\nCE_FLREL cancelled. Select at least one editable Civil 3D feature line.");
+                return;
+            }
 
             string defaultPrefix;
             try
             {
                 using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
                 {
-                    CivilFeatureLine source = OpenFeatureLine(
-                        transaction, sourceResult.ObjectId, OpenMode.ForRead);
-                    EnsureEditable(source, transaction);
+                    CivilFeatureLine source = OpenFeatureLine(transaction, sourceIds[0], OpenMode.ForRead);
                     defaultPrefix = string.IsNullOrWhiteSpace(source.Name)
                         ? "FeatureLine-STEP"
                         : source.Name + "-STEP";
@@ -112,7 +146,7 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Linked Stepped Feature Lines",
-                "Create a complete linked offset set from one source. The set is rebuilt automatically by CE Tools when the source drawing geometry changes.");
+                "Create a complete linked offset set for every selected source. Each set is rebuilt automatically by CE Tools when its source drawing geometry changes.");
             settings.AddPositiveDouble(
                 "HorizontalStep", "01 Stepped offsets", "Horizontal step", 1.0,
                 "Drawing-unit offset between successive linked feature lines.");
@@ -141,91 +175,95 @@ namespace CETools.Civil3D
                 : settings.Text("Prefix");
 
             PromptPointResult sideResult = editor.GetPoint(
-                "\nPick the side on which the stepped offsets must be created: ");
+                "\nPick the side on which the stepped offsets must be created for the selected feature lines: ");
             if (sideResult.Status != PromptStatus.OK) return;
 
             Point3d sidePoint = sideResult.Value.TransformBy(editor.CurrentUserCoordinateSystem);
-            double sign;
-            try
+            int created = 0;
+            int failed = 0;
+            using (DocumentLock documentLock = document.LockDocument())
             {
-                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                for (int sourceIndex = 0; sourceIndex < sourceIds.Count; sourceIndex++)
                 {
-                    CivilFeatureLine source = OpenFeatureLine(
-                        transaction, sourceResult.ObjectId, OpenMode.ForRead);
-                    EnsureEditable(source, transaction);
-                    using (Polyline plan = BuildPlanPolyline(source))
+                    ObjectId sourceId = sourceIds[sourceIndex];
+                    int localCreated = 0;
+                    try
                     {
-                        sign = ResolveOffsetSign(plan, horizontalStep, sidePoint);
-                    }
-                }
-            }
-            catch (System.Exception exception)
-            {
-                editor.WriteMessage("\nCE_FLREL cancelled while preparing the offset. " + exception.Message);
-                return;
-            }
-
-            try
-            {
-                int created = 0;
-                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-                {
-                    CivilFeatureLine source = OpenFeatureLine(
-                        transaction, sourceResult.ObjectId, OpenMode.ForRead);
-                    EnsureEditable(source, transaction);
-                    BlockTableRecord modelSpace = GetModelSpace(
-                        document.Database, transaction, OpenMode.ForWrite);
-                    HashSet<string> names = ReadFeatureLineNames(modelSpace, transaction);
-
-                    using (Polyline plan = BuildPlanPolyline(source))
-                    {
-                        modelSpace.AppendEntity(plan);
-                        transaction.AddNewlyCreatedDBObject(plan, true);
-
-                        for (int index = 1; index <= count; index++)
+                        using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
                         {
-                            double horizontal = sign * horizontalStep * index;
-                            double vertical = verticalStep * index;
-                            string name = UniqueName(
-                                prefix + "-" + index.ToString(CultureInfo.InvariantCulture), names);
-                            ObjectId childId = CreateChild(
-                                source,
-                                plan,
-                                horizontal,
-                                vertical,
-                                name,
-                                source.LayerId,
-                                source.StyleName,
-                                source.SiteId,
-                                modelSpace,
-                                transaction);
-                            CivilFeatureLine child = OpenFeatureLine(
-                                transaction, childId, OpenMode.ForWrite);
-                            WriteRelation(
-                                child,
-                                source.Handle.ToString(),
-                                horizontal,
-                                vertical,
-                                index,
-                                transaction);
-                            created++;
+                            CivilFeatureLine source = OpenFeatureLine(
+                                transaction, sourceId, OpenMode.ForRead);
+                            EnsureEditable(source, transaction);
+                            BlockTableRecord modelSpace = GetModelSpace(
+                                document.Database, transaction, OpenMode.ForWrite);
+                            HashSet<string> names = ReadFeatureLineNames(modelSpace, transaction);
+                            string sourceName = string.IsNullOrWhiteSpace(source.Name)
+                                ? "FeatureLine-" + source.Handle.ToString()
+                                : source.Name;
+                            bool defaultName = string.Equals(prefix, defaultPrefix, StringComparison.OrdinalIgnoreCase);
+                            string sourcePrefix = defaultName
+                                ? sourceName + "-STEP"
+                                : sourceIds.Count == 1
+                                    ? prefix
+                                    : prefix + "-" + (sourceIndex + 1).ToString(CultureInfo.InvariantCulture);
+                            double sign;
+
+                            using (Polyline plan = BuildPlanPolyline(source))
+                            {
+                                sign = ResolveOffsetSign(plan, horizontalStep, sidePoint);
+                                modelSpace.AppendEntity(plan);
+                                transaction.AddNewlyCreatedDBObject(plan, true);
+
+                                for (int index = 1; index <= count; index++)
+                                {
+                                    double horizontal = sign * horizontalStep * index;
+                                    double vertical = verticalStep * index;
+                                    string name = UniqueName(
+                                        sourcePrefix + "-" + index.ToString(CultureInfo.InvariantCulture), names);
+                                    ObjectId childId = CreateChild(
+                                        source,
+                                        plan,
+                                        horizontal,
+                                        vertical,
+                                        name,
+                                        source.LayerId,
+                                        source.StyleName,
+                                        source.SiteId,
+                                        modelSpace,
+                                        transaction);
+                                    CivilFeatureLine child = OpenFeatureLine(
+                                        transaction, childId, OpenMode.ForWrite);
+                                    WriteRelation(
+                                        child,
+                                        source.Handle.ToString(),
+                                        horizontal,
+                                        vertical,
+                                        index,
+                                        transaction);
+                                    localCreated++;
+                                }
+
+                                if (!plan.IsErased) plan.Erase();
+                            }
+                            transaction.Commit();
                         }
-
-                        if (!plan.IsErased) plan.Erase();
+                        created += localCreated;
                     }
-
-                    transaction.Commit();
+                    catch (System.Exception exception)
+                    {
+                        failed++;
+                        editor.WriteMessage(
+                            "\nStepped offsets skipped for feature line {0}: {1}",
+                            sourceId.Handle,
+                            exception.Message);
+                    }
                 }
+            }
 
-                editor.WriteMessage(
-                    "\nCE_FLREL complete. Linked feature lines created: {0}. Automatic linked refresh is enabled; CE_FLRELUPDATE also rebuilds this complete source set on demand.",
-                    created);
-            }
-            catch (System.Exception exception)
-            {
-                editor.WriteMessage(
-                    "\nCE_FLREL cancelled. No changes were committed. " + exception.Message);
-            }
+            editor.Regen();
+            editor.WriteMessage(
+                "\nCE_FLREL complete. Selected source feature lines={0}; rejected={1}; linked feature lines created={2}; failed source sets={3}. Automatic linked refresh is enabled; CE_FLRELUPDATEMULTI rebuilds multiple sets on demand.",
+                sourceIds.Count, rejected, created, failed);
         }
 
         private static void Update(Document document)

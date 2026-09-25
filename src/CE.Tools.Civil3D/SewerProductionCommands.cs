@@ -506,6 +506,7 @@ namespace CETools.Civil3D
             int views = 0;
             int parts = 0;
             int bandItems = 0;
+            int bandBindingWarnings = 0;
             int skipped = 0;
             var reportRows = new List<IList<string>>();
             for (int index = 0; index < records.Count; index++)
@@ -523,6 +524,7 @@ namespace CETools.Civil3D
                     int branchViews;
                     int branchParts;
                     int branchBandItems;
+                    int branchBandWarnings;
                     CreateProfileObjects(
                         database,
                         civilDocument,
@@ -536,11 +538,13 @@ namespace CETools.Civil3D
                         out branchProfiles,
                         out branchViews,
                         out branchParts,
-                        out branchBandItems);
+                        out branchBandItems,
+                        out branchBandWarnings);
                     profiles += branchProfiles;
                     views += branchViews;
                     parts += branchParts;
                     bandItems += branchBandItems;
+                    bandBindingWarnings += branchBandWarnings;
                     reportRows.Add(new List<string>
                     {
                         record.BranchName,
@@ -550,9 +554,11 @@ namespace CETools.Civil3D
                         branchBandItems.ToString(CultureInfo.InvariantCulture),
                         Display(settings.ProfileViewStyle),
                         Display(settings.ProfileViewBandSetStyle),
-                        branchParts > 0
-                            ? "Created and linked"
-                            : "Created; review network-part descriptions"
+                        branchBandWarnings > 0
+                            ? "Created; one or more band links were skipped safely"
+                            : branchParts > 0
+                                ? "Created and linked"
+                                : "Created; review network-part descriptions"
                     });
                 }
                 catch (System.Exception exception)
@@ -588,11 +594,12 @@ namespace CETools.Civil3D
             catch { }
 
             editor.WriteMessage(
-                "\nCE_SEWPROFILE complete. Surface profiles: {0}; profile views: {1}; network parts added: {2}; band items linked: {3}; skipped branches: {4}.",
+                "\nCE_SEWPROFILE complete. Surface profiles: {0}; profile views: {1}; network parts added: {2}; band items linked: {3}; band binding warnings: {4}; skipped branches: {5}.",
                 profiles,
                 views,
                 parts + bandRefresh.NetworkPartsAdded,
                 bandItems + bandRefresh.BandItemsLinked,
+                bandBindingWarnings,
                 skipped);
             GridReportPresenter.ShowReportAndOfferTable(
                 document,
@@ -1157,12 +1164,14 @@ namespace CETools.Civil3D
             out int profilesCreated,
             out int viewsCreated,
             out int partsAdded,
-            out int bandItemsLinked)
+            out int bandItemsLinked,
+            out int bandBindingWarnings)
         {
             profilesCreated = 0;
             viewsCreated = 0;
             partsAdded = 0;
             bandItemsLinked = 0;
+            bandBindingWarnings = 0;
             var bindings = new List<SewerProfileBinding>();
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
@@ -1296,26 +1305,36 @@ namespace CETools.Civil3D
 
             foreach (SewerProfileBinding binding in bindings)
             {
-                using (Transaction transaction = database.TransactionManager.StartTransaction())
+                try
                 {
-                    DBObject view = transaction.GetObject(
-                        binding.ProfileViewId,
-                        OpenMode.ForWrite,
-                        false);
-                    bandItemsLinked += ProfileViewBandDataBinder.Bind(
-                        view,
-                        binding.ProfileId,
-                        ObjectId.Null,
-                        binding.NetworkId);
-                    try
+                    // Band collections are native Civil 3D wrappers. Keep each
+                    // view's source binding in its own committed transaction and
+                    // allow the branch/profile view to survive if one drawing
+                    // returns a non-writable band item (eNotOpenForWrite).
+                    int localBandItems = 0;
+                    using (Transaction transaction = database.TransactionManager.StartTransaction())
                     {
-                        Entity graphicsEntity = view as Entity;
-                        if (graphicsEntity != null)
-                            graphicsEntity.RecordGraphicsModified(true);
+                        DBObject view = transaction.GetObject(
+                            binding.ProfileViewId,
+                            OpenMode.ForWrite,
+                            false);
+                        localBandItems = ProfileViewBandDataBinder.Bind(
+                            view,
+                            binding.ProfileId,
+                            ObjectId.Null,
+                            binding.NetworkId);
+                        try
+                        {
+                            Entity graphicsEntity = view as Entity;
+                            if (graphicsEntity != null)
+                                graphicsEntity.RecordGraphicsModified(true);
+                        }
+                        catch { }
+                        transaction.Commit();
                     }
-                    catch { }
-                    transaction.Commit();
+                    bandItemsLinked += localBandItems;
                 }
+                catch { bandBindingWarnings++; }
             }
         }
 
@@ -1341,18 +1360,29 @@ namespace CETools.Civil3D
                 CivilNetwork network = read.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
                 if (network == null) return 0;
 
+                var connectedStructureIds = new HashSet<ObjectId>();
                 foreach (ObjectId pipeId in network.GetPipeIds())
                 {
                     CivilPipe pipe = read.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe;
-                    if (pipe != null &&
-                        string.Equals(pipe.Description, branchName, StringComparison.OrdinalIgnoreCase))
-                        partIds.Add(pipeId);
+                    if (pipe == null ||
+                        !string.Equals(pipe.Description, branchName, StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    partIds.Add(pipeId);
+                    if (!pipe.StartStructureId.IsNull)
+                        connectedStructureIds.Add(pipe.StartStructureId);
+                    if (!pipe.EndStructureId.IsNull)
+                        connectedStructureIds.Add(pipe.EndStructureId);
                 }
                 foreach (ObjectId structureId in network.GetStructureIds())
                 {
                     CivilStructure structure = read.GetObject(structureId, OpenMode.ForRead, false) as CivilStructure;
+                    // A junction manhole can be shared by this branch and its
+                    // receiving branch. Its Description is only stored once,
+                    // so include all structures connected to the selected
+                    // branch pipes as well as structures tagged to the branch.
                     if (structure != null &&
-                        string.Equals(structure.Description, branchName, StringComparison.OrdinalIgnoreCase))
+                        (string.Equals(structure.Description, branchName, StringComparison.OrdinalIgnoreCase) ||
+                         connectedStructureIds.Contains(structureId)))
                         partIds.Add(structureId);
                 }
             }

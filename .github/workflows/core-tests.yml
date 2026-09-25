@@ -49,6 +49,9 @@ jobs:
       - name: Validate September 11 field-completion workflows
         run: python3 scripts/Validate-September11FieldCompletion.py
 
+      - name: Validate September 25 road and sewer profile fixes
+        run: python3 scripts/Validate-September25RoadSewerProfileFixes.py
+
       - name: Validate dynamic corridor annotation completion
         run: python3 scripts/Validate-September15CorridorAnnotationCompletion.py
 

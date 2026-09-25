@@ -18,6 +18,7 @@ using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilProfile = Autodesk.Civil.DatabaseServices.Profile;
 using CivilProfileView = Autodesk.Civil.DatabaseServices.ProfileView;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
+using CivilTinSurface = Autodesk.Civil.DatabaseServices.TinSurface;
 using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.September18RoadJunctionCompletionCommands))]
@@ -304,32 +305,54 @@ namespace CETools.Civil3D
                 return;
             }
 
+            List<string> availableRoads = ReadRoadChoiceNames(document.Database, civilDocument);
+            string[] roadChoices = new[] { "ALL" }.Concat(availableRoads).ToArray();
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Road TOP/BOTTOM Crossing Profiles",
                 "Add TOP-RD-xx and BOTTOM-RD-xx surfaces as surface profiles to the alignments behind the selected profile views. Surface gaps remain gaps; only actual crossing coverage is drawn.");
-            model.AddText("Roads", "01 Surfaces", "Road numbers", "ALL",
-                "ALL uses every TOP-RD/BOTTOM-RD surface. Or enter comma-separated road names such as RD-01,RD-05.");
+            model.AddChoice("Roads", "01 Surfaces", "Roads", "ALL",
+                "Choose one road from the dropdown, or type comma-separated road names such as RD-01,RD-05. ALL uses every road.",
+                roadChoices);
+            model.AddChoice("RefreshCorridors", "01 Surfaces", "Rebuild road corridors first", "Yes",
+                "Rebuild matching road corridors and their TOP/BOTTOM surfaces before refreshing the profile views. This updates profiles after cross-slope edits.",
+                new[] { "Yes", "No" });
             model.AddText("Layer", "01 Surfaces", "Surface-profile layer", "CE-ROAD-SURFACE-PROFILES",
                 "Layer for the generated TOP/BOTTOM surface profiles.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             HashSet<string> requestedRoads = ParseRoadFilter(model.Text("Roads"));
+            bool refreshCorridors = string.Equals(model.Text("RefreshCorridors"), "Yes", StringComparison.OrdinalIgnoreCase);
 
             int created = 0;
             int existing = 0;
             int failed = 0;
+            int existingProfilesRefreshed = 0;
+            int corridorsRebuilt = 0;
             var rows = new List<IList<string>>();
 
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
+                if (refreshCorridors)
+                {
+                    foreach (DBObject corridor in ReadCorridors(civilDocument, transaction, OpenMode.ForWrite))
+                    {
+                        string road = ResolveRoadName(corridor, transaction);
+                        if (requestedRoads.Count > 0 && !requestedRoads.Contains(road)) continue;
+                        if (TryInvoke(corridor, "Rebuild")) corridorsRebuilt++;
+                    }
+                }
+
                 List<CivilSurface> surfaces = new List<CivilSurface>();
                 foreach (ObjectId surfaceId in civilDocument.GetSurfaceIds())
                 {
-                    CivilSurface surface = SafeOpen<CivilSurface>(transaction, surfaceId, OpenMode.ForRead);
+                    CivilSurface surface = SafeOpen<CivilSurface>(transaction, surfaceId, OpenMode.ForWrite);
                     if (surface == null) continue;
                     string name = surface.Name ?? string.Empty;
                     if (!IsRoadTopBottomSurface(name)) continue;
                     if (!RoadFilterMatches(name, requestedRoads)) continue;
+                    // Corridor rebuilds can update their TIN definitions without
+                    // refreshing the surface object graphics/profile cache.
+                    TryInvoke(surface, "Rebuild");
                     surfaces.Add(surface);
                 }
 
@@ -410,7 +433,11 @@ namespace CETools.Civil3D
                         {
                             ObjectId existingProfileId;
                             if (existingProfileIds.TryGetValue(profileName, out existingProfileId))
+                            {
+                                DBObject existingProfile = SafeOpen<DBObject>(transaction, existingProfileId, OpenMode.ForWrite);
+                                if (RefreshSurfaceProfile(existingProfile)) existingProfilesRefreshed++;
                                 targetProfileIds.Add(existingProfileId);
+                            }
                             existing++;
                             rows.Add(new List<string> { view.Name, alignment.Name, surface.Name, profileName, "Already exists" });
                             continue;
@@ -426,6 +453,7 @@ namespace CETools.Civil3D
                                 styleId,
                                 labelSetId);
                             if (newProfileId.IsNull) throw new InvalidOperationException("Civil 3D returned no profile ObjectId.");
+                            RefreshSurfaceProfile(SafeOpen<DBObject>(transaction, newProfileId, OpenMode.ForWrite));
                             // A profile created from a surface is automatically eligible
                             // for the alignment's profile views. Civil 3D 2023 exposes
                             // GraphOverrides for an already-materialised entry; it does
@@ -457,7 +485,7 @@ namespace CETools.Civil3D
             GridReportPresenter.ShowReportAndOfferTable(
                 document,
                 "CE Tools - Road TOP/BOTTOM Crossing Profiles",
-                string.Format(CultureInfo.CurrentCulture, "Surface profiles created={0}; existing={1}; failed={2}.", created, existing, failed),
+                string.Format(CultureInfo.CurrentCulture, "Road corridors rebuilt={0}; profiles created={1}; existing profiles refreshed={2}; failed={3}.", corridorsRebuilt, created, existingProfilesRefreshed, failed),
                 new[] { "PROFILE VIEW", "ALIGNMENT", "SURFACE", "PROFILE", "STATUS" },
                 rows,
                 "CE ROAD TOP BOTTOM PROFILE REGISTER");
@@ -484,6 +512,17 @@ namespace CETools.Civil3D
             }
         }
 
+        private static bool RefreshSurfaceProfile(DBObject profile)
+        {
+            if (profile == null) return false;
+            bool refreshed = TryInvoke(profile, "Rebuild");
+            refreshed = TryInvoke(profile, "Update") || refreshed;
+            refreshed = TryInvoke(profile, "UpdateDisplay") || refreshed;
+            Entity entity = profile as Entity;
+            if (entity != null) entity.RecordGraphicsModified(true);
+            return refreshed;
+        }
+
         [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONFEATURELINESTOP", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void PasteSelectedJunctionFeatureLinesToRoadTopSurfaces()
         {
@@ -501,9 +540,30 @@ namespace CETools.Civil3D
                 return;
             }
 
+            string[] roadChoices = new[] { "ALL" }
+                .Concat(ReadRoadChoiceNames(document.Database, civilDocument))
+                .ToArray();
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - Junction Feature Lines to Road TOP Surfaces",
+                "Drape each selected feature line once to matching TOP surfaces, then add its valid vertices to those surfaces.");
+            model.AddChoice("Roads", "01 Surfaces", "Roads", "ALL",
+                "Choose a road from the dropdown, or type comma-separated road names. ALL uses every TOP-RD surface.",
+                roadChoices);
+            model.AddChoice("PointMode", "02 Surface Vertices", "Surface points", "Current feature-line vertices",
+                "Keep current vertices or add sampled intermediate points along each segment.",
+                new[] { "Current feature-line vertices", "Add intermediate points" });
+            model.AddPositiveDouble("Spacing", "02 Surface Vertices", "Maximum intermediate-point spacing", 5.0,
+                "Drawing units between added points. Used only when intermediate points are enabled.");
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+            HashSet<string> requestedRoads = ParseRoadFilter(model.Text("Roads"));
+            bool addIntermediate = string.Equals(
+                model.Text("PointMode"), "Add intermediate points", StringComparison.OrdinalIgnoreCase);
+            double pointSpacing = model.Double("Spacing", 5.0);
+
             int surfaces = 0;
             int draped = 0;
             int vertices = 0;
+            int unresolved = 0;
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
@@ -512,7 +572,8 @@ namespace CETools.Civil3D
                 {
                     CivilSurface surface = SafeOpen<CivilSurface>(transaction, surfaceId, OpenMode.ForWrite);
                     if (surface == null ||
-                        !surface.Name.StartsWith("TOP-", StringComparison.OrdinalIgnoreCase))
+                        !surface.Name.StartsWith("TOP-RD-", StringComparison.OrdinalIgnoreCase) ||
+                        !RoadFilterMatches(surface.Name, requestedRoads))
                         continue;
                     topSurfaces.Add(surface);
                 }
@@ -523,25 +584,18 @@ namespace CETools.Civil3D
                         transaction, featureId, OpenMode.ForWrite);
                     if (line == null) continue;
 
+                    int unresolvedPoints;
+                    if (TryAssignFeatureLineElevations(line, topSurfaces, out unresolvedPoints))
+                        draped++;
+                    unresolved += unresolvedPoints;
+
                     foreach (CivilSurface surface in topSurfaces)
                     {
-                        if (TryAssignFeatureLineElevations(line, surface))
-                            draped++;
-                        int local = 0;
-                        try
-                        {
-                            foreach (Point3d point in line.GetPoints(FeatureLinePointType.AllPoints))
-                            {
-                                double elevation;
-                                if (!TryFindSurfaceElevation(surface, point.X, point.Y, out elevation))
-                                    continue;
-                                if (TryAddSurfaceVertex(
-                                    surface,
-                                    new Point3d(point.X, point.Y, elevation)))
-                                    local++;
-                            }
-                        }
-                        catch { }
+                        int local = AddLineVerticesToSurface(
+                            line,
+                            surface,
+                            addIntermediate,
+                            pointSpacing);
 
                         if (local > 0)
                         {
@@ -559,8 +613,8 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_ROADJUNCTIONFEATURELINESTOP complete. Selected feature lines={0}; TOP surfaces processed={1}; feature lines draped={2}; vertices pasted={3}.",
-                featureIds.Count, surfaces, draped, vertices);
+                "\nCE_ROADJUNCTIONFEATURELINESTOP complete. Selected feature lines={0}; matching TOP surfaces processed={1}; feature lines draped={2}; unresolved elevations={3}; surface vertices pasted={4}; intermediate points={5}.",
+                featureIds.Count, surfaces, draped, unresolved, vertices, addIntermediate ? "Yes" : "No");
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADTJUNCTIONASSEMBLYLIMITS", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -697,9 +751,22 @@ namespace CETools.Civil3D
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (document == null || civilDocument == null) return;
 
+            string[] roadChoices = new[] { "ALL" }
+                .Concat(ReadRoadChoiceNames(document.Database, civilDocument))
+                .ToArray();
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - Junction Endpoints to Road TOP Surfaces",
+                "Paste both endpoints of each tagged junction control into every selected road TOP surface that covers the point.");
+            model.AddChoice("Roads", "01 Surfaces", "Roads", "ALL",
+                "Choose a road from the dropdown, or type comma-separated road names. ALL uses every TOP-RD surface.",
+                roadChoices);
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+            HashSet<string> requestedRoads = ParseRoadFilter(model.Text("Roads"));
+
             int surfaceCount = 0;
             int pointsAdded = 0;
             int failed = 0;
+            int uncovered = 0;
             var rows = new List<IList<string>>();
 
             using (DocumentLock documentLock = document.LockDocument())
@@ -709,36 +776,45 @@ namespace CETools.Civil3D
                 foreach (ObjectId surfaceId in civilDocument.GetSurfaceIds())
                 {
                     CivilSurface surface = SafeOpen<CivilSurface>(transaction, surfaceId, OpenMode.ForWrite);
-                    if (surface == null || !surface.Name.StartsWith("TOP-RD-", StringComparison.OrdinalIgnoreCase)) continue;
+                    if (surface == null ||
+                        !surface.Name.StartsWith("TOP-RD-", StringComparison.OrdinalIgnoreCase) ||
+                        !RoadFilterMatches(surface.Name, requestedRoads)) continue;
                     surfaceCount++;
                     int local = 0;
                     int localFailed = 0;
+                    int localUncovered = 0;
                     foreach (Point3d point in endpoints)
                     {
-                        try
+                        double z;
+                        if (!TryFindSurfaceElevation(surface, point.X, point.Y, out z))
                         {
-                            double z = surface.FindElevationAtXY(point.X, point.Y);
-                            Point3d surfacePoint = new Point3d(point.X, point.Y, z);
-                            if (TryAddSurfaceVertex(surface, surfacePoint)) local++;
-                            else localFailed++;
+                            // If a tagged feature line already carries a valid
+                            // endpoint elevation, retain it rather than injecting
+                            // a zero-level vertex when the endpoint sits just
+                            // outside the surface's TIN boundary.
+                            if (!IsFinite(point.Z) || Math.Abs(point.Z) <= 0.001)
+                            {
+                                localUncovered++;
+                                continue;
+                            }
+                            z = point.Z;
                         }
-                        catch
-                        {
-                            // A road surface does not cover every junction. Outside
-                            // points are expected and are not forced into that surface.
-                        }
+                        if (TryAddSurfaceVertex(surface, new Point3d(point.X, point.Y, z))) local++;
+                        else localFailed++;
                     }
                     TryInvoke(surface, "Rebuild");
                     Entity entity = surface as Entity;
                     if (entity != null) entity.RecordGraphicsModified(true);
                     pointsAdded += local;
                     failed += localFailed;
+                    uncovered += localUncovered;
                     rows.Add(new List<string>
                     {
                         surface.Name,
                         endpoints.Count.ToString(CultureInfo.InvariantCulture),
                         local.ToString(CultureInfo.InvariantCulture),
-                        localFailed.ToString(CultureInfo.InvariantCulture)
+                        localFailed.ToString(CultureInfo.InvariantCulture),
+                        localUncovered.ToString(CultureInfo.InvariantCulture)
                     });
                 }
                 transaction.Commit();
@@ -748,8 +824,8 @@ namespace CETools.Civil3D
             GridReportPresenter.ShowReportAndOfferTable(
                 document,
                 "CE Tools - Junction End Points to Road TOP Surfaces",
-                string.Format(CultureInfo.CurrentCulture, "TOP road surfaces={0}; endpoint insertions={1}; API failures={2}.", surfaceCount, pointsAdded, failed),
-                new[] { "TOP SURFACE", "JUNCTION ENDPOINTS", "ADDED", "FAILED" },
+                string.Format(CultureInfo.CurrentCulture, "Selected TOP road surfaces={0}; endpoint insertions={1}; API failures={2}; endpoints outside coverage={3}.", surfaceCount, pointsAdded, failed, uncovered),
+                new[] { "TOP SURFACE", "JUNCTION ENDPOINTS", "ADDED", "FAILED", "UNCOVERED" },
                 rows,
                 "CE JUNCTION ENDPOINT SURFACE REGISTER");
         }
@@ -894,20 +970,29 @@ namespace CETools.Civil3D
                     object startValue = ReadProperty(pipe, "StartPoint");
                     object endValue = ReadProperty(pipe, "EndPoint");
                     if (!(startValue is Point3d) || !(endValue is Point3d)) continue;
+                    double halfDiameter = ReadPipeHalfDiameter(pipe);
                     AddPipeEndpoint(
                         junctions, startStructure,
-                        new PipeEndpoint(pipeId, true, (Point3d)startValue));
+                        new PipeEndpoint(pipeId, true, (Point3d)startValue, halfDiameter));
                     AddPipeEndpoint(
                         junctions, endStructure,
-                        new PipeEndpoint(pipeId, false, (Point3d)endValue));
+                        new PipeEndpoint(pipeId, false, (Point3d)endValue, halfDiameter));
                 }
 
                 int changed = 0;
+                int invertsLevelled = 0;
                 foreach (KeyValuePair<ObjectId, List<PipeEndpoint>> group in junctions)
                 {
                     if (group.Key.IsNull || group.Value == null || group.Value.Count < 2)
                         continue;
-                    double junctionElevation = group.Value.Min(item => item.Point.Z);
+                    // Civil 3D pipe endpoints describe the pipe centreline.
+                    // Equalising endpoint Z values gives different inverts for
+                    // pipes with different diameters, which still draws a jump
+                    // at the manhole. Match the inside inverts, then restore the
+                    // corresponding centreline elevation for each pipe.
+                    double junctionInvert = group.Value.Min(item =>
+                        item.Point.Z - item.HalfDiameter);
+                    bool groupChanged = false;
                     foreach (PipeEndpoint endpoint in group.Value)
                     {
                         DBObject pipe = SafeOpen<DBObject>(
@@ -916,25 +1001,46 @@ namespace CETools.Civil3D
                         Point3d point = new Point3d(
                             endpoint.Point.X,
                             endpoint.Point.Y,
-                            junctionElevation);
+                            junctionInvert + endpoint.HalfDiameter);
                         bool applied = endpoint.Start
                             ? TrySetProperty(pipe, "StartPoint", point)
                             : TrySetProperty(pipe, "EndPoint", point);
                         if (applied)
                         {
                             changed++;
-                            TryInvoke(pipe, "ApplyRules");
+                            groupChanged = true;
                             Entity entity = pipe as Entity;
                             if (entity != null) entity.RecordGraphicsModified(true);
                         }
                     }
+                    if (groupChanged) invertsLevelled++;
                 }
                 transaction.Commit();
                 document.Editor.Regen();
                 document.Editor.WriteMessage(
-                    "\nCE_PIPESLOPEJUNCTIONFIX complete. Junction endpoints levelled={0}; junctions processed={1}.",
-                    changed, junctions.Count);
+                    "\nCE_PIPESLOPEJUNCTIONFIX complete. Pipe endpoints adjusted={0}; shared manhole inverts levelled={1}; structures inspected={2}.",
+                    changed, invertsLevelled, junctions.Count);
             }
+        }
+
+        private static double ReadPipeHalfDiameter(DBObject pipe)
+        {
+            if (pipe == null) return 0.0;
+            foreach (string name in new[]
+            {
+                "InnerDiameterOrWidth", "InnerDiameter", "Diameter", "NominalDiameter"
+            })
+            {
+                object raw = ReadProperty(pipe, name);
+                if (raw == null) continue;
+                try
+                {
+                    double diameter = Convert.ToDouble(raw, CultureInfo.InvariantCulture);
+                    if (IsFinite(diameter) && diameter > 0.0) return diameter * 0.5;
+                }
+                catch { }
+            }
+            return 0.0;
         }
 
         private static void AddPipeEndpoint(
@@ -1360,6 +1466,28 @@ namespace CETools.Civil3D
                     name.StartsWith("BOTTOM-RD-", StringComparison.OrdinalIgnoreCase));
         }
 
+        private static List<string> ReadRoadChoiceNames(
+            Database database,
+            CivilDocument civilDocument)
+        {
+            var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (database == null || civilDocument == null) return new List<string>();
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId surfaceId in civilDocument.GetSurfaceIds())
+                {
+                    CivilSurface surface = SafeOpen<CivilSurface>(
+                        transaction, surfaceId, OpenMode.ForRead);
+                    if (surface == null || !IsRoadTopBottomSurface(surface.Name)) continue;
+                    string road = NormalizeRoadName(surface.Name);
+                    if (!string.IsNullOrWhiteSpace(road)) result.Add(road);
+                }
+            }
+            return result
+                .OrderBy(value => value, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
         private static HashSet<string> ParseRoadFilter(string text)
         {
             var result = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -1635,102 +1763,99 @@ namespace CETools.Civil3D
 
             foreach (ObjectId id in model)
             {
-                Curve curve = SafeOpen<Curve>(transaction, id, OpenMode.ForRead);
-                if (curve == null || !string.Equals(curve.Layer, JunctionLayer, StringComparison.OrdinalIgnoreCase)) continue;
+                Entity entity = SafeOpen<Entity>(transaction, id, OpenMode.ForRead);
+                if (entity == null ||
+                    !string.Equals(entity.Layer, JunctionLayer, StringComparison.OrdinalIgnoreCase)) continue;
                 ResultBuffer data = null;
-                try { data = curve.GetXDataForApplication(JunctionApp); }
+                try { data = entity.GetXDataForApplication(JunctionApp); }
                 catch { }
                 if (data == null) continue;
                 try
                 {
-                    AddUniquePoint(result, curve.StartPoint);
-                    AddUniquePoint(result, curve.EndPoint);
+                    Curve curve = entity as Curve;
+                    if (curve != null)
+                    {
+                        AddUniquePoint(result, curve.StartPoint);
+                        AddUniquePoint(result, curve.EndPoint);
+                    }
+                    else
+                    {
+                        CivilFeatureLine featureLine = entity as CivilFeatureLine;
+                        if (featureLine == null) continue;
+                        Point3dCollection featurePoints = featureLine.GetPoints(
+                            FeatureLinePointType.AllPoints);
+                        if (featurePoints != null && featurePoints.Count >= 2)
+                        {
+                            AddUniquePoint(result, featurePoints[0]);
+                            AddUniquePoint(result, featurePoints[featurePoints.Count - 1]);
+                        }
+                    }
                 }
                 catch
                 {
                 }
+                finally { data.Dispose(); }
             }
             return result;
         }
 
         private static void AddUniquePoint(List<Point3d> points, Point3d point)
         {
-            Point3d plan = new Point3d(point.X, point.Y, 0.0);
-            if (!points.Any(existing => PlanDistance(existing, plan) <= 0.001))
-                points.Add(plan);
+            int match = points.FindIndex(existing => PlanDistance(existing, point) <= 0.001);
+            if (match < 0)
+            {
+                points.Add(point);
+                return;
+            }
+            if (Math.Abs(points[match].Z) <= 0.001 && Math.Abs(point.Z) > 0.001)
+                points[match] = point;
         }
 
         private static bool TryAssignFeatureLineElevations(
             CivilFeatureLine line,
-            CivilSurface surface)
+            IList<CivilSurface> surfaces,
+            out int unresolved)
         {
-            if (line == null || surface == null) return false;
+            unresolved = 0;
+            if (line == null || surfaces == null || surfaces.Count == 0) return false;
             bool changed = false;
-            bool typedAssigned = false;
-
-            // The typed Civil 3D 2023 call is authoritative. Do not invoke a
-            // second reflected drape method after it succeeds: that can restore
-            // relative-to-surface vertices and leave Properties at 0.000.
+            Point3dCollection points;
             try
             {
-                line.AssignElevationsFromSurface(surface.ObjectId, true);
-                typedAssigned = true;
-                changed = true;
+                points = line.GetPoints(FeatureLinePointType.AllPoints);
             }
-            catch { }
+            catch { return false; }
+            if (points == null || points.Count == 0) return false;
 
-            if (!typedAssigned)
+            // Sample all selected road surfaces first, then write the feature
+            // line once. Repeatedly draping one line to every road used to leave
+            // its last-covered endpoint at 0.000 or with the elevation of an
+            // unrelated road surface.
+            for (int index = 0; index < points.Count; index++)
             {
-                foreach (string methodName in new[]
+                Point3d point = points[index];
+                double elevation;
+                if (!TryFindSurfaceElevation(surfaces, point.X, point.Y, out elevation))
                 {
-                    "AssignElevationsFromSurface",
-                    "AssignElevationsFromSurfaceId",
-                    "DrapeToSurface"
-                })
-                {
-                    if (TryInvoke(line, methodName, surface.ObjectId) ||
-                        TryInvoke(line, methodName, surface))
-                    {
-                        changed = true;
-                        break;
-                    }
+                    if (Math.Abs(point.Z) <= 0.001) unresolved++;
+                    continue;
                 }
-            }
 
-            // Verify and persist absolute elevations at every feature-line
-            // vertex. This is the part that repairs the zero-elevation/zero-
-            // grade result after a successful-looking drape.
-            int index = 0;
-            try
-            {
-                foreach (Point3d point in line.GetPoints(FeatureLinePointType.AllPoints))
+                bool applied = false;
+                try
                 {
-                    double elevation;
-                    if (!TryFindSurfaceElevation(surface, point.X, point.Y, out elevation))
+                    if (line.IsElevationRelativeToSurface(point))
                     {
-                        index++;
-                        continue;
-                    }
-
-                    bool applied = false;
-                    try
-                    {
-                        if (line.IsElevationRelativeToSurface(point))
-                            line.SetPointRelativeElevation(point, false, elevation);
-                        else
-                            line.SetPointElevation(index, elevation);
+                        line.SetPointRelativeElevation(point, false, elevation);
                         applied = true;
                     }
-                    catch
-                    {
-                        applied = TrySetFeatureLinePointElevation(line, index, elevation);
-                    }
-
-                    if (applied) changed = true;
-                    index++;
                 }
+                catch { }
+                if (!applied)
+                    applied = TrySetFeatureLinePointElevation(line, index, elevation);
+                if (applied) changed = true;
+                else unresolved++;
             }
-            catch { }
 
             if (changed)
             {
@@ -1752,9 +1877,98 @@ namespace CETools.Civil3D
             try
             {
                 elevation = surface.FindElevationAtXY(x, y);
-                return !double.IsNaN(elevation) && !double.IsInfinity(elevation);
+                if (IsFinite(elevation)) return true;
             }
-            catch { return false; }
+            catch { }
+
+            // Junction controls often fall exactly on a TIN boundary. Civil 3D
+            // can reject FindElevationAtXY at that coordinate even though the
+            // adjacent triangle covers the endpoint. Sample only a small local
+            // neighborhood and keep the endpoint's original XY.
+            foreach (double distance in new[] { 0.001, 0.01, 0.05, 0.1, 0.25 })
+            {
+                foreach (Vector2d offset in new[]
+                {
+                    new Vector2d(distance, 0.0), new Vector2d(-distance, 0.0),
+                    new Vector2d(0.0, distance), new Vector2d(0.0, -distance),
+                    new Vector2d(distance, distance), new Vector2d(-distance, distance),
+                    new Vector2d(distance, -distance), new Vector2d(-distance, -distance)
+                })
+                {
+                    try
+                    {
+                        elevation = surface.FindElevationAtXY(x + offset.X, y + offset.Y);
+                        if (IsFinite(elevation)) return true;
+                    }
+                    catch { }
+                }
+            }
+            return false;
+        }
+
+        private static bool IsFinite(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value);
+        }
+
+        private static bool TryFindSurfaceElevation(
+            IList<CivilSurface> surfaces,
+            double x,
+            double y,
+            out double elevation)
+        {
+            elevation = 0.0;
+            if (surfaces == null) return false;
+            foreach (CivilSurface surface in surfaces)
+                if (TryFindSurfaceElevation(surface, x, y, out elevation)) return true;
+            return false;
+        }
+
+        private static int AddLineVerticesToSurface(
+            CivilFeatureLine line,
+            CivilSurface surface,
+            bool addIntermediate,
+            double spacing)
+        {
+            if (line == null || surface == null) return 0;
+            Point3dCollection points;
+            try { points = line.GetPoints(FeatureLinePointType.AllPoints); }
+            catch { return 0; }
+            if (points == null || points.Count == 0) return 0;
+
+            double interval = Math.Max(0.01, spacing);
+            var insertedPlanPoints = new List<Point3d>();
+            int added = 0;
+            for (int segment = 0; segment < Math.Max(1, points.Count - 1); segment++)
+            {
+                Point3d first = points[Math.Min(segment, points.Count - 1)];
+                Point3d second = points[Math.Min(segment + 1, points.Count - 1)];
+                double length = PlanDistance(first, second);
+                int divisions = addIntermediate
+                    ? Math.Max(1, (int)Math.Ceiling(length / interval))
+                    : 1;
+                for (int part = 0; part <= divisions; part++)
+                {
+                    if (segment > 0 && part == 0) continue;
+                    double fraction = part / (double)divisions;
+                    Point3d planPoint = new Point3d(
+                        first.X + ((second.X - first.X) * fraction),
+                        first.Y + ((second.Y - first.Y) * fraction),
+                        0.0);
+                    if (insertedPlanPoints.Any(value => PlanDistance(value, planPoint) <= 0.001))
+                        continue;
+                    insertedPlanPoints.Add(planPoint);
+
+                    double elevation;
+                    if (!TryFindSurfaceElevation(surface, planPoint.X, planPoint.Y, out elevation))
+                        continue;
+                    if (TryAddSurfaceVertex(
+                            surface,
+                            new Point3d(planPoint.X, planPoint.Y, elevation)))
+                        added++;
+                }
+            }
+            return added;
         }
 
         private static bool TrySetFeatureLinePointElevation(
@@ -1769,17 +1983,6 @@ namespace CETools.Civil3D
                     StringComparison.OrdinalIgnoreCase) < 0)
                     continue;
                 ParameterInfo[] parameters = method.GetParameters();
-                if (parameters.Length == 2 &&
-                    parameters[0].ParameterType == typeof(int) &&
-                    parameters[1].ParameterType == typeof(double))
-                {
-                    try
-                    {
-                        method.Invoke(line, new object[] { index, elevation });
-                        return true;
-                    }
-                    catch { }
-                }
                 if (parameters.Length == 3 &&
                     parameters[0].ParameterType == typeof(FeatureLinePointType) &&
                     parameters[1].ParameterType == typeof(int) &&
@@ -1795,6 +1998,17 @@ namespace CETools.Civil3D
                     }
                     catch { }
                 }
+                if (parameters.Length == 2 &&
+                    parameters[0].ParameterType == typeof(int) &&
+                    parameters[1].ParameterType == typeof(double))
+                {
+                    try
+                    {
+                        method.Invoke(line, new object[] { index, elevation });
+                        return true;
+                    }
+                    catch { }
+                }
             }
             return false;
         }
@@ -1802,14 +2016,31 @@ namespace CETools.Civil3D
         private static bool TryAddSurfaceVertex(CivilSurface surface, Point3d point)
         {
             if (surface == null) return false;
-            if (TryInvoke(surface, "AddVertex", point) || TryInvoke(surface, "AddPoint", point))
+            CivilTinSurface tin = surface as CivilTinSurface;
+            if (tin != null)
+            {
+                try
+                {
+                    tin.AddVertices(new Point3dCollection(new[] { point }));
+                    return true;
+                }
+                catch { }
+            }
+
+            Point3dCollection points = new Point3dCollection(new[] { point });
+            if (TryInvoke(surface, "AddVertices", points) ||
+                TryInvoke(surface, "AddVertex", point) ||
+                TryInvoke(surface, "AddPoint", point))
                 return true;
 
             foreach (string propertyName in new[] { "PointsDefinition", "Definition", "SurfaceDefinition" })
             {
                 object definition = ReadProperty(surface, propertyName);
                 if (definition == null) continue;
-                if (TryInvoke(definition, "AddPoint", point) || TryInvoke(definition, "AddVertex", point))
+                if (TryInvoke(definition, "AddPointCollection", points) ||
+                    TryInvoke(definition, "AddPoints", points) ||
+                    TryInvoke(definition, "AddPoint", point) ||
+                    TryInvoke(definition, "AddVertex", point))
                     return true;
             }
             return false;
@@ -1989,15 +2220,17 @@ namespace CETools.Civil3D
 
         private sealed class PipeEndpoint
         {
-            internal PipeEndpoint(ObjectId pipeId, bool start, Point3d point)
+            internal PipeEndpoint(ObjectId pipeId, bool start, Point3d point, double halfDiameter)
             {
                 PipeId = pipeId;
                 Start = start;
                 Point = point;
+                HalfDiameter = Math.Max(0.0, halfDiameter);
             }
             internal ObjectId PipeId { get; private set; }
             internal bool Start { get; private set; }
             internal Point3d Point { get; private set; }
+            internal double HalfDiameter { get; private set; }
         }
 
         private sealed class FinalProfilePvi
