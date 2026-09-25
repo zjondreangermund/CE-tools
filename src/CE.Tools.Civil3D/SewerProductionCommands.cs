@@ -594,7 +594,7 @@ namespace CETools.Civil3D
             catch { }
 
             editor.WriteMessage(
-                "\nCE_SEWPROFILE complete. Surface profiles: {0}; profile views: {1}; network parts added: {2}; band items linked: {3}; band binding warnings: {4}; skipped branches: {5}.",
+                "\nCE_SEWPROFILE complete. Surface profiles: {0}; profile views: {1}; network parts added: {2}; band items linked: {3}; skipped branches: {4}; band binding warnings: {5}.",
                 profiles,
                 views,
                 parts + bandRefresh.NetworkPartsAdded,
