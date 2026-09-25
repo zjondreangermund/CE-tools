@@ -29,6 +29,51 @@ function ReplaceRequired([string]$text,[string]$old,[string]$new,[string]$label)
     if (-not $text.Contains($old)) { throw "August 18 repair anchor not found: $label" }
     return $text.Replace($old,$new)
 }
+function AddSiteGridAcknowledgement([string]$text,[string]$commandName,[bool]$requiresTransactionCommit) {
+    $commandMarker = '[CommandMethod("CE_TOOLS", "' + $commandName + '",'
+    $commandStart = $text.IndexOf($commandMarker,[StringComparison]::Ordinal)
+    if ($commandStart -lt 0) {
+        throw "August 18 repair anchor not found: Site Grid command $commandName"
+    }
+
+    $nextCommand = $text.IndexOf(
+        '[CommandMethod(',
+        $commandStart + $commandMarker.Length,
+        [StringComparison]::Ordinal)
+    $commandEnd = if ($nextCommand -lt 0) { $text.Length } else { $nextCommand }
+    $commandBody = $text.Substring($commandStart,$commandEnd - $commandStart)
+    $flushCall = 'August21DisplayRefresh.Flush(document);'
+    $flushRelative = $commandBody.IndexOf($flushCall,[StringComparison]::Ordinal)
+    if ($flushRelative -lt 0) {
+        throw "August 18 repair anchor not found: Site Grid display flush in $commandName"
+    }
+
+    $acknowledgement = 'August12SiteGridRuntimeManager.AcknowledgeCurrentState();'
+    $beforeFlush = $commandBody.Substring(0,$flushRelative).TrimEnd()
+    if ($beforeFlush.EndsWith($acknowledgement,[StringComparison]::Ordinal)) {
+        return $text
+    }
+
+    if ($requiresTransactionCommit) {
+        $commitIndex = $commandBody.LastIndexOf(
+            'transaction.Commit();',
+            $flushRelative,
+            [StringComparison]::Ordinal)
+        if ($commitIndex -lt 0) {
+            throw "August 18 repair anchor not found: Site Grid transaction commit in $commandName"
+        }
+    } elseif (-not $commandBody.Contains('int refreshed = RefreshAll(document, null);')) {
+        throw "August 18 repair anchor not found: Site Grid manual refresh in $commandName"
+    }
+
+    $flushIndex = $commandStart + $flushRelative
+    $lineStart = $text.LastIndexOf("`n",$flushIndex)
+    $insertAt = $lineStart + 1
+    $indent = [regex]::Match(
+        $text.Substring($insertAt,$flushIndex - $insertAt),
+        '^[ \t]*').Value
+    return $text.Insert($insertAt,$indent + $acknowledgement + "`r`n")
+}
 
 # -----------------------------------------------------------------------------
 # 1. Survey Production: expose closed-polyline -> Google Earth KML handoff.
@@ -210,36 +255,9 @@ $runtimeTerminateReplacement = @'
 '@ -replace "`n","`r`n"
 $siteGrid = ReplaceRequired $siteGrid $runtimeTerminateAnchor $runtimeTerminateReplacement 'site-grid acknowledge-current-state helper'
 
-$commitAckOld = @'
-                transaction.Commit();
-            }
-
-            August21DisplayRefresh.Flush(document);
-'@ -replace "`n","`r`n"
-$commitAckNew = @'
-                transaction.Commit();
-            }
-
-            August12SiteGridRuntimeManager.AcknowledgeCurrentState();
-            August21DisplayRefresh.Flush(document);
-'@ -replace "`n","`r`n"
-if (-not $siteGrid.Contains($commitAckNew)) {
-    if (-not $siteGrid.Contains($commitAckOld)) {
-        throw 'August 18 repair anchor not found: site-grid explicit command acknowledgement'
-    }
-    $siteGrid = $siteGrid.Replace($commitAckOld,$commitAckNew)
-}
-
-$manualRefreshOld = @'
-            int refreshed = RefreshAll(document, null);
-            August21DisplayRefresh.Flush(document);
-'@ -replace "`n","`r`n"
-$manualRefreshNew = @'
-            int refreshed = RefreshAll(document, null);
-            August12SiteGridRuntimeManager.AcknowledgeCurrentState();
-            August21DisplayRefresh.Flush(document);
-'@ -replace "`n","`r`n"
-$siteGrid = ReplaceRequired $siteGrid $manualRefreshOld $manualRefreshNew 'site-grid manual refresh acknowledgement'
+$siteGrid = AddSiteGridAcknowledgement $siteGrid 'CE_SITEGRID' $true
+$siteGrid = AddSiteGridAcknowledgement $siteGrid 'CE_SITEGRIDREFRESH' $false
+$siteGrid = AddSiteGridAcknowledgement $siteGrid 'CE_SITEGRIDREMOVE' $true
 
 $dirtyFilterOld = @'
             var dirty = new HashSet<ObjectId>(DirtyIds);

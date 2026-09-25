@@ -69,42 +69,27 @@ jobs:
             $global:LASTEXITCODE = 0
           }
 
-      - name: Reproduce and verify exact acknowledgement replacement
+      - name: Apply and verify Site Grid acknowledgement repair
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           $gridPath = Join-Path $env:GITHUB_WORKSPACE 'src\CE.Tools.Civil3D\August12SurveySiteGridCommands.cs'
-          $siteGrid = [System.IO.File]::ReadAllText($gridPath) -replace "`r?`n", "`r`n"
           $repairPath = Join-Path $env:GITHUB_WORKSPACE 'scripts\Repair-August18-SurveyGoogleEarthAndVertexDynamics-Civil3D2023.ps1'
+
+          & $repairPath -RepoRoot $env:GITHUB_WORKSPACE
+          $siteGrid = [System.IO.File]::ReadAllText($gridPath) -replace "`r?`n", "`r`n"
           $repair = [System.IO.File]::ReadAllText($repairPath)
 
-          if (-not $siteGrid.Contains('August21DisplayRefresh.Flush(document);')) {
-            throw 'Staged Site Grid did not preserve the PR #110 display-flush call.'
-          }
-          if ($siteGrid.Contains('August12SiteGridRuntimeManager.AcknowledgeCurrentState();')) {
-            throw 'Staged pre-August18 source unexpectedly already contains explicit acknowledgement.'
-          }
-
-          $old = @'
-                          transaction.Commit();
-                      }
-
-                      August21DisplayRefresh.Flush(document);
-          '@ -replace "`n","`r`n"
-          $new = @'
-                          transaction.Commit();
-                      }
-
-                      August12SiteGridRuntimeManager.AcknowledgeCurrentState();
-                      August21DisplayRefresh.Flush(document);
-          '@ -replace "`n","`r`n"
-
-          if (-not $siteGrid.Contains($old)) {
-            throw 'Reported staged Site Grid acknowledgement anchor was not reproduced.'
-          }
-          $patched = $siteGrid.Replace($old,$new)
-          if (-not $patched.Contains($new)) {
-            throw 'Corrected Site Grid acknowledgement replacement did not apply.'
+          foreach ($commandName in @('CE_SITEGRID','CE_SITEGRIDREFRESH','CE_SITEGRIDREMOVE')) {
+            $commandMarker = '[CommandMethod("CE_TOOLS", "' + $commandName + '",'
+            $commandStart = $siteGrid.IndexOf($commandMarker,[StringComparison]::Ordinal)
+            if ($commandStart -lt 0) { throw "Missing Site Grid command: $commandName" }
+            $nextCommand = $siteGrid.IndexOf('[CommandMethod(',$commandStart + $commandMarker.Length,[StringComparison]::Ordinal)
+            $commandEnd = if ($nextCommand -lt 0) { $siteGrid.Length } else { $nextCommand }
+            $commandBody = $siteGrid.Substring($commandStart,$commandEnd - $commandStart)
+            if (-not [regex]::IsMatch($commandBody,'AcknowledgeCurrentState\(\);\r?\n[ \t]*August21DisplayRefresh\.Flush\(document\);')) {
+              throw "Site Grid acknowledgement was not placed before display refresh in $commandName."
+            }
           }
           if (-not $repair.Contains('August21DisplayRefresh.Flush(document);')) {
             throw 'August 18 repair does not contain the corrected display-flush acknowledgement anchor.'
