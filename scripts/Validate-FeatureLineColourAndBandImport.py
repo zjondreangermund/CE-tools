@@ -21,7 +21,9 @@ for marker in [
 appearance_command = appearance_source.split("public void FeatureLineAppearance()", 1)[1].split(
     '[CommandMethod("CE_TOOLS", "CE_FLVERTEXLABELS"', 1
 )[0]
-style_assignment = appearance_command.find("TrySetFeatureLineStyleId(featureLine, colourStyleId)")
+style_assignment = appearance_command.find(
+    "TrySetFeatureLineStyleId(featureLine, colourStyleId, transaction)"
+)
 entity_colour = appearance_command.find("featureLine.Color = requestedColour;")
 aci_colour = appearance_command.find("featureLine.ColorIndex = window.ColourIndex;")
 if min(style_assignment, entity_colour, aci_colour) < 0 or not style_assignment < entity_colour < aci_colour:
@@ -29,6 +31,37 @@ if min(style_assignment, entity_colour, aci_colour) < 0 or not style_assignment 
 for marker in ["ResolveFeatureLineColourStyle(", "ApplyFeatureLineStyleColour(", "featureLine.RecordGraphicsModified(true)"]:
     if marker not in appearance_source:
         raise SystemExit(f"Feature-line visible colour marker missing: {marker}")
+
+style_resolution = appearance_source.split(
+    "private static ObjectId ResolveFeatureLineColourStyle(", 1
+)[1].split("private static ObjectId FindFeatureLineStyleId(", 1)[0]
+if 'ReadText(\n                featureLine,\n                "StyleName",' not in style_resolution:
+    raise SystemExit("Feature-line colour style lookup must use the readable StyleName property.")
+if 'ReadObjectIdProperty(\n                featureLine,\n                "StyleId"' in style_resolution:
+    raise SystemExit("Feature-line colour style lookup must not read setter-only StyleId.")
+if "FindFeatureLineStyleId(\n                    civilDocument,\n                    currentName,\n                    transaction)" not in style_resolution:
+    raise SystemExit("Feature-line current style name is not resolved through the Civil style collection.")
+
+style_assignment_helper = appearance_source.split(
+    "private static bool TrySetFeatureLineStyleId(", 1
+)[1].split("private static bool TrySetObjectIdProperty(", 1)[0]
+for marker in [
+    "featureLine.StyleId = styleId",
+    'featureLine, "StyleName", string.Empty',
+    "expectedStyleName",
+]:
+    if marker not in style_assignment_helper:
+        raise SystemExit(f"Feature-line style assignment read-back check missing: {marker}")
+
+style_colour = appearance_source.split(
+    "private static void ApplyFeatureLineStyleColour(", 1
+)[1].split("private static bool TrySetFeatureLineStyleId(", 1)[0]
+typed_style_write = style_colour.find("TryApplyTypedFeatureLineStyleColour(typedStyle, colour)")
+display_style_writeback = style_colour.find('foreach (string methodName in new[]')
+if typed_style_write < 0 or display_style_writeback < typed_style_write:
+    raise SystemExit("Feature-line display-style wrapper write-back is skipped after typed style updates.")
+if "return;" in style_colour[typed_style_write:display_style_writeback]:
+    raise SystemExit("Feature-line display-style update returns before trying the wrapper write-back path.")
 
 band_command = band_source.split("public void ApplyRoadBandSetAndShowLabels()", 1)[1].split(
     "private static int EnableBandLabels", 1

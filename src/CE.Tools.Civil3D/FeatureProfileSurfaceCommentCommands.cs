@@ -181,7 +181,7 @@ namespace CETools.Civil3D
                             window.ColourIndex,
                             transaction);
                         if (!colourStyleId.IsNull &&
-                            TrySetFeatureLineStyleId(featureLine, colourStyleId))
+                            TrySetFeatureLineStyleId(featureLine, colourStyleId, transaction))
                             styleChanged++;
 
                         // Apply the entity colour after changing its Civil 3D style.
@@ -933,9 +933,27 @@ namespace CETools.Civil3D
                 colourIndex > 255)
                 return ObjectId.Null;
 
-            ObjectId currentStyleId = ReadObjectIdProperty(
+            // FeatureLine.StyleId is write-only in Civil 3D 2023. Reading it
+            // through reflection always returns null, so resolve the current
+            // style from the readable StyleName and the Civil style collection.
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            string currentName = ReadText(
                 featureLine,
-                "StyleId");
+                "StyleName",
+                string.Empty);
+            ObjectId currentStyleId = ObjectId.Null;
+            if (!string.IsNullOrWhiteSpace(currentName))
+                currentStyleId = FindFeatureLineStyleId(
+                    civilDocument,
+                    currentName,
+                    transaction);
+
+            // Keep compatibility with builds that expose a readable style id
+            // under an alternate property name.
+            if (currentStyleId.IsNull)
+                currentStyleId = ReadObjectIdProperty(
+                    featureLine,
+                    "FeatureLineStyleId");
             if (currentStyleId.IsNull) return ObjectId.Null;
 
             DBObject currentStyle = null;
@@ -944,15 +962,17 @@ namespace CETools.Civil3D
                 currentStyle = transaction.GetObject(
                     currentStyleId,
                     OpenMode.ForRead,
-                    false);
+                false);
             }
             catch { }
             if (currentStyle == null) return ObjectId.Null;
 
-            string currentName = ReadText(
+            currentName = ReadText(
                 currentStyle,
                 "Name",
-                "Basic");
+                currentName);
+            if (string.IsNullOrWhiteSpace(currentName))
+                return ObjectId.Null;
             string safeBase = new string(currentName
                 .Where(character =>
                     char.IsLetterOrDigit(character) ||
@@ -968,7 +988,6 @@ namespace CETools.Civil3D
                 colourIndex.ToString(CultureInfo.InvariantCulture) +
                 "-" + safeBase;
 
-            CivilDocument civilDocument = CivilApplication.ActiveDocument;
             ObjectId existing = FindFeatureLineStyleId(
                 civilDocument,
                 targetName,
@@ -1146,6 +1165,7 @@ namespace CETools.Civil3D
                                 {
                                     profile.Color = colour;
                                     profile.Visible = true;
+                                    DisableLayerColour(profile);
                                     changed = true;
                                 }
                             }
@@ -1200,19 +1220,13 @@ namespace CETools.Civil3D
                 (short)colourIndex);
 
             FeatureLineStyle typedStyle = style as FeatureLineStyle;
-            if (typedStyle != null &&
-                TryApplyTypedFeatureLineStyleColour(typedStyle, colour))
-            {
-                try
-                {
-                    Entity styleEntity = style as Entity;
-                    if (styleEntity != null)
-                        styleEntity.RecordGraphicsModified(true);
-                }
-                catch { }
-                return;
-            }
+            if (typedStyle != null)
+                TryApplyTypedFeatureLineStyleColour(typedStyle, colour);
 
+            // Run the write-back path even when the typed getters succeeded.
+            // Some Civil 3D 2023 builds return detached DisplayStyle wrappers;
+            // the wrapper must be committed through the parent style when the
+            // corresponding setter is available.
             foreach (string methodName in new[]
             {
                 "GetFeatureLineDisplayStylePlan",
@@ -1332,15 +1346,39 @@ namespace CETools.Civil3D
 
         private static bool TrySetFeatureLineStyleId(
             CivilFeatureLine featureLine,
-            ObjectId styleId)
+            ObjectId styleId,
+            Transaction transaction)
         {
-            if (featureLine == null || styleId.IsNull) return false;
+            if (featureLine == null || styleId.IsNull || transaction == null)
+                return false;
 
-            // StyleId is the Civil 3D 2023 property. Keep the alternate names
-            // for verticals/builds that expose the same relationship differently.
-            return TrySetObjectIdProperty(featureLine, "StyleId", styleId) ||
-                   TrySetObjectIdProperty(featureLine, "FeatureLineStyleId", styleId) ||
-                   TrySetObjectIdProperty(featureLine, "Style", styleId);
+            string expectedStyleName = string.Empty;
+            try
+            {
+                DBObject style = transaction.GetObject(
+                    styleId,
+                    OpenMode.ForRead,
+                    false);
+                expectedStyleName = ReadText(style, "Name", string.Empty);
+            }
+            catch { }
+            if (string.IsNullOrWhiteSpace(expectedStyleName)) return false;
+
+            try { featureLine.StyleId = styleId; } catch { }
+            if (string.Equals(
+                    ReadText(featureLine, "StyleName", string.Empty),
+                    expectedStyleName,
+                    StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // StyleName is a documented readable/writable fallback for builds
+            // where the setter-only StyleId assignment does not refresh the
+            // feature-line's cached style binding immediately.
+            try { featureLine.StyleName = expectedStyleName; } catch { }
+            return string.Equals(
+                ReadText(featureLine, "StyleName", string.Empty),
+                expectedStyleName,
+                StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool TrySetObjectIdProperty(
