@@ -264,29 +264,29 @@ $siteGrid = AddSiteGridAcknowledgement $siteGrid 'CE_SITEGRID' $true
 $siteGrid = AddSiteGridAcknowledgement $siteGrid 'CE_SITEGRIDREFRESH' $false
 $siteGrid = AddSiteGridAcknowledgement $siteGrid 'CE_SITEGRIDREMOVE' $true
 
-$dirtyFilterOld = @'
-            var dirty = new HashSet<ObjectId>(DirtyIds);
-            DirtyIds.Clear();
-            _pending = false;
-            _busy = true;
-'@ -replace "`n","`r`n"
-$dirtyFilterNew = @'
-            var dirty = new HashSet<ObjectId>(DirtyIds);
-            DirtyIds.Clear();
-            _pending = false;
-
-            // The drawing contains many CE objects with extension dictionaries.
-            // Only a true site-grid parent/child may wake this dedicated manager.
-            dirty.RemoveWhere(id =>
-                !August12SurveySiteGridCommands.IsLinkedSiteGridObject(
-                    _document.Database,
-                    id));
-            if (dirty.Count == 0)
-                return;
-
-            _busy = true;
-'@ -replace "`n","`r`n"
-$siteGrid = ReplaceRequired $siteGrid $dirtyFilterOld $dirtyFilterNew 'site-grid dirty-object filtering'
+if (-not $siteGrid.Contains('dirty.RemoveWhere(id =>')) {
+    $dirtySnapshot = [regex]::Match(
+        $siteGrid,
+        '(?m)^[ \t]*var dirty\s*=\s*new HashSet<ObjectId>\(DirtyIds\);\s*\r?\n[ \t]*DirtyIds\.Clear\(\);\s*\r?\n[ \t]*_pending\s*=\s*false;')
+    if (-not $dirtySnapshot.Success) {
+        throw 'August 18 repair anchor not found: Site Grid dirty-object snapshot'
+    }
+    $indent = [regex]::Match($dirtySnapshot.Value,'^[ \t]*').Value
+    $dirtyFilter = @(
+        '',
+        $indent + '// The drawing contains many CE objects with extension dictionaries.',
+        $indent + '// Only a true site-grid parent/child may wake this dedicated manager.',
+        $indent + 'dirty.RemoveWhere(id =>',
+        $indent + '    !August12SurveySiteGridCommands.IsLinkedSiteGridObject(',
+        $indent + '        _document.Database,',
+        $indent + '        id));',
+        $indent + 'if (dirty.Count == 0)',
+        $indent + '    return;'
+    ) -join "`r`n"
+    $siteGrid = $siteGrid.Insert(
+        $dirtySnapshot.Index + $dirtySnapshot.Length,
+        $dirtyFilter)
+}
 
 $siteGridAutoRefreshOld = @'
             _busy = true;
