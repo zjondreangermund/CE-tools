@@ -374,12 +374,19 @@ $universalSiteGridNew = @'
             if (command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
                 command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase) ||
 '@ -replace "`n","`r`n"
-$universal = ReplaceRequired $universal $universalSiteGridOld $universalSiteGridNew 'universal site-grid command exclusion'
-
-$undoHelperAnchor = @'
-        private static bool IsUndoRedo(string command)
-'@ -replace "`n","`r`n"
-$undoHelperReplacement = @'
+$universalRefreshAlreadyDisabled = [regex]::IsMatch(
+    $universal,
+    '(?s)internal\s+static\s+bool\s+ShouldQueueRefresh\s*\(string\s+commandName\)\s*\{.*?\breturn\s+false\s*;\s*\}')
+if (-not $universalRefreshAlreadyDisabled) {
+    $universal = ReplaceRequired $universal $universalSiteGridOld $universalSiteGridNew 'universal site-grid command exclusion'
+    if (-not $universal.Contains('private static bool IsSiteGridCommand(string command)')) {
+        $undoHelperAnchor = [regex]::Match(
+            $universal,
+            '(?m)^[ \t]*private\s+static\s+bool\s+IsUndoRedo\s*\(string\s+command\s*\)')
+        if (-not $undoHelperAnchor.Success) {
+            throw 'August 18 repair anchor not found: universal refresh helper insertion point'
+        }
+        $undoHelperReplacement = @'
         private static bool IsSiteGridCommand(string command)
         {
             return string.Equals(command, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
@@ -387,20 +394,25 @@ $undoHelperReplacement = @'
                 string.Equals(command, "CE_SITEGRIDREMOVE", StringComparison.OrdinalIgnoreCase);
         }
 
-        private static bool IsUndoRedo(string command)
 '@ -replace "`n","`r`n"
-$universal = ReplaceRequired $universal $undoHelperAnchor $undoHelperReplacement 'universal site-grid command predicate'
+        $universal = $universal.Insert($undoHelperAnchor.Index,$undoHelperReplacement)
+    }
+}
 WriteText $universalPath $universal
 
 $automaticPath = Required $src 'AugustAutomaticRefreshManager.cs'
 $automatic = ReadText $automaticPath
-$automaticOld = @'
+$automaticRefreshAlreadyDisabled = [regex]::IsMatch(
+    $automatic,
+    '(?s)internal\s+static\s+bool\s+ShouldQueueRefresh\s*\(string\s+commandName\)\s*\{.*?\breturn\s+false\s*;\s*\}')
+if (-not $automaticRefreshAlreadyDisabled) {
+    $automaticOld = @'
             string name = ReadCommandName(args);
             if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
             UniversalDynamicRefreshManager.Queue();
             PlatformDynamicRefreshManager.Queue();
 '@ -replace "`n","`r`n"
-$automaticNew = @'
+    $automaticNew = @'
             string name = ReadCommandName(args);
             if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
             if (string.Equals(name, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
@@ -410,8 +422,9 @@ $automaticNew = @'
             UniversalDynamicRefreshManager.Queue();
             PlatformDynamicRefreshManager.Queue();
 '@ -replace "`n","`r`n"
-$automatic = ReplaceRequired $automatic $automaticOld $automaticNew 'automatic manager site-grid exclusion'
-WriteText $automaticPath $automatic
+    $automatic = ReplaceRequired $automatic $automaticOld $automaticNew 'automatic manager site-grid exclusion'
+    WriteText $automaticPath $automatic
+}
 
 # -----------------------------------------------------------------------------
 # Final guards. These are intentionally strict because this is the last staging
@@ -431,7 +444,8 @@ if ($universal.Contains('CogoPointProjectStyleCommands.ApplySelectedStyles(docum
 if ($universal.Contains('RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);')) {
     throw 'Universal refresh still auto-solves linked annotation overlaps.'
 }
-if (-not $universal.Contains('private static bool IsSiteGridCommand(string command)')) {
+if (-not $universal.Contains('private static bool IsSiteGridCommand(string command)') -and
+    -not $universalRefreshAlreadyDisabled) {
     throw 'Universal refresh still lacks the dedicated Site Grid command exclusion.'
 }
 $vertex = ReadText $vertexPath
@@ -465,7 +479,8 @@ if (([regex]::Matches(
     throw 'Site Grid display-flush guard is missing from create/manual/deferred refresh paths.'
 }
 $automatic = ReadText $automaticPath
-if (-not $automatic.Contains('CE_SITEGRIDREFRESH')) {
+if (-not $automatic.Contains('CE_SITEGRIDREFRESH') -and
+    -not $automaticRefreshAlreadyDisabled) {
     throw 'Automatic CE command refresh manager still schedules Site Grid globally.'
 }
 
