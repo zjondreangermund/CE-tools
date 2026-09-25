@@ -273,9 +273,15 @@ namespace CETools.Civil3D
                                 false);
                             string expectedName = ReadText(style, "Name", string.Empty);
                             string actualName = ReadText(featureLine, "StyleName", string.Empty);
+                            int actualPlanColourIndex;
+                            bool planColourRead = TryReadFeatureLinePlanColourIndex(
+                                style,
+                                out actualPlanColourIndex);
                             if (!string.IsNullOrWhiteSpace(expectedName) &&
                                 string.Equals(actualName, expectedName,
-                                    StringComparison.OrdinalIgnoreCase))
+                                    StringComparison.OrdinalIgnoreCase) &&
+                                planColourRead &&
+                                actualPlanColourIndex == window.ColourIndex)
                             {
                                 styleChanged++;
                             }
@@ -283,10 +289,14 @@ namespace CETools.Civil3D
                             {
                                 styleAssignmentFailures.Add(string.Format(
                                     CultureInfo.CurrentCulture,
-                                    "feature line {0} still uses style '{1}' instead of '{2}'",
+                                    "feature line {0} uses style '{1}' instead of '{2}' or its saved plan colour is ACI {3} instead of {4}",
                                     pair.Key.Handle,
                                     string.IsNullOrWhiteSpace(actualName) ? "<unknown>" : actualName,
-                                    string.IsNullOrWhiteSpace(expectedName) ? "<unknown>" : expectedName));
+                                    string.IsNullOrWhiteSpace(expectedName) ? "<unknown>" : expectedName,
+                                    planColourRead
+                                        ? actualPlanColourIndex.ToString(CultureInfo.InvariantCulture)
+                                        : "<unreadable>",
+                                    window.ColourIndex));
                             }
                             transaction.Commit();
                         }
@@ -1445,6 +1455,25 @@ namespace CETools.Civil3D
             return value is ObjectId
                 ? (ObjectId)value
                 : ObjectId.Null;
+        }
+
+        private static bool TryReadFeatureLinePlanColourIndex(
+            DBObject style,
+            out int colourIndex)
+        {
+            colourIndex = -1;
+            FeatureLineStyle typedStyle = style as FeatureLineStyle;
+            if (typedStyle == null) return false;
+            try
+            {
+                DisplayStyle plan = typedStyle.GetFeatureLineDisplayStylePlan();
+                if (plan == null || !plan.Visible || plan.Color == null ||
+                    plan.Color.ColorMethod != ColorMethod.ByAci)
+                    return false;
+                colourIndex = plan.Color.ColorIndex;
+                return true;
+            }
+            catch { return false; }
         }
 
         private static bool TrySetFeatureLineStyleId(

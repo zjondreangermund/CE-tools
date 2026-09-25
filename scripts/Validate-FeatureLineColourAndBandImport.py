@@ -31,11 +31,12 @@ style_apply_pass = appearance_command.find(
     "TrySetFeatureLineStyleId(\n                                featureLine,\n                                pair.Value,\n                                transaction)"
 )
 style_readback = appearance_command.find("string actualName = ReadText(featureLine, \"StyleName\", string.Empty);")
+plan_colour_readback = appearance_command.find("TryReadFeatureLinePlanColourIndex(\n                                style,", style_readback)
 verified_style_count = appearance_command.find("styleChanged++;", style_readback)
-if min(style_prepared, entity_colour, aci_colour, first_commit, style_apply_pass, style_readback, verified_style_count) < 0:
-    raise SystemExit("Feature-line color style preparation, committed assignment, or read-back verification is missing.")
-if not style_prepared < entity_colour < aci_colour < first_commit < style_apply_pass < style_readback < verified_style_count:
-    raise SystemExit("Feature-line color styles must be committed before assignment and counted only after read-back.")
+if min(style_prepared, entity_colour, aci_colour, first_commit, style_apply_pass, style_readback, plan_colour_readback, verified_style_count) < 0:
+    raise SystemExit("Feature-line color style preparation, committed assignment, or display-color read-back is missing.")
+if not style_prepared < entity_colour < aci_colour < first_commit < style_apply_pass < style_readback < plan_colour_readback < verified_style_count:
+    raise SystemExit("Feature-line color styles must be committed and match saved Plan display color before success is counted.")
 for marker in ["ResolveFeatureLineColourStyle(", "ApplyFeatureLineStyleColour(", "featureLine.RecordGraphicsModified(true)"]:
     if marker not in appearance_source:
         raise SystemExit(f"Feature-line visible colour marker missing: {marker}")
@@ -63,6 +64,18 @@ for marker in [
 
 if "OpenMode.ForWrite" not in style_resolution:
     raise SystemExit("Feature-line source style is not opened writable before CopyAsSibling.")
+
+plan_colour_reader = appearance_source.split(
+    "private static bool TryReadFeatureLinePlanColourIndex(", 1
+)[1].split("private static bool TrySetFeatureLineStyleId(", 1)[0]
+for marker in [
+    "GetFeatureLineDisplayStylePlan()",
+    "plan.Visible",
+    "plan.Color.ColorMethod != ColorMethod.ByAci",
+    "colourIndex = plan.Color.ColorIndex;",
+]:
+    if marker not in plan_colour_reader:
+        raise SystemExit(f"Saved feature-line Plan display color check missing: {marker}")
 
 style_colour = appearance_source.split(
     "private static void ApplyFeatureLineStyleColour(", 1
