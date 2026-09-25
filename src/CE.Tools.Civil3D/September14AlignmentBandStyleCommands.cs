@@ -339,7 +339,7 @@ namespace CETools.Civil3D
             if (roadSourceProfilesAlreadyInView > 0)
             {
                 document.Editor.WriteMessage(
-                    "\nCivil 3D rejects a profile as a band source while that profile is already included in the same profile view. New road views now bind bands before adding graph profiles; an existing view with these profiles in its graph needs a non-displayed source profile to bind those rows.");
+                    "\nCivil 3D rejects graph-displayed profiles as band sources. CE Tools now creates and reuses hidden profile copies for these existing views so the road band rows can read elevation values without changing the displayed profile graphs.");
             }
         }
 

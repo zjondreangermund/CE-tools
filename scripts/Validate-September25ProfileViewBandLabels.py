@@ -26,6 +26,10 @@ for marker in [
     "views without band items={8}",
     "Import the required band set to those views",
     "band-link warnings={10}",
+    "hidden band-source profiles used={12}",
+    "hidden band-source profile failures={13}",
+    "out localProxyProfilesUsed",
+    "out localProxyProfileFailures",
 ]:
     if marker not in command:
         raise SystemExit(f"Multiple profile-view band-label repair missing: {marker}")
@@ -55,6 +59,15 @@ for marker in [
     "CountBandStylesWithoutLabelComponents(",
     "CountRoadSourceProfilesAlreadyInView(",
     "sourceFieldsLinked == sourceFieldsExpected",
+    "MakeRoadSourcesCompatibleWithView(",
+    "GetOrCreateBandSourceProxy(",
+    "CivilProfile.CreateByLayout(",
+    "SynchronizeBandSourceGeometry(",
+    "pvis.AddPVIAsymParabola(",
+    "pvis.AddPVIArc(",
+    "pvis.AddPVISymParabola(",
+    '"CE_BAND_SRC_"',
+    "native band values without changing their graph overrides",
 ]:
     if marker not in bands:
         raise SystemExit(f"Road profile-view band detection missing: {marker}")

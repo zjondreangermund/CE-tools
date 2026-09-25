@@ -1,7 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Reflection;
 using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.Civil.ApplicationServices;
+using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
+using CivilProfile = Autodesk.Civil.DatabaseServices.Profile;
+using CivilProfileView = Autodesk.Civil.DatabaseServices.ProfileView;
 
 namespace CETools.Civil3D
 {
@@ -176,9 +181,364 @@ namespace CETools.Civil3D
             ObjectId finalDesignProfileId,
             out int sourceWarnings)
         {
-            return BindInternal(profileView, leftProfileId, centreProfileId,
-                rightProfileId, finalDesignProfileId, groundProfileId,
-                ObjectId.Null, true, out sourceWarnings);
+            int proxyProfilesUsed;
+            int proxyProfileFailures;
+            return BindRoad(profileView, groundProfileId, leftProfileId,
+                centreProfileId, rightProfileId, finalDesignProfileId,
+                out sourceWarnings, out proxyProfilesUsed,
+                out proxyProfileFailures);
+        }
+
+        internal static int BindRoad(
+            DBObject profileView,
+            ObjectId groundProfileId,
+            ObjectId leftProfileId,
+            ObjectId centreProfileId,
+            ObjectId rightProfileId,
+            ObjectId finalDesignProfileId,
+            out int sourceWarnings,
+            out int proxyProfilesUsed,
+            out int proxyProfileFailures)
+        {
+            ObjectId[] sources = MakeRoadSourcesCompatibleWithView(
+                profileView,
+                groundProfileId,
+                leftProfileId,
+                centreProfileId,
+                rightProfileId,
+                finalDesignProfileId,
+                out proxyProfilesUsed,
+                out proxyProfileFailures);
+            int linked = BindInternal(profileView, sources[1], sources[2],
+                sources[3], sources[4], sources[0], ObjectId.Null, true,
+                out sourceWarnings);
+            return linked;
+        }
+
+        /// <summary>
+        /// Civil 3D refuses to bind a profile-band row to a profile that is
+        /// already displayed in the same ProfileView. Reuse hidden layout
+        /// profile copies for those rows so existing road views can still get
+        /// native band values without changing their graph overrides.
+        /// </summary>
+        private static ObjectId[] MakeRoadSourcesCompatibleWithView(
+            DBObject profileView,
+            ObjectId groundProfileId,
+            ObjectId leftProfileId,
+            ObjectId centreProfileId,
+            ObjectId rightProfileId,
+            ObjectId finalDesignProfileId,
+            out int proxyProfilesUsed,
+            out int proxyProfileFailures)
+        {
+            var sources = new[]
+            {
+                groundProfileId,
+                leftProfileId,
+                centreProfileId,
+                rightProfileId,
+                finalDesignProfileId
+            };
+            proxyProfilesUsed = 0;
+            proxyProfileFailures = 0;
+            if (profileView == null) return sources;
+
+            CivilProfileView civilView = profileView as CivilProfileView;
+            Database database = profileView.Database;
+            Transaction transaction = null;
+            try
+            {
+                if (database != null)
+                    transaction = database.TransactionManager.TopTransaction;
+            }
+            catch { }
+            if (civilView == null || transaction == null ||
+                civilView.AlignmentId.IsNull)
+                return sources;
+
+            var displayed = new HashSet<ObjectId>();
+            object graphOverrides = ReadProperty(profileView, "GraphOverrides");
+            foreach (object item in CivilStyleDiscovery.Enumerate(graphOverrides))
+            {
+                object value = ReadProperty(item, "ProfileId");
+                if (value is ObjectId && !((ObjectId)value).IsNull)
+                    displayed.Add((ObjectId)value);
+            }
+            if (displayed.Count == 0) return sources;
+
+            CivilAlignment alignment = null;
+            try
+            {
+                alignment = transaction.GetObject(
+                    civilView.AlignmentId,
+                    OpenMode.ForRead,
+                    false) as CivilAlignment;
+            }
+            catch { }
+            if (alignment == null) return sources;
+
+            var replacements = new Dictionary<ObjectId, ObjectId>();
+            for (int index = 0; index < sources.Length; index++)
+            {
+                ObjectId sourceId = sources[index];
+                if (sourceId.IsNull || !displayed.Contains(sourceId)) continue;
+                ObjectId proxyId;
+                if (!replacements.TryGetValue(sourceId, out proxyId))
+                {
+                    try
+                    {
+                        proxyId = GetOrCreateBandSourceProxy(
+                            sourceId, alignment, transaction);
+                    }
+                    catch { proxyId = ObjectId.Null; }
+                    if (!proxyId.IsNull)
+                    {
+                        replacements[sourceId] = proxyId;
+                        proxyProfilesUsed++;
+                    }
+                    else
+                    {
+                        proxyProfileFailures++;
+                    }
+                }
+                if (!proxyId.IsNull) sources[index] = proxyId;
+            }
+            return sources;
+        }
+
+        private static ObjectId GetOrCreateBandSourceProxy(
+            ObjectId sourceId,
+            CivilAlignment alignment,
+            Transaction transaction)
+        {
+            CivilProfile source = transaction.GetObject(
+                sourceId, OpenMode.ForRead, false) as CivilProfile;
+            if (source == null)
+                throw new InvalidOperationException("The road band source profile is unavailable.");
+
+            string proxyName = "CE_BAND_SRC_" + sourceId.Handle.ToString();
+            CivilProfile proxy = null;
+            foreach (ObjectId profileId in alignment.GetProfileIds())
+            {
+                CivilProfile candidate = null;
+                try
+                {
+                    candidate = transaction.GetObject(
+                        profileId, OpenMode.ForRead, false) as CivilProfile;
+                }
+                catch { }
+                if (candidate == null || !string.Equals(
+                    candidate.Name, proxyName, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                proxy = transaction.GetObject(
+                    profileId, OpenMode.ForWrite, false) as CivilProfile;
+                break;
+            }
+
+            List<BandSourcePvi> geometry = CaptureBandSourceGeometry(source, alignment);
+            if (geometry.Count < 2)
+                throw new InvalidOperationException("The road band source profile has no usable elevation geometry.");
+
+            if (proxy == null)
+            {
+                CivilDocument civilDocument = CivilApplication.ActiveDocument;
+                if (civilDocument == null || civilDocument.Styles.ProfileStyles.Count == 0 ||
+                    civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles.Count == 0)
+                    throw new InvalidOperationException("Civil 3D has no profile style and label set for a hidden band source.");
+
+                ObjectId profileStyleId = civilDocument.Styles.ProfileStyles[0];
+                ObjectId labelSetStyleId = civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles[0];
+                ObjectId proxyId = CivilProfile.CreateByLayout(
+                    proxyName,
+                    alignment.ObjectId,
+                    alignment.LayerId,
+                    profileStyleId,
+                    labelSetStyleId);
+                proxy = transaction.GetObject(
+                    proxyId, OpenMode.ForWrite, false) as CivilProfile;
+            }
+            if (proxy == null)
+                throw new InvalidOperationException("Civil 3D did not create the hidden road band source profile.");
+
+            SynchronizeBandSourceGeometry(proxy, geometry);
+            try
+            {
+                proxy.Description = "CE Tools hidden profile-band source copied from " + source.Name;
+            }
+            catch { }
+            return proxy.ObjectId;
+        }
+
+        private static List<BandSourcePvi> CaptureBandSourceGeometry(
+            CivilProfile profile,
+            CivilAlignment alignment)
+        {
+            var result = new List<BandSourcePvi>();
+            foreach (object item in CivilStyleDiscovery.Enumerate(profile.PVIs))
+            {
+                if (item == null) continue;
+                double station;
+                double elevation;
+                if (!TryReadFiniteDouble(item, "Station", out station) ||
+                    !TryReadFiniteDouble(item, "Elevation", out elevation))
+                    continue;
+
+                var pvi = new BandSourcePvi
+                {
+                    Station = station,
+                    Elevation = elevation,
+                    Type = Convert.ToString(ReadProperty(item, "PVIType")) ?? string.Empty
+                };
+                object curve = ReadProperty(item, "VerticalCurve");
+                if (curve != null)
+                {
+                    TryReadFiniteDouble(curve, "Length", out pvi.CurveLength);
+                    TryReadFiniteDouble(curve, "AsymmetricLength1", out pvi.AsymmetricLength1);
+                    TryReadFiniteDouble(curve, "AsymmetricLength2", out pvi.AsymmetricLength2);
+                    TryReadFiniteDouble(curve, "Radius", out pvi.Radius);
+                }
+                result.Add(pvi);
+            }
+            result.Sort((first, second) => first.Station.CompareTo(second.Station));
+            for (int index = result.Count - 1; index > 0; index--)
+            {
+                if (Math.Abs(result[index].Station - result[index - 1].Station) <= 1e-8)
+                    result.RemoveAt(index);
+            }
+
+            if (result.Count >= 2) return result;
+
+            // Some surface and corridor profiles expose no PVI wrappers. Sample
+            // the native elevation function at short intervals so their hidden
+            // source still supplies accurate band values at normal label stations.
+            double start = ReadFiniteDoubleOrDefault(profile, "StartingStation", alignment.StartingStation);
+            double end = ReadFiniteDoubleOrDefault(profile, "EndingStation", alignment.EndingStation);
+            if (end <= start) return result;
+            int segments = Math.Max(2, Math.Min(5000,
+                (int)Math.Ceiling((end - start) / 2.0)));
+            result.Clear();
+            for (int index = 0; index <= segments; index++)
+            {
+                double station = start + ((end - start) * index / segments);
+                try
+                {
+                    result.Add(new BandSourcePvi
+                    {
+                        Station = station,
+                        Elevation = profile.ElevationAt(station),
+                        Type = "Tangent"
+                    });
+                }
+                catch { }
+            }
+            return result;
+        }
+
+        private static void SynchronizeBandSourceGeometry(
+            CivilProfile profile,
+            IList<BandSourcePvi> geometry)
+        {
+            var pvis = profile.PVIs;
+            for (int index = pvis.Count - 2; index >= 1; index--)
+                pvis.RemoveAt(index);
+
+            if (pvis.Count >= 2)
+            {
+                Autodesk.Civil.DatabaseServices.ProfilePVI first = pvis[0];
+                Autodesk.Civil.DatabaseServices.ProfilePVI last = pvis[pvis.Count - 1];
+                // Move the endpoint that preserves station order first.
+                if (geometry[0].Station > first.Station)
+                {
+                    last.Station = geometry[geometry.Count - 1].Station;
+                    last.Elevation = geometry[geometry.Count - 1].Elevation;
+                    first.Station = geometry[0].Station;
+                    first.Elevation = geometry[0].Elevation;
+                }
+                else
+                {
+                    first.Station = geometry[0].Station;
+                    first.Elevation = geometry[0].Elevation;
+                    last.Station = geometry[geometry.Count - 1].Station;
+                    last.Elevation = geometry[geometry.Count - 1].Elevation;
+                }
+            }
+            else
+            {
+                while (pvis.Count > 0) pvis.RemoveAt(pvis.Count - 1);
+                pvis.AddPVI(geometry[0].Station, geometry[0].Elevation);
+                pvis.AddPVI(geometry[geometry.Count - 1].Station,
+                    geometry[geometry.Count - 1].Elevation);
+            }
+
+            for (int index = 1; index < geometry.Count - 1; index++)
+            {
+                BandSourcePvi item = geometry[index];
+                string type = (item.Type ?? string.Empty).ToUpperInvariant();
+                if (type.Contains("ASYMMETRIC") &&
+                    item.AsymmetricLength1 > 0.0 && item.AsymmetricLength2 > 0.0)
+                {
+                    pvis.AddPVIAsymParabola(item.Station, item.Elevation,
+                        item.AsymmetricLength1, item.AsymmetricLength2);
+                }
+                else if (type.Contains("ASYMMETRIC"))
+                {
+                    pvis.AddPVI(item.Station, item.Elevation);
+                }
+                else if (type.Contains("CIRCULAR") && item.Radius > 0.0)
+                {
+                    pvis.AddPVIArc(item.Station, item.Elevation, item.Radius);
+                }
+                else if (type.Contains("PARABOLA"))
+                {
+                    if (item.CurveLength > 0.0)
+                        pvis.AddPVISymParabola(item.Station, item.Elevation,
+                            item.CurveLength);
+                    else
+                        pvis.AddPVI(item.Station, item.Elevation);
+                }
+                else
+                {
+                    pvis.AddPVI(item.Station, item.Elevation);
+                }
+            }
+        }
+
+        private static double ReadFiniteDoubleOrDefault(
+            object value,
+            string propertyName,
+            double defaultValue)
+        {
+            double result;
+            return TryReadFiniteDouble(value, propertyName, out result)
+                ? result
+                : defaultValue;
+        }
+
+        private static bool TryReadFiniteDouble(
+            object value,
+            string propertyName,
+            out double result)
+        {
+            result = 0.0;
+            object propertyValue = ReadProperty(value, propertyName);
+            if (propertyValue == null) return false;
+            try
+            {
+                result = Convert.ToDouble(propertyValue, CultureInfo.InvariantCulture);
+                return !double.IsNaN(result) && !double.IsInfinity(result);
+            }
+            catch { return false; }
+        }
+
+        private sealed class BandSourcePvi
+        {
+            internal double Station;
+            internal double Elevation;
+            internal string Type;
+            internal double CurveLength;
+            internal double AsymmetricLength1;
+            internal double AsymmetricLength2;
+            internal double Radius;
         }
 
         internal static bool HasRoadBandRoles(

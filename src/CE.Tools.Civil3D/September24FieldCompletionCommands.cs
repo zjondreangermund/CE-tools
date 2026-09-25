@@ -55,6 +55,8 @@ namespace CETools.Civil3D
             int failedProfileViews = 0;
             int bandBindingWarnings = 0;
             int roadSourceProfilesAlreadyInView = 0;
+            int roadBandSourceProxyProfilesUsed = 0;
+            int roadBandSourceProxyFailures = 0;
             int viewsWithoutBandItems = 0;
             var seen = new HashSet<ObjectId>();
             var processedProfileViewIds = new List<ObjectId>();
@@ -145,6 +147,8 @@ namespace CETools.Civil3D
                                                 rightProfileId,
                                                 finalProfileId);
                                         int localSourceWarnings;
+                                        int localProxyProfilesUsed;
+                                        int localProxyProfileFailures;
                                         int localRoadBandItemsBound = ProfileViewBandDataBinder.BindRoad(
                                             profileView,
                                             groundProfileId,
@@ -152,9 +156,13 @@ namespace CETools.Civil3D
                                             centreProfileId,
                                             rightProfileId,
                                             finalProfileId,
-                                            out localSourceWarnings);
+                                            out localSourceWarnings,
+                                            out localProxyProfilesUsed,
+                                            out localProxyProfileFailures);
                                         roadBandItemsBound += localRoadBandItemsBound;
                                         bandBindingWarnings += localSourceWarnings;
+                                        roadBandSourceProxyProfilesUsed += localProxyProfilesUsed;
+                                        roadBandSourceProxyFailures += localProxyProfileFailures;
                                         if (localRoadBandItemsBound == 0)
                                             bandBindingWarnings += localSourceWarnings == 0 ? 1 : 0;
                                     }
@@ -229,7 +237,7 @@ namespace CETools.Civil3D
             }
 
             document.Editor.WriteMessage(
-                "\nCE_PROFILEBANDLABELSMULTI complete. Profile views processed={0}; band items found={1}; band items with labels on={2}; verified road band sources={3}; native profile-band label values={4}; styles without label components={5}; non-profile objects ignored={6}; profile views skipped={7}; views without band items={8}; failed={9}; band-link warnings={10}; road source profiles already in graph={11}.",
+                "\nCE_PROFILEBANDLABELSMULTI complete. Profile views processed={0}; band items found={1}; band items with labels on={2}; verified road band sources={3}; native profile-band label values={4}; styles without label components={5}; non-profile objects ignored={6}; profile views skipped={7}; views without band items={8}; failed={9}; band-link warnings={10}; road source profiles already in graph={11}; hidden band-source profiles used={12}; hidden band-source profile failures={13}.",
                 processed,
                 bandItemsFound,
                 bandItemsEnabled,
@@ -241,7 +249,9 @@ namespace CETools.Civil3D
                 viewsWithoutBandItems,
                 failedProfileViews,
                 bandBindingWarnings,
-                roadSourceProfilesAlreadyInView);
+                roadSourceProfilesAlreadyInView,
+                roadBandSourceProxyProfilesUsed,
+                roadBandSourceProxyFailures);
             if (viewsWithoutBandItems > 0)
             {
                 document.Editor.WriteMessage(
@@ -262,7 +272,13 @@ namespace CETools.Civil3D
             if (roadSourceProfilesAlreadyInView > 0)
             {
                 document.Editor.WriteMessage(
-                    "\nCivil 3D rejects a profile as a band source while that profile is already included in the same profile view. New road views now bind bands before adding graph profiles; an existing view with these profiles in its graph needs a non-displayed source profile to bind those rows.");
+                    "\nCivil 3D rejects graph-displayed profiles as band sources. CE Tools now creates and reuses hidden profile copies for the selected views so the road band rows can read elevation values without changing the displayed profile graphs.");
+            }
+            if (roadBandSourceProxyFailures > 0)
+            {
+                document.Editor.WriteMessage(
+                    "\n{0} hidden band-source profile(s) could not be created or updated. Those rows may still have empty labels; check whether the source profiles have readable elevations and the drawing has a profile style and label set.",
+                    roadBandSourceProxyFailures);
             }
         }
 
