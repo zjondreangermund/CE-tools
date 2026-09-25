@@ -202,7 +202,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Add Band Labels to Multiple Profile Views",
                         "CE_PROFILEBANDLABELSMULTI",
-                        "Enable Show Labels on the top and bottom band items of multiple selected profile views without the Civil 3D 2023 collection-level write that can abort.",
+                        "Rebind road band rows to their ground/edge/centre/design profiles, enable labels, and keep existing utility network links intact.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Road TOP/BOTTOM Surface Profiles",

@@ -47,34 +47,138 @@ namespace CETools.Civil3D
             document.Editor.SetImpliedSelection(new ObjectId[0]);
 
             int processed = 0;
-            int changed = 0;
-            int skipped = 0;
+            int bandItemsFound = 0;
+            int bandItemsEnabled = 0;
+            int roadBandItemsBound = 0;
+            int nonProfileObjects = 0;
+            int skippedProfileViews = 0;
+            int failedProfileViews = 0;
+            int bandBindingWarnings = 0;
+            int viewsWithoutBandItems = 0;
+            var seen = new HashSet<ObjectId>();
             using (DocumentLock lockDocument = document.LockDocument())
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
+                foreach (ObjectId id in selection.Value.GetObjectIds())
                 {
-                    ProfileView profileView = null;
+                    if (id.IsNull || !seen.Add(id)) continue;
+
                     try
                     {
-                        profileView = transaction.GetObject(
-                            id,
-                            OpenMode.ForWrite,
-                            false) as ProfileView;
-                    }
-                    catch { }
+                        // Keep each profile view in its own transaction. A bad
+                        // band wrapper must not prevent labels being repaired on
+                        // the remaining selected views.
+                        using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                        {
+                            DBObject selectedObject = transaction.GetObject(
+                                id,
+                                OpenMode.ForRead,
+                                false);
+                            ProfileView profileView = selectedObject as ProfileView;
+                            if (profileView == null)
+                            {
+                                nonProfileObjects++;
+                                continue;
+                            }
+                            if (profileView.IsReferenceObject)
+                            {
+                                skippedProfileViews++;
+                                continue;
+                            }
+                            profileView.UpgradeOpen();
 
-                    if (profileView == null || profileView.IsReferenceObject)
+                            // Imported road band sets can retain their rows and
+                            // ShowLabels flags while losing the profile source
+                            // IDs. Restore those links before enabling labels.
+                            // Leave utility bands' existing network bindings alone.
+                            Alignment alignment = null;
+                            try
+                            {
+                                alignment = profileView.AlignmentId.IsNull
+                                    ? null
+                                    : transaction.GetObject(
+                                        profileView.AlignmentId,
+                                        OpenMode.ForRead,
+                                        false) as Alignment;
+                            }
+                            catch { }
+
+                            bool roadBandRoles = false;
+                            try
+                            {
+                                roadBandRoles = ProfileViewBandDataBinder.HasRoadBandRoles(
+                                    profileView,
+                                    alignment == null ? string.Empty : alignment.Name);
+                            }
+                            catch { }
+
+                            if (roadBandRoles)
+                            {
+                                try
+                                {
+                                    if (alignment == null)
+                                    {
+                                        bandBindingWarnings++;
+                                    }
+                                    else
+                                    {
+                                        ObjectId groundProfileId;
+                                        ObjectId leftProfileId;
+                                        ObjectId centreProfileId;
+                                        ObjectId rightProfileId;
+                                        ObjectId finalProfileId;
+                                        August13RoadProfileViewFinalizerCommands.ResolveRoadProfiles(
+                                            alignment,
+                                            transaction,
+                                            out groundProfileId,
+                                            out leftProfileId,
+                                            out centreProfileId,
+                                            out rightProfileId,
+                                            out finalProfileId);
+                                        int localRoadBandItemsBound = ProfileViewBandDataBinder.BindRoad(
+                                            profileView,
+                                            groundProfileId,
+                                            leftProfileId,
+                                            centreProfileId,
+                                            rightProfileId,
+                                            finalProfileId);
+                                        roadBandItemsBound += localRoadBandItemsBound;
+                                        if (localRoadBandItemsBound == 0)
+                                            bandBindingWarnings++;
+                                    }
+                                }
+                                catch (System.Exception exception)
+                                {
+                                    bandBindingWarnings++;
+                                    document.Editor.WriteMessage(
+                                        "\nCE_PROFILEBANDLABELSMULTI could not relink road bands in profile view {0}: {1}",
+                                        id.Handle,
+                                        exception.Message);
+                                }
+                            }
+
+                            int localBandItems;
+                            int localEnabledItems;
+                            EnableProfileViewBandLabels(
+                                profileView,
+                                out localBandItems,
+                                out localEnabledItems);
+                            bandItemsFound += localBandItems;
+                            bandItemsEnabled += localEnabledItems;
+                            if (localBandItems == 0) viewsWithoutBandItems++;
+                            try { profileView.RecordGraphicsModified(true); } catch { }
+                            transaction.Commit();
+                            processed++;
+                        }
+                    }
+                    catch (System.Exception exception)
                     {
-                        skipped++;
-                        continue;
+                        failedProfileViews++;
+                        document.Editor.WriteMessage(
+                            "\nCE_PROFILEBANDLABELSMULTI could not update profile view {0}: {1}",
+                            id.Handle,
+                            exception.Message);
                     }
-
-                    changed += EnableProfileViewBandLabels(profileView);
-                    try { profileView.RecordGraphicsModified(true); } catch { }
-                    processed++;
                 }
-                transaction.Commit();
             }
 
             try
@@ -86,16 +190,32 @@ namespace CETools.Civil3D
             catch { }
 
             document.Editor.WriteMessage(
-                "\nCE_PROFILEBANDLABELSMULTI complete. Profile views processed={0}; band labels enabled={1}; skipped={2}.",
+                "\nCE_PROFILEBANDLABELSMULTI complete. Profile views processed={0}; band items found={1}; band items with labels on={2}; road band items rebound={3}; non-profile objects ignored={4}; profile views skipped={5}; views without band items={6}; failed={7}; band-link warnings={8}.",
                 processed,
-                changed,
-                skipped);
+                bandItemsFound,
+                bandItemsEnabled,
+                roadBandItemsBound,
+                nonProfileObjects,
+                skippedProfileViews,
+                viewsWithoutBandItems,
+                failedProfileViews,
+                bandBindingWarnings);
+            if (viewsWithoutBandItems > 0)
+            {
+                document.Editor.WriteMessage(
+                    "\n{0} selected profile view(s) have no band rows. Import the required band set to those views, then run this command again.",
+                    viewsWithoutBandItems);
+            }
         }
 
-        private static int EnableProfileViewBandLabels(ProfileView profileView)
+        private static void EnableProfileViewBandLabels(
+            ProfileView profileView,
+            out int itemsFound,
+            out int labelsOn)
         {
-            if (profileView == null) return 0;
-            int changed = 0;
+            itemsFound = 0;
+            labelsOn = 0;
+            if (profileView == null) return;
 
             try
             {
@@ -104,12 +224,14 @@ namespace CETools.Civil3D
                 {
                     for (int index = 0; index < top.Count; index++)
                     {
-                        ProfileViewBandItem item = top[index];
-                        if (!item.ShowLabels)
+                        try
                         {
-                            item.ShowLabels = true;
-                            changed++;
+                            ProfileViewBandItem item = top[index];
+                            itemsFound++;
+                            try { item.ShowLabels = true; } catch { }
+                            try { if (item.ShowLabels) labelsOn++; } catch { }
                         }
+                        catch { }
                     }
                 }
             }
@@ -122,18 +244,18 @@ namespace CETools.Civil3D
                 {
                     for (int index = 0; index < bottom.Count; index++)
                     {
-                        ProfileViewBandItem item = bottom[index];
-                        if (!item.ShowLabels)
+                        try
                         {
-                            item.ShowLabels = true;
-                            changed++;
+                            ProfileViewBandItem item = bottom[index];
+                            itemsFound++;
+                            try { item.ShowLabels = true; } catch { }
+                            try { if (item.ShowLabels) labelsOn++; } catch { }
                         }
+                        catch { }
                     }
                 }
             }
             catch { }
-
-            return changed;
         }
 
         [CommandMethod("CE_TOOLS", "CE_PROFILEMOVEVERTICAL", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]

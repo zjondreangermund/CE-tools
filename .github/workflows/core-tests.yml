@@ -46,6 +46,9 @@ jobs:
       - name: Validate feature-line colour and multi-view band imports
         run: python3 scripts/Validate-FeatureLineColourAndBandImport.py
 
+      - name: Validate September 25 profile-view band labels
+        run: python3 scripts/Validate-September25ProfileViewBandLabels.py
+
       - name: Validate September 11 field-completion workflows
         run: python3 scripts/Validate-September11FieldCompletion.py
 

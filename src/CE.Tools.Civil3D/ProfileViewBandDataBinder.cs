@@ -59,6 +59,80 @@ namespace CETools.Civil3D
                 ObjectId.Null, true);
         }
 
+        internal static bool HasRoadBandRoles(
+            DBObject profileView,
+            string alignmentName)
+        {
+            if (profileView == null) return false;
+
+            string viewName = Convert.ToString(ReadProperty(profileView, "Name")) ?? string.Empty;
+            if (LooksLikeRoadName(viewName) || LooksLikeRoadName(alignmentName))
+                return true;
+
+            object bands = ReadProperty(profileView, "Bands");
+            if (bands == null) bands = ReadProperty(profileView, "BandItems");
+            if (bands == null) return false;
+
+            bool hasRoad = false;
+            bool hasLeft = false;
+            bool hasRight = false;
+            bool hasCentre = false;
+            var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            foreach (string methodName in new[]
+            {
+                "GetBottomBandItems",
+                "GetTopBandItems",
+                "GetBandItems"
+            })
+            {
+                object collection = InvokeNoArguments(bands, methodName);
+                foreach (object item in CivilStyleDiscovery.Enumerate(collection))
+                    AccumulateRoadBandIdentity(item, visited,
+                        ref hasRoad, ref hasLeft, ref hasRight, ref hasCentre);
+            }
+            foreach (object item in CivilStyleDiscovery.Enumerate(bands))
+                AccumulateRoadBandIdentity(item, visited,
+                    ref hasRoad, ref hasLeft, ref hasRight, ref hasCentre);
+
+            return hasRoad || (hasLeft && hasRight && hasCentre);
+        }
+
+        private static void AccumulateRoadBandIdentity(
+            object item,
+            HashSet<object> visited,
+            ref bool hasRoad,
+            ref bool hasLeft,
+            ref bool hasRight,
+            ref bool hasCentre)
+        {
+            if (item == null || visited.Contains(item)) return;
+            visited.Add(item);
+            string identity = GetBandIdentity(item);
+            hasRoad = hasRoad || identity.Contains("ROAD");
+            hasLeft = hasLeft || identity.Contains("LEFT") || identity.Contains("LHS");
+            hasRight = hasRight || identity.Contains("RIGHT") || identity.Contains("RHS");
+            hasCentre = hasCentre || identity.Contains("CENTRE") ||
+                        identity.Contains("CENTER") || identity.Contains("C/L");
+        }
+
+        private static bool LooksLikeRoadName(string value)
+        {
+            string name = (value ?? string.Empty).Trim().ToUpperInvariant();
+            return name.Contains("ROAD") ||
+                   name.StartsWith("RD-") ||
+                   name.StartsWith("RD_") ||
+                   name.StartsWith("RD ");
+        }
+
+        private static string GetBandIdentity(object item)
+        {
+            return (item.GetType().Name + " " +
+                Convert.ToString(ReadProperty(item, "BandType")) + " " +
+                Convert.ToString(ReadProperty(item, "Name")) + " " +
+                Convert.ToString(ReadProperty(item, "StyleName")) + " " +
+                ReadBandStyleName(item)).ToUpperInvariant();
+        }
+
         private static int BindInternal(
             DBObject profileView,
             ObjectId leftProfileId,
@@ -141,11 +215,7 @@ namespace CETools.Civil3D
             bool roadRoles)
         {
             bool changed = false;
-            string identity = (item.GetType().Name + " " +
-                Convert.ToString(ReadProperty(item, "BandType")) + " " +
-                Convert.ToString(ReadProperty(item, "Name")) + " " +
-                Convert.ToString(ReadProperty(item, "StyleName")) + " " +
-                ReadBandStyleName(item)).ToUpperInvariant();
+            string identity = GetBandIdentity(item);
             bool networkBand = identity.Contains("PIPE") ||
                                identity.Contains("NETWORK") ||
                                identity.Contains("PRESSURE") ||
