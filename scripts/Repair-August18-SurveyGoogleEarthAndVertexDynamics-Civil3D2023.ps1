@@ -374,19 +374,54 @@ $universalSiteGridNew = @'
             if (command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
                 command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase) ||
 '@ -replace "`n","`r`n"
-$universalRefreshAlreadyDisabled = [regex]::IsMatch(
-    $universal,
-    '(?s)internal\s+static\s+bool\s+ShouldQueueRefresh\s*\(string\s+commandName\)\s*\{.*?\breturn\s+false\s*;\s*\}')
-if (-not $universalRefreshAlreadyDisabled) {
-    $universal = ReplaceRequired $universal $universalSiteGridOld $universalSiteGridNew 'universal site-grid command exclusion'
-    if (-not $universal.Contains('private static bool IsSiteGridCommand(string command)')) {
-        $undoHelperAnchor = [regex]::Match(
-            $universal,
-            '(?m)^[ \t]*private\s+static\s+bool\s+IsUndoRedo\s*\(string\s+command\s*\)')
-        if (-not $undoHelperAnchor.Success) {
-            throw 'August 18 repair anchor not found: universal refresh helper insertion point'
+$universalRefreshAlreadyDisabled = $false
+$universalHasSiteGridGuard = $universal.Contains('if (IsSiteGridCommand(command))')
+if (-not $universalHasSiteGridGuard) {
+    $onCommandStarted = [regex]::Match(
+        $universal,
+        '(?m)^[ \t]*private\s+static\s+void\s+OnCommandEnded\s*\(')
+    if ($onCommandStarted.Success) {
+        $onCommandText = $universal.Substring($onCommandStarted.Index)
+        $nextMethod = [regex]::Match(
+            $onCommandText.Substring(1),
+            '(?m)^[ \t]*(?:private|internal|public)\s+static\s+[^\r\n]+\(')
+        $onCommandLength = if ($nextMethod.Success) { $nextMethod.Index + 1 } else { $onCommandText.Length }
+        $onCommandBody = $onCommandText.Substring(0,$onCommandLength)
+        $ceQueueGate = [regex]::Match(
+            $onCommandBody,
+            '(?m)^[ \t]*if\s*\(\s*command\.StartsWith\("CE_"')
+        if ($ceQueueGate.Success) {
+            $gateIndent = [regex]::Match($ceQueueGate.Value,'^[ \t]*').Value
+            $siteGridGate = @(
+                $gateIndent + 'if (IsSiteGridCommand(command))',
+                $gateIndent + '{',
+                $gateIndent + '    _pending = false;',
+                $gateIndent + '    _lastChangeUtc = DateTime.UtcNow;',
+                $gateIndent + '    return;',
+                $gateIndent + '}'
+            ) -join "`r`n"
+            $universal = $universal.Insert($onCommandStarted.Index + $ceQueueGate.Index,$siteGridGate + "`r`n")
+            $universalHasSiteGridGuard = $true
+        } elseif ($onCommandBody -notmatch '\.Queue\s*\(') {
+            # Current source stages can turn off the generic queue entirely.
+            $universalRefreshAlreadyDisabled = $true
+        } else {
+            throw 'August 18 repair anchor not found: universal command-triggered refresh gate'
         }
-        $undoHelperReplacement = @'
+    } else {
+        $universalRefreshAlreadyDisabled = $true
+    }
+}
+
+if ($universalHasSiteGridGuard -and
+    -not $universal.Contains('private static bool IsSiteGridCommand(string command)')) {
+    $undoHelperAnchor = [regex]::Match(
+        $universal,
+        '(?m)^[ \t]*private\s+static\s+bool\s+IsUndoRedo\s*\(')
+    if (-not $undoHelperAnchor.Success) {
+        throw 'August 18 repair anchor not found: universal refresh helper insertion point'
+    }
+    $undoHelperReplacement = @'
         private static bool IsSiteGridCommand(string command)
         {
             return string.Equals(command, "CE_SITEGRID", StringComparison.OrdinalIgnoreCase) ||
@@ -395,8 +430,7 @@ if (-not $universalRefreshAlreadyDisabled) {
         }
 
 '@ -replace "`n","`r`n"
-        $universal = $universal.Insert($undoHelperAnchor.Index,$undoHelperReplacement)
-    }
+    $universal = $universal.Insert($undoHelperAnchor.Index,$undoHelperReplacement)
 }
 WriteText $universalPath $universal
 
@@ -404,7 +438,7 @@ $automaticPath = Required $src 'AugustAutomaticRefreshManager.cs'
 $automatic = ReadText $automaticPath
 $automaticRefreshAlreadyDisabled = [regex]::IsMatch(
     $automatic,
-    '(?s)internal\s+static\s+bool\s+ShouldQueueRefresh\s*\(string\s+commandName\)\s*\{.*?\breturn\s+false\s*;\s*\}')
+    '(?s)(?:internal|private|public)\s+static\s+bool\s+ShouldQueueRefresh\s*\([^)]*\)\s*\{.*?\breturn\s+false\s*;\s*\}')
 if (-not $automaticRefreshAlreadyDisabled) {
     $automaticOld = @'
             string name = ReadCommandName(args);
