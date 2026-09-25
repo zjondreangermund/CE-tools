@@ -37,7 +37,13 @@ if min(style_prepared, entity_colour, aci_colour, first_commit, style_apply_pass
     raise SystemExit("Feature-line color style preparation, committed assignment, or display-color read-back is missing.")
 if not style_prepared < entity_colour < aci_colour < first_commit < style_apply_pass < style_readback < plan_colour_readback < verified_style_count:
     raise SystemExit("Feature-line color styles must be committed and match saved Plan display color before success is counted.")
-for marker in ["ResolveFeatureLineColourStyle(", "ApplyFeatureLineStyleColour(", "featureLine.RecordGraphicsModified(true)"]:
+for marker in [
+    "ResolveFeatureLineColourStyle(",
+    "ApplyFeatureLineStyleColour(",
+    "FindAnyFeatureLineStyleId(",
+    "AddFeatureLineStyle(",
+    "featureLine.RecordGraphicsModified(true)",
+]:
     if marker not in appearance_source:
         raise SystemExit(f"Feature-line visible colour marker missing: {marker}")
 
@@ -46,6 +52,10 @@ style_resolution = appearance_source.split(
 )[1].split("private static ObjectId FindFeatureLineStyleId(", 1)[0]
 if 'ReadText(\n                featureLine,\n                "StyleName",' not in style_resolution:
     raise SystemExit("Feature-line colour style lookup must use the readable StyleName property.")
+if "FindAnyFeatureLineStyleId(" not in style_resolution:
+    raise SystemExit("Feature-line colour assignment must fall back to an existing style when StyleName is blank.")
+if "created = AddFeatureLineStyle(" not in style_resolution:
+    raise SystemExit("Feature-line colour assignment must create a style if CopyAsSibling returns no ID.")
 if 'ReadObjectIdProperty(\n                featureLine,\n                "StyleId"' in style_resolution:
     raise SystemExit("Feature-line colour style lookup must not read setter-only StyleId.")
 if "FindFeatureLineStyleId(\n                    civilDocument,\n                    currentName,\n                    transaction)" not in style_resolution:

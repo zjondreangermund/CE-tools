@@ -805,6 +805,42 @@ namespace CETools.Civil3D
                 "SetLabelsVisible",
                 "SetBandLabelsVisible",
                 "SetVisible");
+
+            // ProfileViewBandItem exposes the native Profile1Id/Profile2Id
+            // properties. Assign and verify those exact source properties for
+            // profile bands; reflection across the wrapper can match additional
+            // ObjectId setters that are not band data sources.
+            Autodesk.Civil.DatabaseServices.ProfileViewBandItem profileBand =
+                item as Autodesk.Civil.DatabaseServices.ProfileViewBandItem;
+            if (!networkBand && profileBand != null)
+            {
+                sourceExpected = true;
+                sourceFieldsExpected = 2;
+                if (!primaryProfileId.IsNull)
+                {
+                    try
+                    {
+                        if (profileBand.Profile1Id != primaryProfileId)
+                            profileBand.Profile1Id = primaryProfileId;
+                        if (profileBand.Profile1Id == primaryProfileId)
+                            sourceFieldsLinked++;
+                    }
+                    catch { }
+                }
+                if (!secondaryProfileId.IsNull)
+                {
+                    try
+                    {
+                        if (profileBand.Profile2Id != secondaryProfileId)
+                            profileBand.Profile2Id = secondaryProfileId;
+                        if (profileBand.Profile2Id == secondaryProfileId)
+                            sourceFieldsLinked++;
+                    }
+                    catch { }
+                }
+                return sourceFieldsLinked == sourceFieldsExpected;
+            }
+
             foreach (PropertyInfo property in item.GetType().GetProperties(
                 BindingFlags.Public | BindingFlags.Instance))
             {
