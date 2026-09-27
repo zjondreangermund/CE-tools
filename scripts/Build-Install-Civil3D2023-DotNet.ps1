@@ -25,6 +25,29 @@ $autoCadRoot = 'C:\Program Files\Autodesk\AutoCAD 2023'
 $civil3DRoot = if (Test-Path (Join-Path $autoCadRoot 'AeccDbMgd.dll')) { $autoCadRoot } else { Join-Path $autoCadRoot 'C3D' }
 $aecRoot = if (Test-Path (Join-Path $civil3DRoot 'AecBaseMgd.dll')) { $civil3DRoot } else { $autoCadRoot }
 
+function Test-UniversalCommandEndedQueueDisabled([string]$text) {
+    $signature = [regex]::Match(
+        $text,
+        '(?m)^[ \t]*(?:private|internal|public)\s+static\s+void\s+OnCommandEnded\s*\(')
+    if (-not $signature.Success) { return $true }
+
+    $open = $text.IndexOf('{',$signature.Index + $signature.Length)
+    if ($open -lt 0) { return $false }
+    $depth = 0
+    $close = -1
+    for ($i=$open; $i -lt $text.Length; $i++) {
+        if ($text[$i] -eq '{') { $depth++ }
+        elseif ($text[$i] -eq '}') {
+            $depth--
+            if ($depth -eq 0) { $close = $i; break }
+        }
+    }
+    if ($close -lt 0) { return $false }
+
+    $method = $text.Substring($signature.Index,$close - $signature.Index + 1)
+    return $method -notmatch '\bQueue\s*\('
+}
+
 $dotnet = Get-Command dotnet.exe -ErrorAction SilentlyContinue
 if (-not $dotnet) {
     throw 'The .NET SDK command dotnet.exe was not found. Install the .NET 8 SDK and run again.'
@@ -86,10 +109,13 @@ try {
         (Test-Path -LiteralPath $finalGridSource -PathType Leaf)) {
         $universalText = [System.IO.File]::ReadAllText($universalRefreshSource)
         $gridText = [System.IO.File]::ReadAllText($finalGridSource)
+        $surveyCommandRefreshHandled =
+            $universalText.Contains('IsSelfRefreshingSurveyCommand(string command)') -or
+            (Test-UniversalCommandEndedQueueDisabled $universalText)
         $finalSurveyStateDetected =
             $universalText.Contains('RefreshBackground(Document document)') -and
             $universalText.Contains('DelaySeconds { get; set; } = 0.35;') -and
-            $universalText.Contains('IsSelfRefreshingSurveyCommand(string command)') -and
+            $surveyCommandRefreshHandled -and
             $gridText.Contains('CE_GRIDSETTINGOUTDYNAMIC')
     }
 }
