@@ -1450,6 +1450,25 @@ namespace CETools.Civil3D
                         transaction.Commit();
                     }
 
+                    // Reopen the committed graph: a saved style preference is not
+                    // proof that the native profile view has any band rows.
+                    using (Transaction verification =
+                        document.Database.TransactionManager.StartTransaction())
+                    {
+                        foreach (ObjectId viewId in prepared.ToList())
+                        {
+                            Autodesk.Civil.DatabaseServices.ProfileView committed =
+                                verification.GetObject(viewId, OpenMode.ForRead, false) as
+                                    Autodesk.Civil.DatabaseServices.ProfileView;
+                            if (committed != null &&
+                                September14AlignmentBandStyleCommands.CountBandRows(committed) > 0)
+                                continue;
+                            prepared.Remove(viewId);
+                            result.Skipped++;
+                            result.Warning = "One or more selected views still had no native band rows after import; those views were not counted as linked.";
+                        }
+                    }
+
                     // Imported band rows and profile views must be committed before
                     // their live profiles/network parts are assigned.
                     using (Transaction transaction =
@@ -1649,6 +1668,34 @@ namespace CETools.Civil3D
             bool top)
         {
             if (view == null || styleId.IsNull) return false;
+            // The old property-only path reported success while leaving the
+            // profile view with zero native band rows. Import the style into
+            // the real Civil graph and materialize its rows before counting it.
+            Autodesk.Civil.DatabaseServices.ProfileView profileView =
+                view as Autodesk.Civil.DatabaseServices.ProfileView;
+            if (profileView != null && !top)
+            {
+                Transaction transaction = profileView.Database.TransactionManager.TopTransaction;
+                Autodesk.Civil.DatabaseServices.Styles.ProfileViewBandSetStyle style =
+                    transaction.GetObject(styleId, OpenMode.ForRead, false) as
+                        Autodesk.Civil.DatabaseServices.Styles.ProfileViewBandSetStyle;
+                if (style == null) return false;
+                profileView.Bands.ImportBandSetStyle(styleId);
+                return September14AlignmentBandStyleCommands.EnsureImportedBandRows(
+                    profileView, style) > 0;
+            }
+            if (profileView != null && top)
+            {
+                int before;
+                using (Autodesk.Civil.DatabaseServices.ProfileViewBandItemCollection rows =
+                    profileView.Bands.GetTopBandItems()) before = rows.Count;
+                object topBands = profileView.Bands;
+                if (!InvokeObjectId(topBands, "ImportTopBandSetStyle", styleId) &&
+                    !InvokeObjectId(topBands, "AddTopBandSetStyle", styleId))
+                    return false;
+                using (Autodesk.Civil.DatabaseServices.ProfileViewBandItemCollection rows =
+                    profileView.Bands.GetTopBandItems()) return rows.Count > before;
+            }
             object bands = ReadProperty(view, "Bands");
             bool applied = SetObjectId(
                 view,

@@ -198,11 +198,27 @@ namespace CETools.Civil3D
                             }
 
                             profileView.Bands.ImportBandSetStyle(choice.Id);
+                            ProfileViewBandSetStyle bandSetStyle = transaction.GetObject(
+                                choice.Id, OpenMode.ForRead, false) as ProfileViewBandSetStyle;
+                            if (bandSetStyle == null ||
+                                EnsureImportedBandRows(profileView, bandSetStyle) == 0)
+                                throw new InvalidOperationException(
+                                    "The selected band set has no materialized band rows on this profile view.");
                             try { profileView.RecordGraphicsModified(true); } catch { }
                             transaction.Commit();
                         }
 
-                        profileViewIds.Add(selected.ObjectId);
+                        // A setting/style assignment is not evidence of a band on
+                        // the graph. Reopen the committed view and count its rows.
+                        using (Transaction verify = document.Database.TransactionManager.StartTransaction())
+                        {
+                            ProfileView committed = verify.GetObject(
+                                selectedId, OpenMode.ForRead, false) as ProfileView;
+                            if (committed == null || CountBandRows(committed) == 0)
+                                throw new InvalidOperationException(
+                                    "No band rows persisted after the import transaction committed.");
+                        }
+                        profileViewIds.Add(selectedId);
                         applied++;
                     }
                     catch (System.Exception exception)
@@ -394,6 +410,62 @@ namespace CETools.Civil3D
             int enabled;
             ProfileViewBandPersistence.EnableLabels(profileView, out found, out enabled);
             return enabled;
+        }
+
+        internal static int EnsureImportedBandRows(
+            ProfileView view,
+            ProfileViewBandSetStyle style)
+        {
+            // ImportBandSetStyle normally populates both collections. On some
+            // Civil 3D drawings it only assigns the style: explicitly add the
+            // missing rows using the style's actual band style ObjectIds.
+            using (ProfileViewBandItemCollection top = view.Bands.GetTopBandItems())
+            {
+                if (top.Count == 0)
+                {
+                    var templates = style.GetTopBandSetItems();
+                    for (int index = 0; index < templates.Count; index++)
+                    {
+                        top.Add(templates[index].BandStyleId);
+                        CopyBandRow(top[top.Count - 1], templates[index]);
+                    }
+                    if (top.Count > 0) view.Bands.SetTopBandItems(top);
+                }
+            }
+            using (ProfileViewBandItemCollection bottom = view.Bands.GetBottomBandItems())
+            {
+                if (bottom.Count == 0)
+                {
+                    var templates = style.GetBottomBandSetItems();
+                    for (int index = 0; index < templates.Count; index++)
+                    {
+                        bottom.Add(templates[index].BandStyleId);
+                        CopyBandRow(bottom[bottom.Count - 1], templates[index]);
+                    }
+                    if (bottom.Count > 0) view.Bands.SetBottomBandItems(bottom);
+                }
+            }
+            return CountBandRows(view);
+        }
+
+        private static void CopyBandRow(
+            ProfileViewBandItem target,
+            ProfileViewBandSetItem source)
+        {
+            target.Gap = source.Gap;
+            target.MajorInterval = source.MajorInterval;
+            target.MinorInterval = source.MinorInterval;
+            target.ShowLabels = source.ShowLabels;
+            target.LabelAtStartStation = source.LabelAtStartStation;
+            target.LabelAtEndStation = source.LabelAtEndStation;
+            target.Weeding = source.Weeding;
+        }
+
+        internal static int CountBandRows(ProfileView view)
+        {
+            using (ProfileViewBandItemCollection top = view.Bands.GetTopBandItems())
+            using (ProfileViewBandItemCollection bottom = view.Bands.GetBottomBandItems())
+                return top.Count + bottom.Count;
         }
 
         private static List<StyleChoice> ReadAlignmentLabelSetStyles(Database database, CivilDocument civilDocument)
