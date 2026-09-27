@@ -157,6 +157,11 @@ namespace CETools.Civil3D
                         "Select multiple sewer pipes and structures, choose the Civil 3D reference surface and pipe/structure rule sets in a popup, then run the native ApplyRules operation once for each selected part and review the result table.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
+                        "Pipe / Structure Profile Labels - Multiple Views",
+                        "CE_SEWPROFILELABELSTYLESMULTI",
+                        "Select multiple profile views and choose Civil 3D pipe and structure profile label styles. Only existing labels are restyled; sewer slopes, cover and part rules remain unchanged.",
+                        "02 Sewer"),
+                    new DisciplineWorkflowAction(
                         "Reverse Multiple Pipe Slopes to Outlet",
                         "CE_PIPESLOPETOOUTLET",
                         "Select multiple gravity pipes, specify the low point/outlet, and reverse only those pipe end elevations that currently fall away from the outlet.",
