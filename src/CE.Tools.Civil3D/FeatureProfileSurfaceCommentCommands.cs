@@ -111,7 +111,7 @@ namespace CETools.Civil3D
             if (document == null) return;
             PromptSelectionResult selection = GetSelection(
                 document.Editor,
-                "\nSelect Civil 3D feature lines to assign colour, layer and site: ");
+                "\nSelect feature lines and any overlaid polylines to assign colour, layer and site: ");
             if (selection.Status != PromptStatus.OK) return;
 
             List<CivilObjectChoice> sites = ReadSites(document);
@@ -120,6 +120,7 @@ namespace CETools.Civil3D
             if (!window.Accepted) return;
 
             int changed = 0;
+            int polylinesChanged = 0;
             int styleChanged = 0;
             int siteChanged = 0;
             int layerChanged = 0;
@@ -156,11 +157,42 @@ namespace CETools.Civil3D
 
                     foreach (SelectedObject selected in selection.Value)
                     {
-                        CivilFeatureLine featureLine = selected == null || selected.ObjectId.IsNull
+                        DBObject selectedEntity = selected == null || selected.ObjectId.IsNull
                             ? null
-                            : transaction.GetObject(selected.ObjectId, OpenMode.ForWrite, false) as CivilFeatureLine;
+                            : transaction.GetObject(selected.ObjectId, OpenMode.ForWrite, false);
+                        CivilFeatureLine featureLine = selectedEntity as CivilFeatureLine;
                         if (featureLine == null)
                         {
+                            // Feature lines are sometimes coincident with the
+                            // polylines they were created from. Civil 3D reports
+                            // both in a crossing selection; recolouring only the
+                            // feature line leaves the visible polyline on top in
+                            // its old colour (the Properties palette then looks
+                            // correct while the drawing still looks unchanged).
+                            Entity polyline = selectedEntity as Entity;
+                            if (polyline is Polyline ||
+                                polyline is Polyline2d ||
+                                polyline is Polyline3d)
+                            {
+                                Color polylineColour = Color.FromColorIndex(
+                                    ColorMethod.ByAci,
+                                    (short)window.ColourIndex);
+                                polyline.Color = polylineColour;
+                                polyline.ColorIndex = window.ColourIndex;
+                                if (!layerId.IsNull)
+                                {
+                                    try
+                                    {
+                                        polyline.LayerId = layerId;
+                                        layerChanged++;
+                                    }
+                                    catch { }
+                                }
+                                try { polyline.RecordGraphicsModified(true); } catch { }
+                                polylinesChanged++;
+                                continue;
+                            }
+
                             rejected++;
                             continue;
                         }
@@ -327,8 +359,9 @@ namespace CETools.Civil3D
             try { AcApplication.UpdateScreen(); } catch { }
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_FLAPPEARANCE complete. Feature lines updated={0}; visible colour styles={1}; layers={2}; site assignments={3}; rejected={4}; colour={5}.",
+                "\nCE_FLAPPEARANCE complete. Feature lines updated={0}; polylines updated={1}; visible colour styles={2}; layers={3}; site assignments={4}; rejected={5}; colour={6}.",
                 changed,
+                polylinesChanged,
                 styleChanged,
                 layerChanged,
                 siteChanged,
@@ -1968,7 +2001,7 @@ namespace CETools.Civil3D
             Grid.SetColumn(_newSite, 1);
             grid.Children.Add(_newSite);
 
-            AddLabel(grid, "Feature-line layer (optional)", 3);
+            AddLabel(grid, "Selected line layer (optional)", 3);
             _layer = new TextBox { Margin = new Thickness(8), MinWidth = 280 };
             Grid.SetRow(_layer, 3);
             Grid.SetColumn(_layer, 1);
