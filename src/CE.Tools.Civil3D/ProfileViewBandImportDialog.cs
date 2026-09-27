@@ -18,8 +18,8 @@ namespace CETools.Civil3D
         private readonly IList<string> _styleNames;
         private readonly IList<string> _viewNames;
         private readonly ComboBox _bandSet;
-        private readonly CheckBox _showLabels;
-        private readonly CheckBox _openNative;
+        private readonly ComboBox _showLabels;
+        private readonly ComboBox _openNative;
 
         private ProfileViewBandImportDialog(IList<string> styleNames, IList<string> viewNames)
         {
@@ -115,12 +115,13 @@ namespace CETools.Civil3D
             });
             Grid.SetRow(labelPanel, 2);
             controls.Children.Add(labelPanel);
-            _showLabels = new CheckBox
+            _showLabels = new ComboBox
             {
-                Content = "Show labels for every imported band row",
-                IsChecked = true,
+                ItemsSource = new[] { "Yes - show labels for every band row", "No - hide band labels" },
+                SelectedIndex = 0,
                 Padding = new Thickness(7, 5, 7, 5),
-                FontWeight = FontWeights.SemiBold
+                FontWeight = FontWeights.SemiBold,
+                IsEditable = false
             };
             Grid.SetColumn(_showLabels, 1);
             Grid.SetRow(_showLabels, 2);
@@ -163,12 +164,14 @@ namespace CETools.Civil3D
                 HorizontalAlignment = HorizontalAlignment.Right,
                 Margin = new Thickness(0, 12, 0, 0)
             };
-            _openNative = new CheckBox
+            _openNative = new ComboBox
             {
-                Content = "Open native Profile View Properties for first view after apply",
-                IsChecked = true,
+                ItemsSource = new[] { "Yes - open native properties after apply", "No - finish after batch" },
+                SelectedIndex = 0,
                 VerticalAlignment = VerticalAlignment.Center,
-                Margin = new Thickness(0, 0, 18, 0)
+                Margin = new Thickness(0, 0, 18, 0),
+                MinWidth = 280,
+                IsEditable = false
             };
             buttons.Children.Add(_openNative);
             var apply = new Button
@@ -225,8 +228,8 @@ namespace CETools.Civil3D
                 return;
             }
             SelectedStyleName = selected;
-            ShowLabels = _showLabels != null && _showLabels.IsChecked == true;
-            OpenNativeDialog = _openNative != null && _openNative.IsChecked == true;
+            ShowLabels = _showLabels != null && _showLabels.SelectedIndex == 0;
+            OpenNativeDialog = _openNative != null && _openNative.SelectedIndex == 0;
             Accepted = true;
             DialogResult = true;
             Close();

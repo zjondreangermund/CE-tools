@@ -186,7 +186,7 @@ namespace CETools.Civil3D
             double cross = incoming.X * outgoing.Y - incoming.Y * outgoing.X;
             double dot = incoming.X * outgoing.X + incoming.Y * outgoing.Y;
             double scale = incomingLength * outgoingLength;
-            if (dot <= 0.0 || Math.Abs(cross) > DirectionTolerance * scale)
+            if (dot <= 0.0)
                 return false;
             double cosine = Math.Max(-1.0, Math.Min(1.0, dot / scale));
             double deflection = Math.Acos(cosine) * 180.0 / Math.PI;

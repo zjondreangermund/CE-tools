@@ -162,7 +162,7 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble("FillRatio", "Slopes", "Fill slope H:V", 2.0, "Example: 2.0 means 2H:1V when the target is below the platform edge.");
             settings.AddPositiveDouble("MaxDistance", "Search", "Maximum daylight search", 50.0, "Maximum horizontal distance searched from every source point.");
             settings.AddPositiveDouble("SearchStep", "Search", "Surface search step", 0.5, "Horizontal search increment before the final intersection is bisected.");
-            settings.AddChoice("Side", "Direction", "Projection side", "Auto", "Auto uses outward for closed platforms and Left for open feature lines.", new[] { "Auto", "Left", "Right" });
+            settings.AddChoice("Side", "Direction", "Projection side", "Auto", "Closed feature lines can project inside or outside; for open lines Outside is Left and Inside is Right.", new[] { "Auto", "Outside", "Inside", "Left", "Right" });
             settings.AddChoice("Infill", "Grading", "Native grading infill", "Yes", "Attempt a native Civil 3D grading group/infill for closed platforms. Daylight geometry remains valid if the host infill API rejects the region.", new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
@@ -627,7 +627,9 @@ namespace CETools.Civil3D
             Vector2d left = new Vector2d(-tangent.Y, tangent.X);
 
             double sign;
-            if (string.Equals(side, "Left", StringComparison.OrdinalIgnoreCase)) sign = 1.0;
+            if (string.Equals(side, "Inside", StringComparison.OrdinalIgnoreCase)) sign = closed ? (signedArea >= 0.0 ? 1.0 : -1.0) : -1.0;
+            else if (string.Equals(side, "Outside", StringComparison.OrdinalIgnoreCase)) sign = closed ? (signedArea >= 0.0 ? -1.0 : 1.0) : 1.0;
+            else if (string.Equals(side, "Left", StringComparison.OrdinalIgnoreCase)) sign = 1.0;
             else if (string.Equals(side, "Right", StringComparison.OrdinalIgnoreCase)) sign = -1.0;
             else if (closed) sign = signedArea >= 0.0 ? -1.0 : 1.0;
             else sign = 1.0;
@@ -1448,6 +1450,8 @@ namespace CETools.Civil3D
         {
             if (string.Equals(value, "Left", StringComparison.OrdinalIgnoreCase)) return "Left";
             if (string.Equals(value, "Right", StringComparison.OrdinalIgnoreCase)) return "Right";
+            if (string.Equals(value, "Inside", StringComparison.OrdinalIgnoreCase)) return "Inside";
+            if (string.Equals(value, "Outside", StringComparison.OrdinalIgnoreCase)) return "Outside";
             return "Auto";
         }
 

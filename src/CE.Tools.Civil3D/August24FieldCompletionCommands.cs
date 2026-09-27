@@ -1597,8 +1597,10 @@ namespace CETools.Civil3D
                     ObjectId masterId = ResolveHandle(document.Database, Convert.ToString(values[0].Value, CultureInfo.InvariantCulture));
                     CivilFeatureLine master = masterId.IsNull ? null : transaction.GetObject(masterId, OpenMode.ForRead, false) as CivilFeatureLine;
                     if (master == null) continue;
-                    Point3dCollection intersections = new Point3dCollection();
-                    try { ((Entity)master).IntersectWith((Entity)target, Intersect.OnBothOperands, intersections, IntPtr.Zero, IntPtr.Zero); } catch { }
+                    // Native 3D IntersectWith returns no result when road TOP
+                    // strings cross in plan at different existing elevations.
+                    // Find XY crossings first, then sample the master's Z.
+                    Point3dCollection intersections = PlanCrossings(master, target);
                     if (intersections.Count == 0) continue;
                     target.UpgradeOpen();
                     foreach (Point3d intersection in intersections)
@@ -1633,6 +1635,29 @@ namespace CETools.Civil3D
                 if (current < distance) { distance = current; best = index; }
             }
             return best;
+        }
+
+        private static Point3dCollection PlanCrossings(CivilFeatureLine first, CivilFeatureLine second)
+        {
+            var result = new Point3dCollection();
+            Point3dCollection a = first.GetPoints(FeatureLinePointType.AllPoints);
+            Point3dCollection b = second.GetPoints(FeatureLinePointType.AllPoints);
+            for (int i = 1; i < a.Count; i++)
+                for (int j = 1; j < b.Count; j++)
+                {
+                    double ax = a[i].X - a[i - 1].X, ay = a[i].Y - a[i - 1].Y;
+                    double bx = b[j].X - b[j - 1].X, by = b[j].Y - b[j - 1].Y;
+                    double cross = ax * by - ay * bx;
+                    if (Math.Abs(cross) <= 1e-10) continue;
+                    double dx = b[j - 1].X - a[i - 1].X, dy = b[j - 1].Y - a[i - 1].Y;
+                    double t = (dx * by - dy * bx) / cross;
+                    double u = (dx * ay - dy * ax) / cross;
+                    if (t < -1e-8 || t > 1 + 1e-8 || u < -1e-8 || u > 1 + 1e-8) continue;
+                    var point = new Point3d(a[i - 1].X + t * ax, a[i - 1].Y + t * ay, 0);
+                    if (!result.Cast<Point3d>().Any(existing => PlanDistance(existing, point) <= 1e-6))
+                        result.Add(point);
+                }
+            return result;
         }
 
         private static ObjectId GetOrCreateLayer(Database database, Transaction transaction, string name)

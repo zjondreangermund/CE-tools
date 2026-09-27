@@ -424,11 +424,10 @@ namespace CETools.Civil3D
                         FieldCompletionBatchUi.TrySetBoolean(
                             surface,
                             automatic,
-                            "RebuildAutomatic",
-                            "AutomaticRebuild",
-                            "IsRebuildAutomatic"))
+                            "AutoRebuild"))
                     {
-                        localChanged = true;
+                        localChanged = FieldCompletionBatchUi.ReadProperty(surface, "AutoRebuild") is bool &&
+                            (bool)FieldCompletionBatchUi.ReadProperty(surface, "AutoRebuild") == automatic;
                     }
 
                     if (rebuild &&
@@ -598,7 +597,8 @@ namespace CETools.Civil3D
                             "RebuildAutomatic",
                             "AutomaticRebuild"))
                     {
-                        localChanged = true;
+                        localChanged = FieldCompletionBatchUi.ReadProperty(corridor, "RebuildAutomatic") is bool &&
+                            (bool)FieldCompletionBatchUi.ReadProperty(corridor, "RebuildAutomatic") == automatic;
                     }
                     if (!layerId.IsNull &&
                         FieldCompletionBatchUi.TrySetObjectId(corridor, layerId, "LayerId"))
@@ -1186,7 +1186,7 @@ namespace CETools.Civil3D
                     ? new List<CivilChoice>()
                     : choices.ToList(),
                 DisplayMemberPath = "Name",
-                SelectionMode = System.Windows.Controls.SelectionMode.Extended
+                SelectionMode = System.Windows.Controls.SelectionMode.Multiple
             };
             root.Children.Add(_list);
         }

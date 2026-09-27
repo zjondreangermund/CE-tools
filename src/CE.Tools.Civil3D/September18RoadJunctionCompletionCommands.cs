@@ -181,6 +181,7 @@ namespace CETools.Civil3D
 
             int changed = 0;
             int skipped = 0;
+            var reversedProfiles = new HashSet<ObjectId>();
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
@@ -199,6 +200,7 @@ namespace CETools.Civil3D
                     bool local = false;
                     foreach (KeyValuePair<ObjectId, List<FinalProfilePvi>> item in profiles)
                     {
+                        if (!reversedProfiles.Add(item.Key)) continue;
                         CivilProfile profile = SafeOpen<CivilProfile>(transaction, item.Key, OpenMode.ForWrite);
                         if (profile == null) continue;
                         if (ReverseFinalProfilePvis(profile, item.Value,
@@ -306,12 +308,12 @@ namespace CETools.Civil3D
             }
 
             List<string> availableRoads = ReadRoadChoiceNames(document.Database, civilDocument);
-            string[] roadChoices = new[] { "ALL" }.Concat(availableRoads).ToArray();
+            string[] roadChoices = new[] { "ALL", "Select multiple roads..." }.Concat(availableRoads).ToArray();
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Road TOP/BOTTOM Crossing Profiles",
                 "Add TOP-RD-xx and BOTTOM-RD-xx surfaces as surface profiles to the alignments behind the selected profile views. Surface gaps remain gaps; only actual crossing coverage is drawn.");
             model.AddChoice("Roads", "01 Surfaces", "Roads", "ALL",
-                "Choose one road from the dropdown, or type comma-separated road names such as RD-01,RD-05. ALL uses every road.",
+                "Choose ALL, one road, or Select multiple roads to open a multi-selection list.",
                 roadChoices);
             model.AddChoice("RefreshCorridors", "01 Surfaces", "Rebuild road corridors first", "Yes",
                 "Rebuild matching road corridors and their TOP/BOTTOM surfaces before refreshing the profile views. This updates profiles after cross-slope edits.",
@@ -320,6 +322,15 @@ namespace CETools.Civil3D
                 "Layer for the generated TOP/BOTTOM surface profiles.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             HashSet<string> requestedRoads = ParseRoadFilter(model.Text("Roads"));
+            if (string.Equals(model.Text("Roads"), "Select multiple roads...", StringComparison.OrdinalIgnoreCase))
+            {
+                IList<CivilChoice> selectedRoads = FieldCompletionBatchUi.PickMultiple(
+                    "CE Tools - Select Multiple Roads",
+                    "Click each road to include its TOP/BOTTOM surface profiles. Click again to deselect.",
+                    availableRoads.Select(name => new CivilChoice(ObjectId.Null, name)).ToList());
+                if (selectedRoads == null || selectedRoads.Count == 0) return;
+                requestedRoads = new HashSet<string>(selectedRoads.Select(item => item.Name), StringComparer.OrdinalIgnoreCase);
+            }
             bool refreshCorridors = string.Equals(model.Text("RefreshCorridors"), "Yes", StringComparison.OrdinalIgnoreCase);
 
             int created = 0;
@@ -1137,9 +1148,14 @@ namespace CETools.Civil3D
             if (live.Count != original.Count)
                 return RebuildFinalProfilePvis(profile, original, stationStart, stationEnd);
 
-            double expectedFirst = stationStart + stationEnd - original[original.Count - 1].Station;
-            if (Math.Abs(live[0].Station - expectedFirst) <= StationTolerance)
-                return false; // already transformed by Civil 3D
+            // End PVIs commonly remain at the same stations after reversal.
+            // Comparing the first station alone falsely treats every such
+            // profile as already reversed, including the cyan FG profile.
+            if (live.Select((pvi, index) =>
+                    Math.Abs(pvi.Station - (stationStart + stationEnd - original[original.Count - 1 - index].Station)) <= StationTolerance &&
+                    Math.Abs(pvi.Elevation - original[original.Count - 1 - index].Elevation) <= 1e-6)
+                .All(matches => matches))
+                return false;
 
             bool changed = true;
             for (int index = 0; index < live.Count; index++)
@@ -1230,6 +1246,9 @@ namespace CETools.Civil3D
             if (pvi == null) return false;
             bool stationSet = false;
             bool elevationSet = false;
+
+            try { stationSet = Math.Abs(pvi.Station - station) <= StationTolerance; }
+            catch { }
 
             try
             {

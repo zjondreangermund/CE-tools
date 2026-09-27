@@ -78,8 +78,8 @@ namespace CETools.Civil3D
             settings.AddChoice("Style", "01 Style", "Surface style", choices[0].Name,
                 "Choose a style from the active drawing.", choices.Select(item => item.Name).ToArray());
             settings.AddChoice("Scope", "02 Surfaces", "Surfaces to change", "Selected surfaces",
-                "Choose selected surfaces or every editable surface currently using a No Display style.",
-                new[] { "Selected surfaces", "All No Display surfaces" });
+                "Choose surfaces in the drawing, by name (including hidden surfaces), or all editable surfaces using a No Display style.",
+                new[] { "Selected surfaces", "Choose surfaces by name", "All No Display surfaces" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
             StyleChoice choice = choices.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Style"), StringComparison.CurrentCultureIgnoreCase));
             if (choice == null) return;
@@ -88,6 +88,15 @@ namespace CETools.Civil3D
             ObjectId[] surfaceIds;
             if (allNoDisplay)
                 surfaceIds = civilDocument.GetSurfaceIds().Cast<ObjectId>().ToArray();
+            else if (string.Equals(settings.Text("Scope"), "Choose surfaces by name", StringComparison.OrdinalIgnoreCase))
+            {
+                IList<CivilChoice> picked = FieldCompletionBatchUi.PickMultiple(
+                    "CE Tools - Select Surface Names",
+                    "Click each surface to change, including surfaces with no visible display.",
+                    FieldCompletionBatchUi.ReadSurfaceChoices(document, civilDocument));
+                if (picked == null || picked.Count == 0) return;
+                surfaceIds = picked.Select(item => item.Id).ToArray();
+            }
             else
             {
                 PromptSelectionResult selection = Selection(document.Editor, "\nSelect multiple Civil 3D surfaces: ");
