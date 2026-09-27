@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Reflection;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -132,18 +133,33 @@ namespace CETools.Civil3D
                 return;
             }
 
-            StyleChoice choice = ChooseStyle(
-                document,
-                "CE Tools - Road Profile Band Sets",
-                "Apply one existing profile-view band set to multiple road profile views and force each imported top/bottom band item to Show Labels.",
-                "Profile-view band set",
-                styles);
-            if (choice == null) return;
-
             PromptSelectionResult selection = GetSelection(
                 document.Editor,
                 "\nSelect one or more Civil 3D profile views to receive the band set: ");
             if (selection.Status != PromptStatus.OK) return;
+
+            List<ObjectId> selectedProfileViewIds = ReadProfileViewSelection(
+                document.Database,
+                selection);
+            if (selectedProfileViewIds.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_ROADBANDLABELS: the selection contains no editable Civil 3D profile views.");
+                return;
+            }
+
+            ProfileViewBandImportDialog batchDialog = ProfileViewBandImportDialog.Show(
+                styles.Select(item => item.Name).ToList(),
+                selectedProfileViewIds.Select(id => "Profile View " + id.Handle.ToString()).ToList());
+            if (batchDialog == null) return;
+
+            StyleChoice choice = styles.FirstOrDefault(item =>
+                string.Equals(item.Name, batchDialog.SelectedStyleName, StringComparison.CurrentCultureIgnoreCase));
+            if (choice == null)
+            {
+                document.Editor.WriteMessage("\nThe selected Civil 3D band set could not be resolved.");
+                return;
+            }
 
             int applied = 0;
             int bandsEnabled = 0;
@@ -156,9 +172,9 @@ namespace CETools.Civil3D
             var seen = new HashSet<ObjectId>();
             using (DocumentLock documentLock = document.LockDocument())
             {
-                foreach (SelectedObject selected in selection.Value)
+                foreach (ObjectId selectedId in selectedProfileViewIds)
                 {
-                    if (selected == null || selected.ObjectId.IsNull || !seen.Add(selected.ObjectId))
+                    if (selectedId.IsNull || !seen.Add(selectedId))
                     {
                         continue;
                     }
@@ -172,7 +188,7 @@ namespace CETools.Civil3D
                         using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
                         {
                             ProfileView profileView = transaction.GetObject(
-                                selected.ObjectId,
+                                selectedId,
                                 OpenMode.ForWrite,
                                 false) as ProfileView;
                             if (profileView == null || profileView.IsReferenceObject)
@@ -194,7 +210,7 @@ namespace CETools.Civil3D
                         failed++;
                         document.Editor.WriteMessage(
                             "\nCE_ROADBANDLABELS could not import the band set to profile view {0}: {1}",
-                            selected.ObjectId.Handle,
+                            selectedId.Handle,
                             exception.Message);
                     }
                 }
@@ -270,7 +286,9 @@ namespace CETools.Civil3D
                                 throw new InvalidOperationException("Band source binding failed: " + exception.Message, exception);
                             }
 
-                            int localEnabled = EnableBandLabels(profileView);
+                            int localEnabled = batchDialog.ShowLabels
+                                ? EnableBandLabels(profileView)
+                                : 0;
                             try { profileView.RecordGraphicsModified(true); } catch { }
                             transaction.Commit();
                             bandItemsLinked += localLinked;
@@ -348,6 +366,25 @@ namespace CETools.Civil3D
             {
                 document.Editor.WriteMessage(
                     "\nBand sources were saved through the native top/bottom band collections. Original profiles are preferred; compatibility copies are used only when source assignment fails.");
+            }
+
+            if (batchDialog.OpenNativeDialog && profileViewIds.Count > 0)
+            {
+                try
+                {
+                    // Civil 3D's native command edits one view at a time. Open it
+                    // after the committed batch so the operator can inspect the
+                    // exact Bands tab shown in the native Profile View Properties
+                    // window without interrupting the multi-view operation.
+                    document.Editor.SetImpliedSelection(new[] { profileViewIds[0] });
+                    document.SendStringToExecute("_.EditGraphProperties ", true, false, true);
+                }
+                catch (System.Exception exception)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADBANDLABELS could not open native Profile View Properties: {0}",
+                        exception.Message);
+                }
             }
         }
 
@@ -508,6 +545,34 @@ namespace CETools.Civil3D
             catch { }
 
             return prompted;
+        }
+
+        private static List<ObjectId> ReadProfileViewSelection(
+            Database database,
+            PromptSelectionResult selection)
+        {
+            var result = new List<ObjectId>();
+            if (database == null || selection == null || selection.Value == null)
+                return result;
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                foreach (SelectedObject selected in selection.Value)
+                {
+                    if (selected == null || selected.ObjectId.IsNull || selected.ObjectId.IsErased)
+                        continue;
+                    try
+                    {
+                        ProfileView view = transaction.GetObject(
+                            selected.ObjectId,
+                            OpenMode.ForRead,
+                            false) as ProfileView;
+                        if (view != null && !view.IsReferenceObject)
+                            result.Add(selected.ObjectId);
+                    }
+                    catch { }
+                }
+            }
+            return result.Distinct().ToList();
         }
 
         private sealed class StyleChoice

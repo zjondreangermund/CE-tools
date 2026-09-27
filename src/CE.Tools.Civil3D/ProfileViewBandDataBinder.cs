@@ -656,10 +656,198 @@ namespace CETools.Civil3D
                         networkId, roadRoles, out expected, true);
                     if (linked) updated++;
                     else if (expected) warnings++;
-                });
+            });
             sourceWarnings = warnings;
+            // ShowLabels on the band row is only one half of the native Bands
+            // tab setting. A band style can still have every text component (or
+            // its label display wrapper) hidden. Civil 3D then stores the row and
+            // the source ids correctly but creates zero label subentities. Make
+            // at least one existing text component readable before regeneration;
+            // the style's own field contents remain unchanged.
+            EnsureBandStyleLabelComponents(view);
             view.RecordGraphicsModified(true);
             return updated;
+        }
+
+        private static int EnsureBandStyleLabelComponents(DBObject profileView)
+        {
+            if (profileView == null || profileView.Database == null) return 0;
+            Transaction transaction = profileView.Database.TransactionManager.TopTransaction;
+            if (transaction == null) return 0;
+            object bands = ReadProperty(profileView, "Bands");
+            if (bands == null) bands = ReadProperty(profileView, "BandItems");
+            if (bands == null) return 0;
+
+            var visitedItems = new HashSet<object>(ReferenceEqualityComparer.Instance);
+            int changed = 0;
+            foreach (string methodName in new[] { "GetTopBandItems", "GetBottomBandItems" })
+            {
+                object collection = InvokeNoArguments(bands, methodName);
+                foreach (object item in CivilStyleDiscovery.Enumerate(collection))
+                {
+                    if (item == null || visitedItems.Contains(item)) continue;
+                    visitedItems.Add(item);
+                    ObjectId styleId = ReadBandStyleId(item);
+                    if (styleId.IsNull || styleId.IsErased) continue;
+
+                    DBObject style;
+                    try { style = transaction.GetObject(styleId, OpenMode.ForWrite, false); }
+                    catch { continue; }
+                    if (style == null) continue;
+                    changed += EnsureStyleLabelComponents(style, transaction);
+                }
+            }
+            if (changed > 0)
+            {
+                InvokeFirstNoArgument(bands, "Update", "Rebuild", "Refresh", "CommitChanges");
+                InvokeFirstNoArgument(profileView, "Update", "Rebuild", "Refresh");
+            }
+            return changed;
+        }
+
+        private static void InvokeFirstNoArgument(object value, params string[] names)
+        {
+            if (value == null) return;
+            foreach (string name in names)
+            {
+                try
+                {
+                    MethodInfo method = value.GetType().GetMethod(
+                        name,
+                        BindingFlags.Public | BindingFlags.Instance,
+                        null,
+                        Type.EmptyTypes,
+                        null);
+                    if (method == null) continue;
+                    method.Invoke(value, null);
+                    return;
+                }
+                catch { }
+            }
+        }
+
+        private static int EnsureStyleLabelComponents(DBObject style, Transaction transaction)
+        {
+            var labelStyleIds = new List<ObjectId>();
+            foreach (PropertyInfo property in style.GetType().GetProperties(
+                BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (property.GetIndexParameters().Length != 0 ||
+                    property.PropertyType != typeof(ObjectId) ||
+                    property.Name.IndexOf("LabelStyleId", StringComparison.OrdinalIgnoreCase) < 0)
+                    continue;
+                try
+                {
+                    ObjectId id = (ObjectId)property.GetValue(style, null);
+                    if (!id.IsNull && !id.IsErased && !labelStyleIds.Contains(id))
+                        labelStyleIds.Add(id);
+                }
+                catch { }
+            }
+
+            int changed = 0;
+            foreach (ObjectId labelStyleId in labelStyleIds)
+            {
+                DBObject labelStyle;
+                try { labelStyle = transaction.GetObject(labelStyleId, OpenMode.ForWrite, false); }
+                catch { continue; }
+                if (labelStyle == null) continue;
+
+                var components = new List<object>();
+                foreach (PropertyInfo property in labelStyle.GetType().GetProperties(
+                    BindingFlags.Public | BindingFlags.Instance))
+                {
+                    if (!property.CanRead || property.GetIndexParameters().Length != 0 ||
+                        property.Name.IndexOf("Component", StringComparison.OrdinalIgnoreCase) < 0)
+                        continue;
+                    try
+                    {
+                        foreach (object component in CivilStyleDiscovery.Enumerate(
+                            property.GetValue(labelStyle, null)))
+                        {
+                            object resolved = component;
+                            if (component is ObjectId)
+                            {
+                                ObjectId componentId = (ObjectId)component;
+                                if (componentId.IsNull || componentId.IsErased) continue;
+                                try { resolved = transaction.GetObject(componentId, OpenMode.ForWrite, false); }
+                                catch { resolved = null; }
+                            }
+                            if (resolved != null && !components.Contains(resolved))
+                                components.Add(resolved);
+                        }
+                    }
+                    catch { }
+                }
+                if (components.Count == 0) continue;
+
+                bool anyVisible = false;
+                foreach (object component in components)
+                    anyVisible = HasVisibleFlag(component, 0) || anyVisible;
+                if (anyVisible) continue;
+
+                // Keep the imported label style's contents and formatting. Only
+                // turn on the first text component when all components are hidden.
+                if (SetVisibleFlag(components[0], 0)) changed++;
+            }
+            return changed;
+        }
+
+        private static bool HasVisibleFlag(object value, int depth)
+        {
+            if (value == null || depth > 3) return false;
+            foreach (PropertyInfo property in value.GetType().GetProperties(
+                BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (!property.CanRead || property.GetIndexParameters().Length != 0) continue;
+                try
+                {
+                    if (property.PropertyType == typeof(bool) &&
+                        (string.Equals(property.Name, "Visible", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(property.Name, "Visibility", StringComparison.OrdinalIgnoreCase)))
+                        return (bool)property.GetValue(value, null);
+                    if (property.Name.IndexOf("General", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        property.Name.IndexOf("Style", StringComparison.OrdinalIgnoreCase) >= 0)
+                    {
+                        object nested = property.GetValue(value, null);
+                        if (HasVisibleFlag(nested, depth + 1)) return true;
+                    }
+                }
+                catch { }
+            }
+            return false;
+        }
+
+        private static bool SetVisibleFlag(object value, int depth)
+        {
+            if (value == null || depth > 3) return false;
+            foreach (PropertyInfo property in value.GetType().GetProperties(
+                BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (property.GetIndexParameters().Length != 0) continue;
+                try
+                {
+                    if (property.PropertyType == typeof(bool) &&
+                        (string.Equals(property.Name, "Visible", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(property.Name, "Visibility", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        if (property.CanWrite)
+                        {
+                            property.SetValue(value, true, null);
+                            return true;
+                        }
+                        continue;
+                    }
+                    if (!property.CanRead ||
+                        (property.Name.IndexOf("General", StringComparison.OrdinalIgnoreCase) < 0 &&
+                         property.Name.IndexOf("Style", StringComparison.OrdinalIgnoreCase) < 0))
+                        continue;
+                    object nested = property.GetValue(value, null);
+                    if (SetVisibleFlag(nested, depth + 1)) return true;
+                }
+                catch { }
+            }
+            return false;
         }
 
         private static bool AssignSources(

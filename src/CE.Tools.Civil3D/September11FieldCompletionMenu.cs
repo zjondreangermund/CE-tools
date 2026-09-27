@@ -74,7 +74,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Import Road Band Set to Multiple Profile Views",
                         "CE_ROADBANDLABELS",
-                        "Choose a Civil 3D road band set, import and commit it to each selected profile view, bind each band to its matching road profile and turn on labels.",
+                        "Open the Civil 3D Profile View Properties / Bands-style batch window, choose Import band set and Show Labels, then apply it to every selected profile view. Optionally open the native Bands tab for the first view after commit.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
                         "Batch T/Cross Junction Bellmouths",
@@ -150,6 +150,11 @@ namespace CETools.Civil3D
                         "Sewer Surface / Rules Recalculation",
                         "CE_SEWRECALC",
                         "Re-link a gravity network to one surface, apply pipe and structure rules, show every part result/error in a grid or DWG table, then optionally queue sewer profiles only after the transaction commits.",
+                        "02 Sewer"),
+                    new DisciplineWorkflowAction(
+                        "Civil 3D Apply Rules - Multiple Sewer Parts",
+                        "CE_SEWERAPPLYRULESMULTI",
+                        "Select multiple sewer pipes and structures, choose the Civil 3D reference surface and pipe/structure rule sets in a popup, then run the native ApplyRules operation once for each selected part and review the result table.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
                         "Reverse Multiple Pipe Slopes to Outlet",
