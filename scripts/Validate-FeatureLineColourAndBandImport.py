@@ -43,6 +43,13 @@ for marker in [
     "FindAnyFeatureLineStyleId(",
     "AddFeatureLineStyle(",
     "featureLine.RecordGraphicsModified(true)",
+    "polyline is Polyline",
+    "polyline is Polyline2d",
+    "polyline is Polyline3d",
+    "polyline.Color = polylineColour;",
+    "polyline.ColorIndex = window.ColourIndex;",
+    "polylinesChanged++",
+    "polylines updated={1}",
 ]:
     if marker not in appearance_source:
         raise SystemExit(f"Feature-line visible colour marker missing: {marker}")
