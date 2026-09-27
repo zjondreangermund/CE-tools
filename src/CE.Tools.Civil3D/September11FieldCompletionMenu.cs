@@ -159,7 +159,12 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Pipe / Structure Profile Labels - Multiple Views",
                         "CE_SEWPROFILELABELSTYLESMULTI",
-                        "Select multiple profile views and choose Civil 3D pipe and structure profile label styles. Only existing labels are restyled; sewer slopes, cover and part rules remain unchanged.",
+                        "Select multiple profile views and choose Civil 3D pipe and structure profile label styles. Restyle existing labels and optionally create missing labels on drawn parts; slopes, cover and rules remain unchanged.",
+                        "02 Sewer"),
+                    new DisciplineWorkflowAction(
+                        "Draw Multiple Sewer Networks in Profile Views",
+                        "CE_SEWPROFILEPARTSMULTI",
+                        "Choose multiple gravity networks, select multiple profile views, draw their pipes and structures, then optionally open the pipe/structure profile label popup.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
                         "Reverse Multiple Pipe Slopes to Outlet",
@@ -272,12 +277,12 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Recent - CE_PLATFORMDRAPEMULTI",
                         "CE_PLATFORMDRAPEMULTI",
-                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "Select a Civil 3D surface and multiple source feature lines to drape dynamically.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Recent - CE_PLATFORMGRADETOSURFACE",
                         "CE_PLATFORMGRADETOSURFACE",
-                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "Select a Civil 3D surface and multiple source feature lines, then set separate daylight cut and fill slopes.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Recent - CE_FLCLOSEGAP",

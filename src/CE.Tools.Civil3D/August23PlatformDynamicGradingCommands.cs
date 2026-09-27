@@ -156,7 +156,7 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Grade Platforms to Surface",
-                "Create dynamic daylight feature lines from multiple platform edges. The target surface is sampled read-only and is never rebuilt or given breaklines by this command.");
+                "Select multiple source feature lines and a Civil 3D target surface. Set separate cut and fill daylight slopes; the appropriate slope applies at each source point. The target surface is sampled read-only.");
             settings.AddChoice("Surface", "Target", "Target surface", surfaces[0].Name, "Natural ground / controlling target surface.", surfaces.Select(item => item.Name));
             settings.AddPositiveDouble("CutRatio", "Slopes", "Cut slope H:V", 2.0, "Example: 2.0 means 2H:1V when the target is above the platform edge.");
             settings.AddPositiveDouble("FillRatio", "Slopes", "Fill slope H:V", 2.0, "Example: 2.0 means 2H:1V when the target is below the platform edge.");

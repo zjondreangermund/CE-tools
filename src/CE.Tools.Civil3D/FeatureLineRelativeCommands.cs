@@ -38,7 +38,7 @@ namespace CETools.Civil3D
                 "Create and maintain stepped offsets linked to an editable source feature line.",
                 new List<DisciplineWorkflowAction>
                 {
-                    new DisciplineWorkflowAction("Create linked stepped set", "CE_FLRELCREATE", "Create multiple stepped offsets that auto-refresh with one source feature line.", "01 Create"),
+                    new DisciplineWorkflowAction("Create linked stepped sets", "CE_FLRELCREATE", "Select multiple source feature lines and create linked stepped offsets for each source.", "01 Create"),
                     new DisciplineWorkflowAction("Heal stepped feature lines", "CE_FLSTEPJOIN", "Close small gaps and create one feature line with vertices at piece endpoints.", "01 Create"),
                     new DisciplineWorkflowAction("Update all offsets from source", "CE_FLRELUPDATE", "Select the source or any child and immediately rebuild the complete linked set.", "02 Maintain"),
                     new DisciplineWorkflowAction("Update multiple source sets", "CE_FLRELUPDATEMULTI", "Select multiple source feature lines or linked children and rebuild only those complete stepped-offset sets.", "02 Maintain"),

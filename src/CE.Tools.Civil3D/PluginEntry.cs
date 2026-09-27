@@ -857,6 +857,7 @@ namespace CETools.Civil3D
                         Cmd("Refresh Profile View Bands", "CE_PROFILEBANDREFRESH ", "Refresh live profile/network band data at structures and manholes."),
                         Cmd("Apply Civil 3D Rules - Sewer Parts", "CE_SEWERAPPLYRULESMULTI ", "Apply a selected surface and Civil 3D pipe/structure rule sets to multiple selected sewer parts."),
                         Cmd("Sewer Profile Label Styles - Multiple Views", "CE_SEWPROFILELABELSTYLESMULTI ", "Apply pipe and structure profile label styles to multiple selected profile views without changing slopes or cover rules."),
+                        Cmd("Draw Sewer Networks - Multiple Profile Views", "CE_SEWPROFILEPARTSMULTI ", "Choose multiple gravity networks and draw their pipes and structures in selected profile views."),
                         Cmd("Production Tools", "CE_REPORTTOOLS ", "Open reports, summaries and drawing-book workflows."),
                         Cmd("Create Project Summary Sheet", "CE_SUMMARYSHEET ", "Create a linked project metadata, discipline and production-readiness summary."),
                         Cmd("Refresh Project Summary", "CE_SUMMARYREFRESH ", "Refresh the summary from current model, links and layouts."),
