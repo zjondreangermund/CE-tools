@@ -59,6 +59,9 @@ namespace CETools.Civil3D
             model.AddChoice("Output", "04 Output", "Bellmouth geometry", "Polylines",
                 "Create lightweight polylines, native arcs, or normal Civil 3D feature lines.",
                 new[] { "Polylines", "Arcs", "Feature Lines" });
+            model.AddChoice("ClosureFeatureLine", "04 Output", "T-junction endpoint connector", "Feature Line",
+                "Create the magenta connector between the two return endpoints as a Civil 3D feature line, even when returns are polylines or arcs.",
+                new[] { "Feature Line", "Polyline" });
             model.AddText("Layer", "04 Output", "Output layer", JunctionLayer,
                 "Layer for all generated bellmouth returns, magenta T-junction closures and junction labels.");
             // Legacy September 16 regression marker retained while extending the choices:
@@ -98,10 +101,11 @@ namespace CETools.Civil3D
             string outputMode = model.Text("Output");
             bool polylines = string.Equals(outputMode, "Polylines", StringComparison.OrdinalIgnoreCase);
             bool featureLines = string.Equals(outputMode, "Feature Lines", StringComparison.OrdinalIgnoreCase);
+            bool closureFeatureLine = string.Equals(model.Text("ClosureFeatureLine"), "Feature Line", StringComparison.OrdinalIgnoreCase);
             double weedDistance = Math.Max(0.0, model.Double("WeedDistance", 0.0));
             double weedAngle = Math.Max(0.0, model.Double("WeedAngle", 0.0));
             string outputLayerName = CleanLayerName(model.Text("Layer"));
-            ObjectId featureLineSiteId = featureLines ? ResolveSite(model.Text("Site")) : ObjectId.Null;
+            ObjectId featureLineSiteId = featureLines || closureFeatureLine ? ResolveSite(model.Text("Site")) : ObjectId.Null;
             int created = 0;
             int tClosures = 0;
             int crossLimitLines = 0;
@@ -195,7 +199,7 @@ namespace CETools.Civil3D
                         layerId,
                         candidate,
                         definitions,
-                        featureLines,
+                        featureLines || (!candidate.IsCross && closureFeatureLine),
                         featureLineSiteId,
                         weedDistance,
                         weedAngle);

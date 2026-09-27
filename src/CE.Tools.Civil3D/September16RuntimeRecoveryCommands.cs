@@ -77,20 +77,39 @@ namespace CETools.Civil3D
                 "Apply one existing Civil 3D surface style to every selected editable surface.");
             settings.AddChoice("Style", "01 Style", "Surface style", choices[0].Name,
                 "Choose a style from the active drawing.", choices.Select(item => item.Name).ToArray());
+            settings.AddChoice("Scope", "02 Surfaces", "Surfaces to change", "Selected surfaces",
+                "Choose selected surfaces or every editable surface currently using a No Display style.",
+                new[] { "Selected surfaces", "All No Display surfaces" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
             StyleChoice choice = choices.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Style"), StringComparison.CurrentCultureIgnoreCase));
             if (choice == null) return;
 
-            PromptSelectionResult selection = Selection(document.Editor, "\nSelect multiple Civil 3D surfaces: ");
-            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+            bool allNoDisplay = string.Equals(settings.Text("Scope"), "All No Display surfaces", StringComparison.OrdinalIgnoreCase);
+            ObjectId[] surfaceIds;
+            if (allNoDisplay)
+                surfaceIds = civilDocument.GetSurfaceIds().Cast<ObjectId>().ToArray();
+            else
+            {
+                PromptSelectionResult selection = Selection(document.Editor, "\nSelect multiple Civil 3D surfaces: ");
+                if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+                surfaceIds = selection.Value.GetObjectIds();
+            }
             int changed = 0;
             int skipped = 0;
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
+                var noDisplayIds = new HashSet<ObjectId>(choices.Where(item =>
+                    item.Name.IndexOf("No Display", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    item.Name.IndexOf("No-Display", StringComparison.OrdinalIgnoreCase) >= 0)
+                    .Select(item => item.Id));
+                foreach (ObjectId id in surfaceIds.Distinct())
                 {
-                    CivilSurface surface = transaction.GetObject(id, OpenMode.ForWrite, false) as CivilSurface;
+                    CivilSurface surface;
+                    try { surface = transaction.GetObject(id, OpenMode.ForRead, false) as CivilSurface; }
+                    catch { skipped++; continue; }
                     if (surface == null || surface.IsReferenceObject) { skipped++; continue; }
+                    if (allNoDisplay && !noDisplayIds.Contains(surface.StyleId)) { skipped++; continue; }
+                    surface.UpgradeOpen();
                     surface.StyleId = choice.Id;
                     try { surface.Rebuild(); } catch { }
                     changed++;

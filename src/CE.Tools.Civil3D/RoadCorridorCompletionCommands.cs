@@ -55,6 +55,10 @@ namespace CETools.Civil3D
             model.AddDouble("MinGrade", "01 Vertical Design", "Minimum grade (%)", 0.5, "Absolute minimum grade used between sampled PVIs.");
             model.AddDouble("MaxGrade", "01 Vertical Design", "Maximum grade (%)", 8.0, "Absolute maximum grade used between sampled PVIs.");
             model.AddPositiveInteger("Intervals", "02 Sampling", "Design intervals", 8, "Number of equal station intervals used to seed editable design PVIs.");
+            model.AddPositiveDouble("MinTangent", "02 Sampling", "Minimum tangent length", 10.0,
+                "Reduce the number of design intervals if needed so adjacent PVIs have at least this station spacing.");
+            model.AddPositiveDouble("MinCurve", "02 Sampling", "Minimum vertical curve length", 6.0,
+                "Create a symmetric curve at eligible internal PVIs only when this length leaves the minimum tangent clear.");
             model.AddText("Suffix", "03 Naming", "Design profile suffix", "FG", "Final profiles are named Road-FG by default.");
             model.AddChoice("ProfileStyle", "04 Civil 3D Styles", "Final profile line style",
                 RoadStyle(road, project, "Profile Style"),
@@ -70,6 +74,8 @@ namespace CETools.Civil3D
             double minimumGrade = Math.Abs(model.Double("MinGrade", 0.5)) / 100.0;
             double maximumGrade = Math.Max(Math.Abs(model.Double("MaxGrade", 8.0)) / 100.0, minimumGrade);
             int intervals = Math.Max(model.Integer("Intervals", 8), 2);
+            double minimumTangent = Math.Max(0.1, model.Double("MinTangent", 10.0));
+            double minimumCurve = Math.Max(0.1, model.Double("MinCurve", 6.0));
             string suffix = string.IsNullOrWhiteSpace(model.Text("Suffix")) ? "FG" : model.Text("Suffix").Trim();
             int created = 0;
             int viewsUpdated = 0;
@@ -101,7 +107,11 @@ namespace CETools.Civil3D
                         ObjectId profileId = CreateLayoutProfile(name, alignmentId, layerId, styleId, labelSetId);
                         CivilProfile design = transaction.GetObject(profileId, OpenMode.ForWrite, false) as CivilProfile;
                         if (design == null) continue;
-                        AddDesignPvis(design, ngl, alignment, offset, minimumGrade, maximumGrade, intervals);
+                        int usableIntervals = Math.Max(1, Math.Min(intervals,
+                            (int)Math.Floor((alignment.EndingStation - alignment.StartingStation) /
+                                Math.Max(minimumTangent + minimumCurve, 0.1))));
+                        AddDesignPvis(design, ngl, alignment, offset, minimumGrade, maximumGrade, usableIntervals);
+                        AddMinimumVerticalCurves(design, minimumCurve, minimumTangent);
                         design.Description = string.Format(
                             CultureInfo.InvariantCulture,
                             "CE final road profile | NGL={0} | offset={1:R} | grade-range={2:R}-{3:R}",
@@ -616,6 +626,21 @@ namespace CETools.Civil3D
                 InvokeAddPvi(add, pvis, station, elevation);
                 previousStation = station;
                 previousElevation = elevation;
+            }
+        }
+
+        private static void AddMinimumVerticalCurves(CivilProfile design, double length, double tangent)
+        {
+            List<ProfilePVI> pvis = CivilStyleDiscovery.Enumerate(design.PVIs)
+                .OfType<ProfilePVI>().OrderBy(item => item.Station).ToList();
+            for (int index = 1; index < pvis.Count - 1; index++)
+            {
+                double before = pvis[index].Station - pvis[index - 1].Station;
+                double after = pvis[index + 1].Station - pvis[index].Station;
+                // Reserve a complete tangent gap between adjacent curves.
+                if (Math.Min(before, after) + 1e-8 < length + tangent) continue;
+                try { design.Entities.AddFreeSymmetricParabolaByPVIAndCurveLength(pvis[index], length); }
+                catch { /* Civil 3D can reject a flat or otherwise ineligible PVI. */ }
             }
         }
 

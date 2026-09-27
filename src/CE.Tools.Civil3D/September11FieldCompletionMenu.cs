@@ -242,7 +242,12 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Batch T/Cross Bellmouths - Feature-Line Output",
                         "CE_ROADJUNCTIONBATCH",
-                        "Create every detected T/cross bellmouth in one transaction, join every T-junction return pair with the magenta endpoint closure and optionally output normal Civil 3D feature lines.",
+                        "Create T/cross returns and connect T-junction endpoints with a magenta feature line.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Convert Multiple Bellmouths to Arcs",
+                        "CE_BELLMOUTHARCSMULTI",
+                        "Fit true arc segments to multiple selected joined polylines or feature lines with intermediate points.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "T-Junction Assembly Limits",

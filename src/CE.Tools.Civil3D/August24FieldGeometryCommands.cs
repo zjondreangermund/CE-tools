@@ -29,16 +29,23 @@ namespace CETools.Civil3D
         {
             Document document = Active();
             if (document == null) return;
+            var options = new ProductionSettingsDialogModel("CE Tools - Close Multiple Boundaries",
+                "Close selected polylines and feature lines individually. Connected selected line segments can also be joined into closed polylines.");
+            options.AddPositiveDouble("JoinTolerance", "01 Lines", "Endpoint join tolerance", 0.05,
+                "Maximum endpoint gap for joining selected line segments into a closed polyline.");
+            if (!DisciplineWorkflowDialogs.EditSettings(options)) return;
             PromptSelectionResult selection = Select(document.Editor,
-                "\nSelect open lightweight polylines and/or Civil 3D feature lines to close: ");
+                "\nSelect multiple lines, joined polylines and/or Civil 3D feature lines to close: ");
             if (selection.Status != PromptStatus.OK || selection.Value == null) return;
 
             int polylines = 0;
             int featureLines = 0;
             int alreadyClosed = 0;
             int failed = 0;
+            ObjectId[] selectedIds = selection.Value.GetObjectIds().Distinct().ToArray();
+            int joinedLines = JoinClosedLineChains(document, selectedIds, options.Double("JoinTolerance", 0.05));
 
-            foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
+            foreach (ObjectId id in selectedIds)
             {
                 try
                 {
@@ -58,6 +65,7 @@ namespace CETools.Civil3D
                             continue;
                         }
 
+                        if (value is Line) continue;
                         CivilFeatureLine featureLine = value as CivilFeatureLine;
                         if (featureLine == null || featureLine.IsReferenceObject || Locked(transaction, featureLine.LayerId))
                         {
@@ -131,8 +139,69 @@ namespace CETools.Civil3D
 
             August21DisplayRefresh.Flush(document);
             document.Editor.WriteMessage(
-                "\nCE_CLOSEOPENMULTI complete. Polylines closed={0}; feature lines closed={1}; already closed={2}; failed/skipped={3}.",
-                polylines, featureLines, alreadyClosed, failed);
+                "\nCE_CLOSEOPENMULTI complete. Polylines closed={0}; feature lines closed={1}; already closed={2}; failed/skipped={3}; closed line chains joined={4}.",
+                polylines, featureLines, alreadyClosed, failed, joinedLines);
+        }
+
+        private static int JoinClosedLineChains(Document document, ObjectId[] ids, double tolerance)
+        {
+            var chains = new List<List<Point3d>>();
+            var layers = new List<ObjectId>();
+            using (Transaction read = document.Database.TransactionManager.StartTransaction())
+                foreach (ObjectId id in ids)
+                {
+                    Line line;
+                    try { line = read.GetObject(id, OpenMode.ForRead, false) as Line; }
+                    catch { continue; }
+                    if (line == null) continue;
+                    chains.Add(new List<Point3d> { line.StartPoint, line.EndPoint });
+                    layers.Add(line.LayerId);
+                }
+            int created = 0;
+            while (chains.Count > 0)
+            {
+                List<Point3d> chain = chains[0];
+                ObjectId layer = layers[0];
+                chains.RemoveAt(0); layers.RemoveAt(0);
+                bool progress;
+                do
+                {
+                    progress = false;
+                    for (int i = 0; i < chains.Count; i++)
+                    {
+                        List<Point3d> next = chains[i];
+                        if (chain[chain.Count - 1].DistanceTo(next[0]) <= tolerance)
+                            chain.Add(next[1]);
+                        else if (chain[chain.Count - 1].DistanceTo(next[1]) <= tolerance)
+                            chain.Add(next[0]);
+                        else if (chain[0].DistanceTo(next[1]) <= tolerance)
+                            chain.Insert(0, next[0]);
+                        else if (chain[0].DistanceTo(next[0]) <= tolerance)
+                            chain.Insert(0, next[1]);
+                        else continue;
+                        chains.RemoveAt(i); layers.RemoveAt(i); progress = true; break;
+                    }
+                } while (progress);
+                if (chain.Count < 4 || chain[0].DistanceTo(chain[chain.Count - 1]) > tolerance) continue;
+                chain.RemoveAt(chain.Count - 1);
+                try
+                {
+                    using (Transaction write = document.Database.TransactionManager.StartTransaction())
+                    {
+                        var poly = new Polyline(chain.Count);
+                        poly.SetDatabaseDefaults(document.Database);
+                        poly.LayerId = layer;
+                        for (int i = 0; i < chain.Count; i++)
+                            poly.AddVertexAt(i, new Point2d(chain[i].X, chain[i].Y), 0, 0, 0);
+                        poly.Closed = true;
+                        BlockTableRecord space = write.GetObject(document.Database.CurrentSpaceId, OpenMode.ForWrite) as BlockTableRecord;
+                        space.AppendEntity(poly); write.AddNewlyCreatedDBObject(poly, true);
+                        write.Commit(); created++;
+                    }
+                }
+                catch { }
+            }
+            return created;
         }
 
         [CommandMethod("CE_TOOLS", "CE_MULTISTRETCHFL", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
