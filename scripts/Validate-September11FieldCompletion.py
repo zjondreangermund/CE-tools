@@ -69,11 +69,7 @@ required_alignment_bands = [
     '"CE_ROADBANDLABELS"',
     'civilDocument.Styles.ProfileViewBandSetStyles',
     'profileView.Bands.ImportBandSetStyle(choice.Id)',
-    'profileView.Bands.GetTopBandItems()',
-    'profileView.Bands.GetBottomBandItems()',
-    'item.ShowLabels = true',
-    'profileView.Bands.SetTopBandItems(top)',
-    'profileView.Bands.SetBottomBandItems(bottom)',
+    'ProfileViewBandPersistence.EnableLabels(',
 ]
 for token in required_alignment_bands:
     if token not in alignment_bands:

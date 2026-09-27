@@ -12,8 +12,8 @@ namespace CETools.Civil3D
 {
     /// <summary>
     /// Civil 3D creates the band rows from a band-set style but does not always
-    /// assign their profile/network data sources. Populate those sources through
-    /// the 2023/2024-compatible reflected band-item API.
+    /// assign their profile/network data sources. Persist edited band collections
+    /// and verify newly retrieved items, not the temporary edit wrappers.
     /// </summary>
     internal static class ProfileViewBandDataBinder
     {
@@ -200,6 +200,16 @@ namespace CETools.Civil3D
             out int proxyProfilesUsed,
             out int proxyProfileFailures)
         {
+            proxyProfilesUsed = 0;
+            proxyProfileFailures = 0;
+            // Prefer the real, dynamic profiles. Only attempt the compatibility
+            // copies when an actual source assignment fails; graph membership
+            // alone does not prove that a source is unusable.
+            int directLinked = BindInternal(profileView, leftProfileId, centreProfileId,
+                rightProfileId, finalDesignProfileId, groundProfileId, ObjectId.Null,
+                true, out sourceWarnings);
+            if (sourceWarnings == 0) return directLinked;
+
             ObjectId[] sources = MakeRoadSourcesCompatibleWithView(
                 profileView,
                 groundProfileId,
@@ -216,10 +226,9 @@ namespace CETools.Civil3D
         }
 
         /// <summary>
-        /// Civil 3D refuses to bind a profile-band row to a profile that is
-        /// already displayed in the same ProfileView. Reuse hidden layout
-        /// profile copies for those rows so existing road views can still get
-        /// native band values without changing their graph overrides.
+        /// Compatibility fallback after a real source assignment fails. Reuse
+        /// hidden layout copies to supply native band values without changing
+        /// their graph overrides on API versions that reject the direct source.
         /// </summary>
         private static ObjectId[] MakeRoadSourcesCompatibleWithView(
             DBObject profileView,
@@ -627,72 +636,29 @@ namespace CETools.Civil3D
             out int sourceWarnings)
         {
             sourceWarnings = 0;
-            if (profileView == null) return 0;
-            object bands = ReadProperty(profileView, "Bands");
-            if (bands == null) bands = ReadProperty(profileView, "BandItems");
-            if (bands == null) return 0;
-
-            // Labels can be disabled at both the profile-view and band-item
-            // levels. Rebinding only the data sources leaves the rows empty in
-            // Civil 3D 2023 even though the band set appears in Properties.
-            SetBooleanIfAvailable(profileView, true,
-                "ShowLabels", "DisplayLabels", "LabelsVisible",
-                "ShowBandLabels", "BandLabelsVisible");
-
+            CivilProfileView view = profileView as CivilProfileView;
+            if (view == null) return 0;
             int updated = 0;
-            var visited = new HashSet<object>(ReferenceEqualityComparer.Instance);
-            foreach (string methodName in new[]
-            {
-                "GetBottomBandItems",
-                "GetTopBandItems",
-                "GetBandItems"
-            })
-            {
-                object collection = InvokeNoArguments(bands, methodName);
-                foreach (object item in CivilStyleDiscovery.Enumerate(collection))
+            int warnings = 0;
+            ProfileViewBandPersistence.Update(view,
+                item =>
                 {
-                    if (item == null || visited.Contains(item)) continue;
-                    visited.Add(item);
-                    bool sourceExpected;
+                    bool expected;
+                    AssignSources(item, groundProfileId, leftProfileId, centreProfileId,
+                        rightProfileId, finalDesignProfileId, networkId, roadRoles,
+                        out expected);
+                },
+                item =>
+                {
+                    bool expected;
                     bool linked = AssignSources(item, groundProfileId, leftProfileId,
                         centreProfileId, rightProfileId, finalDesignProfileId,
-                        networkId, roadRoles, out sourceExpected);
-                    if (linked)
-                        updated++;
-                    else if (sourceExpected)
-                        sourceWarnings++;
-                }
-                // Civil 3D 2023 can return a read-only wrapper for the band
-                // collection immediately after a profile view is created. Do not
-                // call SetTop/SetBottom or a collection-level refresh here; those
-                // native writes were the eNotOpenForWrite abort path in
-                // CE_SEWPROFILE. Individual band-item properties are committed by
-                // the owning ProfileView transaction below.
-            }
-
-            // A few builds expose the band collection itself as the enumerable.
-            foreach (object item in CivilStyleDiscovery.Enumerate(bands))
-            {
-                if (item == null || visited.Contains(item)) continue;
-                visited.Add(item);
-                bool sourceExpected;
-                bool linked = AssignSources(item, groundProfileId, leftProfileId,
-                    centreProfileId, rightProfileId, finalDesignProfileId,
-                    networkId, roadRoles, out sourceExpected);
-                if (linked)
-                    updated++;
-                else if (sourceExpected)
-                    sourceWarnings++;
-            }
-            // Do not invoke Update/Rebuild/Refresh on the band collection.
-            // Those methods reopen Civil 3D's internal collection and can abort
-            // with !dbobji.cpp@8671:eNotOpenForWrite in Civil 3D 2023.
-            try
-            {
-                Entity entity = profileView as Entity;
-                if (entity != null) entity.RecordGraphicsModified(true);
-            }
-            catch { }
+                        networkId, roadRoles, out expected, true);
+                    if (linked) updated++;
+                    else if (expected) warnings++;
+                });
+            sourceWarnings = warnings;
+            view.RecordGraphicsModified(true);
             return updated;
         }
 
@@ -705,17 +671,19 @@ namespace CETools.Civil3D
             ObjectId finalDesignProfileId,
             ObjectId networkId,
             bool roadRoles,
-            out bool sourceExpected)
+            out bool sourceExpected,
+            bool verifyOnly = false)
         {
             sourceExpected = false;
             int sourceFieldsExpected = 0;
             int sourceFieldsLinked = 0;
             string identity = GetBandIdentity(item);
-            bool networkBand = identity.Contains("PIPE") ||
-                               identity.Contains("NETWORK") ||
-                               identity.Contains("PRESSURE") ||
-                               identity.Contains("STRUCTURE") ||
-                               identity.Contains("MANHOLE");
+            var profileBand = item as Autodesk.Civil.DatabaseServices.ProfileViewBandItem;
+            if (profileBand == null) return false;
+            // A ProfileData style named "Pipe invert" still takes profile IDs.
+            // Network sources are selected by native band type, not title text.
+            bool networkBand = profileBand.BandType == Autodesk.Civil.BandType.PipeNetwork ||
+                               profileBand.BandType == Autodesk.Civil.BandType.PressureNetwork;
             ObjectId primaryProfileId = centreProfileId;
             ObjectId secondaryProfileId = finalDesignProfileId.IsNull
                 ? centreProfileId
@@ -731,11 +699,6 @@ namespace CETools.Civil3D
                     identity.Contains("-EG") ||
                     identity.Contains(" EG ") ||
                     identity.EndsWith(" EG", StringComparison.Ordinal);
-                if (groundBand && !groundProfileId.IsNull)
-                {
-                    primaryProfileId = groundProfileId;
-                    secondaryProfileId = groundProfileId;
-                }
                 bool leftBand =
                     identity.Contains("LEFT") ||
                     identity.Contains("LHS") ||
@@ -762,7 +725,12 @@ namespace CETools.Civil3D
                 bool horizontalBand =
                     identity.Contains("HORIZONTAL");
 
-                if (leftBand && !leftProfileId.IsNull)
+                if (groundBand)
+                {
+                    primaryProfileId = groundProfileId;
+                    secondaryProfileId = groundProfileId;
+                }
+                else if (leftBand && !leftProfileId.IsNull)
                 {
                     primaryProfileId = leftProfileId;
                     secondaryProfileId = leftProfileId;
@@ -792,27 +760,24 @@ namespace CETools.Civil3D
                         : finalDesignProfileId;
             }
 
-            SetBooleanIfAvailable(item, true,
-                "ShowLabels",
-                "DisplayLabels",
-                "LabelsVisible",
-                "ShowBandLabels",
-                "BandLabelsVisible");
-            SetBooleanIfAvailable(item, true, "Visible", "IsVisible");
-            InvokeBooleanSetter(item, true,
-                "SetShowLabels",
-                "SetDisplayLabels",
-                "SetLabelsVisible",
-                "SetBandLabelsVisible",
-                "SetVisible");
+            if (!verifyOnly)
+            {
+                Autodesk.Civil.DatabaseServices.ProfileViewBandItem nativeItem =
+                    item as Autodesk.Civil.DatabaseServices.ProfileViewBandItem;
+                if (nativeItem != null) nativeItem.ShowLabels = true;
+            }
 
             // ProfileViewBandItem exposes the native Profile1Id/Profile2Id
             // properties. Assign and verify those exact source properties for
             // profile bands; reflection across the wrapper can match additional
             // ObjectId setters that are not band data sources.
-            Autodesk.Civil.DatabaseServices.ProfileViewBandItem profileBand =
-                item as Autodesk.Civil.DatabaseServices.ProfileViewBandItem;
-            if (!networkBand && profileBand != null)
+            if (profileBand.BandType == Autodesk.Civil.BandType.HorizontalGeometry ||
+                profileBand.BandType == Autodesk.Civil.BandType.SuperelevationData)
+            {
+                sourceExpected = true;
+                return !profileBand.AlignmentId.IsNull;
+            }
+            if (!networkBand)
             {
                 sourceExpected = true;
                 sourceFieldsExpected = 2;
@@ -820,7 +785,7 @@ namespace CETools.Civil3D
                 {
                     try
                     {
-                        if (profileBand.Profile1Id != primaryProfileId)
+                        if (!verifyOnly && profileBand.Profile1Id != primaryProfileId)
                             profileBand.Profile1Id = primaryProfileId;
                         if (profileBand.Profile1Id == primaryProfileId)
                             sourceFieldsLinked++;
@@ -831,7 +796,7 @@ namespace CETools.Civil3D
                 {
                     try
                     {
-                        if (profileBand.Profile2Id != secondaryProfileId)
+                        if (!verifyOnly && profileBand.Profile2Id != secondaryProfileId)
                             profileBand.Profile2Id = secondaryProfileId;
                         if (profileBand.Profile2Id == secondaryProfileId)
                             sourceFieldsLinked++;
@@ -841,200 +806,16 @@ namespace CETools.Civil3D
                 return sourceFieldsLinked == sourceFieldsExpected;
             }
 
-            foreach (PropertyInfo property in item.GetType().GetProperties(
-                BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (!property.CanWrite || property.PropertyType != typeof(ObjectId) ||
-                    property.GetIndexParameters().Length != 0)
-                    continue;
-                string name = (property.Name ?? string.Empty).ToUpperInvariant();
-                ObjectId source = ObjectId.Null;
-                bool recognized = false;
-                if (!networkBand &&
-                    (name.Contains("PROFILE2") || name.Contains("SECONDARY")))
-                {
-                    source = secondaryProfileId;
-                    recognized = true;
-                }
-                else if (name.Contains("DATASOURCE"))
-                {
-                    if (networkBand && !networkId.IsNull)
-                    {
-                        source = networkId;
-                        recognized = true;
-                    }
-                }
-                else if (name.Contains("NETWORK"))
-                {
-                    if (!networkId.IsNull)
-                    {
-                        source = networkId;
-                        recognized = true;
-                    }
-                }
-                else if (!networkBand &&
-                    (name.Contains("PROFILE1") || name.Contains("PROFILE")))
-                {
-                    source = primaryProfileId;
-                    recognized = true;
-                }
-                else
-                    continue;
-
-                if (!recognized) continue;
-                sourceExpected = true;
-                sourceFieldsExpected++;
-                if (source.IsNull) continue;
-                if (TrySetObjectIdProperty(item, property, source))
-                    sourceFieldsLinked++;
-            }
-
-            foreach (MethodInfo method in item.GetType().GetMethods(
-                BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (!method.Name.StartsWith("Set", StringComparison.OrdinalIgnoreCase) ||
-                    (method.Name.IndexOf("DataSource", StringComparison.OrdinalIgnoreCase) < 0 &&
-                     method.Name.IndexOf("Profile", StringComparison.OrdinalIgnoreCase) < 0 &&
-                     method.Name.IndexOf("Network", StringComparison.OrdinalIgnoreCase) < 0))
-                    continue;
-                ParameterInfo[] parameters = method.GetParameters();
-                if (parameters.Length != 1 || parameters[0].ParameterType != typeof(ObjectId))
-                    continue;
-                string name = (method.Name + parameters[0].Name).ToUpperInvariant();
-                ObjectId source = name.Contains("2")
-                    ? secondaryProfileId
-                    : primaryProfileId;
-                bool networkSource = name.Contains("NETWORK") || name.Contains("DATASOURCE");
-                bool recognized = networkBand
-                    ? networkSource
-                    : name.Contains("PROFILE");
-                if (!recognized) continue;
-                if (networkSource)
-                {
-                    if (!networkBand || networkId.IsNull) continue;
-                    source = networkId;
-                }
-                sourceExpected = true;
-                sourceFieldsExpected++;
-                if (source.IsNull) continue;
-                try
-                {
-                    method.Invoke(item, new object[] { source });
-                    ObjectId readback = ReadObjectIdFromMethodTarget(item, name);
-                    if (!readback.IsNull && readback == source)
-                        sourceFieldsLinked++;
-                }
-                catch { }
-            }
-            return sourceExpected && sourceFieldsExpected > 0 &&
-                   sourceFieldsLinked == sourceFieldsExpected;
-        }
-
-        private static bool TrySetObjectIdProperty(
-            object target,
-            PropertyInfo property,
-            ObjectId source)
-        {
-            if (target == null || property == null || source.IsNull) return false;
+            // Preserve network links during the road-only repair command.
+            if (networkId.IsNull) return false;
+            sourceExpected = true;
             try
             {
-                object existing = property.GetValue(target, null);
-                if (existing is ObjectId && (ObjectId)existing == source)
-                    return true;
-            }
-            catch { }
-            try
-            {
-                property.SetValue(target, source, null);
-                object readback = property.GetValue(target, null);
-                return readback is ObjectId && (ObjectId)readback == source;
+                if (!verifyOnly && profileBand.DataSourceId != networkId)
+                    profileBand.DataSourceId = networkId;
+                return profileBand.DataSourceId == networkId;
             }
             catch { return false; }
-        }
-
-        private static ObjectId ReadObjectIdFromMethodTarget(object target, string setterName)
-        {
-            if (target == null || string.IsNullOrWhiteSpace(setterName))
-                return ObjectId.Null;
-            string name = setterName.ToUpperInvariant();
-            string propertyName = name.Contains("DATASOURCE") ? "DataSourceId" :
-                name.Contains("NETWORK") ? "NetworkId" :
-                name.Contains("PROFILE2") || name.Contains("SECONDARY") ? "Profile2Id" :
-                name.Contains("PROFILE1") || name.Contains("PROFILE") ? "Profile1Id" :
-                string.Empty;
-            object value = string.IsNullOrEmpty(propertyName)
-                ? null
-                : ReadProperty(target, propertyName);
-            return value is ObjectId ? (ObjectId)value : ObjectId.Null;
-        }
-
-        private static bool InvokeBooleanSetter(
-            object target,
-            bool value,
-            params string[] names)
-        {
-            if (target == null || names == null) return false;
-            bool changed = false;
-            foreach (string name in names)
-            {
-                foreach (MethodInfo method in target.GetType().GetMethods(
-                    BindingFlags.Public | BindingFlags.Instance))
-                {
-                    if (!string.Equals(method.Name, name, StringComparison.OrdinalIgnoreCase))
-                        continue;
-                    ParameterInfo[] parameters = method.GetParameters();
-                    if (parameters.Length != 1 || parameters[0].ParameterType != typeof(bool))
-                        continue;
-                    try
-                    {
-                        method.Invoke(target, new object[] { value });
-                        changed = true;
-                    }
-                    catch { }
-                }
-            }
-            return changed;
-        }
-
-        private static bool SetBooleanIfAvailable(
-            object target,
-            bool value,
-            params string[] names)
-        {
-            if (target == null || names == null) return false;
-            bool changed = false;
-            foreach (string name in names)
-            {
-                try
-                {
-                    PropertyInfo property = target.GetType().GetProperty(
-                        name,
-                        BindingFlags.Public | BindingFlags.Instance);
-                    if (property == null ||
-                        !property.CanWrite ||
-                        property.PropertyType != typeof(bool))
-                        continue;
-                    property.SetValue(target, value, null);
-                    changed = true;
-                }
-                catch { }
-            }
-            return changed;
-        }
-
-        private static void CommitCollection(object bands, string getterName, object collection)
-        {
-            if (bands == null || collection == null || string.IsNullOrWhiteSpace(getterName)) return;
-            string setterName = getterName.StartsWith("Get", StringComparison.Ordinal)
-                ? "Set" + getterName.Substring(3)
-                : string.Empty;
-            if (setterName.Length == 0) return;
-            foreach (MethodInfo method in bands.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
-            {
-                if (!string.Equals(method.Name, setterName, StringComparison.Ordinal) ||
-                    method.GetParameters().Length != 1) continue;
-                try { method.Invoke(bands, new[] { collection }); return; } catch { }
-            }
         }
 
         private static object ReadProperty(object value, string name)
@@ -1064,8 +845,9 @@ namespace CETools.Civil3D
             {
                 Transaction transaction = id.Database.TransactionManager.TopTransaction;
                 if (transaction == null) return string.Empty;
-                DBObject style = transaction.GetObject(id, OpenMode.ForRead, false);
-                return Convert.ToString(ReadProperty(style, "Name"));
+                var style = transaction.GetObject(id, OpenMode.ForRead, false)
+                    as Autodesk.Civil.DatabaseServices.Styles.StyleBase;
+                return CivilStyleNames.Get(style);
             }
             catch { return string.Empty; }
         }

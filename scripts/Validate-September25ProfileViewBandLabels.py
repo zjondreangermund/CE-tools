@@ -53,13 +53,12 @@ for marker in [
     'identity.Contains("RIGHT")',
     'identity.Contains("CENTRE")',
     "hasLeft && hasRight && hasCentre",
-    "TrySetObjectIdProperty(item, property, source)",
     "ProfileDataBandLabelGroup.GetAvailableLabelGroupIds(",
     "group.SubEntityCount",
     "CountBandStylesWithoutLabelComponents(",
     "CountRoadSourceProfilesAlreadyInView(",
     "sourceFieldsLinked == sourceFieldsExpected",
-    "ProfileViewBandItem profileBand =",
+    "var profileBand = item as Autodesk.Civil.DatabaseServices.ProfileViewBandItem;",
     "profileBand.Profile1Id = primaryProfileId",
     "profileBand.Profile2Id = secondaryProfileId",
     "MakeRoadSourcesCompatibleWithView(",
@@ -70,14 +69,13 @@ for marker in [
     "pvis.AddPVIArc(",
     "pvis.AddPVISymParabola(",
     '"CE_BAND_SRC_"',
-    "native band values without changing their graph overrides",
+    "native band values without changing",
 ]:
     if marker not in bands:
         raise SystemExit(f"Road profile-view band detection missing: {marker}")
 
 for marker in [
-    "item.ShowLabels = false;",
-    "item.ShowLabels = true;",
+    "ProfileViewBandPersistence.EnableLabels(",
     "verified road band sources={3}",
     "native profile-band label values={4}",
     "road source profiles already in graph={11}",
@@ -96,9 +94,14 @@ for marker in [
 ]:
     if marker not in import_command:
         raise SystemExit(f"Road band-set import label verification missing: {marker}")
-for marker in ["item.ShowLabels = false;", "item.ShowLabels = true;"]:
-    if marker not in road_import:
-        raise SystemExit(f"Road band-set label regeneration missing: {marker}")
+if "ProfileViewBandPersistence.EnableLabels(" not in road_import:
+    raise SystemExit("Road import must persist labels through the shared band writer.")
+if "CivilStyleNames.Get(style)" not in bands:
+    raise SystemExit("Band role names must use the inherited Civil style getter.")
+if "ProfileViewBandPersistence.Update(view," not in bands or "out expected, true)" not in bands:
+    raise SystemExit("Band source verification must read a newly retrieved collection.")
+if bands.index("if (sourceWarnings == 0) return directLinked;") > bands.index("ObjectId[] sources = MakeRoadSourcesCompatibleWithView("):
+    raise SystemExit("Original source profiles must be attempted before creating compatibility copies.")
 
 finalizer = (ROOT / "src/CE.Tools.Civil3D/August13RoadProfileViewFinalizerCommands.cs").read_text(encoding="utf-8")
 finalizer_flow = finalizer.split("ResolveRoadProfiles(", 1)[1].split(

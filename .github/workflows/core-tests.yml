@@ -177,6 +177,9 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Test Civil API colour and band persistence contracts
+        run: dotnet run --project tests/CE.Tools.Civil3D.ApiContract.Tests/CE.Tools.Civil3D.ApiContract.Tests.csproj -c Release
+
       - name: Parse Civil 3D C# syntax
         run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
 

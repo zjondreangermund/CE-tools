@@ -115,6 +115,10 @@ namespace CETools.Civil3D
                             }
                             catch { }
 
+                            int localRoadBandItemsBound = 0;
+                            int localSourceWarnings = 0;
+                            int localProxyProfilesUsed = 0;
+                            int localProxyProfileFailures = 0;
                             if (roadBandRoles)
                             {
                                 try
@@ -146,10 +150,7 @@ namespace CETools.Civil3D
                                                 centreProfileId,
                                                 rightProfileId,
                                                 finalProfileId);
-                                        int localSourceWarnings;
-                                        int localProxyProfilesUsed;
-                                        int localProxyProfileFailures;
-                                        int localRoadBandItemsBound = ProfileViewBandDataBinder.BindRoad(
+                                        localRoadBandItemsBound = ProfileViewBandDataBinder.BindRoad(
                                             profileView,
                                             groundProfileId,
                                             leftProfileId,
@@ -159,21 +160,14 @@ namespace CETools.Civil3D
                                             out localSourceWarnings,
                                             out localProxyProfilesUsed,
                                             out localProxyProfileFailures);
-                                        roadBandItemsBound += localRoadBandItemsBound;
-                                        bandBindingWarnings += localSourceWarnings;
-                                        roadBandSourceProxyProfilesUsed += localProxyProfilesUsed;
-                                        roadBandSourceProxyFailures += localProxyProfileFailures;
                                         if (localRoadBandItemsBound == 0)
                                             bandBindingWarnings += localSourceWarnings == 0 ? 1 : 0;
                                     }
                                 }
                                 catch (System.Exception exception)
                                 {
-                                    bandBindingWarnings++;
-                                    document.Editor.WriteMessage(
-                                        "\nCE_PROFILEBANDLABELSMULTI could not relink road bands in profile view {0}: {1}",
-                                        id.Handle,
-                                        exception.Message);
+                                    throw new InvalidOperationException(
+                                        "Band source binding failed: " + exception.Message, exception);
                                 }
                             }
 
@@ -183,11 +177,15 @@ namespace CETools.Civil3D
                                 profileView,
                                 out localBandItems,
                                 out localEnabledItems);
-                            bandItemsFound += localBandItems;
-                            bandItemsEnabled += localEnabledItems;
-                            if (localBandItems == 0) viewsWithoutBandItems++;
                             try { profileView.RecordGraphicsModified(true); } catch { }
                             transaction.Commit();
+                            bandItemsFound += localBandItems;
+                            bandItemsEnabled += localEnabledItems;
+                            roadBandItemsBound += localRoadBandItemsBound;
+                            bandBindingWarnings += localSourceWarnings;
+                            roadBandSourceProxyProfilesUsed += localProxyProfilesUsed;
+                            roadBandSourceProxyFailures += localProxyProfileFailures;
+                            if (localBandItems == 0) viewsWithoutBandItems++;
                             processed++;
                             processedProfileViewIds.Add(id);
                         }
@@ -272,7 +270,7 @@ namespace CETools.Civil3D
             if (roadSourceProfilesAlreadyInView > 0)
             {
                 document.Editor.WriteMessage(
-                    "\nCivil 3D rejects graph-displayed profiles as band sources. CE Tools now creates and reuses hidden profile copies for the selected views so the road band rows can read elevation values without changing the displayed profile graphs.");
+                    "\nBand sources were saved through the native top/bottom band collections. Original profiles are preferred; compatibility copies are used only when source assignment fails.");
             }
             if (roadBandSourceProxyFailures > 0)
             {
@@ -287,51 +285,7 @@ namespace CETools.Civil3D
             out int itemsFound,
             out int labelsOn)
         {
-            itemsFound = 0;
-            labelsOn = 0;
-            if (profileView == null) return;
-
-            try
-            {
-                using (ProfileViewBandItemCollection top =
-                    profileView.Bands.GetTopBandItems())
-                {
-                    for (int index = 0; index < top.Count; index++)
-                    {
-                        try
-                        {
-                            ProfileViewBandItem item = top[index];
-                            itemsFound++;
-                            try { item.ShowLabels = false; } catch { }
-                            try { item.ShowLabels = true; } catch { }
-                            try { if (item.ShowLabels) labelsOn++; } catch { }
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
-
-            try
-            {
-                using (ProfileViewBandItemCollection bottom =
-                    profileView.Bands.GetBottomBandItems())
-                {
-                    for (int index = 0; index < bottom.Count; index++)
-                    {
-                        try
-                        {
-                            ProfileViewBandItem item = bottom[index];
-                            itemsFound++;
-                            try { item.ShowLabels = false; } catch { }
-                            try { item.ShowLabels = true; } catch { }
-                            try { if (item.ShowLabels) labelsOn++; } catch { }
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
+            ProfileViewBandPersistence.EnableLabels(profileView, out itemsFound, out labelsOn);
         }
 
         [CommandMethod("CE_TOOLS", "CE_PROFILEMOVEVERTICAL", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]

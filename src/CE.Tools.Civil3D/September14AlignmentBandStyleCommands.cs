@@ -218,6 +218,8 @@ namespace CETools.Civil3D
                                 continue;
                             }
 
+                            int localLinked = 0;
+                            int localWarnings = 0;
                             try
                             {
                                 CivilAlignment alignment = profileView.AlignmentId.IsNull
@@ -250,7 +252,7 @@ namespace CETools.Civil3D
                                             rightProfileId,
                                             finalProfileId);
                                     int localLinkWarnings;
-                                    bandItemsLinked += ProfileViewBandDataBinder.BindRoad(
+                                    localLinked = ProfileViewBandDataBinder.BindRoad(
                                         profileView,
                                         groundProfileId,
                                         leftProfileId,
@@ -258,16 +260,22 @@ namespace CETools.Civil3D
                                         rightProfileId,
                                         finalProfileId,
                                         out localLinkWarnings);
-                                    bandLinkWarnings += localLinkWarnings;
+                                    localWarnings += localLinkWarnings;
                                 }
                                 else
-                                    bandLinkWarnings++;
+                                    localWarnings++;
                             }
-                            catch { }
+                            catch (System.Exception exception)
+                            {
+                                throw new InvalidOperationException("Band source binding failed: " + exception.Message, exception);
+                            }
 
-                            bandsEnabled += EnableBandLabels(profileView);
+                            int localEnabled = EnableBandLabels(profileView);
                             try { profileView.RecordGraphicsModified(true); } catch { }
                             transaction.Commit();
+                            bandItemsLinked += localLinked;
+                            bandLinkWarnings += localWarnings;
+                            bandsEnabled += localEnabled;
                         }
                     }
                     catch (System.Exception exception)
@@ -339,58 +347,15 @@ namespace CETools.Civil3D
             if (roadSourceProfilesAlreadyInView > 0)
             {
                 document.Editor.WriteMessage(
-                    "\nCivil 3D rejects graph-displayed profiles as band sources. CE Tools now creates and reuses hidden profile copies for these existing views so the road band rows can read elevation values without changing the displayed profile graphs.");
+                    "\nBand sources were saved through the native top/bottom band collections. Original profiles are preferred; compatibility copies are used only when source assignment fails.");
             }
         }
 
         private static int EnableBandLabels(ProfileView profileView)
         {
-            int enabled = 0;
-
-            try
-            {
-                using (ProfileViewBandItemCollection top = profileView.Bands.GetTopBandItems())
-                {
-                    for (int index = 0; index < top.Count; index++)
-                    {
-                        try
-                        {
-                            ProfileViewBandItem item = top[index];
-                            try { item.ShowLabels = false; } catch { }
-                            try { item.ShowLabels = true; } catch { }
-                            if (item.ShowLabels) enabled++;
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
-
-            try
-            {
-                using (ProfileViewBandItemCollection bottom = profileView.Bands.GetBottomBandItems())
-                {
-                    for (int index = 0; index < bottom.Count; index++)
-                    {
-                        try
-                        {
-                            ProfileViewBandItem item = bottom[index];
-                            try { item.ShowLabels = false; } catch { }
-                            try { item.ShowLabels = true; } catch { }
-                            if (item.ShowLabels) enabled++;
-                        }
-                        catch { }
-                    }
-                }
-            }
-            catch { }
-
-            // Do not write the collection back. Civil 3D 2023 can return a
-            // read-only band collection and abort with eNotOpenForWrite; setting
-            // ShowLabels on each item is the supported safe write path.
-            // Keep validator markers for the intentionally avoided native calls:
-            // profileView.Bands.SetTopBandItems(top)
-            // profileView.Bands.SetBottomBandItems(bottom)
+            int found;
+            int enabled;
+            ProfileViewBandPersistence.EnableLabels(profileView, out found, out enabled);
             return enabled;
         }
 

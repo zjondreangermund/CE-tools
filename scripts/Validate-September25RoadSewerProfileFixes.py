@@ -55,7 +55,7 @@ for marker in [
     if marker not in sewer:
         errors.append(f"sewer branch parts: missing marker {marker!r}")
 
-if "identity.Contains(\"STRUCTURE\")" not in bands or "identity.Contains(\"MANHOLE\")" not in bands:
+if "profileBand.BandType == Autodesk.Civil.BandType.PipeNetwork" not in bands or "profileBand.DataSourceId = networkId" not in bands:
     errors.append("sewer structure/manhole data bands are not linked to the network")
 
 profile_method = road.split("public void AddRoadTopBottomSurfacesToProfileViews()", 1)[1].split(

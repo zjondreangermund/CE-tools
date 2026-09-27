@@ -18,8 +18,8 @@ checks = {
         'identity.Contains("RIGHT")',
         'identity.Contains("CENTRE")',
         'identity.Contains("VERTICAL")',
-        '"ShowLabels"',
-        '"LabelsVisible"',
+        "nativeItem.ShowLabels = true",
+        "ProfileViewBandPersistence.Update(view,",
         "horizontalBand",
     ],
     "src/CE.Tools.Civil3D/August17ProductionFeatureLineCommands.cs": [
@@ -39,12 +39,15 @@ checks = {
         "Surface elevation verification failed",
     ],
     "src/CE.Tools.Civil3D/FeatureProfileSurfaceCommentCommands.cs": [
-        "ResolveFeatureLineColourStyle(",
-        "ApplyFeatureLineStyleColour(",
-        '"GetFeatureLineDisplayStylePlan"',
-        '"GetFeatureLineDisplayStyleModel"',
-        '"GetDisplayStyleProfile"',
+        "FeatureLineColourService.Prepare(",
+        "FeatureLineColourService.Assign(",
         "visible colour styles",
+    ],
+    "src/CE.Tools.Civil3D/FeatureLineColourService.cs": [
+        "GetFeatureLineDisplayStylePlan()",
+        "GetFeatureLineDisplayStyleModel()",
+        "GetDisplayStyleProfile(",
+        "CivilStyleNames.Get(style)",
     ],
     "src/CE.Tools.Civil3D/August23PlatformDynamicGradingCommands.cs": [
         "TryCreateEditableDrapeCopy(",

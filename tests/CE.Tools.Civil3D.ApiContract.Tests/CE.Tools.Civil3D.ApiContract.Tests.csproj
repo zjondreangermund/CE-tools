@@ -1,0 +1,12 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <EnableDefaultCompileItems>true</EnableDefaultCompileItems>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="../../src/CE.Tools.Civil3D/CivilStyleNames.cs" Link="CivilStyleNames.cs" />
+    <Compile Include="../../src/CE.Tools.Civil3D/FeatureLineColourService.cs" Link="FeatureLineColourService.cs" />
+    <Compile Include="../../src/CE.Tools.Civil3D/ProfileViewBandPersistence.cs" Link="ProfileViewBandPersistence.cs" />
+  </ItemGroup>
+</Project>

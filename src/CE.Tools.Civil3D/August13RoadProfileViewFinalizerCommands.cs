@@ -716,7 +716,8 @@ namespace CETools.Civil3D
                     profileId,
                     OpenMode.ForRead,
                     false) as CivilProfile;
-                if (profile == null) continue;
+                if (profile == null || profile.Name.StartsWith(
+                    "CE_BAND_SRC_", StringComparison.OrdinalIgnoreCase)) continue;
                 string identity = ((profile.Name ?? string.Empty) + " " +
                     (profile.Description ?? string.Empty)).ToUpperInvariant();
 
