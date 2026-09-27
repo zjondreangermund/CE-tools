@@ -43,6 +43,28 @@ function ReplaceMethod([string]$text,[string]$marker,[string]$replacement,[strin
     if ($close -lt 0) { throw "Closing brace not found: $label" }
     return $text.Substring(0,$start) + $replacement + $text.Substring($close+1)
 }
+function Test-UniversalCommandEndedQueueDisabled([string]$text) {
+    $signature = [regex]::Match(
+        $text,
+        '(?m)^[ \t]*(?:private|internal|public)\s+static\s+void\s+OnCommandEnded\s*\(')
+    if (-not $signature.Success) { return $true }
+
+    $open = $text.IndexOf('{',$signature.Index + $signature.Length)
+    if ($open -lt 0) { return $false }
+    $depth = 0
+    $close = -1
+    for ($i=$open; $i -lt $text.Length; $i++) {
+        if ($text[$i] -eq '{') { $depth++ }
+        elseif ($text[$i] -eq '}') {
+            $depth--
+            if ($depth -eq 0) { $close = $i; break }
+        }
+    }
+    if ($close -lt 0) { return $false }
+
+    $method = $text.Substring($signature.Index,$close - $signature.Index + 1)
+    return $method -notmatch '\bQueue\s*\('
+}
 
 # 1. Dedicated dynamic Grid Setting-Out front door.
 $gridEnginePath = Required 'August18DynamicGridSettingOutCommands.cs'
@@ -163,7 +185,60 @@ $predicateNew = @'
                 string.Equals(command, "CE_DYNAMICREFRESHALL", StringComparison.OrdinalIgnoreCase);
         }
 '@ -replace "`n","`r`n"
-$universal = ReplaceRequired $universal $predicateOld $predicateNew 'self-refreshing Survey command predicate'
+$universalCommandQueueDisabled = Test-UniversalCommandEndedQueueDisabled $universal
+if ($universal.Contains($predicateOld)) {
+    $universal = $universal.Replace($predicateOld,$predicateNew)
+}
+elseif (-not $universalCommandQueueDisabled) {
+    $onCommand = [regex]::Match(
+        $universal,
+        '(?m)^[ \t]*(?:private|internal|public)\s+static\s+void\s+OnCommandEnded\s*\(')
+    if (-not $onCommand.Success) {
+        throw 'Universal command-ended queue is active, but its Survey filter insertion point is missing.'
+    }
+
+    $methodStart = $onCommand.Index
+    $methodOpen = $universal.IndexOf('{',$methodStart + $onCommand.Length)
+    if ($methodOpen -lt 0) { throw 'Universal command-ended queue opening brace is missing.' }
+    $methodDepth = 0
+    $methodClose = -1
+    for ($i=$methodOpen; $i -lt $universal.Length; $i++) {
+        if ($universal[$i] -eq '{') { $methodDepth++ }
+        elseif ($universal[$i] -eq '}') {
+            $methodDepth--
+            if ($methodDepth -eq 0) { $methodClose = $i; break }
+        }
+    }
+    if ($methodClose -lt 0) { throw 'Universal command-ended queue closing brace is missing.' }
+    $method = $universal.Substring($methodStart,$methodClose - $methodStart + 1)
+
+    if (-not $method.Contains('if (IsSelfRefreshingSurveyCommand(command))')) {
+        $commandLine = [regex]::Match(
+            $method,
+            '(?m)^([ \t]*)(?:string|var)\s+command\s*=\s*NormalizeCommand\(e\.GlobalCommandName\);')
+        if (-not $commandLine.Success) {
+            throw 'Universal command-ended queue is active, but its normalized command anchor is missing.'
+        }
+
+        $indent = $commandLine.Groups[1].Value
+        $guard = @(
+            $indent + 'if (IsSelfRefreshingSurveyCommand(command))',
+            $indent + '{',
+            $indent + '    _pending = false;',
+            $indent + '    _lastChangeUtc = DateTime.UtcNow;',
+            $indent + '    return;',
+            $indent + '}'
+        ) -join "`r`n"
+        $commandEnd = $methodStart + $commandLine.Index + $commandLine.Length
+        $lineEnd = $universal.IndexOf("`n",$commandEnd)
+        $insertAt = if ($lineEnd -ge 0) { $lineEnd + 1 } else { $commandEnd }
+        $universal = $universal.Insert($insertAt,$guard + "`r`n")
+    }
+    if (-not $universal.Contains($predicateNew)) {
+        $universal = $universal.Insert($methodStart,$predicateNew)
+    }
+    $universalCommandQueueDisabled = $false
+}
 $universal = $universal.Replace('if (IsSiteGridCommand(command))','if (IsSelfRefreshingSurveyCommand(command))')
 
 $changedOld = @'
@@ -351,12 +426,15 @@ if ($gridSlice.Contains('document.SendStringToExecute("CE_VERTEXSETTINGOUT ", tr
     throw 'CE_GRIDSETTINGOUT still routes to Vertex Setting-Out.'
 }
 $universal = ReadText $universalPath
-foreach ($required in @(
+$requiredUniversalMarkers = @(
     'RefreshBackground(Document document)',
     'August18DynamicGridSettingOutCommands.RefreshAll(document)',
     'IsRefreshDependency(DBObject value)',
-    'IsSelfRefreshingSurveyCommand(string command)',
-    'DelaySeconds { get; set; } = 0.35;')) {
+    'DelaySeconds { get; set; } = 0.35;')
+if (-not $universalCommandQueueDisabled) {
+    $requiredUniversalMarkers += 'IsSelfRefreshingSurveyCommand(string command)'
+}
+foreach ($required in $requiredUniversalMarkers) {
     if (-not $universal.Contains($required)) { throw "Universal stability marker missing: $required" }
 }
 foreach ($forbidden in @(
@@ -384,6 +462,9 @@ foreach ($forbidden in @(
 
 Write-Host 'Grid Setting-Out now has its own MULTIPLE-polyline Perimeter / Full-grid workflow.' -ForegroundColor Green
 Write-Host 'Grid/Vertex linked updates now use one settled dependency refresh path instead of repeated feedback passes.' -ForegroundColor Green
+if ($universalCommandQueueDisabled) {
+    Write-Host 'Universal command-ended refresh was already disabled; no obsolete Site Grid predicate was required.' -ForegroundColor Green
+}
 Write-Host 'Survey Linked/Annotative Refresh no longer moves COGO labels or repeats table presentation operations.' -ForegroundColor Green
 Write-Host 'Automatic annotation-scale maintenance is excluded from Undo and redraws only through the coordinated refresh.' -ForegroundColor Green
 Write-Host 'Survey Production PREPARE opens CE-Background Tools; the old XREF utilities remain nested inside it.' -ForegroundColor Green
