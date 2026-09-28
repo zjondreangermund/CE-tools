@@ -248,11 +248,24 @@ $changedOld = @'
                 value is Autodesk.Civil.DatabaseServices.Network)
                 Queue();
 '@ -replace "`n","`r`n"
+$changedOldAssemblySafe = @'
+            DBObject value = e.DBObject;
+            if (IsAssemblyObject(value)) return;
+            if (value is Entity || value is Xrecord || value is DBDictionary ||
+                value is CogoPoint || value is Pipe || value is Structure ||
+                value is Autodesk.Civil.DatabaseServices.Network)
+                Queue();
+'@ -replace "`n","`r`n"
 $changedNew = @'
             DBObject value = e.DBObject;
             if (IsRefreshDependency(value)) Queue();
 '@ -replace "`n","`r`n"
-$universal = ReplaceRequired $universal $changedOld $changedNew 'dependency-only ObjectModified queue'
+if ($universal.Contains($changedOldAssemblySafe)) {
+    $universal = ReplaceRequired $universal $changedOldAssemblySafe $changedNew 'dependency-only ObjectModified queue after assembly safety'
+}
+else {
+    $universal = ReplaceRequired $universal $changedOld $changedNew 'dependency-only ObjectModified queue'
+}
 
 $changedMarker = @'
         private static void OnObjectChanged(object sender, ObjectEventArgs e)
