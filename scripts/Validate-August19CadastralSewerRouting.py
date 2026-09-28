@@ -5,6 +5,15 @@ source = (root / 'src/CE.Tools.Civil3D/August19CadastralSewerRouteCommands.cs').
 road_reserve = (root / 'src/CE.Tools.Civil3D/August19RoadReserveSewerAndSafetyCommands.cs').read_text(encoding='utf-8')
 repair = (root / 'scripts/Repair-August19-CadastralSewerRouting-Civil3D2023.ps1').read_text(encoding='utf-8')
 build = (root / 'scripts/Build-Install-Civil3D2023-August19.ps1').read_text(encoding='utf-8')
+late_repair = (root / 'scripts/Repair-August21-StateGraphicsSurfaceSafety-Civil3D2023.ps1').read_text(encoding='utf-8')
+
+# The later stability repair replaces the whole command body during a local
+# build. Validate that the code actually compiled keeps the surface dropdown.
+late_body = late_repair.split("$cadastralBody = @'", 1)[1].split("'@", 1)[0]
+if 'model.AddChoice("Surface", "01 Cadastral"' not in late_body or \
+        'ObjectId surfaceId = selectedSurface == null ? ObjectId.Null : selectedSurface.Id;' not in late_body or \
+        'ObjectId surfaceId = PromptSurface(document);' in late_body:
+    raise SystemExit('Late Civil 3D build repair restores a click-only surface prompt.')
 
 required_source = [
     'CE_SEWERFROMCADASTRAL',

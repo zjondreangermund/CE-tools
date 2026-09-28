@@ -926,9 +926,20 @@ $cadastralBody = @'
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
 
+            List<CivilChoice> surfaceChoices = FieldCompletionBatchUi.ReadSurfaceChoices(
+                document, CivilApplication.ActiveDocument);
+            if (surfaceChoices.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_SEWERFROMCADASTRAL cancelled. No Civil 3D surfaces were found.");
+                return;
+            }
+
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Sewer Route from Cadastral Data",
                 "Create connected preliminary sewer routes directly from cadastral erf boundaries. Civil surface analysis is completed in a read-only planning stage before a separate AutoCAD construction transaction.");
+            model.AddChoice("Surface", "01 Cadastral", "Analysis surface", surfaceChoices[0].Name,
+                "Civil 3D surface used for cadastral route slope and site-low-point analysis.",
+                surfaceChoices.Select(item => item.Name));
             model.AddChoice("Scope", "01 Cadastral", "Erf boundaries", "Selected",
                 "Use selected closed cadastral erf polylines or all non-CE closed lightweight polylines in model space.",
                 new[] { "Selected", "All" });
@@ -953,19 +964,21 @@ $cadastralBody = @'
                 new[] { "Replace existing", "Keep existing" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
+            CivilChoice selectedSurface = surfaceChoices.FirstOrDefault(item =>
+                string.Equals(item.Name, model.Text("Surface"), StringComparison.OrdinalIgnoreCase));
+            ObjectId surfaceId = selectedSurface == null ? ObjectId.Null : selectedSurface.Id;
+            if (surfaceId.IsNull)
+            {
+                document.Editor.WriteMessage("\nCE_SEWERFROMCADASTRAL cancelled. Select an analysis surface in the dropdown.");
+                return;
+            }
+
             List<ObjectId> parcelIds = ResolveParcels(document, model.Text("Scope"));
             if (parcelIds.Count == 0)
             {
                 document.Editor.WriteMessage("\nCE_SEWERFROMCADASTRAL: no closed cadastral erf polylines were found.");
                 return;
             }
-            ObjectId surfaceId = PromptSurface(document);
-            if (surfaceId.IsNull)
-            {
-                document.Editor.WriteMessage("\nCE_SEWERFROMCADASTRAL cancelled. Select a Civil 3D surface for slope/low-point analysis.");
-                return;
-            }
-
             double midblockOffset = Math.Max(0.0, model.Double("MidblockOffset", 1.5));
             double roadReserveOffset = Math.Max(0.0, model.Double("RoadReserveOffset", 5.0));
             double spacing = string.Equals(model.Text("Spacing"), "80 m", StringComparison.OrdinalIgnoreCase)
@@ -1184,6 +1197,11 @@ $cadastralCheck = ReadText $cadastralPath
 if (-not $cadastralCheck.Contains('Surface surface = planning.GetObject(') -or
     -not $cadastralCheck.Contains('using (Transaction construction =')) {
     throw 'August21 cadastral sewer planning/construction split missing.'
+}
+if (-not $cadastralCheck.Contains('model.AddChoice("Surface", "01 Cadastral"') -or
+    -not $cadastralCheck.Contains('selectedSurface.Id') -or
+    $cadastralCheck.Contains('ObjectId surfaceId = PromptSurface(document);')) {
+    throw 'August21 cadastral sewer surface dropdown was replaced by an entity prompt.'
 }
 $pluginCheck = ReadText $pluginPath
 foreach ($required in @('August21SimpleParkingRefreshManager.Initialize();','August21GraphicsRefreshManager.Initialize();')) {
