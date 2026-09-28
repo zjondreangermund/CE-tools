@@ -254,8 +254,9 @@ namespace CETools.Civil3D
                 if (space == null) return result;
                 foreach (ObjectId id in space)
                 {
-                    DBObject value = transaction.GetObject(id, OpenMode.ForRead, false);
-                    if (value == null || value.GetType().Name.IndexOf("Assembly", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                    Autodesk.Civil.DatabaseServices.Assembly value = transaction.GetObject(
+                        id, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Assembly;
+                    if (value == null) continue;
                     PropertyInfo name = value.GetType().GetProperty("Name");
                     string text = name == null ? id.Handle.ToString() : Convert.ToString(name.GetValue(value, null));
                     result.Add(new NamedId(string.IsNullOrWhiteSpace(text) ? id.Handle.ToString() : text, id));
@@ -276,9 +277,9 @@ namespace CETools.Civil3D
                 if (space == null) return result;
                 foreach (ObjectId id in space)
                 {
-                    DBObject value = transaction.GetObject(id, OpenMode.ForRead, false);
-                    if (value != null && value.GetType().Name.IndexOf(
-                            "Assembly", StringComparison.OrdinalIgnoreCase) >= 0)
+                    Autodesk.Civil.DatabaseServices.Assembly value = transaction.GetObject(
+                        id, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Assembly;
+                    if (value != null)
                         result.Add(id);
                 }
             }

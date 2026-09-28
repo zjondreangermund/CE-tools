@@ -405,12 +405,22 @@ namespace CETools.Civil3D
 
         private static void OnObjectChanged(object sender, ObjectEventArgs args)
         {
+            if (IsAssemblyObject(args == null ? null : args.DBObject)) return;
             MarkPending(sender as Database);
         }
 
         private static void OnObjectErased(object sender, ObjectErasedEventArgs args)
         {
+            if (IsAssemblyObject(args == null ? null : args.DBObject)) return;
             MarkPending(sender as Database);
+        }
+
+        private static bool IsAssemblyObject(DBObject value)
+        {
+            if (value == null) return false;
+            string name = value.GetType().Name;
+            return string.Equals(name, "Assembly", StringComparison.OrdinalIgnoreCase) ||
+                name.IndexOf("Subassembly", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static void MarkPending(Database database)

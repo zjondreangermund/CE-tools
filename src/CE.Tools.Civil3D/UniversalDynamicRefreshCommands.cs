@@ -260,11 +260,14 @@ namespace CETools.Civil3D
                 _lastChangeUtc = DateTime.UtcNow;
                 return;
             }
+            if (command == "CE_ASSEMBLYCOPYSAFE")
+            {
+                // This command only clones Civil assembly objects. It does not
+                // change CE linked-data sources.
+                return;
+            }
             if (command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
-                command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase) ||
-                command.IndexOf("GRIP", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                command.IndexOf("MOVE", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                command.IndexOf("STRETCH", StringComparison.OrdinalIgnoreCase) >= 0)
+                command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase))
                 Queue();
         }
 
@@ -276,6 +279,14 @@ namespace CETools.Civil3D
         private static bool IsSewerSequence(string command)
         {
             return string.Equals(command, "CE_SEWSEQ", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool IsAssemblyObject(DBObject value)
+        {
+            if (value == null) return false;
+            string name = value.GetType().Name;
+            return string.Equals(name, "Assembly", StringComparison.OrdinalIgnoreCase) ||
+                name.IndexOf("Subassembly", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static bool IsUndoRedo(string command)
@@ -292,6 +303,7 @@ namespace CETools.Civil3D
         {
             if (_busy || _undoRedoActive || e == null || e.DBObject == null) return;
             DBObject value = e.DBObject;
+            if (IsAssemblyObject(value)) return;
             if (value is Entity || value is Xrecord || value is DBDictionary ||
                 value is CogoPoint || value is Pipe || value is Structure ||
                 value is Autodesk.Civil.DatabaseServices.Network)
@@ -301,7 +313,7 @@ namespace CETools.Civil3D
         private static void OnObjectErased(object sender, ObjectErasedEventArgs e)
         {
             if (_busy || _undoRedoActive || e == null || e.DBObject == null) return;
-            Queue();
+            if (!IsAssemblyObject(e.DBObject)) Queue();
         }
 
         private static void OnIdle(object sender, EventArgs e)

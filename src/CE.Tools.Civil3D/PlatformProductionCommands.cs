@@ -1394,7 +1394,12 @@ namespace CETools.Civil3D
             if (_busy || e == null || e.DBObject == null) return;
             if (e.DBObject is CivilSurface || e.DBObject is CivilFeatureLine || e.DBObject is Table) Queue();
         }
-        private static void Erased(object sender, ObjectErasedEventArgs e) { if (!_busy) Queue(); }
+        private static void Erased(object sender, ObjectErasedEventArgs e)
+        {
+            if (_busy || e == null || e.DBObject == null) return;
+            if (e.DBObject is CivilSurface || e.DBObject is CivilFeatureLine || e.DBObject is Table)
+                Queue();
+        }
         private static void Idle(object sender, EventArgs e)
         {
             Document active = AcApplication.DocumentManager.MdiActiveDocument;
