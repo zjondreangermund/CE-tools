@@ -14,6 +14,7 @@ using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
+using FeatureLinePointType = Autodesk.Civil.FeatureLinePointType;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.PlatformProductionCommands))]
 

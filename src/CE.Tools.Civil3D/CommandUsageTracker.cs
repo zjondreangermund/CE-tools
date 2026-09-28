@@ -143,8 +143,6 @@ namespace CETools.Civil3D
                         }
                         target.Clicks += source.Clicks;
                         target.TotalSeconds += source.TotalSeconds;
-                        target.EstimatedClicksSaved += source.EstimatedClicksSaved;
-                        target.EstimatedSecondsSaved += source.EstimatedSecondsSaved;
                         target.IsFavorite = target.IsFavorite || source.IsFavorite;
                         if (source.LastUsedUtc > target.LastUsedUtc) target.LastUsedUtc = source.LastUsedUtc;
                     }

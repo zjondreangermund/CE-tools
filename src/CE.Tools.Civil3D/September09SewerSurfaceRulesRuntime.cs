@@ -279,7 +279,7 @@ namespace CETools.Civil3D
             }
 
             if (!eraseSources)
-                foreach (ObjectId sourceId in sourceIds) NetworkSourceMarker.Mark(document, sourceId, "Sewer");
+                foreach (ObjectId sourceId in sourceIds) NetworkSourceMarker.Mark(database, sourceId, "Sewer");
 
             editor.Regen();
             editor.WriteMessage(

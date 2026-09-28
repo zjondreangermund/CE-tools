@@ -333,7 +333,7 @@ namespace CETools.Civil3D
             private readonly List<NetworkChoice> _networks;
             private readonly ListBox _networkList = new ListBox
             {
-                SelectionMode = SelectionMode.Multiple,
+                SelectionMode = System.Windows.Controls.SelectionMode.Multiple,
                 MinHeight = 120
             };
             private readonly CheckBox _match;

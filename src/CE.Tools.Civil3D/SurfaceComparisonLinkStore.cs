@@ -48,7 +48,7 @@ namespace CETools.Civil3D
                     Point3d reference;
                     Vector3d offset = TryReadReferencePoint(value, out reference)
                         ? reference - anchorPoint
-                        : Vector3d.Zero;
+                        : new Vector3d(0.0, 0.0, 0.0);
                     WriteRecord(value, transaction, baseSurfaceId, comparisonSurfaceId, point, anchorId, offset);
                 }
                 transaction.Commit();
@@ -99,7 +99,7 @@ namespace CETools.Civil3D
                 table.Position = insertionPoint;
                 ObjectId tableId = space.AppendEntity(table);
                 transaction.AddNewlyCreatedDBObject(table, true);
-                WriteRecord(table, transaction, baseSurfaceId, comparisonSurfaceId, point, ObjectId.Null, Vector3d.Zero);
+                WriteRecord(table, transaction, baseSurfaceId, comparisonSurfaceId, point, ObjectId.Null, new Vector3d(0.0, 0.0, 0.0));
                 PopulateTable(table, ReadResult(database, transaction, baseSurfaceId, comparisonSurfaceId, point), Math.Max(textHeight, 0.001));
                 PaperAnnotationScale.SetAnnotative(table);
                 transaction.Commit();
@@ -138,7 +138,7 @@ namespace CETools.Civil3D
                         {
                             livePoint = self.Position;
                             link.AnchorId = self.ObjectId;
-                            link.Offset = Vector3d.Zero;
+                            link.Offset = new Vector3d(0.0, 0.0, 0.0);
                         }
                     }
 

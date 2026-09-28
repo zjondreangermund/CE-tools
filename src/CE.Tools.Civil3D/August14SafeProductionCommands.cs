@@ -40,11 +40,11 @@ namespace CETools.Civil3D
             string[] alignmentStyles = ProductionStyleCatalog.ReadNames(
                 document.Database,
                 civil.Styles.AlignmentStyles,
-                "Alignment Style");
+                "Alignment Style").ToArray();
             string[] labelSets = ProductionStyleCatalog.ReadNames(
                 document.Database,
                 civil.Styles.LabelSetStyles.AlignmentLabelSetStyles,
-                "Alignment Label Set Style");
+                "Alignment Label Set Style").ToArray();
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Safe Stormwater Alignments",
                 "Fallback for source polylines that fail the richer SW alignment workflow. CE Tools removes consecutive duplicate XY vertices, flattens source Z for alignment geometry, skips zero-length strings and calls Civil 3D Alignment.Create directly.");
@@ -170,10 +170,10 @@ namespace CETools.Civil3D
             SurfaceChoice surface = surfaceWindow.SelectedSurface;
             if (surface == null) return;
 
-            string[] profileStyles = ProductionStyleCatalog.ReadNames(document.Database, civil.Styles.ProfileStyles, "Profile Style");
-            string[] profileLabelSets = ProductionStyleCatalog.ReadNames(document.Database, civil.Styles.LabelSetStyles.ProfileLabelSetStyles, "Profile Label Set Style");
-            string[] viewStyles = ProductionStyleCatalog.ReadNames(document.Database, civil.Styles.ProfileViewStyles, "Profile View Style");
-            string[] bandSets = ProductionStyleCatalog.ReadNames(document.Database, civil.Styles.ProfileViewBandSetStyles, "Profile View Band Set Style");
+            string[] profileStyles = ProductionStyleCatalog.ReadNames(document.Database, civil.Styles.ProfileStyles, "Profile Style").ToArray();
+            string[] profileLabelSets = ProductionStyleCatalog.ReadNames(document.Database, civil.Styles.LabelSetStyles.ProfileLabelSetStyles, "Profile Label Set Style").ToArray();
+            string[] viewStyles = ProductionStyleCatalog.ReadNames(document.Database, civil.Styles.ProfileViewStyles, "Profile View Style").ToArray();
+            string[] bandSets = ProductionStyleCatalog.ReadNames(document.Database, civil.Styles.ProfileViewBandSetStyles, "Profile View Band Set Style").ToArray();
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Safe Water Profile Views",
                 "Fallback for fatal/internal pressure-profile cases. It creates only a surface profile and a profile view through Civil 3D's direct Profile.CreateFromSurface and ProfileView.Create APIs. It deliberately skips pressure-part projection and CE band binding.");

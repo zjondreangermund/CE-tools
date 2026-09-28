@@ -194,6 +194,11 @@ namespace CETools.Civil3D
         private static bool _internalUpdate;
         private static bool _initialized;
 
+        internal static void QueueRefresh(Database database)
+        {
+            if (database != null && Documents.ContainsKey(database)) Pending.Add(database);
+        }
+
         public static void Initialize()
         {
             if (_initialized) return;

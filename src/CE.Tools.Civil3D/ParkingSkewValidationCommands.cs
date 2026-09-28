@@ -347,16 +347,16 @@ namespace CETools.Civil3D
                             new[] { "Correction", "CorrectionLabel" });
 
                         Point2d longAxis = candidate.LongAxis;
-                        Point2d shortAxis = candidate.ShortAxis;
+                        Vector2d shortAxis = candidate.ShortAxis;
                         double halfLength = candidate.LengthDrawingUnits * 0.5;
                         double halfWidth = settings.RequiredWidthDrawingUnits * 0.5;
                         Point2d center = new Point2d(candidate.Center.X, candidate.Center.Y);
                         Point2d[] corners =
                         {
-                            center - longAxis.GetAsVector() * halfLength - shortAxis.GetAsVector() * halfWidth,
-                            center + longAxis.GetAsVector() * halfLength - shortAxis.GetAsVector() * halfWidth,
-                            center + longAxis.GetAsVector() * halfLength + shortAxis.GetAsVector() * halfWidth,
-                            center - longAxis.GetAsVector() * halfLength + shortAxis.GetAsVector() * halfWidth
+                            center - longAxis.GetAsVector() * halfLength - shortAxis * halfWidth,
+                            center + longAxis.GetAsVector() * halfLength - shortAxis * halfWidth,
+                            center + longAxis.GetAsVector() * halfLength + shortAxis * halfWidth,
+                            center - longAxis.GetAsVector() * halfLength + shortAxis * halfWidth
                         };
                         var outline = new Polyline(4);
                         outline.SetDatabaseDefaults(document.Database);

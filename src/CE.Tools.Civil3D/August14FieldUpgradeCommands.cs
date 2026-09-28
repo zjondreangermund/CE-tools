@@ -136,7 +136,7 @@ namespace CETools.Civil3D
                     modelSpace.AppendEntity(text);
                     transaction.AddNewlyCreatedDBObject(text, true);
                     ParkingNumberLinkCommands.Link(transaction, text, bay);
-                    ParkingNumberLinkStore.Link(transaction, bay, text, prefix, number);
+                    ParkingNumberLinkStore.Link(document.Database, transaction, text, bay.ObjectId);
                     created++;
                 }
                 transaction.Commit();

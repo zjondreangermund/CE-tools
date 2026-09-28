@@ -331,15 +331,15 @@ namespace CETools.Civil3D
 
                 try
                 {
-                    int before = pvi.EntityBefore;
-                    int after = pvi.EntityAfter;
+                    uint before = pvi.EntityBefore;
+                    uint after = pvi.EntityAfter;
                     if (before <= 0 || after <= 0) continue;
                     VerticalCurveType curveType = gradeIn > gradeOut
                         ? VerticalCurveType.Crest
                         : VerticalCurveType.Sag;
                     profile.Entities.AddFreeSymmetricParabolaByLength(
-                        unchecked((uint)before),
-                        unchecked((uint)after),
+                        before,
+                        after,
                         curveType,
                         length,
                         true);

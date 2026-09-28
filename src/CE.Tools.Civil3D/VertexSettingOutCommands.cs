@@ -541,6 +541,7 @@ namespace CETools.Civil3D
             if (civilDocument == null)
                 throw new InvalidOperationException("No active Civil 3D document is available.");
 
+            bool styleCogo = false;
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
@@ -550,6 +551,7 @@ namespace CETools.Civil3D
                     false) as Table;
                 if (table == null) throw new InvalidOperationException("The selected object is not an AutoCAD table.");
                 VertexSettingLink link = ReadTableLink(table);
+                styleCogo = string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase);
                 List<ObjectId> sourceIds = link.SourceHandles
                     .Select(handle => ResolveHandle(document.Database, handle))
                     .Where(id => !id.IsNull && !id.IsErased)
@@ -632,7 +634,7 @@ namespace CETools.Civil3D
                 pointCount = records.Count;
                 dimensionCount = liveDimensionKeys.Count;
             }
-            if (string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))
+            if (styleCogo)
             {
                 try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, false); }
                 catch { }
@@ -1459,6 +1461,13 @@ namespace CETools.Civil3D
                     record.DesignLevel = double.IsNaN(sampledDesign) ? record.Point.Z : sampledDesign;
                 }
             }
+        }
+
+        private static double SampleSurfaceLevel(Autodesk.Civil.DatabaseServices.Surface surface, Point3d point)
+        {
+            if (surface == null) return double.NaN;
+            try { return surface.FindElevationAtXY(point.X, point.Y); }
+            catch { return double.NaN; }
         }
 
         private static AttachmentPoint AnchoredAttachment(VertexSettingRecord record, double offset)

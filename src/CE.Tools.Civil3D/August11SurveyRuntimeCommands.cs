@@ -457,7 +457,7 @@ namespace CETools.Civil3D
 
         private static bool TryReadVectorRecord(DBObject value, Transaction transaction, string key, out Vector3d vector)
         {
-            vector = Vector3d.Zero;
+            vector = new Vector3d(0.0, 0.0, 0.0);
             if (!HasRecord(value, transaction, key)) return false;
             try
             {
