@@ -111,6 +111,19 @@ namespace CETools.Civil3D
         {
             Document active = AcApplication.DocumentManager.MdiActiveDocument;
             Attach(active);
+            // The Properties palette can commit an alignment name without
+            // issuing a CommandEnded event. Process that edit once Civil 3D
+            // has left any active drawing command.
+            if (_alignmentChanged && active != null)
+            {
+                try
+                {
+                    if (Convert.ToInt32(AcApplication.GetSystemVariable("CMDACTIVE")) != 0) return;
+                    _pending = true;
+                    _alignmentChanged = false;
+                }
+                catch { return; }
+            }
             if (!_pending || _busy || active == null) return;
             _pending = false;
             Sync(active);

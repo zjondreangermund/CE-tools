@@ -158,7 +158,7 @@ namespace CETools.Civil3D
                 "Create this many linked stepped feature lines from the selected source.");
             settings.AddChoice("Side", "01 Stepped offsets", "Offset side", "Pick side in drawing",
                 "Apply the same side choice to each selected source. Inside and Outside use the enclosed area for closed lines; for open lines they map to right and left.",
-                new[] { "Pick side in drawing", "Left / positive", "Right / negative", "Inside", "Outside" });
+                new[] { "Pick side in drawing", "Left / positive", "Right / negative", "Inside", "Outside", "Both sides" });
             settings.AddText(
                 "Prefix", "02 Naming", "Feature-line name prefix", defaultPrefix,
                 "Names are created as Prefix-1, Prefix-2, and so on.");
@@ -223,12 +223,16 @@ namespace CETools.Civil3D
                                 modelSpace.AppendEntity(plan);
                                 transaction.AddNewlyCreatedDBObject(plan, true);
 
+                                int sides = string.Equals(side, "Both sides", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
+                                for (int sideIndex = 0; sideIndex < sides; sideIndex++)
                                 for (int index = 1; index <= count; index++)
                                 {
-                                    double horizontal = sign * horizontalStep * index;
+                                    double direction = sideIndex == 0 ? sign : -sign;
+                                    double horizontal = direction * horizontalStep * index;
                                     double vertical = verticalStep * index;
                                     string name = UniqueName(
-                                        sourcePrefix + "-" + index.ToString(CultureInfo.InvariantCulture), names);
+                                        sourcePrefix + (sides == 2 ? (sideIndex == 0 ? "-OUTSIDE" : "-INSIDE") : "") +
+                                        "-" + index.ToString(CultureInfo.InvariantCulture), names);
                                     ObjectId childId = CreateChild(
                                         source,
                                         plan,
@@ -247,7 +251,7 @@ namespace CETools.Civil3D
                                         source.Handle.ToString(),
                                         horizontal,
                                         vertical,
-                                        index,
+                                        sideIndex * count + index,
                                         transaction);
                                     localCreated++;
                                 }

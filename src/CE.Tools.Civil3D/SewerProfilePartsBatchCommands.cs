@@ -331,9 +331,13 @@ namespace CETools.Civil3D
         private sealed class NetworkPicker : Window
         {
             private readonly List<NetworkChoice> _networks;
-            private readonly List<CheckBox> _checks = new List<CheckBox>();
+            private readonly ListBox _networkList = new ListBox
+            {
+                SelectionMode = SelectionMode.Multiple,
+                MinHeight = 120
+            };
             private readonly CheckBox _match;
-            private readonly CheckBox _labels;
+            private readonly System.Windows.Controls.Primitives.ToggleButton _labels;
 
             internal NetworkPicker(List<NetworkChoice> networks)
             {
@@ -348,26 +352,48 @@ namespace CETools.Civil3D
                 root.Children.Add(footer);
                 _match = new CheckBox { Content = "Only draw parts on each profile view's branch (required)", IsChecked = true, IsEnabled = false, Margin = new Thickness(0, 8, 0, 5) };
                 footer.Children.Add(_match);
-                _labels = new CheckBox { Content = "Open pipe and structure profile label popup after drawing", IsChecked = LastOpenLabels, Margin = new Thickness(0, 0, 0, 12) };
+                _labels = new System.Windows.Controls.Primitives.ToggleButton
+                {
+                    Content = "Open label popup after drawing: " + (LastOpenLabels ? "Yes" : "No"),
+                    IsChecked = LastOpenLabels,
+                    HorizontalAlignment = HorizontalAlignment.Left,
+                    Padding = new Thickness(10, 5, 10, 5),
+                    Margin = new Thickness(0, 0, 0, 12)
+                };
+                _labels.Click += (sender, args) =>
+                    _labels.Content = "Open label popup after drawing: " + (_labels.IsChecked == true ? "Yes" : "No");
                 footer.Children.Add(_labels);
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
                 var apply = new Button { Content = "Draw in selected profile views", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 8, 0) };
-                apply.Click += (sender, args) => { if (_checks.Any(item => item.IsChecked == true)) DialogResult = true; };
+                apply.Click += (sender, args) => { if (_networkList.SelectedItems.Count > 0) DialogResult = true; };
                 buttons.Children.Add(apply);
                 var cancel = new Button { Content = "Cancel", Padding = new Thickness(12, 6, 12, 6) };
                 cancel.Click += (sender, args) => DialogResult = false;
                 buttons.Children.Add(cancel);
                 footer.Children.Add(buttons);
-                var list = new StackPanel();
-                list.Children.Add(new TextBlock { Text = "Select the gravity networks to draw:", FontSize = 16, Margin = new Thickness(0, 0, 0, 12) });
+                var list = new DockPanel();
+                var selectionActions = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 0, 0, 8) };
+                DockPanel.SetDock(selectionActions, Dock.Top);
+                selectionActions.Children.Add(new TextBlock { Text = "Select gravity networks (Ctrl or Shift for several):", FontSize = 15, Margin = new Thickness(0, 0, 12, 0) });
+                var all = new Button { Content = "Select all", Padding = new Thickness(8, 3, 8, 3), Margin = new Thickness(0, 0, 6, 0) };
+                all.Click += (sender, args) => _networkList.SelectAll();
+                selectionActions.Children.Add(all);
+                var none = new Button { Content = "Clear", Padding = new Thickness(8, 3, 8, 3) };
+                none.Click += (sender, args) => _networkList.UnselectAll();
+                selectionActions.Children.Add(none);
+                list.Children.Add(selectionActions);
                 foreach (NetworkChoice network in networks)
                 {
-                    var check = new CheckBox { Content = network.Name, IsChecked = LastSelectedNetworks.Count == 0 || LastSelectedNetworks.Contains(network.Name), Margin = new Thickness(0, 0, 0, 8) };
-                    _checks.Add(check); list.Children.Add(check);
+                    var item = new ListBoxItem { Content = network.Name, Padding = new Thickness(10, 8, 10, 8), Tag = network };
+                    _networkList.Items.Add(item);
+                    if (LastSelectedNetworks.Count == 0 || LastSelectedNetworks.Contains(network.Name))
+                        item.IsSelected = true;
                 }
-                root.Children.Add(new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });
+                list.Children.Add(_networkList);
+                root.Children.Add(list);
             }
-            internal List<NetworkChoice> SelectedNetworks => _networks.Where((item, index) => _checks[index].IsChecked == true).ToList();
+            internal List<NetworkChoice> SelectedNetworks =>
+                _networkList.SelectedItems.Cast<ListBoxItem>().Select(item => (NetworkChoice)item.Tag).ToList();
             internal bool MatchAlignment => _match.IsChecked == true;
             internal bool OpenLabels => _labels.IsChecked == true;
         }
