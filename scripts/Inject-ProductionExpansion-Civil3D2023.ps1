@@ -50,6 +50,49 @@ function Replace-AllLiteral {
     Write-Host "Integrated: $Description" -ForegroundColor Green
 }
 
+function Ensure-LineAfter {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Anchor,
+        [Parameter(Mandatory = $true)][string]$Line,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+    $text = [System.IO.File]::ReadAllText($Path)
+    if ($text.Contains($Line)) {
+        Write-Host "Already integrated: $Description" -ForegroundColor DarkGreen
+        return
+    }
+    $index = $text.IndexOf($Anchor, [System.StringComparison]::Ordinal)
+    if ($index -lt 0) {
+        throw "Could not integrate '$Description'. Anchor '$($Anchor.Trim())' was not found in $Path"
+    }
+    $insertAt = $index + $Anchor.Length
+    $updated = $text.Substring(0, $insertAt) + [Environment]::NewLine + $Line + $text.Substring($insertAt)
+    [System.IO.File]::WriteAllText($Path, $updated, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "Integrated: $Description" -ForegroundColor Green
+}
+
+function Ensure-LineBefore {
+    param(
+        [Parameter(Mandatory = $true)][string]$Path,
+        [Parameter(Mandatory = $true)][string]$Anchor,
+        [Parameter(Mandatory = $true)][string]$Line,
+        [Parameter(Mandatory = $true)][string]$Description
+    )
+    $text = [System.IO.File]::ReadAllText($Path)
+    if ($text.Contains($Line)) {
+        Write-Host "Already integrated: $Description" -ForegroundColor DarkGreen
+        return
+    }
+    $index = $text.IndexOf($Anchor, [System.StringComparison]::Ordinal)
+    if ($index -lt 0) {
+        throw "Could not integrate '$Description'. Anchor '$($Anchor.Trim())' was not found in $Path"
+    }
+    $updated = $text.Substring(0, $index) + $Line + [Environment]::NewLine + $text.Substring($index)
+    [System.IO.File]::WriteAllText($Path, $updated, [System.Text.UTF8Encoding]::new($false))
+    Write-Host "Integrated: $Description" -ForegroundColor Green
+}
+
 $root = (Resolve-Path -LiteralPath $RepoRoot.Trim().Trim('"')).ProviderPath
 $src = Join-Path $root 'src\CE.Tools.Civil3D'
 $plugin = Join-Path $src 'PluginEntry.cs'
@@ -70,41 +113,15 @@ foreach ($required in @($plugin, $road, $platform, $drawing, $closure, $namibia,
 }
 
 # Start the platform surface/feature-line monitor with the rest of the CE Tools
-# runtime managers. The manager is intentionally self-idempotent.
-$oldInit = @'
-            UniversalDynamicRefreshManager.Initialize();
-            AcApplication.Idle += OnApplicationIdle;
-'@
-$newInit = @'
-            UniversalDynamicRefreshManager.Initialize();
-            PlatformDynamicRefreshManager.EnsureInitialized();
-            AcApplication.Idle += OnApplicationIdle;
-'@
-Replace-Once -Path $plugin -Old $oldInit -New $newInit -Description 'start platform dynamic refresh at CE Tools startup'
+# runtime managers. These integrations are anchored to one stable call instead
+# of assuming adjacent source lines, because later repairs add managers here.
+Ensure-LineAfter -Path $plugin -Anchor '            UniversalDynamicRefreshManager.Initialize();' -Line '            PlatformDynamicRefreshManager.EnsureInitialized();' -Description 'start platform dynamic refresh at CE Tools startup'
 
 # AutoCAD/Civil 3D can consume Ctrl+F before WPF PreviewKeyDown. Register a
 # WinForms message filter as an earlier Windows-message interception layer.
-$oldShortcutInit = @'
-            PlatformDynamicRefreshManager.EnsureInitialized();
-            AcApplication.Idle += OnApplicationIdle;
-'@
-$newShortcutInit = @'
-            PlatformDynamicRefreshManager.EnsureInitialized();
-            AugustGlobalShortcutManager.Initialize();
-            AcApplication.Idle += OnApplicationIdle;
-'@
-Replace-Once -Path $plugin -Old $oldShortcutInit -New $newShortcutInit -Description 'capture Ctrl+F before AutoCAD OSNAP handling'
+Ensure-LineAfter -Path $plugin -Anchor '            PlatformDynamicRefreshManager.EnsureInitialized();' -Line '            AugustGlobalShortcutManager.Initialize();' -Description 'capture Ctrl+F before AutoCAD OSNAP handling'
 
-$oldShortcutTerminate = @'
-            FloatingToolsCommands.Terminate();
-            CommandUsageTracker.Terminate();
-'@
-$newShortcutTerminate = @'
-            AugustGlobalShortcutManager.Terminate();
-            FloatingToolsCommands.Terminate();
-            CommandUsageTracker.Terminate();
-'@
-Replace-Once -Path $plugin -Old $oldShortcutTerminate -New $newShortcutTerminate -Description 'remove global CE shortcut filter at termination'
+Ensure-LineBefore -Path $plugin -Anchor '            FloatingToolsCommands.Terminate();' -Line '            AugustGlobalShortcutManager.Terminate();' -Description 'remove global CE shortcut filter at termination'
 
 # Give the explicit saved-project/drawing-settings mode real effect. Shared
 # defaults are always available; drawing overrides are skipped when the user

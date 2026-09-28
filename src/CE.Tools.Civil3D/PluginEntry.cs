@@ -31,6 +31,8 @@ namespace CETools.Civil3D
             SewerNetworkDynamicSequenceManager.Initialize();
             CeInteractionTelemetryManager.Initialize();
             UniversalDynamicRefreshManager.Initialize();
+            PlatformDynamicRefreshManager.EnsureInitialized();
+            AugustGlobalShortcutManager.Initialize();
             RoadAlignmentNameSync.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
@@ -45,6 +47,7 @@ namespace CETools.Civil3D
             SewerNetworkDynamicSequenceManager.Terminate();
             CogoPointProjectStyleManager.Terminate();
             ProjectStylePresetManager.Terminate();
+            AugustGlobalShortcutManager.Terminate();
             FloatingToolsCommands.Terminate();
             CommandUsageTracker.Terminate();
             LinkedTableAutoRefreshManager.Terminate();
