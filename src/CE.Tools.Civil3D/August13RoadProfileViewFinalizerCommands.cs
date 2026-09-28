@@ -718,16 +718,21 @@ namespace CETools.Civil3D
                     false) as CivilProfile;
                 if (profile == null || profile.Name.StartsWith(
                     "CE_BAND_SRC_", StringComparison.OrdinalIgnoreCase)) continue;
-                string identity = ((profile.Name ?? string.Empty) + " " +
-                    (profile.Description ?? string.Empty)).ToUpperInvariant();
-
-                bool ground = IsGroundProfileIdentity(identity);
+                // Descriptions such as "SURFACE DESIGN" are common on FG
+                // layout profiles. Civil 3D's native profile type takes
+                // precedence over a free-form description or naming convention.
+                string identity = (profile.Name ?? string.Empty).ToUpperInvariant();
+                bool ground = profile.ProfileType == ProfileType.EG ||
+                    (profile.ProfileType != ProfileType.FG &&
+                     IsGroundProfileIdentity(identity));
                 bool excluded = ground;
                 if (ground && fallbackGroundProfileId.IsNull)
                     fallbackGroundProfileId = profileId;
                 if (!excluded && fallbackDesignProfileId.IsNull)
                     fallbackDesignProfileId = profileId;
-                if (finalProfileId.IsNull && IsFinalDesignProfileIdentity(identity))
+                if (finalProfileId.IsNull && !ground &&
+                    (profile.ProfileType == ProfileType.FG ||
+                     IsFinalDesignProfileIdentity(identity)))
                     finalProfileId = profileId;
                 if (!excluded && leftProfileId.IsNull &&
                     (identity.Contains("LEFT") || identity.Contains("LHS") ||
