@@ -872,18 +872,16 @@ namespace CETools.Civil3D
                         Cmd("Export Drawing Book Index", "CE_BOOKINDEX ", "Export the standard and existing layout register to Excel."))));
         }
 
-        private static RibbonRow Row(params RibbonItem[] items)
+        private static RibbonItem[] Row(params RibbonItem[] items)
         {
-            var row = new RibbonRow();
-            foreach (RibbonItem item in items) row.RowItems.Add(item);
-            return row;
+            return items;
         }
 
         private static void AddPanel(
             RibbonTab tab,
             string panelId,
             string title,
-            params RibbonRow[] rows)
+            params RibbonItem[][] rows)
         {
             var source = new RibbonPanelSource
             {
@@ -892,7 +890,11 @@ namespace CETools.Civil3D
                     ? title.ToUpperInvariant()
                     : "CE-" + title.ToUpperInvariant()
             };
-            foreach (RibbonRow row in rows) source.Rows.Add(row);
+            foreach (RibbonItem[] row in rows)
+            {
+                foreach (RibbonItem item in row)
+                    source.Items.Add(item);
+            }
             tab.Panels.Add(new RibbonPanel { Source = source });
         }
 

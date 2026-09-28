@@ -10,6 +10,7 @@ using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+using Surface = Autodesk.Civil.DatabaseServices.Surface;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.August19CadastralSewerRouteCommands))]
 
