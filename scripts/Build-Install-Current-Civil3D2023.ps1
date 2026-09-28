@@ -18,7 +18,11 @@ if ($missing.Count -gt 0) { throw "Civil 3D 2023 assemblies are missing: $($miss
 
 $dotnet = Get-Command dotnet.exe -ErrorAction Stop
 $sdk = (& $dotnet.Source --version).Trim()
-if (-not $sdk.StartsWith('8.')) { throw "The .NET 8 SDK is required. Selected SDK: $sdk" }
+if ($LASTEXITCODE -ne 0 -or $sdk -notmatch '^(\d+)\.') {
+    throw 'Could not resolve an installed .NET SDK. Install .NET SDK 8 or newer.'
+}
+if ([int]$Matches[1] -lt 8) { throw "The .NET 8 SDK or newer is required. Selected SDK: $sdk" }
+Write-Host "Using .NET SDK $sdk for the Civil 3D 2023 net48 build." -ForegroundColor Cyan
 $sourceCommit = 'UNKNOWN'
 if (Get-Command git -ErrorAction SilentlyContinue) {
     try {
