@@ -2,6 +2,12 @@ name: Civil 3D 2023 build and release package
 
 on:
   workflow_dispatch:
+    inputs:
+      build_civil3d_2023:
+        description: 'Build the compiled Civil 3D 2023 installer (requires the self-hosted Windows/Civil3D2023 runner)'
+        required: true
+        type: boolean
+        default: false
   push:
     branches:
       - main
@@ -44,7 +50,22 @@ jobs:
       - name: Run host-independent engineering tests
         run: dotnet run --project tests/CE.Tools.Core.Tests/CE.Tools.Core.Tests.csproj -c Release
 
+      - name: Package exact source for local Civil 3D build
+        shell: bash
+        run: |
+          mkdir -p artifacts/source
+          git archive --format=zip --output="artifacts/source/CE-Tools-Civil3D-2023-source-${GITHUB_SHA:0:8}.zip" HEAD
+
+      - name: Upload source ZIP
+        uses: actions/upload-artifact@v4
+        with:
+          name: CE-Tools-Civil3D-2023-source-${{ github.sha }}
+          path: artifacts/source/CE-Tools-Civil3D-2023-source-*.zip
+          if-no-files-found: error
+          retention-days: 30
+
   build-civil3d-2023:
+    if: github.event_name == 'workflow_dispatch' && inputs.build_civil3d_2023
     needs: source-validation
     runs-on: [self-hosted, Windows, X64, Civil3D2023]
     steps:

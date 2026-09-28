@@ -208,6 +208,15 @@ Close Civil 3D 2023, then double-click:
 BUILD-INSTALL-CIVIL3D-2023.cmd
 ```
 
+GitHub Actions runs source validation on each push and uploads a source ZIP.
+This ZIP contains source code, not the compiled DLLs. Extract it on a Windows
+computer with Civil 3D 2023 installed and run the command above. The compiled
+installer job requires a registered, online self-hosted runner with the
+`Windows`, `X64`, and `Civil3D2023` labels. To request that job, open the
+**Civil 3D 2023 build and release package** workflow, choose **Run workflow**,
+and enable **Build the compiled Civil 3D 2023 installer**. Normal pushes do not
+wait indefinitely for that runner.
+
 The command stages the repository outside OneDrive, builds Release x64 with the
 pinned .NET 8 SDK, writes a V61 source-commit manifest, produces a verified ZIP
 and installs to:
