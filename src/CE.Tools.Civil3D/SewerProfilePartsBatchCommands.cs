@@ -19,6 +19,10 @@ namespace CETools.Civil3D
 {
     public sealed class SewerProfilePartsBatchCommands
     {
+        private static readonly HashSet<string> LastSelectedNetworks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static bool LastMatchAlignment = true;
+        private static bool LastOpenLabels = true;
+
         [CommandMethod("CE_TOOLS", "CE_SEWPROFILEPARTSMULTI",
             CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void DrawSelectedNetworksInProfileViews()
@@ -38,6 +42,10 @@ namespace CETools.Civil3D
             if (picker.DialogResult != true) return;
             List<NetworkChoice> chosen = picker.SelectedNetworks;
             if (chosen.Count == 0) return;
+            LastSelectedNetworks.Clear();
+            foreach (NetworkChoice item in chosen) LastSelectedNetworks.Add(item.Name);
+            LastMatchAlignment = picker.MatchAlignment;
+            LastOpenLabels = picker.OpenLabels;
 
             PromptSelectionResult selection = document.Editor.SelectImplied();
             if (selection.Status == PromptStatus.OK && selection.Value != null && selection.Value.Count > 0)
@@ -79,8 +87,8 @@ namespace CETools.Civil3D
                     List<ObjectId> parts = ReadParts(document.Database, network.Id);
                     foreach (ViewChoice view in views)
                     {
-                        if (picker.MatchAlignment &&
-                            (network.AlignmentId.IsNull || view.AlignmentId != network.AlignmentId))
+                        if (picker.MatchAlignment && !network.AlignmentId.IsNull &&
+                            view.AlignmentId != network.AlignmentId)
                         {
                             unmatched++;
                             continue;
@@ -130,8 +138,14 @@ namespace CETools.Civil3D
                     try
                     {
                         CivilNetwork network = read.GetObject(id, OpenMode.ForRead, false) as CivilNetwork;
-                        if (network != null && !network.IsReferenceObject)
-                            result.Add(new NetworkChoice(id, network.Name, network.ReferenceAlignmentId));
+                        if (network == null) continue;
+                        // An unassigned reference alignment is normal for a
+                        // gravity network. Civil 3D 2023 can throw from this
+                        // getter; do not discard the entire valid network.
+                        ObjectId alignmentId = ObjectId.Null;
+                        try { alignmentId = network.ReferenceAlignmentId; }
+                        catch { }
+                        result.Add(new NetworkChoice(id, network.Name, alignmentId));
                     }
                     catch { }
                 }
@@ -185,9 +199,9 @@ namespace CETools.Civil3D
                 var footer = new StackPanel { Orientation = Orientation.Vertical };
                 DockPanel.SetDock(footer, Dock.Bottom);
                 root.Children.Add(footer);
-                _match = new CheckBox { Content = "Match network reference alignment to profile view", IsChecked = true, Margin = new Thickness(0, 8, 0, 5) };
+                _match = new CheckBox { Content = "Match assigned network alignment to profile view", IsChecked = LastMatchAlignment, Margin = new Thickness(0, 8, 0, 5) };
                 footer.Children.Add(_match);
-                _labels = new CheckBox { Content = "Open pipe and structure profile label popup after drawing", IsChecked = true, Margin = new Thickness(0, 0, 0, 12) };
+                _labels = new CheckBox { Content = "Open pipe and structure profile label popup after drawing", IsChecked = LastOpenLabels, Margin = new Thickness(0, 0, 0, 12) };
                 footer.Children.Add(_labels);
                 var buttons = new StackPanel { Orientation = Orientation.Horizontal, HorizontalAlignment = HorizontalAlignment.Right };
                 var apply = new Button { Content = "Draw in selected profile views", Padding = new Thickness(12, 6, 12, 6), Margin = new Thickness(0, 0, 8, 0) };
@@ -201,7 +215,7 @@ namespace CETools.Civil3D
                 list.Children.Add(new TextBlock { Text = "Select the gravity networks to draw:", FontSize = 16, Margin = new Thickness(0, 0, 0, 12) });
                 foreach (NetworkChoice network in networks)
                 {
-                    var check = new CheckBox { Content = network.Name, IsChecked = true, Margin = new Thickness(0, 0, 0, 8) };
+                    var check = new CheckBox { Content = network.Name, IsChecked = LastSelectedNetworks.Count == 0 || LastSelectedNetworks.Contains(network.Name), Margin = new Thickness(0, 0, 0, 8) };
                     _checks.Add(check); list.Children.Add(check);
                 }
                 root.Children.Add(new ScrollViewer { Content = list, VerticalScrollBarVisibility = ScrollBarVisibility.Auto });

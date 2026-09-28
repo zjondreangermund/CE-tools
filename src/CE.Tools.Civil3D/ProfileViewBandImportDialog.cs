@@ -15,6 +15,9 @@ namespace CETools.Civil3D
     /// </summary>
     internal sealed class ProfileViewBandImportDialog : Window
     {
+        private static string _lastSelectedStyle;
+        private static bool _lastShowLabels = true;
+        private static bool _lastOpenNative = true;
         private readonly IList<string> _styleNames;
         private readonly IList<string> _viewNames;
         private readonly ComboBox _bandSet;
@@ -94,7 +97,12 @@ namespace CETools.Civil3D
                 IsEditable = false,
                 ItemsSource = _styleNames
             };
-            if (_styleNames.Count > 0) _bandSet.SelectedIndex = 0;
+            if (_styleNames.Count > 0)
+            {
+                int previous = _styleNames.ToList().FindIndex(name =>
+                    string.Equals(name, _lastSelectedStyle, StringComparison.OrdinalIgnoreCase));
+                _bandSet.SelectedIndex = previous >= 0 ? previous : 0;
+            }
             Grid.SetColumn(_bandSet, 1);
             Grid.SetRow(_bandSet, 1);
             controls.Children.Add(_bandSet);
@@ -118,7 +126,7 @@ namespace CETools.Civil3D
             _showLabels = new ComboBox
             {
                 ItemsSource = new[] { "Yes - show labels for every band row", "No - hide band labels" },
-                SelectedIndex = 0,
+                SelectedIndex = _lastShowLabels ? 0 : 1,
                 Padding = new Thickness(7, 5, 7, 5),
                 FontWeight = FontWeights.SemiBold,
                 IsEditable = false
@@ -167,7 +175,7 @@ namespace CETools.Civil3D
             _openNative = new ComboBox
             {
                 ItemsSource = new[] { "Yes - open native properties after apply", "No - finish after batch" },
-                SelectedIndex = 0,
+                SelectedIndex = _lastOpenNative ? 0 : 1,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 18, 0),
                 MinWidth = 280,
@@ -230,6 +238,9 @@ namespace CETools.Civil3D
             SelectedStyleName = selected;
             ShowLabels = _showLabels != null && _showLabels.SelectedIndex == 0;
             OpenNativeDialog = _openNative != null && _openNative.SelectedIndex == 0;
+            _lastSelectedStyle = SelectedStyleName;
+            _lastShowLabels = ShowLabels;
+            _lastOpenNative = OpenNativeDialog;
             Accepted = true;
             DialogResult = true;
             Close();
