@@ -19,8 +19,16 @@ if ($missing.Count -gt 0) { throw "Civil 3D 2023 assemblies are missing: $($miss
 $dotnet = Get-Command dotnet.exe -ErrorAction Stop
 $sdk = (& $dotnet.Source --version).Trim()
 if (-not $sdk.StartsWith('8.')) { throw "The .NET 8 SDK is required. Selected SDK: $sdk" }
-$sourceCommit = (& git -C $repo rev-parse HEAD).Trim()
-if ($LASTEXITCODE -ne 0) { throw 'Could not determine the source commit.' }
+$sourceCommit = 'UNKNOWN'
+if (Get-Command git -ErrorAction SilentlyContinue) {
+    try {
+        $detectedCommit = (& git -C $repo rev-parse HEAD 2>$null).Trim()
+        if ($LASTEXITCODE -eq 0 -and $detectedCommit -match '^[0-9a-fA-F]{40}$') {
+            $sourceCommit = $detectedCommit
+        }
+    }
+    catch { }
+}
 
 $args = @('msbuild', $project, '/p:Configuration=Release', '/p:Platform=x64',
     '/p:AutoCADVersion=2023', "/p:AutoCADRoot=$autoCadRoot", "/p:Civil3DRoot=$civilRoot",
