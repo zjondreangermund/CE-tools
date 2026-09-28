@@ -11,8 +11,6 @@ using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
-[assembly: CommandClass(typeof(CETools.Civil3D.RoadAlignmentNameSyncCommands))]
-
 namespace CETools.Civil3D
 {
     /// <summary>Synchronizes CE road object names after an alignment is renamed in Civil 3D.</summary>
@@ -292,15 +290,4 @@ namespace CETools.Civil3D
         }
     }
 
-    public sealed class RoadAlignmentNameSyncCommands
-    {
-        [CommandMethod("CE_TOOLS", "CE_ROADNAMESYNC", CommandFlags.Modal)]
-        public void SynchronizeRoadNames()
-        {
-            Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            int renamed = RoadAlignmentNameSync.Sync(document);
-            if (document != null)
-                document.Editor.WriteMessage("\nCE_ROADNAMESYNC: related names updated={0}.", renamed);
-        }
-    }
 }
