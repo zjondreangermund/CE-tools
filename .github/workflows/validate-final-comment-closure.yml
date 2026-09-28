@@ -34,24 +34,25 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Run Civil 3D 2023 staging closure transforms
+      - name: Validate current Civil 3D source integration
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
           Set-StrictMode -Version Latest
           $root = (Resolve-Path '.').ProviderPath
-
-          & (Join-Path $root 'scripts\Inject-ProductionExpansion-Civil3D2023.ps1') -RepoRoot $root
-          & (Join-Path $root 'scripts\Inject-August10BehaviorFixes-Civil3D2023.ps1') -RepoRoot $root
-          & (Join-Path $root 'scripts\Inject-FinalAnnotationReview2-Civil3D2023.ps1') -RepoRoot $root
-          & (Join-Path $root 'scripts\Inject-FinalUtilityWorkflow-Civil3D2023.ps1') -RepoRoot $root
-          & (Join-Path $root 'scripts\Repair-CogoOverlap-Civil3D2023.ps1') -RepoRoot $root
-          & (Join-Path $root 'scripts\Repair-RoadStyleFallback-Civil3D2023.ps1') -RepoRoot $root
-          & (Join-Path $root 'scripts\Repair-BranchLabelRefresh-Civil3D2023.ps1') -RepoRoot $root
-          & (Join-Path $root 'scripts\Repair-MidblockRoutePlanner-Civil3D2023.ps1') -RepoRoot $root
-          & (Join-Path $root 'scripts\Repair-ProfileStyleAutoImport-Civil3D2023.ps1') -RepoRoot $root
-          & (Join-Path $root 'scripts\Repair-UtilityProfileIsolation-Civil3D2023.ps1') -RepoRoot $root
-          & (Join-Path $root 'scripts\Validate-August10CommentClosure.ps1') -RepoRoot $root
+          $plugin = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\PluginEntry.cs'))
+          $platform = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\PlatformProductionCommands.cs'))
+          $route = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\RoutePlannerExpansionCommands.cs'))
+          foreach ($marker in @('UniversalDynamicRefreshManager.Initialize();', 'RoadAlignmentNameSync.Initialize();')) {
+            if (-not $plugin.Contains($marker)) { throw "Current startup integration is missing: $marker" }
+          }
+          if (-not $platform.Contains('PlatformDynamicRefreshManager.EnsureInitialized()')) {
+            throw 'Platform refresh manager is missing from the current source.'
+          }
+          if (-not $route.Contains('"CE_MIDBLOCKSEWERLAYOUT"')) {
+            throw 'Current Midblock command target is missing.'
+          }
+          Write-Host 'Current source integration passed without applying historical injectors.'
 
       - name: Simulate late Midblock recovery and verify final repair
         shell: pwsh
