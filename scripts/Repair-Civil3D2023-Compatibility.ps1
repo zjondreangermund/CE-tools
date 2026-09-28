@@ -154,7 +154,14 @@ $newUsageAggregate = @'
                         // Estimated savings are derived from the aggregated Clicks value.
                         target.IsFavorite = target.IsFavorite || source.IsFavorite;
 '@
-Replace-RequiredText -Path $usagePath -Old $oldUsageAggregate -New $newUsageAggregate -Description 'avoid assigning derived read-only command usage savings properties'
+$usageText = [System.IO.File]::ReadAllText($usagePath)
+if ($usageText.Contains($oldUsageAggregate)) {
+    Replace-RequiredText -Path $usagePath -Old $oldUsageAggregate -New $newUsageAggregate -Description 'avoid assigning derived read-only command usage savings properties'
+} elseif (-not $usageText.Contains('target.EstimatedClicksSaved +=') -and -not $usageText.Contains('target.EstimatedSecondsSaved +=')) {
+    Write-Host 'Already repaired: avoid assigning derived read-only command usage savings properties' -ForegroundColor DarkGreen
+} else {
+    throw 'Command usage aggregation still assigns a derived savings property in an unrecognized form.'
+}
 
 $vertexPath = Join-Path $src 'VertexSettingOutCommands.cs'
 $oldRefreshHeader = @'
@@ -184,7 +191,9 @@ $newRefreshHeader = @'
 
             using (DocumentLock documentLock = document.LockDocument())
 '@
-Replace-RequiredText -Path $vertexPath -Old $oldRefreshHeader -New $newRefreshHeader -Description 'retain COGO style refresh state outside the table transaction'
+if (-not ([System.IO.File]::ReadAllText($vertexPath)).Contains('bool styleCogo = false;')) {
+    Replace-RequiredText -Path $vertexPath -Old $oldRefreshHeader -New $newRefreshHeader -Description 'retain COGO style refresh state outside the table transaction'
+}
 
 $oldLinkRead = @'
                 VertexSettingLink link = ReadTableLink(table);
@@ -195,7 +204,9 @@ $newLinkRead = @'
                 applyCogoStyles = string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase);
                 List<ObjectId> sourceIds = link.SourceHandles
 '@
-Replace-RequiredText -Path $vertexPath -Old $oldLinkRead -New $newLinkRead -Description 'capture linked COGO output mode before leaving transaction scope'
+if (-not ([System.IO.File]::ReadAllText($vertexPath)).Contains('styleCogo = string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase);')) {
+    Replace-RequiredText -Path $vertexPath -Old $oldLinkRead -New $newLinkRead -Description 'capture linked COGO output mode before leaving transaction scope'
+}
 
 # Replace only the RefreshTable tail. A global replacement of the COGO condition
 # also changes CreateOutput(), where applyCogoStyles is intentionally not in scope.
@@ -219,7 +230,9 @@ $newRefreshTail = @'
             }
         }
 '@
-Replace-RequiredText -Path $vertexPath -Old $oldRefreshTail -New $newRefreshTail -Description 'use retained COGO output mode only after the RefreshTable transaction'
+if (-not ([System.IO.File]::ReadAllText($vertexPath)).Contains('if (styleCogo)')) {
+    Replace-RequiredText -Path $vertexPath -Old $oldRefreshTail -New $newRefreshTail -Description 'use retained COGO output mode only after the RefreshTable transaction'
+}
 
 $oldLevelMethod = @'
         private static void ApplyLevelReferences(
@@ -247,7 +260,9 @@ $newLevelMethod = @'
         private static void ApplyLevelReferences(
             Database database,
 '@
-Replace-RequiredText -Path $vertexPath -Old $oldLevelMethod -New $newLevelMethod -Description 'restore safe Civil surface level sampling helper'
+if (-not ([System.IO.File]::ReadAllText($vertexPath)).Contains('private static double SampleSurfaceLevel(')) {
+    Replace-RequiredText -Path $vertexPath -Old $oldLevelMethod -New $newLevelMethod -Description 'restore safe Civil surface level sampling helper'
+}
 
 # Fail early if a future source edit prevents any of the compile repairs above.
 $cogoText = [System.IO.File]::ReadAllText($cogoPath)
@@ -260,9 +275,6 @@ if ($usageText.Contains('target.EstimatedClicksSaved +=') -or $usageText.Contain
 }
 $vertexText = [System.IO.File]::ReadAllText($vertexPath)
 foreach ($requiredVertexMarker in @(
-    'bool applyCogoStyles = false;',
-    'applyCogoStyles = string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase);',
-    'if (applyCogoStyles)',
     'private static double SampleSurfaceLevel(',
     'private static ObjectId CreateOutput(',
     'if (string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))'
@@ -271,10 +283,18 @@ foreach ($requiredVertexMarker in @(
         throw "Civil 3D 2023 repair verification failed: missing vertex marker: $requiredVertexMarker"
     }
 }
+if (-not (($vertexText.Contains('bool styleCogo = false;') -and
+            $vertexText.Contains('styleCogo = string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase);') -and
+            $vertexText.Contains('if (styleCogo)')) -or
+           ($vertexText.Contains('bool applyCogoStyles = false;') -and
+            $vertexText.Contains('applyCogoStyles = string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase);') -and
+            $vertexText.Contains('if (applyCogoStyles)')))) {
+    throw 'Civil 3D 2023 repair verification failed: COGO refresh state is incomplete.'
+}
 
-# There must be only one applyCogoStyles conditional: the post-transaction
-# RefreshTable condition. CreateOutput must continue to inspect link.OutputType.
-$applyCogoConditionalCount = ([regex]::Matches($vertexText, 'if \(applyCogoStyles\)')).Count
+# There must be only one post-transaction COGO conditional in RefreshTable.
+# CreateOutput must continue to inspect link.OutputType.
+$applyCogoConditionalCount = ([regex]::Matches($vertexText, 'if \((?:applyCogoStyles|styleCogo)\)')).Count
 if ($applyCogoConditionalCount -ne 1) {
     throw "Civil 3D 2023 repair verification failed: expected one applyCogoStyles conditional, found $applyCogoConditionalCount."
 }
