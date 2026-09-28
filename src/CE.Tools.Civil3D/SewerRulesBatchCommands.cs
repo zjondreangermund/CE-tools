@@ -109,6 +109,10 @@ namespace CETools.Civil3D
                 "Yes",
                 "Calls the native Civil 3D ApplyRules() operation separately for every selected part.",
                 new[] { "Yes", "No" });
+            model.AddChoice("DrawInProfiles", "04 Civil 3D operation",
+                "Draw selected parts in profile views", "Yes",
+                "After applying rules, select multiple profile views. Only matching pipes and structures will be drawn.",
+                new[] { "Yes", "No" });
 
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
@@ -264,6 +268,11 @@ namespace CETools.Civil3D
                 new List<string> { "Part", "Name", "Network", "Reference Surface", "Rule / Result" },
                 rows,
                 "CE CIVIL 3D APPLY RULES RESULTS");
+            if (string.Equals(model.Text("DrawInProfiles"), "Yes", StringComparison.OrdinalIgnoreCase))
+            {
+                document.Editor.SetImpliedSelection(parts.Select(item => item.Id).ToArray());
+                document.SendStringToExecute("CE_SEWSELECTEDPARTSPROFILEMULTI ", true, false, true);
+            }
         }
 
         private static PromptSelectionResult GetSelection(Editor editor, string message)

@@ -156,6 +156,9 @@ namespace CETools.Civil3D
             settings.AddPositiveInteger(
                 "Count", "01 Stepped offsets", "Number of offsets", 1,
                 "Create this many linked stepped feature lines from the selected source.");
+            settings.AddChoice("Side", "01 Stepped offsets", "Offset side", "Pick side in drawing",
+                "Apply the same side choice to each selected source. Inside and Outside use the enclosed area for closed lines; for open lines they map to right and left.",
+                new[] { "Pick side in drawing", "Left / positive", "Right / negative", "Inside", "Outside" });
             settings.AddText(
                 "Prefix", "02 Naming", "Feature-line name prefix", defaultPrefix,
                 "Names are created as Prefix-1, Prefix-2, and so on.");
@@ -174,11 +177,15 @@ namespace CETools.Civil3D
                 ? defaultPrefix
                 : settings.Text("Prefix");
 
-            PromptPointResult sideResult = editor.GetPoint(
-                "\nPick the side on which the stepped offsets must be created for the selected feature lines: ");
-            if (sideResult.Status != PromptStatus.OK) return;
-
-            Point3d sidePoint = sideResult.Value.TransformBy(editor.CurrentUserCoordinateSystem);
+            string side = settings.Text("Side");
+            Point3d sidePoint = Point3d.Origin;
+            if (string.Equals(side, "Pick side in drawing", StringComparison.OrdinalIgnoreCase))
+            {
+                PromptPointResult sideResult = editor.GetPoint(
+                    "\nPick the side on which the stepped offsets must be created for the selected feature lines: ");
+                if (sideResult.Status != PromptStatus.OK) return;
+                sidePoint = sideResult.Value.TransformBy(editor.CurrentUserCoordinateSystem);
+            }
             int created = 0;
             int failed = 0;
             using (DocumentLock documentLock = document.LockDocument())
@@ -210,7 +217,9 @@ namespace CETools.Civil3D
 
                             using (Polyline plan = BuildPlanPolyline(source))
                             {
-                                sign = ResolveOffsetSign(plan, horizontalStep, sidePoint);
+                                sign = string.Equals(side, "Pick side in drawing", StringComparison.OrdinalIgnoreCase)
+                                    ? ResolveOffsetSign(plan, horizontalStep, sidePoint)
+                                    : ResolveNamedOffsetSign(plan, horizontalStep, side);
                                 modelSpace.AppendEntity(plan);
                                 transaction.AddNewlyCreatedDBObject(plan, true);
 
@@ -815,6 +824,37 @@ namespace CETools.Civil3D
             if (double.IsInfinity(positive) && double.IsInfinity(negative))
                 throw new InvalidOperationException("An offset could not be created on either side.");
             return positive <= negative ? 1.0 : -1.0;
+        }
+
+        private static double ResolveNamedOffsetSign(Polyline plan, double distance, string side)
+        {
+            if (string.Equals(side, "Left / positive", StringComparison.OrdinalIgnoreCase)) return 1.0;
+            if (string.Equals(side, "Right / negative", StringComparison.OrdinalIgnoreCase)) return -1.0;
+            if (!plan.Closed || plan.NumberOfVertices < 3)
+                return string.Equals(side, "Inside", StringComparison.OrdinalIgnoreCase) ? -1.0 : 1.0;
+
+            // For a closed line the outer offset has the larger perimeter.
+            // This also handles clockwise and counterclockwise source lines.
+            double positive = OffsetLength(plan, distance);
+            double negative = OffsetLength(plan, -distance);
+            if (double.IsInfinity(positive) && double.IsInfinity(negative))
+                throw new InvalidOperationException("An offset could not be created on either side.");
+            double outside = positive >= negative ? 1.0 : -1.0;
+            return string.Equals(side, "Inside", StringComparison.OrdinalIgnoreCase) ? -outside : outside;
+        }
+
+        private static double OffsetLength(Polyline plan, double distance)
+        {
+            DBObjectCollection curves = null;
+            try
+            {
+                curves = plan.GetOffsetCurves(distance);
+                if (curves == null || curves.Count != 1) return double.NegativeInfinity;
+                AcCurve curve = curves[0] as AcCurve;
+                return curve == null ? double.NegativeInfinity : curve.GetDistanceAtParameter(curve.EndParam);
+            }
+            catch { return double.NegativeInfinity; }
+            finally { Dispose(curves); }
         }
 
         private static double DistanceToOffset(Polyline plan, double offset, Point3d sidePoint)

@@ -7,6 +7,7 @@ using System.Windows.Controls;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
+using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
@@ -22,6 +23,126 @@ namespace CETools.Civil3D
         private static readonly HashSet<string> LastSelectedNetworks = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private static bool LastMatchAlignment = true;
         private static bool LastOpenLabels = true;
+
+        [CommandMethod("CE_TOOLS", "CE_SEWSELECTEDPARTSPROFILEMULTI",
+            CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void DrawSelectedPartsInMatchingViews()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (document == null || civil == null) return;
+            List<NetworkChoice> networks = ReadNetworks(document.Database, civil);
+            if (networks.Count == 0) return;
+
+            PromptSelectionResult partSelection = document.Editor.SelectImplied();
+            if (partSelection.Status != PromptStatus.OK || partSelection.Value == null || partSelection.Value.Count == 0)
+                partSelection = document.Editor.GetSelection(new PromptSelectionOptions
+                {
+                    MessageForAdding = "\nSelect multiple sewer pipes and structures to draw: ",
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
+            document.Editor.SetImpliedSelection(new ObjectId[0]);
+            if (partSelection.Status != PromptStatus.OK || partSelection.Value == null) return;
+            var selectedIds = new HashSet<ObjectId>(partSelection.Value.GetObjectIds());
+            var partNetworks = new Dictionary<ObjectId, NetworkChoice>();
+            foreach (NetworkChoice network in networks)
+                foreach (ObjectId id in ReadParts(document.Database, network.Id))
+                    if (selectedIds.Contains(id)) partNetworks[id] = network;
+            if (partNetworks.Count == 0)
+            {
+                document.Editor.WriteMessage("\nNo gravity-network pipes or structures were selected.");
+                return;
+            }
+
+            PromptSelectionResult viewSelection = document.Editor.GetSelection(new PromptSelectionOptions
+            {
+                MessageForAdding = "\nSelect multiple destination sewer profile views: ",
+                AllowDuplicates = false,
+                RejectObjectsFromNonCurrentSpace = true
+            });
+            if (viewSelection.Status != PromptStatus.OK || viewSelection.Value == null) return;
+            var views = new List<ViewChoice>();
+            using (Transaction read = document.Database.TransactionManager.StartTransaction())
+                foreach (ObjectId id in viewSelection.Value.GetObjectIds().Distinct())
+                {
+                    try
+                    {
+                        ProfileView view = read.GetObject(id, OpenMode.ForRead, false) as ProfileView;
+                        if (view != null && !view.IsReferenceObject)
+                            views.Add(new ViewChoice(id, view.AlignmentId));
+                    }
+                    catch { }
+                }
+            if (views.Count == 0) return;
+
+            int drawn = 0, unmatched = 0, rejected = 0;
+            using (DocumentLock documentLock = document.LockDocument())
+                foreach (var pair in partNetworks)
+                    foreach (ViewChoice view in views)
+                    {
+                        // A network with no assigned alignment cannot safely
+                        // be placed into an arbitrary selected profile view.
+                        if (!MatchesView(document.Database, pair.Key, pair.Value, view))
+                        {
+                            unmatched++;
+                            continue;
+                        }
+                        try
+                        {
+                            using (Transaction write = document.Database.TransactionManager.StartTransaction())
+                            {
+                                DBObject part = write.GetObject(pair.Key, OpenMode.ForWrite, false);
+                                MethodInfo add = part.GetType().GetMethod("AddToProfileView",
+                                    BindingFlags.Public | BindingFlags.Instance, null,
+                                    new[] { typeof(ObjectId) }, null);
+                                if (add == null) { rejected++; continue; }
+                                add.Invoke(part, new object[] { view.Id });
+                                write.Commit();
+                                drawn++;
+                            }
+                        }
+                        catch { rejected++; }
+                    }
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_SEWSELECTEDPARTSPROFILEMULTI complete. Selected parts={0}; views={1}; drawn={2}; unmatched alignment pairs={3}; already present/rejected={4}.",
+                partNetworks.Count, views.Count, drawn, unmatched, rejected);
+        }
+
+        private static bool MatchesView(Database database, ObjectId partId,
+            NetworkChoice network, ViewChoice view)
+        {
+            if (!network.AlignmentId.IsNull && network.AlignmentId == view.AlignmentId)
+                return true;
+            if (view.AlignmentId.IsNull) return false;
+            try
+            {
+                using (Transaction read = database.TransactionManager.StartTransaction())
+                {
+                    Alignment alignment = read.GetObject(view.AlignmentId, OpenMode.ForRead, false) as Alignment;
+                    DBObject part = read.GetObject(partId, OpenMode.ForRead, false);
+                    if (alignment == null || part == null) return false;
+                    var pipe = part as Pipe;
+                    Point3d point;
+                    if (pipe != null)
+                    {
+                        Point3d a = pipe.StartPoint, b = pipe.EndPoint;
+                        point = new Point3d((a.X + b.X) / 2, (a.Y + b.Y) / 2, (a.Z + b.Z) / 2);
+                    }
+                    else
+                    {
+                        var structure = part as Structure;
+                        if (structure == null) return false;
+                        point = structure.Position;
+                    }
+                    double station = 0, offset = 0;
+                    alignment.StationOffset(point.X, point.Y, ref station, ref offset);
+                    return Math.Abs(offset) <= 5.0;
+                }
+            }
+            catch { return false; }
+        }
 
         [CommandMethod("CE_TOOLS", "CE_SEWPROFILEPARTSMULTI",
             CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -87,14 +208,13 @@ namespace CETools.Civil3D
                     List<ObjectId> parts = ReadParts(document.Database, network.Id);
                     foreach (ViewChoice view in views)
                     {
-                        if (picker.MatchAlignment && !network.AlignmentId.IsNull &&
-                            view.AlignmentId != network.AlignmentId)
-                        {
-                            unmatched++;
-                            continue;
-                        }
                         foreach (ObjectId partId in parts)
                         {
+                            if (picker.MatchAlignment && !MatchesView(document.Database, partId, network, view))
+                            {
+                                unmatched++;
+                                continue;
+                            }
                             try
                             {
                                 // Civil 3D opens the profile view internally. One

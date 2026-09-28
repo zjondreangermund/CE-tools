@@ -167,6 +167,11 @@ namespace CETools.Civil3D
                         "Choose multiple gravity networks, select multiple profile views, draw their pipes and structures, then optionally open the pipe/structure profile label popup.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
+                        "Draw Selected Sewer Parts in Matching Profile Views",
+                        "CE_SEWSELECTEDPARTSPROFILEMULTI",
+                        "Select multiple pipes and structures, then multiple profile views. Draw parts only where the network alignment matches or the part is within 5 drawing units of the view alignment.",
+                        "02 Sewer"),
+                    new DisciplineWorkflowAction(
                         "Reverse Multiple Pipe Slopes to Outlet",
                         "CE_PIPESLOPETOOUTLET",
                         "Select multiple gravity pipes, specify the low point/outlet, and reverse only those pipe end elevations that currently fall away from the outlet.",
