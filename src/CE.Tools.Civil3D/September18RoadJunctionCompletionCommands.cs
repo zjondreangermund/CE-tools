@@ -532,7 +532,8 @@ namespace CETools.Civil3D
         private static bool RefreshSurfaceProfile(DBObject profile)
         {
             if (profile == null) return false;
-            if ((profile.Name ?? string.Empty).StartsWith("CE_BAND_SRC_",
+            string profileName = Convert.ToString(ReadProperty(profile, "Name"), CultureInfo.CurrentCulture) ?? string.Empty;
+            if (profileName.StartsWith("CE_BAND_SRC_",
                     StringComparison.OrdinalIgnoreCase)) return false;
             bool refreshed = TryInvoke(profile, "Rebuild");
             refreshed = TryInvoke(profile, "Update") || refreshed;
