@@ -1415,7 +1415,10 @@ namespace CETools.Civil3D
             {
                 active.Database.DisableUndoRecording(true);
                 undoDisabled = true;
-                PlatformProductionCommands.RefreshAll(active);
+                // Idle runs outside a document command. Civil 3D writes performed by
+                // the linked daylight refresh require an explicit document lock.
+                using (active.LockDocument())
+                    PlatformProductionCommands.RefreshAll(active);
                 _pending = false;
             }
             catch { }
