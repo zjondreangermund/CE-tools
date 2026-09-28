@@ -200,17 +200,23 @@ namespace CETools.Civil3D
                     bool local = false;
                     foreach (KeyValuePair<ObjectId, List<FinalProfilePvi>> item in profiles)
                     {
-                        if (!reversedProfiles.Add(item.Key)) continue;
+                        if (reversedProfiles.Contains(item.Key)) continue;
                         CivilProfile profile = SafeOpen<CivilProfile>(transaction, item.Key, OpenMode.ForWrite);
                         if (profile == null) continue;
                         if (ReverseFinalProfilePvis(profile, item.Value,
                                 alignment.StartingStation, alignment.EndingStation))
+                        {
+                            reversedProfiles.Add(item.Key);
                             local = true;
+                        }
                     }
 
-                    if (TryInvoke(view, "Rebuild") || TryInvoke(view, "Update") ||
-                        TryInvoke(view, "UpdateDisplay"))
-                        local = true;
+                    if (local)
+                    {
+                        TryInvoke(view, "Rebuild");
+                        TryInvoke(view, "Update");
+                        TryInvoke(view, "UpdateDisplay");
+                    }
                     Entity entity = view as Entity;
                     if (entity != null) entity.RecordGraphicsModified(true);
                     if (local) changed++; else skipped++;
@@ -526,6 +532,8 @@ namespace CETools.Civil3D
         private static bool RefreshSurfaceProfile(DBObject profile)
         {
             if (profile == null) return false;
+            if ((profile.Name ?? string.Empty).StartsWith("CE_BAND_SRC_",
+                    StringComparison.OrdinalIgnoreCase)) return false;
             bool refreshed = TryInvoke(profile, "Rebuild");
             refreshed = TryInvoke(profile, "Update") || refreshed;
             refreshed = TryInvoke(profile, "UpdateDisplay") || refreshed;
@@ -1086,9 +1094,10 @@ namespace CETools.Civil3D
                     viewIds.AddRange(ReadObjectIds(InvokeReturning(selectedView, member)));
                 foreach (string property in new[] { "ProfileIds", "Profiles" })
                     viewIds.AddRange(ReadObjectIds(ReadProperty(selectedView, property)));
-                viewIds = viewIds.Where(id => !id.IsNull).Distinct().ToList();
-                if (viewIds.Count > 0)
-                    candidateIds = viewIds;
+                // Some 2023 views report only graph overrides (often the EG
+                // surface) here. Retain every profile on the parent alignment
+                // so a cyan FG layout profile is not silently excluded.
+                candidateIds = candidateIds.Concat(viewIds.Where(id => !id.IsNull)).Distinct();
             }
 
             foreach (ObjectId profileId in candidateIds)
@@ -1114,15 +1123,20 @@ namespace CETools.Civil3D
 
         private static bool IsFinalRoadProfile(CivilProfile profile)
         {
-            string identity = ((profile.Name ?? string.Empty) + " " +
-                (profile.Description ?? string.Empty)).ToUpperInvariant();
-            bool excluded = IsGroundProfileIdentity(identity);
-
-            // Profile views can contain unnamed/legacy cyan layout profiles
-            // that do not contain FG, FINAL, DESIGN or PROPOSED. For a selected
-            // design view, reverse every non-ground road profile while leaving
-            // TOP/BOTTOM surface profiles to Civil 3D's native station update.
-            return !excluded && !IsSurfaceProfileIdentity(identity);
+            if (profile == null) return false;
+            // The description in road drawings can say "SURFACE DESIGN" even
+            // for a manually edited final-grade layout profile. Civil 3D's
+            // profile type, rather than that free-form description, decides.
+            try
+            {
+                if (profile.ProfileType == ProfileType.FG) return true;
+                if (profile.ProfileType == ProfileType.EG ||
+                    profile.ProfileType == ProfileType.CorridorFeature) return false;
+            }
+            catch { }
+            string name = (profile.Name ?? string.Empty).ToUpperInvariant();
+            return !IsGroundProfileIdentity(name) && !IsSurfaceProfileIdentity(name) &&
+                IsFinalDesignProfileIdentity(name);
         }
 
         private static bool IsSurfaceProfileIdentity(string identity)

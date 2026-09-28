@@ -1099,7 +1099,9 @@ namespace CETools.Civil3D
 
     internal sealed class FieldCompletionMultiChoiceWindow : System.Windows.Window
     {
-        private readonly System.Windows.Controls.ListBox _list;
+        private readonly System.Windows.Controls.StackPanel _items;
+        private readonly List<KeyValuePair<CivilChoice, System.Windows.Controls.CheckBox>> _checks =
+            new List<KeyValuePair<CivilChoice, System.Windows.Controls.CheckBox>>();
 
         internal FieldCompletionMultiChoiceWindow(
             string title,
@@ -1136,7 +1138,7 @@ namespace CETools.Civil3D
             };
             selectAll.Click += delegate
             {
-                _list.SelectAll();
+                foreach (var item in _checks) item.Value.IsChecked = true;
             };
             buttons.Children.Add(selectAll);
 
@@ -1150,7 +1152,8 @@ namespace CETools.Civil3D
             };
             ok.Click += delegate
             {
-                Selected = _list.SelectedItems.Cast<CivilChoice>().ToList();
+                Selected = _checks.Where(item => item.Value.IsChecked == true)
+                    .Select(item => item.Key).ToList();
                 if (Selected.Count > 0)
                 {
                     Accepted = true;
@@ -1180,15 +1183,24 @@ namespace CETools.Civil3D
                 System.Windows.Controls.Dock.Top);
             root.Children.Add(heading);
 
-            _list = new System.Windows.Controls.ListBox
+            var scroll = new System.Windows.Controls.ScrollViewer
             {
-                ItemsSource = choices == null
-                    ? new List<CivilChoice>()
-                    : choices.ToList(),
-                DisplayMemberPath = "Name",
-                SelectionMode = System.Windows.Controls.SelectionMode.Multiple
+                VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto
             };
-            root.Children.Add(_list);
+            _items = new System.Windows.Controls.StackPanel();
+            foreach (CivilChoice choice in choices ?? Enumerable.Empty<CivilChoice>())
+            {
+                var check = new System.Windows.Controls.CheckBox
+                {
+                    Content = choice.Name,
+                    Padding = new System.Windows.Thickness(5),
+                    MinHeight = 26
+                };
+                _checks.Add(new KeyValuePair<CivilChoice, System.Windows.Controls.CheckBox>(choice, check));
+                _items.Children.Add(check);
+            }
+            scroll.Content = _items;
+            root.Children.Add(scroll);
         }
 
         internal bool Accepted { get; private set; }

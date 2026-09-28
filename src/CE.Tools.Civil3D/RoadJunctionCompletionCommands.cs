@@ -33,6 +33,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Create T-junction", "CE_ROADTJUNCTION", "Create two linked bellmouth returns and number them clockwise.", "01 Create"),
                     new DisciplineWorkflowAction("Create cross-junction", "CE_ROADCROSSJUNCTION", "Create four linked bellmouth returns and number them clockwise.", "01 Create"),
                     new DisciplineWorkflowAction("Number selected junction bellmouths", "CE_JUNCTIONNUMBER", "Choose left-to-right, top-to-bottom or top-left-to-bottom-right group order, with an optional picked start junction/return.", "02 Number"),
+                    new DisciplineWorkflowAction("Close selected junction/bellmouth feature lines", "CE_JUNCTIONFLCLOSEMULTI", "Select multiple open Civil 3D feature lines and close each while preserving its curves and elevations.", "03 Close"),
                     new DisciplineWorkflowAction("Refresh linked junctions", "CE_JUNCTIONREFRESH", "Rebuild labels and linked bellmouth geometry from saved source handles.", "03 Refresh")
                 });
         }

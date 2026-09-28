@@ -28,12 +28,13 @@ namespace CETools.Civil3D
             internal int Group;
         }
 
-        internal static void CloseOpenMultiple(Document document)
+        internal static void CloseOpenMultiple(Document document, bool featureLinesOnly = false)
         {
             if (document == null) return;
             Editor editor = document.Editor;
-            PromptSelectionResult selection = Select(editor,
-                "\nSelect open lightweight polylines and/or Civil 3D feature lines to close by connecting each object's own endpoints: ");
+            PromptSelectionResult selection = Select(editor, featureLinesOnly
+                ? "\nSelect multiple junction/bellmouth Civil 3D feature lines to close: "
+                : "\nSelect open lightweight polylines and/or Civil 3D feature lines to close by connecting each object's own endpoints: ");
             if (selection.Status != PromptStatus.OK || selection.Value == null) return;
 
             int polylines = 0;
@@ -58,6 +59,7 @@ namespace CETools.Civil3D
                         Polyline polyline = entity as Polyline;
                         if (polyline != null)
                         {
+                            if (featureLinesOnly) { skipped++; continue; }
                             if (polyline.Closed) { alreadyClosed++; continue; }
                             if (polyline.NumberOfVertices < 2) { skipped++; continue; }
                             polyline.UpgradeOpen();

@@ -189,6 +189,9 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Bulk Road Junctions",
                 "Detect intersections between CE road centrelines. A centreline ending at another road forms a T-junction; two through roads form a cross-junction.");
+            model.AddChoice("Operation", "01 Selection", "Operation", "Create junctions",
+                "Create returns or close multiple selected junction/bellmouth feature lines.",
+                new[] { "Create junctions", "Close selected feature lines" });
             model.AddChoice("Scope", "01 Selection", "Roads", "All", "Use every CE road centreline or only selected road centreline polylines.", new[] { "All", "Selected" });
             model.AddChoice("Type", "01 Selection", "Junction type", "T and Cross", "Create both detected junction types or only one type.", new[] { "T and Cross", "T only", "Cross only" });
             model.AddPositiveDouble("Radius", "02 Geometry", "Bellmouth radius", 10.0, "Return radius.");
@@ -196,6 +199,12 @@ namespace CETools.Civil3D
             model.AddText("Layer", "03 Output", "Junction output layer", JunctionLayer, "Layer for generated T/cross return arcs and T-junction closure lines.");
             model.AddChoice("Replace", "03 Output", "Existing generated junctions", "Replace existing", "Replace prior CE bulk-junction arcs and T-closure lines or keep them.", new[] { "Replace existing", "Keep existing" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+
+            if (string.Equals(model.Text("Operation"), "Close selected feature lines", StringComparison.OrdinalIgnoreCase))
+            {
+                August26CadSupplementaryFieldRuntime.CloseOpenMultiple(document, true);
+                return;
+            }
 
             List<ObjectId> centerIds = ResolveRoadScope(document, "CENTER", model.Text("Scope"), "\nSelect road centreline polylines: ");
             if (centerIds.Count < 2)

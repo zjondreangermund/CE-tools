@@ -30,6 +30,14 @@ namespace CETools.Civil3D
         private const string AppName = "CE_ROAD_JUNCTION";
         private const double Tol = 1e-6;
 
+        [CommandMethod("CE_TOOLS", "CE_JUNCTIONFLCLOSEMULTI", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void CloseSelectedJunctionFeatureLines()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+            August26CadSupplementaryFieldRuntime.CloseOpenMultiple(document, true);
+        }
+
         [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONBATCH", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void CreateAllJunctionReturns()
         {
@@ -40,6 +48,9 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Batch T/Cross Junction Bellmouths",
                 "Detect every unique crossing between selected road-centre curves, create all T/cross bellmouth returns in one transaction and leave the source geometry unchanged.");
+            model.AddChoice("Operation", "01 Selection", "Operation", "Create junctions",
+                "Create bellmouths from selected road centre lines or close multiple selected junction/bellmouth feature lines.",
+                new[] { "Create junctions", "Close selected feature lines" });
             model.AddPositiveDouble("Radius", "01 Geometry", "Bellmouth radius", 10.0,
                 "Radius used for every generated return.");
             model.AddPositiveDouble("MainHalfWidth", "01 Geometry", "Main-road half-width", 3.7,
@@ -75,6 +86,13 @@ namespace CETools.Civil3D
             model.AddDouble("WeedAngle", "04 Output", "Feature-line weed angle (deg)", 0.0,
                 "Optional deflection-angle weed setting. 0 disables angle weeding.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+
+            if (string.Equals(model.Text("Operation"), "Close selected feature lines",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                August26CadSupplementaryFieldRuntime.CloseOpenMultiple(document, true);
+                return;
+            }
 
             PromptSelectionResult selected = document.Editor.SelectImplied();
             if (selected.Status != PromptStatus.OK || selected.Value == null || selected.Value.Count < 2)
