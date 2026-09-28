@@ -225,6 +225,25 @@ namespace CETools.Civil3D
             return linked;
         }
 
+        // A newly created layout profile cannot reliably be selected as a band
+        // source until its creation transaction has committed. Prepare the
+        // compatibility sources before the separate band-binding transaction.
+        internal static int PrepareRoadBandSources(
+            DBObject profileView,
+            ObjectId groundProfileId,
+            ObjectId leftProfileId,
+            ObjectId centreProfileId,
+            ObjectId rightProfileId,
+            ObjectId finalDesignProfileId)
+        {
+            int created;
+            int failed;
+            MakeRoadSourcesCompatibleWithView(profileView, groundProfileId,
+                leftProfileId, centreProfileId, rightProfileId,
+                finalDesignProfileId, out created, out failed);
+            return failed;
+        }
+
         /// <summary>
         /// Compatibility fallback after a real source assignment fails. Reuse
         /// hidden layout copies to supply native band values without changing

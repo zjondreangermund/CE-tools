@@ -242,7 +242,16 @@ namespace CETools.Civil3D
 
                     try
                     {
-                        slopePatterns += EnsureSlopePatterns(corridor, slopePatternStyleId);
+                        int missingDaylightSides;
+                        slopePatterns += EnsureSlopePatterns(corridor, slopePatternStyleId,
+                            out missingDaylightSides);
+                        if (missingDaylightSides > 0)
+                        {
+                            warnings += missingDaylightSides;
+                            document.Editor.WriteMessage(
+                                "\n{0}: {1} cut/fill side(s) have no matching EPS and daylight feature lines. Check the assembly's conditional cut/fill branches and surface target.",
+                                corridor.Name, missingDaylightSides);
+                        }
                     }
                     catch (System.Exception exception)
                     {
@@ -258,6 +267,10 @@ namespace CETools.Civil3D
                         corridor.Rebuild();
                         corridor.RecordGraphicsModified(true);
                     }
+                    catch { warnings++; }
+                    // Keep the native corridor geometry and its cut/fill feature
+                    // lines current when the road design profile or target changes.
+                    try { corridor.RebuildAutomatic = true; }
                     catch { warnings++; }
                 }
                 transaction.Commit();
@@ -534,22 +547,13 @@ namespace CETools.Civil3D
             }
         }
 
-        private static int EnsureSlopePatterns(Corridor corridor, ObjectId styleId)
+        private static int EnsureSlopePatterns(Corridor corridor, ObjectId styleId,
+            out int missingDaylightSides)
         {
+            missingDaylightSides = 0;
             if (corridor == null || styleId.IsNull) return 0;
             CorridorSlopePatternCollection patterns = corridor.SlopePatterns;
             if (patterns == null) return 0;
-
-            // Civil 3D retains old slope-pattern rows when a corridor is rebuilt.
-            // Remove every existing row first, then recreate only the two requested
-            // engineering pairs on each side: EPS -> Daylight_Cut and
-            // EPS -> Daylight_Fill.
-            List<object> existing = EnumerateObjects(patterns).ToList();
-            for (int index = existing.Count - 1; index >= 0; index--)
-            {
-                if (!TryInvoke(patterns, "Remove", existing[index]))
-                    TryInvoke(patterns, "RemoveAt", index);
-            }
 
             int added = 0;
             foreach (Baseline baseline in corridor.Baselines)
@@ -566,6 +570,18 @@ namespace CETools.Civil3D
                     .Where(item => IsSlopeCode(item.CodeName, "DAYLIGHT_FILL"))
                     .ToList();
 
+                // A pattern styles geometry produced by an assembly; it cannot
+                // generate the missing fill branch when the corridor only emits
+                // Daylight_Cut. Report that condition instead of claiming four
+                // working patterns were created.
+                foreach (int side in new[] { -1, 1 })
+                {
+                    if (!eps.Any(item => Math.Sign(AverageOffset(item)) == side) ||
+                        (!cut.Any(item => Math.Sign(AverageOffset(item)) == side) &&
+                         !fill.Any(item => Math.Sign(AverageOffset(item)) == side)))
+                        missingDaylightSides++;
+                }
+
                 foreach (CorridorFeatureLine hinge in eps)
                 {
                     double hingeOffset = AverageOffset(hinge);
@@ -573,13 +589,16 @@ namespace CETools.Civil3D
                     CorridorFeatureLine fillLine = FindSameSideSlopeLine(fill, hingeOffset);
                     foreach (CorridorFeatureLine outer in new[] { cutLine, fillLine })
                     {
-                        if (outer == null) continue;
+                        if (outer == null || HasSlopePattern(patterns, hinge, outer)) continue;
+                        double start, end;
+                        if (!TrySharedStationRange(hinge, outer, baseline, out start, out end))
+                            continue;
                         try
                         {
                             CorridorSlopePattern pattern = patterns.Add(hinge, outer, styleId);
                             if (pattern == null) continue;
-                            pattern.StartStation = baseline.StartStation;
-                            pattern.EndStation = baseline.EndStation;
+                            pattern.StartStation = start;
+                            pattern.EndStation = end;
                             added++;
                         }
                         catch { }
@@ -587,6 +606,24 @@ namespace CETools.Civil3D
                 }
             }
             return added;
+        }
+
+        private static bool TrySharedStationRange(
+            CorridorFeatureLine first, CorridorFeatureLine second,
+            Baseline baseline, out double start, out double end)
+        {
+            start = baseline.StartStation;
+            end = baseline.EndStation;
+            foreach (CorridorFeatureLine line in new[] { first, second })
+            {
+                var stations = new List<double>();
+                foreach (FeatureLinePoint point in line.FeatureLinePoints)
+                    stations.Add(point.Station);
+                if (stations.Count < 2) return false;
+                start = Math.Max(start, stations.Min());
+                end = Math.Min(end, stations.Max());
+            }
+            return end > start + 1e-6;
         }
 
         private static CorridorFeatureLine FindSameSideSlopeLine(
@@ -650,10 +687,16 @@ namespace CETools.Civil3D
                 {
                     string p1 = pattern.FeatureLine1 == null ? string.Empty : pattern.FeatureLine1.CodeName;
                     string p2 = pattern.FeatureLine2 == null ? string.Empty : pattern.FeatureLine2.CodeName;
-                    if ((string.Equals(p1, first.CodeName, StringComparison.OrdinalIgnoreCase) &&
-                         string.Equals(p2, second.CodeName, StringComparison.OrdinalIgnoreCase)) ||
-                        (string.Equals(p1, second.CodeName, StringComparison.OrdinalIgnoreCase) &&
-                         string.Equals(p2, first.CodeName, StringComparison.OrdinalIgnoreCase)))
+                    // Codes repeat on both sides. Include offset when checking
+                    // whether this side and cut/fill pair already has a row.
+                    double firstOffset = AverageOffset(first);
+                    double secondOffset = AverageOffset(second);
+                    if (((IsSlopeCode(p1, first.CodeName) && IsSlopeCode(p2, second.CodeName)) &&
+                         Math.Abs(AverageOffset(pattern.FeatureLine1) - firstOffset) < 0.01 &&
+                         Math.Abs(AverageOffset(pattern.FeatureLine2) - secondOffset) < 0.01) ||
+                        ((IsSlopeCode(p2, first.CodeName) && IsSlopeCode(p1, second.CodeName)) &&
+                         Math.Abs(AverageOffset(pattern.FeatureLine2) - firstOffset) < 0.01 &&
+                         Math.Abs(AverageOffset(pattern.FeatureLine1) - secondOffset) < 0.01))
                         return true;
                 }
                 catch { }

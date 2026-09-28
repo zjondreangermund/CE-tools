@@ -231,6 +231,38 @@ namespace CETools.Civil3D
                     }
                 }
 
+                // Commit compatibility profiles before they are referenced by
+                // the band collections. Civil 3D can reject a source created in
+                // the same transaction as SetBottomBandItems, even though the
+                // profile object itself is readable in that transaction.
+                foreach (ObjectId id in profileViewIds)
+                {
+                    try
+                    {
+                        using (Transaction prepare = document.Database.TransactionManager.StartTransaction())
+                        {
+                            ProfileView view = prepare.GetObject(id, OpenMode.ForWrite, false) as ProfileView;
+                            CivilAlignment alignment = view == null || view.AlignmentId.IsNull
+                                ? null : prepare.GetObject(view.AlignmentId, OpenMode.ForRead, false) as CivilAlignment;
+                            if (alignment != null)
+                            {
+                                ObjectId ground, left, centre, right, final;
+                                August13RoadProfileViewFinalizerCommands.ResolveRoadProfiles(
+                                    alignment, prepare, out ground, out left, out centre, out right, out final);
+                                ProfileViewBandDataBinder.PrepareRoadBandSources(
+                                    view, ground, left, centre, right, final);
+                            }
+                            prepare.Commit();
+                        }
+                    }
+                    catch (System.Exception exception)
+                    {
+                        document.Editor.WriteMessage(
+                            "\nCE_ROADBANDLABELS: source preparation for view {0}: {1}",
+                            id.Handle, exception.Message);
+                    }
+                }
+
                 // Run a second committed pass after the import commits. Bind each
                 // imported band's profile source by its role (ground, left, centre,
                 // right or final design), then enable labels on both band rows.
