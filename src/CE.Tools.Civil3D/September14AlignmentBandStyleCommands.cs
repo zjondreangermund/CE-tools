@@ -220,6 +220,15 @@ namespace CETools.Civil3D
                         }
                         profileViewIds.Add(selectedId);
                         applied++;
+                        // Civil 3D 2023 materializes band graphics during Regen.
+                        // Flush each imported view before editing the next one,
+                        // as happens when the native dialog is used individually.
+                        try
+                        {
+                            document.Database.TransactionManager.QueueForGraphicsFlush();
+                            document.Editor.Regen();
+                        }
+                        catch { }
                     }
                     catch (System.Exception exception)
                     {
@@ -343,6 +352,12 @@ namespace CETools.Civil3D
                             bandLinkWarnings += localWarnings;
                             bandsEnabled += localEnabled;
                         }
+                        try
+                        {
+                            document.Database.TransactionManager.QueueForGraphicsFlush();
+                            document.Editor.Regen();
+                        }
+                        catch { }
                     }
                     catch (System.Exception exception)
                     {
@@ -364,6 +379,7 @@ namespace CETools.Civil3D
 
             int nativeBandLabelValues = 0;
             int bandStylesWithoutLabelComponents = 0;
+            int viewsWithNativeLabels = 0;
             foreach (ObjectId id in profileViewIds)
             {
                 try
@@ -374,9 +390,14 @@ namespace CETools.Civil3D
                             id, OpenMode.ForRead, false) as ProfileView;
                         if (profileView != null)
                         {
-                            nativeBandLabelValues +=
+                            int localNativeLabels =
                                 ProfileViewBandDataBinder.CountProfileDataBandLabelSubentities(
                                     profileView, transaction);
+                            nativeBandLabelValues += localNativeLabels;
+                            if (localNativeLabels > 0) viewsWithNativeLabels++;
+                            else document.Editor.WriteMessage(
+                                "\nCE_ROADBANDLABELS: profile view {0} still has no native profile-band label values.",
+                                id.Handle);
                             bandStylesWithoutLabelComponents +=
                                 ProfileViewBandDataBinder.CountBandStylesWithoutLabelComponents(
                                     profileView, transaction);
@@ -399,6 +420,9 @@ namespace CETools.Civil3D
                 skipped,
                 failed,
                 roadSourceProfilesAlreadyInView);
+            document.Editor.WriteMessage(
+                "\nCE_ROADBANDLABELS: profile views with native label values={0}/{1}.",
+                viewsWithNativeLabels, profileViewIds.Count);
             if (nativeBandLabelValues == 0)
             {
                 document.Editor.WriteMessage(

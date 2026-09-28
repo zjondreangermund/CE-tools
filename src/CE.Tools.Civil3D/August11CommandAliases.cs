@@ -29,12 +29,14 @@ namespace CETools.Civil3D
             document.SendStringToExecute("CE_BULKWATERPRODUCTIONCENTRE ", true, false, true);
         }
 
-        [CommandMethod("CE_TOOLS", "CE_FLOFFSET", CommandFlags.Modal)]
+        [CommandMethod("CE_TOOLS", "CE_FLOFFSET", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void FeatureLineOffsetAlias()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-            document.SendStringToExecute("CE_FLRELCREATE ", true, false, true);
+            // Calling the batch implementation in this command preserves the
+            // implied multi-selection; queueing another command discards it.
+            new FeatureLineRelativeCommands().CreateCommand();
         }
     }
 }

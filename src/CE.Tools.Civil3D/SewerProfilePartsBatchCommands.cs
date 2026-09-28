@@ -76,7 +76,7 @@ namespace CETools.Civil3D
                 }
             if (views.Count == 0) return;
 
-            int drawn = 0, unmatched = 0, rejected = 0;
+            int drawn = 0, unmatched = 0, rejected = 0, removed = 0;
             using (DocumentLock documentLock = document.LockDocument())
                 foreach (var pair in partNetworks)
                     foreach (ViewChoice view in views)
@@ -86,6 +86,7 @@ namespace CETools.Civil3D
                         if (!MatchesView(document.Database, pair.Key, pair.Value, view))
                         {
                             unmatched++;
+                            if (RemoveFromWrongView(document.Database, pair.Key, view.Id)) removed++;
                             continue;
                         }
                         try
@@ -106,15 +107,13 @@ namespace CETools.Civil3D
                     }
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_SEWSELECTEDPARTSPROFILEMULTI complete. Selected parts={0}; views={1}; drawn={2}; unmatched alignment pairs={3}; already present/rejected={4}.",
-                partNetworks.Count, views.Count, drawn, unmatched, rejected);
+                "\nCE_SEWSELECTEDPARTSPROFILEMULTI complete. Selected parts={0}; views={1}; drawn={2}; branch mismatches={3}; already present/rejected={4}; misplaced parts removed={5}.",
+                partNetworks.Count, views.Count, drawn, unmatched, rejected, removed);
         }
 
         private static bool MatchesView(Database database, ObjectId partId,
             NetworkChoice network, ViewChoice view)
         {
-            if (!network.AlignmentId.IsNull && network.AlignmentId == view.AlignmentId)
-                return true;
             if (view.AlignmentId.IsNull) return false;
             try
             {
@@ -124,24 +123,28 @@ namespace CETools.Civil3D
                     DBObject part = read.GetObject(partId, OpenMode.ForRead, false);
                     if (alignment == null || part == null) return false;
                     var pipe = part as Pipe;
-                    Point3d point;
                     if (pipe != null)
                     {
-                        Point3d a = pipe.StartPoint, b = pipe.EndPoint;
-                        point = new Point3d((a.X + b.X) / 2, (a.Y + b.Y) / 2, (a.Z + b.Z) / 2);
+                        // A network's reference alignment can cover several branches.
+                        // Both pipe ends must follow this view's actual branch;
+                        // a midpoint alone can accidentally match a crossing road.
+                        return OnBranch(alignment, pipe.StartPoint) &&
+                               OnBranch(alignment, pipe.EndPoint);
                     }
-                    else
-                    {
-                        var structure = part as Structure;
-                        if (structure == null) return false;
-                        point = structure.Position;
-                    }
-                    double station = 0, offset = 0;
-                    alignment.StationOffset(point.X, point.Y, ref station, ref offset);
-                    return Math.Abs(offset) <= 5.0;
+                    var structure = part as Structure;
+                    return structure != null && OnBranch(alignment, structure.Position);
                 }
             }
             catch { return false; }
+        }
+
+        private static bool OnBranch(Alignment alignment, Point3d point)
+        {
+            double station = 0, offset = 0;
+            alignment.StationOffset(point.X, point.Y, ref station, ref offset);
+            return station >= alignment.StartingStation - 0.01 &&
+                   station <= alignment.EndingStation + 0.01 &&
+                   Math.Abs(offset) <= 1.0;
         }
 
         [CommandMethod("CE_TOOLS", "CE_SEWPROFILEPARTSMULTI",
@@ -200,7 +203,7 @@ namespace CETools.Civil3D
                 return;
             }
 
-            int drawn = 0, skipped = 0, unmatched = 0;
+            int drawn = 0, skipped = 0, unmatched = 0, removed = 0;
             using (DocumentLock documentLock = document.LockDocument())
             {
                 foreach (NetworkChoice network in chosen)
@@ -210,9 +213,10 @@ namespace CETools.Civil3D
                     {
                         foreach (ObjectId partId in parts)
                         {
-                            if (picker.MatchAlignment && !MatchesView(document.Database, partId, network, view))
+                            if (!MatchesView(document.Database, partId, network, view))
                             {
                                 unmatched++;
+                                if (RemoveFromWrongView(document.Database, partId, view.Id)) removed++;
                                 continue;
                             }
                             try
@@ -239,13 +243,36 @@ namespace CETools.Civil3D
             }
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_SEWPROFILEPARTSMULTI complete. Networks={0}; profile views={1}; parts drawn={2}; already present/rejected={3}; alignment pairs skipped={4}. Pipe elevations, slopes, cover and rules were not changed.",
-                chosen.Count, views.Count, drawn, skipped, unmatched);
+                "\nCE_SEWPROFILEPARTSMULTI complete. Networks={0}; profile views={1}; parts drawn={2}; already present/rejected={3}; branch mismatches={4}; misplaced parts removed={5}. Pipe elevations, slopes, cover and rules were not changed.",
+                chosen.Count, views.Count, drawn, skipped, unmatched, removed);
             if (picker.OpenLabels)
             {
                 document.Editor.SetImpliedSelection(views.Select(item => item.Id).ToArray());
                 document.SendStringToExecute("CE_SEWPROFILELABELSTYLESMULTI ", true, false, true);
             }
+        }
+
+        private static bool RemoveFromWrongView(Database database, ObjectId partId, ObjectId viewId)
+        {
+            try
+            {
+                using (Transaction write = database.TransactionManager.StartTransaction())
+                {
+                    DBObject part = write.GetObject(partId, OpenMode.ForWrite, false);
+                    MethodInfo displayed = part.GetType().GetMethod("GetProfileViewsDisplayingMe", Type.EmptyTypes);
+                    object ids = displayed == null ? null : displayed.Invoke(part, null);
+                    var collection = ids as System.Collections.IEnumerable;
+                    if (collection == null || !collection.Cast<object>().Any(value =>
+                        value is ObjectId && (ObjectId)value == viewId)) return false;
+                    MethodInfo remove = part.GetType().GetMethod("RemoveFromProfileView",
+                        new[] { typeof(ObjectId) });
+                    if (remove == null) return false;
+                    remove.Invoke(part, new object[] { viewId });
+                    write.Commit();
+                    return true;
+                }
+            }
+            catch { return false; }
         }
 
         private static List<NetworkChoice> ReadNetworks(Database database, CivilDocument civil)
@@ -319,7 +346,7 @@ namespace CETools.Civil3D
                 var footer = new StackPanel { Orientation = Orientation.Vertical };
                 DockPanel.SetDock(footer, Dock.Bottom);
                 root.Children.Add(footer);
-                _match = new CheckBox { Content = "Match assigned network alignment to profile view", IsChecked = LastMatchAlignment, Margin = new Thickness(0, 8, 0, 5) };
+                _match = new CheckBox { Content = "Only draw parts on each profile view's branch (required)", IsChecked = true, IsEnabled = false, Margin = new Thickness(0, 8, 0, 5) };
                 footer.Children.Add(_match);
                 _labels = new CheckBox { Content = "Open pipe and structure profile label popup after drawing", IsChecked = LastOpenLabels, Margin = new Thickness(0, 0, 0, 12) };
                 footer.Children.Add(_labels);
