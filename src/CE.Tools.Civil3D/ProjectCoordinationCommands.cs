@@ -236,6 +236,7 @@ namespace CETools.Civil3D
             try
             {
                 civilDocument.Settings.DrawingSettings.UnitZoneSettings.CoordinateSystemCode = code;
+                August11SurveyRuntimeCommands.SyncProjectLocation(document, town, code);
                 document.Editor.WriteMessage("\nCE_SURVEYLOCATION complete. {0} -> installed Autodesk coordinate system {1}. Existing geometry was not transformed.", town, code);
             }
             catch (System.Exception exception)
