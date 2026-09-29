@@ -14,6 +14,7 @@ appearance = code("src/CE.Tools.Civil3D/FeatureProfileSurfaceCommentCommands.cs"
 colour = code("src/CE.Tools.Civil3D/FeatureLineColourService.cs")
 names = code("src/CE.Tools.Civil3D/CivilStyleNames.cs")
 bands = code("src/CE.Tools.Civil3D/September14AlignmentBandStyleCommands.cs")
+band_dialog = code("src/CE.Tools.Civil3D/ProfileViewBandImportDialog.cs")
 persistence = code("src/CE.Tools.Civil3D/ProfileViewBandPersistence.cs")
 
 require(appearance, "ItemsSource = colourChoices", "for (int index = 1; index <= 255; index++)",
@@ -31,6 +32,15 @@ if "ReadText(" in colour or "GetProperty(" in colour or "catch { }" in colour:
     raise SystemExit("Colour repair must not reflect setter-only names or swallow API failures.")
 require(bands, "profileView.Bands.ImportBandSetStyle(choice.Id);",
         "ProfileViewBandDataBinder.BindRoad(", "ProfileViewBandPersistence.EnableLabels(")
+require(bands,
+        "document.Editor.SetImpliedSelection(profileViewIds.Distinct().ToArray());",
+        "batchDialog.OpenNativeDialog && profileViewIds.Count == 1",
+        "never collapse a multi-view batch to profileViewIds[0]")
+require(band_dialog,
+        "private static bool _lastOpenNative = false;",
+        "IsEnabled = _viewNames.Count == 1",
+        "finish batch and keep all selected",
+        "_viewNames.Count == 1 && _openNative != null && _openNative.SelectedIndex == 1")
 require(persistence, "!view.IsWriteEnabled", "bands.SetTopBandItems(top);",
         "bands.SetBottomBandItems(bottom);", "item.ShowLabels = true", "verify(top[index])", "verify(bottom[index])")
 if "catch" in persistence:
