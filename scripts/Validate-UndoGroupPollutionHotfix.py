@@ -16,8 +16,10 @@ required_telemetry = [
 required_refresh = [
     "_document.CommandWillStart += OnCommandWillStart;",
     "_undoRedoActive = true;",
-    "if (_busy || _undoRedoActive) return;",
-    "if (_busy || _undoRedoActive || e == null || e.DBObject == null) return;",
+    "_suppressQueueUntilUtc",
+    "DateTime.UtcNow < _suppressQueueUntilUtc",
+    "HasCeLink(value)",
+    "Do not queue a universal full-model pass after every CE command",
     "RefreshNow(active, true);",
     "bool suppressUndoRecording",
     "DisableUndoRecording(true)",
@@ -33,7 +35,12 @@ finish_block = telemetry[finish_start:finish_end]
 if "Save(document, state);" in finish_block:
     missing.append("telemetry:Finish still writes an Xrecord after every command")
 
+if 'command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)' in refresh:
+    missing.append("refresh:blanket CE command-ended universal refresh returned")
+if 'if (value is Entity || value is Xrecord || value is DBDictionary ||' in refresh:
+    missing.append("refresh:broad all-entity DBObject refresh trigger returned")
+
 if missing:
     raise SystemExit("Undo group pollution regression failed:\n- " + "\n- ".join(missing))
 
-print("Undo group pollution regression passed: telemetry no longer writes after every command, undo/redo suspends refresh, and idle refresh is excluded from AutoCAD undo recording.")
+print("Undo/Redo regression passed: telemetry stays out of command history, post-Undo events are suppressed, only CE-linked objects queue universal refresh, and idle refresh is excluded from AutoCAD undo recording.")
