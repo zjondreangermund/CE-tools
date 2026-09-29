@@ -81,18 +81,19 @@ jobs:
             if (-not $platform.Contains($legacy)) { throw "Existing Platform workflow route was lost: $legacy" }
           }
           foreach ($marker in @(
-            '_suppressUntilUtc',
-            '"CE_PLATFORMREFRESH "',
-            'private static void Changed(object sender, ObjectEventArgs e) { }',
-            'private static void Erased(object sender, ObjectErasedEventArgs e) { }')) {
-            if (-not $platform.Contains($marker)) { throw "Command-driven Platform refresh marker is missing: $marker" }
+            '"CE_PLATFORMREFRESH"',
+            'Field policy (29 Sep): automatic Platform refresh is disabled',
+            'Manual-only Platform refresh: normal Civil 3D object changes do',
+            'Manual-only Platform refresh: erasures do not start background work.')) {
+            if (-not $platform.Contains($marker)) { throw "Manual-only Platform refresh marker is missing: $marker" }
           }
           foreach ($forbidden in @(
+            'active.SendStringToExecute("CE_PLATFORMREFRESH "',
             '_database.ObjectModified += Changed',
             '_database.ObjectErased += Erased',
             'QueueFromEvent();',
             '_knownLinkedItems')) {
-            if ($platform.Contains($forbidden)) { throw "Regen-driven Platform refresh marker survived: $forbidden" }
+            if ($platform.Contains($forbidden)) { throw "Automatic Platform refresh marker survived: $forbidden" }
           }
 
       - name: Verify pre-compile target ordering
