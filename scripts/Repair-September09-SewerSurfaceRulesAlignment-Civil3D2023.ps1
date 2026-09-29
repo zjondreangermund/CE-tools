@@ -84,18 +84,18 @@ $universalRefreshPath = Required 'UniversalDynamicRefreshCommands.cs'
 
 $runtime = ReadText $runtimePath
 
-# Earlier staged recovery sources can leave the completion marker call passing a
-# Database even though NetworkSourceMarker.Mark requires the active Document.
-# Repair that exact legacy call before compilation and guard the corrected form so
-# a later staged source rewrite cannot silently reintroduce CS1503.
-$legacySourceMarkerCall = 'NetworkSourceMarker.Mark(database, sourceId, "Sewer");'
+# Earlier staged recovery sources can leave the completion marker call passing the
+# active Document, but NetworkSourceMarker.Mark expects the drawing Database.
+# Normalize that exact legacy call before compilation and guard the corrected form
+# so repeated build/install runs cannot reintroduce CS1503.
 $documentSourceMarkerCall = 'NetworkSourceMarker.Mark(document, sourceId, "Sewer");'
-if ($runtime.Contains($legacySourceMarkerCall)) {
-    $runtime = $runtime.Replace($legacySourceMarkerCall, $documentSourceMarkerCall)
+$databaseSourceMarkerCall = 'NetworkSourceMarker.Mark(database, sourceId, "Sewer");'
+if ($runtime.Contains($documentSourceMarkerCall)) {
+    $runtime = $runtime.Replace($documentSourceMarkerCall, $databaseSourceMarkerCall)
     WriteText $runtimePath $runtime
 }
-if (-not $runtime.Contains($documentSourceMarkerCall)) {
-    throw 'September 09 sewer source marker guard missing: NetworkSourceMarker.Mark must receive Document.'
+if (-not $runtime.Contains($databaseSourceMarkerCall)) {
+    throw 'September 09 sewer source marker guard missing: NetworkSourceMarker.Mark must receive Database.'
 }
 
 # Civil 3D 2023 exposes the WinForms modal-dialog helper on the ApplicationServices
