@@ -4,6 +4,7 @@ import re
 root = Path(__file__).resolve().parents[1]
 source_root = root / "src/CE.Tools.Civil3D"
 sewer = (source_root / "SewerProductionCommands.cs").read_text(encoding="utf-8")
+sewer_bands = (source_root / "SewerLongSectionBandCommands.cs").read_text(encoding="utf-8")
 runtime = (source_root / "PreBuildRuntimeCompletionCommands.cs").read_text(encoding="utf-8")
 menu = (source_root / "September11FieldCompletionMenu.cs").read_text(encoding="utf-8")
 ribbon = (source_root / "PluginEntry.cs").read_text(encoding="utf-8")
@@ -14,7 +15,9 @@ required_sewer = [
     '"\\nCE_SEWPROFILE skipped {0}: {1}"',
     'out int bandItemsLinked',
     'out int bandBindingWarnings',
-    'localBandItems = ProfileViewBandDataBinder.Bind(',
+    'SewerLongSectionBandService.Apply(',
+    'BandSetStyleId = bandId',
+    'ProfileViewStyleId = viewStyleId',
     'one or more band links were skipped safely',
     'returns a non-writable band item (eNotOpenForWrite)',
     'Do not run a second global band refresh here.',
@@ -28,6 +31,21 @@ required_sewer = [
 for token in required_sewer:
     if token not in sewer:
         raise SystemExit(f"Sewer profile/long-section marker missing: {token}")
+
+required_band_service = [
+    '"CE_SEWBANDLABELS"',
+    'view.Bands.ImportBandSetStyle(bandSetStyleId);',
+    'September14AlignmentBandStyleCommands.EnsureImportedBandRows(',
+    'ProfileViewBandDataBinder.Bind(',
+    'ProfileViewBandPersistence.EnableLabels(',
+    'ResolveTaggedNetwork(',
+    'ResolveNetworkByAlignment(',
+    'ResolveGroundProfile(',
+    '"Select multiple sewer profile views to receive the long-section band set: "',
+]
+for token in required_band_service:
+    if token not in sewer_bands:
+        raise SystemExit(f"Sewer long-section band-service marker missing: {token}")
 
 command = re.search(
     r'\[CommandMethod\("CE_SEWPROFILE".*?\n        \[CommandMethod\("CE_SEWINFO"',
@@ -60,7 +78,7 @@ for forbidden in ('InvokeNoArgument(bands,\n                    "Clear"', '"Remo
 
 for text, label, tokens in [
     (menu, "Field Completion", ['"Sewer Profiles / Long Sections"', '"CE_SEWPROFILE"']),
-    (ribbon, "Sewer ribbon", ['Cmd("Create Profiles / Long Sections", "CE_SEWPROFILE "']),
+    (ribbon, "Sewer ribbon", ['Cmd("Create Profiles / Long Sections", "CE_SEWPROFILE "', 'Cmd("Sewer Long Section Bands", "CE_SEWBANDLABELS "']),
     (finalizer, "utility profile finalizer", ["$sewerText.Contains('CE_SEWPROFILE skipped {0}: {1}')"]),
 ]:
     for token in tokens:
