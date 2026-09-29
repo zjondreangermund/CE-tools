@@ -204,11 +204,20 @@ jobs:
           if (-not $idle.Contains('CE_DYNAMICREFRESHALL')) { throw 'Universal Idle command queue is missing.' }
           if (-not $universal.Contains('PlatformProductionCommands.RefreshAll(document);')) { throw 'Platform refresh is not folded into Universal refresh.' }
           if (-not $auto.Contains('ShouldQueueRefresh(name)')) { throw 'Automatic no-blanket refresh policy is missing.' }
-          if (-not $platform.Contains('_knownLinkedItems') -or
-              -not $platform.Contains('_suppressEventsUntilUtc') -or
-              -not $platform.Contains('HasLinkedPlatformData(value)') -or
-              -not $platform.Contains('CompleteRefresh(count)')) {
-            throw 'Platform refresh self-loop guards are missing.'
+          if (-not $platform.Contains('_suppressUntilUtc') -or
+              -not $platform.Contains('CompleteRefresh(count)') -or
+              -not $platform.Contains('private static void Changed(object sender, ObjectEventArgs e)') -or
+              -not $platform.Contains('private static void Erased(object sender, ObjectErasedEventArgs e)')) {
+            throw 'Command-driven Platform refresh guards are missing.'
+          }
+          foreach ($forbidden in @(
+            '_database.ObjectModified += Changed',
+            '_database.ObjectErased += Erased',
+            'QueueFromEvent();',
+            '_knownLinkedItems')) {
+            if ($platform.Contains($forbidden)) {
+              throw "Regen-driven Platform refresh survived the final boundary: $forbidden"
+            }
           }
           $autoEndedStart = $auto.IndexOf('private static void OnCommandEnded(object sender, CommandEventArgs e)',[StringComparison]::Ordinal)
           $autoEndedNext = $auto.IndexOf('internal static bool ShouldQueueRefresh',$autoEndedStart,[StringComparison]::Ordinal)
