@@ -145,6 +145,8 @@ namespace CETools.Civil3D
                 }
                 try { result.JunctionLabels += RoadJunctionCompletionCommands.RefreshAll(document); }
                 catch { result.Warnings++; }
+                try { August11RoadNamingCurveCommands.SyncRoadNames(document, false); }
+                catch { result.Warnings++; }
                 try { SewerPlanLabelRuntimeManager.Apply(document); }
                 catch { result.Warnings++; }
                 try { ProfileViewBandRuntimeManager.RefreshAll(document); }
