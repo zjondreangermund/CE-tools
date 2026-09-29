@@ -82,9 +82,9 @@ jobs:
           }
           foreach ($marker in @(
             '"CE_PLATFORMREFRESH"',
-            'Field policy (29 Sep): automatic Platform refresh is disabled',
-            'Manual-only Platform refresh: normal Civil 3D object changes do',
-            'Manual-only Platform refresh: erasures do not start background work.')) {
+            'Field policy (29 Sep): Platform refresh is manual/on-demand only.',
+            'Intentionally no Application.Idle, ObjectModified, ObjectErased or',
+            'normal REGEN into a deferred full Platform refresh.')) {
             if (-not $platform.Contains($marker)) { throw "Manual-only Platform refresh marker is missing: $marker" }
           }
           foreach ($forbidden in @(
