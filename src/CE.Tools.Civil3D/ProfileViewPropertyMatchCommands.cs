@@ -604,30 +604,133 @@ namespace CETools.Civil3D
             ObjectId targetAlignmentId,
             Transaction tr)
         {
-            if (sourceProfileId.IsNull || targetAlignmentId.IsNull) return ObjectId.Null;
+            if (sourceProfileId.IsNull || targetAlignmentId.IsNull)
+                return ObjectId.Null;
+
             CivilProfile source;
             CivilAlignment targetAlignment;
             try
             {
-                source = tr.GetObject(sourceProfileId, OpenMode.ForRead, false) as CivilProfile;
-                targetAlignment = tr.GetObject(targetAlignmentId, OpenMode.ForRead, false) as CivilAlignment;
+                source = tr.GetObject(
+                    sourceProfileId, OpenMode.ForRead, false) as CivilProfile;
+                targetAlignment = tr.GetObject(
+                    targetAlignmentId, OpenMode.ForRead, false) as CivilAlignment;
             }
             catch { return ObjectId.Null; }
-            if (source == null || targetAlignment == null) return ObjectId.Null;
-            if (source.AlignmentId == targetAlignmentId) return sourceProfileId;
+
+            if (source == null || targetAlignment == null)
+                return ObjectId.Null;
+            if (source.AlignmentId == targetAlignmentId)
+                return sourceProfileId;
+
+            string sourceName = source.Name ?? string.Empty;
+            string sourceRole = ProfileRole(sourceName);
+            ObjectId best = ObjectId.Null;
+            int bestScore = int.MinValue;
+
             foreach (ObjectId id in targetAlignment.GetProfileIds())
             {
                 try
                 {
-                    CivilProfile candidate = tr.GetObject(id, OpenMode.ForRead, false) as CivilProfile;
-                    if (candidate != null &&
-                        string.Equals(candidate.Name, source.Name,
-                            StringComparison.CurrentCultureIgnoreCase))
+                    CivilProfile candidate = tr.GetObject(
+                        id, OpenMode.ForRead, false) as CivilProfile;
+                    if (candidate == null) continue;
+
+                    string candidateName = candidate.Name ?? string.Empty;
+                    if (string.Equals(
+                        candidateName,
+                        sourceName,
+                        StringComparison.CurrentCultureIgnoreCase))
                         return id;
+
+                    int score = 0;
+                    string candidateRole = ProfileRole(candidateName);
+                    if (!string.IsNullOrWhiteSpace(sourceRole) &&
+                        string.Equals(
+                            sourceRole,
+                            candidateRole,
+                            StringComparison.OrdinalIgnoreCase))
+                        score += 1000;
+
+                    string sourceTail = ProfileTail(sourceName);
+                    string candidateTail = ProfileTail(candidateName);
+                    if (!string.IsNullOrWhiteSpace(sourceTail) &&
+                        string.Equals(
+                            sourceTail,
+                            candidateTail,
+                            StringComparison.OrdinalIgnoreCase))
+                        score += 500;
+
+                    string sourceDescription = source.Description ?? string.Empty;
+                    string candidateDescription = candidate.Description ?? string.Empty;
+                    string sourceDescriptionRole = ProfileRole(sourceDescription);
+                    if (!string.IsNullOrWhiteSpace(sourceDescriptionRole) &&
+                        string.Equals(
+                            sourceDescriptionRole,
+                            ProfileRole(candidateDescription),
+                            StringComparison.OrdinalIgnoreCase))
+                        score += 250;
+
+                    if (score > bestScore)
+                    {
+                        bestScore = score;
+                        best = id;
+                    }
                 }
                 catch { }
             }
-            return ObjectId.Null;
+
+            // Do not guess between unrelated profiles. A positive score means the
+            // target has the same engineering role (EG, left/right edge, centre,
+            // final design, etc.) or the same trailing role token.
+            return bestScore > 0 ? best : ObjectId.Null;
+        }
+
+        private static string ProfileRole(string value)
+        {
+            string text = (" " + (value ?? string.Empty) + " ")
+                .Replace("_", " ")
+                .Replace("-", " ")
+                .Replace("/", " ")
+                .ToUpperInvariant();
+
+            if (text.Contains(" EXIST") ||
+                text.Contains(" GROUND") ||
+                text.Contains(" NGL") ||
+                text.Contains(" EG "))
+                return "EG";
+            if (text.Contains(" LEFT") ||
+                text.Contains(" LHS") ||
+                text.Contains(" HL "))
+                return "LEFT";
+            if (text.Contains(" RIGHT") ||
+                text.Contains(" RHS") ||
+                text.Contains(" HR "))
+                return "RIGHT";
+            if (text.Contains(" CENTRE") ||
+                text.Contains(" CENTER") ||
+                text.Contains(" CL "))
+                return "CENTRE";
+            if (text.Contains(" FINAL") ||
+                text.Contains(" DESIGN") ||
+                text.Contains(" FG "))
+                return "DESIGN";
+            if (text.Contains(" TOP "))
+                return "TOP";
+            if (text.Contains(" BOTTOM") ||
+                text.Contains(" DATUM"))
+                return "BOTTOM";
+            return string.Empty;
+        }
+
+        private static string ProfileTail(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value)) return string.Empty;
+            string[] parts = value.Trim()
+                .Split(new[] { '-', '_', ' ' },
+                    StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length == 0) return string.Empty;
+            return parts[parts.Length - 1].ToUpperInvariant();
         }
 
         private static bool TrySetObjectId(object target, string name, ObjectId value)
