@@ -1358,47 +1358,34 @@ namespace CETools.Civil3D
         private static bool _initialised;
         private static bool _busy;
         private static bool _pending;
-        private static bool _knownLinkedItems;
-        private static Database _database;
         private static Document _document;
         private static DateTime _lastChangeUtc = DateTime.MinValue;
-        private static DateTime _suppressEventsUntilUtc = DateTime.MinValue;
+        private static DateTime _suppressUntilUtc = DateTime.MinValue;
 
-        private static readonly string[] LinkKeys =
-        {
-            "CE_FLREL",
-            "CE_PLATFORM_DRAPE",
-            "CE_PLATFORM_NAME",
-            "CE_PLATFORM_TABLE",
-            "CE_PLATFORM_SECTION",
-            "CE_PLATFORM_DIRECT_DRAPE",
-            "CE_PLATFORM_GRADE_LINK"
-        };
-
+        // Field rule: Platform refresh is command-driven, not drawing-event-driven.
+        // Civil 3D raises many Surface/FeatureLine ObjectModified notifications during
+        // REGEN, profile/band work and normal display updates. Treating those as
+        // design changes caused CE_PLATFORMREFRESH to run continuously on drawings
+        // that contain linked platform items. Only CE Platform commands explicitly
+        // call Queue(), producing at most one deferred refresh after their own work.
         internal static void EnsureInitialized()
         {
             if (_initialised)
             {
-                Attach(AcApplication.DocumentManager.MdiActiveDocument);
+                _document = AcApplication.DocumentManager.MdiActiveDocument;
                 return;
             }
 
             _initialised = true;
+            _document = AcApplication.DocumentManager.MdiActiveDocument;
             AcApplication.DocumentManager.DocumentActivated += Activated;
-            AcApplication.DocumentManager.DocumentCreated += Activated;
             AcApplication.DocumentManager.DocumentToBeDestroyed += Destroyed;
             AcApplication.Idle += Idle;
-            Attach(AcApplication.DocumentManager.MdiActiveDocument);
         }
 
         internal static void Queue()
         {
-            if (_busy || DateTime.UtcNow < _suppressEventsUntilUtc) return;
-
-            // Explicit Platform commands call Queue after creating/updating links.
-            // Mark the drawing as potentially linked so one deferred verification
-            // pass is allowed. If no CE Platform links exist, Idle clears this flag.
-            _knownLinkedItems = true;
+            if (_busy || DateTime.UtcNow < _suppressUntilUtc) return;
             _pending = true;
             _lastChangeUtc = DateTime.UtcNow;
         }
@@ -1406,119 +1393,39 @@ namespace CETools.Civil3D
         internal static void CompleteRefresh(int refreshed)
         {
             _pending = false;
-            _knownLinkedItems =
-                refreshed > 0 || HasAnyLinkedPlatformData(_database);
-            _suppressEventsUntilUtc = DateTime.UtcNow.AddSeconds(2.5);
+            _suppressUntilUtc = DateTime.UtcNow.AddSeconds(2.0);
         }
 
         private static void Activated(object sender, DocumentCollectionEventArgs e)
         {
-            Attach(e == null ? null : e.Document);
+            _document = e == null ? null : e.Document;
+            _pending = false;
         }
 
         private static void Destroyed(object sender, DocumentCollectionEventArgs e)
         {
             if (e != null && ReferenceEquals(e.Document, _document))
-                Detach();
-        }
-
-        private static void Attach(Document document)
-        {
-            if (ReferenceEquals(document, _document)) return;
-
-            Detach();
-            _document = document;
-            _database = document == null ? null : document.Database;
-            if (_database == null) return;
-
-            _database.ObjectModified += Changed;
-            _database.ObjectErased += Erased;
-
-            // A drawing can be opened with existing persistent platform links.
-            // Scan once on activation instead of reacting to every normal Civil 3D
-            // object modification.
-            _knownLinkedItems = HasAnyLinkedPlatformData(_database);
-            _pending = false;
-        }
-
-        private static void Detach()
-        {
-            if (_database != null)
             {
-                _database.ObjectModified -= Changed;
-                _database.ObjectErased -= Erased;
-            }
-
-            _database = null;
-            _document = null;
-            _pending = false;
-            _knownLinkedItems = false;
-            _suppressEventsUntilUtc = DateTime.MinValue;
-        }
-
-        private static void Changed(object sender, ObjectEventArgs e)
-        {
-            if (_busy ||
-                DateTime.UtcNow < _suppressEventsUntilUtc ||
-                e == null ||
-                e.DBObject == null)
-                return;
-
-            DBObject value = e.DBObject;
-
-            // Linked feature lines can depend on another source feature line or a
-            // Civil surface. Once a drawing is known to contain CE Platform links,
-            // those two object families may queue one debounced refresh. Unrelated
-            // tables and ordinary entities must never wake the Platform manager.
-            if (value is CivilSurface || value is CivilFeatureLine)
-            {
-                if (_knownLinkedItems || HasLinkedPlatformData(value))
-                {
-                    _knownLinkedItems = true;
-                    QueueFromEvent();
-                }
-                return;
-            }
-
-            Table table = value as Table;
-            if (table != null && HasLinkedPlatformData(table))
-            {
-                _knownLinkedItems = true;
-                QueueFromEvent();
+                _document = null;
+                _pending = false;
             }
         }
 
-        private static void Erased(object sender, ObjectErasedEventArgs e)
-        {
-            if (_busy ||
-                DateTime.UtcNow < _suppressEventsUntilUtc ||
-                e == null ||
-                e.DBObject == null ||
-                !_knownLinkedItems)
-                return;
-
-            if (e.DBObject is CivilSurface ||
-                e.DBObject is CivilFeatureLine ||
-                e.DBObject is Table)
-                QueueFromEvent();
-        }
-
-        private static void QueueFromEvent()
-        {
-            if (_busy || DateTime.UtcNow < _suppressEventsUntilUtc) return;
-            _pending = true;
-            _lastChangeUtc = DateTime.UtcNow;
-        }
+        // Retained as compatibility method anchors for historical build finalizers.
+        // They deliberately do nothing: ordinary DBObject modification/erase events
+        // must never schedule Platform refresh.
+        private static void Changed(object sender, ObjectEventArgs e) { }
+        private static void Erased(object sender, ObjectErasedEventArgs e) { }
 
         private static void Idle(object sender, EventArgs e)
         {
             Document active = AcApplication.DocumentManager.MdiActiveDocument;
-            Attach(active);
-
+            _document = active;
             if (!_pending ||
                 _busy ||
                 active == null ||
-                (DateTime.UtcNow - _lastChangeUtc).TotalSeconds < 1.5)
+                DateTime.UtcNow < _suppressUntilUtc ||
+                (DateTime.UtcNow - _lastChangeUtc).TotalMilliseconds < 350.0)
                 return;
 
             string commands = Convert.ToString(
@@ -1532,116 +1439,26 @@ namespace CETools.Civil3D
             if (activeCommands != 0) return;
 
             _busy = true;
-            bool undoDisabled = false;
-            int refreshed = 0;
             try
             {
-                active.Database.DisableUndoRecording(true);
-                undoDisabled = true;
-
-                using (active.LockDocument())
-                    refreshed = PlatformProductionCommands.RefreshAll(active);
-
-                // If the refresh found nothing, stop listening to ordinary
-                // Surface/FeatureLine traffic until an explicit Platform command
-                // creates a link again. CompleteRefresh also suppresses the delayed
-                // regeneration notifications that Civil 3D emits after the write.
-                CompleteRefresh(refreshed);
+                // Clear before queueing the command. CE_PLATFORMREFRESH calls
+                // CompleteRefresh after the one intentional pass.
+                _pending = false;
+                _suppressUntilUtc = DateTime.UtcNow.AddSeconds(2.0);
+                active.SendStringToExecute(
+                    "CE_PLATFORMREFRESH ",
+                    true,
+                    false,
+                    false);
             }
             catch
             {
                 _pending = false;
-                _suppressEventsUntilUtc = DateTime.UtcNow.AddSeconds(2.5);
             }
             finally
             {
-                if (undoDisabled)
-                {
-                    try { active.Database.DisableUndoRecording(false); }
-                    catch { }
-                }
                 _busy = false;
             }
-        }
-
-        private static bool HasAnyLinkedPlatformData(Database database)
-        {
-            if (database == null) return false;
-            try
-            {
-                using (Transaction transaction =
-                    database.TransactionManager.StartOpenCloseTransaction())
-                {
-                    BlockTableRecord space = transaction.GetObject(
-                        SymbolUtilityServices.GetBlockModelSpaceId(database),
-                        OpenMode.ForRead,
-                        false) as BlockTableRecord;
-                    if (space == null) return false;
-
-                    foreach (ObjectId id in space)
-                    {
-                        DBObject value;
-                        try
-                        {
-                            value = transaction.GetObject(
-                                id, OpenMode.ForRead, false);
-                        }
-                        catch
-                        {
-                            continue;
-                        }
-
-                        if (HasLinkedPlatformData(value, transaction))
-                            return true;
-                    }
-                }
-            }
-            catch { }
-
-            return false;
-        }
-
-        private static bool HasLinkedPlatformData(DBObject value)
-        {
-            if (value == null || value.Database == null) return false;
-            try
-            {
-                using (Transaction transaction =
-                    value.Database.TransactionManager.StartOpenCloseTransaction())
-                    return HasLinkedPlatformData(value, transaction);
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        private static bool HasLinkedPlatformData(
-            DBObject value,
-            Transaction transaction)
-        {
-            if (value == null ||
-                transaction == null ||
-                value.ExtensionDictionary.IsNull)
-                return false;
-
-            try
-            {
-                DBDictionary dictionary = transaction.GetObject(
-                    value.ExtensionDictionary,
-                    OpenMode.ForRead,
-                    false) as DBDictionary;
-                if (dictionary == null) return false;
-
-                foreach (string key in LinkKeys)
-                {
-                    if (dictionary.Contains(key))
-                        return true;
-                }
-            }
-            catch { }
-
-            return false;
         }
     }
 }
