@@ -36,19 +36,36 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
 
-            ObjectId sourceId = PromptProfileView(
-                document.Editor,
-                "\nSelect the ONE profile view to edit in native Profile View Properties: ");
-            if (sourceId.IsNull) return;
+            ObjectId sourceId = ObjectId.Null;
+            List<ObjectId> targets = new List<ObjectId>();
 
-            List<ObjectId> targets = PromptProfileViews(
-                document,
-                "\nSelect all OTHER profile views that must receive the same edits: ",
-                sourceId);
+            // When this command is launched from the batch band workflow, keep
+            // the complete implied selection. The first selected profile view is
+            // the one the operator edits in Civil 3D; every remaining selected
+            // view receives the edited properties after the native dialog closes.
+            List<ObjectId> implied = ReadImpliedProfileViews(document);
+            if (implied.Count >= 2)
+            {
+                sourceId = implied[0];
+                targets = implied.Skip(1).Distinct().ToList();
+            }
+            else
+            {
+                sourceId = PromptProfileView(
+                    document.Editor,
+                    "\nSelect the ONE profile view to edit in native Profile View Properties: ");
+                if (sourceId.IsNull) return;
+
+                targets = PromptProfileViews(
+                    document,
+                    "\nSelect all OTHER profile views that must receive the same edits: ",
+                    sourceId);
+            }
+
             if (targets.Count == 0)
             {
                 document.Editor.WriteMessage(
-                    "\nCE_PROFILEVIEWEDITMATCH: no target profile views were selected.");
+                    "\nCE_PROFILEVIEWEDITMATCH: select at least two profile views. The first is edited; the remaining views receive the same properties.");
                 return;
             }
 
@@ -746,6 +763,36 @@ namespace CETools.Civil3D
                 return true;
             }
             catch { return false; }
+        }
+
+        private static List<ObjectId> ReadImpliedProfileViews(
+            Document document)
+        {
+            var result = new List<ObjectId>();
+            if (document == null) return result;
+            PromptSelectionResult selection = document.Editor.SelectImplied();
+            if (selection.Status != PromptStatus.OK ||
+                selection.Value == null ||
+                selection.Value.Count < 2)
+                return result;
+
+            using (Transaction tr =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in selection.Value.GetObjectIds())
+                {
+                    if (result.Contains(id)) continue;
+                    try
+                    {
+                        CivilProfileView view = tr.GetObject(
+                            id, OpenMode.ForRead, false) as CivilProfileView;
+                        if (view != null && !view.IsReferenceObject)
+                            result.Add(id);
+                    }
+                    catch { }
+                }
+            }
+            return result;
         }
 
         private static ObjectId PromptProfileView(Editor editor, string message)
