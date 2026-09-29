@@ -566,25 +566,22 @@ foreach ($required in @(
 foreach ($required in @(
     'August21PlatformRelativeFatalSafety.CreatePlatformSteps(',
     'August21PlatformRelativeFatalSafety.DrapeSelection(',
-    'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)',
-    'active.SendStringToExecute("CE_PLATFORMREFRESH "',
-    '_suppressUntilUtc',
-    'private static void Changed(object sender, ObjectEventArgs e)',
-    'private static void Erased(object sender, ObjectErasedEventArgs e)')) {
+    'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)')) {
     if (-not $platformCheck.Contains($required)) { throw "Platform final safety missing: $required" }
 }
 if (-not $platformCheck.Contains('Platform refresh is manual/on-demand only') -and
     -not $platformCheck.Contains('automatic Platform refresh is disabled')) {
     throw 'Manual-only Platform refresh policy is missing after the final safety pass.'
 }
+if ($platformCheck.Contains('SendStringToExecute("CE_PLATFORMREFRESH "') -or
+    $platformCheck.Contains('QueueFromEvent();') -or
+    $platformCheck.Contains('_database.ObjectModified += Changed') -or
+    $platformCheck.Contains('_database.ObjectErased += Erased')) {
+    throw 'Platform background/event refresh wiring survived the manual-only final safety pass.'
+}
 if ($platformCheck.Contains('child.AssignElevationsFromSurface(surface.ObjectId, intermediate);') -or
     $platformCheck.Contains('rebuilt.AssignElevationsFromSurface(surfaceId, snapshot.Link.Intermediate);')) {
     throw 'Unsafe Platform AssignElevationsFromSurface path survived the final safety pass.'
-}
-if ($platformCheck.Contains('QueueFromEvent();') -or
-    $platformCheck.Contains('_database.ObjectModified += Changed') -or
-    $platformCheck.Contains('_database.ObjectErased += Erased')) {
-    throw 'Platform database-event auto-refresh survived the final safety pass.'
 }
 if (-not $joinCheck.Contains('August21PlatformRelativeFatalSafety.CreateJoinedFeatureLine(')) {
     throw 'Stepped join final safety delegation is missing.'
@@ -594,12 +591,14 @@ if ($joinCheck.Contains('CivilFeatureLine.Create(outputName, sourcePolyline.Obje
 }
 foreach ($required in @(
     'active.SendStringToExecute("CE_DYNAMICREFRESHALL "',
-    'PlatformProductionCommands.RefreshAll(document);',
     'string.Equals(command, "CE_DYNAMICREFRESHALL"')) {
     if (-not $universalCheck.Contains($required)) { throw "Universal final safety missing: $required" }
 }
 if ($universalCheck.Contains('RefreshNow(active, true);')) {
     throw 'Universal Refresh still mutates Civil objects directly from Idle.'
+}
+if ($universalCheck.Contains('PlatformProductionCommands.RefreshAll(document);')) {
+    throw 'Universal Refresh still invokes Platform refresh even though Platform refresh is manual/on-demand only.'
 }
 if (-not $sewerCheck.Contains('document.SendStringToExecute("CE_SEWAUTOSEQALL "')) {
     throw 'Sewer automatic sequence fallback still lacks command-context queuing.'
