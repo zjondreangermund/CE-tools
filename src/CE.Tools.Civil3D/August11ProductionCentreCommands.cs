@@ -122,7 +122,9 @@ namespace CETools.Civil3D
             {
                 Action("SETTINGS - Platform Styles", "CE_PLATFORMSTYLES", "Select feature-line, grading, surface and annotation styles.", "01 SETTINGS"),
                 Action("PREPARE - Create Feature Lines", "CE_FLCREATE", "Create multiple feature lines from selected polylines.", "02 PREPARE"),
-                Action("DESIGN - Platform Slopes / Levels", "CE_PLATFORMSLOPE", "Constant slope, fixed slope or flatten to highest elevation.", "04 DESIGN"),
+                Action("DESIGN - Grading & Slopes", "CE_GRADINGSLOPETOOLS", "Open grade-to-surface, constant-grade, slope/crossfall annotation and grading review tools.", "04 DESIGN"),
+                Action("Platform Slopes / Levels", "CE_PLATFORMSLOPE", "Constant slope, fixed slope or flatten to highest elevation.", "04 DESIGN"),
+                Action("Grade to Surface - Cut / Fill Slopes", "CE_PLATFORMGRADETOSURFACE", "Create dynamic daylight grading using separate cut and fill H:V slopes.", "04 DESIGN"),
                 Action("Stepped Offsets", "CE_PLATFORMSTEPOFFSETS", "Create linked stepped offsets for multiple platforms.", "04 DESIGN"),
                 Action("Drape / Platform Surface", "CE_PLATFORMDRAPE", "Drape linked platform controls to selected surface.", "04 DESIGN"),
                 Action("COMPLETE - Setting-Out", "CE_PLATFORMSETTINGOUT", "Vertex/grid setting-out and linked tables.", "05 COMPLETE"),
