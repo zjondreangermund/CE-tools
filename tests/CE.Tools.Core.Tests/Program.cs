@@ -29,6 +29,8 @@ namespace CETools.Core.Tests
                 SystemCurveIncreasesWithFlow();
                 PumpDutyPointFindsIntersection();
                 PumpReviewChecksNpshMargin();
+                PumpDutyPointSolvesNonlinearSystem();
+                MissingNpshDoesNotPass();
 
                 Console.WriteLine($"CE Tools core tests passed: {_tests}");
                 return 0;
@@ -266,6 +268,27 @@ namespace CETools.Core.Tests
             Near(1.2, pass.NpshMarginMetres.Value);
             True(!fail.NpshPass);
             Near(0.4, fail.NpshMarginMetres.Value);
+            Pass();
+        }
+
+        private static void PumpDutyPointSolvesNonlinearSystem()
+        {
+            var pump = new[] { new PumpCurvePoint(0, 40, 70, 5, 2), new PumpCurvePoint(40, 5, 80, 9, 4) };
+            var system = new SystemCurveDefinition(8, 1000, 0.15, 130, 3);
+            PumpDutyPoint duty = PumpSystemCurve.FindDutyPoint(pump, system);
+            True(duty != null && duty.FlowLitresPerSecond > 0 && duty.FlowLitresPerSecond < 40);
+            Near(PumpSystemCurve.SystemHeadMetres(duty.FlowLitresPerSecond, system), duty.PumpHeadMetres, 1e-8);
+            Pass();
+        }
+
+        private static void MissingNpshDoesNotPass()
+        {
+            var pump = new[] { new PumpCurvePoint(0, 20, null, null, null), new PumpCurvePoint(20, 0, null, null, null) };
+            var system = new SystemCurveDefinition(12, 0, 0.2, 130, 0);
+            var review = PumpSystemCurve.Review(pump, system, null, null);
+            True(!review.NpshPass && !review.NpshMarginMetres.HasValue);
+            Throws<ArgumentOutOfRangeException>(() => PumpSystemCurve.Review(pump, system, double.NaN, 0));
+            Throws<ArgumentOutOfRangeException>(() => PumpSystemCurve.Review(pump, system, 5, -1));
             Pass();
         }
 
