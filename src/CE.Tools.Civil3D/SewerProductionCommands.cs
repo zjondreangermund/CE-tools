@@ -57,6 +57,8 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Format alignments and labels", "CE_SEWFORMAT", "Reapply production styles and repeated branch labels.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Create sewer profiles / long sections", "CE_SEWPROFILE", "Create one isolated long-section profile view per branch, link its pipe-network parts and bands, then review the branch results in a grid or DWG table.", "3 — Profiles"),
                     new DisciplineWorkflowAction("Apply / repair sewer long-section bands", "CE_SEWBANDLABELS", "Select multiple sewer profile views, apply the chosen native band set, bind the existing-ground profile and gravity network, and enable all configured labels.", "3 — Profiles"),
+                    new DisciplineWorkflowAction("Repair Pipe Network Band Label Groups", "CE_SEWPIPEBANDGROUPS", "Materialise Pipe Network band rows on multiple sewer profile views and restore their gravity-network Data Source / label groups.", "3 — Profiles"),
+                    new DisciplineWorkflowAction("Band Data Sources (multiple views)", "CE_PROFILEVIEWDATASOURCES", "Batch-fill blank Profile 1/Profile 2/Pipe Network Data Source fields on selected profile views.", "3 — Profiles"),
                     new DisciplineWorkflowAction("Sewer information", "CE_SEWINFO", "Review settings, alignments, profile views and network links.", "5 — Review")
                 });
             if (!string.IsNullOrWhiteSpace(command))
