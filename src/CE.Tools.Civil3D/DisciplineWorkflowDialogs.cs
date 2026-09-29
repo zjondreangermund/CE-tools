@@ -54,7 +54,7 @@ namespace CETools.Civil3D
             // Water settings remain available when another DWG is opened.
             CrossDrawingProductionSettingsStore.Load(model);
             // A drawing can still keep its own override of the shared defaults.
-            if (document != null)
+            if (document != null && !CrossDrawingSettingsPreference.UseSavedProjectSettings)
                 ProductionSettingsPersistenceStore.Load(document.Database, model);
             var window = new ProductionSettingsWindow(model);
             AcApplication.ShowModalWindow(window);
