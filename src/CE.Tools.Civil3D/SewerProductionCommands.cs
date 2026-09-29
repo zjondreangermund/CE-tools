@@ -1259,7 +1259,9 @@ namespace CETools.Civil3D
                         BranchName = record.BranchName,
                         ProfileId = profileId,
                         ProfileViewId = viewId,
-                        NetworkId = networkId
+                        NetworkId = networkId,
+                        BandSetStyleId = bandId,
+                        ProfileViewStyleId = viewStyleId
                     });
 
                     var title = new MText();
@@ -1307,34 +1309,28 @@ namespace CETools.Civil3D
             {
                 try
                 {
-                    // Band collections are native Civil 3D wrappers. Keep each
-                    // view's source binding in its own committed transaction and
-                    // allow the branch/profile view to survive if one drawing
-                    // returns a non-writable band item (eNotOpenForWrite).
-                    int localBandItems = 0;
-                    using (Transaction transaction = database.TransactionManager.StartTransaction())
-                    {
-                        DBObject view = transaction.GetObject(
-                            binding.ProfileViewId,
-                            OpenMode.ForWrite,
-                            false);
-                        localBandItems = ProfileViewBandDataBinder.Bind(
-                            view,
-                            binding.ProfileId,
-                            ObjectId.Null,
-                            binding.NetworkId);
-                        try
-                        {
-                            Entity graphicsEntity = view as Entity;
-                            if (graphicsEntity != null)
-                                graphicsEntity.RecordGraphicsModified(true);
-                        }
-                        catch { }
-                        transaction.Commit();
-                    }
-                    bandItemsLinked += localBandItems;
+                    // Civil 3D 2023 may accept the band-set ObjectId during
+                    // ProfileView.Create yet leave the native top/bottom
+                    // collections empty. Re-import and materialise the selected
+                    // sewer band set only after the creation transaction has
+                    // committed, then bind the EG profile and gravity network.
+                    SewerBandApplyResult result = SewerLongSectionBandService.Apply(
+                        database,
+                        binding.ProfileViewId,
+                        binding.BandSetStyleId,
+                        binding.ProfileViewStyleId,
+                        binding.ProfileId,
+                        binding.NetworkId);
+                    bandItemsLinked += result.LinkedSources;
+                    if (result.BandRows == 0 ||
+                        result.LabelsFound == 0 ||
+                        result.LabelsEnabled < result.LabelsFound)
+                        bandBindingWarnings++;
                 }
-                catch { bandBindingWarnings++; }
+                catch
+                {
+                    bandBindingWarnings++;
+                }
             }
         }
 
@@ -1344,6 +1340,8 @@ namespace CETools.Civil3D
             internal ObjectId ProfileId { get; set; }
             internal ObjectId ProfileViewId { get; set; }
             internal ObjectId NetworkId { get; set; }
+            internal ObjectId BandSetStyleId { get; set; }
+            internal ObjectId ProfileViewStyleId { get; set; }
         }
 
         private static int AddBranchPartsSafely(
