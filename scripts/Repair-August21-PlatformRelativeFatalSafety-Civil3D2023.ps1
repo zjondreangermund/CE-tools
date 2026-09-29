@@ -439,17 +439,14 @@ $universalEnded = @'
                 Queue();
 '@
 $universal = ReplaceMethodBody $universal 'private static void OnCommandEnded(object sender, CommandEventArgs e)' $universalEnded 'UniversalDynamicRefreshManager.OnCommandEnded'
-if (-not $universal.Contains('PlatformProductionCommands.RefreshAll(document);')) {
-    $anchor = '                try { FinalFeatureLineReportCommands.RefreshAll(document); }' + "`r`n" +
-              '                catch { result.Warnings++; }'
-    if (-not $universal.Contains($anchor)) {
-        throw 'Universal refresh platform insertion anchor is missing.'
-    }
-    $replacement = $anchor + "`r`n" +
-        '                try { PlatformProductionCommands.RefreshAll(document); }' + "`r`n" +
-        '                catch { result.Warnings++; }'
-    $universal = $universal.Replace($anchor,$replacement)
-}
+# Platform refresh is intentionally excluded from Universal Dynamic Refresh.
+# It is expensive and Civil 3D regeneration can make linked Platform output look
+# dirty repeatedly. Keep CE_PLATFORMREFRESH as an explicit Maintain command only.
+$universal = $universal.Replace(
+    '                try { PlatformProductionCommands.RefreshAll(document); }' + "`r`n" +
+    '                catch { result.Warnings++; }' + "`r`n",
+    '')
+
 WriteText $universalPath $universal
 
 # -----------------------------------------------------------------------------
