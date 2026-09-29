@@ -274,7 +274,7 @@ namespace CETools.Civil3D
                 }
                 Point3d geo;
                 string transformError;
-                if (!GeoCoordinateTransform.TryDrawingToWgs84(
+                if (!NamibiaCoordinateRuntime.TryDrawingToWgs84(
                         document.Database,
                         new Point3d(xValue, yValue, 0.0),
                         out geo,
@@ -305,7 +305,7 @@ namespace CETools.Civil3D
                 }
                 Point3d drawingPoint;
                 string transformError;
-                if (!GeoCoordinateTransform.TryWgs84ToDrawing(
+                if (!NamibiaCoordinateRuntime.TryWgs84ToDrawing(
                         document.Database,
                         transformLatitude,
                         transformLongitude,
