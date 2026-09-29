@@ -34,6 +34,12 @@ if (Get-Command git -ErrorAction SilentlyContinue) {
     catch { }
 }
 
+$productionValidation = Join-Path $PSScriptRoot 'Validate-CurrentProductionWiring-Civil3D2023.ps1'
+if (-not (Test-Path -LiteralPath $productionValidation -PathType Leaf)) {
+    throw "Production wiring validator is missing: $productionValidation"
+}
+& $productionValidation -RepoRoot $repo
+
 $args = @('msbuild', $project, '/p:Configuration=Release', '/p:Platform=x64',
     '/p:AutoCADVersion=2023', "/p:AutoCADRoot=$autoCadRoot", "/p:Civil3DRoot=$civilRoot",
     "/p:AecRoot=$aecRoot", '/p:UseSharedCompilation=false', '/p:BuildInParallel=false',
