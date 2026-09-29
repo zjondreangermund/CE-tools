@@ -24,6 +24,7 @@ healing = read("FeatureLineSteppedJoinCommands.cs")
 construction = read("FeatureLineConstructionCommands.cs")
 ribbon = read("PluginEntry.cs")
 refresh = read("CommentPresentationCommands.cs")
+junction = read("August13JunctionFallbackCommands.cs")
 
 required = {
     "FeatureLineRelativeCommands.cs": (
@@ -34,6 +35,14 @@ required = {
         'settings.AddPositiveInteger(',
         'public static int RefreshAll(Document document)',
         'private const string RecordKey = "CE_FLREL";',
+        '"VerticalMode"',
+        '"Grade (%)"',
+        '"Slope (H:V)"',
+        '"Offset side"',
+        '"Left"',
+        '"Right"',
+        '"Both sides"',
+        '"Select multiple SOURCE feature lines for stepped offsets: "',
     ),
     "FeatureLineSteppedJoinCommands.cs": (
         '"CE_FLSTEPJOIN"',
@@ -56,6 +65,11 @@ required = {
     "CommentPresentationCommands.cs": (
         "FeatureLineRelativeCommands.RefreshAll(document)",
     ),
+    "August13JunctionFallbackCommands.cs": (
+        '"CE_FLRELCREATE"',
+        '"CE_GRADINGSLOPETOOLS"',
+        '"CE_PLATFORMGRADETOSURFACE"',
+    ),
 }
 
 texts = {
@@ -64,6 +78,7 @@ texts = {
     "FeatureLineConstructionCommands.cs": construction,
     "PluginEntry.cs": ribbon,
     "CommentPresentationCommands.cs": refresh,
+    "August13JunctionFallbackCommands.cs": junction,
 }
 
 for name, markers in required.items():
@@ -89,6 +104,13 @@ update_body = update_body.split("public static int RefreshAll(Document document)
 if "Confirm(editor" in update_body:
     errors.append("CE_FLRELUPDATE must rebuild the selected source set without a second confirmation")
 
+if '"CE_FLOFFSET"' in junction:
+    errors.append("Junction stepped-offset fallback must not route back to the legacy single-source CE_FLOFFSET command")
+if 'settings.Text("VerticalMode")' not in create_body or 'settings.Text("SlopeDirection")' not in create_body:
+    errors.append("Linked stepped offsets must calculate vertical change from the selected elevation/grade/slope mode")
+if 'ResolveNamedOffsetSign' not in create_body:
+    errors.append("Linked stepped offsets must retain selectable side control for bellmouth/source offsets")
+
 if "gapTolerance" not in healing or "best.Distance > gapTolerance" not in healing:
     errors.append("Stepped healing no longer protects the maximum bridge distance")
 if "if (!sourcePolyline.IsErased) sourcePolyline.Erase();" not in healing:
@@ -102,5 +124,5 @@ if errors:
 
 print(
     "Stepped feature-line workflows passed: popup multi-offset creation, automatic linked refresh, "
-    "one-selection set rebuild, gap-tolerant healing and endpoint-vertex preservation are protected."
+    "multi-source creation, bellmouth side control, grade/slope vertical modes, one-selection set rebuild, gap-tolerant healing and endpoint-vertex preservation are protected."
 )
