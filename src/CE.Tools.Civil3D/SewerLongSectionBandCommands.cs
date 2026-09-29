@@ -274,6 +274,17 @@ namespace CETools.Civil3D
                     groundProfileId,
                     ObjectId.Null,
                     networkId);
+
+                // Field guard: every native Pipe Network row from the selected
+                // sewer band-set style must carry the gravity-network DataSource.
+                // Civil 3D 2023 can leave only the first row linked even when the
+                // remaining rows are present. Re-assert and verify the complete
+                // top/bottom collections before regeneration.
+                int networkRowsLinked = EnsureEveryNetworkBandSource(
+                    view,
+                    networkId);
+                linked = Math.Max(linked, networkRowsLinked);
+
                 ProfileViewBandPersistence.EnableLabels(view, out found, out labelsEnabled);
                 try { view.RecordGraphicsModified(true); } catch { }
                 bind.Commit();
@@ -288,6 +299,14 @@ namespace CETools.Civil3D
                 if (persistedRows == 0)
                     throw new InvalidOperationException(
                         "The sewer band rows disappeared after the import transaction committed.");
+
+                int unlinkedNetworkRows = CountUnlinkedNetworkRows(
+                    view,
+                    networkId);
+                if (!networkId.IsNull && unlinkedNetworkRows > 0)
+                    throw new InvalidOperationException(
+                        unlinkedNetworkRows.ToString(CultureInfo.InvariantCulture) +
+                        " Pipe Network band row(s) still have a blank/wrong Data Source after the repair.");
             }
 
             return new SewerBandApplyResult
