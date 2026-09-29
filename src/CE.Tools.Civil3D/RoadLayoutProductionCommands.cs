@@ -858,16 +858,24 @@ namespace CETools.Civil3D
         {
             Vector2d ux = x.GetNormal();
             Vector2d uy = y.GetNormal();
-            Vector2d local = ux.MultiplyBy(sx * (halfWidth + radius)) + uy.MultiplyBy(sy * (halfWidth + radius));
-            Point3d arcCentre = centre + new Vector3d(local.X, local.Y, 0.0);
-            double baseAngle = Math.Atan2(ux.Y, ux.X);
-            double start;
-            double end;
-            if (sx > 0 && sy > 0) { start = baseAngle + Math.PI; end = baseAngle + Math.PI * 1.5; }
-            else if (sx < 0 && sy > 0) { start = baseAngle + Math.PI * 1.5; end = baseAngle + Math.PI * 2.0; }
-            else if (sx < 0 && sy < 0) { start = baseAngle; end = baseAngle + Math.PI * 0.5; }
-            else { start = baseAngle + Math.PI * 0.5; end = baseAngle + Math.PI; }
-            var arc = new Arc(arcCentre, Vector3d.ZAxis, radius, NormalizeAngle(start), NormalizeAngle(end));
+            Vector2d centreOffset = ux.MultiplyBy(sx * (halfWidth + radius)) + uy.MultiplyBy(sy * (halfWidth + radius));
+            Point3d arcCentre = centre + new Vector3d(centreOffset.X, centreOffset.Y, 0.0);
+
+            Vector2d firstOffset = ux.MultiplyBy(sx * (halfWidth + radius)) + uy.MultiplyBy(sy * halfWidth);
+            Vector2d secondOffset = ux.MultiplyBy(sx * halfWidth) + uy.MultiplyBy(sy * (halfWidth + radius));
+            Point3d first = centre + new Vector3d(firstOffset.X, firstOffset.Y, 0.0);
+            Point3d second = centre + new Vector3d(secondOffset.X, secondOffset.Y, 0.0);
+
+            Vector2d r1 = new Vector2d(first.X - arcCentre.X, first.Y - arcCentre.Y);
+            Vector2d r2 = new Vector2d(second.X - arcCentre.X, second.Y - arcCentre.Y);
+            double a1 = NormalizeAngle(Math.Atan2(r1.Y, r1.X));
+            double a2 = NormalizeAngle(Math.Atan2(r2.Y, r2.X));
+            double cross = r1.X * r2.Y - r1.Y * r2.X;
+            double start = cross >= 0.0 ? a1 : a2;
+            double end = cross >= 0.0 ? a2 : a1;
+            if (end <= start) end += Math.PI * 2.0;
+
+            var arc = new Arc(arcCentre, Vector3d.ZAxis, radius, start, end);
             arc.SetDatabaseDefaults(database);
             return arc;
         }
