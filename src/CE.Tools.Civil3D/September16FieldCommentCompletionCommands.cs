@@ -85,6 +85,9 @@ namespace CETools.Civil3D
                 "Optional minimum point spacing for feature-line output. 0 keeps all generated control points.");
             model.AddDouble("WeedAngle", "04 Output", "Feature-line weed angle (deg)", 0.0,
                 "Optional deflection-angle weed setting. 0 disables angle weeding.");
+            model.AddChoice("TopSurfaceVertices", "05 Road TOP surfaces", "Assign junction vertices to road TOP surfaces", "Yes",
+                "Select multiple road TOP surfaces after selecting the roads. Cross-road connectors include a protected midpoint so the road crown is retained.",
+                new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             if (string.Equals(model.Text("Operation"), "Close selected feature lines",
@@ -123,15 +126,25 @@ namespace CETools.Civil3D
             double weedDistance = Math.Max(0.0, model.Double("WeedDistance", 0.0));
             double weedAngle = Math.Max(0.0, model.Double("WeedAngle", 0.0));
             string outputLayerName = CleanLayerName(model.Text("Layer"));
+            IList<CivilChoice> topSurfaceChoices = new List<CivilChoice>();
+            if ((featureLines || closureFeatureLine) && model.Text("TopSurfaceVertices") == "Yes")
+            {
+                topSurfaceChoices = JunctionSurfaceVertices.PickSurfaces(document, CivilApplication.ActiveDocument);
+                if (topSurfaceChoices == null || topSurfaceChoices.Count == 0) return;
+            }
             ObjectId featureLineSiteId = featureLines || closureFeatureLine ? ResolveSite(model.Text("Site")) : ObjectId.Null;
             int created = 0;
             int tClosures = 0;
             int crossLimitLines = 0;
             int junctions = 0;
             int failedPairs = 0;
+            int surfaceVertices = 0;
+            int unresolvedVertices = 0;
 
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
+                List<Autodesk.Civil.DatabaseServices.Surface> topSurfaces =
+                    JunctionSurfaceVertices.OpenSurfaces(transaction, topSurfaceChoices);
                 var curves = new List<Curve>();
                 foreach (ObjectId id in selected.Value.GetObjectIds().Distinct())
                 {
@@ -205,6 +218,13 @@ namespace CETools.Civil3D
                             weedDistance,
                             weedAngle);
                         if (arcId.IsNull) continue;
+                        CivilFeatureLine returnLine = transaction.GetObject(arcId, OpenMode.ForWrite, false) as CivilFeatureLine;
+                        if (returnLine != null && topSurfaces.Count > 0)
+                        {
+                            int unresolved;
+                            surfaceVertices += JunctionSurfaceVertices.Apply(returnLine, topSurfaces, out unresolved);
+                            unresolvedVertices += unresolved;
+                        }
                         string label = prefix + junctionNumber.ToString(CultureInfo.InvariantCulture) + "." +
                             returnNumber.ToString(CultureInfo.InvariantCulture);
                         CreateLabel(document.Database, transaction, space, layerId, definition.Mid, label, textHeight, arcId, candidate.Point);
@@ -220,12 +240,17 @@ namespace CETools.Civil3D
                         featureLines || (!candidate.IsCross && closureFeatureLine),
                         featureLineSiteId,
                         weedDistance,
-                        weedAngle);
+                        weedAngle,
+                        topSurfaces,
+                        ref surfaceVertices,
+                        ref unresolvedVertices);
                     if (candidate.IsCross) crossLimitLines += closureCount;
                     else tClosures += closureCount;
                     if (returnNumber > 0) junctions++;
                 }
 
+                foreach (Autodesk.Civil.DatabaseServices.Surface surface in topSurfaces)
+                    surface.Rebuild();
                 transaction.Commit();
             }
 
@@ -233,6 +258,8 @@ namespace CETools.Civil3D
             document.Editor.WriteMessage(
                 "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction endpoint closures={2}; cross-junction limit lines={3}; failed curve pairs={4}; layer={5}. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
                 junctions, created, tClosures, crossLimitLines, failedPairs, outputLayerName);
+            document.Editor.WriteMessage("\nCross-road connectors include midpoint vertices; surface vertices added={0}; unresolved elevations={1}.",
+                surfaceVertices, unresolvedVertices);
         }
 
         private static bool TryBuildCandidate(Curve first, Curve second, Point3d point, double endpointTolerance, out JunctionCandidate candidate)
@@ -427,7 +454,10 @@ namespace CETools.Civil3D
             bool featureLines,
             ObjectId siteId,
             double weedDistance,
-            double weedAngle)
+            double weedAngle,
+            IList<Autodesk.Civil.DatabaseServices.Surface> topSurfaces,
+            ref int surfaceVertices,
+            ref int unresolvedVertices)
         {
             var pairs = new List<Tuple<Point3d, Point3d, string>>();
             if (candidate.IsCross)
@@ -467,7 +497,8 @@ namespace CETools.Civil3D
             {
                 ObjectId id = CreateClosureEntity(
                     database, transaction, space, layerId, pair.Item1, pair.Item2,
-                    pair.Item3, candidate.Point, featureLines, siteId, weedDistance, weedAngle);
+                    pair.Item3, candidate.Point, featureLines, siteId, weedDistance, weedAngle,
+                    topSurfaces, ref surfaceVertices, ref unresolvedVertices);
                 if (!id.IsNull) created++;
             }
             return created;
@@ -485,16 +516,20 @@ namespace CETools.Civil3D
             bool featureLine,
             ObjectId siteId,
             double weedDistance,
-            double weedAngle)
+            double weedAngle,
+            IList<Autodesk.Civil.DatabaseServices.Surface> topSurfaces,
+            ref int surfaceVertices,
+            ref int unresolvedVertices)
         {
             try
             {
-                var polyline = new Polyline(2);
+                var polyline = new Polyline(3);
                 polyline.SetDatabaseDefaults(database);
                 polyline.LayerId = layerId;
                 polyline.Color = Color.FromColorIndex(ColorMethod.ByAci, 6);
                 polyline.AddVertexAt(0, new Point2d(start.X, start.Y), 0.0, 0.0, 0.0);
-                polyline.AddVertexAt(1, new Point2d(end.X, end.Y), 0.0, 0.0, 0.0);
+                polyline.AddVertexAt(1, new Point2d((start.X + end.X) * 0.5, (start.Y + end.Y) * 0.5), 0.0, 0.0, 0.0);
+                polyline.AddVertexAt(2, new Point2d(end.X, end.Y), 0.0, 0.0, 0.0);
                 ObjectId sourceId = space.AppendEntity(polyline);
                 transaction.AddNewlyCreatedDBObject(polyline, true);
 
@@ -511,7 +546,14 @@ namespace CETools.Civil3D
                     {
                         created.LayerId = layerId;
                         created.Color = Color.FromColorIndex(ColorMethod.ByAci, 6);
-                        ApplyFeatureLineWeeding(created, weedDistance, weedAngle);
+                        // The centre crown and both edge controls are mandatory;
+                        // straight-line weeding would remove the midpoint.
+                        if (topSurfaces.Count > 0)
+                        {
+                            int unresolved;
+                            surfaceVertices += JunctionSurfaceVertices.Apply(created, topSurfaces, out unresolved);
+                            unresolvedVertices += unresolved;
+                        }
                         output = created;
                     }
                     TryEraseGeneratedSource(polyline);

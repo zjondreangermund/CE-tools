@@ -1084,6 +1084,7 @@ namespace CETools.Civil3D
                 desiredName = MakeUniqueAlignmentName(civilDocument, transaction, desiredName, newAlignmentId);
                 created.Name = desiredName;
                 created.Description = "CE sewer alignment - " + branch.BranchName;
+                SewerPartAlignmentBinding.BindBranch(transaction, branch.PipeIds, branch.StructureIds, newAlignmentId);
                 string networkHandle = string.Empty;
                 if (branch.PipeIds.Count > 0)
                 {

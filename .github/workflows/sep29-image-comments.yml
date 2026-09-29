@@ -1,0 +1,22 @@
+name: September 29 image comments
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  source-and-catalog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+      - run: dotnet run --project tests/CE.Tools.AssemblyCatalog.Tests
+      - run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests -- .
+      - run: dotnet run --project tests/CE.Tools.Civil3D.ApiContract.Tests
+      - run: python3 scripts/Validate-September16FieldComments.py
+      - run: python3 scripts/Validate-September25RoadSewerProfileFixes.py
+      - run: python3 scripts/Validate-September25ProfileViewBandLabels.py
+      - run: python3 scripts/Validate-CommandRegistry.py
