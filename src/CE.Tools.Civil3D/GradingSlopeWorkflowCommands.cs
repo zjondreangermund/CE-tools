@@ -62,9 +62,14 @@ namespace CETools.Civil3D
                         "Create linked slope arrows and values sampled from a Civil 3D surface.",
                         "02 SLOPE ANNOTATION"),
                     new DisciplineWorkflowAction(
-                        "Refresh Dynamic Slopes",
+                        "Refresh Feature-Line Slope Arrows",
+                        "CE_SLOPEARROWSREFRESH",
+                        "Refresh linked feature-line slope annotations.",
+                        "02 SLOPE ANNOTATION"),
+                    new DisciplineWorkflowAction(
+                        "Refresh Dynamic Crossfalls",
                         "CE_DYNAMICSLOPESREFRESH",
-                        "Refresh all linked CE slope and crossfall leader sets.",
+                        "Refresh linked crossfall/dynamic slope leader sets.",
                         "02 SLOPE ANNOTATION"),
                     new DisciplineWorkflowAction(
                         "Grading Diagnostics",
@@ -94,20 +99,5 @@ namespace CETools.Civil3D
                 });
         }
 
-        [CommandMethod("CE_TOOLS", "CE_FEATURELINESLOPEARROWS", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
-        public void FeatureLineSlopeArrows()
-        {
-            Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document == null) return;
-            August27DynamicSlopeGridHatchCommands.FeatureLineSlopeArrows(document);
-        }
-
-        [CommandMethod("CE_TOOLS", "CE_SURFACESLOPEARROWS", CommandFlags.Modal | CommandFlags.Redraw)]
-        public void SurfaceSlopeArrows()
-        {
-            Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document == null) return;
-            August27DynamicSlopeGridHatchCommands.SurfaceSlopeArrows(document);
-        }
     }
 }
