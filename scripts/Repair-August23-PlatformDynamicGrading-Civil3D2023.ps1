@@ -81,10 +81,10 @@ $platform = InsertWorkflowAction $platform 'CE_PLATFORMGRADETOSURFACE' `
     '                    new DisciplineWorkflowAction("Grade / daylight multiple platforms to surface", "CE_PLATFORMGRADETOSURFACE", "Create dynamic cut/fill daylight feature lines to a selected surface with optional native grading infill.", "04 Surface"),' `
     'CE_PLATFORMSURFACE'
 
-# The established PlatformDynamicRefreshManager already watches Surface and
-# FeatureLine modifications and calls PlatformProductionCommands.RefreshAll(). Add
-# the August 23 persistent links to that exact refresh boundary so no second event
-# manager or duplicate command reactor is needed.
+# CE_PLATFORMREFRESH is the deliberate Platform refresh boundary. Add the
+# August 23 persistent links to that same refresh pass; the manager itself is
+# command-driven so Civil 3D REGEN/ObjectModified traffic cannot continuously
+# requeue Platform work.
 $refreshMarker = '        internal static int RefreshAll(Document document)'
 $range = MethodRange $platform $refreshMarker 'PlatformProductionCommands.RefreshAll'
 $start = [int]$range[0]
@@ -151,4 +151,4 @@ Write-Host ' - multi-feature-line safe surface draping is exposed and persistent
 Write-Host ' - dynamic cut/fill daylight-to-surface with optional native infill is exposed.' -ForegroundColor Green
 Write-Host ' - constant grade preserves first/last endpoint levels for multiple feature lines.' -ForegroundColor Green
 Write-Host ' - stepped gaps can be bridged without moving source endpoints; fixed-anchor endpoint snap remains available.' -ForegroundColor Green
-Write-Host ' - existing PlatformDynamicRefreshManager now refreshes August 23 links automatically.' -ForegroundColor Green
+Write-Host ' - CE_PLATFORMREFRESH includes August 23 links; ordinary REGEN events do not queue Platform refresh.' -ForegroundColor Green
