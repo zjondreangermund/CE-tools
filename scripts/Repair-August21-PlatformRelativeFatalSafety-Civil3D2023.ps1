@@ -346,7 +346,9 @@ $platformIdle = @'
             // when the operator explicitly requests it from Platform Production.
             _pending = false;
 '@
-$platform = ReplaceMethodBody $platform 'private static void Idle(object sender, EventArgs e)' $platformIdle 'PlatformDynamicRefreshManager.Idle'
+if ($platform.Contains('private static void Idle(object sender, EventArgs e)')) {
+    $platform = ReplaceMethodBody $platform 'private static void Idle(object sender, EventArgs e)' $platformIdle 'PlatformDynamicRefreshManager.Idle'
+}
 
 # Platform automatic refresh is deliberately command-driven. Civil 3D emits
 # Surface/FeatureLine/Table ObjectModified events during REGEN and profile/band
@@ -356,12 +358,16 @@ $platformChanged = @'
             // not queue CE_PLATFORMREFRESH.
             return;
 '@
-$platform = ReplaceMethodBody $platform 'private static void Changed(object sender, ObjectEventArgs e)' $platformChanged 'PlatformDynamicRefreshManager.Changed'
+if ($platform.Contains('private static void Changed(object sender, ObjectEventArgs e)')) {
+    $platform = ReplaceMethodBody $platform 'private static void Changed(object sender, ObjectEventArgs e)' $platformChanged 'PlatformDynamicRefreshManager.Changed'
+}
 $platformErased = @'
             // Manual-only Platform refresh: erasures do not start background work.
             return;
 '@
-$platform = ReplaceMethodBody $platform 'private static void Erased(object sender, ObjectErasedEventArgs e)' $platformErased 'PlatformDynamicRefreshManager.Erased'
+if ($platform.Contains('private static void Erased(object sender, ObjectErasedEventArgs e)')) {
+    $platform = ReplaceMethodBody $platform 'private static void Erased(object sender, ObjectErasedEventArgs e)' $platformErased 'PlatformDynamicRefreshManager.Erased'
+}
 WriteText $platformPath $platform
 
 # -----------------------------------------------------------------------------
@@ -566,6 +572,10 @@ foreach ($required in @(
     'private static void Changed(object sender, ObjectEventArgs e)',
     'private static void Erased(object sender, ObjectErasedEventArgs e)')) {
     if (-not $platformCheck.Contains($required)) { throw "Platform final safety missing: $required" }
+}
+if (-not $platformCheck.Contains('Platform refresh is manual/on-demand only') -and
+    -not $platformCheck.Contains('automatic Platform refresh is disabled')) {
+    throw 'Manual-only Platform refresh policy is missing after the final safety pass.'
 }
 if ($platformCheck.Contains('child.AssignElevationsFromSurface(surface.ObjectId, intermediate);') -or
     $platformCheck.Contains('rebuilt.AssignElevationsFromSurface(surfaceId, snapshot.Link.Intermediate);')) {
