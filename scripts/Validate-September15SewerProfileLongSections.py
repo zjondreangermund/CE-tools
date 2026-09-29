@@ -42,7 +42,7 @@ required_band_service = [
     'ResolveTaggedNetwork(',
     'ResolveNetworkByAlignment(',
     'ResolveGroundProfile(',
-    '"Select multiple sewer profile views to receive the long-section band set: "',
+    'Select multiple sewer profile views to receive the long-section band set:',
 ]
 for token in required_band_service:
     if token not in sewer_bands:
