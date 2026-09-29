@@ -37,13 +37,11 @@ namespace CETools.Civil3D
             IList<DisciplineWorkflowAction> actions)
         {
             if (document == null) return;
-            string command = SelectWorkflow(title, note, actions);
-            if (string.IsNullOrWhiteSpace(command)) return;
-            document.SendStringToExecute(
-                command.Trim() + " ",
-                true,
-                false,
-                true);
+            var window = new DisciplineWorkflowWindow(title, note, actions)
+            {
+                KeepOpenOnAction = true
+            };
+            AcApplication.ShowModelessWindow(window);
         }
 
         public static bool EditSettings(ProductionSettingsDialogModel model)
@@ -161,7 +159,7 @@ namespace CETools.Civil3D
                     {
                         Tag = action,
                         HorizontalContentAlignment = HorizontalAlignment.Stretch,
-                        Padding = new Thickness(12, 9, 12, 9),
+                        Padding = new Thickness(14, 11, 14, 11),
                         Margin = new Thickness(0, 0, 0, 7),
                         Content = BuildActionContent(action)
                     };
@@ -193,34 +191,62 @@ namespace CETools.Civil3D
         }
 
         public string SelectedCommand { get; private set; }
+        public bool KeepOpenOnAction { get; set; }
 
         private static UIElement BuildActionContent(DisciplineWorkflowAction action)
         {
-            var grid = new Grid();
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(210) });
-            grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            var title = new StackPanel();
+            var grid = new Grid
+            {
+                HorizontalAlignment = HorizontalAlignment.Stretch
+            };
+            grid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(330),
+                MinWidth = 300
+            });
+            grid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(28)
+            });
+            grid.ColumnDefinitions.Add(new ColumnDefinition
+            {
+                Width = new GridLength(1, GridUnitType.Star),
+                MinWidth = 220
+            });
+
+            var title = new StackPanel
+            {
+                Margin = new Thickness(0, 1, 0, 1),
+                VerticalAlignment = VerticalAlignment.Center
+            };
             title.Children.Add(new TextBlock
             {
                 Text = action.Title,
                 FontWeight = FontWeights.SemiBold,
-                FontSize = 14
+                FontSize = 14,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 3)
             });
             title.Children.Add(new TextBlock
             {
                 Text = action.Command,
                 FontFamily = new FontFamily("Consolas"),
-                Foreground = Brushes.DimGray
+                Foreground = Brushes.DimGray,
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 11.5
             });
+            Grid.SetColumn(title, 0);
             grid.Children.Add(title);
+
             var description = new TextBlock
             {
                 Text = action.Description,
                 TextWrapping = TextWrapping.Wrap,
                 VerticalAlignment = VerticalAlignment.Center,
-                Foreground = Brushes.DimGray
+                Foreground = Brushes.DimGray,
+                LineHeight = 18
             };
-            Grid.SetColumn(description, 1);
+            Grid.SetColumn(description, 2);
             grid.Children.Add(description);
             return grid;
         }
@@ -231,8 +257,82 @@ namespace CETools.Civil3D
             var action = button == null ? null : button.Tag as DisciplineWorkflowAction;
             if (action == null || string.IsNullOrWhiteSpace(action.Command)) return;
             SelectedCommand = action.Command;
+
+            if (KeepOpenOnAction)
+            {
+                string queuedCommand = action.Command.Trim() + " ";
+                string discipline = ResolveStyleDiscipline(Title);
+
+                Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    Document document = null;
+                    try
+                    {
+                        document = AcApplication.DocumentManager.MdiActiveDocument;
+                        if (document == null) return;
+
+                        if (!string.IsNullOrWhiteSpace(discipline))
+                        {
+                            try
+                            {
+                                using (DocumentLock documentLock = document.LockDocument())
+                                {
+                                    August11DisciplineStylePresetManager.ActivateForProduction(
+                                        document.Database,
+                                        discipline);
+                                }
+                            }
+                            catch (System.Exception presetException)
+                            {
+                                try
+                                {
+                                    document.Editor.WriteMessage(
+                                        "\nCE Tools: {0} style preset could not be pre-activated; the command will still run. {1}",
+                                        discipline,
+                                        presetException.Message);
+                                }
+                                catch { }
+                            }
+                        }
+
+                        document.SendStringToExecute(
+                            queuedCommand,
+                            true,
+                            false,
+                            true);
+                    }
+                    catch (System.Exception dispatchException)
+                    {
+                        try
+                        {
+                            if (document != null)
+                                document.Editor.WriteMessage(
+                                    "\nCE Tools production command could not be queued safely. {0}",
+                                    dispatchException.Message);
+                        }
+                        catch { }
+                    }
+                }));
+                return;
+            }
+
             DialogResult = true;
             Close();
+        }
+
+        private static string ResolveStyleDiscipline(string title)
+        {
+            string value = (title ?? string.Empty).ToUpperInvariant();
+            if (value.Contains("BULK WATER")) return "Bulk Water";
+            if (value.Contains("STORMWATER")) return "Stormwater";
+            if (value.Contains("SEWER")) return "Sewer";
+            if (value.Contains("PLATFORM")) return "Platforms";
+            if (value.Contains("PARKING")) return "Parking";
+            if (value.Contains("FLOOD")) return "Flood";
+            if (value.Contains("SURVEY")) return "Survey";
+            if (value.Contains("ROAD")) return "Roads";
+            if (value.Contains("WATER")) return "Water";
+            return string.Empty;
         }
     }
 
