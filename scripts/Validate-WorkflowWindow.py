@@ -69,7 +69,8 @@ for command in ("CE_REFRESHALL", "CE_REFRESHSTATUS", "CE_AUTOREFRESH"):
 for marker in (
     "FloatingToolsCommands.Initialize();",
     "FloatingToolsCommands.Terminate();",
-    "FloatingToolsCommands.OpenAtFirstStartup();",
+    "RibbonBuilder.EnsureCreated() && ProductionWorkflowRibbonBuilder.EnsureCreated()",
+    'SendStringToExecute("CE_WELCOME "',
 ):
     if marker not in plugin:
         errors.append(f"Plugin workflow lifecycle is missing: {marker}")
