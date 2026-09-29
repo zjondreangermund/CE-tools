@@ -340,32 +340,11 @@ $platform = ReplaceMethodBody $platform 'private static ObjectId CreateOffsetFea
 # Defence in depth if a future staging pass re-enables this legacy watcher: Idle
 # may enqueue a modal command but must never mutate Civil objects directly.
 $platformIdle = @'
-            Document active = AcApplication.DocumentManager.MdiActiveDocument;
-            _document = active;
-            if (!_pending ||
-                _busy ||
-                active == null ||
-                DateTime.UtcNow < _suppressUntilUtc ||
-                (DateTime.UtcNow - _lastChangeUtc).TotalMilliseconds < 350.0) return;
-            string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
-            if (!string.IsNullOrWhiteSpace(commands)) return;
-            int activeCommands = Convert.ToInt32(AcApplication.GetSystemVariable("CMDACTIVE"), CultureInfo.InvariantCulture);
-            if (activeCommands != 0) return;
-            _busy = true;
-            try
-            {
-                _pending = false;
-                _suppressUntilUtc = DateTime.UtcNow.AddSeconds(2.0);
-                active.SendStringToExecute("CE_PLATFORMREFRESH ", true, false, false);
-            }
-            catch
-            {
-                _pending = false;
-            }
-            finally
-            {
-                _busy = false;
-            }
+            // Field policy (29 Sep): automatic Platform refresh is disabled.
+            // Civil 3D regeneration and linked-object modifications can generate
+            // cascades of ObjectModified events. CE_PLATFORMREFRESH must run only
+            // when the operator explicitly requests it from Platform Production.
+            _pending = false;
 '@
 $platform = ReplaceMethodBody $platform 'private static void Idle(object sender, EventArgs e)' $platformIdle 'PlatformDynamicRefreshManager.Idle'
 
@@ -373,9 +352,14 @@ $platform = ReplaceMethodBody $platform 'private static void Idle(object sender,
 # Surface/FeatureLine/Table ObjectModified events during REGEN and profile/band
 # operations, so those database events must not queue CE_PLATFORMREFRESH.
 $platformChanged = @'
+            // Manual-only Platform refresh: normal Civil 3D object changes do
+            // not queue CE_PLATFORMREFRESH.
+            return;
 '@
 $platform = ReplaceMethodBody $platform 'private static void Changed(object sender, ObjectEventArgs e)' $platformChanged 'PlatformDynamicRefreshManager.Changed'
 $platformErased = @'
+            // Manual-only Platform refresh: erasures do not start background work.
+            return;
 '@
 $platform = ReplaceMethodBody $platform 'private static void Erased(object sender, ObjectErasedEventArgs e)' $platformErased 'PlatformDynamicRefreshManager.Erased'
 WriteText $platformPath $platform
