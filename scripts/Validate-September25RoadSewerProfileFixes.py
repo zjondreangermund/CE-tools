@@ -33,7 +33,12 @@ checks = {
     ],
     "multiple stepped feature lines": [
         'CommandMethod("CE_TOOLS", "CE_FLRELCREATE", CommandFlags.Modal | CommandFlags.UsePickSet',
-        'MessageForAdding = "\\nSelect one or more SOURCE feature lines for stepped offsets: "',
+        'MessageForAdding = "\\nSelect multiple SOURCE feature lines for stepped offsets: "',
+        '"VerticalMode"',
+        '"Grade (%)"',
+        '"Slope (H:V)"',
+        '"Offset side"',
+        '"Both sides"',
         "sourceIds.Count",
         "for (int sourceIndex = 0; sourceIndex < sourceIds.Count; sourceIndex++)",
         "localCreated++",
