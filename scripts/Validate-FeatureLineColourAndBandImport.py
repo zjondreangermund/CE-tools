@@ -34,8 +34,9 @@ require(bands, "profileView.Bands.ImportBandSetStyle(choice.Id);",
         "ProfileViewBandDataBinder.BindRoad(", "ProfileViewBandPersistence.EnableLabels(")
 require(bands,
         "document.Editor.SetImpliedSelection(profileViewIds.Distinct().ToArray());",
-        "batchDialog.OpenNativeDialog && profileViewIds.Count == 1",
-        "never collapse a multi-view batch to profileViewIds[0]")
+        "batchDialog.OpenNativeDialog && profileViewIds.Count == 1")
+if "SetImpliedSelection(new[] { profileViewIds[0] })" in bands:
+    raise SystemExit("Multi-profile band import must not collapse selection to the first profile view.")
 require(band_dialog,
         "private static bool _lastOpenNative = false;",
         "IsEnabled = _viewNames.Count == 1",
