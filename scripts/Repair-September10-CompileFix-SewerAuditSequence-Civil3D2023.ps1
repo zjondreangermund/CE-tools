@@ -11,9 +11,10 @@ $sequencePath = Join-Path $src 'SewerSequenceCommands.cs'
 $helperPath = Join-Path $src 'September10SewerAuditRuntime.cs'
 $profilePath = Join-Path $src 'SewerProductionCommands.cs'
 $platformPath = Join-Path $src 'August21PlatformRelativeFatalSafety.cs'
+$runtimePath = Join-Path $src 'September09SewerSurfaceRulesRuntime.cs'
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 
-foreach ($path in @($auditPath,$sequencePath,$helperPath,$profilePath,$platformPath)) {
+foreach ($path in @($auditPath,$sequencePath,$helperPath,$profilePath,$platformPath,$runtimePath)) {
     if (-not (Test-Path -LiteralPath $path -PathType Leaf)) {
         throw "September 10 compile-fix input missing: $path"
     }
@@ -184,8 +185,24 @@ if (-not $platform.Contains($compatibleColourCall)) {
 }
 WriteText $platformPath $platform
 
+# Final type-safety guard for the September 09 sewer completion marker. The marker
+# helper takes a Database; an older September 09 staged finalizer previously rewrote
+# the call to Document immediately before CoreCompile and caused CS1503. Keep this
+# last compile-compatibility boundary defensive and idempotent.
+$runtime = ReadText $runtimePath
+$legacySourceMarkerCall = 'NetworkSourceMarker.Mark(document, sourceId, "Sewer");'
+$compatibleSourceMarkerCall = 'NetworkSourceMarker.Mark(database, sourceId, "Sewer");'
+if ($runtime.Contains($legacySourceMarkerCall)) {
+    $runtime = $runtime.Replace($legacySourceMarkerCall,$compatibleSourceMarkerCall)
+}
+if (-not $runtime.Contains($compatibleSourceMarkerCall)) {
+    throw 'September 10 compile-fix could not normalize NetworkSourceMarker.Mark to Database.'
+}
+WriteText $runtimePath $runtime
+
 Write-Host 'September 10/16 Civil 3D 2023 compile compatibility applied.' -ForegroundColor Green
 Write-Host ' - Legacy audit surface linking uses the non-interactive helper; the current engineering audit remains read-only.'
 Write-Host ' - CandidatePath node/edge storage is mutable for in-place side-branch reversal.'
 Write-Host ' - CE_SEWPROFILE owns its alignment recovery list; CE_SEWSEQMAIN no longer references civilDocument.'
 Write-Host ' - Platform feature-line ColorIndex capture/restore converts AutoCAD int ACI values to short safely.'
+Write-Host ' - Sewer source completion marker is normalized to the Database overload before compilation.'
