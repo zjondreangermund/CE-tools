@@ -331,9 +331,12 @@ namespace CETools.Civil3D
                 "Surface assigned to RefSurfaceId on every selected pipe and structure.",
                 surfaces.Select(item => item.Name).ToArray());
             settings.AddChoice("RuleMode", "02 Pipe rules", "Rule input", "Enter CE rule values manually",
-                "Manual values are applied directly to editable network geometry; named mode uses installed Civil 3D rule-set styles.",
+                "Manual values adjust invert elevations while preserving the existing pipe/structure RuleSetStyleId assignments; named mode uses installed Civil 3D rule-set styles.",
                 new[] { "Enter CE rule values manually", "Use Civil 3D rule sets" });
-            settings.AddPositiveDouble("MinSlope", "02 Pipe rules", "Minimum slope (%)", 1.0, "Minimum absolute pipe grade.");
+            settings.AddPositiveDouble("MinStartSlope", "02 Pipe rules", "Minimum start-pipe slope (%)", 1.5,
+                "Applied to the first pipe of every sequenced branch (P#.1).");
+            settings.AddPositiveDouble("MinSlope", "02 Pipe rules", "Minimum overall slope (%)", 1.0,
+                "Applied to the remaining pipes in each branch after the starting pipe.");
             settings.AddPositiveDouble("MaxSlope", "02 Pipe rules", "Maximum slope (%)", 12.0, "Maximum absolute pipe grade.");
             settings.AddPositiveDouble("MinCover", "02 Pipe rules", "Minimum cover (m)", 0.834, "Minimum cover from the selected surface to the pipe crown.");
             settings.AddPositiveDouble("MaxCover", "02 Pipe rules", "Maximum cover (m)", 10.0, "Maximum allowed cover; pipe endpoints are clamped into the permitted cover range.");
@@ -580,7 +583,11 @@ namespace CETools.Civil3D
                 warnings++;
             if (run <= PointTolerance) { warnings++; return; }
 
-            double minimumSlope = Math.Abs(settings.Double("MinSlope", 1.0)) / 100.0;
+            double overallMinimumSlope = Math.Abs(settings.Double("MinSlope", 1.0)) / 100.0;
+            double startingMinimumSlope = Math.Abs(settings.Double("MinStartSlope", 1.5)) / 100.0;
+            double minimumSlope = IsStartingBranchPipe(pipe)
+                ? Math.Max(overallMinimumSlope, startingMinimumSlope)
+                : overallMinimumSlope;
             double maximumSlope = Math.Max(minimumSlope, Math.Abs(settings.Double("MaxSlope", 12.0)) / 100.0);
             double minimumCover = Math.Max(0.0, settings.Double("MinCover", 0.834));
             double maximumCover = Math.Max(minimumCover, settings.Double("MaxCover", 10.0));
@@ -661,6 +668,23 @@ namespace CETools.Civil3D
                 if (endSet) TrySetPoint(pipe, "EndPoint", end);
                 warnings++;
             }
+        }
+
+        private static bool IsStartingBranchPipe(CivilPipe pipe)
+        {
+            if (pipe == null) return false;
+            Match name = PipeNamePattern.Match(pipe.Name ?? string.Empty);
+            if (name.Success)
+            {
+                int sequence;
+                return int.TryParse(
+                    name.Groups["sequence"].Value,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out sequence) && sequence == 1;
+            }
+            string description = pipe.Description ?? string.Empty;
+            return description.IndexOf("Pipe-1", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static void AddPipeRuleCandidate(
