@@ -33,6 +33,7 @@ namespace CETools.Civil3D
             UniversalDynamicRefreshManager.Initialize();
             PlatformDynamicRefreshManager.EnsureInitialized();
             AugustGlobalShortcutManager.Initialize();
+            August11SurveyRuntimeManager.Initialize();
             RoadAlignmentNameSync.Initialize();
             AcApplication.Idle += OnApplicationIdle;
         }
@@ -47,6 +48,7 @@ namespace CETools.Civil3D
             SewerNetworkDynamicSequenceManager.Terminate();
             CogoPointProjectStyleManager.Terminate();
             ProjectStylePresetManager.Terminate();
+            August11SurveyRuntimeManager.Terminate();
             AugustGlobalShortcutManager.Terminate();
             FloatingToolsCommands.Terminate();
             CommandUsageTracker.Terminate();
@@ -69,13 +71,15 @@ namespace CETools.Civil3D
 
             try
             {
-                _ribbonCreated = RibbonBuilder.EnsureCreated();
+                _ribbonCreated = RibbonBuilder.EnsureCreated() && ProductionWorkflowRibbonBuilder.EnsureCreated();
                 if (_ribbonCreated)
                 {
                     // The workflow command centre must appear once when the
                     // first Civil 3D session has a usable CE Tools ribbon.
                     // Opening it before this point produces an empty window.
-                    FloatingToolsCommands.OpenAtFirstStartup();
+                    Autodesk.AutoCAD.ApplicationServices.Document activeDocument = AcApplication.DocumentManager.MdiActiveDocument;
+                    if (activeDocument != null)
+                        activeDocument.SendStringToExecute("CE_WELCOME ", true, false, true);
                     AcApplication.Idle -= OnApplicationIdle;
                 }
             }
