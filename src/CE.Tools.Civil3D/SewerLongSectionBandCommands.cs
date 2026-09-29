@@ -462,6 +462,67 @@ namespace CETools.Civil3D
             catch { return false; }
         }
 
+        private static int EnsureEveryNetworkBandSource(
+            CivilProfileView view,
+            ObjectId networkId)
+        {
+            if (view == null || networkId.IsNull) return 0;
+            int verified = 0;
+            ProfileViewBandPersistence.Update(
+                view,
+                item =>
+                {
+                    if (item.BandType != Autodesk.Civil.BandType.PipeNetwork &&
+                        item.BandType != Autodesk.Civil.BandType.PressureNetwork)
+                        return;
+
+                    item.DataSourceId = networkId;
+                    item.ShowLabels = true;
+                },
+                item =>
+                {
+                    if (item.BandType != Autodesk.Civil.BandType.PipeNetwork &&
+                        item.BandType != Autodesk.Civil.BandType.PressureNetwork)
+                        return;
+
+                    if (item.DataSourceId == networkId) verified++;
+                });
+            return verified;
+        }
+
+        private static int CountUnlinkedNetworkRows(
+            CivilProfileView view,
+            ObjectId networkId)
+        {
+            if (view == null || networkId.IsNull) return 0;
+            int missing = 0;
+            using (ProfileViewBandItemCollection top =
+                view.Bands.GetTopBandItems())
+            {
+                for (int index = 0; index < top.Count; index++)
+                {
+                    ProfileViewBandItem item = top[index];
+                    if ((item.BandType == Autodesk.Civil.BandType.PipeNetwork ||
+                         item.BandType == Autodesk.Civil.BandType.PressureNetwork) &&
+                        item.DataSourceId != networkId)
+                        missing++;
+                }
+            }
+            using (ProfileViewBandItemCollection bottom =
+                view.Bands.GetBottomBandItems())
+            {
+                for (int index = 0; index < bottom.Count; index++)
+                {
+                    ProfileViewBandItem item = bottom[index];
+                    if ((item.BandType == Autodesk.Civil.BandType.PipeNetwork ||
+                         item.BandType == Autodesk.Civil.BandType.PressureNetwork) &&
+                        item.DataSourceId != networkId)
+                        missing++;
+                }
+            }
+            return missing;
+        }
+
         private static int CountRows(CivilProfileView view)
         {
             if (view == null) return 0;
