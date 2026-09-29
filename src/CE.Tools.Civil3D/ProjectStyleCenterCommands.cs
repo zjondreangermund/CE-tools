@@ -38,7 +38,10 @@ namespace CETools.Civil3D
             "Stormwater",
             "Sewer",
             "Water",
-            "Platforms"
+            "Platforms",
+            "Bulk Water",
+            "Parking",
+            "Flood"
         };
 
         private static readonly string[] SelectionKeys =
@@ -127,6 +130,7 @@ namespace CETools.Civil3D
 
                 ProjectStyleSelection selection = window.BuildSelection();
                 WriteSelection(document.Database, selection);
+                August11DisciplineStylePresetManager.SavePreset(document.Database, selection);
                 ProjectStylePresetManager.SaveFromDrawing(document);
                 CogoPointProjectStyleManager.Queue();
                 CogoPointProjectStyleCommands.ApplySelectedStyles(document, true);
