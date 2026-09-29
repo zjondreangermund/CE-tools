@@ -93,7 +93,7 @@ namespace CETools.Civil3D
             {
                 selection = editor.GetSelection(new PromptSelectionOptions
                 {
-                    MessageForAdding = "\nSelect one or more SOURCE feature lines for stepped offsets: ",
+                    MessageForAdding = "\nSelect multiple SOURCE feature lines for stepped offsets: ",
                     AllowDuplicates = false,
                     RejectObjectsFromNonCurrentSpace = true
                 });
