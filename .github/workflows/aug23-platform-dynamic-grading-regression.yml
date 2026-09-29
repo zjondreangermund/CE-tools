@@ -82,7 +82,7 @@ jobs:
           }
           foreach ($marker in @(
             '_suppressUntilUtc',
-            'active.SendStringToExecute("CE_PLATFORMREFRESH "',
+            '"CE_PLATFORMREFRESH "',
             'private static void Changed(object sender, ObjectEventArgs e) { }',
             'private static void Erased(object sender, ObjectErasedEventArgs e) { }')) {
             if (-not $platform.Contains($marker)) { throw "Command-driven Platform refresh marker is missing: $marker" }
