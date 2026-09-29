@@ -440,15 +440,19 @@ namespace CETools.Civil3D
                     "\nBand sources were saved through the native top/bottom band collections. Original profiles are preferred; compatibility copies are used only when source assignment fails.");
             }
 
-            if (batchDialog.OpenNativeDialog && profileViewIds.Count > 0)
+            // Preserve the complete successfully processed batch selection.
+            // Civil 3D's native EditGraphProperties command is single-view only;
+            // never collapse a multi-view batch to profileViewIds[0].
+            try
+            {
+                document.Editor.SetImpliedSelection(profileViewIds.Distinct().ToArray());
+            }
+            catch { }
+
+            if (batchDialog.OpenNativeDialog && profileViewIds.Count == 1)
             {
                 try
                 {
-                    // Civil 3D's native command edits one view at a time. Open it
-                    // after the committed batch so the operator can inspect the
-                    // exact Bands tab shown in the native Profile View Properties
-                    // window without interrupting the multi-view operation.
-                    document.Editor.SetImpliedSelection(new[] { profileViewIds[0] });
                     document.SendStringToExecute("_.EditGraphProperties ", true, false, true);
                 }
                 catch (System.Exception exception)
@@ -457,6 +461,12 @@ namespace CETools.Civil3D
                         "\nCE_ROADBANDLABELS could not open native Profile View Properties: {0}",
                         exception.Message);
                 }
+            }
+            else if (batchDialog.OpenNativeDialog && profileViewIds.Count > 1)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_ROADBANDLABELS: native Profile View Properties was not opened because Civil 3D edits one profile view at a time. All {0} imported profile views remain selected.",
+                    profileViewIds.Count);
             }
         }
 
