@@ -185,9 +185,12 @@ jobs:
           foreach ($marker in @(
             'August21PlatformRelativeFatalSafety.CreatePlatformSteps(',
             'August21PlatformRelativeFatalSafety.DrapeSelection(',
-            'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)',
-            'Field policy (29 Sep): automatic Platform refresh is disabled')) {
+            'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)')) {
             if (-not $platform.Contains($marker)) { throw "Platform safety marker missing: $marker" }
+          }
+          if (-not $platform.Contains('Platform refresh is manual/on-demand only') -and
+              -not $platform.Contains('automatic Platform refresh is disabled')) {
+            throw 'Manual-only Platform refresh policy is missing.'
           }
           if ($platform.Contains('child.AssignElevationsFromSurface(surface.ObjectId, intermediate);') -or
               $platform.Contains('rebuilt.AssignElevationsFromSurface(surfaceId, snapshot.Link.Intermediate);')) {
@@ -204,11 +207,10 @@ jobs:
           if (-not $idle.Contains('CE_DYNAMICREFRESHALL')) { throw 'Universal Idle command queue is missing.' }
           if ($universal.Contains('PlatformProductionCommands.RefreshAll(document);')) { throw 'Platform refresh must not run from Universal background refresh.' }
           if (-not $auto.Contains('ShouldQueueRefresh(name)')) { throw 'Automatic no-blanket refresh policy is missing.' }
-          if (-not $platform.Contains('_suppressUntilUtc') -or
-              -not $platform.Contains('CompleteRefresh(count)') -or
-              -not $platform.Contains('private static void Changed(object sender, ObjectEventArgs e)') -or
-              -not $platform.Contains('private static void Erased(object sender, ObjectErasedEventArgs e)')) {
-            throw 'Command-driven Platform refresh guards are missing.'
+          if (-not $platform.Contains('internal static void Queue()') -or
+              -not $platform.Contains('Intentionally no-op') -or
+              -not $platform.Contains('CE_PLATFORMREFRESH remains available')) {
+            throw 'Manual-only Platform refresh manager is missing.'
           }
           foreach ($forbidden in @(
             '_database.ObjectModified += Changed',
