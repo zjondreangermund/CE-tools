@@ -81,15 +81,18 @@ jobs:
             if (-not $platform.Contains($legacy)) { throw "Existing Platform workflow route was lost: $legacy" }
           }
           foreach ($marker in @(
-            '_knownLinkedItems',
-            '_suppressEventsUntilUtc',
-            'HasAnyLinkedPlatformData',
-            'DateTime.UtcNow.AddSeconds(2.5)',
-            'if (_knownLinkedItems || HasLinkedPlatformData(value))')) {
-            if (-not $platform.Contains($marker)) { throw "Platform refresh loop guard is missing: $marker" }
+            '_suppressUntilUtc',
+            'active.SendStringToExecute("CE_PLATFORMREFRESH "',
+            'private static void Changed(object sender, ObjectEventArgs e) { }',
+            'private static void Erased(object sender, ObjectErasedEventArgs e) { }')) {
+            if (-not $platform.Contains($marker)) { throw "Command-driven Platform refresh marker is missing: $marker" }
           }
-          if ($platform.Contains('if (e.DBObject is CivilSurface || e.DBObject is CivilFeatureLine || e.DBObject is Table) Queue();')) {
-            throw 'Platform manager returned to the broad all-object refresh trigger.'
+          foreach ($forbidden in @(
+            '_database.ObjectModified += Changed',
+            '_database.ObjectErased += Erased',
+            'QueueFromEvent();',
+            '_knownLinkedItems')) {
+            if ($platform.Contains($forbidden)) { throw "Regen-driven Platform refresh marker survived: $forbidden" }
           }
 
       - name: Verify pre-compile target ordering
