@@ -43,6 +43,9 @@ jobs:
           $plugin = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\PluginEntry.cs'))
           $platform = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\PlatformProductionCommands.cs'))
           $route = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\RoutePlannerExpansionCommands.cs'))
+          $bands = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\SewerLongSectionBandCommands.cs'))
+          $profileMatch = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\ProfileViewPropertyMatchCommands.cs'))
+          $flow = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\SewerFlowDirectionCommands.cs'))
           foreach ($marker in @('UniversalDynamicRefreshManager.Initialize();', 'RoadAlignmentNameSync.Initialize();')) {
             if (-not $plugin.Contains($marker)) { throw "Current startup integration is missing: $marker" }
           }
@@ -52,7 +55,48 @@ jobs:
           if (-not $route.Contains('"CE_MIDBLOCKSEWERPRODUCTION"')) {
             throw 'Current Midblock production command target is missing.'
           }
-          Write-Host 'Current source integration passed without applying historical injectors.'
+
+          # September 29 field comments: keep these four fixes in the live source.
+          foreach ($marker in @(
+            'Platform refresh is manual/on-demand only',
+            'Intentionally no Application.Idle, ObjectModified, ObjectErased or')) {
+            if (-not $platform.Contains($marker)) { throw "Platform refresh throttling regression: $marker" }
+          }
+          foreach ($forbidden in @(
+            '_database.ObjectModified += Changed',
+            '_database.ObjectErased += Erased',
+            'active.SendStringToExecute("CE_PLATFORMREFRESH "')) {
+            if ($platform.Contains($forbidden)) { throw "Platform refresh loop regression: $forbidden" }
+          }
+
+          foreach ($marker in @(
+            'EnsureEveryNetworkBandSource(',
+            'CountUnlinkedNetworkRows(',
+            'item.DataSourceId = networkId',
+            'view.Bands.SetTopBandItems',
+            'view.Bands.SetBottomBandItems')) {
+            if (-not $bands.Contains($marker)) { throw "Sewer all-band data-source regression: $marker" }
+          }
+
+          foreach ($marker in @(
+            '"CE_PROFILEVIEWEDITMATCH"',
+            '"_.EditGraphProperties',
+            'CE_PROFILEVIEWEDITMATCHAPPLY',
+            'ReadImpliedProfileViews(document)',
+            'CopyBands(')) {
+            if (-not $profileMatch.Contains($marker)) { throw "Edit-once/apply-all regression: $marker" }
+          }
+
+          foreach ($marker in @(
+            '"CE_SEWFLOWTOOUTLET"',
+            'DistanceFromOutlet(outletId, adjacency)',
+            'FlowDirectionMethodType.StartToEnd',
+            'FlowDirectionMethodType.EndToStart',
+            'pipe.RuleSetStyleId == originalRule')) {
+            if (-not $flow.Contains($marker)) { throw "Structure-sequence sewer-flow regression: $marker" }
+          }
+
+          Write-Host 'Current source integration and September 29 field comments passed without applying historical injectors.'
 
       - name: Simulate late Midblock recovery and verify final repair
         shell: pwsh
