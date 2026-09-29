@@ -483,6 +483,28 @@ namespace CETools.Civil3D
                         exception.Message);
                 }
             }
+            else if (batchDialog.OpenEditMatch && profileViewIds.Count > 1)
+            {
+                try
+                {
+                    // The first item in the preserved implied selection is opened
+                    // in Civil 3D's native Profile View Properties window. After
+                    // the operator closes it, CE_PROFILEVIEWEDITMATCH copies the
+                    // edited style/ranges/complete band collections to all other
+                    // selected profile views.
+                    document.SendStringToExecute(
+                        "CE_PROFILEVIEWEDITMATCH ",
+                        true,
+                        false,
+                        true);
+                }
+                catch (System.Exception exception)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADBANDLABELS could not start the edit-once/apply-all profile-view workflow: {0}",
+                        exception.Message);
+                }
+            }
         }
 
         private static int EnableBandLabels(ProfileView profileView)
