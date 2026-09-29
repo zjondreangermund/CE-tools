@@ -80,6 +80,17 @@ jobs:
           foreach ($legacy in @('"CE_PLATFORMDRAPE"','"CE_PLATFORMSURFACE"','"CE_PLATFORMREFRESH"')) {
             if (-not $platform.Contains($legacy)) { throw "Existing Platform workflow route was lost: $legacy" }
           }
+          foreach ($marker in @(
+            '_knownLinkedItems',
+            '_suppressEventsUntilUtc',
+            'HasAnyLinkedPlatformData',
+            'DateTime.UtcNow.AddSeconds(2.5)',
+            'if (_knownLinkedItems || HasLinkedPlatformData(value))')) {
+            if (-not $platform.Contains($marker)) { throw "Platform refresh loop guard is missing: $marker" }
+          }
+          if ($platform.Contains('if (e.DBObject is CivilSurface || e.DBObject is CivilFeatureLine || e.DBObject is Table) Queue();')) {
+            throw 'Platform manager returned to the broad all-object refresh trigger.'
+          }
 
       - name: Verify pre-compile target ordering
         shell: powershell
