@@ -342,7 +342,12 @@ $platform = ReplaceMethodBody $platform 'private static ObjectId CreateOffsetFea
 $platformIdle = @'
             Document active = AcApplication.DocumentManager.MdiActiveDocument;
             Attach(active);
-            if (!_pending || _busy || active == null || (DateTime.UtcNow - _lastChangeUtc).TotalSeconds < 1.5) return;
+            if (!_pending ||
+                !_knownLinkedItems ||
+                _busy ||
+                active == null ||
+                DateTime.UtcNow < _suppressEventsUntilUtc ||
+                (DateTime.UtcNow - _lastChangeUtc).TotalSeconds < 1.5) return;
             string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(commands)) return;
             int activeCommands = Convert.ToInt32(AcApplication.GetSystemVariable("CMDACTIVE"), CultureInfo.InvariantCulture);
@@ -351,6 +356,10 @@ $platformIdle = @'
             try
             {
                 _pending = false;
+                // CE_PLATFORMREFRESH runs in normal command context. Suppress the
+                // delayed REGEN/ObjectModified tail before queueing it so the
+                // automatic worker cannot schedule itself again.
+                _suppressEventsUntilUtc = DateTime.UtcNow.AddSeconds(3.0);
                 active.SendStringToExecute("CE_PLATFORMREFRESH ", true, false, false);
             }
             catch
@@ -364,19 +373,46 @@ $platformIdle = @'
 '@
 $platform = ReplaceMethodBody $platform 'private static void Idle(object sender, EventArgs e)' $platformIdle 'PlatformDynamicRefreshManager.Idle'
 $platformChanged = @'
-            if (_busy || e == null || e.DBObject == null) return;
+            if (_busy ||
+                DateTime.UtcNow < _suppressEventsUntilUtc ||
+                e == null ||
+                e.DBObject == null) return;
             string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(commands) &&
                 commands.IndexOf("CE_PLATFORMREFRESH", StringComparison.OrdinalIgnoreCase) >= 0) return;
-            if (e.DBObject is CivilSurface || e.DBObject is CivilFeatureLine || e.DBObject is Table) Queue();
+
+            DBObject value = e.DBObject;
+            if (value is CivilSurface || value is CivilFeatureLine)
+            {
+                if (_knownLinkedItems || HasLinkedPlatformData(value))
+                {
+                    _knownLinkedItems = true;
+                    QueueFromEvent();
+                }
+                return;
+            }
+
+            Table table = value as Table;
+            if (table != null && HasLinkedPlatformData(table))
+            {
+                _knownLinkedItems = true;
+                QueueFromEvent();
+            }
 '@
 $platform = ReplaceMethodBody $platform 'private static void Changed(object sender, ObjectEventArgs e)' $platformChanged 'PlatformDynamicRefreshManager.Changed'
 $platformErased = @'
-            if (_busy) return;
+            if (_busy ||
+                DateTime.UtcNow < _suppressEventsUntilUtc ||
+                e == null ||
+                e.DBObject == null ||
+                !_knownLinkedItems) return;
             string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(commands) &&
                 commands.IndexOf("CE_PLATFORMREFRESH", StringComparison.OrdinalIgnoreCase) >= 0) return;
-            Queue();
+            if (e.DBObject is CivilSurface ||
+                e.DBObject is CivilFeatureLine ||
+                e.DBObject is Table)
+                QueueFromEvent();
 '@
 $platform = ReplaceMethodBody $platform 'private static void Erased(object sender, ObjectErasedEventArgs e)' $platformErased 'PlatformDynamicRefreshManager.Erased'
 WriteText $platformPath $platform
@@ -552,12 +588,8 @@ $autoPath = Source 'AugustAutomaticRefreshManager.cs'
 $auto = ReadText $autoPath
 $autoEnded = @'
             string name = ReadCommandName(e);
-            if (!name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)) return;
-            if (string.Equals(name, "CE_DYNAMICREFRESHALL", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(name, "CE_PLATFORMREFRESH", StringComparison.OrdinalIgnoreCase))
-                return;
+            if (!ShouldQueueRefresh(name)) return;
             UniversalDynamicRefreshManager.Queue();
-            PlatformDynamicRefreshManager.Queue();
 '@
 # Historical staging normalizes this parameter to e before the final boundary.
 $auto = ReplaceMethodBody $auto 'private static void OnCommandEnded(object sender, CommandEventArgs e)' $autoEnded 'AugustAutomaticRefreshManager.OnCommandEnded'
@@ -585,7 +617,11 @@ foreach ($required in @(
     'August21PlatformRelativeFatalSafety.CreatePlatformSteps(',
     'August21PlatformRelativeFatalSafety.DrapeSelection(',
     'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)',
-    'active.SendStringToExecute("CE_PLATFORMREFRESH "')) {
+    'active.SendStringToExecute("CE_PLATFORMREFRESH "',
+    '_knownLinkedItems',
+    '_suppressEventsUntilUtc',
+    'QueueFromEvent()',
+    'HasLinkedPlatformData(value)')) {
     if (-not $platformCheck.Contains($required)) { throw "Platform final safety missing: $required" }
 }
 if ($platformCheck.Contains('child.AssignElevationsFromSurface(surface.ObjectId, intermediate);') -or
@@ -613,8 +649,11 @@ if (-not $sewerCheck.Contains('document.SendStringToExecute("CE_SEWAUTOSEQALL "'
 if ($sewerCheck.Contains('SewerNetworkDynamicSequenceCommands.ResequenceAll(' + "`r`n" + '                    document,')) {
     throw 'Sewer automatic sequence still contains the known direct Idle resequence call.'
 }
-if (-not $autoCheck.Contains('string.Equals(name, "CE_DYNAMICREFRESHALL"')) {
-    throw 'Automatic refresh loop suppression is missing.'
+if (-not $autoCheck.Contains('ShouldQueueRefresh(name)')) {
+    throw 'Automatic refresh no-blanket policy is missing.'
+}
+if ($autoCheck.Contains('PlatformDynamicRefreshManager.Queue();')) {
+    throw 'Automatic command-ended Platform refresh queuing survived the final safety pass.'
 }
 
 Write-Host 'Platform, linked feature-line, drape, Universal Idle and sewer-sequence fatal-safety boundary applied.' -ForegroundColor Green
