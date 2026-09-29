@@ -44,6 +44,7 @@ jobs:
           $platform = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\PlatformProductionCommands.cs'))
           $route = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\RoutePlannerExpansionCommands.cs'))
           $bands = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\SewerLongSectionBandCommands.cs'))
+          $bandPersistence = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\ProfileViewBandPersistence.cs'))
           $profileMatch = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\ProfileViewPropertyMatchCommands.cs'))
           $flow = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\SewerFlowDirectionCommands.cs'))
           foreach ($marker in @('UniversalDynamicRefreshManager.Initialize();', 'RoadAlignmentNameSync.Initialize();')) {
@@ -72,10 +73,13 @@ jobs:
           foreach ($marker in @(
             'EnsureEveryNetworkBandSource(',
             'CountUnlinkedNetworkRows(',
-            'item.DataSourceId = networkId',
-            'view.Bands.SetTopBandItems',
-            'view.Bands.SetBottomBandItems')) {
+            'item.DataSourceId = networkId')) {
             if (-not $bands.Contains($marker)) { throw "Sewer all-band data-source regression: $marker" }
+          }
+          foreach ($marker in @(
+            'bands.SetTopBandItems(top)',
+            'bands.SetBottomBandItems(bottom)')) {
+            if (-not $bandPersistence.Contains($marker)) { throw "Band persistence regression: $marker" }
           }
 
           foreach ($marker in @(
