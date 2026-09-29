@@ -462,11 +462,26 @@ namespace CETools.Civil3D
                         exception.Message);
                 }
             }
-            else if (batchDialog.OpenNativeDialog && profileViewIds.Count > 1)
+            else if (batchDialog.OpenBandDataSources && profileViewIds.Count > 1)
             {
-                document.Editor.WriteMessage(
-                    "\nCE_ROADBANDLABELS: native Profile View Properties was not opened because Civil 3D edits one profile view at a time. All {0} imported profile views remain selected.",
-                    profileViewIds.Count);
+                try
+                {
+                    // The full multi-view implied selection is still active.
+                    // CE_PROFILEVIEWDATASOURCES consumes that selection and lets
+                    // the operator apply Profile 1/Profile 2/Pipe Network sources
+                    // to all compatible rows without opening Civil 3D's one-view dialog.
+                    document.SendStringToExecute(
+                        "CE_PROFILEVIEWDATASOURCES ",
+                        true,
+                        false,
+                        true);
+                }
+                catch (System.Exception exception)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADBANDLABELS could not open the multi-view Band Data Sources tool: {0}",
+                        exception.Message);
+                }
             }
         }
 
