@@ -44,6 +44,9 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Create outside road / sidewalk offsets", "CE_ROADOUTSIDEOFFSET", "Choose road edges or sidewalk/shoulder edges and offset automatically away from the road centre.", "02 Offsets"),
                     new DisciplineWorkflowAction("Create junction trim boundaries", "CE_JUNCTIONTRIMBOUNDARIES", "Create non-plot closed boundaries around multiple junctions and continue into trim-inside.", "03 Junctions"),
                     new DisciplineWorkflowAction("Complete junction setting-out in four-quadrant order", "CE_JUNCTIONSETTINGOUT4", "Order every junction group before passing it to linked junction setting-out.", "03 Junctions"),
+                    new DisciplineWorkflowAction("Multiple horizontal centreline curves", "CE_ROUTEHORIZONTALCURVES", "Apply tangent circular curves with a specified radius to multiple selected road/route polylines.", "02 Geometry"),
+                    new DisciplineWorkflowAction("Synchronize road names through Civil objects", "CE_ROADNAMESYNC", "Propagate ROAD-n names into alignments, profiles, corridors, sections and assemblies and store the name link.", "02 Geometry"),
+                    new DisciplineWorkflowAction("Utility offsets from erf / road-reserve geometry", "CE_UTILITYROUTEOFFSET", "Create Stormwater/Sewer/Water/Bulk-Water route strings at selected offsets from erf, reserve-edge or road-centre geometry.", "02 Geometry"),
                     new DisciplineWorkflowAction("Route annotation presentation", "CE_ROUTEANNOTATIONSTYLE", "Paper text sizes, masks, dimension metre suffix and arrow size.", "04 Annotation"),
                     new DisciplineWorkflowAction("Shift selected route annotations", "CE_ROUTESHIFTANNOTATION", "Move multiple selected text/dimensions/leaders together to resolve overlap.", "04 Annotation"),
                     new DisciplineWorkflowAction("Extract polyline arc segments", "CE_POLYLINEARCS", "Create true Arc entities from curved polyline segments.", "05 Geometry"),
@@ -266,7 +269,7 @@ namespace CETools.Civil3D
             }
             document.Editor.SetImpliedSelection(ordered);
             document.Editor.WriteMessage("\nCE_JUNCTIONSETTINGOUT4: ordered junction curves={0}; each grouped junction is completed before the next.", ordered.Length);
-            document.SendStringToExecute("CE_ROADJUNCTIONSETTINGOUT ", true, false, true);
+            document.SendStringToExecute("CE_VERTEXSETTINGOUT ", true, false, true);
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROUTEANNOTATIONSTYLE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
