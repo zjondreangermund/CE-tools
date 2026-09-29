@@ -88,7 +88,7 @@ namespace CETools.Civil3D
                 Action("SETTINGS - Project Setup", "CE_PROJECTSETUP", "Project/client/stage/revision/designed-drawn-checked-approved information.", "01 SETTINGS"),
                 Action("Project Style Centre", "CE_PROJECTSTYLES", "Select shared discipline Civil 3D styles.", "01 SETTINGS"),
                 Action("PREPARE - Project Coordination", "CE_PROJECTCOORDINATION", "Coordinate source drawings, location and page setups.", "02 PREPARE"),
-                Action("Standards", "CE_STANDARDS", "Select and record project standards.", "02 PREPARE"),
+                Action("Standards", "CE_DESIGNSTANDARDS", "Select and record project standards.", "02 PREPARE"),
                 Action("CREATE - Project Metadata Refresh", "CE_PROJECTMETADATAREFRESH", "Synchronize project metadata into linked project outputs.", "03 CREATE"),
                 Action("COMPLETE - Drawing Register", "CE_DRAWINGREGISTEREDIT", "Review drawing numbers, titles, revisions and issue information.", "05 COMPLETE"),
                 Action("DELIVER - Drawing / Client Books", "CE_BOOKTOOLS", "Create drawing books, client books and indexes.", "06 DELIVER"),
@@ -143,7 +143,7 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_SWPRODUCTIONCENTRE", CommandFlags.Modal)]
         public void StormwaterProduction()
         {
-            RunCentre("STORMWATER PRODUCTION", "Route → network → branches → hydraulic/design checks → profiles → setting-out/BOQ → drawings.", UtilityActions("Stormwater", "CE_SWSETTINGS", "CE_SWSEQ", "CE_SWALIGN", "CE_SWPROFILE", "CE_BOQSTORMWATER", "CE_REPORTSTORMWATER", "CE_SWTOOLS"));
+            RunCentre("STORMWATER PRODUCTION", "Route → network → branches → hydraulic/design checks → profiles → setting-out/BOQ → drawings.", UtilityActions("Stormwater", "CE_SWSETTINGS", "CE_SWSEQ", "CE_SWALIGN", "CE_SWPROFILE", "CE_BOQSTORM", "CE_REPORTSTORM", "CE_SWTOOLS"));
         }
 
         [CommandMethod("CE_TOOLS", "CE_SEWERPRODUCTIONCENTRE", CommandFlags.Modal)]
@@ -178,7 +178,7 @@ namespace CETools.Civil3D
             RunCentre("BULK WATER PRODUCTION", "Road-reserve/source route → pressure network → profile/setting-out → quantities → delivery.", new[]
             {
                 Action("SETTINGS - Project / Water Styles", "CE_PROJECTSTYLES", "Select pressure-network and profile styles.", "01 SETTINGS"),
-                Action("PREPARE - Utility Route from Road Reserve", "CE_UTILITYFROMROADRESERVE", "Create bulk-water planning routes at selected offsets.", "02 PREPARE"),
+                Action("PREPARE - Utility Route from Erf / Road Reserve", "CE_UTILITYROUTEOFFSET", "Create bulk-water planning routes at selected offsets from erf, reserve-edge or road-centre geometry.", "02 PREPARE"),
                 Action("CREATE - Multiple Networks from Polylines", "CE_NETWORKFROMPOLYLINESBATCH", "Batch source polylines into pressure network creation.", "03 CREATE"),
                 Action("DESIGN - Network Data", "CE_NETWORKDATA", "Review selected pressure-network objects and levels.", "04 DESIGN"),
                 Action("COMPLETE - Setting-Out", "CE_VERTEXSETTINGOUT", "Generate linked setting-out.", "05 COMPLETE"),
@@ -196,10 +196,10 @@ namespace CETools.Civil3D
                 Action("SETTINGS - Parking Tools", "CE_PKTOOLS", "Parking layout and annotation settings.", "01 SETTINGS"),
                 Action("PREPARE - Parking Options", "CE_PARKOPTIONS", "Compare parking arrangements inside a selected boundary.", "02 PREPARE"),
                 Action("CREATE - Parking Optimiser", "CE_PARKOPTIMIZE", "Create obstacle-aware parking alternative.", "03 CREATE"),
-                Action("DESIGN - Parking Grading", "CE_PARKGRADINGTOOLS", "Create linked grading/drainage guides.", "04 DESIGN"),
+                Action("DESIGN - Parking Grading", "CE_PARKGRADETOOLS", "Create linked grading/drainage guides.", "04 DESIGN"),
                 Action("COMPLETE - Skew / Width Validation", "CE_PKSKVALIDATE", "Check perpendicular bay width and skew.", "05 COMPLETE"),
                 Action("Setting-Out", "CE_GRIDSETTINGOUT", "Grid/perimeter setting-out where applicable.", "05 COMPLETE"),
-                Action("DELIVER - Parking Quantities", "CE_PARKQTYTOOLS", "Create parking/layerwork quantity outputs.", "06 DELIVER"),
+                Action("DELIVER - Parking Quantities", "CE_STANDARDQTYTOOLS", "Create parking/layerwork quantity outputs.", "06 DELIVER"),
                 Action("▶ RUN COMPLETE PARKING PRODUCTION", "CE_PKTOOLS", "Open parking tools and continue through the production stages.", "99 RUN COMPLETE")
             });
         }
@@ -211,12 +211,12 @@ namespace CETools.Civil3D
             {
                 Action("SETTINGS - Hydrology / Flood Inputs", "CE_HYDROLOGYTOOLS", "Review rainfall/runoff and analysis settings.", "01 SETTINGS"),
                 Action("PREPARE - Surface / Catchment Review", "CE_SURFTOOLS", "Review the terrain source before flood calculations.", "02 PREPARE"),
-                Action("CREATE - Quick Flood / Rational Review", "CE_FLOODQUICK", "Pre/post return-period peak-flow and preliminary culvert screen.", "03 CREATE"),
-                Action("DESIGN - Surface Hydrology", "CE_HYDROLOGYREVIEW", "Flow routes, catchments and terrain storage review.", "04 DESIGN"),
+                Action("CREATE - Quick Flood / Rational Review", "CE_CATCHMENTQUICK", "Pre/post return-period peak-flow and preliminary culvert screen.", "03 CREATE"),
+                Action("DESIGN - Surface Hydrology", "CE_HYDROLOGYTOOLS", "Flow routes, catchments and terrain storage review.", "04 DESIGN"),
                 Action("Affected Property / Flood Results", "CE_FLOODRESULTTOOLS", "Review imported specialist flood results and affected properties.", "04 DESIGN"),
                 Action("COMPLETE - Culvert Review", "CE_CULVERTREVIEW", "Review candidate crossings/culvert requirements.", "05 COMPLETE"),
                 Action("DELIVER - Flood Report", "CE_REPORTFULL", "Generate project/discipline report output.", "06 DELIVER"),
-                Action("▶ RUN COMPLETE FLOOD PRODUCTION", "CE_FLOODQUICK", "Start the guided flood production path.", "99 RUN COMPLETE")
+                Action("▶ RUN COMPLETE FLOOD PRODUCTION", "CE_CATCHMENTQUICK", "Start the guided flood production path.", "99 RUN COMPLETE")
             });
         }
 
@@ -225,7 +225,7 @@ namespace CETools.Civil3D
             return new[]
             {
                 Action("SETTINGS - " + discipline + " Settings", settings, "Parts, styles, labels and profile settings.", "01 SETTINGS"),
-                Action("PREPARE - Utility Route Planner", "CE_UTILITYFROMROADRESERVE", "Create a preliminary route from road-reserve geometry.", "02 PREPARE"),
+                Action("PREPARE - Utility Route Planner", "CE_UTILITYROUTEOFFSET", "Create a preliminary route from erf, reserve-edge or road-centre geometry at a selected offset.", "02 PREPARE"),
                 Action("CREATE - Multiple Networks from Polylines", "CE_NETWORKFROMPOLYLINESBATCH", "Batch multiple source objects into network creation.", "03 CREATE"),
                 Action("Sequence / Branches", sequence, "Create the discipline network sequence.", "03 CREATE"),
                 Action("DESIGN - Network Data", "CE_NETWORKDATA", "Review levels, sizes, slopes and connected parts.", "04 DESIGN"),
