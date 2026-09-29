@@ -85,6 +85,7 @@ namespace CETools.Civil3D
             int cogoMoved = 0;
             if (string.Equals(types, "All supported", StringComparison.OrdinalIgnoreCase) || string.Equals(types, "COGO labels", StringComparison.OrdinalIgnoreCase))
             {
+                August11SurveyRuntimeCommands.CaptureCogoInitialOffsets(document);
                 CogoPointProjectStyleCommands.ApplySelectedStyles(document, false);
                 ISet<ObjectId> restricted = selected == null ? null : new HashSet<ObjectId>(selected.Where(id => IsCogoPoint(document.Database, id)));
                 if (selected == null || restricted.Count > 0)
@@ -117,6 +118,7 @@ namespace CETools.Civil3D
                 selected = new HashSet<ObjectId>(selection.Value.GetObjectIds());
             }
             int restored = SmartAnnotationRuntime.Restore(document, selected);
+            restored += August11SurveyRuntimeCommands.RestoreCogoLabels(document, selected);
             document.Editor.Regen();
             document.Editor.WriteMessage("\nCE_ANNOTATIONRESTORE complete. Restored annotations={0}.", restored);
         }
@@ -158,31 +160,7 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_TABLESOURCEZOOM", CommandFlags.Modal | CommandFlags.Redraw)]
         public void TableSourceZoom()
         {
-            Document document = ActiveDocument();
-            if (document == null) return;
-            PromptEntityOptions options = new PromptEntityOptions("\nSelect a linked CE table: ");
-            options.SetRejectMessage("\nSelect a Table object.");
-            options.AddAllowedClass(typeof(Table), false);
-            PromptEntityResult picked = document.Editor.GetEntity(options);
-            if (picked.Status != PromptStatus.OK) return;
-            List<ObjectId> sources = LinkedTableSourceNavigator.Discover(document.Database, picked.ObjectId);
-            if (sources.Count == 0)
-            {
-                document.Editor.WriteMessage("\nCE_TABLESOURCEZOOM: no live source handles were found in this table link.");
-                return;
-            }
-            int index = 0;
-            if (sources.Count > 1)
-            {
-                PromptIntegerOptions prompt = new PromptIntegerOptions("\nSource number to select/zoom <0 = all>: ") { AllowNegative = false, DefaultValue = 0, UseDefaultValue = true, LowerLimit = 0, UpperLimit = sources.Count };
-                PromptIntegerResult result = document.Editor.GetInteger(prompt);
-                if (result.Status != PromptStatus.OK) return;
-                index = result.Value;
-            }
-            ObjectId[] target = index <= 0 ? sources.ToArray() : new[] { sources[index - 1] };
-            document.Editor.SetImpliedSelection(target);
-            ZoomToObjects(document, target);
-            document.Editor.WriteMessage("\nCE_TABLESOURCEZOOM selected {0} linked source object(s).", target.Length);
+            new TableCellNavigationCommands().TableCellZoom();
         }
 
         [CommandMethod("CE_TOOLS", "CE_FLANNOTREFRESH", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
