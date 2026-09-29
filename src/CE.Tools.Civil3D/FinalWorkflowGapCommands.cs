@@ -128,40 +128,13 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_NETWORKFROMPOLYLINES", CommandFlags.Modal | CommandFlags.UsePickSet)]
         public void NetworkFromObject()
         {
-            Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document == null) return;
-            var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Create Network from Polyline / Feature Line",
-                "Launch the Civil 3D native network-from-object workflow from CE Tools. Gravity workflows create pipes + structures; Water/Bulk Water use pressure-network pipe runs and the selected Autodesk parts list/nominal diameter.");
-            settings.AddChoice("Discipline", "01 Network", "Discipline", "Sewer", "Choose the network type to create.", new[] { "Sewer", "Stormwater", "Water", "Bulk Water" });
-            settings.AddChoice("Source", "01 Network", "Source geometry", "Use preselection or pick in Civil 3D", "Preselect one supported line/polyline/feature line, or pick it after the Civil command starts.", new[] { "Use preselection or pick in Civil 3D" });
-            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
-
-            PromptSelectionResult implied = document.Editor.SelectImplied();
-            if (implied.Status == PromptStatus.OK && implied.Value != null && implied.Value.Count > 0)
-            {
-                ObjectId[] first = implied.Value.GetObjectIds().Take(1).ToArray();
-                if (first.Length > 0) document.Editor.SetImpliedSelection(first);
-            }
-            string discipline = settings.Text("Discipline");
-            bool pressure = string.Equals(discipline, "Water", StringComparison.OrdinalIgnoreCase) ||
-                            string.Equals(discipline, "Bulk Water", StringComparison.OrdinalIgnoreCase);
-            string command = pressure ? "_.CreatePressureNetworkFromObj " : "_.CreateNetworkFromObject ";
-            document.Editor.WriteMessage("\nCE_NETWORKFROMPOLYLINES: launching Civil 3D {0} network-from-object. Use the {1} project settings/parts list and nominal diameter in the native dialog.", discipline, discipline);
-            document.SendStringToExecute(command, true, false, true);
+            new August11NetworkBatchCommands().CreateNetworksBatch();
         }
 
         [CommandMethod("CE_TOOLS", "CE_NETWORKCONNECT", CommandFlags.Modal | CommandFlags.UsePickSet)]
         public void ConnectParts()
         {
-            Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document == null) return;
-            PromptSelectionResult implied = document.Editor.SelectImplied();
-            if (implied.Status != PromptStatus.OK || implied.Value == null || implied.Value.Count == 0)
-            {
-                document.Editor.WriteMessage("\nCE_NETWORKCONNECT: select the pipe/structure parts to connect when Civil 3D prompts.");
-            }
-            document.SendStringToExecute("_.ConnectNetworkPartTo ", true, false, true);
+            new August11NetworkBatchCommands().ConnectSelectedParts();
         }
 
         [CommandMethod("CE_TOOLS", "CE_NETWORKCREATEHUB", CommandFlags.Modal)]
