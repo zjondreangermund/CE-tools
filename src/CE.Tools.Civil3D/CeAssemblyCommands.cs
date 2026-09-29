@@ -110,7 +110,7 @@ namespace CETools.Civil3D
             model.AddChoice(
                 "Template",
                 "Assembly",
-                "Civil 3D common assembly",
+                "Road assembly preset / use",
                 templates.FirstOrDefault(item => string.Equals(item.Units, "meter", StringComparison.OrdinalIgnoreCase))?.DisplayName ?? templateChoices[0],
                 "Lists the actual assembly tools in your installed palettes, including Basic, Primary/Secondary Road, Divided Highway and intersection assemblies. Units are shown where supplied by the palette.",
                 templateChoices);
