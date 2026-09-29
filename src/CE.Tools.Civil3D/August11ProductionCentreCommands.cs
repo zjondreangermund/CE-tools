@@ -165,6 +165,7 @@ namespace CETools.Civil3D
                 Action("DESIGN - Network Data / Levels", "CE_NETWORKDATA", "Review pipe/structure levels, lengths and slopes.", "04 DESIGN"),
                 Action("COMPLETE - Alignments", "CE_SEWALIGN", "Create linked branch alignments.", "05 COMPLETE"),
                 Action("Profiles", "CE_SEWPROFILE", "Create isolated branch profiles/profile views with automatic band import.", "05 COMPLETE"),
+                Action("Long-Section Bands", "CE_SEWBANDLABELS", "Apply or repair sewer band sets on multiple selected profile views with native ground-profile and gravity-network source binding.", "05 COMPLETE"),
                 Action("Labels", "CE_SEWLABELS", "Apply selected pipe/structure labels and branch presentation.", "05 COMPLETE"),
                 Action("Setting-Out", "CE_VERTEXSETTINGOUT", "Linked setting-out for design geometry.", "05 COMPLETE"),
                 Action("BOQ", "CE_BOQSEWER", "Create linked sewer quantities.", "05 COMPLETE"),
