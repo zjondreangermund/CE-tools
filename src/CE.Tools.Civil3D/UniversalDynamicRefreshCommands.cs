@@ -129,6 +129,8 @@ namespace CETools.Civil3D
                 catch { result.Warnings++; }
                 try { SurveyCoordinateWorkflowCommands.RefreshAll(document); }
                 catch { result.Warnings++; }
+                try { August11SurveyRuntimeCommands.RefreshMultiSurfaceTables(document); }
+                catch { result.Warnings++; }
                 try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); }
                 catch { result.Warnings++; }
                 try { RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true); }
