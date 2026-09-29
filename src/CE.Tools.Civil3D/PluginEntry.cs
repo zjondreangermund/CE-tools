@@ -189,6 +189,7 @@ namespace CETools.Civil3D
                         Cmd("Create CE Road Assembly", "CE_ASSEMBLYCREATE ", "Create a named Civil 3D road assembly at a selected insertion point."),
                         Cmd("Copy Assembly Between Drawings (Safe)", "CE_ASSEMBLYCOPYSAFE ", "Clone an assembly between open drawings without using the clipboard, which can freeze Civil 3D."),
                         Cmd("Assembly Register", "CE_ASSEMBLYREPORT ", "Review every assembly, style and subassembly count."),
+                        Cmd("Assign Design Profiles to Corridors", "CE_CORRIDORPROFILESMULTI ", "Assign multiple design profiles or add selected baselines to multiple corridors."),
                         Cmd("Project Style Centre", "CE_PROJECTSTYLES ", "Select the project assembly, corridor and code-set styles."),
                         Cmd("Create Road Corridors", "CE_ROADCORRIDORS ", "Create corridors using CE road alignment/profile pairs and the selected assembly."))));
         }

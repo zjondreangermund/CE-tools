@@ -519,6 +519,26 @@ namespace CETools.Civil3D
                         "CE_ROADCORRIDORASSIGNBATCH",
                         "Assign selected assemblies, assembly frequencies, surface targets, slope-pattern styles, slope-pattern visibility and corridor-extents boundaries to multiple selected corridors.",
                         "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Assign Design Profiles to Multiple Corridors",
+                        "CE_CORRIDORPROFILESMULTI",
+                        "Match design profiles to existing baseline alignments or add selected profiles as new baselines with assembly regions.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Create Road Assembly from Civil 3D Palettes",
+                        "CE_ASSEMBLYCREATE",
+                        "Select and import a complete installed common assembly with its subassemblies.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Assign Pipe Reference Alignment",
+                        "CE_PIPEALIGNMENTMULTI",
+                        "Set the reference alignment on selected pipes and structures, including existing parts with a blank reference.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Import Band Set / Repair Road Band Sources",
+                        "CE_PROFILEVIEWDATASOURCES",
+                        "Import the selected band set and bind each view to its own road profiles, or repair existing band sources.",
+                        "06 Latest Field Completion"),
                 });
         }
     }

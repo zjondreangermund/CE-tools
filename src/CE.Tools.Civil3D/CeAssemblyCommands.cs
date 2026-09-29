@@ -53,7 +53,7 @@ namespace CETools.Civil3D
                 ObjectId id = CreateRoadAssemblyInteractively(document);
                 if (!id.IsNull)
                     document.Editor.WriteMessage(
-                        "\nCE_ASSEMBLYCREATE complete. Assembly handle={0}. Add the required lane, kerb, shoulder and daylight subassemblies before detailed corridor modelling.",
+                        "\nCE_ASSEMBLYCREATE complete. Assembly handle={0}. Review the imported subassembly parameters before corridor modelling.",
                         id.Handle);
             }
             catch (System.Exception exception)
@@ -100,42 +100,53 @@ namespace CETools.Civil3D
         {
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
             if (document == null || civilDocument == null) return ObjectId.Null;
+            List<AssemblyTemplate> templates = CivilAssemblyTemplateImporter.Discover();
+            string[] templateChoices = templates.Select(item => item.DisplayName)
+                .Concat(new[] { CivilAssemblyTemplateImporter.Browse, CivilAssemblyTemplateImporter.Empty }).ToArray();
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Create Road Assembly",
-                "Create the Civil 3D assembly container used by Road Production. Subassemblies can then be added from the Civil 3D Tool Palettes.");
+                "Select an installed Civil 3D common assembly, including its subassemblies, or browse an assembly DWG. Empty custom assemblies are also available.");
             model.AddText("Name", "Assembly", "Assembly name", "CE-ROAD-ASSEMBLY", "The name is made unique when an assembly with the same name already exists.");
             model.AddChoice(
-                "Preset",
+                "Template",
                 "Assembly",
                 "Road assembly preset / use",
-                "Urban kerbed road",
-                "Choose the intended road assembly use. CE Tools creates the Civil assembly container and opens Civil 3D Tool Palettes for the compatible lane/kerb/shoulder/daylight subassemblies.",
-                new[] { "Urban kerbed road", "Primary crowned road", "Secondary road", "Rural shoulder road", "Divided road", "Planar road", "Custom" });
+                templates.FirstOrDefault(item => string.Equals(item.Units, "meter", StringComparison.OrdinalIgnoreCase))?.DisplayName ?? templateChoices[0],
+                "Lists the actual assembly tools in your installed palettes, including Basic, Primary/Secondary Road, Divided Highway and intersection assemblies. Units are shown where supplied by the palette.",
+                templateChoices);
             model.AddChoice(
                 "Type",
                 "Assembly",
                 "Civil 3D assembly classification",
                 "UndividedCrownedRoad",
-                "Choose the supported Civil 3D assembly classification. Roadway subassemblies are selected from Autodesk Tool Palettes after creation.",
+                "Used for an empty custom assembly. Imported assemblies retain their native classification.",
                 new[] { "UndividedCrownedRoad", "UndividedPlanarRoad", "Other" });
             model.AddChoice(
                 "AssemblyStyle",
                 "Assembly",
                 "Assembly style",
-                string.Empty,
-                "Apply any Civil 3D assembly style installed in the active drawing.",
-                ProductionStyleCatalog.ReadNames(
+                "<Keep template / drawing default>",
+                "Keep the imported assembly style or choose a style from this drawing.",
+                new[] { "<Keep template / drawing default>" }.Concat(ProductionStyleCatalog.ReadNames(
                     document.Database,
                     ReadProperty(civilDocument.Styles, "AssemblyStyles"),
-                    "Assembly Style"));
+                    "Assembly Style")));
             model.AddChoice(
                 "OpenPalette",
                 "Assembly",
                 "Open Civil 3D Common Assemblies after placement",
-                "Yes",
-                "Open Tool Palettes immediately so a Basic, Primary Road, Secondary Road or other Civil 3D subassembly template can be added to the new assembly.",
+                "No",
+                "Optionally open Tool Palettes to customize the completed assembly further.",
                 new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return ObjectId.Null;
+            AssemblyTemplate template = templates.FirstOrDefault(item => item.DisplayName == model.Text("Template"));
+            if (model.Text("Template") == CivilAssemblyTemplateImporter.Browse)
+            {
+                template = CivilAssemblyTemplateImporter.BrowseDrawing(document);
+                if (template == null) return ObjectId.Null;
+            }
+            if (template == null && model.Text("Template") != CivilAssemblyTemplateImporter.Empty)
+                throw new InvalidOperationException("Select an installed assembly or browse its DWG.");
             PromptPointResult point = document.Editor.GetPoint(
                 "\nSelect the insertion point for the CE road assembly: ");
             if (point.Status != PromptStatus.OK) return ObjectId.Null;
@@ -152,25 +163,30 @@ namespace CETools.Civil3D
                 if (collection == null)
                     throw new InvalidOperationException(
                         "CivilDocument.AssemblyCollection is unavailable in this Civil 3D build.");
-                ObjectId styleId = ResolveAssemblyStyleId(
+                bool keepStyle = model.Text("AssemblyStyle") == "<Keep template / drawing default>";
+                ObjectId styleId = template != null && keepStyle ? ObjectId.Null : ResolveAssemblyStyleId(
                     civilDocument,
                     document.Database,
                     transaction,
-                    model.Text("AssemblyStyle"));
+                    keepStyle ? string.Empty : model.Text("AssemblyStyle"));
                 string styleName = string.Empty;
                 if (!styleId.IsNull)
                 {
                     DBObject selectedStyle = transaction.GetObject(styleId, OpenMode.ForRead, false);
                     styleName = Text(ReadProperty(selectedStyle, "Name"));
                 }
-                assemblyId = AddAssembly(
+                Point3d insertionPoint = point.Value.TransformBy(document.Editor.CurrentUserCoordinateSystem);
+                assemblyId = template != null
+                    ? CivilAssemblyTemplateImporter.Import(civilDocument, document, template, name, insertionPoint)
+                    : AddAssembly(
                     collection,
                     document.Database,
                     name,
                     model.Text("Type"),
-                    point.Value,
+                    insertionPoint,
                     styleId,
                     styleName);
+                if (assemblyId.IsNull) return ObjectId.Null;
                 DBObject assembly = transaction.GetObject(
                     assemblyId,
                     OpenMode.ForWrite,
@@ -178,7 +194,7 @@ namespace CETools.Civil3D
                 TrySetProperty(
                     assembly,
                     "Description",
-                    "CE Tools road assembly. Add project subassemblies before detailed corridor generation.");
+                    template == null ? "CE Tools custom assembly." : "Imported from Civil 3D assembly: " + template.Name);
                 if (!styleId.IsNull) TrySetProperty(assembly, "StyleId", styleId);
                 transaction.Commit();
             }

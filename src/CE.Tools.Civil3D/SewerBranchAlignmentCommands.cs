@@ -634,6 +634,7 @@ namespace CETools.Civil3D
                         alignment.Description =
                             "CE sewer alignment - " + branch.BranchName;
                         alignment.XData = BuildTag(branchKey, "Alignment");
+                        SewerPartAlignmentBinding.BindBranch(transaction, branch.PipeIds, branch.StructureIds, alignmentId);
                         alignmentsCreated++;
 
                         IReadOnlyList<SewerBranchLabelPlacement.Placement> placements =

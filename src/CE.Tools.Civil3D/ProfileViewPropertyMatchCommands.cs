@@ -314,6 +314,28 @@ namespace CETools.Civil3D
                 ObjectId.Null);
             if (viewIds.Count == 0) return;
 
+            const string importRoadBands = "Import band set and assign road sources";
+            const string matchRoadBands = "Match each road view's existing bands";
+            var workflow = new ProductionSettingsDialogModel("CE Tools - Band Set and Data Sources",
+                "Import the required band set, repair road sources by each view's alignment, or choose sources manually.");
+            workflow.AddChoice("Action", "01 Operation", "Band action", importRoadBands,
+                "Road mode resolves ground, left edge, centre, right edge and final-design profiles separately for each view.",
+                new[] { importRoadBands, matchRoadBands, "Choose sources manually" });
+            if (!DisciplineWorkflowDialogs.EditSettings(workflow)) return;
+            if (workflow.Text("Action") == importRoadBands)
+            {
+                document.Editor.SetImpliedSelection(viewIds.ToArray());
+                // Use the canonical importer: commit each view, materialise its
+                // band rows, bind its own road profiles and regenerate labels.
+                new September14AlignmentBandStyleCommands().ApplyRoadBandSetAndShowLabels();
+                return;
+            }
+            if (workflow.Text("Action") == matchRoadBands)
+            {
+                BindRoadDataSources(document, viewIds);
+                return;
+            }
+
             List<ProfileChoice> profiles = ReadProfiles(document.Database, civil);
             List<NetworkChoice> networks = ReadNetworks(document.Database, civil);
             const string keep = "<Keep current>";
@@ -349,6 +371,13 @@ namespace CETools.Civil3D
             bool profileRows = !string.Equals(model.Text("Rows"), "Pipe Network rows only", StringComparison.OrdinalIgnoreCase);
             bool networkRows = !string.Equals(model.Text("Rows"), "Profile rows only", StringComparison.OrdinalIgnoreCase);
             bool showLabels = IsYes(model.Text("Labels"));
+            bool copyProfile1 = string.Equals(model.Text("Profile2"), same, StringComparison.OrdinalIgnoreCase);
+            if ((!profileRows || (profile1 == null && profile2 == null && !copyProfile1)) &&
+                (!networkRows || network == null))
+            {
+                document.Editor.WriteMessage("\nNo data source was selected. Use the road matching/import action or choose a profile/network source.");
+                return;
+            }
 
             int views = 0, rows = 0, verified = 0, pipeGroups = 0, failed = 0;
             using (DocumentLock documentLock = document.LockDocument())
@@ -364,6 +393,17 @@ namespace CETools.Civil3D
                             if (view == null || view.IsReferenceObject)
                                 throw new InvalidOperationException("Profile view is read-only or unavailable.");
 
+                            // A profile from RD-01 cannot be assigned directly to
+                            // the bands on RD-02. Map the selected engineering role
+                            // to this view's alignment, and fail when it is absent.
+                            ObjectId localProfile1 = profile1 == null || !profileRows ? ObjectId.Null :
+                                MapProfile(profile1.Id, view.AlignmentId, tr);
+                            ObjectId localProfile2 = profile2 == null || !profileRows ? ObjectId.Null :
+                                MapProfile(profile2.Id, view.AlignmentId, tr);
+                            if (profileRows && ((profile1 != null && localProfile1.IsNull) ||
+                                (profile2 != null && localProfile2.IsNull)))
+                                throw new InvalidOperationException("No matching selected profile exists on this view's alignment. Use automatic road matching.");
+
                             int local = 0, localVerified = 0;
                             ProfileViewBandPersistence.Update(
                                 view,
@@ -374,22 +414,24 @@ namespace CETools.Civil3D
                                         item.BandType == Autodesk.Civil.BandType.PressureNetwork;
                                     if (isNetwork)
                                     {
-                                        if (networkRows && network != null && !network.Id.IsNull)
+                                        if (item.BandType == Autodesk.Civil.BandType.PipeNetwork &&
+                                            networkRows && network != null && !network.Id.IsNull)
                                         {
                                             item.DataSourceId = network.Id;
                                             local++;
                                         }
                                     }
-                                    else if (profileRows)
+                                    else if (profileRows && SupportsProfileSources(item))
                                     {
-                                        if (profile1 != null && !profile1.Id.IsNull)
+                                        if (!localProfile1.IsNull)
                                         {
-                                            item.Profile1Id = profile1.Id;
+                                            item.Profile1Id = localProfile1;
                                             local++;
                                         }
-                                        if (profile2 != null && !profile2.Id.IsNull)
+                                        ObjectId second = copyProfile1 ? item.Profile1Id : localProfile2;
+                                        if (!second.IsNull)
                                         {
-                                            item.Profile2Id = profile2.Id;
+                                            item.Profile2Id = second;
                                             local++;
                                         }
                                     }
@@ -400,11 +442,19 @@ namespace CETools.Civil3D
                                     bool isNetwork =
                                         item.BandType == Autodesk.Civil.BandType.PipeNetwork ||
                                         item.BandType == Autodesk.Civil.BandType.PressureNetwork;
-                                    if (isNetwork && networkRows && network != null &&
+                                    if (item.BandType == Autodesk.Civil.BandType.PipeNetwork && networkRows && network != null &&
                                         item.DataSourceId == network.Id) localVerified++;
-                                    if (!isNetwork && profileRows && profile1 != null &&
-                                        item.Profile1Id == profile1.Id) localVerified++;
+                                    if (!isNetwork && profileRows && SupportsProfileSources(item))
+                                    {
+                                        if (!localProfile1.IsNull && item.Profile1Id == localProfile1) localVerified++;
+                                        ObjectId second = copyProfile1 ? item.Profile1Id : localProfile2;
+                                        if (!second.IsNull && item.Profile2Id == second) localVerified++;
+                                    }
                                 });
+                            if (local == 0)
+                                throw new InvalidOperationException("No compatible band sources were assigned. Import a band set or select valid sources first.");
+                            if (localVerified < local)
+                                throw new InvalidOperationException("Some source fields did not persist. This view's changes were rolled back.");
                             try { view.RecordGraphicsModified(true); } catch { }
                             tr.Commit();
                             rows += local;
@@ -439,6 +489,62 @@ namespace CETools.Civil3D
             document.Editor.WriteMessage(
                 "\nCE_PROFILEVIEWDATASOURCES complete. Views={0}; source fields written={1}; verified fields={2}; PipeNetwork band-label groups={3}; failed={4}.",
                 views, rows, verified, pipeGroups, failed);
+        }
+
+        private static bool SupportsProfileSources(ProfileViewBandItem item)
+        {
+            return item.BandType != Autodesk.Civil.BandType.HorizontalGeometry &&
+                item.BandType != Autodesk.Civil.BandType.SuperelevationData;
+        }
+
+        private static void BindRoadDataSources(Document document, IEnumerable<ObjectId> viewIds)
+        {
+            int completed = 0, linked = 0, failed = 0;
+            using (DocumentLock documentLock = document.LockDocument())
+            foreach (ObjectId id in viewIds)
+            {
+                try
+                {
+                    using (Transaction prepare = document.Database.TransactionManager.StartTransaction())
+                    {
+                        var view = prepare.GetObject(id, OpenMode.ForWrite, false) as CivilProfileView;
+                        if (view == null || view.IsReferenceObject) throw new InvalidOperationException("View is unavailable or read-only.");
+                        if (September14AlignmentBandStyleCommands.CountBandRows(view) == 0)
+                            throw new InvalidOperationException("No band rows exist. Choose Import band set and assign road sources.");
+                        var alignment = prepare.GetObject(view.AlignmentId, OpenMode.ForRead, false) as CivilAlignment;
+                        if (alignment == null) throw new InvalidOperationException("View has no valid alignment.");
+                        ObjectId ground, left, centre, right, final;
+                        August13RoadProfileViewFinalizerCommands.ResolveRoadProfiles(alignment, prepare,
+                            out ground, out left, out centre, out right, out final);
+                        if (ground.IsNull && final.IsNull) throw new InvalidOperationException("No road source profiles exist on this alignment.");
+                        ProfileViewBandDataBinder.PrepareRoadBandSources(view, ground, left, centre, right, final);
+                        prepare.Commit();
+                    }
+                    int local;
+                    using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+                    {
+                        var view = (CivilProfileView)tr.GetObject(id, OpenMode.ForWrite, false);
+                        var alignment = (CivilAlignment)tr.GetObject(view.AlignmentId, OpenMode.ForRead, false);
+                        ObjectId ground, left, centre, right, final;
+                        August13RoadProfileViewFinalizerCommands.ResolveRoadProfiles(alignment, tr,
+                            out ground, out left, out centre, out right, out final);
+                        int warnings;
+                        local = ProfileViewBandDataBinder.BindRoad(view, ground, left, centre, right, final, out warnings);
+                        if (local == 0 || warnings > 0)
+                            throw new InvalidOperationException("Band sources are incomplete; verified rows=" + local + ", unresolved rows=" + warnings + ". Check the band's source profiles and style.");
+                        tr.Commit();
+                    }
+                    document.Editor.Regen();
+                    completed++;
+                    linked += local;
+                }
+                catch (System.Exception exception)
+                {
+                    failed++;
+                    document.Editor.WriteMessage("\nBand source repair for view {0}: {1}", id.Handle, exception.Message);
+                }
+            }
+            document.Editor.WriteMessage("\nRoad band source repair: views repaired={0}; band rows linked and verified={1}; views needing attention={2}.", completed, linked, failed);
         }
 
         [CommandMethod("CE_TOOLS", "CE_SEWPIPEBANDGROUPS",

@@ -560,22 +560,19 @@ namespace CETools.Civil3D
                 return;
             }
 
-            string[] roadChoices = new[] { "ALL" }
-                .Concat(ReadRoadChoiceNames(document.Database, civilDocument))
-                .ToArray();
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Junction Feature Lines to Road TOP Surfaces",
-                "Drape each selected feature line once to matching TOP surfaces, then add its valid vertices to those surfaces.");
-            model.AddChoice("Roads", "01 Surfaces", "Roads", "ALL",
-                "Choose a road from the dropdown, or type comma-separated road names. ALL uses every TOP-RD surface.",
-                roadChoices);
+                "Add cross-road midpoint vertices, then drape and add the feature-line vertices to multiple selected road TOP surfaces.");
+            model.AddChoice("Midpoints", "01 Cross-road vertices", "Insert missing cross-road midpoint", "Yes",
+                "Add a midpoint to straight two-PI connectors. Curved bellmouths and existing midpoint vertices are preserved.", new[] { "Yes", "No" });
             model.AddChoice("PointMode", "02 Surface Vertices", "Surface points", "Current feature-line vertices",
                 "Keep current vertices or add sampled intermediate points along each segment.",
                 new[] { "Current feature-line vertices", "Add intermediate points" });
             model.AddPositiveDouble("Spacing", "02 Surface Vertices", "Maximum intermediate-point spacing", 5.0,
                 "Drawing units between added points. Used only when intermediate points are enabled.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
-            HashSet<string> requestedRoads = ParseRoadFilter(model.Text("Roads"));
+            IList<CivilChoice> selectedSurfaces = JunctionSurfaceVertices.PickSurfaces(document, civilDocument);
+            if (selectedSurfaces == null || selectedSurfaces.Count == 0) return;
             bool addIntermediate = string.Equals(
                 model.Text("PointMode"), "Add intermediate points", StringComparison.OrdinalIgnoreCase);
             double pointSpacing = model.Double("Spacing", 5.0);
@@ -584,19 +581,12 @@ namespace CETools.Civil3D
             int draped = 0;
             int vertices = 0;
             int unresolved = 0;
+            int midpoints = 0;
+            var changedSurfaceIds = new HashSet<ObjectId>();
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                List<CivilSurface> topSurfaces = new List<CivilSurface>();
-                foreach (ObjectId surfaceId in civilDocument.GetSurfaceIds())
-                {
-                    CivilSurface surface = SafeOpen<CivilSurface>(transaction, surfaceId, OpenMode.ForWrite);
-                    if (surface == null ||
-                        !surface.Name.StartsWith("TOP-RD-", StringComparison.OrdinalIgnoreCase) ||
-                        !RoadFilterMatches(surface.Name, requestedRoads))
-                        continue;
-                    topSurfaces.Add(surface);
-                }
+                List<CivilSurface> topSurfaces = JunctionSurfaceVertices.OpenSurfaces(transaction, selectedSurfaces);
 
                 foreach (ObjectId featureId in featureIds.Distinct())
                 {
@@ -604,10 +594,18 @@ namespace CETools.Civil3D
                         transaction, featureId, OpenMode.ForWrite);
                     if (line == null) continue;
 
+                    if (model.Text("Midpoints") == "Yes" && JunctionSurfaceVertices.EnsureMidpoint(line)) midpoints++;
+
                     int unresolvedPoints;
                     if (TryAssignFeatureLineElevations(line, topSurfaces, out unresolvedPoints))
                         draped++;
                     unresolved += unresolvedPoints;
+                    if (unresolvedPoints > 0)
+                    {
+                        document.Editor.WriteMessage("\nFeature line {0}: no surface vertices were written because {1} control elevations could not be resolved.",
+                            featureId.Handle, unresolvedPoints);
+                        continue;
+                    }
 
                     foreach (CivilSurface surface in topSurfaces)
                     {
@@ -619,22 +617,24 @@ namespace CETools.Civil3D
 
                         if (local > 0)
                         {
-                            surfaces++;
+                            changedSurfaceIds.Add(surface.ObjectId);
                             vertices += local;
-                            TryInvoke(surface, "Rebuild");
                             surface.RecordGraphicsModified(true);
                         }
                     }
 
                     line.RecordGraphicsModified(true);
                 }
+                foreach (CivilSurface surface in topSurfaces)
+                    if (changedSurfaceIds.Contains(surface.ObjectId)) TryInvoke(surface, "Rebuild");
+                surfaces = changedSurfaceIds.Count;
                 transaction.Commit();
             }
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_ROADJUNCTIONFEATURELINESTOP complete. Selected feature lines={0}; matching TOP surfaces processed={1}; feature lines draped={2}; unresolved elevations={3}; surface vertices pasted={4}; intermediate points={5}.",
-                featureIds.Count, surfaces, draped, unresolved, vertices, addIntermediate ? "Yes" : "No");
+                "\nCE_ROADJUNCTIONFEATURELINESTOP complete. Selected feature lines={0}; matching TOP surfaces processed={1}; feature lines draped={2}; unresolved elevations={3}; surface vertices pasted={4}; intermediate points={5}; cross-road midpoints added={6}.",
+                featureIds.Count, surfaces, draped, unresolved, vertices, addIntermediate ? "Yes" : "No", midpoints);
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADTJUNCTIONASSEMBLYLIMITS", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -1845,7 +1845,7 @@ namespace CETools.Civil3D
                 points[match] = point;
         }
 
-        private static bool TryAssignFeatureLineElevations(
+        internal static bool TryAssignFeatureLineElevations(
             CivilFeatureLine line,
             IList<CivilSurface> surfaces,
             out int unresolved)
@@ -1871,7 +1871,7 @@ namespace CETools.Civil3D
                 double elevation;
                 if (!TryFindSurfaceElevation(surfaces, point.X, point.Y, out elevation))
                 {
-                    if (Math.Abs(point.Z) <= 0.001) unresolved++;
+                    unresolved++;
                     continue;
                 }
 
@@ -1958,7 +1958,7 @@ namespace CETools.Civil3D
             return false;
         }
 
-        private static int AddLineVerticesToSurface(
+        internal static int AddLineVerticesToSurface(
             CivilFeatureLine line,
             CivilSurface surface,
             bool addIntermediate,
@@ -1998,7 +1998,11 @@ namespace CETools.Civil3D
                         continue;
                     if (TryAddSurfaceVertex(
                             surface,
-                            new Point3d(planPoint.X, planPoint.Y, elevation)))
+                            // Use the common feature-line control elevation on
+                            // each destination, rather than re-inserting its own
+                            // existing surface elevation (which changes nothing).
+                            new Point3d(planPoint.X, planPoint.Y,
+                                first.Z + ((second.Z - first.Z) * fraction))))
                         added++;
                 }
             }

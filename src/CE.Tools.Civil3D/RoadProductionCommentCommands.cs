@@ -55,6 +55,7 @@ namespace CETools.Civil3D
                     RoadAction("Create CE road assembly", "CE_ASSEMBLYCREATE", "Create the Civil 3D roadway assembly used by corridor regions.", "3 — Assembly"),
                     RoadAction("Assembly workflow", "CE_ASSEMBLYTOOLS", "Create, review and select project assemblies.", "3 — Assembly"),
                     RoadAction("Create and complete road corridors", "CE_ROADCORRIDORFULL", "Create corridors, then apply supported baselines, regions, frequencies, targets, TOP/DATUM surfaces, boundaries, visibility, automatic rebuild and slope patterns.", "4 — Corridors"),
+                    RoadAction("Assign design profiles to corridors", "CE_CORRIDORPROFILESMULTI", "Assign multiple design profiles to existing corridors or add new baselines.", "4 — Corridors"),
                     RoadAction("Normalize road TOP/BOTTOM surface names", "CE_ROADSURFACENAMES", "Associate corridor surfaces with their road numbers using TOP-RD-01/BOTTOM-RD-01 naming.", "4 — Corridors"),
                     RoadAction("Paste junction end points to TOP surfaces", "CE_JUNCTIONENDPOINTSTOTOPSURFACES", "Add generated junction return/closure endpoints to every covering TOP-RD surface.", "4 — Corridors"),
                     RoadAction("Corridor baselines and regions", "CE_CORBASEUI", "Review generated corridor baselines and regions.", "4 — Corridors"),
