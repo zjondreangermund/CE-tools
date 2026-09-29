@@ -59,7 +59,8 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Create sewer profiles / long sections", "CE_SEWPROFILE", "Create one isolated long-section profile view per branch, link its pipe-network parts and bands, then review the branch results in a grid or DWG table.", "3 — Profiles"),
                     new DisciplineWorkflowAction("Apply / repair sewer long-section bands", "CE_SEWBANDLABELS", "Select multiple sewer profile views, apply the chosen native band set, bind the existing-ground profile and gravity network, and enable all configured labels.", "3 — Profiles"),
                     new DisciplineWorkflowAction("Repair Pipe Network Band Label Groups", "CE_SEWPIPEBANDGROUPS", "Materialise Pipe Network band rows on multiple sewer profile views and restore their gravity-network Data Source / label groups.", "3 — Profiles"),
-                    new DisciplineWorkflowAction("Edit one profile view, apply to selected", "CE_PROFILEVIEWEDITMATCH", "Open one native Profile View Properties window, edit it once, then copy the edited style/range/band settings to all selected profile views with target-specific sources.", "3 — Profiles"),\n                    new DisciplineWorkflowAction("Band Data Sources (multiple views)", "CE_PROFILEVIEWDATASOURCES", "Batch-fill blank Profile 1/Profile 2/Pipe Network Data Source fields on selected profile views.", "3 — Profiles"),
+                    new DisciplineWorkflowAction("Edit one profile view, apply to selected", "CE_PROFILEVIEWEDITMATCH", "Open one native Profile View Properties window, edit it once, then copy the edited style/range/band settings to all selected profile views with target-specific sources.", "3 — Profiles"),
+                    new DisciplineWorkflowAction("Band Data Sources (multiple views)", "CE_PROFILEVIEWDATASOURCES", "Batch-fill blank Profile 1/Profile 2/Pipe Network Data Source fields on selected profile views.", "3 — Profiles"),
                     new DisciplineWorkflowAction("Sewer information", "CE_SEWINFO", "Review settings, alignments, profile views and network links.", "5 — Review")
                 });
             if (!string.IsNullOrWhiteSpace(command))
@@ -141,7 +142,8 @@ namespace CETools.Civil3D
             for (int index = 0; index < plan.Branches.Count; index++)
             {
                 editor.WriteMessage(
-                    "\n  Branch-{0}: pipes={1}; length={2:0.###}.",
+                    "
+  Branch-{0}: pipes={1}; length={2:0.###}.",
                     index + 2,
                     plan.Branches[index].Edges.Count,
                     plan.Branches[index].Length);
@@ -819,17 +821,28 @@ namespace CETools.Civil3D
 
             document.Editor.WriteMessage(
                 "\nCE sewer production information:" +
-                "\n  Source networks: " + networks.Count +
-                "\n  Generated alignments: " + alignments +
-                "\n  Generated plan labels: " + labels +
-                "\n  Generated profile views: " + profileViews +
-                "\n  Alignment style: " + Display(settings.AlignmentStyle) +
-                "\n  Profile style: " + Display(settings.ProfileStyle) +
-                "\n  Profile label set: " + Display(settings.ProfileLabelSetStyle) +
-                "\n  Profile-view style: " + Display(settings.ProfileViewStyle) +
-                "\n  Band-set style: " + Display(settings.ProfileViewBandSetStyle) +
-                "\n  Profile layer: " + settings.ProfileLayer +
-                "\n  Refresh model: explicit CE_SEWREFRESH / CE_SEWPROFILE; native surface-profile linkage remains controlled by Civil 3D.");
+                "
+  Source networks: " + networks.Count +
+                "
+  Generated alignments: " + alignments +
+                "
+  Generated plan labels: " + labels +
+                "
+  Generated profile views: " + profileViews +
+                "
+  Alignment style: " + Display(settings.AlignmentStyle) +
+                "
+  Profile style: " + Display(settings.ProfileStyle) +
+                "
+  Profile label set: " + Display(settings.ProfileLabelSetStyle) +
+                "
+  Profile-view style: " + Display(settings.ProfileViewStyle) +
+                "
+  Band-set style: " + Display(settings.ProfileViewBandSetStyle) +
+                "
+  Profile layer: " + settings.ProfileLayer +
+                "
+  Refresh model: explicit CE_SEWREFRESH / CE_SEWPROFILE; native surface-profile linkage remains controlled by Civil 3D.");
         }
 
         private static bool PromptMainStructures(
