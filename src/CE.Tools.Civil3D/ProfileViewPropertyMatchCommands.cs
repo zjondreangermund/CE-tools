@@ -27,6 +27,157 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class ProfileViewPropertyMatchCommands
     {
+        private static ProfileViewEditMatchSession _editMatchSession;
+
+        [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWEDITMATCH",
+            CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void EditOneProfileViewThenApplyToSelected()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+
+            ObjectId sourceId = PromptProfileView(
+                document.Editor,
+                "\nSelect the ONE profile view to edit in native Profile View Properties: ");
+            if (sourceId.IsNull) return;
+
+            List<ObjectId> targets = PromptProfileViews(
+                document,
+                "\nSelect all OTHER profile views that must receive the same edits: ",
+                sourceId);
+            if (targets.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_PROFILEVIEWEDITMATCH: no target profile views were selected.");
+                return;
+            }
+
+            _editMatchSession = new ProfileViewEditMatchSession
+            {
+                Database = document.Database,
+                SourceId = sourceId,
+                TargetIds = targets.ToList()
+            };
+
+            try
+            {
+                document.Editor.SetImpliedSelection(new[] { sourceId });
+                document.Editor.WriteMessage(
+                    "\nEdit the source Profile View Properties once. Click OK/Apply and close the native Civil 3D window; CE Tools will then copy the edited view style, ranges and complete Bands-tab rows to {0} selected target view(s), mapping profile/network sources to each target.",
+                    targets.Count);
+
+                // Queue the native modal editor first and the CE apply command
+                // immediately after it. AutoCAD executes the second command only
+                // after EditGraphProperties has closed.
+                document.SendStringToExecute(
+                    "_.EditGraphProperties \nCE_PROFILEVIEWEDITMATCHAPPLY ",
+                    true,
+                    false,
+                    true);
+            }
+            catch (System.Exception exception)
+            {
+                _editMatchSession = null;
+                document.Editor.WriteMessage(
+                    "\nCE_PROFILEVIEWEDITMATCH could not open native Profile View Properties: {0}",
+                    exception.Message);
+            }
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWEDITMATCHAPPLY",
+            CommandFlags.Modal | CommandFlags.Redraw)]
+        public void ApplyEditedProfileViewToSelected()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            ProfileViewEditMatchSession session = _editMatchSession;
+            _editMatchSession = null;
+
+            if (document == null || civil == null || session == null ||
+                !ReferenceEquals(session.Database, document.Database))
+            {
+                if (document != null)
+                    document.Editor.WriteMessage(
+                        "\nCE_PROFILEVIEWEDITMATCHAPPLY: no pending edit-and-match session exists for this drawing.");
+                return;
+            }
+
+            int completed = 0;
+            int copiedRows = 0;
+            int failed = 0;
+            using (DocumentLock documentLock = document.LockDocument())
+            {
+                foreach (ObjectId targetId in session.TargetIds.Distinct())
+                {
+                    try
+                    {
+                        SewerLongSectionContext targetContext =
+                            SewerLongSectionBandService.ResolveContext(
+                                document.Database,
+                                civil,
+                                targetId);
+
+                        using (Transaction tr =
+                            document.Database.TransactionManager.StartTransaction())
+                        {
+                            CivilProfileView source = tr.GetObject(
+                                session.SourceId,
+                                OpenMode.ForRead,
+                                false) as CivilProfileView;
+                            CivilProfileView target = tr.GetObject(
+                                targetId,
+                                OpenMode.ForWrite,
+                                false) as CivilProfileView;
+                            if (source == null || target == null ||
+                                target.IsReferenceObject)
+                                throw new InvalidOperationException(
+                                    "Source/target profile view is unavailable or read-only.");
+
+                            target.StyleId = source.StyleId;
+                            CopyViewRangeProperties(source, target);
+                            copiedRows += CopyBands(
+                                source,
+                                target,
+                                tr,
+                                true,
+                                false,
+                                targetContext.NetworkId);
+
+                            try { target.RecordGraphicsModified(true); }
+                            catch { }
+                            tr.Commit();
+                        }
+                        completed++;
+                    }
+                    catch (System.Exception exception)
+                    {
+                        failed++;
+                        document.Editor.WriteMessage(
+                            "\nCE_PROFILEVIEWEDITMATCHAPPLY target {0} skipped: {1}",
+                            targetId.Handle,
+                            exception.Message);
+                    }
+                }
+            }
+
+            try
+            {
+                document.Editor.SetImpliedSelection(
+                    session.TargetIds.Distinct().ToArray());
+                document.Database.TransactionManager.QueueForGraphicsFlush();
+                document.Editor.Regen();
+                AcApplication.UpdateScreen();
+            }
+            catch { }
+
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWEDITMATCH complete. Edited source={0}; target views updated={1}; native band rows copied={2}; failed={3}.",
+                session.SourceId.Handle,
+                completed,
+                copiedRows,
+                failed);
+        }
+
         [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWMATCH",
             CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
         public void MatchProfileViewProperties()
@@ -90,7 +241,8 @@ namespace CETools.Civil3D
                             if (copyRanges) CopyViewRangeProperties(source, target);
                             if (copyBands)
                                 bandRows += CopyBands(
-                                    source, target, tr, mapProfiles, showLabels);
+                                    source, target, tr, mapProfiles, showLabels,
+                                    ObjectId.Null);
 
                             try { target.RecordGraphicsModified(true); } catch { }
                             tr.Commit();
@@ -289,17 +441,20 @@ namespace CETools.Civil3D
             CivilProfileView target,
             Transaction tr,
             bool mapProfiles,
-            bool showLabels)
+            bool showLabels,
+            ObjectId targetNetworkId)
         {
             int copied = 0;
             copied += CopyBandLocation(
                 source.Bands.GetTopBandItems(),
                 target.Bands.GetTopBandItems(),
-                true, source, target, tr, mapProfiles, showLabels);
+                true, source, target, tr, mapProfiles, showLabels,
+                targetNetworkId);
             copied += CopyBandLocation(
                 source.Bands.GetBottomBandItems(),
                 target.Bands.GetBottomBandItems(),
-                false, source, target, tr, mapProfiles, showLabels);
+                false, source, target, tr, mapProfiles, showLabels,
+                targetNetworkId);
             return copied;
         }
 
@@ -311,7 +466,8 @@ namespace CETools.Civil3D
             CivilProfileView targetView,
             Transaction tr,
             bool mapProfiles,
-            bool showLabels)
+            bool showLabels,
+            ObjectId targetNetworkId)
         {
             try
             {
@@ -324,6 +480,9 @@ namespace CETools.Civil3D
                     CopyWritableBandProperties(source, target);
                     TrySetObjectId(target, "AlignmentId", targetView.AlignmentId);
 
+                    bool networkBand =
+                        source.BandType == Autodesk.Civil.BandType.PipeNetwork ||
+                        source.BandType == Autodesk.Civil.BandType.PressureNetwork;
                     if (mapProfiles)
                     {
                         ObjectId mapped1 = MapProfile(
@@ -332,6 +491,17 @@ namespace CETools.Civil3D
                             source.Profile2Id, targetView.AlignmentId, tr);
                         if (!mapped1.IsNull) target.Profile1Id = mapped1;
                         if (!mapped2.IsNull) target.Profile2Id = mapped2;
+                        if (networkBand && !targetNetworkId.IsNull)
+                            target.DataSourceId = targetNetworkId;
+                    }
+                    else
+                    {
+                        if (!source.Profile1Id.IsNull)
+                            target.Profile1Id = source.Profile1Id;
+                        if (!source.Profile2Id.IsNull)
+                            target.Profile2Id = source.Profile2Id;
+                        if (networkBand && !source.DataSourceId.IsNull)
+                            target.DataSourceId = source.DataSourceId;
                     }
                     if (showLabels) target.ShowLabels = true;
                 }
@@ -383,7 +553,11 @@ namespace CETools.Civil3D
                 if (!property.CanRead || !property.CanWrite ||
                     property.GetIndexParameters().Length != 0 ||
                     string.Equals(property.Name, "BandStyleId", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(property.Name, "BandType", StringComparison.OrdinalIgnoreCase))
+                    string.Equals(property.Name, "BandType", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(property.Name, "AlignmentId", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(property.Name, "Profile1Id", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(property.Name, "Profile2Id", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(property.Name, "DataSourceId", StringComparison.OrdinalIgnoreCase))
                     continue;
                 try
                 {
@@ -605,6 +779,13 @@ namespace CETools.Civil3D
         private static bool IsYes(string value)
         {
             return string.Equals(value, "Yes", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private sealed class ProfileViewEditMatchSession
+        {
+            internal Database Database;
+            internal ObjectId SourceId;
+            internal List<ObjectId> TargetIds;
         }
 
         private sealed class ProfileChoice
