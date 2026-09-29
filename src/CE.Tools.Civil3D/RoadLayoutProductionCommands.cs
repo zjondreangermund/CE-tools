@@ -551,77 +551,7 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONSETTINGOUT", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void JunctionSettingOut()
         {
-            Document document = ActiveDocument();
-            if (document == null) return;
-            CivilDocument civilDocument = CivilApplication.ActiveDocument;
-            if (civilDocument == null) return;
-            var model = new ProductionSettingsDialogModel(
-                "CE Tools - Junction Vertex Setting-Out",
-                "Create COGO setting-out points only at T/cross junction return endpoints and arc midpoints. Junction groups are sequenced top-to-bottom and left-to-right.");
-            model.AddChoice("Scope", "01 Selection", "Junctions", "All", "Use all generated junction returns or only selected return arcs.", new[] { "All", "Selected" });
-            model.AddText("Prefix", "02 Numbering", "Point prefix", "J", "Names are generated as J1.1, J1.2, etc.");
-            model.AddPositiveInteger("Start", "02 Numbering", "Starting junction number", 1, "First junction group number.");
-            model.AddChoice("IncludeMid", "03 Points", "Arc midpoint", "Yes", "Include the midpoint of each bellmouth arc as a setting-out point.", new[] { "Yes", "No" });
-            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
-            List<ObjectId> arcs = ResolveRoadScope(document, "JUNCTION_ARC", model.Text("Scope"), "\nSelect generated junction return arcs: ");
-            if (arcs.Count == 0) return;
-            string prefix = string.IsNullOrWhiteSpace(model.Text("Prefix")) ? "J" : model.Text("Prefix").Trim();
-            int start = model.Integer("Start", 1);
-            bool includeMid = string.Equals(model.Text("IncludeMid"), "Yes", StringComparison.OrdinalIgnoreCase);
-            int created = 0;
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-            {
-                var groups = new Dictionary<string, List<Arc>>(StringComparer.OrdinalIgnoreCase);
-                foreach (ObjectId id in arcs)
-                {
-                    Arc arc = transaction.GetObject(id, OpenMode.ForRead, false) as Arc;
-                    if (arc == null) continue;
-                    RoadLink link;
-                    if (!TryReadLink(arc, transaction, out link) || string.IsNullOrWhiteSpace(link.Group)) continue;
-                    List<Arc> list;
-                    if (!groups.TryGetValue(link.Group, out list)) { list = new List<Arc>(); groups.Add(link.Group, list); }
-                    list.Add(arc);
-                }
-                var orderedGroups = groups.Values
-                    .OrderByDescending(group => group.Average(arc => arc.Center.Y))
-                    .ThenBy(group => group.Average(arc => arc.Center.X))
-                    .ToList();
-                int groupIndex = 0;
-                foreach (List<Arc> group in orderedGroups)
-                {
-                    Point3d groupCentre = new Point3d(group.Average(a => a.Center.X), group.Average(a => a.Center.Y), group.Average(a => a.Center.Z));
-                    var points = new List<Point3d>();
-                    foreach (Arc arc in group.OrderBy(a => ClockwiseKey(a.Center, groupCentre)))
-                    {
-                        points.Add(arc.StartPoint);
-                        if (includeMid) points.Add(arc.GetPointAtParameter((arc.StartParam + arc.EndParam) * 0.5));
-                        points.Add(arc.EndPoint);
-                    }
-                    points = Deduplicate(points, 0.005);
-                    points = points.OrderBy(point => ClockwiseKey(point, groupCentre)).ToList();
-                    int pointIndex = 1;
-                    foreach (Point3d point in points)
-                    {
-                        string name = prefix + (start + groupIndex).ToString(CultureInfo.InvariantCulture) + "." + pointIndex.ToString(CultureInfo.InvariantCulture);
-                        ObjectId cogoId = civilDocument.CogoPoints.Add(point, name, true);
-                        CivilCogoPoint cogo = transaction.GetObject(cogoId, OpenMode.ForWrite, false) as CivilCogoPoint;
-                        if (cogo != null)
-                        {
-                            cogo.RawDescription = name;
-                            try { cogo.PointName = name; } catch { }
-                            ObjectId layerId = GetOrCreateLayer(document.Database, transaction, SettingOutLayer);
-                            cogo.LayerId = layerId;
-                        }
-                        created++;
-                        pointIndex++;
-                    }
-                    groupIndex++;
-                }
-                transaction.Commit();
-            }
-            try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, false); } catch { }
-            document.Editor.Regen();
-            document.Editor.WriteMessage("\nCE_ROADJUNCTIONSETTINGOUT complete. COGO points created={0}.", created);
+            new August11RoadCompletionCommands().JunctionSettingOutFourQuadrants();
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADLAYOUTREFRESH", CommandFlags.Modal | CommandFlags.Redraw)]
