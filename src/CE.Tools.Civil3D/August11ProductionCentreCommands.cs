@@ -87,6 +87,7 @@ namespace CETools.Civil3D
             {
                 Action("SETTINGS - Project Setup", "CE_PROJECTSETUP", "Project/client/stage/revision/designed-drawn-checked-approved information.", "01 SETTINGS"),
                 Action("Project Style Centre", "CE_PROJECTSTYLES", "Select shared discipline Civil 3D styles.", "01 SETTINGS"),
+                Action("Discipline Style Presets", "CE_DISCIPLINESTYLEPRESETS", "Review, copy or activate independent Roads/SW/Sewer/Water/Platform/Bulk Water/Parking/Flood selections from the shared style library.", "01 SETTINGS"),
                 Action("PREPARE - Project Coordination", "CE_PROJECTCOORDINATION", "Coordinate source drawings, location and page setups.", "02 PREPARE"),
                 Action("Standards", "CE_DESIGNSTANDARDS", "Select and record project standards.", "02 PREPARE"),
                 Action("CREATE - Project Metadata Refresh", "CE_PROJECTMETADATAREFRESH", "Synchronize project metadata into linked project outputs.", "03 CREATE"),
@@ -116,6 +117,7 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_PLATFORMPRODUCTIONCENTRE", CommandFlags.Modal)]
         public void PlatformProduction()
         {
+            August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Platforms");
             RunCentre("PLATFORM PRODUCTION", "Source polygons → feature lines → levels → grading → setting-out → quantities → drawings.", new[]
             {
                 Action("SETTINGS - Project Styles / Platform", "CE_PROJECTSTYLES", "Select feature-line, grading, surface and annotation styles.", "01 SETTINGS"),
@@ -143,12 +145,14 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_SWPRODUCTIONCENTRE", CommandFlags.Modal)]
         public void StormwaterProduction()
         {
+            August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Stormwater");
             RunCentre("STORMWATER PRODUCTION", "Route → network → branches → hydraulic/design checks → profiles → setting-out/BOQ → drawings.", UtilityActions("Stormwater", "CE_SWSETTINGS", "CE_SWSEQ", "CE_SWALIGN", "CE_SWPROFILE", "CE_BOQSTORM", "CE_REPORTSTORM", "CE_SWTOOLS"));
         }
 
         [CommandMethod("CE_TOOLS", "CE_SEWERPRODUCTIONCENTRE", CommandFlags.Modal)]
         public void SewerProduction()
         {
+            August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Sewer");
             RunCentre("SEWER PRODUCTION", "Cadastral/Roads/Existing Ground → route/network/branches → levels/checks → profiles/labels/setting-out/BOQ → drawings/report.", new[]
             {
                 Action("SETTINGS - Sewer Settings", "CE_SEWSETTINGS", "Parts, styles, labels, profile and band settings.", "01 SETTINGS"),
@@ -169,12 +173,14 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_WATERPRODUCTIONCENTRE", CommandFlags.Modal)]
         public void WaterProduction()
         {
+            August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Water");
             RunCentre("WATER PRODUCTION", "Route → pressure network → sequence/design → profiles/assets → quantities → delivery.", UtilityActions("Water", "CE_WATERSETTINGS", "CE_WATERSEQ", "CE_WATERALIGN", "CE_WATERPROFILE", "CE_BOQWATER", "CE_REPORTWATER", "CE_WATERTOOLS"));
         }
 
         [CommandMethod("CE_TOOLS", "CE_BULKWATERPRODUCTIONCENTRE", CommandFlags.Modal)]
         public void BulkWaterProduction()
         {
+            August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Bulk Water");
             RunCentre("BULK WATER PRODUCTION", "Road-reserve/source route → pressure network → profile/setting-out → quantities → delivery.", new[]
             {
                 Action("SETTINGS - Project / Water Styles", "CE_PROJECTSTYLES", "Select pressure-network and profile styles.", "01 SETTINGS"),
@@ -191,6 +197,7 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_PARKINGPRODUCTIONCENTRE", CommandFlags.Modal)]
         public void ParkingProduction()
         {
+            August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Parking");
             RunCentre("PARKING AREA PRODUCTION", "Boundary → alternatives/layout → grading → checks/setting-out → quantities → drawings.", new[]
             {
                 Action("SETTINGS - Parking Tools", "CE_PKTOOLS", "Parking layout and annotation settings.", "01 SETTINGS"),
@@ -207,6 +214,7 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_FLOODPRODUCTIONCENTRE", CommandFlags.Modal)]
         public void FloodProduction()
         {
+            August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Flood");
             RunCentre("FLOOD PRODUCTION", "Existing ground/catchment → hydrology → flow/affected area → culvert review → outputs.", new[]
             {
                 Action("SETTINGS - Hydrology / Flood Inputs", "CE_HYDROLOGYTOOLS", "Review rainfall/runoff and analysis settings.", "01 SETTINGS"),
