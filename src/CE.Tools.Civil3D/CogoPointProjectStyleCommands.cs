@@ -63,6 +63,7 @@ namespace CETools.Civil3D
                 restricted = new HashSet<ObjectId>(selection.Value.GetObjectIds());
             }
 
+            August11SurveyRuntimeCommands.CaptureCogoInitialOffsets(document);
             CogoPointStyleResult result = ApplySelectedStyles(document, false);
             result.OverlapsMoved = ResolveOverlaps(document, restricted);
             document.Editor.Regen();
