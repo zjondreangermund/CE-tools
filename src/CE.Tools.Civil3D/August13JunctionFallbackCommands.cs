@@ -14,14 +14,15 @@ namespace CETools.Civil3D
    DisciplineWorkflowDialogs.SelectAndRun(d,"CE Tools - Junction Stepped Offset Fallback","Use this when a corridor junction cannot be completed reliably. Keep the junction controls on a dedicated site/surface where available.",new List<DisciplineWorkflowAction>
    {
     new DisciplineWorkflowAction("1. Bellmouths to Feature Lines","CE_FLCREATE","Create feature lines from the bellmouth control strings.","01 Controls"),
-    new DisciplineWorkflowAction("2. Gutter Edge","CE_FLOFFSET","Select one or more source feature lines and create linked stepped gutter offsets.","02 Kerb and Gutter"),
-    new DisciplineWorkflowAction("3. Bottom of Kerb","CE_FLOFFSET","Select one or more source feature lines and create bottom-of-kerb controls.","02 Kerb and Gutter"),
-    new DisciplineWorkflowAction("4. Top of Kerb","CE_FLOFFSET","Select one or more source feature lines and create top-of-kerb controls.","02 Kerb and Gutter"),
-    new DisciplineWorkflowAction("5. Sidewalk / Shoulder Edge","CE_FLOFFSET","Select one or more source feature lines and create outer sidewalk or shoulder controls.","03 Outside"),
-    new DisciplineWorkflowAction("6. Daylight Cut/Fill to Selected Surface","CE_PLATFORMGRADETOSURFACE","Select multiple source feature lines and a Civil 3D surface, then apply separate cut and fill daylight slopes.","03 Outside"),
-    new DisciplineWorkflowAction("7. Join / Close Stepped Strings","CE_FLSTEPJOIN","Join pieces, close gaps and add endpoint vertices.","04 Close and Infill"),
-    new DisciplineWorkflowAction("8. Junction Surface / Infill","CE_SURFTOOLS","Create or review the dedicated junction surface and add closed controls.","04 Close and Infill"),
-    new DisciplineWorkflowAction("9. Refresh Linked Model Data","CE_REFRESHALL","Refresh dependent model data after the fallback.","05 Refresh")
+    new DisciplineWorkflowAction("2. Gutter Edge","CE_FLRELCREATE","Select one or more source feature lines and create linked stepped gutter offsets.","02 Kerb and Gutter"),
+    new DisciplineWorkflowAction("3. Bottom of Kerb","CE_FLRELCREATE","Select one or more source feature lines and create bottom-of-kerb controls.","02 Kerb and Gutter"),
+    new DisciplineWorkflowAction("4. Top of Kerb","CE_FLRELCREATE","Select one or more source feature lines and create top-of-kerb controls.","02 Kerb and Gutter"),
+    new DisciplineWorkflowAction("5. Sidewalk / Shoulder Edge","CE_FLRELCREATE","Select one or more source feature lines and create outer sidewalk or shoulder controls.","03 Outside"),
+    new DisciplineWorkflowAction("6. Grading & Slopes","CE_GRADINGSLOPETOOLS","Choose grading, cut/fill daylight, constant-grade and slope/crossfall tools from one dropdown workflow.","03 Outside"),
+    new DisciplineWorkflowAction("7. Daylight Cut/Fill to Selected Surface","CE_PLATFORMGRADETOSURFACE","Select multiple source feature lines and a Civil 3D surface, then apply separate cut and fill daylight slopes.","03 Outside"),
+    new DisciplineWorkflowAction("8. Join / Close Stepped Strings","CE_FLSTEPJOIN","Join pieces, close gaps and add endpoint vertices.","04 Close and Infill"),
+    new DisciplineWorkflowAction("9. Junction Surface / Infill","CE_SURFTOOLS","Create or review the dedicated junction surface and add closed controls.","04 Close and Infill"),
+    new DisciplineWorkflowAction("10. Refresh Linked Model Data","CE_REFRESHALL","Refresh dependent model data after the fallback.","05 Refresh")
    });
   }
  }
