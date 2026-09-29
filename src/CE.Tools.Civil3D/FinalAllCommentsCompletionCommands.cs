@@ -248,7 +248,7 @@ namespace CETools.Civil3D
             if (action.StartsWith("Drawing", StringComparison.OrdinalIgnoreCase))
             {
                 Point3d geo;
-                if (!GeoCoordinateTransform.TryDrawingToWgs84(document.Database, new Point3d(x, y, z), out geo, out error))
+                if (!NamibiaCoordinateRuntime.TryDrawingToWgs84(document.Database, new Point3d(x, y, z), out geo, out error))
                 {
                     document.Editor.WriteMessage("\nCE_COORDTRANSFORM stopped. {0}", error); return;
                 }
@@ -266,7 +266,7 @@ namespace CETools.Civil3D
             else
             {
                 Point3d dwg;
-                if (!GeoCoordinateTransform.TryWgs84ToDrawing(document.Database, lat, lon, alt, out dwg, out error))
+                if (!NamibiaCoordinateRuntime.TryWgs84ToDrawing(document.Database, lat, lon, alt, out dwg, out error))
                 {
                     document.Editor.WriteMessage("\nCE_COORDTRANSFORM stopped. {0}", error); return;
                 }
@@ -353,7 +353,7 @@ namespace CETools.Civil3D
                 if (drawingToGeo)
                 {
                     Point3d geo;
-                    if (GeoCoordinateTransform.TryDrawingToWgs84(database, new Point3d(a, b, 0), out geo, out error))
+                    if (NamibiaCoordinateRuntime.TryDrawingToWgs84(database, new Point3d(a, b, 0), out geo, out error))
                     {
                         row.Add(geo.Y.ToString("0.00000000", CultureInfo.InvariantCulture));
                         row.Add(geo.X.ToString("0.00000000", CultureInfo.InvariantCulture));
@@ -363,7 +363,7 @@ namespace CETools.Civil3D
                 else
                 {
                     Point3d dwg;
-                    if (GeoCoordinateTransform.TryWgs84ToDrawing(database, a, b, 0, out dwg, out error))
+                    if (NamibiaCoordinateRuntime.TryWgs84ToDrawing(database, a, b, 0, out dwg, out error))
                     {
                         row.Add(dwg.X.ToString("0.###", CultureInfo.InvariantCulture));
                         row.Add(dwg.Y.ToString("0.###", CultureInfo.InvariantCulture));
