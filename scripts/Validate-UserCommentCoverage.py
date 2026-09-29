@@ -97,7 +97,9 @@ requirements = {
         "ParkingOptionAutoRefreshManager.Initialize();",
         "AnnotationScaleSyncManager.Initialize();",
         "LinkedTableAutoRefreshManager.Initialize();",
-        "FloatingToolsCommands.OpenAtFirstStartup();",
+        "FloatingToolsCommands.Initialize();",
+        "RibbonBuilder.EnsureCreated() && ProductionWorkflowRibbonBuilder.EnsureCreated()",
+        'SendStringToExecute("CE_WELCOME "',
     ],
     "FloatingToolsWindow.cs": [
         "OpenAtFirstStartup()",
