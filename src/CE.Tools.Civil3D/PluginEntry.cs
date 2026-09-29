@@ -462,6 +462,8 @@ namespace CETools.Civil3D
                         "Profile reporting, station elevations and plan labels.",
                         Cmd("Profile Tools", "CE_PRTOOLS ", "Open profile tools."),
                         Cmd("Batch Profile Views", "CE_PROFILEVIEWBATCHTOOLS ", "Apply profile-view styles, band sets, automatic fit and rebuild options."),
+                        Cmd("Match Profile View Properties", "CE_PROFILEVIEWMATCH ", "Use one source profile view to match styles, ranges, complete band rows, labels and data-source assignments to multiple targets."),
+                        Cmd("Band Data Sources (Multiple Views)", "CE_PROFILEVIEWDATASOURCES ", "Apply Profile 1/Profile 2/Pipe Network data sources to compatible band items on multiple profile views."),
                         Cmd("Safe Profile / Band Batch", "CE_PROFILEBATCHSAFE ", "Run profile style/band repair stages independently to isolate incompatible profile views."),
                         Cmd("Profile Report", "CE_PRREPORTUI ", "Show profile details in a pop-up and optionally place a table."),
                         Cmd("Station Elevation", "CE_PRELEV ", "Report elevation and grade at a station."),
