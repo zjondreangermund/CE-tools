@@ -493,15 +493,55 @@ namespace CETools.Civil3D
                 return;
             SewerProductionSettings settings = SewerProductionSettings.Read(database);
 
+            var layout = new ProductionSettingsDialogModel(
+                "CE Tools - Sewer Long Section Layout",
+                "Control how the branch long sections are placed. Vertical top-down keeps Branch 1 at the upper-left insertion point and places every following branch below it.");
+            layout.AddChoice(
+                "Arrangement", "01 Layout", "Profile-view arrangement",
+                string.IsNullOrWhiteSpace(settings.ProfileLayoutMode)
+                    ? "Vertical - Branch 1 at top"
+                    : settings.ProfileLayoutMode,
+                "Vertical is the production default. Grid and horizontal arrangements remain available for compact drawings.",
+                new[] { "Vertical - Branch 1 at top", "Grid", "Horizontal - left to right" });
+            layout.AddPositiveDouble(
+                "HorizontalSpacing", "01 Layout", "Horizontal spacing",
+                Math.Max(1.0, settings.ProfileHorizontalSpacing),
+                "Drawing-unit spacing between profile-view insertion points in adjacent columns.");
+            layout.AddPositiveDouble(
+                "VerticalSpacing", "01 Layout", "Vertical spacing",
+                Math.Max(1.0, settings.ProfileVerticalSpacing),
+                "Drawing-unit spacing between profile-view insertion points from top to bottom.");
+            layout.AddPositiveInteger(
+                "Columns", "01 Layout", "Grid columns",
+                Math.Max(1, settings.ProfileColumns),
+                "Used only when arrangement is Grid. Vertical top-down always uses one column.");
+            layout.AddChoice(
+                "Remember", "02 Defaults", "Remember sewer long-section layout", "Yes",
+                "Save these spacing/layout settings for the next CE_SEWPROFILE run.",
+                new[] { "Yes", "No" });
+            if (!DisciplineWorkflowDialogs.EditSettings(layout)) return;
+
+            settings.ProfileLayoutMode = layout.Text("Arrangement");
+            settings.ProfileHorizontalSpacing = Math.Max(
+                1.0, layout.Double("HorizontalSpacing", settings.ProfileHorizontalSpacing));
+            settings.ProfileVerticalSpacing = Math.Max(
+                1.0, layout.Double("VerticalSpacing", settings.ProfileVerticalSpacing));
+            settings.ProfileColumns = Math.Max(
+                1, layout.Integer("Columns", settings.ProfileColumns));
+            if (string.Equals(layout.Text("Remember"), "Yes", StringComparison.OrdinalIgnoreCase))
+                settings.Write(database);
+
             PromptPointResult pointResult = editor.GetPoint(
-                "\nSpecify the upper-left insertion point for the first sewer profile view: ");
+                "\nSpecify the upper-left insertion point for Branch 1 sewer profile view: ");
             if (pointResult.Status != PromptStatus.OK)
                 return;
 
             editor.WriteMessage(
-                "\nCE_SEWPROFILE preview. Branch alignments: {0}; views per row: {1}.",
+                "\nCE_SEWPROFILE preview. Branch alignments: {0}; arrangement: {1}; horizontal spacing: {2:0.###}; vertical spacing: {3:0.###}.",
                 records.Count,
-                settings.ProfileColumns);
+                settings.ProfileLayoutMode,
+                settings.ProfileHorizontalSpacing,
+                settings.ProfileVerticalSpacing);
             if (!Confirm(editor, "Create or refresh the sewer profiles and profile views"))
                 return;
 
@@ -515,8 +555,31 @@ namespace CETools.Civil3D
             for (int index = 0; index < records.Count; index++)
             {
                 SewerAlignmentRecord record = records[index];
-                int row = index / Math.Max(1, settings.ProfileColumns);
-                int column = index % Math.Max(1, settings.ProfileColumns);
+                int row;
+                int column;
+                if (string.Equals(
+                        settings.ProfileLayoutMode,
+                        "Horizontal - left to right",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    row = 0;
+                    column = index;
+                }
+                else if (string.Equals(
+                        settings.ProfileLayoutMode,
+                        "Grid",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    row = index / Math.Max(1, settings.ProfileColumns);
+                    column = index % Math.Max(1, settings.ProfileColumns);
+                }
+                else
+                {
+                    // Production default: Branch 1 starts at the selected top
+                    // insertion point and every subsequent branch follows down.
+                    row = index;
+                    column = 0;
+                }
                 Point3d branchPoint = new Point3d(
                     pointResult.Value.X + column * settings.ProfileHorizontalSpacing,
                     pointResult.Value.Y - row * settings.ProfileVerticalSpacing,
@@ -2119,7 +2182,8 @@ namespace CETools.Civil3D
         public string BranchLabelSide { get; set; } = "Alternating";
         public double BranchLabelAboveOffset { get; set; } = 10.0;
         public double BranchLabelBelowOffset { get; set; } = 10.0;
-        public int ProfileColumns { get; set; } = 2;
+        public string ProfileLayoutMode { get; set; } = "Vertical - Branch 1 at top";
+        public int ProfileColumns { get; set; } = 1;
         public double ProfileHorizontalSpacing { get; set; } = 250.0;
         public double ProfileVerticalSpacing { get; set; } = 120.0;
 
@@ -2184,6 +2248,7 @@ namespace CETools.Civil3D
                     Value("PipePlanLabelStyle", PipePlanLabelStyle),
                     Value("StructurePlanLabelStyle", StructurePlanLabelStyle),
                     Value("ProfileLayer", ProfileLayer),
+                    Value("ProfileLayoutMode", ProfileLayoutMode),
                     Value("LabelHeight", LabelHeight.ToString("R", CultureInfo.InvariantCulture)),
                     Value("BranchLabelSide", BranchLabelSide),
                     Value("BranchLabelAboveOffset", BranchLabelAboveOffset.ToString("R", CultureInfo.InvariantCulture)),
@@ -2211,6 +2276,7 @@ namespace CETools.Civil3D
             else if (key == "PipePlanLabelStyle") settings.PipePlanLabelStyle = value;
             else if (key == "StructurePlanLabelStyle") settings.StructurePlanLabelStyle = value;
             else if (key == "ProfileLayer") settings.ProfileLayer = value;
+            else if (key == "ProfileLayoutMode") settings.ProfileLayoutMode = value;
             else if (key == "BranchLabelSide") settings.BranchLabelSide = value;
             else if (key == "BranchLabelAboveOffset")
             {
