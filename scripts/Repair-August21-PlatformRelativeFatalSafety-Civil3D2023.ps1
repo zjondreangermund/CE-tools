@@ -341,13 +341,12 @@ $platform = ReplaceMethodBody $platform 'private static ObjectId CreateOffsetFea
 # may enqueue a modal command but must never mutate Civil objects directly.
 $platformIdle = @'
             Document active = AcApplication.DocumentManager.MdiActiveDocument;
-            Attach(active);
+            _document = active;
             if (!_pending ||
-                !_knownLinkedItems ||
                 _busy ||
                 active == null ||
-                DateTime.UtcNow < _suppressEventsUntilUtc ||
-                (DateTime.UtcNow - _lastChangeUtc).TotalSeconds < 1.5) return;
+                DateTime.UtcNow < _suppressUntilUtc ||
+                (DateTime.UtcNow - _lastChangeUtc).TotalMilliseconds < 350.0) return;
             string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(commands)) return;
             int activeCommands = Convert.ToInt32(AcApplication.GetSystemVariable("CMDACTIVE"), CultureInfo.InvariantCulture);
@@ -356,15 +355,12 @@ $platformIdle = @'
             try
             {
                 _pending = false;
-                // CE_PLATFORMREFRESH runs in normal command context. Suppress the
-                // delayed REGEN/ObjectModified tail before queueing it so the
-                // automatic worker cannot schedule itself again.
-                _suppressEventsUntilUtc = DateTime.UtcNow.AddSeconds(3.0);
+                _suppressUntilUtc = DateTime.UtcNow.AddSeconds(2.0);
                 active.SendStringToExecute("CE_PLATFORMREFRESH ", true, false, false);
             }
             catch
             {
-                _pending = true;
+                _pending = false;
             }
             finally
             {
@@ -372,47 +368,14 @@ $platformIdle = @'
             }
 '@
 $platform = ReplaceMethodBody $platform 'private static void Idle(object sender, EventArgs e)' $platformIdle 'PlatformDynamicRefreshManager.Idle'
+
+# Platform automatic refresh is deliberately command-driven. Civil 3D emits
+# Surface/FeatureLine/Table ObjectModified events during REGEN and profile/band
+# operations, so those database events must not queue CE_PLATFORMREFRESH.
 $platformChanged = @'
-            if (_busy ||
-                DateTime.UtcNow < _suppressEventsUntilUtc ||
-                e == null ||
-                e.DBObject == null) return;
-            string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
-            if (!string.IsNullOrWhiteSpace(commands) &&
-                commands.IndexOf("CE_PLATFORMREFRESH", StringComparison.OrdinalIgnoreCase) >= 0) return;
-
-            DBObject value = e.DBObject;
-            if (value is CivilSurface || value is CivilFeatureLine)
-            {
-                if (_knownLinkedItems || HasLinkedPlatformData(value))
-                {
-                    _knownLinkedItems = true;
-                    QueueFromEvent();
-                }
-                return;
-            }
-
-            Table table = value as Table;
-            if (table != null && HasLinkedPlatformData(table))
-            {
-                _knownLinkedItems = true;
-                QueueFromEvent();
-            }
 '@
 $platform = ReplaceMethodBody $platform 'private static void Changed(object sender, ObjectEventArgs e)' $platformChanged 'PlatformDynamicRefreshManager.Changed'
 $platformErased = @'
-            if (_busy ||
-                DateTime.UtcNow < _suppressEventsUntilUtc ||
-                e == null ||
-                e.DBObject == null ||
-                !_knownLinkedItems) return;
-            string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
-            if (!string.IsNullOrWhiteSpace(commands) &&
-                commands.IndexOf("CE_PLATFORMREFRESH", StringComparison.OrdinalIgnoreCase) >= 0) return;
-            if (e.DBObject is CivilSurface ||
-                e.DBObject is CivilFeatureLine ||
-                e.DBObject is Table)
-                QueueFromEvent();
 '@
 $platform = ReplaceMethodBody $platform 'private static void Erased(object sender, ObjectErasedEventArgs e)' $platformErased 'PlatformDynamicRefreshManager.Erased'
 WriteText $platformPath $platform
@@ -618,15 +581,19 @@ foreach ($required in @(
     'August21PlatformRelativeFatalSafety.DrapeSelection(',
     'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)',
     'active.SendStringToExecute("CE_PLATFORMREFRESH "',
-    '_knownLinkedItems',
-    '_suppressEventsUntilUtc',
-    'QueueFromEvent()',
-    'HasLinkedPlatformData(value)')) {
+    '_suppressUntilUtc',
+    'private static void Changed(object sender, ObjectEventArgs e)',
+    'private static void Erased(object sender, ObjectErasedEventArgs e)')) {
     if (-not $platformCheck.Contains($required)) { throw "Platform final safety missing: $required" }
 }
 if ($platformCheck.Contains('child.AssignElevationsFromSurface(surface.ObjectId, intermediate);') -or
     $platformCheck.Contains('rebuilt.AssignElevationsFromSurface(surfaceId, snapshot.Link.Intermediate);')) {
     throw 'Unsafe Platform AssignElevationsFromSurface path survived the final safety pass.'
+}
+if ($platformCheck.Contains('QueueFromEvent();') -or
+    $platformCheck.Contains('_database.ObjectModified += Changed') -or
+    $platformCheck.Contains('_database.ObjectErased += Erased')) {
+    throw 'Platform database-event auto-refresh survived the final safety pass.'
 }
 if (-not $joinCheck.Contains('August21PlatformRelativeFatalSafety.CreateJoinedFeatureLine(')) {
     throw 'Stepped join final safety delegation is missing.'
