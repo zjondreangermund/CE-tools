@@ -203,7 +203,20 @@ jobs:
           if ($idle.Contains('RefreshNow(active, true);')) { throw 'Universal refresh still mutates Civil objects directly from Idle.' }
           if (-not $idle.Contains('CE_DYNAMICREFRESHALL')) { throw 'Universal Idle command queue is missing.' }
           if (-not $universal.Contains('PlatformProductionCommands.RefreshAll(document);')) { throw 'Platform refresh is not folded into Universal refresh.' }
-          if (-not $auto.Contains('string.Equals(name, "CE_DYNAMICREFRESHALL"')) { throw 'Automatic refresh loop suppression is missing.' }
+          if (-not $auto.Contains('ShouldQueueRefresh(name)')) { throw 'Automatic no-blanket refresh policy is missing.' }
+          if (-not $platform.Contains('_knownLinkedItems') -or
+              -not $platform.Contains('_suppressEventsUntilUtc') -or
+              -not $platform.Contains('HasLinkedPlatformData(value)') -or
+              -not $platform.Contains('CompleteRefresh(count)')) {
+            throw 'Platform refresh self-loop guards are missing.'
+          }
+          $autoEndedStart = $auto.IndexOf('private static void OnCommandEnded(object sender, CommandEventArgs e)',[StringComparison]::Ordinal)
+          $autoEndedNext = $auto.IndexOf('internal static bool ShouldQueueRefresh',$autoEndedStart,[StringComparison]::Ordinal)
+          if ($autoEndedStart -lt 0 -or $autoEndedNext -le $autoEndedStart) { throw 'Automatic refresh live OnCommandEnded range not found.' }
+          $autoEnded = $auto.Substring($autoEndedStart,$autoEndedNext-$autoEndedStart)
+          if ($autoEnded.Contains('PlatformDynamicRefreshManager.Queue();')) {
+            throw 'Command-ended Platform refresh queuing survived the final boundary.'
+          }
 
           foreach ($marker in @(
             'TryCreateFromCommittedTemporary(',
