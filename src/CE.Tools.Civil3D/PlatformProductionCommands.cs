@@ -1357,13 +1357,31 @@ namespace CETools.Civil3D
         private static bool _initialised;
         private static bool _busy;
         private static bool _pending;
+        private static bool _knownLinkedItems;
         private static Database _database;
         private static Document _document;
         private static DateTime _lastChangeUtc = DateTime.MinValue;
+        private static DateTime _suppressEventsUntilUtc = DateTime.MinValue;
+
+        private static readonly string[] LinkKeys =
+        {
+            "CE_FLREL",
+            "CE_PLATFORM_DRAPE",
+            "CE_PLATFORM_NAME",
+            "CE_PLATFORM_TABLE",
+            "CE_PLATFORM_SECTION",
+            "CE_PLATFORM_DIRECT_DRAPE",
+            "CE_PLATFORM_GRADE_LINK"
+        };
 
         internal static void EnsureInitialized()
         {
-            if (_initialised) { Attach(AcApplication.DocumentManager.MdiActiveDocument); return; }
+            if (_initialised)
+            {
+                Attach(AcApplication.DocumentManager.MdiActiveDocument);
+                return;
+            }
+
             _initialised = true;
             AcApplication.DocumentManager.DocumentActivated += Activated;
             AcApplication.DocumentManager.DocumentCreated += Activated;
@@ -1372,62 +1390,256 @@ namespace CETools.Civil3D
             Attach(AcApplication.DocumentManager.MdiActiveDocument);
         }
 
-        internal static void Queue() { if (_busy) return; _pending = true; _lastChangeUtc = DateTime.UtcNow; }
-        private static void Activated(object sender, DocumentCollectionEventArgs e) { Attach(e == null ? null : e.Document); }
-        private static void Destroyed(object sender, DocumentCollectionEventArgs e) { if (e != null && ReferenceEquals(e.Document, _document)) Detach(); }
+        internal static void Queue()
+        {
+            if (_busy || DateTime.UtcNow < _suppressEventsUntilUtc) return;
+
+            // Explicit Platform commands call Queue after creating/updating links.
+            // Mark the drawing as potentially linked so one deferred verification
+            // pass is allowed. If no CE Platform links exist, Idle clears this flag.
+            _knownLinkedItems = true;
+            _pending = true;
+            _lastChangeUtc = DateTime.UtcNow;
+        }
+
+        private static void Activated(object sender, DocumentCollectionEventArgs e)
+        {
+            Attach(e == null ? null : e.Document);
+        }
+
+        private static void Destroyed(object sender, DocumentCollectionEventArgs e)
+        {
+            if (e != null && ReferenceEquals(e.Document, _document))
+                Detach();
+        }
+
         private static void Attach(Document document)
         {
             if (ReferenceEquals(document, _document)) return;
+
             Detach();
             _document = document;
             _database = document == null ? null : document.Database;
             if (_database == null) return;
+
             _database.ObjectModified += Changed;
             _database.ObjectErased += Erased;
+
+            // A drawing can be opened with existing persistent platform links.
+            // Scan once on activation instead of reacting to every normal Civil 3D
+            // object modification.
+            _knownLinkedItems = HasAnyLinkedPlatformData(_database);
+            _pending = false;
         }
+
         private static void Detach()
         {
-            if (_database != null) { _database.ObjectModified -= Changed; _database.ObjectErased -= Erased; }
-            _database = null; _document = null;
+            if (_database != null)
+            {
+                _database.ObjectModified -= Changed;
+                _database.ObjectErased -= Erased;
+            }
+
+            _database = null;
+            _document = null;
+            _pending = false;
+            _knownLinkedItems = false;
+            _suppressEventsUntilUtc = DateTime.MinValue;
         }
+
         private static void Changed(object sender, ObjectEventArgs e)
         {
-            if (_busy || e == null || e.DBObject == null) return;
-            if (e.DBObject is CivilSurface || e.DBObject is CivilFeatureLine || e.DBObject is Table) Queue();
+            if (_busy ||
+                DateTime.UtcNow < _suppressEventsUntilUtc ||
+                e == null ||
+                e.DBObject == null)
+                return;
+
+            DBObject value = e.DBObject;
+
+            // Linked feature lines can depend on another source feature line or a
+            // Civil surface. Once a drawing is known to contain CE Platform links,
+            // those two object families may queue one debounced refresh. Unrelated
+            // tables and ordinary entities must never wake the Platform manager.
+            if (value is CivilSurface || value is CivilFeatureLine)
+            {
+                if (_knownLinkedItems || HasLinkedPlatformData(value))
+                {
+                    _knownLinkedItems = true;
+                    QueueFromEvent();
+                }
+                return;
+            }
+
+            Table table = value as Table;
+            if (table != null && HasLinkedPlatformData(table))
+            {
+                _knownLinkedItems = true;
+                QueueFromEvent();
+            }
         }
+
         private static void Erased(object sender, ObjectErasedEventArgs e)
         {
-            if (_busy || e == null || e.DBObject == null) return;
-            if (e.DBObject is CivilSurface || e.DBObject is CivilFeatureLine || e.DBObject is Table)
-                Queue();
+            if (_busy ||
+                DateTime.UtcNow < _suppressEventsUntilUtc ||
+                e == null ||
+                e.DBObject == null ||
+                !_knownLinkedItems)
+                return;
+
+            if (e.DBObject is CivilSurface ||
+                e.DBObject is CivilFeatureLine ||
+                e.DBObject is Table)
+                QueueFromEvent();
         }
+
+        private static void QueueFromEvent()
+        {
+            if (_busy || DateTime.UtcNow < _suppressEventsUntilUtc) return;
+            _pending = true;
+            _lastChangeUtc = DateTime.UtcNow;
+        }
+
         private static void Idle(object sender, EventArgs e)
         {
             Document active = AcApplication.DocumentManager.MdiActiveDocument;
             Attach(active);
-            if (!_pending || _busy || active == null || (DateTime.UtcNow - _lastChangeUtc).TotalSeconds < 1.5) return;
-            string commands = Convert.ToString(AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture);
+
+            if (!_pending ||
+                _busy ||
+                active == null ||
+                (DateTime.UtcNow - _lastChangeUtc).TotalSeconds < 1.5)
+                return;
+
+            string commands = Convert.ToString(
+                AcApplication.GetSystemVariable("CMDNAMES"),
+                CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(commands)) return;
-            int activeCommands = Convert.ToInt32(AcApplication.GetSystemVariable("CMDACTIVE"), CultureInfo.InvariantCulture);
+
+            int activeCommands = Convert.ToInt32(
+                AcApplication.GetSystemVariable("CMDACTIVE"),
+                CultureInfo.InvariantCulture);
             if (activeCommands != 0) return;
+
             _busy = true;
             bool undoDisabled = false;
+            int refreshed = 0;
             try
             {
                 active.Database.DisableUndoRecording(true);
                 undoDisabled = true;
-                // Idle runs outside a document command. Civil 3D writes performed by
-                // the linked daylight refresh require an explicit document lock.
+
                 using (active.LockDocument())
-                    PlatformProductionCommands.RefreshAll(active);
+                    refreshed = PlatformProductionCommands.RefreshAll(active);
+
                 _pending = false;
+
+                // If the refresh found nothing, stop listening to ordinary
+                // Surface/FeatureLine traffic until an explicit Platform command
+                // creates a link again. This prevents the REGEN -> ObjectModified
+                // -> CE_PLATFORMREFRESH loop visible in field testing.
+                _knownLinkedItems =
+                    refreshed > 0 || HasAnyLinkedPlatformData(active.Database);
+
+                // Civil 3D can deliver regeneration/object-modified notifications
+                // just after the refresh transaction closes. Ignore that tail.
+                _suppressEventsUntilUtc = DateTime.UtcNow.AddSeconds(2.5);
             }
-            catch { }
+            catch
+            {
+                _pending = false;
+                _suppressEventsUntilUtc = DateTime.UtcNow.AddSeconds(2.5);
+            }
             finally
             {
-                if (undoDisabled) { try { active.Database.DisableUndoRecording(false); } catch { } }
+                if (undoDisabled)
+                {
+                    try { active.Database.DisableUndoRecording(false); }
+                    catch { }
+                }
                 _busy = false;
             }
+        }
+
+        private static bool HasAnyLinkedPlatformData(Database database)
+        {
+            if (database == null) return false;
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartOpenCloseTransaction())
+                {
+                    BlockTableRecord space = transaction.GetObject(
+                        SymbolUtilityServices.GetBlockModelSpaceId(database),
+                        OpenMode.ForRead,
+                        false) as BlockTableRecord;
+                    if (space == null) return false;
+
+                    foreach (ObjectId id in space)
+                    {
+                        DBObject value;
+                        try
+                        {
+                            value = transaction.GetObject(
+                                id, OpenMode.ForRead, false);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        if (HasLinkedPlatformData(value, transaction))
+                            return true;
+                    }
+                }
+            }
+            catch { }
+
+            return false;
+        }
+
+        private static bool HasLinkedPlatformData(DBObject value)
+        {
+            if (value == null || value.Database == null) return false;
+            try
+            {
+                using (Transaction transaction =
+                    value.Database.TransactionManager.StartOpenCloseTransaction())
+                    return HasLinkedPlatformData(value, transaction);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool HasLinkedPlatformData(
+            DBObject value,
+            Transaction transaction)
+        {
+            if (value == null ||
+                transaction == null ||
+                value.ExtensionDictionary.IsNull)
+                return false;
+
+            try
+            {
+                DBDictionary dictionary = transaction.GetObject(
+                    value.ExtensionDictionary,
+                    OpenMode.ForRead,
+                    false) as DBDictionary;
+                if (dictionary == null) return false;
+
+                foreach (string key in LinkKeys)
+                {
+                    if (dictionary.Contains(key))
+                        return true;
+                }
+            }
+            catch { }
+
+            return false;
         }
     }
 }
