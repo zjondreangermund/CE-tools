@@ -1355,110 +1355,28 @@ namespace CETools.Civil3D
 
     internal static class PlatformDynamicRefreshManager
     {
-        private static bool _initialised;
-        private static bool _busy;
-        private static bool _pending;
-        private static Document _document;
-        private static DateTime _lastChangeUtc = DateTime.MinValue;
-        private static DateTime _suppressUntilUtc = DateTime.MinValue;
-
-        // Field rule: Platform refresh is command-driven, not drawing-event-driven.
-        // Civil 3D raises many Surface/FeatureLine ObjectModified notifications during
-        // REGEN, profile/band work and normal display updates. Treating those as
-        // design changes caused CE_PLATFORMREFRESH to run continuously on drawings
-        // that contain linked platform items. Only CE Platform commands explicitly
-        // call Queue(), producing at most one deferred refresh after their own work.
+        // Field policy (29 Sep): Platform refresh is manual/on-demand only.
+        // Civil 3D emits many ObjectModified/REGEN events while linked feature
+        // lines, labels, tables and surfaces rebuild. Treating those events as
+        // refresh triggers caused CE_PLATFORMREFRESH to run continuously.
         internal static void EnsureInitialized()
         {
-            if (_initialised)
-            {
-                _document = AcApplication.DocumentManager.MdiActiveDocument;
-                return;
-            }
-
-            _initialised = true;
-            _document = AcApplication.DocumentManager.MdiActiveDocument;
-            AcApplication.DocumentManager.DocumentActivated += Activated;
-            AcApplication.DocumentManager.DocumentToBeDestroyed += Destroyed;
-            AcApplication.Idle += Idle;
+            // Intentionally no Application.Idle, ObjectModified, ObjectErased or
+            // CommandEnded subscriptions. CE_PLATFORMREFRESH remains available
+            // from Platform Production > Maintain and can be run when required.
         }
 
         internal static void Queue()
         {
-            if (_busy || DateTime.UtcNow < _suppressUntilUtc) return;
-            _pending = true;
-            _lastChangeUtc = DateTime.UtcNow;
+            // Intentionally no-op. Commands that create/edit Platform geometry
+            // already complete their own operation synchronously. Do not turn a
+            // normal REGEN into a deferred full Platform refresh.
         }
 
         internal static void CompleteRefresh(int refreshed)
         {
-            _pending = false;
-            _suppressUntilUtc = DateTime.UtcNow.AddSeconds(2.0);
-        }
-
-        private static void Activated(object sender, DocumentCollectionEventArgs e)
-        {
-            _document = e == null ? null : e.Document;
-            _pending = false;
-        }
-
-        private static void Destroyed(object sender, DocumentCollectionEventArgs e)
-        {
-            if (e != null && ReferenceEquals(e.Document, _document))
-            {
-                _document = null;
-                _pending = false;
-            }
-        }
-
-        // Retained as compatibility method anchors for historical build finalizers.
-        // They deliberately do nothing: ordinary DBObject modification/erase events
-        // must never schedule Platform refresh.
-        private static void Changed(object sender, ObjectEventArgs e) { }
-        private static void Erased(object sender, ObjectErasedEventArgs e) { }
-
-        private static void Idle(object sender, EventArgs e)
-        {
-            Document active = AcApplication.DocumentManager.MdiActiveDocument;
-            _document = active;
-            if (!_pending ||
-                _busy ||
-                active == null ||
-                DateTime.UtcNow < _suppressUntilUtc ||
-                (DateTime.UtcNow - _lastChangeUtc).TotalMilliseconds < 350.0)
-                return;
-
-            string commands = Convert.ToString(
-                AcApplication.GetSystemVariable("CMDNAMES"),
-                CultureInfo.InvariantCulture);
-            if (!string.IsNullOrWhiteSpace(commands)) return;
-
-            int activeCommands = Convert.ToInt32(
-                AcApplication.GetSystemVariable("CMDACTIVE"),
-                CultureInfo.InvariantCulture);
-            if (activeCommands != 0) return;
-
-            _busy = true;
-            try
-            {
-                // Clear before queueing the command. CE_PLATFORMREFRESH calls
-                // CompleteRefresh after the one intentional pass.
-                _pending = false;
-                _suppressUntilUtc = DateTime.UtcNow.AddSeconds(2.0);
-                active.SendStringToExecute(
-                    "CE_PLATFORMREFRESH ",
-                    true,
-                    false,
-                    false);
-            }
-            catch
-            {
-                _pending = false;
-            }
-            finally
-            {
-                _busy = false;
-            }
+            // Manual CE_PLATFORMREFRESH completion hook retained for source/API
+            // compatibility. No background work is armed.
         }
     }
 }
