@@ -49,8 +49,8 @@ jobs:
           if (-not $platform.Contains('PlatformDynamicRefreshManager.EnsureInitialized()')) {
             throw 'Platform refresh manager is missing from the current source.'
           }
-          if (-not $route.Contains('"CE_MIDBLOCKSEWERLAYOUT"')) {
-            throw 'Current Midblock command target is missing.'
+          if (-not $route.Contains('"CE_MIDBLOCKSEWERPRODUCTION"')) {
+            throw 'Current Midblock production command target is missing.'
           }
           Write-Host 'Current source integration passed without applying historical injectors.'
 
