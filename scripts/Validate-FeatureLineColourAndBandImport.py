@@ -34,14 +34,17 @@ require(bands, "profileView.Bands.ImportBandSetStyle(choice.Id);",
         "ProfileViewBandDataBinder.BindRoad(", "ProfileViewBandPersistence.EnableLabels(")
 require(bands,
         "document.Editor.SetImpliedSelection(profileViewIds.Distinct().ToArray());",
-        "batchDialog.OpenNativeDialog && profileViewIds.Count == 1")
+        "batchDialog.OpenNativeDialog && profileViewIds.Count == 1",
+        "batchDialog.OpenBandDataSources && profileViewIds.Count > 1",
+        '"CE_PROFILEVIEWDATASOURCES "')
 if "SetImpliedSelection(new[] { profileViewIds[0] })" in bands:
     raise SystemExit("Multi-profile band import must not collapse selection to the first profile view.")
 require(band_dialog,
         "private static bool _lastOpenNative = false;",
-        "IsEnabled = _viewNames.Count == 1",
-        "finish batch and keep all selected",
-        "_viewNames.Count == 1 && _openNative != null && _openNative.SelectedIndex == 1")
+        "IsEnabled = true",
+        "Finish batch and keep all selected",
+        "Open Band Data Sources for selected views",
+        "OpenBandDataSources = _viewNames.Count > 1 && secondaryAction")
 require(persistence, "!view.IsWriteEnabled", "bands.SetTopBandItems(top);",
         "bands.SetBottomBandItems(bottom);", "item.ShowLabels = true", "verify(top[index])", "verify(bottom[index])")
 if "catch" in persistence:
