@@ -4,7 +4,7 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 namespace CETools.Civil3D
 {
-    internal static class AugustGlobalShortcutManager
+    internal static class CeGlobalShortcutManager
     {
         private static ShortcutMessageFilter _filter;
         private static bool _installed;
