@@ -537,6 +537,7 @@ namespace CETools.Civil3D
             Document document = ActiveDocument();
             if (document == null) return;
             int count = RefreshAll(document);
+            PlatformDynamicRefreshManager.CompleteRefresh(count);
             document.Editor.Regen();
             document.Editor.WriteMessage("\nCE_PLATFORMREFRESH complete. Refreshed linked platform items={0}.", count);
         }
@@ -1402,6 +1403,14 @@ namespace CETools.Civil3D
             _lastChangeUtc = DateTime.UtcNow;
         }
 
+        internal static void CompleteRefresh(int refreshed)
+        {
+            _pending = false;
+            _knownLinkedItems =
+                refreshed > 0 || HasAnyLinkedPlatformData(_database);
+            _suppressEventsUntilUtc = DateTime.UtcNow.AddSeconds(2.5);
+        }
+
         private static void Activated(object sender, DocumentCollectionEventArgs e)
         {
             Attach(e == null ? null : e.Document);
@@ -1533,18 +1542,11 @@ namespace CETools.Civil3D
                 using (active.LockDocument())
                     refreshed = PlatformProductionCommands.RefreshAll(active);
 
-                _pending = false;
-
                 // If the refresh found nothing, stop listening to ordinary
                 // Surface/FeatureLine traffic until an explicit Platform command
-                // creates a link again. This prevents the REGEN -> ObjectModified
-                // -> CE_PLATFORMREFRESH loop visible in field testing.
-                _knownLinkedItems =
-                    refreshed > 0 || HasAnyLinkedPlatformData(active.Database);
-
-                // Civil 3D can deliver regeneration/object-modified notifications
-                // just after the refresh transaction closes. Ignore that tail.
-                _suppressEventsUntilUtc = DateTime.UtcNow.AddSeconds(2.5);
+                // creates a link again. CompleteRefresh also suppresses the delayed
+                // regeneration notifications that Civil 3D emits after the write.
+                CompleteRefresh(refreshed);
             }
             catch
             {
