@@ -32,7 +32,7 @@ namespace CETools.Civil3D
             CeInteractionTelemetryManager.Initialize();
             UniversalDynamicRefreshManager.Initialize();
             PlatformDynamicRefreshManager.EnsureInitialized();
-            AugustGlobalShortcutManager.Initialize();
+            CeGlobalShortcutManager.Initialize();
             August11SurveyRuntimeManager.Initialize();
             RoadAlignmentNameSync.Initialize();
             AcApplication.Idle += OnApplicationIdle;
@@ -49,7 +49,7 @@ namespace CETools.Civil3D
             CogoPointProjectStyleManager.Terminate();
             ProjectStylePresetManager.Terminate();
             August11SurveyRuntimeManager.Terminate();
-            AugustGlobalShortcutManager.Terminate();
+            CeGlobalShortcutManager.Terminate();
             FloatingToolsCommands.Terminate();
             CommandUsageTracker.Terminate();
             LinkedTableAutoRefreshManager.Terminate();
