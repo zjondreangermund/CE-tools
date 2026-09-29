@@ -50,9 +50,9 @@ namespace CETools.Civil3D
                 return;
             }
 
-            List<string> bandSets = CivilStyleCatalogV2.ReadNames(
+            IList<string> bandSets = CivilStyleCatalogV2.ReadNames(
                 document.Database, civil, "Profile View Band Set Style");
-            List<string> viewStyles = CivilStyleCatalogV2.ReadNames(
+            IList<string> viewStyles = CivilStyleCatalogV2.ReadNames(
                 document.Database, civil, "Profile View Style");
             if (bandSets.Count == 0)
             {
