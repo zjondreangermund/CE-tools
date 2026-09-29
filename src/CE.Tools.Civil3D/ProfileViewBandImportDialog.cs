@@ -58,7 +58,7 @@ namespace CETools.Civil3D
 
             var note = new TextBlock
             {
-                Text = "Choose the Civil 3D band set, enable its band labels, and apply the same Bands-tab settings to every selected profile view. For multi-view batches CE Tools keeps the complete selection active; Civil 3D's native EditGraphProperties window is only available when one profile view is selected.",
+                Text = "Choose the Civil 3D band set, enable its band labels, and apply the same Bands-tab settings to every selected profile view. Multi-view batches keep the complete selection active. After applying, you can either finish the batch or open CE Tools Band Data Sources for the selected views.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brushes.DimGray,
                 Margin = new Thickness(0, 0, 0, 14)
@@ -174,17 +174,23 @@ namespace CETools.Civil3D
             };
             _openNative = new ComboBox
             {
-                ItemsSource = new[]
-                {
-                    "No - finish batch and keep all selected",
-                    "Yes - open native properties (single view only)"
-                },
+                ItemsSource = _viewNames.Count == 1
+                    ? new[]
+                    {
+                        "Finish batch and keep selected",
+                        "Open native Profile View Properties"
+                    }
+                    : new[]
+                    {
+                        "Finish batch and keep all selected",
+                        "Open Band Data Sources for selected views"
+                    },
                 SelectedIndex = _viewNames.Count == 1 && _lastOpenNative ? 1 : 0,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 18, 0),
-                MinWidth = 330,
+                MinWidth = 360,
                 IsEditable = false,
-                IsEnabled = _viewNames.Count == 1
+                IsEnabled = true
             };
             buttons.Children.Add(_openNative);
             var apply = new Button
@@ -215,6 +221,7 @@ namespace CETools.Civil3D
         internal string SelectedStyleName { get; private set; }
         internal bool ShowLabels { get; private set; }
         internal bool OpenNativeDialog { get; private set; }
+        internal bool OpenBandDataSources { get; private set; }
 
         internal static ProfileViewBandImportDialog Show(
             IList<string> styleNames,
@@ -242,7 +249,9 @@ namespace CETools.Civil3D
             }
             SelectedStyleName = selected;
             ShowLabels = _showLabels != null && _showLabels.SelectedIndex == 0;
-            OpenNativeDialog = _viewNames.Count == 1 && _openNative != null && _openNative.SelectedIndex == 1;
+            bool secondaryAction = _openNative != null && _openNative.SelectedIndex == 1;
+            OpenNativeDialog = _viewNames.Count == 1 && secondaryAction;
+            OpenBandDataSources = _viewNames.Count > 1 && secondaryAction;
             _lastSelectedStyle = SelectedStyleName;
             _lastShowLabels = ShowLabels;
             _lastOpenNative = OpenNativeDialog;
