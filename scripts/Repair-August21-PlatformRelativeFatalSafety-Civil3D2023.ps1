@@ -652,7 +652,20 @@ if ($sewerCheck.Contains('SewerNetworkDynamicSequenceCommands.ResequenceAll(' + 
 if (-not $autoCheck.Contains('ShouldQueueRefresh(name)')) {
     throw 'Automatic refresh no-blanket policy is missing.'
 }
-if ($autoCheck.Contains('PlatformDynamicRefreshManager.Queue();')) {
+$autoEndedStart = $autoCheck.IndexOf(
+    'private static void OnCommandEnded(object sender, CommandEventArgs e)',
+    [StringComparison]::Ordinal)
+$autoEndedNext = $autoCheck.IndexOf(
+    'internal static bool ShouldQueueRefresh',
+    $autoEndedStart,
+    [StringComparison]::Ordinal)
+if ($autoEndedStart -lt 0 -or $autoEndedNext -le $autoEndedStart) {
+    throw 'Automatic refresh live OnCommandEnded method could not be isolated.'
+}
+$autoEndedBody = $autoCheck.Substring(
+    $autoEndedStart,
+    $autoEndedNext - $autoEndedStart)
+if ($autoEndedBody.Contains('PlatformDynamicRefreshManager.Queue();')) {
     throw 'Automatic command-ended Platform refresh queuing survived the final safety pass.'
 }
 
