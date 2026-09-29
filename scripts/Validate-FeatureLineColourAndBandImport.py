@@ -36,7 +36,9 @@ require(bands,
         "document.Editor.SetImpliedSelection(profileViewIds.Distinct().ToArray());",
         "batchDialog.OpenNativeDialog && profileViewIds.Count == 1",
         "batchDialog.OpenBandDataSources && profileViewIds.Count > 1",
-        '"CE_PROFILEVIEWDATASOURCES "')
+        '"CE_PROFILEVIEWDATASOURCES "',
+        "batchDialog.OpenEditMatch && profileViewIds.Count > 1",
+        '"CE_PROFILEVIEWEDITMATCH "')
 if "SetImpliedSelection(new[] { profileViewIds[0] })" in bands:
     raise SystemExit("Multi-profile band import must not collapse selection to the first profile view.")
 require(band_dialog,
@@ -44,7 +46,9 @@ require(band_dialog,
         "IsEnabled = true",
         "Finish batch and keep all selected",
         "Open Band Data Sources for selected views",
-        "OpenBandDataSources = _viewNames.Count > 1 && secondaryAction")
+        "Edit first selected in native properties, apply to all others",
+        "OpenBandDataSources = _viewNames.Count > 1 && postAction == 1",
+        "OpenEditMatch = _viewNames.Count > 1 && postAction == 2")
 require(persistence, "!view.IsWriteEnabled", "bands.SetTopBandItems(top);",
         "bands.SetBottomBandItems(bottom);", "item.ShowLabels = true", "verify(top[index])", "verify(bottom[index])")
 if "catch" in persistence:
