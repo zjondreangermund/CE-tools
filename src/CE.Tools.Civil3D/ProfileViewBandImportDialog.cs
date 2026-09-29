@@ -17,7 +17,7 @@ namespace CETools.Civil3D
     {
         private static string _lastSelectedStyle;
         private static bool _lastShowLabels = true;
-        private static bool _lastOpenNative = true;
+        private static bool _lastOpenNative = false;
         private readonly IList<string> _styleNames;
         private readonly IList<string> _viewNames;
         private readonly ComboBox _bandSet;
@@ -58,7 +58,7 @@ namespace CETools.Civil3D
 
             var note = new TextBlock
             {
-                Text = "Choose the Civil 3D band set, enable its band labels, and apply the same Bands-tab settings to every selected profile view. The optional native-dialog button opens EditGraphProperties for the first view after the batch is committed.",
+                Text = "Choose the Civil 3D band set, enable its band labels, and apply the same Bands-tab settings to every selected profile view. For multi-view batches CE Tools keeps the complete selection active; Civil 3D's native EditGraphProperties window is only available when one profile view is selected.",
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brushes.DimGray,
                 Margin = new Thickness(0, 0, 0, 14)
@@ -174,12 +174,17 @@ namespace CETools.Civil3D
             };
             _openNative = new ComboBox
             {
-                ItemsSource = new[] { "Yes - open native properties after apply", "No - finish after batch" },
-                SelectedIndex = _lastOpenNative ? 0 : 1,
+                ItemsSource = new[]
+                {
+                    "No - finish batch and keep all selected",
+                    "Yes - open native properties (single view only)"
+                },
+                SelectedIndex = _viewNames.Count == 1 && _lastOpenNative ? 1 : 0,
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 18, 0),
-                MinWidth = 280,
-                IsEditable = false
+                MinWidth = 330,
+                IsEditable = false,
+                IsEnabled = _viewNames.Count == 1
             };
             buttons.Children.Add(_openNative);
             var apply = new Button
@@ -237,7 +242,7 @@ namespace CETools.Civil3D
             }
             SelectedStyleName = selected;
             ShowLabels = _showLabels != null && _showLabels.SelectedIndex == 0;
-            OpenNativeDialog = _openNative != null && _openNative.SelectedIndex == 0;
+            OpenNativeDialog = _viewNames.Count == 1 && _openNative != null && _openNative.SelectedIndex == 1;
             _lastSelectedStyle = SelectedStyleName;
             _lastShowLabels = ShowLabels;
             _lastOpenNative = OpenNativeDialog;
