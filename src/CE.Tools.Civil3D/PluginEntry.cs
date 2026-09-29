@@ -667,7 +667,7 @@ namespace CETools.Civil3D
                         Cmd("Create Profiles / Long Sections", "CE_SEWPROFILE ", "Create isolated branch profile views, link network parts and band data, and review the long-section register."),
                         Cmd("Integrity / Engineering Audit", "CE_SEWAUDITLIMITS ", "Review open pipe ends, isolated/terminal structures, rule/surface assignments, inverts, cover, slopes, drops, depths and sump clearances without changing the network."),
                         Cmd("Connect Open Pipe Ends", "CE_SEWCONNECTPARTS ", "Connect open pipe starts or ends to nearby existing structures in the same gravity network."),
-                        Cmd("Reverse Pipe Slopes to Outlet", "CE_PIPESLOPETOOUTLET ", "Select multiple gravity pipes and reverse only slopes that currently fall away from a specified low point/outlet."),
+                        Cmd("Flow Direction by Branch Alignments", "CE_SEWFLOWBYALIGNMENT ", "Set gravity-pipe flow from each sewer branch alignment start to end toward the selected outlet without moving endpoints or replacing rule sets."),
                         Cmd("Sewer Settings", "CE_SEWSETTINGS ", "Configure styles, layers and label height."),
                         Cmd("Sewer Information", "CE_SEWINFO ", "Review links and generated output."),
                         Cmd("Sort Branch Labels", "CE_SEWLABELSORT ", "Stagger branch labels to reduce overlap."),

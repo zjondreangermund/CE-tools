@@ -64,6 +64,7 @@ namespace CETools.Civil3D
         private static bool _undoRedoActive;
         private static DateTime _lastChangeUtc = DateTime.MinValue;
         private static DateTime _lastRefreshUtc = DateTime.MinValue;
+        private static DateTime _suppressQueueUntilUtc = DateTime.MinValue;
 
         internal static bool Enabled { get; set; } = true;
         internal static double DelaySeconds { get; set; } = 1.8;
@@ -94,7 +95,8 @@ namespace CETools.Civil3D
 
         internal static void Queue()
         {
-            if (_busy || _undoRedoActive) return;
+            if (_busy || _undoRedoActive ||
+                DateTime.UtcNow < _suppressQueueUntilUtc) return;
             _pending = true;
             _lastChangeUtc = DateTime.UtcNow;
         }
@@ -200,7 +202,9 @@ namespace CETools.Civil3D
             _document.CommandEnded += OnCommandEnded;
             _document.CommandCancelled += OnCommandEnded;
             _document.CommandFailed += OnCommandEnded;
-            Queue();
+            // Do not arm a full-project refresh merely because a drawing was
+            // activated. Dedicated dependency managers and CE-linked object
+            // events queue only the work that actually changed.
         }
 
         private static void Detach()
@@ -262,6 +266,9 @@ namespace CETools.Civil3D
                 _undoRedoActive = false;
                 _pending = false;
                 _lastChangeUtc = DateTime.UtcNow;
+                // Some Civil 3D DBObject events arrive just after CommandEnded.
+                // Ignore that tail so Redo remains available after an Undo.
+                _suppressQueueUntilUtc = DateTime.UtcNow.AddSeconds(1.25);
                 return;
             }
             if (command == "CE_ASSEMBLYCOPYSAFE")
@@ -270,9 +277,9 @@ namespace CETools.Civil3D
                 // change CE linked-data sources.
                 return;
             }
-            if (command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
-                command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase))
-                Queue();
+            // Do not queue a universal full-model pass after every CE command.
+            // Commands update their own outputs; CE-linked DBObject changes below
+            // queue the deferred universal pass only when a linked source changed.
         }
 
         private static string NormalizeCommand(string value)
@@ -305,19 +312,51 @@ namespace CETools.Civil3D
 
         private static void OnObjectChanged(object sender, ObjectEventArgs e)
         {
-            if (_busy || _undoRedoActive || e == null || e.DBObject == null) return;
+            if (_busy || _undoRedoActive ||
+                DateTime.UtcNow < _suppressQueueUntilUtc ||
+                e == null || e.DBObject == null) return;
             DBObject value = e.DBObject;
             if (IsAssemblyObject(value)) return;
-            if (value is Entity || value is Xrecord || value is DBDictionary ||
-                value is CogoPoint || value is Pipe || value is Structure ||
-                value is Autodesk.Civil.DatabaseServices.Network)
-                Queue();
+            if (HasCeLink(value)) Queue();
         }
 
         private static void OnObjectErased(object sender, ObjectErasedEventArgs e)
         {
-            if (_busy || _undoRedoActive || e == null || e.DBObject == null) return;
-            if (!IsAssemblyObject(e.DBObject)) Queue();
+            if (_busy || _undoRedoActive ||
+                DateTime.UtcNow < _suppressQueueUntilUtc ||
+                e == null || e.DBObject == null) return;
+            if (!IsAssemblyObject(e.DBObject) && HasCeLink(e.DBObject)) Queue();
+        }
+
+        private static bool HasCeLink(DBObject value)
+        {
+            if (value == null) return false;
+            try
+            {
+                using (ResultBuffer data = value.XData)
+                {
+                    if (data != null)
+                    {
+                        foreach (TypedValue item in data)
+                        {
+                            if (item.TypeCode !=
+                                (int)DxfCode.ExtendedDataRegAppName) continue;
+                            string name = Convert.ToString(
+                                item.Value, CultureInfo.InvariantCulture);
+                            if (!string.IsNullOrWhiteSpace(name) &&
+                                (name.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
+                                 name.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase)))
+                                return true;
+                        }
+                    }
+                }
+            }
+            catch { }
+
+            // Xrecords and dictionaries are CE bookkeeping only when they are
+            // changed by an explicit CE command. They no longer trigger a global
+            // refresh by themselves; this avoids repeated undo-group pollution.
+            return false;
         }
 
         private static void OnIdle(object sender, EventArgs e)

@@ -53,6 +53,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Sequence with selected main + options", "CE_SEWSEQMAINWORKFLOW", "Select the intended main route before branch numbering.", "1 — Network"),
                     new DisciplineWorkflowAction("Create / refresh Civil labels", "CE_SEWLABELS", "Add the selected Civil 3D pipe and structure plan labels without duplicating existing labels.", "1 — Network"),
                     new DisciplineWorkflowAction("Create sewer alignments", "CE_SEWALIGN", "Create linked branch alignments from the sequenced network.", "2 — Alignments"),
+                    new DisciplineWorkflowAction("Set pipe flow from branch alignments", "CE_SEWFLOWBYALIGNMENT", "Set each gravity pipe FlowDirectionMethod from the branch alignment start-to-end direction without moving endpoints or changing rule-set assignments.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Refresh alignments", "CE_SEWREFRESH", "Rebuild generated sewer alignments from their live network sources.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Format alignments and labels", "CE_SEWFORMAT", "Reapply production styles and repeated branch labels.", "2 — Alignments"),
                     new DisciplineWorkflowAction("Create sewer profiles / long sections", "CE_SEWPROFILE", "Create one isolated long-section profile view per branch, link its pipe-network parts and bands, then review the branch results in a grid or DWG table.", "3 — Profiles"),
