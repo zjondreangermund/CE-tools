@@ -497,36 +497,94 @@ namespace CETools.Civil3D
             ProfileView view,
             ProfileViewBandSetStyle style)
         {
-            // ImportBandSetStyle normally populates both collections. On some
-            // Civil 3D drawings it only assigns the style: explicitly add the
-            // missing rows using the style's actual band style ObjectIds.
+            // ImportBandSetStyle can partially materialise a band set in Civil 3D
+            // 2023: for example one Pipe Network row appears while the remaining
+            // sewer rows from the band-set style are absent. A non-zero row count
+            // therefore does NOT mean the import is complete. Reconcile both
+            // locations against the style template, in order, and rebuild the
+            // location whenever row count or style ids differ.
             using (ProfileViewBandItemCollection top = view.Bands.GetTopBandItems())
             {
-                if (top.Count == 0)
+                var templates = style.GetTopBandSetItems();
+                bool rebuild = top.Count != templates.Count;
+                if (!rebuild)
                 {
-                    var templates = style.GetTopBandSetItems();
                     for (int index = 0; index < templates.Count; index++)
                     {
-                        top.Add(templates[index].BandStyleId);
-                        CopyBandRow(top[top.Count - 1], templates[index]);
+                        if (top[index].BandStyleId != templates[index].BandStyleId)
+                        {
+                            rebuild = true;
+                            break;
+                        }
                     }
-                    if (top.Count > 0) view.Bands.SetTopBandItems(top);
                 }
+                if (rebuild)
+                {
+                    ClearBandRows(top);
+                    for (int index = 0; index < templates.Count; index++)
+                        top.Add(templates[index].BandStyleId);
+                }
+                for (int index = 0; index < templates.Count && index < top.Count; index++)
+                    CopyBandRow(top[index], templates[index]);
+                if (top.Count > 0 || templates.Count == 0)
+                    view.Bands.SetTopBandItems(top);
             }
+
             using (ProfileViewBandItemCollection bottom = view.Bands.GetBottomBandItems())
             {
-                if (bottom.Count == 0)
+                var templates = style.GetBottomBandSetItems();
+                bool rebuild = bottom.Count != templates.Count;
+                if (!rebuild)
                 {
-                    var templates = style.GetBottomBandSetItems();
                     for (int index = 0; index < templates.Count; index++)
                     {
-                        bottom.Add(templates[index].BandStyleId);
-                        CopyBandRow(bottom[bottom.Count - 1], templates[index]);
+                        if (bottom[index].BandStyleId != templates[index].BandStyleId)
+                        {
+                            rebuild = true;
+                            break;
+                        }
                     }
-                    if (bottom.Count > 0) view.Bands.SetBottomBandItems(bottom);
                 }
+                if (rebuild)
+                {
+                    ClearBandRows(bottom);
+                    for (int index = 0; index < templates.Count; index++)
+                        bottom.Add(templates[index].BandStyleId);
+                }
+                for (int index = 0; index < templates.Count && index < bottom.Count; index++)
+                    CopyBandRow(bottom[index], templates[index]);
+                if (bottom.Count > 0 || templates.Count == 0)
+                    view.Bands.SetBottomBandItems(bottom);
             }
             return CountBandRows(view);
+        }
+
+        private static void ClearBandRows(ProfileViewBandItemCollection rows)
+        {
+            if (rows == null) return;
+            MethodInfo clear = rows.GetType().GetMethod(
+                "Clear",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                Type.EmptyTypes,
+                null);
+            if (clear != null)
+            {
+                clear.Invoke(rows, null);
+                return;
+            }
+
+            MethodInfo removeAt = rows.GetType().GetMethod(
+                "RemoveAt",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                new[] { typeof(int) },
+                null);
+            if (removeAt == null)
+                throw new InvalidOperationException(
+                    "Civil 3D 2023 does not expose a writable profile-view band-row removal method.");
+            for (int index = rows.Count - 1; index >= 0; index--)
+                removeAt.Invoke(rows, new object[] { index });
         }
 
         private static void CopyBandRow(
