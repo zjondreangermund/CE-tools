@@ -183,7 +183,8 @@ namespace CETools.Civil3D
                     : new[]
                     {
                         "Finish batch and keep all selected",
-                        "Open Band Data Sources for selected views"
+                        "Open Band Data Sources for selected views",
+                        "Edit first selected in native properties, apply to all others"
                     },
                 SelectedIndex = _viewNames.Count == 1 && _lastOpenNative ? 1 : 0,
                 VerticalAlignment = VerticalAlignment.Center,
@@ -222,6 +223,7 @@ namespace CETools.Civil3D
         internal bool ShowLabels { get; private set; }
         internal bool OpenNativeDialog { get; private set; }
         internal bool OpenBandDataSources { get; private set; }
+        internal bool OpenEditMatch { get; private set; }
 
         internal static ProfileViewBandImportDialog Show(
             IList<string> styleNames,
@@ -249,9 +251,10 @@ namespace CETools.Civil3D
             }
             SelectedStyleName = selected;
             ShowLabels = _showLabels != null && _showLabels.SelectedIndex == 0;
-            bool secondaryAction = _openNative != null && _openNative.SelectedIndex == 1;
-            OpenNativeDialog = _viewNames.Count == 1 && secondaryAction;
-            OpenBandDataSources = _viewNames.Count > 1 && secondaryAction;
+            int postAction = _openNative == null ? 0 : _openNative.SelectedIndex;
+            OpenNativeDialog = _viewNames.Count == 1 && postAction == 1;
+            OpenBandDataSources = _viewNames.Count > 1 && postAction == 1;
+            OpenEditMatch = _viewNames.Count > 1 && postAction == 2;
             _lastSelectedStyle = SelectedStyleName;
             _lastShowLabels = ShowLabels;
             _lastOpenNative = OpenNativeDialog;
