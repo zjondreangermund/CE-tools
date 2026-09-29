@@ -10,7 +10,7 @@ namespace CETools.Civil3D
     /// <summary>
     /// One front door for CE Tools grading design, slope annotation and grading review.
     /// Existing production engines remain the source of truth; this class only exposes
-    /// the combined workflow and the two August 27 internal slope routines as commands.
+    /// a combined workflow that links the existing grading and slope commands.
     /// </summary>
     public sealed class GradingSlopeWorkflowCommands
     {
@@ -57,9 +57,9 @@ namespace CETools.Civil3D
                         "Create linked crossfall arrows and slope percentages between two feature lines.",
                         "02 SLOPE ANNOTATION"),
                     new DisciplineWorkflowAction(
-                        "Dynamic Surface Slope Arrows",
+                        "Surface Slope Arrows",
                         "CE_SURFACESLOPEARROWS",
-                        "Create linked slope arrows and values sampled from a Civil 3D surface.",
+                        "Create slope arrows and percentage values sampled from a Civil 3D surface.",
                         "02 SLOPE ANNOTATION"),
                     new DisciplineWorkflowAction(
                         "Refresh Feature-Line Slope Arrows",
