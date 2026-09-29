@@ -150,27 +150,59 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "HorizontalStep", "01 Stepped offsets", "Horizontal step", 1.0,
                 "Drawing-unit offset between successive linked feature lines.");
+            settings.AddChoice(
+                "VerticalMode", "01 Stepped offsets", "Vertical control", "Elevation difference",
+                "Choose how CE Tools calculates the vertical change for every horizontal offset.",
+                new[] { "Elevation difference", "Grade (%)", "Slope (H:V)" });
             settings.AddText(
-                "VerticalStep", "01 Stepped offsets", "Vertical step", "0.000",
-                "Elevation difference per step. Use a negative value for steps below the source.");
+                "VerticalStep", "01 Stepped offsets", "Vertical / grade / slope value", "0.000",
+                "Elevation difference: drawing units per step. Grade (%): signed percent, e.g. -2.0. Slope (H:V): positive H:V ratio, e.g. 2.0 for 2H:1V.");
+            settings.AddChoice(
+                "SlopeDirection", "01 Stepped offsets", "H:V slope direction", "Fall / negative",
+                "Used only when Vertical control is Slope (H:V).",
+                new[] { "Fall / negative", "Rise / positive" });
             settings.AddPositiveInteger(
                 "Count", "01 Stepped offsets", "Number of offsets", 1,
-                "Create this many linked stepped feature lines from the selected source.");
+                "Create this many linked stepped feature lines from every selected source.");
             settings.AddChoice("Side", "01 Stepped offsets", "Offset side", "Pick side in drawing",
-                "Apply the same side choice to each selected source. Inside and Outside use the enclosed area for closed lines; for open lines they map to right and left.",
-                new[] { "Pick side in drawing", "Left / positive", "Right / negative", "Inside", "Outside", "Both sides" });
+                "Choose which side of the selected bellmouth/feature lines receives the offsets. The same choice is applied to every selected source.",
+                new[] { "Pick side in drawing", "Left", "Right", "Inside", "Outside", "Both sides" });
             settings.AddText(
                 "Prefix", "02 Naming", "Feature-line name prefix", defaultPrefix,
                 "Names are created as Prefix-1, Prefix-2, and so on.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             double horizontalStep = settings.Double("HorizontalStep", 1.0);
-            double verticalStep;
+            double verticalValue;
             if (!ProductionSettingsDialogModel.TryDouble(
-                    settings.Text("VerticalStep"), out verticalStep))
+                    settings.Text("VerticalStep"), out verticalValue))
             {
-                editor.WriteMessage("\nCE_FLREL cancelled. Vertical step must be a number.");
+                editor.WriteMessage("\nCE_FLREL cancelled. Vertical / grade / slope value must be a number.");
                 return;
+            }
+            string verticalMode = settings.Text("VerticalMode");
+            string slopeDirection = settings.Text("SlopeDirection");
+            double verticalStep;
+            if (string.Equals(verticalMode, "Grade (%)", StringComparison.OrdinalIgnoreCase))
+            {
+                verticalStep = horizontalStep * verticalValue / 100.0;
+            }
+            else if (string.Equals(verticalMode, "Slope (H:V)", StringComparison.OrdinalIgnoreCase))
+            {
+                if (verticalValue <= Tolerance)
+                {
+                    editor.WriteMessage("\nCE_FLREL cancelled. H:V slope value must be greater than zero.");
+                    return;
+                }
+                double direction = string.Equals(
+                    slopeDirection, "Rise / positive", StringComparison.OrdinalIgnoreCase)
+                    ? 1.0
+                    : -1.0;
+                verticalStep = direction * horizontalStep / verticalValue;
+            }
+            else
+            {
+                verticalStep = verticalValue;
             }
             int count = settings.Integer("Count", 1);
             string prefix = string.IsNullOrWhiteSpace(settings.Text("Prefix"))
@@ -832,8 +864,8 @@ namespace CETools.Civil3D
 
         private static double ResolveNamedOffsetSign(Polyline plan, double distance, string side)
         {
-            if (string.Equals(side, "Left / positive", StringComparison.OrdinalIgnoreCase)) return 1.0;
-            if (string.Equals(side, "Right / negative", StringComparison.OrdinalIgnoreCase)) return -1.0;
+            if (string.Equals(side, "Left", StringComparison.OrdinalIgnoreCase) || string.Equals(side, "Left / positive", StringComparison.OrdinalIgnoreCase)) return 1.0;
+            if (string.Equals(side, "Right", StringComparison.OrdinalIgnoreCase) || string.Equals(side, "Right / negative", StringComparison.OrdinalIgnoreCase)) return -1.0;
             if (!plan.Closed || plan.NumberOfVertices < 3)
                 return string.Equals(side, "Inside", StringComparison.OrdinalIgnoreCase) ? -1.0 : 1.0;
 
