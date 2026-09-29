@@ -651,6 +651,7 @@ namespace CETools.Civil3D
                         "Sewer Network\nProduction",
                         "Sequence sewer networks, format alignments and create profiles.",
                         Cmd("Sewer Production Tools", "CE_SEWTOOLS ", "Open the complete sewer production menu."),
+                        Cmd("Sewer Long Section Bands", "CE_SEWBANDLABELS ", "Apply or repair the selected native sewer band set on multiple profile views, including gravity-network and ground-profile source binding."),
                         Cmd("Sequence Network + Production Options", "CE_SEWSEQWORKFLOW ", "Sequence a complete network or selected path."),
                         Cmd("Sequence Selected Main + Production Options", "CE_SEWSEQMAINWORKFLOW ", "Select Branch-1 and sequence remaining branches."),
                         Cmd("Dynamic Resequence Selected Network", "CE_SEWAUTOSEQ ", "Compact Branch/P/MH numbering after deletions or reconnections and refresh linked outputs."),
