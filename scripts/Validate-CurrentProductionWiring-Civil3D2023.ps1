@@ -34,19 +34,26 @@ $styleCentre = Read-RequiredSource 'ProjectStyleCenterCommands.cs'
 $roadLayout = Read-RequiredSource 'RoadLayoutProductionCommands.cs'
 $roadCompletion = Read-RequiredSource 'August11RoadCompletionCommands.cs'
 $platformSafety = Read-RequiredSource 'August21PlatformRelativeFatalSafety.cs'
-Read-RequiredSource 'AugustGlobalShortcutManager.cs' | Out-Null
+$shortcuts = Read-RequiredSource 'AugustGlobalShortcutManager.cs'
 
 # Dedicated CE PRODUCTION startup and current runtime managers.
 foreach ($token in @(
     'ProductionWorkflowRibbonBuilder.EnsureCreated()',
     'August11SurveyRuntimeManager.Initialize();',
     'August11SurveyRuntimeManager.Terminate();',
-    'AugustGlobalShortcutManager.Initialize();',
-    'AugustGlobalShortcutManager.Terminate();',
+    'CeGlobalShortcutManager.Initialize();',
+    'CeGlobalShortcutManager.Terminate();',
     'SendStringToExecute("CE_WELCOME "'
 )) {
     Require-Token $plugin $token 'PluginEntry production/runtime startup wiring is incomplete'
 }
+
+# The current shortcut manager intentionally uses a CE-specific type name so
+# historical staged repair passes can still contain their legacy August type
+# without producing a duplicate C# class during the real Windows build.
+Require-Token $shortcuts 'internal static class CeGlobalShortcutManager' 'Collision-proof CE shortcut manager type is missing'
+Require-Token $shortcuts 'Application.AddMessageFilter(_filter);' 'CE global shortcut manager install hook is missing'
+Require-Token $shortcuts 'Application.RemoveMessageFilter(_filter);' 'CE global shortcut manager uninstall hook is missing'
 
 # Main CE TOOLS ribbon items that were previously supplied only by staged injectors.
 foreach ($token in @(
