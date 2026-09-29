@@ -1035,7 +1035,8 @@ namespace CETools.Civil3D
                 Margin = new Thickness(0, 0, 0, 12)
             });
             AddButton(root, "Batch styles, band sets and rebuild", "CE_PROFILEVIEWBATCH ");
-            AddButton(root, "Edit one native Profile View, then apply to selected", "CE_PROFILEVIEWEDITMATCH ");\n            AddButton(root, "Match first/source profile view to multiple views", "CE_PROFILEVIEWMATCH ");
+            AddButton(root, "Edit one native Profile View, then apply to selected", "CE_PROFILEVIEWEDITMATCH ");
+            AddButton(root, "Match first/source profile view to multiple views", "CE_PROFILEVIEWMATCH ");
             AddButton(root, "Batch-edit band Data Sources", "CE_PROFILEVIEWDATASOURCES ");
             AddButton(root, "Repair Sewer Pipe Network Band Labels", "CE_SEWPIPEBANDGROUPS ");
             AddButton(root, "Import Road Band Set + Show Labels", "CE_ROADBANDLABELS ");
