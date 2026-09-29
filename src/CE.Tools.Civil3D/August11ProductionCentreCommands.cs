@@ -54,7 +54,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE-PRODUCTION CENTRE",
-                "Choose a discipline. Each production centre keeps Settings first, then preparation/design/production and delivery. Use CE-ENGINEERING INTELLIGENCE CENTRE for the full command library.",
+                "Choose a discipline. Each production centre keeps Settings first, then preparation/design/production and delivery. Use CE-ENGINEERING CENTRE for the full command library.",
                 new List<DisciplineWorkflowAction>
                 {
                     Action("PROJECT PRODUCTION", "CE_PROJECTPRODUCTIONCENTRE", "Project setup, standards, styles, registers and coordinated delivery.", "01 Disciplines"),
@@ -67,7 +67,7 @@ namespace CETools.Civil3D
                     Action("BULK WATER PRODUCTION", "CE_BULKWATERPRODUCTIONCENTRE", "Bulk-water routes, profiles, quantities and delivery.", "01 Disciplines"),
                     Action("PARKING AREA PRODUCTION", "CE_PARKINGPRODUCTIONCENTRE", "Boundary layout, grading, checks, setting-out and quantities.", "01 Disciplines"),
                     Action("FLOOD PRODUCTION", "CE_FLOODPRODUCTIONCENTRE", "Catchments, hydrology, affected areas, culverts and flood outputs.", "01 Disciplines"),
-                    Action("CE-ENGINEERING INTELLIGENCE CENTRE", "CE_ENGINEERINGINTELLIGENCECENTRE", "Open the full CE Tools command/workflow library.", "02 Full library"),
+                    Action("CE-ENGINEERING CENTRE", "CE_ENGINEERINGINTELLIGENCECENTRE", "Open the full CE Tools command/workflow library.", "02 Full library"),
                     Action("Appearance - Dark / Light", "CE_CETHEME", "Choose the CE Tools welcome/production-window theme.", "03 Appearance")
                 });
         }
@@ -103,7 +103,7 @@ namespace CETools.Civil3D
             RunCentre("SURVEY PRODUCTION", "Coordinate system → existing ground → survey cleanup → setting-out.", new[]
             {
                 Action("SETTINGS - Survey Location / Coordinate System", "CE_SURVEYLOCATION", "Choose town/project area and assign the installed Namibia LO system.", "01 SETTINGS"),
-                Action("Project Style Centre - Points/Surfaces", "CE_PROJECTSTYLES", "Select point, point-label and surface styles.", "01 SETTINGS"),
+                Action("SETTINGS - Survey Styles", "CE_SURVEYSTYLES", "Select point, point-label and surface styles.", "01 SETTINGS"),
                 Action("PREPARE - LandXML Import / Export", "CE_LANDXMLTOOLS", "Import or export survey/Civil LandXML.", "02 PREPARE"),
                 Action("Surface Tools", "CE_SURFTOOLS", "Create/review existing-ground surfaces.", "03 CREATE"),
                 Action("DESIGN - Surface Correction / Review", "CE_SURFCTOOLS", "Audit and create reversible corrected surface copies.", "04 DESIGN"),
@@ -120,7 +120,7 @@ namespace CETools.Civil3D
             August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Platforms");
             RunCentre("PLATFORM PRODUCTION", "Source polygons → feature lines → levels → grading → setting-out → quantities → drawings.", new[]
             {
-                Action("SETTINGS - Project Styles / Platform", "CE_PROJECTSTYLES", "Select feature-line, grading, surface and annotation styles.", "01 SETTINGS"),
+                Action("SETTINGS - Platform Styles", "CE_PLATFORMSTYLES", "Select feature-line, grading, surface and annotation styles.", "01 SETTINGS"),
                 Action("PREPARE - Create Feature Lines", "CE_FLCREATE", "Create multiple feature lines from selected polylines.", "02 PREPARE"),
                 Action("DESIGN - Platform Slopes / Levels", "CE_PLATFORMSLOPE", "Constant slope, fixed slope or flatten to highest elevation.", "04 DESIGN"),
                 Action("Stepped Offsets", "CE_PLATFORMSTEPOFFSETS", "Create linked stepped offsets for multiple platforms.", "04 DESIGN"),
@@ -156,6 +156,7 @@ namespace CETools.Civil3D
             RunCentre("SEWER PRODUCTION", "Cadastral/Roads/Existing Ground → route/network/branches → levels/checks → profiles/labels/setting-out/BOQ → drawings/report.", new[]
             {
                 Action("SETTINGS - Sewer Settings", "CE_SEWSETTINGS", "Parts, styles, labels, profile and band settings.", "01 SETTINGS"),
+                Action("Project Styles - Sewer", "CE_SEWERSTYLES", "Civil 3D styles used only by Sewer production.", "01 SETTINGS"),
                 Action("PREPARE - Midblock / Road-Reserve Route", "CE_MIDBLOCKSEWERPRODUCTION", "Continuous selected-side/low-side sewer routes and planning manholes.", "02 PREPARE"),
                 Action("CREATE - Multiple Networks from Polylines", "CE_NETWORKFROMPOLYLINESBATCH", "Select many source polylines and create them without duplicate source runs.", "03 CREATE"),
                 Action("Sequence Branches / Structures / Pipes", "CE_SEWSEQ", "Build the live network sequence and branch names.", "03 CREATE"),
@@ -183,7 +184,7 @@ namespace CETools.Civil3D
             August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Bulk Water");
             RunCentre("BULK WATER PRODUCTION", "Road-reserve/source route → pressure network → profile/setting-out → quantities → delivery.", new[]
             {
-                Action("SETTINGS - Project / Water Styles", "CE_PROJECTSTYLES", "Select pressure-network and profile styles.", "01 SETTINGS"),
+                Action("SETTINGS - Bulk Water Styles", "CE_BULKWATERSTYLES", "Select pressure-network and profile styles.", "01 SETTINGS"),
                 Action("PREPARE - Utility Route from Erf / Road Reserve", "CE_UTILITYROUTEOFFSET", "Create bulk-water planning routes at selected offsets from erf, reserve-edge or road-centre geometry.", "02 PREPARE"),
                 Action("CREATE - Multiple Networks from Polylines", "CE_NETWORKFROMPOLYLINESBATCH", "Batch source polylines into pressure network creation.", "03 CREATE"),
                 Action("DESIGN - Network Data", "CE_NETWORKDATA", "Review selected pressure-network objects and levels.", "04 DESIGN"),
@@ -201,6 +202,7 @@ namespace CETools.Civil3D
             RunCentre("PARKING AREA PRODUCTION", "Boundary → alternatives/layout → grading → checks/setting-out → quantities → drawings.", new[]
             {
                 Action("SETTINGS - Parking Tools", "CE_PKTOOLS", "Parking layout and annotation settings.", "01 SETTINGS"),
+                Action("Project Styles - Parking", "CE_PARKINGSTYLES", "Civil 3D styles used only by Parking production.", "01 SETTINGS"),
                 Action("PREPARE - Parking Options", "CE_PARKOPTIONS", "Compare parking arrangements inside a selected boundary.", "02 PREPARE"),
                 Action("CREATE - Parking Optimiser", "CE_PARKOPTIMIZE", "Create obstacle-aware parking alternative.", "03 CREATE"),
                 Action("DESIGN - Parking Grading", "CE_PARKGRADETOOLS", "Create linked grading/drainage guides.", "04 DESIGN"),
@@ -218,6 +220,7 @@ namespace CETools.Civil3D
             RunCentre("FLOOD PRODUCTION", "Existing ground/catchment → hydrology → flow/affected area → culvert review → outputs.", new[]
             {
                 Action("SETTINGS - Hydrology / Flood Inputs", "CE_HYDROLOGYTOOLS", "Review rainfall/runoff and analysis settings.", "01 SETTINGS"),
+                Action("Project Styles - Flood", "CE_FLOODSTYLES", "Civil 3D styles used only by Flood production.", "01 SETTINGS"),
                 Action("PREPARE - Surface / Catchment Review", "CE_SURFTOOLS", "Review the terrain source before flood calculations.", "02 PREPARE"),
                 Action("CREATE - Quick Flood / Rational Review", "CE_CATCHMENTQUICK", "Pre/post return-period peak-flow and preliminary culvert screen.", "03 CREATE"),
                 Action("DESIGN - Surface Hydrology", "CE_HYDROLOGYTOOLS", "Flow routes, catchments and terrain storage review.", "04 DESIGN"),
@@ -233,6 +236,10 @@ namespace CETools.Civil3D
             return new[]
             {
                 Action("SETTINGS - " + discipline + " Settings", settings, "Parts, styles, labels and profile settings.", "01 SETTINGS"),
+                Action("Project Styles - " + discipline,
+                    string.Equals(discipline, "Stormwater", StringComparison.OrdinalIgnoreCase) ? "CE_SWSTYLES" : "CE_WATERSTYLES",
+                    "Civil 3D styles used only by " + discipline + " production.",
+                    "01 SETTINGS"),
                 Action("PREPARE - Utility Route Planner", "CE_UTILITYROUTEOFFSET", "Create a preliminary route from erf, reserve-edge or road-centre geometry at a selected offset.", "02 PREPARE"),
                 Action("CREATE - Multiple Networks from Polylines", "CE_NETWORKFROMPOLYLINESBATCH", "Batch multiple source objects into network creation.", "03 CREATE"),
                 Action("Sequence / Branches", sequence, "Create the discipline network sequence.", "03 CREATE"),
@@ -328,7 +335,7 @@ namespace CETools.Civil3D
             cards.ColumnDefinitions.Add(new ColumnDefinition());
             cards.ColumnDefinitions.Add(new ColumnDefinition());
             cards.Children.Add(BuildCard("CE-PRODUCTION CENTRE", "Important commands only. Guided discipline production workflows, with Roads split into Settings, Layout Production and Design Production.", "CE_PRODUCTIONCENTRE", card, foreground, muted, accent, 0));
-            cards.Children.Add(BuildCard("CE-ENGINEERING INTELLIGENCE CENTRE", "The complete CE Tools command library, utilities, reports, repair tools and advanced engineering workflows.", "CE_ENGINEERINGINTELLIGENCECENTRE", card, foreground, muted, accent, 1));
+            cards.Children.Add(BuildCard("CE-ENGINEERING CENTRE", "The complete CE Tools command library, utilities, reports, repair tools and advanced engineering workflows.", "CE_ENGINEERINGINTELLIGENCECENTRE", card, foreground, muted, accent, 1));
             Grid.SetRow(cards, 1);
             root.Children.Add(cards);
 
@@ -365,7 +372,7 @@ namespace CETools.Civil3D
             var panel = new StackPanel();
             panel.Children.Add(new TextBlock { Text = title, FontSize = 18, FontWeight = FontWeights.Bold, Foreground = foreground, TextWrapping = TextWrapping.Wrap });
             panel.Children.Add(new TextBlock { Text = description, FontSize = 13, Foreground = muted, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 18, 0, 24), MinHeight = 82 });
-            var button = new Button { Content = "OPEN CENTRE  ›", Padding = new Thickness(14, 9, 14, 9), FontWeight = FontWeights.SemiBold };
+            var button = new Button { Content = "OPEN CENTRE", Padding = new Thickness(14, 9, 14, 9), FontWeight = FontWeights.SemiBold };
             button.Click += delegate { SelectedCommand = command; DialogResult = true; };
             panel.Children.Add(button);
             border.Child = panel;
