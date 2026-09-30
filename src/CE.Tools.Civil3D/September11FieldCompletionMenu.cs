@@ -460,9 +460,9 @@ namespace CETools.Civil3D
                         "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
-                        "Recent - CE_SEWLINKSURFACE",
+                        "Link Sewer Parts to Surface / Gravity Slopes",
                         "CE_SEWLINKSURFACE",
-                        "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
+                        "Link selected sewer parts to a surface. Use constant downhill branch slopes that never reverse uphill with NG, follow NG at a specified crown depth, or apply Civil 3D rule sets.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Recent - CE_ROADCENTRECLEAN",
