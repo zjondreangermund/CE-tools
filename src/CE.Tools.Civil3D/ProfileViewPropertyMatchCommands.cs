@@ -69,7 +69,7 @@ namespace CETools.Civil3D
                 return;
             }
 
-            _editMatchSession = new ProfileViewEditMatchSession
+            var session = new ProfileViewEditMatchSession
             {
                 Database = document.Database,
                 SourceId = sourceId,
@@ -78,26 +78,42 @@ namespace CETools.Civil3D
 
             try
             {
-                document.Editor.SetImpliedSelection(new[] { sourceId });
                 document.Editor.WriteMessage(
                     "\nEdit the source Profile View Properties once. Click OK/Apply and close the native Civil 3D window; CE Tools will then copy the edited view style, ranges and complete Bands-tab rows to {0} selected target view(s), mapping profile/network sources to each target.",
                     targets.Count);
 
-                // Queue the native modal editor first and the CE apply command
-                // immediately after it. AutoCAD executes the second command only
-                // after EditGraphProperties has closed.
-                document.SendStringToExecute(
-                    "_.EditGraphProperties \nCE_PROFILEVIEWEDITMATCHAPPLY ",
-                    true,
-                    false,
-                    true);
+                // Supply the source entity to the native command explicitly.
+                // Queued command text can otherwise be consumed by its "Select
+                // graph" prompt instead of running the batch continuation.
+                bool applied = ProfileViewNativeEditor.EditAndApply(
+                    document,
+                    sourceId,
+                    () =>
+                    {
+                        _editMatchSession = session;
+                        ApplyEditedProfileViewToSelected();
+                    });
+                if (!applied)
+                    document.Editor.WriteMessage(
+                        "\nCE_PROFILEVIEWEDITMATCH: native editing was cancelled or did not complete; no target views were updated.");
             }
             catch (System.Exception exception)
             {
-                _editMatchSession = null;
                 document.Editor.WriteMessage(
-                    "\nCE_PROFILEVIEWEDITMATCH could not open native Profile View Properties: {0}",
+                    "\nCE_PROFILEVIEWEDITMATCH could not complete the edit-and-match operation: {0}",
                     exception.Message);
+            }
+            finally
+            {
+                _editMatchSession = null;
+                // Native selection and regeneration must not discard the batch,
+                // including its source, on success, cancellation or failure.
+                try
+                {
+                    document.Editor.SetImpliedSelection(
+                        new[] { sourceId }.Concat(targets).Distinct().ToArray());
+                }
+                catch { }
             }
         }
 
@@ -134,6 +150,7 @@ namespace CETools.Civil3D
                                 civil,
                                 targetId);
 
+                        int targetRows;
                         using (Transaction tr =
                             document.Database.TransactionManager.StartTransaction())
                         {
@@ -152,7 +169,7 @@ namespace CETools.Civil3D
 
                             target.StyleId = source.StyleId;
                             CopyViewRangeProperties(source, target);
-                            copiedRows += CopyBands(
+                            targetRows = CopyBands(
                                 source,
                                 target,
                                 tr,
@@ -164,6 +181,7 @@ namespace CETools.Civil3D
                             catch { }
                             tr.Commit();
                         }
+                        copiedRows += targetRows;
                         completed++;
                     }
                     catch (System.Exception exception)
@@ -180,7 +198,7 @@ namespace CETools.Civil3D
             try
             {
                 document.Editor.SetImpliedSelection(
-                    session.TargetIds.Distinct().ToArray());
+                    new[] { session.SourceId }.Concat(session.TargetIds).Distinct().ToArray());
                 document.Database.TransactionManager.QueueForGraphicsFlush();
                 document.Editor.Regen();
                 AcApplication.UpdateScreen();
