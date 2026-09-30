@@ -2,9 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
+using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
+using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
@@ -26,6 +29,10 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class SewerRulesBatchCommands
     {
+        private const double GeometryTolerance = 1e-8;
+        private static readonly Regex PipeSequencePattern = new Regex(
+            @"^P(?<branch>\d+)\.(?<sequence>\d+)$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
         [CommandMethod("CE_TOOLS", "CE_SEWERAPPLYRULESMULTI", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void ApplyRulesToMultipleSewerParts()
         {
@@ -109,6 +116,13 @@ namespace CETools.Civil3D
                 "Yes",
                 "Calls the native Civil 3D ApplyRules() operation separately for every selected part.",
                 new[] { "Yes", "No" });
+            model.AddChoice(
+                "ForceDownhill",
+                "04 Civil 3D operation",
+                "Keep sewer pipe slopes downhill by branch",
+                "Yes",
+                "After Civil 3D ApplyRules() is committed for every selected pipe, keep the absolute slope produced by the chosen rule set but orient P#.1, P#.2, ... continuously downhill from MH#.1. Natural-ground rise cannot reverse a gravity pipe.",
+                new[] { "Yes", "No" });
             model.AddChoice("DrawInProfiles", "04 Civil 3D operation",
                 "Draw selected parts in profile views", "Yes",
                 "After applying rules, select multiple profile views. Only matching pipes and structures will be drawn.",
@@ -131,15 +145,25 @@ namespace CETools.Civil3D
                 model.Text("ApplyRules"),
                 "Yes",
                 StringComparison.OrdinalIgnoreCase);
+            bool forceDownhill = string.Equals(
+                model.Text("ForceDownhill"),
+                "Yes",
+                StringComparison.OrdinalIgnoreCase);
 
             int pipes = 0;
             int structures = 0;
             int rulesApplied = 0;
             int skipped = 0;
             int failed = 0;
+            int downhillAdjusted = 0;
+            int downhillUnresolved = 0;
             var rows = new List<IList<string>>();
+
+            // Commit each selected part independently. Civil 3D's native ApplyRules()
+            // can update connected geometry internally; batching a large selection
+            // inside one outer transaction can leave later parts evaluated against
+            // stale in-memory network state even though ApplyRules() returns true.
             using (DocumentLock documentLock = document.LockDocument())
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 foreach (SewerPartSelection selected in parts)
                 {
@@ -150,92 +174,120 @@ namespace CETools.Civil3D
                         : selected.NetworkId.Handle.ToString();
                     string ruleName = "<current>";
                     string result = string.Empty;
+
                     try
                     {
-                        DBObject value = transaction.GetObject(
-                            selected.Id,
-                            OpenMode.ForWrite,
-                            false);
-                        CivilPipe pipe = value as CivilPipe;
-                        CivilStructure structure = value as CivilStructure;
-                        if ((pipe == null && structure == null) ||
-                            (pipe != null && pipe.IsReferenceObject) ||
-                            (structure != null && structure.IsReferenceObject))
+                        using (Transaction transaction =
+                            document.Database.TransactionManager.StartTransaction())
                         {
-                            skipped++;
-                            rows.Add(Row(kind, partName, networkName, "<reference/read-only>", "Skipped"));
-                            continue;
-                        }
-
-                        if (surface != null && !surface.Id.IsNull)
-                        {
-                            if (pipe != null) pipe.RefSurfaceId = surface.Id;
-                            else structure.RefSurfaceId = surface.Id;
-                        }
-
-                        if (pipe != null)
-                        {
-                            pipes++;
-                            if (assignPipeRule && !pipeRuleId.IsNull)
+                            DBObject value = transaction.GetObject(
+                                selected.Id,
+                                OpenMode.ForWrite,
+                                false);
+                            CivilPipe pipe = value as CivilPipe;
+                            CivilStructure structure = value as CivilStructure;
+                            if ((pipe == null && structure == null) ||
+                                (pipe != null && pipe.IsReferenceObject) ||
+                                (structure != null && structure.IsReferenceObject))
                             {
-                                pipe.RuleSetStyleId = pipeRuleId;
-                                ruleName = FindName(pipeRules, pipeRuleId);
+                                skipped++;
+                                rows.Add(Row(
+                                    kind,
+                                    partName,
+                                    networkName,
+                                    "<reference/read-only>",
+                                    "Skipped"));
+                                continue;
                             }
-                            if (applyRules)
+
+                            if (surface != null && !surface.Id.IsNull)
                             {
-                                try
+                                if (pipe != null) pipe.RefSurfaceId = surface.Id;
+                                else structure.RefSurfaceId = surface.Id;
+                            }
+
+                            if (pipe != null)
+                            {
+                                pipes++;
+                                if (assignPipeRule && !pipeRuleId.IsNull)
                                 {
-                                    if (pipe.ApplyRules())
+                                    pipe.RuleSetStyleId = pipeRuleId;
+                                    ruleName = FindName(pipeRules, pipeRuleId);
+                                }
+
+                                if (applyRules)
+                                {
+                                    try
                                     {
-                                        rulesApplied++;
-                                        result = "Applied";
+                                        bool applied = pipe.ApplyRules();
+                                        if (applied)
+                                        {
+                                            rulesApplied++;
+                                            result = "Applied";
+                                        }
+                                        else
+                                        {
+                                            failed++;
+                                            result = "Civil 3D returned false";
+                                        }
                                     }
-                                    else
+                                    catch (System.Exception exception)
                                     {
                                         failed++;
-                                        result = "Civil 3D returned false";
+                                        result = "Failed: " + exception.Message;
                                     }
                                 }
-                                catch (System.Exception exception)
+                                else
                                 {
-                                    failed++;
-                                    result = "Failed: " + exception.Message;
+                                    result = "Assigned; Apply Rules not run";
                                 }
                             }
-                            else result = "Assigned; Apply Rules not run";
-                        }
-                        else
-                        {
-                            structures++;
-                            if (assignStructureRule && !structureRuleId.IsNull)
+                            else
                             {
-                                structure.RuleSetStyleId = structureRuleId;
-                                ruleName = FindName(structureRules, structureRuleId);
-                            }
-                            if (applyRules)
-                            {
-                                try
+                                structures++;
+                                if (assignStructureRule && !structureRuleId.IsNull)
                                 {
-                                    if (structure.ApplyRules())
+                                    structure.RuleSetStyleId = structureRuleId;
+                                    ruleName = FindName(
+                                        structureRules,
+                                        structureRuleId);
+                                }
+
+                                if (applyRules)
+                                {
+                                    try
                                     {
-                                        rulesApplied++;
-                                        result = "Applied";
+                                        bool applied = structure.ApplyRules();
+                                        if (applied)
+                                        {
+                                            rulesApplied++;
+                                            result = "Applied";
+                                        }
+                                        else
+                                        {
+                                            failed++;
+                                            result = "Civil 3D returned false";
+                                        }
                                     }
-                                    else
+                                    catch (System.Exception exception)
                                     {
                                         failed++;
-                                        result = "Civil 3D returned false";
+                                        result = "Failed: " + exception.Message;
                                     }
                                 }
-                                catch (System.Exception exception)
+                                else
                                 {
-                                    failed++;
-                                    result = "Failed: " + exception.Message;
+                                    result = "Assigned; Apply Rules not run";
                                 }
                             }
-                            else result = "Assigned; Apply Rules not run";
+
+                            transaction.Commit();
                         }
-                        rows.Add(Row(kind, partName, networkName,
+
+                        rows.Add(Row(
+                            kind,
+                            partName,
+                            networkName,
                             surface == null ? "<current>" : surface.Name,
                             ruleName + " - " + result));
                     }
@@ -243,19 +295,39 @@ namespace CETools.Civil3D
                     {
                         skipped++;
                         failed++;
-                        rows.Add(Row(kind, partName, networkName, "<unchanged>", "Failed: " + exception.Message));
+                        rows.Add(Row(
+                            kind,
+                            partName,
+                            networkName,
+                            "<unchanged>",
+                            "Failed: " + exception.Message));
                     }
                 }
-                transaction.Commit();
+
+                if (applyRules && forceDownhill)
+                {
+                    EnforceRuleProducedDownhillSlopes(
+                        document.Database,
+                        parts.Where(item =>
+                                string.Equals(
+                                    item.Kind,
+                                    "Pipe",
+                                    StringComparison.OrdinalIgnoreCase))
+                            .Select(item => item.Id),
+                        out downhillAdjusted,
+                        out downhillUnresolved);
+                }
             }
 
             try { document.Editor.Regen(); } catch { }
             document.Editor.WriteMessage(
-                "\nCE_SEWERAPPLYRULESMULTI complete. Selected parts={0}; pipes={1}; structures={2}; Civil 3D rules applied={3}; skipped={4}; failed={5}; surface='{6}'.",
+                "\nCE_SEWERAPPLYRULESMULTI complete. Selected parts={0}; pipes={1}; structures={2}; Civil 3D rules applied={3}; downhill pipe grades enforced={4}; downhill unresolved={5}; skipped={6}; failed={7}; surface='{8}'.",
                 parts.Count,
                 pipes,
                 structures,
                 rulesApplied,
+                downhillAdjusted,
+                downhillUnresolved,
                 skipped,
                 failed,
                 surface == null ? "<current per part>" : surface.Name);
@@ -263,7 +335,9 @@ namespace CETools.Civil3D
                 document,
                 "CE Tools - Civil 3D Apply Rules Results",
                 applyRules
-                    ? "Civil 3D ApplyRules() was called for each selected pipe and structure. Review any returned false/failed rows before creating or refreshing profile views."
+                    ? (forceDownhill
+                        ? "Civil 3D ApplyRules() was committed separately for each selected part. The absolute grade produced by the selected pipe rule set was then preserved and forced continuously downhill through each CE-sequenced P#.n branch. Review any failed or unresolved rows before refreshing profile views."
+                        : "Civil 3D ApplyRules() was committed separately for each selected pipe and structure. Review any returned false/failed rows before creating or refreshing profile views.")
                     : "The selected surface and rule-set assignments were saved; Civil 3D ApplyRules() was not run.",
                 new List<string> { "Part", "Name", "Network", "Reference Surface", "Rule / Result" },
                 rows,
@@ -273,6 +347,360 @@ namespace CETools.Civil3D
                 document.Editor.SetImpliedSelection(parts.Select(item => item.Id).ToArray());
                 document.SendStringToExecute("CE_SEWSELECTEDPARTSPROFILEMULTI ", true, false, true);
             }
+        }
+
+        private static void EnforceRuleProducedDownhillSlopes(
+            Database database,
+            IEnumerable<ObjectId> pipeIds,
+            out int adjusted,
+            out int unresolved)
+        {
+            adjusted = 0;
+            unresolved = 0;
+            if (database == null) return;
+
+            List<ObjectId> ids = (pipeIds ?? Enumerable.Empty<ObjectId>())
+                .Where(id => !id.IsNull && !id.IsErased)
+                .Distinct()
+                .ToList();
+            if (ids.Count == 0) return;
+
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                var records = new List<SequencedPipeRecord>();
+                foreach (ObjectId id in ids)
+                {
+                    CivilPipe pipe = null;
+                    try
+                    {
+                        pipe = transaction.GetObject(
+                            id,
+                            OpenMode.ForWrite,
+                            false) as CivilPipe;
+                    }
+                    catch { }
+
+                    if (pipe == null || pipe.IsReferenceObject)
+                    {
+                        unresolved++;
+                        continue;
+                    }
+
+                    Match match = PipeSequencePattern.Match(
+                        pipe.Name ?? string.Empty);
+                    int branch;
+                    int sequence;
+                    if (!match.Success ||
+                        !int.TryParse(
+                            match.Groups["branch"].Value,
+                            NumberStyles.Integer,
+                            CultureInfo.InvariantCulture,
+                            out branch) ||
+                        !int.TryParse(
+                            match.Groups["sequence"].Value,
+                            NumberStyles.Integer,
+                            CultureInfo.InvariantCulture,
+                            out sequence))
+                    {
+                        unresolved++;
+                        continue;
+                    }
+
+                    Point3d start = pipe.StartPoint;
+                    Point3d end = pipe.EndPoint;
+                    double run = PlanRun(start, end);
+                    if (run <= GeometryTolerance)
+                    {
+                        unresolved++;
+                        continue;
+                    }
+
+                    // ApplyRules has already committed. The magnitude here is the
+                    // grade Civil 3D produced from the chosen rule set; only its
+                    // gravity direction and branch continuity are corrected.
+                    double slope = Math.Abs(end.Z - start.Z) / run;
+                    if (double.IsNaN(slope) ||
+                        double.IsInfinity(slope) ||
+                        slope <= GeometryTolerance)
+                    {
+                        unresolved++;
+                        continue;
+                    }
+
+                    records.Add(new SequencedPipeRecord
+                    {
+                        Pipe = pipe,
+                        Branch = branch,
+                        Sequence = sequence,
+                        OriginalStart = start,
+                        OriginalEnd = end,
+                        Run = run,
+                        Slope = slope
+                    });
+                }
+
+                foreach (IGrouping<int, SequencedPipeRecord> branch in
+                    records.GroupBy(item => item.Branch)
+                        .OrderBy(item => item.Key))
+                {
+                    List<SequencedPipeRecord> ordered = branch
+                        .OrderBy(item => item.Sequence)
+                        .ThenBy(item => item.Pipe.ObjectId.Handle.Value)
+                        .ToList();
+
+                    ObjectId previousDownstream = ObjectId.Null;
+                    double previousDownstreamZ = double.NaN;
+                    int previousSequence = int.MinValue;
+
+                    foreach (SequencedPipeRecord record in ordered)
+                    {
+                        bool forward;
+                        if (!ResolveDownstreamOrientation(
+                                record,
+                                transaction,
+                                previousDownstream,
+                                out forward))
+                        {
+                            unresolved++;
+                            previousDownstream = ObjectId.Null;
+                            previousDownstreamZ = double.NaN;
+                            previousSequence = record.Sequence;
+                            continue;
+                        }
+
+                        ObjectId upstreamStructureId = forward
+                            ? record.Pipe.StartStructureId
+                            : record.Pipe.EndStructureId;
+                        ObjectId downstreamStructureId = forward
+                            ? record.Pipe.EndStructureId
+                            : record.Pipe.StartStructureId;
+
+                        Point3d upstream = forward
+                            ? record.OriginalStart
+                            : record.OriginalEnd;
+                        Point3d downstream = forward
+                            ? record.OriginalEnd
+                            : record.OriginalStart;
+
+                        bool continuous =
+                            previousSequence != int.MinValue &&
+                            record.Sequence == previousSequence + 1 &&
+                            !previousDownstream.IsNull &&
+                            upstreamStructureId == previousDownstream &&
+                            !double.IsNaN(previousDownstreamZ);
+
+                        double upstreamZ = continuous
+                            ? previousDownstreamZ
+                            : upstream.Z;
+                        double downstreamZ =
+                            upstreamZ - record.Slope * record.Run;
+
+                        // Never permit a zero/uphill result after the native rule
+                        // pass. This is a gravity network: sequence defines flow.
+                        if (downstreamZ >= upstreamZ - GeometryTolerance)
+                        {
+                            unresolved++;
+                            previousDownstream = ObjectId.Null;
+                            previousDownstreamZ = double.NaN;
+                            previousSequence = record.Sequence;
+                            continue;
+                        }
+
+                        Point3d newUpstream = new Point3d(
+                            upstream.X,
+                            upstream.Y,
+                            upstreamZ);
+                        Point3d newDownstream = new Point3d(
+                            downstream.X,
+                            downstream.Y,
+                            downstreamZ);
+                        Point3d newStart = forward
+                            ? newUpstream
+                            : newDownstream;
+                        Point3d newEnd = forward
+                            ? newDownstream
+                            : newUpstream;
+
+                        try
+                        {
+                            bool startSet = TrySetPipePoint(
+                                record.Pipe,
+                                "StartPoint",
+                                newStart);
+                            bool endSet = TrySetPipePoint(
+                                record.Pipe,
+                                "EndPoint",
+                                newEnd);
+                            if (!startSet || !endSet)
+                                throw new InvalidOperationException(
+                                    "Civil 3D did not accept the corrected pipe endpoint elevations.");
+                            adjusted++;
+                            previousDownstream = downstreamStructureId;
+                            previousDownstreamZ = downstreamZ;
+                        }
+                        catch
+                        {
+                            try
+                            {
+                                TrySetPipePoint(
+                                    record.Pipe,
+                                    "StartPoint",
+                                    record.OriginalStart);
+                                TrySetPipePoint(
+                                    record.Pipe,
+                                    "EndPoint",
+                                    record.OriginalEnd);
+                            }
+                            catch { }
+                            unresolved++;
+                            previousDownstream = ObjectId.Null;
+                            previousDownstreamZ = double.NaN;
+                        }
+
+                        previousSequence = record.Sequence;
+                    }
+                }
+
+                transaction.Commit();
+            }
+        }
+
+        private static bool ResolveDownstreamOrientation(
+            SequencedPipeRecord record,
+            Transaction transaction,
+            ObjectId previousDownstream,
+            out bool forward)
+        {
+            forward = true;
+            if (record == null || record.Pipe == null)
+                return false;
+
+            string expectedUpstream =
+                "MH" +
+                record.Branch.ToString(CultureInfo.InvariantCulture) +
+                "." +
+                record.Sequence.ToString(CultureInfo.InvariantCulture);
+
+            string startName = ReadStructureName(
+                record.Pipe.StartStructureId,
+                transaction);
+            string endName = ReadStructureName(
+                record.Pipe.EndStructureId,
+                transaction);
+
+            if (string.Equals(
+                    startName,
+                    expectedUpstream,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                forward = true;
+                return true;
+            }
+            if (string.Equals(
+                    endName,
+                    expectedUpstream,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                forward = false;
+                return true;
+            }
+
+            if (!previousDownstream.IsNull)
+            {
+                if (record.Pipe.StartStructureId == previousDownstream)
+                {
+                    forward = true;
+                    return true;
+                }
+                if (record.Pipe.EndStructureId == previousDownstream)
+                {
+                    forward = false;
+                    return true;
+                }
+            }
+
+            // Legacy fallback: pipe sequence still identifies the branch, but
+            // structure names may pre-date MH#.n numbering. Preserve the current
+            // lower-end direction rather than deriving direction from the surface.
+            if (Math.Abs(
+                    record.OriginalStart.Z -
+                    record.OriginalEnd.Z) > GeometryTolerance)
+            {
+                forward =
+                    record.OriginalStart.Z >
+                    record.OriginalEnd.Z;
+                return true;
+            }
+
+            return false;
+        }
+
+        private static bool TrySetPipePoint(
+            CivilPipe pipe,
+            string propertyName,
+            Point3d value)
+        {
+            if (pipe == null || string.IsNullOrWhiteSpace(propertyName))
+                return false;
+            try
+            {
+                PropertyInfo property = pipe.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null ||
+                    !property.CanWrite ||
+                    property.PropertyType != typeof(Point3d))
+                    return false;
+                property.SetValue(pipe, value, null);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string ReadStructureName(
+            ObjectId id,
+            Transaction transaction)
+        {
+            if (id.IsNull || transaction == null)
+                return string.Empty;
+            try
+            {
+                CivilStructure structure = transaction.GetObject(
+                    id,
+                    OpenMode.ForRead,
+                    false) as CivilStructure;
+                return structure == null
+                    ? string.Empty
+                    : structure.Name ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static double PlanRun(
+            Point3d first,
+            Point3d second)
+        {
+            double dx = second.X - first.X;
+            double dy = second.Y - first.Y;
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        private sealed class SequencedPipeRecord
+        {
+            internal CivilPipe Pipe;
+            internal int Branch;
+            internal int Sequence;
+            internal Point3d OriginalStart;
+            internal Point3d OriginalEnd;
+            internal double Run;
+            internal double Slope;
         }
 
         private static PromptSelectionResult GetSelection(Editor editor, string message)
