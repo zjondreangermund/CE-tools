@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
 using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -523,8 +524,17 @@ namespace CETools.Civil3D
 
                         try
                         {
-                            record.Pipe.StartPoint = newStart;
-                            record.Pipe.EndPoint = newEnd;
+                            bool startSet = TrySetPipePoint(
+                                record.Pipe,
+                                "StartPoint",
+                                newStart);
+                            bool endSet = TrySetPipePoint(
+                                record.Pipe,
+                                "EndPoint",
+                                newEnd);
+                            if (!startSet || !endSet)
+                                throw new InvalidOperationException(
+                                    "Civil 3D did not accept the corrected pipe endpoint elevations.");
                             adjusted++;
                             previousDownstream = downstreamStructureId;
                             previousDownstreamZ = downstreamZ;
@@ -533,10 +543,14 @@ namespace CETools.Civil3D
                         {
                             try
                             {
-                                record.Pipe.StartPoint =
-                                    record.OriginalStart;
-                                record.Pipe.EndPoint =
-                                    record.OriginalEnd;
+                                TrySetPipePoint(
+                                    record.Pipe,
+                                    "StartPoint",
+                                    record.OriginalStart);
+                                TrySetPipePoint(
+                                    record.Pipe,
+                                    "EndPoint",
+                                    record.OriginalEnd);
                             }
                             catch { }
                             unresolved++;
@@ -620,6 +634,31 @@ namespace CETools.Civil3D
             }
 
             return false;
+        }
+
+        private static bool TrySetPipePoint(
+            CivilPipe pipe,
+            string propertyName,
+            Point3d value)
+        {
+            if (pipe == null || string.IsNullOrWhiteSpace(propertyName))
+                return false;
+            try
+            {
+                PropertyInfo property = pipe.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null ||
+                    !property.CanWrite ||
+                    property.PropertyType != typeof(Point3d))
+                    return false;
+                property.SetValue(pipe, value, null);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static string ReadStructureName(
