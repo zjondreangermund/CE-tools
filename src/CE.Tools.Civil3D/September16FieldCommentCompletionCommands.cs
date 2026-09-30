@@ -35,7 +35,41 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-            August26CadSupplementaryFieldRuntime.CloseOpenMultiple(document, true);
+
+            List<string> siteNames = ReadSiteNames();
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - T-Junction Edge / Centre / Edge Limits",
+                "Add separate T-junction limit feature lines between selected bellmouth returns. The bellmouth returns themselves stay open; CE Tools does not close them into chorded loops.");
+            model.AddChoice(
+                "Site", "01 Output", "Feature-line site",
+                siteNames.Count == 0 ? "<Create CE-JUNCTIONS>" : siteNames[0],
+                "Site for the new T-junction limit feature lines.",
+                siteNames.Count == 0
+                    ? new[] { "<Create CE-JUNCTIONS>" }
+                    : siteNames.Concat(new[] { "<Create CE-JUNCTIONS>" }).Distinct().ToList());
+            model.AddText(
+                "Layer", "01 Output", "Output layer", JunctionLayer,
+                "Layer for the edge-centre-edge T-junction limits.");
+            model.AddPositiveDouble(
+                "PairDistance", "02 Pairing", "Maximum bellmouth pair distance", 20.0,
+                "Selected bellmouth returns are paired by their closest endpoints. Pairs farther apart than this are skipped.");
+            model.AddChoice(
+                "TopSurfaceVertices", "03 Road TOP surfaces", "Assign edge/centre/edge vertices to road TOP surfaces", "Yes",
+                "Select the covering road TOP surfaces and write the two edge elevations plus the protected centre vertex.",
+                new[] { "Yes", "No" });
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+
+            AddTJunctionLimitFeatureLines(
+                document,
+                model.Text("Site"),
+                CleanLayerName(model.Text("Layer")),
+                Math.Max(0.10, model.Double("PairDistance", 20.0)),
+                0.0,
+                0.0,
+                string.Equals(
+                    model.Text("TopSurfaceVertices"),
+                    "Yes",
+                    StringComparison.OrdinalIgnoreCase));
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONBATCH", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -49,8 +83,8 @@ namespace CETools.Civil3D
                 "CE Tools - Batch T/Cross Junction Bellmouths",
                 "Detect every unique crossing between selected road-centre curves, create all T/cross bellmouth returns in one transaction and leave the source geometry unchanged.");
             model.AddChoice("Operation", "01 Selection", "Operation", "Create junctions",
-                "Create bellmouths from selected road centre lines or close multiple selected junction/bellmouth feature lines.",
-                new[] { "Create junctions", "Close selected feature lines" });
+                "Create bellmouths from selected road centre lines, or add separate edge-centre-edge T-junction limit feature lines between existing bellmouth returns. Existing bellmouth feature lines are never closed into loops.",
+                new[] { "Create junctions", "Add T-junction edge-centre-edge feature lines" });
             model.AddPositiveDouble("Radius", "01 Geometry", "Bellmouth radius", 10.0,
                 "Radius used for every generated return.");
             model.AddPositiveDouble("MainHalfWidth", "01 Geometry", "Main-road half-width", 3.7,
@@ -70,9 +104,11 @@ namespace CETools.Civil3D
             model.AddChoice("Output", "04 Output", "Bellmouth geometry", "Polylines",
                 "Create lightweight polylines, native arcs, or normal Civil 3D feature lines.",
                 new[] { "Polylines", "Arcs", "Feature Lines" });
-            model.AddChoice("ClosureFeatureLine", "04 Output", "T-junction endpoint connector", "Feature Line",
-                "Create the magenta connector between the two return endpoints as a Civil 3D feature line, even when returns are polylines or arcs.",
-                new[] { "Feature Line", "Polyline" });
+            model.AddChoice("ClosureFeatureLine", "04 Output", "T-junction limit line", "Feature Line edge-centre-edge",
+                "Creates one separate line between the two side-road edge tangency points with a protected centre vertex. It does NOT close either bellmouth return into a loop.",
+                new[] { "Feature Line edge-centre-edge", "Polyline edge-centre-edge", "None" });
+            model.AddPositiveDouble("TLimitPairDistance", "04 Output", "Existing-bellmouth pairing distance", 20.0,
+                "Used only by Add T-junction edge-centre-edge feature lines. Selected bellmouth returns are paired by their closest endpoints; pairs farther apart than this are skipped.");
             model.AddText("Layer", "04 Output", "Output layer", JunctionLayer,
                 "Layer for all generated bellmouth returns, magenta T-junction closures and junction labels.");
             // Legacy September 16 regression marker retained while extending the choices:
@@ -90,10 +126,17 @@ namespace CETools.Civil3D
                 new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
-            if (string.Equals(model.Text("Operation"), "Close selected feature lines",
+            if (string.Equals(model.Text("Operation"), "Add T-junction edge-centre-edge feature lines",
                     StringComparison.OrdinalIgnoreCase))
             {
-                August26CadSupplementaryFieldRuntime.CloseOpenMultiple(document, true);
+                AddTJunctionLimitFeatureLines(
+                    document,
+                    model.Text("Site"),
+                    CleanLayerName(model.Text("Layer")),
+                    Math.Max(0.10, model.Double("TLimitPairDistance", 20.0)),
+                    Math.Max(0.0, model.Double("WeedDistance", 0.0)),
+                    Math.Max(0.0, model.Double("WeedAngle", 0.0)),
+                    string.Equals(model.Text("TopSurfaceVertices"), "Yes", StringComparison.OrdinalIgnoreCase));
                 return;
             }
 
@@ -122,7 +165,9 @@ namespace CETools.Civil3D
             string outputMode = model.Text("Output");
             bool polylines = string.Equals(outputMode, "Polylines", StringComparison.OrdinalIgnoreCase);
             bool featureLines = string.Equals(outputMode, "Feature Lines", StringComparison.OrdinalIgnoreCase);
-            bool closureFeatureLine = string.Equals(model.Text("ClosureFeatureLine"), "Feature Line", StringComparison.OrdinalIgnoreCase);
+            string tLimitMode = model.Text("ClosureFeatureLine");
+            bool createTLimit = !string.Equals(tLimitMode, "None", StringComparison.OrdinalIgnoreCase);
+            bool closureFeatureLine = string.Equals(tLimitMode, "Feature Line edge-centre-edge", StringComparison.OrdinalIgnoreCase);
             double weedDistance = Math.Max(0.0, model.Double("WeedDistance", 0.0));
             double weedAngle = Math.Max(0.0, model.Double("WeedAngle", 0.0));
             string outputLayerName = CleanLayerName(model.Text("Layer"));
@@ -238,6 +283,7 @@ namespace CETools.Civil3D
                         candidate,
                         definitions,
                         featureLines || (!candidate.IsCross && closureFeatureLine),
+                        createTLimit,
                         featureLineSiteId,
                         weedDistance,
                         weedAngle,
@@ -256,7 +302,7 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction endpoint closures={2}; cross-junction limit lines={3}; failed curve pairs={4}; layer={5}. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
+                "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction edge-centre-edge limits={2}; cross-junction limit lines={3}; failed curve pairs={4}; layer={5}. Bellmouth returns remain open. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
                 junctions, created, tClosures, crossLimitLines, failedPairs, outputLayerName);
             document.Editor.WriteMessage("\nCross-road connectors include midpoint vertices; surface vertices added={0}; unresolved elevations={1}.",
                 surfaceVertices, unresolvedVertices);
@@ -452,6 +498,7 @@ namespace CETools.Civil3D
             JunctionCandidate candidate,
             IList<ReturnDefinition> definitions,
             bool featureLines,
+            bool createTLimit,
             ObjectId siteId,
             double weedDistance,
             double weedAngle,
@@ -473,12 +520,13 @@ namespace CETools.Civil3D
                     if (group.Count == 2) pairs.Add(Tuple.Create(group[0].Start, group[1].Start, "X-LIMIT"));
                 }
             }
-            else
+            else if (createTLimit)
             {
-                // For a T-junction, Start is the side-road/kerb tangency for
-                // both returns. Connecting these two points produces the
-                // transverse magenta line shown across the road mouth; End is
-                // the main-road tangency and would leave the mouth open.
+                // A T-junction gets one SEPARATE edge-centre-edge limit line.
+                // Do not close either curved bellmouth feature line: closing a
+                // return creates the unwanted chord/loop through the bellmouth.
+                // Start is the side-road edge tangency for each return, so the
+                // two Start points are the correct road-edge controls.
                 List<ReturnDefinition> group = definitions
                     .OrderBy(item => item.MainSign)
                     .ToList();
@@ -502,6 +550,181 @@ namespace CETools.Civil3D
                 if (!id.IsNull) created++;
             }
             return created;
+        }
+
+        private static void AddTJunctionLimitFeatureLines(
+            Document document,
+            string requestedSite,
+            string requestedLayer,
+            double maximumPairDistance,
+            double weedDistance,
+            double weedAngle,
+            bool assignTopSurfaceVertices)
+        {
+            if (document == null || document.Database == null) return;
+
+            PromptSelectionResult selection = document.Editor.SelectImplied();
+            if (selection.Status != PromptStatus.OK || selection.Value == null || selection.Value.Count < 2)
+            {
+                selection = document.Editor.GetSelection(new PromptSelectionOptions
+                {
+                    MessageForAdding = "\nSelect all existing T-junction bellmouth feature lines. CE Tools will pair the nearest return endpoints and add separate edge-centre-edge limit feature lines: ",
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
+            }
+            document.Editor.SetImpliedSelection(new ObjectId[0]);
+            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+
+            IList<CivilChoice> topSurfaceChoices = new List<CivilChoice>();
+            if (assignTopSurfaceVertices)
+            {
+                topSurfaceChoices = JunctionSurfaceVertices.PickSurfaces(
+                    document,
+                    CivilApplication.ActiveDocument);
+                if (topSurfaceChoices == null || topSurfaceChoices.Count == 0) return;
+            }
+
+            ObjectId siteId = ResolveSite(requestedSite);
+            int created = 0;
+            int skipped = 0;
+            int surfaceVertices = 0;
+            int unresolvedVertices = 0;
+
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                var returns = new List<TLimitReturn>();
+                foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
+                {
+                    CivilFeatureLine featureLine = null;
+                    try
+                    {
+                        featureLine = transaction.GetObject(
+                            id, OpenMode.ForRead, false) as CivilFeatureLine;
+                    }
+                    catch { }
+                    if (featureLine == null || featureLine.IsReferenceObject) continue;
+
+                    Point3dCollection points;
+                    try { points = featureLine.GetPoints(FeatureLinePointType.AllPoints); }
+                    catch { continue; }
+                    if (points == null || points.Count < 2) continue;
+
+                    returns.Add(new TLimitReturn
+                    {
+                        Id = id,
+                        First = points[0],
+                        Last = points[points.Count - 1]
+                    });
+                }
+
+                if (returns.Count < 2)
+                {
+                    document.Editor.WriteMessage(
+                        "\nNo usable pair of Civil 3D bellmouth feature lines was selected.");
+                    return;
+                }
+
+                ObjectId layerId = EnsureLayer(
+                    document.Database,
+                    transaction,
+                    requestedLayer);
+                EnsureRegApp(document.Database, transaction);
+                BlockTableRecord space = transaction.GetObject(
+                    document.Database.CurrentSpaceId,
+                    OpenMode.ForWrite,
+                    false) as BlockTableRecord;
+                if (space == null) return;
+
+                List<Autodesk.Civil.DatabaseServices.Surface> topSurfaces =
+                    JunctionSurfaceVertices.OpenSurfaces(transaction, topSurfaceChoices);
+
+                var unused = new HashSet<int>(
+                    Enumerable.Range(0, returns.Count));
+                while (unused.Count >= 2)
+                {
+                    int bestA = -1;
+                    int bestB = -1;
+                    Point3d bestStart = Point3d.Origin;
+                    Point3d bestEnd = Point3d.Origin;
+                    double bestDistance = double.MaxValue;
+
+                    int[] indices = unused.ToArray();
+                    for (int aIndex = 0; aIndex < indices.Length - 1; aIndex++)
+                    {
+                        for (int bIndex = aIndex + 1; bIndex < indices.Length; bIndex++)
+                        {
+                            TLimitReturn first = returns[indices[aIndex]];
+                            TLimitReturn second = returns[indices[bIndex]];
+                            foreach (Point3d firstPoint in new[] { first.First, first.Last })
+                            {
+                                foreach (Point3d secondPoint in new[] { second.First, second.Last })
+                                {
+                                    double distance = PlanDistance(firstPoint, secondPoint);
+                                    if (distance >= bestDistance) continue;
+                                    bestDistance = distance;
+                                    bestA = indices[aIndex];
+                                    bestB = indices[bIndex];
+                                    bestStart = firstPoint;
+                                    bestEnd = secondPoint;
+                                }
+                            }
+                        }
+                    }
+
+                    if (bestA < 0 || bestB < 0 || bestDistance > maximumPairDistance)
+                    {
+                        skipped += unused.Count;
+                        break;
+                    }
+
+                    unused.Remove(bestA);
+                    unused.Remove(bestB);
+
+                    Point3d centre = new Point3d(
+                        (bestStart.X + bestEnd.X) * 0.5,
+                        (bestStart.Y + bestEnd.Y) * 0.5,
+                        (bestStart.Z + bestEnd.Z) * 0.5);
+
+                    ObjectId id = CreateClosureEntity(
+                        document.Database,
+                        transaction,
+                        space,
+                        layerId,
+                        bestStart,
+                        bestEnd,
+                        "T-LIMIT",
+                        centre,
+                        true,
+                        siteId,
+                        weedDistance,
+                        weedAngle,
+                        topSurfaces,
+                        ref surfaceVertices,
+                        ref unresolvedVertices);
+                    if (id.IsNull) skipped++;
+                    else created++;
+                }
+
+                foreach (Autodesk.Civil.DatabaseServices.Surface surface in topSurfaces)
+                    surface.Rebuild();
+                transaction.Commit();
+            }
+
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nT-junction edge-centre-edge limit feature lines complete. Created={0}; unpaired/skipped={1}; surface vertices added={2}; unresolved elevations={3}. Existing bellmouth returns were not closed or modified.",
+                created,
+                skipped,
+                surfaceVertices,
+                unresolvedVertices);
+        }
+
+        private static double PlanDistance(Point3d first, Point3d second)
+        {
+            double dx = first.X - second.X;
+            double dy = first.Y - second.Y;
+            return Math.Sqrt(dx * dx + dy * dy);
         }
 
         private static ObjectId CreateClosureEntity(
@@ -745,6 +968,13 @@ namespace CETools.Civil3D
         private static Vector3d Plan(Vector3d value)
         {
             return new Vector3d(value.X, value.Y, 0.0);
+        }
+
+        private sealed class TLimitReturn
+        {
+            internal ObjectId Id;
+            internal Point3d First;
+            internal Point3d Last;
         }
 
         private sealed class JunctionCandidate
