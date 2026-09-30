@@ -29,6 +29,7 @@ namespace CETools.Core.Tests
                 SystemCurveIncreasesWithFlow();
                 PumpDutyPointFindsIntersection();
                 PumpReviewChecksNpshMargin();
+                _tests += SewerGravityGradeTests.Run();
 
                 Console.WriteLine($"CE Tools core tests passed: {_tests}");
                 return 0;

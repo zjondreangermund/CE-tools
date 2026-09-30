@@ -105,6 +105,7 @@ namespace CETools.Civil3D
                         }
                         catch { rejected++; }
                     }
+            SewerManholeConnectionDisplay.EnableForViews(document.Database, views.Select(view => view.Id));
             document.Editor.Regen();
             document.Editor.WriteMessage(
                 "\nCE_SEWSELECTEDPARTSPROFILEMULTI complete. Selected parts={0}; views={1}; drawn={2}; branch mismatches={3}; already present/rejected={4}; misplaced parts removed={5}.",
@@ -251,6 +252,7 @@ namespace CETools.Civil3D
                     }
                 }
             }
+            SewerManholeConnectionDisplay.EnableForViews(document.Database, views.Select(view => view.Id));
             document.Editor.Regen();
             document.Editor.WriteMessage(
                 "\nCE_SEWPROFILEPARTSMULTI complete. Networks={0}; profile views={1}; parts drawn={2}; already present/rejected={3}; branch mismatches={4}; misplaced parts removed={5}. Pipe elevations, slopes, cover and rules were not changed.",

@@ -1373,6 +1373,8 @@ namespace CETools.Civil3D
                         binding.ProfileViewId);
             }
 
+            SewerManholeConnectionDisplay.EnableForViews(database, bindings.Select(binding => binding.ProfileViewId));
+
             foreach (SewerProfileBinding binding in bindings)
             {
                 try

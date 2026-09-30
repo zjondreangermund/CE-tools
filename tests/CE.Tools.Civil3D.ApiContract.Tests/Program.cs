@@ -19,6 +19,7 @@ internal static class Program
     private static void Main()
     {
         ProfileViewNativeEditorTests.Run(Check);
+        SewerPipeConnectionTests.Run(Check);
         var database = new Database();
         var styles = Autodesk.Civil.ApplicationServices.CivilDocument.GetCivilDocument(database).Styles.FeatureLineStyles;
         var basicId = styles.Add("Basic");
