@@ -53,7 +53,9 @@ checks = {
         'CE_ROADSURFACENAMES ',
         'CE_ROADTOPBOTTOMPROFILE ',
         'CE_JUNCTIONENDPOINTSTOTOPSURFACES ',
-        'CE_PIPESLOPETOOUTLET ',
+        # The ribbon uses the newer structure-sequence outlet-flow command.
+        # The slope-reversal command remains checked in Field Completion above.
+        'CE_SEWFLOWTOOUTLET ',
     ],
 }
 
