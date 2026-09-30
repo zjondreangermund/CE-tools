@@ -324,39 +324,56 @@ namespace CETools.Civil3D
             string[] pipeChoices = RuleChoiceNames(pipeRuleSets);
             string[] structureChoices = RuleChoiceNames(structureRuleSets);
 
+            const string gravityMode = "Gravity - constant downhill slope by branch";
+            const string groundMode = "Follow natural ground at specified depth";
+            const string civilMode = "Use Civil 3D rule sets";
+
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Link Sewer Parts to Surface",
-                "Links all selected gravity-network parts to one Civil 3D surface. Pipe and structure rule sets are independent and are applied only after the surface reference is assigned.");
+                "Links selected gravity-network parts to one Civil 3D surface. Gravity mode keeps every sequenced branch falling continuously at the specified slopes even when natural ground rises. Natural-ground mode is a separate option for selected pipes that must remain at a specified cover depth.");
             settings.AddChoice("Surface", "01 Surface", "Reference surface", surfaces[0].Name,
                 "Surface assigned to RefSurfaceId on every selected pipe and structure.",
                 surfaces.Select(item => item.Name).ToArray());
-            settings.AddChoice("RuleMode", "02 Pipe rules", "Rule input", "Enter CE rule values manually",
-                "Manual values adjust invert elevations while preserving the existing pipe/structure RuleSetStyleId assignments; named mode uses installed Civil 3D rule-set styles.",
-                new[] { "Enter CE rule values manually", "Use Civil 3D rule sets" });
-            settings.AddPositiveDouble("MinStartSlope", "02 Pipe rules", "Minimum start-pipe slope (%)", 1.5,
-                "Applied to the first pipe of every sequenced branch (P#.1).");
-            settings.AddPositiveDouble("MinSlope", "02 Pipe rules", "Minimum overall slope (%)", 1.0,
-                "Applied to the remaining pipes in each branch after the starting pipe.");
-            settings.AddPositiveDouble("MaxSlope", "02 Pipe rules", "Maximum slope (%)", 12.0, "Maximum absolute pipe grade.");
-            settings.AddPositiveDouble("MinCover", "02 Pipe rules", "Minimum cover (m)", 0.834, "Minimum cover from the selected surface to the pipe crown.");
-            settings.AddPositiveDouble("MaxCover", "02 Pipe rules", "Maximum cover (m)", 10.0, "Maximum allowed cover; pipe endpoints are clamped into the permitted cover range.");
-            settings.AddPositiveDouble("MinLength", "02 Pipe rules", "Minimum pipe length (m)", 2.440, "Short pipes are reported because structure positions are preserved.");
-            settings.AddPositiveDouble("MaxLength", "02 Pipe rules", "Maximum pipe length (m)", 100.0, "Long pipes are reported because adding structures is a topology edit.");
+            settings.AddChoice("RuleMode", "02 Pipe geometry", "Pipe elevation mode", gravityMode,
+                "Gravity mode never reverses uphill with natural ground. Natural-ground mode follows the surface at the specified crown depth. Civil 3D mode uses the selected installed rule set.",
+                new[] { gravityMode, groundMode, civilMode });
+            settings.AddPositiveDouble("MinStartSlope", "02 Pipe geometry", "Starting pipe slope (%)", 0.65,
+                "Exact downhill slope used for the first pipe of every sequenced branch (P#.1) in Gravity mode.");
+            settings.AddPositiveDouble("MinSlope", "02 Pipe geometry", "Remaining pipe slope (%)", 0.65,
+                "Exact downhill slope used for P#.2 onward in Gravity mode.");
+            settings.AddPositiveDouble("GroundDepth", "02 Pipe geometry", "Natural-ground depth to pipe crown (m)", 0.834,
+                "Used only in Follow natural ground mode. Each selected pipe crown is kept this depth below the selected surface at both endpoints.");
+            settings.AddPositiveDouble("MaxSlope", "02 Pipe geometry", "Maximum review slope (%)", 12.0,
+                "Review limit only. Gravity mode uses the exact specified branch slopes and never changes sign to follow rising ground.");
+            settings.AddPositiveDouble("MinCover", "02 Pipe geometry", "Minimum cover (m)", 0.834,
+                "Cover constraint from the selected surface to the pipe crown in Gravity mode.");
+            settings.AddPositiveDouble("MaxCover", "02 Pipe geometry", "Maximum cover (m)", 10.0,
+                "Cover constraint in Gravity mode. If the exact downhill grade and cover range cannot both be satisfied, CE Tools preserves gravity slope and reports a warning instead of making a pipe run uphill.");
+            settings.AddPositiveDouble("MinLength", "02 Pipe geometry", "Minimum pipe length (m)", 2.440,
+                "Short pipes are reported because structure positions are preserved.");
+            settings.AddPositiveDouble("MaxLength", "02 Pipe geometry", "Maximum pipe length (m)", 100.0,
+                "Long pipes are reported because adding structures is a topology edit.");
             settings.AddChoice("PipeRules", "02 Pipe rules", "Apply pipe rules", "Apply selected rule set",
-                "Apply the selected pipe rule set after assigning the surface.",
+                "Used only in Civil 3D rule-set mode.",
                 new[] { "Apply selected rule set", "Do not apply pipe rules" });
             settings.AddChoice("PipeRuleSet", "02 Pipe rules", "Pipe rule set", pipeChoices[0],
                 "Named Civil 3D Pipe Rule Set for selected pipes.", pipeChoices);
             settings.AddChoice("StructureRules", "03 Structure rules", "Apply structure rules", "Apply selected rule set",
-                "Apply the selected structure rule set after assigning the surface.",
+                "Civil 3D structure rules are used only in Civil 3D rule-set mode. In the two CE geometry modes, rims/sumps are updated without changing the pipe grades.",
                 new[] { "Apply selected rule set", "Do not apply structure rules" });
             settings.AddChoice("StructureRuleSet", "03 Structure rules", "Structure rule set", structureChoices[0],
                 "Named Civil 3D Structure Rule Set for selected structures.", structureChoices);
-            settings.AddDouble("SumpDepth", "03 Structure rules", "Sump depth (m)", 0.500, "Manual depth below the lowest connected pipe invert; absolute elevation control is used when Civil 3D exposes it.");
-            settings.AddChoice("DropHandling", "03 Structure rules", "Drop handling", "Apply drop corrections", "Apply the minimum/maximum drop rule at each manhole where the endpoint cover range still permits a correction.", new[] { "Apply drop corrections", "Report only" });
-            settings.AddChoice("DropReference", "03 Structure rules", "Drop reference location", "Crown", "Reference for structure drop checks and corrections.", new[] { "Crown", "Invert" });
-            settings.AddPositiveDouble("DropValue", "03 Structure rules", "Minimum drop value (m)", 0.050, "Minimum desired drop through a structure.");
-            settings.AddPositiveDouble("MaxDrop", "03 Structure rules", "Maximum drop value (m)", 3.0, "Maximum allowed drop; larger values are reported.");
+            settings.AddDouble("SumpDepth", "03 Structure rules", "Sump depth (m)", 0.500,
+                "Manual depth below the lowest connected pipe invert; absolute elevation control is used when Civil 3D exposes it.");
+            settings.AddChoice("DropHandling", "03 Structure rules", "Drop handling", "Report only",
+                "In CE gravity/ground-follow modes pipe endpoint grades are preserved. Drop conditions are reported, not corrected by moving pipe ends.",
+                new[] { "Report only", "Apply drop corrections" });
+            settings.AddChoice("DropReference", "03 Structure rules", "Drop reference location", "Crown",
+                "Reference for structure drop checks and corrections.", new[] { "Crown", "Invert" });
+            settings.AddPositiveDouble("DropValue", "03 Structure rules", "Minimum drop value (m)", 0.050,
+                "Minimum desired drop through a structure.");
+            settings.AddPositiveDouble("MaxDrop", "03 Structure rules", "Maximum drop value (m)", 3.0,
+                "Maximum allowed drop; larger values are reported.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             NamedId surface = FindNamed(surfaces, settings.Text("Surface"));
@@ -365,7 +382,10 @@ namespace CETools.Civil3D
             ObjectId structureRuleSetId = ResolveRuleChoice(structureRuleSets, settings.Text("StructureRuleSet"));
             bool applyPipeRules = string.Equals(settings.Text("PipeRules"), "Apply selected rule set", StringComparison.OrdinalIgnoreCase);
             bool applyStructureRules = string.Equals(settings.Text("StructureRules"), "Apply selected rule set", StringComparison.OrdinalIgnoreCase);
-            bool manualRules = string.Equals(settings.Text("RuleMode"), "Enter CE rule values manually", StringComparison.OrdinalIgnoreCase);
+            string mode = settings.Text("RuleMode");
+            bool gravity = string.Equals(mode, gravityMode, StringComparison.OrdinalIgnoreCase);
+            bool followGround = string.Equals(mode, groundMode, StringComparison.OrdinalIgnoreCase);
+            bool civilRules = string.Equals(mode, civilMode, StringComparison.OrdinalIgnoreCase);
 
             int pipes = 0;
             int structures = 0;
@@ -374,10 +394,19 @@ namespace CETools.Civil3D
             int manualAdjusted = 0;
             int manualWarnings = 0;
             int skipped = 0;
+
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
                 CivilSurface selectedSurface = transaction.GetObject(surface.Id, OpenMode.ForRead, false) as CivilSurface;
+                if (selectedSurface == null)
+                {
+                    editor.WriteMessage("\nCE_SEWLINKSURFACE: selected Civil 3D surface is unavailable.");
+                    return;
+                }
+
+                var selectedPipes = new List<CivilPipe>();
+                var selectedStructures = new List<CivilStructure>();
                 foreach (ObjectId id in partIds)
                 {
                     try
@@ -388,26 +417,14 @@ namespace CETools.Civil3D
                         CivilPipe pipe = part as CivilPipe;
                         if (pipe != null)
                         {
-                            if (manualRules)
-                                ApplyManualPipeRules(pipe, selectedSurface, settings, ref manualAdjusted, ref manualWarnings);
-                            else
-                            {
-                                if (!pipeRuleSetId.IsNull) pipe.RuleSetStyleId = pipeRuleSetId;
-                                if (applyPipeRules) { try { if (pipe.ApplyRules()) pipeRules++; } catch { } }
-                            }
+                            selectedPipes.Add(pipe);
                             pipes++;
                             continue;
                         }
                         CivilStructure structure = part as CivilStructure;
                         if (structure != null)
                         {
-                            if (manualRules)
-                                ApplyManualStructureRules(structure, transaction, selectedSurface, settings, ref manualAdjusted, ref manualWarnings);
-                            else
-                            {
-                                if (!structureRuleSetId.IsNull) structure.RuleSetStyleId = structureRuleSetId;
-                                if (applyStructureRules) { try { if (structure.ApplyRules()) structureRules++; } catch { } }
-                            }
+                            selectedStructures.Add(structure);
                             structures++;
                             continue;
                         }
@@ -415,13 +432,79 @@ namespace CETools.Civil3D
                     }
                     catch { skipped++; }
                 }
+
+                if (gravity)
+                {
+                    ApplyConstantGravitySlopes(
+                        selectedPipes,
+                        selectedSurface,
+                        transaction,
+                        settings,
+                        ref manualAdjusted,
+                        ref manualWarnings);
+                }
+                else if (followGround)
+                {
+                    foreach (CivilPipe pipe in selectedPipes)
+                        ApplyNaturalGroundDepth(
+                            pipe,
+                            selectedSurface,
+                            settings,
+                            ref manualAdjusted,
+                            ref manualWarnings);
+                }
+                else if (civilRules)
+                {
+                    foreach (CivilPipe pipe in selectedPipes)
+                    {
+                        if (!pipeRuleSetId.IsNull) pipe.RuleSetStyleId = pipeRuleSetId;
+                        if (applyPipeRules)
+                        {
+                            try { if (pipe.ApplyRules()) pipeRules++; }
+                            catch { manualWarnings++; }
+                        }
+                    }
+                }
+
+                foreach (CivilStructure structure in selectedStructures)
+                {
+                    if (civilRules)
+                    {
+                        if (!structureRuleSetId.IsNull) structure.RuleSetStyleId = structureRuleSetId;
+                        if (applyStructureRules)
+                        {
+                            try { if (structure.ApplyRules()) structureRules++; }
+                            catch { manualWarnings++; }
+                        }
+                    }
+                    else
+                    {
+                        // Update rim/sump and report drop/cover issues only.
+                        // Preserve the pipe endpoint elevations established above.
+                        ApplyManualStructureRules(
+                            structure,
+                            transaction,
+                            selectedSurface,
+                            settings,
+                            ref manualAdjusted,
+                            ref manualWarnings,
+                            true);
+                    }
+                }
+
                 transaction.Commit();
             }
 
             editor.Regen();
             editor.WriteMessage(
-                "\nCE_SEWLINKSURFACE complete. Surface='{0}'; pipes linked={1}; structures linked={2}; pipe rules applied={3}; structure rules applied={4}; manual adjustments={5}; manual review warnings={6}; skipped={7}.",
-                surface.Name, pipes, structures, pipeRules, structureRules, manualAdjusted, manualWarnings, skipped);
+                "\nCE_SEWLINKSURFACE complete. Mode='{0}'; surface='{1}'; pipes linked={2}; structures linked={3}; pipe rules applied={4}; structure rules applied={5}; geometry/structure adjustments={6}; review warnings={7}; skipped={8}.",
+                mode, surface.Name, pipes, structures, pipeRules, structureRules, manualAdjusted, manualWarnings, skipped);
+            if (gravity)
+                editor.WriteMessage(
+                    "\nGravity mode keeps every recognised P#.n branch continuously downhill at the exact specified slope. Rising natural ground can increase cover but cannot reverse a pipe uphill.");
+            else if (followGround)
+                editor.WriteMessage(
+                    "\nNatural-ground mode follows the selected surface at the specified depth to pipe crown; uphill ground is therefore allowed in this mode by design.");
         }
 
         internal static void CreateBranchAlignmentsSafe(Document document, CivilDocument civilDocument)
