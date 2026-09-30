@@ -122,12 +122,22 @@ namespace CETools.Civil3D
                     Alignment alignment = read.GetObject(view.AlignmentId, OpenMode.ForRead, false) as Alignment;
                     DBObject part = read.GetObject(partId, OpenMode.ForRead, false);
                     if (alignment == null || part == null) return false;
+
+                    // Per-part reference alignment is authoritative once the sewer
+                    // branch references have been assigned. This prevents a Branch-2
+                    // part from being drawn into Branch-1 merely because its plan
+                    // geometry happens to sit close to both alignments at a junction.
+                    Part civilPart = part as Part;
+                    if (civilPart != null &&
+                        !civilPart.RefAlignmentId.IsNull &&
+                        !civilPart.RefAlignmentId.IsErased)
+                        return civilPart.RefAlignmentId == view.AlignmentId;
+
                     var pipe = part as Pipe;
                     if (pipe != null)
                     {
-                        // A network's reference alignment can cover several branches.
-                        // Both pipe ends must follow this view's actual branch;
-                        // a midpoint alone can accidentally match a crossing road.
+                        // Legacy/fallback geometry match for drawings that have not
+                        // yet run automatic branch reference assignment.
                         return OnBranch(alignment, pipe.StartPoint) &&
                                OnBranch(alignment, pipe.EndPoint);
                     }
