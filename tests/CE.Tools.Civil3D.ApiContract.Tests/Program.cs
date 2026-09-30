@@ -47,6 +47,24 @@ internal static class Program
         catch (ArgumentOutOfRangeException) { badColour = true; }
         Check(badColour, "Reject invalid explicit colour indices.");
 
+        styles.Add("Road1");
+        styles.Add("Road 1");
+        var compactLine = new Civil.FeatureLine { StyleName = "Road1" };
+        var spacedLine = new Civil.FeatureLine { StyleName = "Road 1" };
+        var compactStyle = FeatureLineColourService.Prepare(database, compactLine, 2, transaction);
+        var spacedStyle = FeatureLineColourService.Prepare(database, spacedLine, 2, transaction);
+        Check(!compactStyle.Equals(spacedStyle), "Sanitizing source names must not merge unrelated styles.");
+        FeatureLineColourService.Assign(spacedLine, spacedStyle, transaction);
+        var recolour = FeatureLineColourService.Prepare(database, spacedLine, 4, transaction);
+        FeatureLineColourService.Assign(spacedLine, recolour, transaction);
+        Check(FeatureLineColourService.Prepare(database, spacedLine, 2, transaction).Equals(spacedStyle), "Hashed names must remain stable when recoloured.");
+        string common = new string('A', 55);
+        styles.Add(common + "One");
+        styles.Add(common + "Two");
+        var longOne = FeatureLineColourService.Prepare(database, new Civil.FeatureLine { StyleName = common + "One" }, 2, transaction);
+        var longTwo = FeatureLineColourService.Prepare(database, new Civil.FeatureLine { StyleName = common + "Two" }, 2, transaction);
+        Check(!longOne.Equals(longTwo), "Truncated names must preserve separate source styles.");
+
         // Negative control: modifying a retrieved band collection must NOT save
         // anything. This is the behaviour the old implementation overlooked.
         var view = MakeView();

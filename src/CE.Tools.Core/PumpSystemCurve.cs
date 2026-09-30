@@ -97,9 +97,19 @@ namespace CETools.Core
                     (firstDifference < 0.0 && secondDifference < 0.0))
                     continue;
 
-                double fraction = firstDifference /
-                    (firstDifference - secondDifference);
-                fraction = Math.Max(0.0, Math.Min(1.0, fraction));
+                // Pipe losses are nonlinear. Solve against the actual system curve,
+                // rather than interpolating the residual only at segment endpoints.
+                double lower = 0.0, upper = 1.0, fraction = 0.5;
+                for (int iteration = 0; iteration < 80; iteration++)
+                {
+                    fraction = (lower + upper) / 2.0;
+                    double trialFlow = Interpolate(first.FlowLitresPerSecond, second.FlowLitresPerSecond, fraction);
+                    double residual = Interpolate(first.HeadMetres, second.HeadMetres, fraction) -
+                        SystemHeadMetres(trialFlow, definition);
+                    if (Math.Abs(residual) <= 1e-12) break;
+                    if ((residual > 0.0) == (firstDifference > 0.0)) lower = fraction;
+                    else upper = fraction;
+                }
                 double flow = Interpolate(
                     first.FlowLitresPerSecond,
                     second.FlowLitresPerSecond,
@@ -125,6 +135,10 @@ namespace CETools.Core
             double? npshAvailableMetres,
             double? minimumNpshMarginMetres)
         {
+            if (npshAvailableMetres.HasValue && (!IsFinite(npshAvailableMetres.Value) || npshAvailableMetres.Value < 0.0))
+                throw new ArgumentOutOfRangeException(nameof(npshAvailableMetres));
+            if (minimumNpshMarginMetres.HasValue && (!IsFinite(minimumNpshMarginMetres.Value) || minimumNpshMarginMetres.Value < 0.0))
+                throw new ArgumentOutOfRangeException(nameof(minimumNpshMarginMetres));
             PumpDutyPoint duty = FindDutyPoint(pumpCurve, definition);
             if (duty == null)
             {
@@ -147,7 +161,7 @@ namespace CETools.Core
                     ? " The entered NPSH available meets the screening margin."
                     : " The entered NPSH available does not meet the screening margin.";
             }
-            else if (npshAvailableMetres.HasValue || duty.NpshRequiredMetres.HasValue)
+            else
             {
                 npshPass = false;
                 message += " NPSH screening is incomplete because either NPSHa or NPSHr is missing.";

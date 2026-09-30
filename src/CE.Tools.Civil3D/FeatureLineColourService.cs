@@ -1,6 +1,8 @@
 using System;
 using System.Globalization;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using Autodesk.AutoCAD.Colors;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.Civil.ApplicationServices;
@@ -40,7 +42,16 @@ namespace CETools.Civil3D
             string safeBase = new string(baseName.Where(character =>
                 char.IsLetterOrDigit(character) || character == '-' || character == '_').ToArray());
             if (string.IsNullOrWhiteSpace(safeBase)) safeBase = "Basic";
-            if (safeBase.Length > 50) safeBase = safeBase.Substring(0, 50);
+            // Preserve distinct source styles when sanitizing or truncating their names.
+            if (safeBase != baseName || safeBase.Length > 50)
+            {
+                using (SHA256 hash = SHA256.Create())
+                {
+                    string suffix = BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(baseName)))
+                        .Replace("-", "").Substring(0, 12);
+                    safeBase = safeBase.Substring(0, Math.Min(37, safeBase.Length)) + "-" + suffix;
+                }
+            }
             string targetName = "CE-FL-ACI-" + colourIndex.ToString(CultureInfo.InvariantCulture) + "-" + safeBase;
             ObjectId styleId = styles.Contains(targetName) ? styles[targetName] :
                 current == null ? styles.Add(targetName) : current.CopyAsSibling(targetName);
