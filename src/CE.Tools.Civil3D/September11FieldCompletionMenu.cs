@@ -164,7 +164,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Pipe / Structure Profile Labels - Multiple Views",
                         "CE_SEWPROFILELABELSTYLESMULTI",
-                        "Select multiple profile views and choose Civil 3D pipe and structure profile label styles. Restyle existing labels and optionally create missing labels on drawn parts; slopes, cover and rules remain unchanged.",
+                        "Select multiple profile views and choose Civil 3D pipe and structure profile label styles. Missing labels are checked per profile view so a structure label in one view no longer suppresses the same structure's label in another.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
                         "Draw Multiple Sewer Networks in Profile Views",
@@ -245,14 +245,14 @@ namespace CETools.Civil3D
                         "Paste generated junction closure endpoints into every covering road TOP surface.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
-                        "Batch T/Cross Junction Bellmouths and T-Closures",
+                        "Batch T/Cross Junction Bellmouths and T-Limits",
                         "CE_ROADJUNCTIONBULK",
-                        "Create all T/cross bellmouth returns in one transaction, close T-junctions with the magenta closure line and write the configured output layer.",
+                        "Create all T/cross bellmouth returns in one transaction and add separate edge-centre-edge T-junction limit lines without closing the curved bellmouth returns.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Batch T/Cross Bellmouths - Feature-Line Output",
                         "CE_ROADJUNCTIONBATCH",
-                        "Create T/cross returns and connect T-junction endpoints with a magenta feature line.",
+                        "Create T/cross returns and optionally add a separate T-junction edge-centre-edge feature line with a protected centre vertex. Bellmouth returns remain open.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Convert Multiple Bellmouths to Arcs",
@@ -535,9 +535,9 @@ namespace CETools.Civil3D
                         "Select and import a complete installed common assembly with its subassemblies.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
-                        "Assign Pipe Reference Alignment",
+                        "Assign Sewer Reference Alignments by Branch",
                         "CE_PIPEALIGNMENTMULTI",
-                        "Set the reference alignment on selected pipes and structures, including existing parts with a blank reference.",
+                        "Automatically expand selected sewer parts to the entire network and assign P1.x/MH1.x to Branch-1, P2.x/MH2.x to Branch-2, and so on. Manual selected-part assignment remains available.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Import Band Set / Repair Road Band Sources",
