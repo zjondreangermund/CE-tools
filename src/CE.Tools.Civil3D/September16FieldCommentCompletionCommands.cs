@@ -35,7 +35,41 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-            August26CadSupplementaryFieldRuntime.CloseOpenMultiple(document, true);
+
+            List<string> siteNames = ReadSiteNames();
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - T-Junction Edge / Centre / Edge Limits",
+                "Add separate T-junction limit feature lines between selected bellmouth returns. The bellmouth returns themselves stay open; CE Tools does not close them into chorded loops.");
+            model.AddChoice(
+                "Site", "01 Output", "Feature-line site",
+                siteNames.Count == 0 ? "<Create CE-JUNCTIONS>" : siteNames[0],
+                "Site for the new T-junction limit feature lines.",
+                siteNames.Count == 0
+                    ? new[] { "<Create CE-JUNCTIONS>" }
+                    : siteNames.Concat(new[] { "<Create CE-JUNCTIONS>" }).Distinct().ToList());
+            model.AddText(
+                "Layer", "01 Output", "Output layer", JunctionLayer,
+                "Layer for the edge-centre-edge T-junction limits.");
+            model.AddPositiveDouble(
+                "PairDistance", "02 Pairing", "Maximum bellmouth pair distance", 20.0,
+                "Selected bellmouth returns are paired by their closest endpoints. Pairs farther apart than this are skipped.");
+            model.AddChoice(
+                "TopSurfaceVertices", "03 Road TOP surfaces", "Assign edge/centre/edge vertices to road TOP surfaces", "Yes",
+                "Select the covering road TOP surfaces and write the two edge elevations plus the protected centre vertex.",
+                new[] { "Yes", "No" });
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+
+            AddTJunctionLimitFeatureLines(
+                document,
+                model.Text("Site"),
+                CleanLayerName(model.Text("Layer")),
+                Math.Max(0.10, model.Double("PairDistance", 20.0)),
+                0.0,
+                0.0,
+                string.Equals(
+                    model.Text("TopSurfaceVertices"),
+                    "Yes",
+                    StringComparison.OrdinalIgnoreCase));
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONBATCH", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -268,7 +302,7 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction endpoint closures={2}; cross-junction limit lines={3}; failed curve pairs={4}; layer={5}. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
+                "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction edge-centre-edge limits={2}; cross-junction limit lines={3}; failed curve pairs={4}; layer={5}. Bellmouth returns remain open. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
                 junctions, created, tClosures, crossLimitLines, failedPairs, outputLayerName);
             document.Editor.WriteMessage("\nCross-road connectors include midpoint vertices; surface vertices added={0}; unresolved elevations={1}.",
                 surfaceVertices, unresolvedVertices);
