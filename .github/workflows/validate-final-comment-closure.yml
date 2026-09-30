@@ -46,6 +46,7 @@ jobs:
           $bands = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\SewerLongSectionBandCommands.cs'))
           $bandPersistence = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\ProfileViewBandPersistence.cs'))
           $profileMatch = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\ProfileViewPropertyMatchCommands.cs'))
+          $profileEditor = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\ProfileViewNativeEditor.cs'))
           $flow = [System.IO.File]::ReadAllText((Join-Path $root 'src\CE.Tools.Civil3D\SewerFlowDirectionCommands.cs'))
           foreach ($marker in @('UniversalDynamicRefreshManager.Initialize();', 'RoadAlignmentNameSync.Initialize();')) {
             if (-not $plugin.Contains($marker)) { throw "Current startup integration is missing: $marker" }
@@ -84,11 +85,14 @@ jobs:
 
           foreach ($marker in @(
             '"CE_PROFILEVIEWEDITMATCH"',
-            '"_.EditGraphProperties',
+            'ProfileViewNativeEditor.EditAndApply(',
             'CE_PROFILEVIEWEDITMATCHAPPLY',
             'ReadImpliedProfileViews(document)',
             'CopyBands(')) {
             if (-not $profileMatch.Contains($marker)) { throw "Edit-once/apply-all regression: $marker" }
+          }
+          if (-not $profileEditor.Contains('document.Editor.Command("_.EditGraphProperties", sourceId);')) {
+            throw 'Native profile-view editing must supply the source graph explicitly.'
           }
 
           foreach ($marker in @(
