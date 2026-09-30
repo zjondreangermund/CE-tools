@@ -18,6 +18,9 @@ string[] sourceFiles = Directory.GetFiles(
     SearchOption.AllDirectories);
 var parseOptions = new CSharpParseOptions(LanguageVersion.Latest);
 var failures = new List<string>();
+var trees = new List<SyntaxTree>();
+
+UsingAliasValidation.RunRegressionChecks();
 
 foreach (string sourceFile in sourceFiles.OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
 {
@@ -26,6 +29,7 @@ foreach (string sourceFile in sourceFiles.OrderBy(path => path, StringComparer.O
         text,
         parseOptions,
         path: sourceFile);
+    trees.Add(tree);
 
     foreach (Diagnostic diagnostic in tree.GetDiagnostics()
         .Where(item => item.Severity == DiagnosticSeverity.Error))
@@ -38,13 +42,22 @@ foreach (string sourceFile in sourceFiles.OrderBy(path => path, StringComparer.O
     }
 }
 
+// Parsing each file cannot catch a local alias colliding with a global alias
+// declared in another source file (CS1537). Bind the alias headers together.
+foreach (Diagnostic diagnostic in UsingAliasValidation.FindConflicts(trees))
+{
+    string relative = Path.GetRelativePath(repositoryRoot, diagnostic.Location.SourceTree!.FilePath);
+    failures.Add($"{relative}: {diagnostic.Id}: {diagnostic.GetMessage()}");
+}
+
 if (failures.Count > 0)
 {
-    Console.Error.WriteLine("Civil 3D C# syntax validation failed:");
+    Console.Error.WriteLine("Civil 3D C# syntax/shared-alias validation failed:");
     foreach (string failure in failures)
         Console.Error.WriteLine($"- {failure}");
     return 1;
 }
 
 Console.WriteLine($"Civil 3D C# syntax validation passed for {sourceFiles.Length} source files.");
+Console.WriteLine("Civil 3D shared-alias compiler validation passed (including 4 regression cases).");
 return 0;
