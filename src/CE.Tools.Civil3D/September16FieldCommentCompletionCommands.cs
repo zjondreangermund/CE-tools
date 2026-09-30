@@ -606,7 +606,7 @@ namespace CETools.Civil3D
                     if (featureLine == null || featureLine.IsReferenceObject) continue;
 
                     Point3dCollection points;
-                    try { points = featureLine.GetPoints(FeatureLinePointType.AllPoints); }
+                    try { points = featureLine.GetPoints(Autodesk.Civil.FeatureLinePointType.AllPoints); }
                     catch { continue; }
                     if (points == null || points.Count < 2) continue;
 
