@@ -11,7 +11,7 @@ for marker in [
     '"Keep sewer pipe slopes downhill by branch"',
     "EnforceRuleProducedDownhillSlopes(",
     "PipeSequencePattern",
-    "ApplyRules() is committed separately for each selected part",
+    "Civil 3D ApplyRules() was committed separately for each selected part",
     "record.Slope * record.Run",
     "downstreamZ =",
     "upstreamZ - record.Slope * record.Run",
