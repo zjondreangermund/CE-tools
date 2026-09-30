@@ -46,7 +46,7 @@ for marker in [
 for marker in [
     "ResolveSequencedBranchStart(",
     'string expectedStartName = "MH"',
-    "firstPipe.SequenceNumber",
+    ".OrderBy(record => record.SequenceNumber)",
     "Run CE_SEWSEQ before CE_SEWALIGN",
     "alignment starts at sequenced start manhole",
 ]:
