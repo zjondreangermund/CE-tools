@@ -18,8 +18,8 @@ namespace CETools.Civil3D
     new DisciplineWorkflowAction("3. Bottom of Kerb","CE_FLRELCREATE","Select one or more source feature lines and create bottom-of-kerb controls.","02 Kerb and Gutter"),
     new DisciplineWorkflowAction("4. Top of Kerb","CE_FLRELCREATE","Select one or more source feature lines and create top-of-kerb controls.","02 Kerb and Gutter"),
     new DisciplineWorkflowAction("5. Sidewalk / Shoulder Edge","CE_FLRELCREATE","Select one or more source feature lines and create outer sidewalk or shoulder controls.","03 Outside"),
-    new DisciplineWorkflowAction("6. Grading & Slopes","CE_GRADINGSLOPETOOLS","Choose grading, cut/fill daylight, constant-grade and slope/crossfall tools from one dropdown workflow.","03 Outside"),
-    new DisciplineWorkflowAction("7. Daylight Cut/Fill to Selected Surface","CE_PLATFORMGRADETOSURFACE","Select multiple source feature lines and a Civil 3D surface, then apply separate cut and fill daylight slopes.","03 Outside"),
+    new DisciplineWorkflowAction("6. Junction Bellmouths - Grade to Surface","CE_JUNCTIONGRADETOSURFACE","Grade selected bellmouth feature lines to the selected surface in native workflow order: grading side, Grade to Surface criteria, Cut format/value, then Fill format/value. Cut and Fill can each use Grade (%) or Slope (H:V).","03 Outside"),
+    new DisciplineWorkflowAction("7. Grading & Slopes","CE_GRADINGSLOPETOOLS","Open the wider grading, cut/fill daylight, constant-grade and slope/crossfall toolbox after the bellmouth grading is complete.","03 Outside"),
     new DisciplineWorkflowAction("8. Join / Close Stepped Strings","CE_FLSTEPJOIN","Join pieces, close gaps and add endpoint vertices.","04 Close and Infill"),
     new DisciplineWorkflowAction("9. Junction Surface / Infill","CE_SURFTOOLS","Create or review the dedicated junction surface and add closed controls.","04 Close and Infill"),
     new DisciplineWorkflowAction("10. Refresh Linked Model Data","CE_REFRESHALL","Refresh dependent model data after the fallback.","05 Refresh")

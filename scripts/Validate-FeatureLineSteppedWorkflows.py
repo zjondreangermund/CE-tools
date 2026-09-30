@@ -25,6 +25,7 @@ construction = read("FeatureLineConstructionCommands.cs")
 ribbon = read("PluginEntry.cs")
 refresh = read("CommentPresentationCommands.cs")
 junction = read("August13JunctionFallbackCommands.cs")
+grading = read("August23PlatformDynamicGradingCommands.cs")
 
 required = {
     "FeatureLineRelativeCommands.cs": (
@@ -68,7 +69,20 @@ required = {
     "August13JunctionFallbackCommands.cs": (
         '"CE_FLRELCREATE"',
         '"CE_GRADINGSLOPETOOLS"',
+        '"CE_JUNCTIONGRADETOSURFACE"',
+    ),
+    "August23PlatformDynamicGradingCommands.cs": (
         '"CE_PLATFORMGRADETOSURFACE"',
+        '"CE_JUNCTIONGRADETOSURFACE"',
+        '"Grade to Surface"',
+        '"CutFormat"',
+        '"FillFormat"',
+        '"Slope (H:V)"',
+        '"Grade (%)"',
+        '"CutSlope"',
+        '"CutGrade"',
+        '"FillSlope"',
+        '"FillGrade"',
     ),
 }
 
@@ -79,6 +93,7 @@ texts = {
     "PluginEntry.cs": ribbon,
     "CommentPresentationCommands.cs": refresh,
     "August13JunctionFallbackCommands.cs": junction,
+    "August23PlatformDynamicGradingCommands.cs": grading,
 }
 
 for name, markers in required.items():
@@ -106,6 +121,12 @@ if "Confirm(editor" in update_body:
 
 if '"CE_FLOFFSET"' in junction:
     errors.append("Junction stepped-offset fallback must not route back to the legacy single-source CE_FLOFFSET command")
+if '"CE_PLATFORMGRADETOSURFACE"' in junction:
+    errors.append("Junction fallback must route through the ordered CE_JUNCTIONGRADETOSURFACE workflow")
+if '100.0 / Math.Max(0.001, Math.Abs(settings.Double("CutGrade", 50.0)))' not in grading:
+    errors.append("Junction grade-to-surface must convert cut Grade (%) to the equivalent H:V daylight ratio")
+if '100.0 / Math.Max(0.001, Math.Abs(settings.Double("FillGrade", 50.0)))' not in grading:
+    errors.append("Junction grade-to-surface must convert fill Grade (%) to the equivalent H:V daylight ratio")
 if 'settings.Text("VerticalMode")' not in create_body or 'settings.Text("SlopeDirection")' not in create_body:
     errors.append("Linked stepped offsets must calculate vertical change from the selected elevation/grade/slope mode")
 if 'ResolveNamedOffsetSign' not in create_body:

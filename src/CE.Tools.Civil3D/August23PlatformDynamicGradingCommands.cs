@@ -141,6 +141,7 @@ namespace CETools.Civil3D
         }
 
         [CommandMethod("CE_TOOLS", "CE_PLATFORMGRADETOSURFACE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        [CommandMethod("CE_TOOLS", "CE_JUNCTIONGRADETOSURFACE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void GradeToSurface()
         {
             PlatformDynamicRefreshManager.EnsureInitialized();
@@ -155,28 +156,72 @@ namespace CETools.Civil3D
             }
 
             var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Grade Platforms to Surface",
-                "Select multiple source feature lines and a Civil 3D target surface. Set separate cut and fill daylight slopes; the appropriate slope applies at each source point. The target surface is sampled read-only.");
-            settings.AddChoice("Surface", "Target", "Target surface", surfaces[0].Name, "Natural ground / controlling target surface.", surfaces.Select(item => item.Name));
-            settings.AddPositiveDouble("CutRatio", "Slopes", "Cut slope H:V", 2.0, "Example: 2.0 means 2H:1V when the target is above the platform edge.");
-            settings.AddPositiveDouble("FillRatio", "Slopes", "Fill slope H:V", 2.0, "Example: 2.0 means 2H:1V when the target is below the platform edge.");
-            settings.AddPositiveDouble("MaxDistance", "Search", "Maximum daylight search", 50.0, "Maximum horizontal distance searched from every source point.");
-            settings.AddPositiveDouble("SearchStep", "Search", "Surface search step", 0.5, "Horizontal search increment before the final intersection is bisected.");
-            settings.AddChoice("Side", "Direction", "Projection side", "Auto", "Closed feature lines can project inside or outside; for open lines Outside is Left and Inside is Right.", new[] { "Auto", "Outside", "Inside", "Left", "Right" });
-            settings.AddChoice("Infill", "Grading", "Native grading infill", "Yes", "Attempt a native Civil 3D grading group/infill for closed platforms. Daylight geometry remains valid if the host infill API rejects the region.", new[] { "Yes", "No" });
+                "CE Tools - Junction / Feature-Line Grade to Surface",
+                "Grade selected junction bellmouth or other feature lines to a Civil 3D surface in the same order as the native Grade to Surface workflow: target, grading side, criteria, cut format/value, then fill format/value.");
+            settings.AddChoice(
+                "Surface", "01 Target", "Target surface", surfaces[0].Name,
+                "Natural ground / controlling surface that the bellmouth grading must daylight to.",
+                surfaces.Select(item => item.Name));
+            settings.AddChoice(
+                "Side", "02 Grading side", "Projection / grading side", "Auto",
+                "Auto uses the outward side for closed feature lines. For open bellmouth strings choose Outside/Inside or explicit Left/Right when needed.",
+                new[] { "Auto", "Outside", "Inside", "Left", "Right" });
+            settings.AddChoice(
+                "Criteria", "03 Grading criteria", "Grading criteria", "Grade to Surface",
+                "Junction bellmouth grading uses Grade to Surface.",
+                new[] { "Grade to Surface" });
+            settings.AddChoice(
+                "CutFormat", "04 Cut", "Cut format", "Slope (H:V)",
+                "Choose whether the cut value is entered as a horizontal-to-vertical slope ratio or as grade percent.",
+                new[] { "Slope (H:V)", "Grade (%)" });
+            settings.AddPositiveDouble(
+                "CutSlope", "04 Cut", "Cut slope H:V (1:x)", 2.0,
+                "Used when Cut format is Slope. 2.0 means 1V:2H (2H:1V), matching the native 1:2.000 prompt.");
+            settings.AddPositiveDouble(
+                "CutGrade", "04 Cut", "Cut grade (%)", 50.0,
+                "Used when Cut format is Grade. 50% is equivalent to 1V:2H.");
+            settings.AddChoice(
+                "FillFormat", "05 Fill", "Fill format", "Slope (H:V)",
+                "Choose whether the fill value is entered as a horizontal-to-vertical slope ratio or as grade percent.",
+                new[] { "Slope (H:V)", "Grade (%)" });
+            settings.AddPositiveDouble(
+                "FillSlope", "05 Fill", "Fill slope H:V (1:x)", 2.0,
+                "Used when Fill format is Slope. 2.0 means 1V:2H (2H:1V), matching the native 1:2.000 prompt.");
+            settings.AddPositiveDouble(
+                "FillGrade", "05 Fill", "Fill grade (%)", 50.0,
+                "Used when Fill format is Grade. 50% is equivalent to 1V:2H.");
+            settings.AddPositiveDouble(
+                "MaxDistance", "06 Search", "Maximum daylight search", 50.0,
+                "Maximum horizontal distance searched from every source point.");
+            settings.AddPositiveDouble(
+                "SearchStep", "06 Search", "Surface search step", 0.5,
+                "Horizontal search increment before the final surface intersection is bisected.");
+            settings.AddChoice(
+                "Infill", "07 Grading group", "Create native grading group / infill where possible", "Yes",
+                "For closed feature lines CE Tools also attempts a Civil 3D grading group/infill. Open bellmouth strings still receive the linked Grade-to-Surface daylight geometry.",
+                new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
             if (selectedSurface == null) return;
 
-            PromptSelectionResult selection = SelectFeatureLines(document.Editor, "\nSelect multiple platform/source feature lines to grade to surface: ");
+            double cutRatio = string.Equals(settings.Text("CutFormat"), "Grade (%)", StringComparison.OrdinalIgnoreCase)
+                ? 100.0 / Math.Max(0.001, Math.Abs(settings.Double("CutGrade", 50.0)))
+                : Math.Max(0.001, settings.Double("CutSlope", 2.0));
+            double fillRatio = string.Equals(settings.Text("FillFormat"), "Grade (%)", StringComparison.OrdinalIgnoreCase)
+                ? 100.0 / Math.Max(0.001, Math.Abs(settings.Double("FillGrade", 50.0)))
+                : Math.Max(0.001, settings.Double("FillSlope", 2.0));
+
+            PromptSelectionResult selection = SelectFeatureLines(
+                document.Editor,
+                "\nSelect junction bellmouth / feature lines to grade to the selected surface: ");
             if (selection.Status != PromptStatus.OK || selection.Value == null) return;
 
             var requested = new GradeLink
             {
                 SurfaceHandle = selectedSurface.ObjectId.Handle.ToString(),
-                CutRatio = Math.Max(0.001, settings.Double("CutRatio", 2.0)),
-                FillRatio = Math.Max(0.001, settings.Double("FillRatio", 2.0)),
+                CutRatio = cutRatio,
+                FillRatio = fillRatio,
                 MaxDistance = Math.Max(0.10, settings.Double("MaxDistance", 50.0)),
                 SearchStep = Math.Max(0.05, settings.Double("SearchStep", 0.5)),
                 Side = SafeSide(settings.Text("Side")),
