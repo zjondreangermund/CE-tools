@@ -113,9 +113,14 @@ namespace CETools.Civil3D
                     : new List<ObjectId>();
                 foreach (ObjectId viewId in views)
                 {
+                    var pipeLabelsInView = new HashSet<ObjectId>(
+                        AvailableLabels(viewId, true));
+                    var structureLabelsInView = new HashSet<ObjectId>(
+                        AvailableLabels(viewId, false));
+
                     if (!pipeStyleId.IsNull)
                     {
-                        foreach (ObjectId labelId in AvailableLabels(viewId, true))
+                        foreach (ObjectId labelId in pipeLabelsInView.ToArray())
                         {
                             try
                             {
@@ -129,7 +134,7 @@ namespace CETools.Civil3D
                     }
                     if (!structureStyleId.IsNull)
                     {
-                        foreach (ObjectId labelId in AvailableLabels(viewId, false))
+                        foreach (ObjectId labelId in structureLabelsInView.ToArray())
                         {
                             try
                             {
@@ -141,6 +146,7 @@ namespace CETools.Civil3D
                             catch { failed++; }
                         }
                     }
+
                     foreach (ObjectId partId in drawnParts)
                     {
                         ProfileViewPart part = tr.GetObject(partId, OpenMode.ForRead, false) as ProfileViewPart;
@@ -148,27 +154,57 @@ namespace CETools.Civil3D
                         DBObject modelPart;
                         try { modelPart = tr.GetObject(part.ModelPartId, OpenMode.ForRead, false); }
                         catch { continue; }
-                        // Civil 3D validates that the ProfileViewPart belongs to
-                        // this view. A rejected Create simply means another view.
+
+                        // A profile part can legitimately be drawn in several
+                        // profile views. GetPartProfileLabelIds() returns labels
+                        // across all of those views, so the old global check could
+                        // suppress a missing label in this view merely because the
+                        // same part was labelled somewhere else. Check only label
+                        // ids Civil 3D reports for the current profile view.
                         if (modelPart is Pipe && !pipeStyleId.IsNull)
                         {
-                            if (HasPartLabel(part, tr, true)) continue;
+                            if (HasPartLabelInView(
+                                    part,
+                                    tr,
+                                    true,
+                                    pipeLabelsInView))
+                                continue;
                             try
                             {
-                                PipeProfileLabel.Create(partId, viewId, 0.5, pipeStyleId);
-                                pipeAdded++;
+                                ObjectId created = PipeProfileLabel.Create(
+                                    partId,
+                                    viewId,
+                                    0.5,
+                                    pipeStyleId);
+                                if (!created.IsNull)
+                                {
+                                    pipeLabelsInView.Add(created);
+                                    pipeAdded++;
+                                }
                             }
-                            catch { }
+                            catch { failed++; }
                         }
                         else if (modelPart is Structure && !structureStyleId.IsNull)
                         {
-                            if (HasPartLabel(part, tr, false)) continue;
+                            if (HasPartLabelInView(
+                                    part,
+                                    tr,
+                                    false,
+                                    structureLabelsInView))
+                                continue;
                             try
                             {
-                                StructureProfileLabel.Create(viewId, partId, structureStyleId);
-                                structureAdded++;
+                                ObjectId created = StructureProfileLabel.Create(
+                                    viewId,
+                                    partId,
+                                    structureStyleId);
+                                if (!created.IsNull)
+                                {
+                                    structureLabelsInView.Add(created);
+                                    structureAdded++;
+                                }
                             }
-                            catch { }
+                            catch { failed++; }
                         }
                     }
                 }
@@ -201,12 +237,19 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static bool HasPartLabel(ProfileViewPart part, Transaction tr, bool pipe)
+        private static bool HasPartLabelInView(
+            ProfileViewPart part,
+            Transaction tr,
+            bool pipe,
+            ISet<ObjectId> labelsInView)
         {
+            if (part == null || labelsInView == null || labelsInView.Count == 0)
+                return false;
             try
             {
                 foreach (ObjectId id in part.GetPartProfileLabelIds())
                 {
+                    if (!labelsInView.Contains(id)) continue;
                     DBObject label = tr.GetObject(id, OpenMode.ForRead, false);
                     if (pipe ? label is PipeProfileLabel : label is StructureProfileLabel)
                         return true;
