@@ -82,6 +82,11 @@ namespace CETools.Civil3D
                         "Detect every T/cross intersection, create all bellmouth returns, close every T-junction with the magenta line and write the configured junction layer.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
+                        "Grade Junction Bellmouths to Surface",
+                        "CE_JUNCTIONGRADETOSURFACE",
+                        "Select the junction bellmouth feature lines and target surface, choose grading side, then Grade-to-Surface cut/fill formats independently as Grade (%) or Slope (H:V).",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
                         "Reverse Multiple Road Alignments + Profiles",
                         "CE_ROADALIGNREVERSEMULTI",
                         "Reverse selected Civil 3D road alignments and refresh their associated profiles, profile views and corridor rebuilds in the same workflow.",
