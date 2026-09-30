@@ -11,7 +11,6 @@ using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using Autodesk.Civil.DatabaseServices.Styles;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
-using DBObject = Autodesk.AutoCAD.DatabaseServices.DBObject;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.SewerManholeConnectionCommands))]
 
