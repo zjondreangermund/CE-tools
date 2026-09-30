@@ -181,31 +181,90 @@ namespace CETools.Civil3D
 
                     try
                     {
-                        // Import and commit each view independently. Civil 3D 2023
-                        // materialises the native band-item collection on commit;
-                        // importing a whole selection in one transaction can leave
-                        // later views with band rows but no visible labels.
-                        using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                        // Import and commit each view independently. Some Civil 3D
+                        // 2023 drawings throw from ImportBandSetStyle even though an
+                        // existing native band row is already present, or even though
+                        // the style template can still be materialised through the
+                        // writable top/bottom band collections. Never let that native
+                        // import quirk make an entire multi-view batch fail.
+                        int rowsBeforeImport = 0;
+                        try
                         {
-                            ProfileView profileView = transaction.GetObject(
-                                selectedId,
-                                OpenMode.ForWrite,
-                                false) as ProfileView;
-                            if (profileView == null || profileView.IsReferenceObject)
+                            using (Transaction count = document.Database.TransactionManager.StartTransaction())
                             {
-                                skipped++;
-                                continue;
+                                ProfileView existing = count.GetObject(
+                                    selectedId, OpenMode.ForRead, false) as ProfileView;
+                                if (existing != null) rowsBeforeImport = CountBandRows(existing);
+                            }
+                        }
+                        catch { }
+
+                        System.Exception nativeImportFailure = null;
+                        bool imported = false;
+                        try
+                        {
+                            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                            {
+                                ProfileView profileView = transaction.GetObject(
+                                    selectedId,
+                                    OpenMode.ForWrite,
+                                    false) as ProfileView;
+                                if (profileView == null || profileView.IsReferenceObject)
+                                {
+                                    skipped++;
+                                    continue;
+                                }
+
+                                ProfileViewBandSetStyle bandSetStyle = transaction.GetObject(
+                                    choice.Id, OpenMode.ForRead, false) as ProfileViewBandSetStyle;
+                                if (bandSetStyle == null)
+                                    throw new InvalidOperationException("The selected band-set style is unavailable.");
+
+                                profileView.Bands.ImportBandSetStyle(choice.Id);
+                                if (EnsureImportedBandRows(profileView, bandSetStyle) == 0)
+                                    throw new InvalidOperationException(
+                                        "The selected band set has no materialized band rows on this profile view.");
+                                try { profileView.RecordGraphicsModified(true); } catch { }
+                                transaction.Commit();
+                                imported = true;
+                            }
+                        }
+                        catch (System.Exception exception)
+                        {
+                            nativeImportFailure = exception;
+                        }
+
+                        if (!imported)
+                        {
+                            using (Transaction fallback = document.Database.TransactionManager.StartTransaction())
+                            {
+                                ProfileView profileView = fallback.GetObject(
+                                    selectedId, OpenMode.ForWrite, false) as ProfileView;
+                                if (profileView == null || profileView.IsReferenceObject)
+                                    throw new InvalidOperationException("Profile view is read-only or unavailable.");
+
+                                ProfileViewBandSetStyle bandSetStyle = fallback.GetObject(
+                                    choice.Id, OpenMode.ForRead, false) as ProfileViewBandSetStyle;
+                                if (bandSetStyle == null)
+                                    throw new InvalidOperationException("The selected band-set style is unavailable.");
+
+                                int rows = CountBandRows(profileView);
+                                if (rows == 0)
+                                    rows = EnsureImportedBandRows(profileView, bandSetStyle);
+                                if (rows == 0)
+                                    throw new InvalidOperationException(
+                                        "No native band rows could be materialized." +
+                                        (nativeImportFailure == null ? string.Empty :
+                                            " Native import error: " + nativeImportFailure.Message));
+                                try { profileView.RecordGraphicsModified(true); } catch { }
+                                fallback.Commit();
                             }
 
-                            profileView.Bands.ImportBandSetStyle(choice.Id);
-                            ProfileViewBandSetStyle bandSetStyle = transaction.GetObject(
-                                choice.Id, OpenMode.ForRead, false) as ProfileViewBandSetStyle;
-                            if (bandSetStyle == null ||
-                                EnsureImportedBandRows(profileView, bandSetStyle) == 0)
-                                throw new InvalidOperationException(
-                                    "The selected band set has no materialized band rows on this profile view.");
-                            try { profileView.RecordGraphicsModified(true); } catch { }
-                            transaction.Commit();
+                            document.Editor.WriteMessage(
+                                "\nCE_ROADBANDLABELS profile view {0}: native band-set import failed; continued with {1} existing/materialized native band row(s). {2}",
+                                selectedId.Handle,
+                                rowsBeforeImport,
+                                nativeImportFailure == null ? string.Empty : nativeImportFailure.Message);
                         }
 
                         // A setting/style assignment is not evidence of a band on
