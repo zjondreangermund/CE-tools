@@ -933,8 +933,13 @@ namespace CETools.Civil3D
                 rootElevation = rootMaximum;
             else
             {
-                rootElevation =
-                    first.UpstreamGround - minimumCover - first.Radius;
+                // Prioritise minimum cover everywhere when no exact solution can
+                // satisfy both minimum and maximum cover. Choosing the lowest
+                // upper bound keeps every crown at or below its minimum-cover
+                // envelope; excessive depth is then reported for review.
+                rootElevation = Finite(rootMaximum)
+                    ? rootMaximum
+                    : first.UpstreamGround - minimumCover - first.Radius;
                 warnings++;
             }
 
