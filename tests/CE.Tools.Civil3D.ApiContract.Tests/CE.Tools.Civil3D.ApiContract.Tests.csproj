@@ -9,5 +9,6 @@
     <Compile Include="../../src/CE.Tools.Civil3D/FeatureLineColourService.cs" Link="FeatureLineColourService.cs" />
     <Compile Include="../../src/CE.Tools.Civil3D/ProfileViewBandPersistence.cs" Link="ProfileViewBandPersistence.cs" />
     <Compile Include="../../src/CE.Tools.Civil3D/ProfileViewNativeEditor.cs" Link="ProfileViewNativeEditor.cs" />
+    <Compile Include="../../src/CE.Tools.Civil3D/SewerPipeConnections.cs" Link="SewerPipeConnections.cs" />
   </ItemGroup>
 </Project>

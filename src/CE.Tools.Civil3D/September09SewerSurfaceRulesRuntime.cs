@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Text.RegularExpressions;
+using CETools.Core;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -330,12 +331,12 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Link Sewer Parts to Surface",
-                "Links selected gravity-network parts to one Civil 3D surface. Gravity mode keeps every sequenced branch falling continuously at the specified slopes even when natural ground rises. Natural-ground mode is a separate option for selected pipes that must remain at a specified cover depth.");
+                "Links selected gravity-network parts to one Civil 3D surface. Gravity mode continues each outgoing pipe from the lowest incoming pipe invert at its manhole, then falls at the specified slope even when natural ground rises. Natural-ground mode is a separate option for selected pipes that must remain at a specified cover depth.");
             settings.AddChoice("Surface", "01 Surface", "Reference surface", surfaces[0].Name,
                 "Surface assigned to RefSurfaceId on every selected pipe and structure.",
                 surfaces.Select(item => item.Name).ToArray());
             settings.AddChoice("RuleMode", "02 Pipe geometry", "Pipe elevation mode", gravityMode,
-                "Gravity mode never reverses uphill with natural ground. Natural-ground mode follows the surface at the specified crown depth. Civil 3D mode uses the selected installed rule set.",
+                "Gravity mode uses the lowest incoming invert, including other branches and unselected incoming pipes. Natural-ground mode follows the surface at the specified crown depth. Civil 3D mode uses the selected installed rule set.",
                 new[] { gravityMode, groundMode, civilMode });
             settings.AddPositiveDouble("MinStartSlope", "02 Pipe geometry", "Starting pipe slope (%)", 0.65,
                 "Exact downhill slope used for the first pipe of every sequenced branch (P#.1) in Gravity mode.");
@@ -394,6 +395,7 @@ namespace CETools.Civil3D
             int manualAdjusted = 0;
             int manualWarnings = 0;
             int skipped = 0;
+            var connectionStructures = new HashSet<ObjectId>();
 
             using (DocumentLock documentLock = document.LockDocument())
             using (Transaction transaction = database.TransactionManager.StartTransaction())
@@ -414,6 +416,7 @@ namespace CETools.Civil3D
                         CivilPart part = transaction.GetObject(id, OpenMode.ForWrite, false) as CivilPart;
                         if (part == null || part.IsReferenceObject) { skipped++; continue; }
                         part.RefSurfaceId = surface.Id;
+                        SewerManholeConnectionCommands.AddSelection(part, connectionStructures);
                         CivilPipe pipe = part as CivilPipe;
                         if (pipe != null)
                         {
@@ -435,13 +438,21 @@ namespace CETools.Civil3D
 
                 if (gravity)
                 {
-                    ApplyConstantGravitySlopes(
-                        selectedPipes,
-                        selectedSurface,
-                        transaction,
-                        settings,
-                        ref manualAdjusted,
-                        ref manualWarnings);
+                    try
+                    {
+                        ApplyConstantGravitySlopes(
+                            selectedPipes,
+                            selectedSurface,
+                            transaction,
+                            settings,
+                            ref manualAdjusted,
+                            ref manualWarnings);
+                    }
+                    catch (System.Exception exception)
+                    {
+                        editor.WriteMessage("\nGravity grading cancelled; no changes were saved: {0}", exception.Message);
+                        return;
+                    }
                 }
                 else if (followGround)
                 {
@@ -501,10 +512,12 @@ namespace CETools.Civil3D
                 mode, surface.Name, pipes, structures, pipeRules, structureRules, manualAdjusted, manualWarnings, skipped);
             if (gravity)
                 editor.WriteMessage(
-                    "\nGravity mode keeps every recognised P#.n branch continuously downhill at the exact specified slope. Rising natural ground can increase cover but cannot reverse a pipe uphill.");
+                    "\nGravity mode continues from the lowest incoming invert at each manhole, including other branches. Exact downhill slopes are preserved; cover conflicts and unresolved connections are reported.");
             else if (followGround)
                 editor.WriteMessage(
                     "\nNatural-ground mode follows the selected surface at the specified depth to pipe crown; uphill ground is therefore allowed in this mode by design.");
+            using (document.LockDocument())
+                SewerManholeConnectionCommands.EnableAndReport(document, connectionStructures, gravity);
         }
 
         internal static void CreateBranchAlignmentsSafe(Document document, CivilDocument civilDocument)
@@ -655,6 +668,7 @@ namespace CETools.Civil3D
             if (pipes == null || surface == null || transaction == null) return;
 
             var sequenced = new List<GravityPipeSeed>();
+            var segments = new List<List<GravityPipeStep>>();
             foreach (CivilPipe pipe in pipes)
             {
                 if (pipe == null) continue;
@@ -679,8 +693,9 @@ namespace CETools.Civil3D
                 });
             }
 
-            foreach (IGrouping<int, GravityPipeSeed> branchGroup in
-                sequenced.GroupBy(item => item.Branch).OrderBy(item => item.Key))
+            foreach (var branchGroup in sequenced
+                .GroupBy(item => new { item.Pipe.NetworkId, item.Branch })
+                .OrderBy(item => item.Key.NetworkId.Handle.Value).ThenBy(item => item.Key.Branch))
             {
                 var segment = new List<GravityPipeStep>();
                 ObjectId previousDownstream = ObjectId.Null;
@@ -692,7 +707,7 @@ namespace CETools.Civil3D
                 {
                     if (segment.Count > 0 && seed.Sequence != previousSequence + 1)
                     {
-                        ApplyGravitySegment(segment, surface, settings, ref adjusted, ref warnings);
+                        segments.Add(segment.ToList());
                         segment.Clear();
                         previousDownstream = ObjectId.Null;
                     }
@@ -708,7 +723,7 @@ namespace CETools.Civil3D
                     {
                         if (segment.Count > 0)
                         {
-                            ApplyGravitySegment(segment, surface, settings, ref adjusted, ref warnings);
+                            segments.Add(segment.ToList());
                             segment.Clear();
                         }
                         previousDownstream = ObjectId.Null;
@@ -723,7 +738,7 @@ namespace CETools.Civil3D
                         !previousDownstream.IsNull &&
                         step.UpstreamStructureId != previousDownstream)
                     {
-                        ApplyGravitySegment(segment, surface, settings, ref adjusted, ref warnings);
+                        segments.Add(segment.ToList());
                         segment.Clear();
                         previousDownstream = ObjectId.Null;
 
@@ -747,8 +762,13 @@ namespace CETools.Civil3D
                 }
 
                 if (segment.Count > 0)
-                    ApplyGravitySegment(segment, surface, settings, ref adjusted, ref warnings);
+                    segments.Add(segment.ToList());
             }
+
+            foreach (var segment in segments)
+                PrepareGravitySegment(segment, settings, ref warnings);
+            ApplyGravitySegment(segments.SelectMany(segment => segment).ToList(),
+                transaction, settings, ref adjusted, ref warnings);
         }
 
         private static bool TryBuildGravityStep(
@@ -768,8 +788,8 @@ namespace CETools.Civil3D
                 !TryReadPoint(seed.Pipe, "EndPoint", out end))
                 return false;
 
-            double run = PlanRun(start, end);
-            if (run <= PointTolerance) return false;
+            double run = seed.Pipe.Length2DCenterToCenter;
+            if (!Finite(run) || run <= PointTolerance) return false;
 
             bool forward = true;
             bool directionResolved = false;
@@ -810,10 +830,10 @@ namespace CETools.Civil3D
 
             if (!directionResolved)
             {
-                // Sequence 1 should normally resolve from MH#.1. For legacy
-                // drawings without structure names, retain the existing pipe flow
-                // direction as the last fallback; never infer direction from NG.
-                forward = start.Z >= end.Z;
+                // Retain explicit flow direction for legacy manhole names.
+                // A flat/unknown connection is reported instead of guessed.
+                if (!SewerPipeConnections.TryForward(seed.Pipe, transaction, out forward))
+                    return false;
             }
 
             Point3d upstream = forward ? start : end;
@@ -844,26 +864,22 @@ namespace CETools.Civil3D
             double slope = seed.Sequence == 1 ? startSlope : regularSlope;
             if (slope <= 0.0) return false;
 
-            double diameter = Math.Max(0.0, ReadDouble(
-                seed.Pipe,
-                "OuterDiameterOrWidth",
-                "InnerDiameterOrWidth",
-                "Diameter"));
+            double diameter = seed.Pipe.OuterHeight;
+            double innerHeight = seed.Pipe.InnerHeight;
+            if (!Finite(diameter) || !Finite(innerHeight) || diameter <= 0 || innerHeight <= 0)
+                return false;
 
             step = new GravityPipeStep
             {
                 Pipe = seed.Pipe,
-                Branch = seed.Branch,
-                Sequence = seed.Sequence,
                 Forward = forward,
-                OriginalStart = start,
-                OriginalEnd = end,
                 Upstream = upstream,
                 Downstream = downstream,
                 UpstreamStructureId = upstreamStructure,
                 DownstreamStructureId = downstreamStructure,
                 Run = run,
                 Radius = diameter * 0.5,
+                InnerRadius = innerHeight * 0.5,
                 Slope = slope,
                 UpstreamGround = upstreamGround,
                 DownstreamGround = downstreamGround
@@ -871,11 +887,9 @@ namespace CETools.Civil3D
             return true;
         }
 
-        private static void ApplyGravitySegment(
+        private static void PrepareGravitySegment(
             IList<GravityPipeStep> segment,
-            CivilSurface surface,
             ProductionSettingsDialogModel settings,
-            ref int adjusted,
             ref int warnings)
         {
             if (segment == null || segment.Count == 0) return;
@@ -903,16 +917,16 @@ namespace CETools.Civil3D
                     warnings++;
 
                 double upstreamMinimum =
-                    step.UpstreamGround - maximumCover - step.Radius +
+                    step.UpstreamGround - maximumCover - step.Radius - step.InnerRadius +
                     step.CumulativeStartDrop;
                 double upstreamMaximum =
-                    step.UpstreamGround - minimumCover - step.Radius +
+                    step.UpstreamGround - minimumCover - step.Radius - step.InnerRadius +
                     step.CumulativeStartDrop;
                 double downstreamMinimum =
-                    step.DownstreamGround - maximumCover - step.Radius +
+                    step.DownstreamGround - maximumCover - step.Radius - step.InnerRadius +
                     step.CumulativeEndDrop;
                 double downstreamMaximum =
-                    step.DownstreamGround - minimumCover - step.Radius +
+                    step.DownstreamGround - minimumCover - step.Radius - step.InnerRadius +
                     step.CumulativeEndDrop;
 
                 rootMinimum = Math.Max(
@@ -939,72 +953,99 @@ namespace CETools.Civil3D
                 // envelope; excessive depth is then reported for review.
                 rootElevation = Finite(rootMaximum)
                     ? rootMaximum
-                    : first.UpstreamGround - minimumCover - first.Radius;
+                    : first.UpstreamGround - minimumCover - first.Radius - first.InnerRadius;
                 warnings++;
             }
 
             foreach (GravityPipeStep step in segment)
+                step.HeadwaterInvert = rootElevation - step.CumulativeStartDrop;
+        }
+
+        private static void ApplyGravitySegment(
+            IList<GravityPipeStep> steps, Transaction transaction,
+            ProductionSettingsDialogModel settings, ref int adjusted, ref int warnings)
+        {
+            if (steps.Count == 0) return;
+            var byId = steps.ToDictionary(step => step.Pipe.ObjectId.Handle.ToString());
+            var selectedIds = new HashSet<ObjectId>(steps.Select(step => step.Pipe.ObjectId));
+            var fixedInlets = new List<SewerFixedInlet>();
+            var blockedNodes = new HashSet<string>();
+            foreach (ObjectId node in steps.Select(step => step.UpstreamStructureId)
+                .Where(id => !id.IsNull).Distinct())
             {
-                double upstreamZ =
-                    rootElevation - step.CumulativeStartDrop;
-                double downstreamZ =
-                    rootElevation - step.CumulativeEndDrop;
+                var structure = transaction.GetObject(node, OpenMode.ForRead, false) as CivilStructure;
+                if (structure == null) { blockedNodes.Add(node.Handle.ToString()); continue; }
+                foreach (ObjectId pipeId in SewerPipeConnections.PipeIds(structure))
+                {
+                    if (selectedIds.Contains(pipeId)) continue;
+                    var incoming = transaction.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe;
+                    bool forward;
+                    if (incoming == null || !SewerPipeConnections.TryForward(incoming, transaction, out forward))
+                    { blockedNodes.Add(node.Handle.ToString()); continue; }
+                    ObjectId downstream = forward ? incoming.EndStructureId : incoming.StartStructureId;
+                    if (downstream != node) continue;
+                    double invert = SewerPipeConnections.Invert(incoming, !forward);
+                    if (!Finite(invert)) { blockedNodes.Add(node.Handle.ToString()); continue; }
+                    fixedInlets.Add(new SewerFixedInlet
+                    { PipeId = pipeId.Handle.ToString(), Node = node.Handle.ToString(), Invert = invert });
+                }
+            }
 
+            SewerGravityPlan plan = SewerGravityGradeSolver.Solve(steps.Select(step => new SewerGravityPipe
+            {
+                Id = step.Pipe.ObjectId.Handle.ToString(),
+                // Unconnected endpoints must not join through ObjectId.Null.
+                UpstreamNode = step.UpstreamStructureId.IsNull ? "UP-" + step.Pipe.ObjectId.Handle : step.UpstreamStructureId.Handle.ToString(),
+                DownstreamNode = step.DownstreamStructureId.IsNull ? "DOWN-" + step.Pipe.ObjectId.Handle : step.DownstreamStructureId.Handle.ToString(),
+                Length = step.Run, Slope = step.Slope, HeadwaterInvert = step.HeadwaterInvert
+            }), fixedInlets, blockedNodes);
+            warnings += plan.UnresolvedPipeIds.Count;
+            if (plan.UnresolvedPipeIds.Count > 0)
+                AcApplication.DocumentManager.MdiActiveDocument.Editor.WriteMessage(
+                    "\nGravity grade not changed (cycle or unresolved incoming connection): {0}",
+                    string.Join(", ", plan.UnresolvedPipeIds.Select(id => byId[id].Pipe.Name)));
+
+            double minimumCover = Math.Max(0.0, settings.Double("MinCover", 0.834));
+            double maximumCover = Math.Max(minimumCover, settings.Double("MaxCover", 10.0));
+            foreach (SewerGravityGrade grade in plan.Grades)
+            {
+                GravityPipeStep step = byId[grade.Pipe.Id];
+                // Match INSIDE inverts, then convert back to each pipe's own
+                // centreline. Different diameters must not create an invert step.
+                double upstreamZ = grade.UpstreamInvert + step.InnerRadius;
+                double downstreamZ = grade.DownstreamInvert + step.InnerRadius;
                 if (downstreamZ >= upstreamZ - 1e-9)
-                {
-                    warnings++;
-                    continue;
-                }
+                    throw new InvalidOperationException("Invalid downhill grade for " + step.Pipe.Name);
+                Point3d newUpstream = new Point3d(step.Upstream.X, step.Upstream.Y, upstreamZ);
+                Point3d newDownstream = new Point3d(step.Downstream.X, step.Downstream.Y, downstreamZ);
+                step.Pipe.StartPoint = step.Forward ? newUpstream : newDownstream;
+                step.Pipe.EndPoint = step.Forward ? newDownstream : newUpstream;
+                step.Pipe.FlowDirectionMethod = step.Forward
+                    ? Autodesk.Civil.DatabaseServices.FlowDirectionMethodType.StartToEnd
+                    : Autodesk.Civil.DatabaseServices.FlowDirectionMethodType.EndToStart;
+                // A setter/native rule failure aborts the transaction: downstream
+                // pipes must never use an incoming level that was not saved.
+                double actualUp = SewerPipeConnections.Invert(step.Pipe, step.Forward);
+                double actualDown = SewerPipeConnections.Invert(step.Pipe, !step.Forward);
+                if (Math.Abs(actualUp - grade.UpstreamInvert) > 1e-6 ||
+                    Math.Abs(actualDown - grade.DownstreamInvert) > 1e-6)
+                    throw new InvalidOperationException("Civil 3D did not retain the connected invert grade for " + step.Pipe.Name);
 
-                Point3d newUpstream = new Point3d(
-                    step.Upstream.X,
-                    step.Upstream.Y,
-                    upstreamZ);
-                Point3d newDownstream = new Point3d(
-                    step.Downstream.X,
-                    step.Downstream.Y,
-                    downstreamZ);
-                Point3d newStart = step.Forward
-                    ? newUpstream
-                    : newDownstream;
-                Point3d newEnd = step.Forward
-                    ? newDownstream
-                    : newUpstream;
-
-                bool startSet = TrySetPoint(
-                    step.Pipe,
-                    "StartPoint",
-                    newStart);
-                bool endSet = TrySetPoint(
-                    step.Pipe,
-                    "EndPoint",
-                    newEnd);
-                if (!startSet || !endSet)
-                {
-                    if (startSet)
-                        TrySetPoint(step.Pipe, "StartPoint", step.OriginalStart);
-                    if (endSet)
-                        TrySetPoint(step.Pipe, "EndPoint", step.OriginalEnd);
-                    warnings++;
-                    continue;
-                }
-
-                double actualSlope =
-                    (upstreamZ - downstreamZ) / step.Run;
-                if (Math.Abs(actualSlope - step.Slope) > 1e-7)
-                    warnings++;
-
-                double upstreamCover =
-                    step.UpstreamGround - (upstreamZ + step.Radius);
-                double downstreamCover =
-                    step.DownstreamGround - (downstreamZ + step.Radius);
-                if (upstreamCover < minimumCover - 1e-6 ||
-                    upstreamCover > maximumCover + 1e-6 ||
-                    downstreamCover < minimumCover - 1e-6 ||
-                    downstreamCover > maximumCover + 1e-6)
-                    warnings++;
-
+                double upstreamCover = step.UpstreamGround - (upstreamZ + step.Radius);
+                double downstreamCover = step.DownstreamGround - (downstreamZ + step.Radius);
+                if (upstreamCover < minimumCover - 1e-6 || upstreamCover > maximumCover + 1e-6 ||
+                    downstreamCover < minimumCover - 1e-6 || downstreamCover > maximumCover + 1e-6)
+                    warnings++; // Fixed incoming inverts take precedence over the cover envelope.
                 adjusted++;
+            }
+            // Recheck the complete network after every setter has run: a native
+            // change on a later connected pipe must not invalidate an earlier one.
+            foreach (SewerGravityGrade grade in plan.Grades)
+            {
+                GravityPipeStep step = byId[grade.Pipe.Id];
+                if (Math.Abs(SewerPipeConnections.Invert(step.Pipe, step.Forward) - grade.UpstreamInvert) > 1e-6 ||
+                    Math.Abs(SewerPipeConnections.Invert(step.Pipe, !step.Forward) - grade.DownstreamInvert) > 1e-6)
+                    throw new InvalidOperationException("Connected pipe levels changed while grading " + step.Pipe.Name);
             }
         }
 
@@ -1128,17 +1169,15 @@ namespace CETools.Civil3D
         private sealed class GravityPipeStep
         {
             internal CivilPipe Pipe;
-            internal int Branch;
-            internal int Sequence;
             internal bool Forward;
-            internal Point3d OriginalStart;
-            internal Point3d OriginalEnd;
             internal Point3d Upstream;
             internal Point3d Downstream;
             internal ObjectId UpstreamStructureId;
             internal ObjectId DownstreamStructureId;
             internal double Run;
             internal double Radius;
+            internal double InnerRadius;
+            internal double HeadwaterInvert;
             internal double Slope;
             internal double UpstreamGround;
             internal double DownstreamGround;
@@ -1299,13 +1338,7 @@ namespace CETools.Civil3D
             ref int warnings,
             bool preservePipeEndpoints = false)
         {
-            object connected = ReadReflectedProperty(structure, "ConnectedPipeIds") ??
-                               InvokeReflected(structure, "GetConnectedPipeIds");
-            var pipeIds = new List<ObjectId>();
-            System.Collections.IEnumerable values = connected as System.Collections.IEnumerable;
-            if (values != null)
-                foreach (object value in values)
-                    if (value is ObjectId) pipeIds.Add((ObjectId)value);
+            List<ObjectId> pipeIds = SewerPipeConnections.PipeIds(structure);
 
             double lowestInvert = double.PositiveInfinity;
             var dropLevels = new List<double>();
@@ -1320,8 +1353,7 @@ namespace CETools.Civil3D
                 if (!atStart && !atEnd) continue;
                 if (TryReadPoint(pipe, atStart ? "StartPoint" : "EndPoint", out point))
                 {
-                    double diameter = Math.Max(0.0, ReadDouble(pipe,
-                        "OuterDiameterOrWidth", "InnerDiameterOrWidth", "Diameter"));
+                    double diameter = pipe.InnerHeight;
                     double radius = diameter * 0.5;
                     double invert = point.Z - radius;
                     lowestInvert = Math.Min(lowestInvert, invert);

@@ -25,6 +25,7 @@ namespace Autodesk.AutoCAD.DatabaseServices
     {
         internal DBObject Value;
         public bool IsNull { get { return Value == null; } }
+        public bool IsErased { get; set; }
         public static ObjectId Null { get { return new ObjectId(); } }
     }
     public enum OpenMode { ForRead, ForWrite }

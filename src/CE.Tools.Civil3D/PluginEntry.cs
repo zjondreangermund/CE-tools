@@ -670,6 +670,7 @@ namespace CETools.Civil3D
                         Cmd("Integrity / Engineering Audit", "CE_SEWAUDITLIMITS ", "Review open pipe ends, isolated/terminal structures, rule/surface assignments, inverts, cover, slopes, drops, depths and sump clearances without changing the network."),
                         Cmd("Connect Open Pipe Ends", "CE_SEWCONNECTPARTS ", "Connect open pipe starts or ends to nearby existing structures in the same gravity network."),
                         Cmd("Flow Toward Selected Outlet / Low Point", "CE_SEWFLOWTOOUTLET ", "Use the connected structure/pipe sequence to set every gravity pipe flow direction toward one selected downstream structure without moving endpoints or changing rule sets."),
+                        Cmd("Show Manhole Pipe Connections", "CE_SEWINCOMINGPIPES ", "Show all connected pipe openings and list incoming/outgoing invert levels for selected or all manholes."),
                         Cmd("Sewer Settings", "CE_SEWSETTINGS ", "Configure styles, layers and label height."),
                         Cmd("Sewer Information", "CE_SEWINFO ", "Review links and generated output."),
                         Cmd("Sort Branch Labels", "CE_SEWLABELSORT ", "Stagger branch labels to reduce overlap."),
