@@ -61,6 +61,9 @@ jobs:
       - name: Validate September 30 junction and sewer completion
         run: python3 scripts/Validate-September30JunctionSewerCompletion.py
 
+      - name: Validate September 30 sewer gravity slope modes
+        run: python3 scripts/Validate-September30SewerGravitySlopeModes.py
+
       - name: Validate dynamic corridor annotation completion
         run: python3 scripts/Validate-September15CorridorAnnotationCompletion.py
 
