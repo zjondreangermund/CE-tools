@@ -141,7 +141,7 @@ namespace CETools.Civil3D
                 foreach (BranchAlignmentPlan branch in plan.Branches)
                 {
                     editor.WriteMessage(
-                        "\n    {0}: pipes={1}; structures={2}; sampled vertices={3}; alignment direction=high cover to low cover",
+                        "\n    {0}: pipes={1}; structures={2}; sampled vertices={3}; alignment starts at sequenced start manhole",
                         branch.BranchName,
                         branch.PipeIds.Count,
                         branch.StructureIds.Count,
@@ -376,10 +376,11 @@ namespace CETools.Civil3D
                     " must have exactly two endpoints.");
             }
 
-            ObjectId startId = endpoints
-                .OrderByDescending(id => GetRimElevation(id, transaction))
-                .ThenBy(id => id.Handle.Value)
-                .First();
+            ObjectId startId = ResolveSequencedBranchStart(
+                branchNumber,
+                endpoints,
+                pipeRecords,
+                transaction);
 
             var unusedPipes = new HashSet<ObjectId>(
                 pipeRecords.Select(record => record.PipeId));
@@ -431,6 +432,52 @@ namespace CETools.Civil3D
                 orderedStructures,
                 orderedPipes,
                 planPoints);
+        }
+
+        private static ObjectId ResolveSequencedBranchStart(
+            int branchNumber,
+            IList<ObjectId> endpoints,
+            IReadOnlyList<BranchPipeRecord> pipeRecords,
+            Transaction transaction)
+        {
+            string expectedStartName = "MH" +
+                branchNumber.ToString(CultureInfo.InvariantCulture) + ".1";
+
+            // The sewer sequence owns branch direction. Prefer the actual first
+            // sequenced manhole instead of re-deriving direction from rim levels;
+            // otherwise CE_SEWALIGN can reverse a correctly sequenced branch.
+            foreach (ObjectId id in endpoints)
+            {
+                CivilStructure structure = transaction.GetObject(
+                    id, OpenMode.ForRead, false) as CivilStructure;
+                if (structure != null &&
+                    string.Equals(
+                        structure.Name,
+                        expectedStartName,
+                        StringComparison.OrdinalIgnoreCase))
+                    return id;
+            }
+
+            // If structure names were edited after sequencing, use the endpoint
+            // attached to P{branch}.1 / sequence 1. A valid linear branch has only
+            // one sequence-1 pipe and exactly one of its ends is the branch start.
+            BranchPipeRecord firstPipe = pipeRecords
+                .OrderBy(record => record.SequenceNumber)
+                .ThenBy(record => record.PipeId.Handle.Value)
+                .FirstOrDefault();
+            if (firstPipe != null)
+            {
+                bool startIsEndpoint = endpoints.Contains(firstPipe.StartStructureId);
+                bool endIsEndpoint = endpoints.Contains(firstPipe.EndStructureId);
+                if (startIsEndpoint ^ endIsEndpoint)
+                    return startIsEndpoint
+                        ? firstPipe.StartStructureId
+                        : firstPipe.EndStructureId;
+            }
+
+            throw new InvalidOperationException(
+                "Branch-" + branchNumber.ToString(CultureInfo.InvariantCulture) +
+                " has no unambiguous sequenced start manhole. Run CE_SEWSEQ before CE_SEWALIGN.");
         }
 
         private static void AddPipe(

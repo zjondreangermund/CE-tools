@@ -18,28 +18,80 @@ namespace CETools.Civil3D
         internal const string Empty = "<Empty custom assembly>";
         internal const string Browse = "<Browse assembly DWG...>";
 
+        private static readonly object DiscoverySync = new object();
+        private static string _discoveryKey = string.Empty;
+        private static List<AssemblyTemplate> _discoveryCache;
+
         internal static List<AssemblyTemplate> Discover()
         {
             var roots = new List<string>();
+            var broadFallbackRoots = new List<string>();
             string location = typeof(CivilDocument).Assembly.Location;
             Match year = Regex.Match(location, @"20\d{2}");
+
+            // Prefer the actual Tool Palettes folders instead of recursively
+            // scanning the whole Civil 3D application-data tree. The latter can
+            // contain thousands of unrelated files and made CE_ASSEMBLYCREATE
+            // appear to freeze before its settings dialog opened.
             if (year.Success)
             {
                 foreach (Environment.SpecialFolder folder in new[]
                 {
                     Environment.SpecialFolder.CommonApplicationData,
                     Environment.SpecialFolder.ApplicationData
-                }) roots.Add(Path.Combine(Environment.GetFolderPath(folder), "Autodesk", "C3D " + year.Value));
+                })
+                {
+                    string baseRoot = Path.Combine(
+                        Environment.GetFolderPath(folder),
+                        "Autodesk",
+                        "C3D " + year.Value);
+                    broadFallbackRoots.Add(baseRoot);
+                    roots.Add(Path.Combine(baseRoot, "enu", "Tool Palettes"));
+                    roots.Add(Path.Combine(baseRoot, "Tool Palettes"));
+                    roots.Add(Path.Combine(baseRoot, "enu", "ToolPalette"));
+                }
             }
-            // Respect customized palette paths as well as the stock installation.
+
+            string configured = string.Empty;
             try
             {
-                string configured = Convert.ToString(AcApplication.GetSystemVariable("TOOLPALETTEPATH"));
-                roots.AddRange((configured ?? string.Empty).Split(';')
-                    .Select(value => Environment.ExpandEnvironmentVariables(value.Trim().Trim('"'))));
+                configured = Convert.ToString(AcApplication.GetSystemVariable("TOOLPALETTEPATH")) ?? string.Empty;
+                roots.AddRange(configured.Split(';')
+                    .Select(value => Environment.ExpandEnvironmentVariables(value.Trim().Trim('"')))
+                    .Where(value => !string.IsNullOrWhiteSpace(value)));
             }
             catch { }
-            return AssemblyTemplateCatalog.Discover(roots);
+
+            roots = roots.Where(Directory.Exists)
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            string key = (year.Success ? year.Value : string.Empty) + "|" +
+                configured + "|" + string.Join("|", roots.OrderBy(value => value, StringComparer.OrdinalIgnoreCase));
+
+            lock (DiscoverySync)
+            {
+                if (_discoveryCache != null &&
+                    string.Equals(_discoveryKey, key, StringComparison.Ordinal))
+                    return new List<AssemblyTemplate>(_discoveryCache);
+            }
+
+            List<AssemblyTemplate> templates = AssemblyTemplateCatalog.Discover(roots);
+
+            // Localized or non-standard installs may not use the common enu path.
+            // Only if the targeted palette scan found nothing do we fall back to
+            // the broader C3D folder scan.
+            if (templates.Count == 0)
+                templates = AssemblyTemplateCatalog.Discover(
+                    broadFallbackRoots.Where(Directory.Exists)
+                        .Distinct(StringComparer.OrdinalIgnoreCase));
+
+            lock (DiscoverySync)
+            {
+                _discoveryKey = key;
+                _discoveryCache = new List<AssemblyTemplate>(templates);
+            }
+            return new List<AssemblyTemplate>(templates);
         }
 
         internal static AssemblyTemplate BrowseDrawing(Document document)
