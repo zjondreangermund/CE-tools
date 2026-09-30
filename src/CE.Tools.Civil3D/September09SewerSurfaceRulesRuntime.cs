@@ -644,6 +644,503 @@ namespace CETools.Civil3D
             }
         }
 
+        private static void ApplyConstantGravitySlopes(
+            IList<CivilPipe> pipes,
+            CivilSurface surface,
+            Transaction transaction,
+            ProductionSettingsDialogModel settings,
+            ref int adjusted,
+            ref int warnings)
+        {
+            if (pipes == null || surface == null || transaction == null) return;
+
+            var sequenced = new List<GravityPipeSeed>();
+            foreach (CivilPipe pipe in pipes)
+            {
+                if (pipe == null) continue;
+                Match match = PipeNamePattern.Match(pipe.Name ?? string.Empty);
+                int branch;
+                int sequence;
+                if (!match.Success ||
+                    !int.TryParse(match.Groups["branch"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out branch) ||
+                    !int.TryParse(match.Groups["sequence"].Value, NumberStyles.Integer, CultureInfo.InvariantCulture, out sequence))
+                {
+                    // Gravity direction must come from the CE branch sequence, not
+                    // from natural-ground elevation. Leave unsequenced pipes alone
+                    // rather than guessing a direction that could make them uphill.
+                    warnings++;
+                    continue;
+                }
+                sequenced.Add(new GravityPipeSeed
+                {
+                    Pipe = pipe,
+                    Branch = branch,
+                    Sequence = sequence
+                });
+            }
+
+            foreach (IGrouping<int, GravityPipeSeed> branchGroup in
+                sequenced.GroupBy(item => item.Branch).OrderBy(item => item.Key))
+            {
+                var segment = new List<GravityPipeStep>();
+                ObjectId previousDownstream = ObjectId.Null;
+                int previousSequence = int.MinValue;
+
+                foreach (GravityPipeSeed seed in branchGroup
+                    .OrderBy(item => item.Sequence)
+                    .ThenBy(item => item.Pipe.ObjectId.Handle.Value))
+                {
+                    if (segment.Count > 0 && seed.Sequence != previousSequence + 1)
+                    {
+                        ApplyGravitySegment(segment, surface, settings, ref adjusted, ref warnings);
+                        segment.Clear();
+                        previousDownstream = ObjectId.Null;
+                    }
+
+                    GravityPipeStep step;
+                    if (!TryBuildGravityStep(
+                            seed,
+                            previousDownstream,
+                            transaction,
+                            surface,
+                            settings,
+                            out step))
+                    {
+                        if (segment.Count > 0)
+                        {
+                            ApplyGravitySegment(segment, surface, settings, ref adjusted, ref warnings);
+                            segment.Clear();
+                        }
+                        previousDownstream = ObjectId.Null;
+                        warnings++;
+                        previousSequence = seed.Sequence;
+                        continue;
+                    }
+
+                    // If the next sequential pipe is not actually connected to the
+                    // previous downstream manhole, start a new independent segment.
+                    if (segment.Count > 0 &&
+                        !previousDownstream.IsNull &&
+                        step.UpstreamStructureId != previousDownstream)
+                    {
+                        ApplyGravitySegment(segment, surface, settings, ref adjusted, ref warnings);
+                        segment.Clear();
+                        previousDownstream = ObjectId.Null;
+
+                        if (!TryBuildGravityStep(
+                                seed,
+                                ObjectId.Null,
+                                transaction,
+                                surface,
+                                settings,
+                                out step))
+                        {
+                            warnings++;
+                            previousSequence = seed.Sequence;
+                            continue;
+                        }
+                    }
+
+                    segment.Add(step);
+                    previousDownstream = step.DownstreamStructureId;
+                    previousSequence = seed.Sequence;
+                }
+
+                if (segment.Count > 0)
+                    ApplyGravitySegment(segment, surface, settings, ref adjusted, ref warnings);
+            }
+        }
+
+        private static bool TryBuildGravityStep(
+            GravityPipeSeed seed,
+            ObjectId previousDownstream,
+            Transaction transaction,
+            CivilSurface surface,
+            ProductionSettingsDialogModel settings,
+            out GravityPipeStep step)
+        {
+            step = null;
+            if (seed == null || seed.Pipe == null) return false;
+
+            Point3d start;
+            Point3d end;
+            if (!TryReadPoint(seed.Pipe, "StartPoint", out start) ||
+                !TryReadPoint(seed.Pipe, "EndPoint", out end))
+                return false;
+
+            double run = PlanRun(start, end);
+            if (run <= PointTolerance) return false;
+
+            bool forward = true;
+            bool directionResolved = false;
+            string expectedUpstream = "MH" +
+                seed.Branch.ToString(CultureInfo.InvariantCulture) + "." +
+                seed.Sequence.ToString(CultureInfo.InvariantCulture);
+
+            string startStructureName = ReadStructureName(
+                seed.Pipe.StartStructureId,
+                transaction);
+            string endStructureName = ReadStructureName(
+                seed.Pipe.EndStructureId,
+                transaction);
+
+            if (string.Equals(startStructureName, expectedUpstream, StringComparison.OrdinalIgnoreCase))
+            {
+                forward = true;
+                directionResolved = true;
+            }
+            else if (string.Equals(endStructureName, expectedUpstream, StringComparison.OrdinalIgnoreCase))
+            {
+                forward = false;
+                directionResolved = true;
+            }
+            else if (!previousDownstream.IsNull)
+            {
+                if (seed.Pipe.StartStructureId == previousDownstream)
+                {
+                    forward = true;
+                    directionResolved = true;
+                }
+                else if (seed.Pipe.EndStructureId == previousDownstream)
+                {
+                    forward = false;
+                    directionResolved = true;
+                }
+            }
+
+            if (!directionResolved)
+            {
+                // Sequence 1 should normally resolve from MH#.1. For legacy
+                // drawings without structure names, retain the existing pipe flow
+                // direction as the last fallback; never infer direction from NG.
+                forward = start.Z >= end.Z;
+            }
+
+            Point3d upstream = forward ? start : end;
+            Point3d downstream = forward ? end : start;
+            ObjectId upstreamStructure = forward
+                ? seed.Pipe.StartStructureId
+                : seed.Pipe.EndStructureId;
+            ObjectId downstreamStructure = forward
+                ? seed.Pipe.EndStructureId
+                : seed.Pipe.StartStructureId;
+
+            double upstreamGround;
+            double downstreamGround;
+            try
+            {
+                upstreamGround = surface.FindElevationAtXY(upstream.X, upstream.Y);
+                downstreamGround = surface.FindElevationAtXY(downstream.X, downstream.Y);
+            }
+            catch
+            {
+                return false;
+            }
+            if (!Finite(upstreamGround) || !Finite(downstreamGround))
+                return false;
+
+            double startSlope = Math.Abs(settings.Double("MinStartSlope", 0.65)) / 100.0;
+            double regularSlope = Math.Abs(settings.Double("MinSlope", 0.65)) / 100.0;
+            double slope = seed.Sequence == 1 ? startSlope : regularSlope;
+            if (slope <= 0.0) return false;
+
+            double diameter = Math.Max(0.0, ReadDouble(
+                seed.Pipe,
+                "OuterDiameterOrWidth",
+                "InnerDiameterOrWidth",
+                "Diameter"));
+
+            step = new GravityPipeStep
+            {
+                Pipe = seed.Pipe,
+                Branch = seed.Branch,
+                Sequence = seed.Sequence,
+                Forward = forward,
+                OriginalStart = start,
+                OriginalEnd = end,
+                Upstream = upstream,
+                Downstream = downstream,
+                UpstreamStructureId = upstreamStructure,
+                DownstreamStructureId = downstreamStructure,
+                Run = run,
+                Radius = diameter * 0.5,
+                Slope = slope,
+                UpstreamGround = upstreamGround,
+                DownstreamGround = downstreamGround
+            };
+            return true;
+        }
+
+        private static void ApplyGravitySegment(
+            IList<GravityPipeStep> segment,
+            CivilSurface surface,
+            ProductionSettingsDialogModel settings,
+            ref int adjusted,
+            ref int warnings)
+        {
+            if (segment == null || segment.Count == 0) return;
+
+            double minimumCover = Math.Max(0.0, settings.Double("MinCover", 0.834));
+            double maximumCover = Math.Max(minimumCover, settings.Double("MaxCover", 10.0));
+            double maximumReviewSlope = Math.Abs(settings.Double("MaxSlope", 12.0)) / 100.0;
+            double minLength = Math.Max(0.0, settings.Double("MinLength", 2.440));
+            double maxLength = Math.Max(minLength, settings.Double("MaxLength", 100.0));
+
+            double cumulativeDrop = 0.0;
+            double rootMinimum = double.NegativeInfinity;
+            double rootMaximum = double.PositiveInfinity;
+
+            foreach (GravityPipeStep step in segment)
+            {
+                step.CumulativeStartDrop = cumulativeDrop;
+                step.CumulativeEndDrop = cumulativeDrop + step.Slope * step.Run;
+                cumulativeDrop = step.CumulativeEndDrop;
+
+                if (step.Run < minLength || step.Run > maxLength)
+                    warnings++;
+                if (maximumReviewSlope > 0.0 &&
+                    step.Slope > maximumReviewSlope + 1e-9)
+                    warnings++;
+
+                double upstreamMinimum =
+                    step.UpstreamGround - maximumCover - step.Radius +
+                    step.CumulativeStartDrop;
+                double upstreamMaximum =
+                    step.UpstreamGround - minimumCover - step.Radius +
+                    step.CumulativeStartDrop;
+                double downstreamMinimum =
+                    step.DownstreamGround - maximumCover - step.Radius +
+                    step.CumulativeEndDrop;
+                double downstreamMaximum =
+                    step.DownstreamGround - minimumCover - step.Radius +
+                    step.CumulativeEndDrop;
+
+                rootMinimum = Math.Max(
+                    rootMinimum,
+                    Math.Max(upstreamMinimum, downstreamMinimum));
+                rootMaximum = Math.Min(
+                    rootMaximum,
+                    Math.Min(upstreamMaximum, downstreamMaximum));
+            }
+
+            // When cover constraints and the exact gravity grade are compatible,
+            // use the shallowest valid branch start. If rising ground/terrain makes
+            // the cover envelope impossible, preserve the exact downhill grade and
+            // report cover warnings rather than ever turning a pipe uphill.
+            GravityPipeStep first = segment[0];
+            double rootElevation;
+            if (rootMinimum <= rootMaximum)
+                rootElevation = rootMaximum;
+            else
+            {
+                rootElevation =
+                    first.UpstreamGround - minimumCover - first.Radius;
+                warnings++;
+            }
+
+            foreach (GravityPipeStep step in segment)
+            {
+                double upstreamZ =
+                    rootElevation - step.CumulativeStartDrop;
+                double downstreamZ =
+                    rootElevation - step.CumulativeEndDrop;
+
+                if (downstreamZ >= upstreamZ - 1e-9)
+                {
+                    warnings++;
+                    continue;
+                }
+
+                Point3d newUpstream = new Point3d(
+                    step.Upstream.X,
+                    step.Upstream.Y,
+                    upstreamZ);
+                Point3d newDownstream = new Point3d(
+                    step.Downstream.X,
+                    step.Downstream.Y,
+                    downstreamZ);
+                Point3d newStart = step.Forward
+                    ? newUpstream
+                    : newDownstream;
+                Point3d newEnd = step.Forward
+                    ? newDownstream
+                    : newUpstream;
+
+                bool startSet = TrySetPoint(
+                    step.Pipe,
+                    "StartPoint",
+                    newStart);
+                bool endSet = TrySetPoint(
+                    step.Pipe,
+                    "EndPoint",
+                    newEnd);
+                if (!startSet || !endSet)
+                {
+                    if (startSet)
+                        TrySetPoint(step.Pipe, "StartPoint", step.OriginalStart);
+                    if (endSet)
+                        TrySetPoint(step.Pipe, "EndPoint", step.OriginalEnd);
+                    warnings++;
+                    continue;
+                }
+
+                double actualSlope =
+                    (upstreamZ - downstreamZ) / step.Run;
+                if (Math.Abs(actualSlope - step.Slope) > 1e-7)
+                    warnings++;
+
+                double upstreamCover =
+                    step.UpstreamGround - (upstreamZ + step.Radius);
+                double downstreamCover =
+                    step.DownstreamGround - (downstreamZ + step.Radius);
+                if (upstreamCover < minimumCover - 1e-6 ||
+                    upstreamCover > maximumCover + 1e-6 ||
+                    downstreamCover < minimumCover - 1e-6 ||
+                    downstreamCover > maximumCover + 1e-6)
+                    warnings++;
+
+                adjusted++;
+            }
+        }
+
+        private static void ApplyNaturalGroundDepth(
+            CivilPipe pipe,
+            CivilSurface surface,
+            ProductionSettingsDialogModel settings,
+            ref int adjusted,
+            ref int warnings)
+        {
+            Point3d start;
+            Point3d end;
+            if (pipe == null || surface == null ||
+                !TryReadPoint(pipe, "StartPoint", out start) ||
+                !TryReadPoint(pipe, "EndPoint", out end))
+            {
+                warnings++;
+                return;
+            }
+
+            double run = PlanRun(start, end);
+            if (run <= PointTolerance)
+            {
+                warnings++;
+                return;
+            }
+            if (run < settings.Double("MinLength", 2.440) ||
+                run > settings.Double("MaxLength", 100.0))
+                warnings++;
+
+            double groundStart;
+            double groundEnd;
+            try
+            {
+                groundStart = surface.FindElevationAtXY(start.X, start.Y);
+                groundEnd = surface.FindElevationAtXY(end.X, end.Y);
+            }
+            catch
+            {
+                warnings++;
+                return;
+            }
+            if (!Finite(groundStart) || !Finite(groundEnd))
+            {
+                warnings++;
+                return;
+            }
+
+            double diameter = Math.Max(0.0, ReadDouble(
+                pipe,
+                "OuterDiameterOrWidth",
+                "InnerDiameterOrWidth",
+                "Diameter"));
+            double radius = diameter * 0.5;
+            double crownDepth = Math.Max(
+                0.0,
+                settings.Double("GroundDepth", 0.834));
+
+            Point3d newStart = new Point3d(
+                start.X,
+                start.Y,
+                groundStart - crownDepth - radius);
+            Point3d newEnd = new Point3d(
+                end.X,
+                end.Y,
+                groundEnd - crownDepth - radius);
+
+            bool startSet = TrySetPoint(pipe, "StartPoint", newStart);
+            bool endSet = TrySetPoint(pipe, "EndPoint", newEnd);
+            if (startSet && endSet)
+            {
+                adjusted++;
+                return;
+            }
+
+            if (startSet) TrySetPoint(pipe, "StartPoint", start);
+            if (endSet) TrySetPoint(pipe, "EndPoint", end);
+            warnings++;
+        }
+
+        private static double PlanRun(Point3d first, Point3d second)
+        {
+            double dx = second.X - first.X;
+            double dy = second.Y - first.Y;
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        private static bool Finite(double value)
+        {
+            return !double.IsNaN(value) && !double.IsInfinity(value);
+        }
+
+        private static string ReadStructureName(
+            ObjectId structureId,
+            Transaction transaction)
+        {
+            if (structureId.IsNull || transaction == null) return string.Empty;
+            try
+            {
+                CivilStructure structure = transaction.GetObject(
+                    structureId,
+                    OpenMode.ForRead,
+                    false) as CivilStructure;
+                return structure == null
+                    ? string.Empty
+                    : structure.Name ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private sealed class GravityPipeSeed
+        {
+            internal CivilPipe Pipe;
+            internal int Branch;
+            internal int Sequence;
+        }
+
+        private sealed class GravityPipeStep
+        {
+            internal CivilPipe Pipe;
+            internal int Branch;
+            internal int Sequence;
+            internal bool Forward;
+            internal Point3d OriginalStart;
+            internal Point3d OriginalEnd;
+            internal Point3d Upstream;
+            internal Point3d Downstream;
+            internal ObjectId UpstreamStructureId;
+            internal ObjectId DownstreamStructureId;
+            internal double Run;
+            internal double Radius;
+            internal double Slope;
+            internal double UpstreamGround;
+            internal double DownstreamGround;
+            internal double CumulativeStartDrop;
+            internal double CumulativeEndDrop;
+        }
+
         private static void ApplyManualPipeRules(
             CivilPipe pipe,
             CivilSurface surface,
@@ -794,7 +1291,8 @@ namespace CETools.Civil3D
             CivilSurface surface,
             ProductionSettingsDialogModel settings,
             ref int adjusted,
-            ref int warnings)
+            ref int warnings,
+            bool preservePipeEndpoints = false)
         {
             object connected = ReadReflectedProperty(structure, "ConnectedPipeIds") ??
                                InvokeReflected(structure, "GetConnectedPipeIds");
@@ -928,10 +1426,12 @@ namespace CETools.Civil3D
                 double drop = high - low;
                 if (drop < minimumDrop - 1e-6 || drop > maximumDrop + 1e-6)
                 {
-                    bool applyDrop = string.Equals(
-                        settings.Text("DropHandling"),
-                        "Apply drop corrections",
-                        StringComparison.OrdinalIgnoreCase);
+                    bool applyDrop =
+                        !preservePipeEndpoints &&
+                        string.Equals(
+                            settings.Text("DropHandling"),
+                            "Apply drop corrections",
+                            StringComparison.OrdinalIgnoreCase);
                     if (applyDrop)
                     {
                         double targetLow = drop < minimumDrop
