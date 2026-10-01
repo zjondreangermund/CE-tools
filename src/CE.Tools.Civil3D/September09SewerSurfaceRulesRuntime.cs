@@ -338,16 +338,16 @@ namespace CETools.Civil3D
             settings.AddChoice("RuleMode", "02 Pipe geometry", "Pipe elevation mode", gravityMode,
                 "Gravity mode uses the lowest incoming invert, including other branches and unselected incoming pipes. Natural-ground mode follows the surface at the specified crown depth. Civil 3D mode uses the selected installed rule set.",
                 new[] { gravityMode, groundMode, civilMode });
-            settings.AddPositiveDouble("MinStartSlope", "02 Pipe geometry", "Starting pipe slope (%)", 0.65,
-                "Exact downhill slope used for the first pipe of every sequenced branch (P#.1) in Gravity mode.");
-            settings.AddPositiveDouble("MinSlope", "02 Pipe geometry", "Remaining pipe slope (%)", 0.65,
-                "Exact downhill slope used for P#.2 onward in Gravity mode.");
+            settings.AddPositiveDouble("MinStartSlope", "02 Pipe geometry", "Starting minimum pipe slope (%)", 0.65,
+                "Minimum downhill slope for the first pipe of every sequenced branch (P#.1). CE Tools may steepen it only as needed to respect the selected surface and minimum depth/cover, never beyond Maximum pipe slope.");
+            settings.AddPositiveDouble("MinSlope", "02 Pipe geometry", "Minimum downhill pipe slope (%)", 0.65,
+                "Minimum downhill slope for P#.2 onward. CE Tools follows the natural-ground fall where possible, clamps to this minimum when the ground is flatter/rising, and clamps to Maximum pipe slope when the ground falls more steeply.");
             settings.AddPositiveDouble("GroundDepth", "02 Pipe geometry", "Natural-ground depth to pipe crown (m)", 0.834,
                 "Used only in Follow natural ground mode. Each selected pipe crown is kept this depth below the selected surface at both endpoints.");
-            settings.AddPositiveDouble("MaxSlope", "02 Pipe geometry", "Maximum review slope (%)", 12.0,
-                "Review limit only. Gravity mode uses the exact specified branch slopes and never changes sign to follow rising ground.");
-            settings.AddPositiveDouble("MinCover", "02 Pipe geometry", "Minimum cover (m)", 0.834,
-                "Cover constraint from the selected surface to the pipe crown in Gravity mode.");
+            settings.AddPositiveDouble("MaxSlope", "02 Pipe geometry", "Maximum pipe slope (%)", 12.0,
+                "Hard maximum downhill slope in Gravity mode. CE Tools never makes a pipe steeper than this value. If minimum depth/cover cannot be met within the min/max slope range, the conflict is reported for review.");
+            settings.AddPositiveDouble("MinCover", "02 Pipe geometry", "Minimum depth / cover at structures (m)", 0.834,
+                "Minimum depth from the selected surface to pipe crown at each connected structure in Gravity mode. This constraint is used when choosing the actual pipe slope between the minimum and maximum values.");
             settings.AddPositiveDouble("MaxCover", "02 Pipe geometry", "Maximum cover (m)", 10.0,
                 "Cover constraint in Gravity mode. If the exact downhill grade and cover range cannot both be satisfied, CE Tools preserves gravity slope and reports a warning instead of making a pipe run uphill.");
             settings.AddPositiveDouble("MinLength", "02 Pipe geometry", "Minimum pipe length (m)", 2.440,
@@ -880,6 +880,7 @@ namespace CETools.Civil3D
                 Run = run,
                 Radius = diameter * 0.5,
                 InnerRadius = innerHeight * 0.5,
+                MinimumSlope = slope,
                 Slope = slope,
                 UpstreamGround = upstreamGround,
                 DownstreamGround = downstreamGround
@@ -894,11 +895,70 @@ namespace CETools.Civil3D
         {
             if (segment == null || segment.Count == 0) return;
 
-            double minimumCover = Math.Max(0.0, settings.Double("MinCover", 0.834));
-            double maximumCover = Math.Max(minimumCover, settings.Double("MaxCover", 10.0));
-            double maximumReviewSlope = Math.Abs(settings.Double("MaxSlope", 12.0)) / 100.0;
-            double minLength = Math.Max(0.0, settings.Double("MinLength", 2.440));
-            double maxLength = Math.Max(minLength, settings.Double("MaxLength", 100.0));
+            double minimumCover = Math.Max(
+                0.0,
+                settings.Double("MinCover", 0.834));
+            double maximumCover = Math.Max(
+                minimumCover,
+                settings.Double("MaxCover", 10.0));
+            double maximumSlope = Math.Abs(
+                settings.Double("MaxSlope", 12.0)) / 100.0;
+            double minLength = Math.Max(
+                0.0,
+                settings.Double("MinLength", 2.440));
+            double maxLength = Math.Max(
+                minLength,
+                settings.Double("MaxLength", 100.0));
+
+            if (maximumSlope <= 0.0)
+                throw new InvalidOperationException(
+                    "Maximum pipe slope must be greater than zero.");
+
+            // Choose the actual slope pipe-by-pipe from the natural-ground fall,
+            // but keep the CE branch minimum as a hard lower bound and MaxSlope as
+            // a hard upper bound. The later root-elevation solve shifts the whole
+            // connected segment vertically so minimum depth/cover is satisfied at
+            // every structure without changing these grades.
+            foreach (GravityPipeStep step in segment)
+            {
+                double minimumSlope = Math.Max(
+                    0.0,
+                    step.MinimumSlope);
+                if (minimumSlope > maximumSlope + 1e-9)
+                    throw new InvalidOperationException(
+                        "Minimum pipe slope exceeds Maximum pipe slope for " +
+                        (step.Pipe == null ? "a sewer pipe" : step.Pipe.Name) + ".");
+
+                double upstreamShallowInvert =
+                    step.UpstreamGround -
+                    minimumCover -
+                    step.Radius -
+                    step.InnerRadius;
+                double downstreamShallowInvert =
+                    step.DownstreamGround -
+                    minimumCover -
+                    step.Radius -
+                    step.InnerRadius;
+                double naturalRequiredSlope =
+                    (upstreamShallowInvert - downstreamShallowInvert) /
+                    step.Run;
+
+                // Rising/flatter ground cannot reverse gravity: retain the minimum
+                // downhill grade. Falling ground may steepen the pipe, but never
+                // beyond the user-specified maximum.
+                step.Slope = Math.Max(
+                    minimumSlope,
+                    Math.Min(
+                        maximumSlope,
+                        Math.Max(0.0, naturalRequiredSlope)));
+
+                if (step.Run < minLength ||
+                    step.Run > maxLength)
+                    warnings++;
+
+                if (naturalRequiredSlope > maximumSlope + 1e-9)
+                    warnings++;
+            }
 
             double cumulativeDrop = 0.0;
             double rootMinimum = double.NegativeInfinity;
@@ -907,58 +967,73 @@ namespace CETools.Civil3D
             foreach (GravityPipeStep step in segment)
             {
                 step.CumulativeStartDrop = cumulativeDrop;
-                step.CumulativeEndDrop = cumulativeDrop + step.Slope * step.Run;
+                step.CumulativeEndDrop =
+                    cumulativeDrop +
+                    step.Slope * step.Run;
                 cumulativeDrop = step.CumulativeEndDrop;
 
-                if (step.Run < minLength || step.Run > maxLength)
-                    warnings++;
-                if (maximumReviewSlope > 0.0 &&
-                    step.Slope > maximumReviewSlope + 1e-9)
-                    warnings++;
-
                 double upstreamMinimum =
-                    step.UpstreamGround - maximumCover - step.Radius - step.InnerRadius +
+                    step.UpstreamGround -
+                    maximumCover -
+                    step.Radius -
+                    step.InnerRadius +
                     step.CumulativeStartDrop;
                 double upstreamMaximum =
-                    step.UpstreamGround - minimumCover - step.Radius - step.InnerRadius +
+                    step.UpstreamGround -
+                    minimumCover -
+                    step.Radius -
+                    step.InnerRadius +
                     step.CumulativeStartDrop;
                 double downstreamMinimum =
-                    step.DownstreamGround - maximumCover - step.Radius - step.InnerRadius +
+                    step.DownstreamGround -
+                    maximumCover -
+                    step.Radius -
+                    step.InnerRadius +
                     step.CumulativeEndDrop;
                 double downstreamMaximum =
-                    step.DownstreamGround - minimumCover - step.Radius - step.InnerRadius +
+                    step.DownstreamGround -
+                    minimumCover -
+                    step.Radius -
+                    step.InnerRadius +
                     step.CumulativeEndDrop;
 
                 rootMinimum = Math.Max(
                     rootMinimum,
-                    Math.Max(upstreamMinimum, downstreamMinimum));
+                    Math.Max(
+                        upstreamMinimum,
+                        downstreamMinimum));
                 rootMaximum = Math.Min(
                     rootMaximum,
-                    Math.Min(upstreamMaximum, downstreamMaximum));
+                    Math.Min(
+                        upstreamMaximum,
+                        downstreamMaximum));
             }
 
-            // When cover constraints and the exact gravity grade are compatible,
-            // use the shallowest valid branch start. If rising ground/terrain makes
-            // the cover envelope impossible, preserve the exact downhill grade and
-            // report cover warnings rather than ever turning a pipe uphill.
             GravityPipeStep first = segment[0];
             double rootElevation;
             if (rootMinimum <= rootMaximum)
+            {
+                // Shallowest valid start while respecting minimum depth at every
+                // structure and the selected maximum-cover envelope.
                 rootElevation = rootMaximum;
+            }
             else
             {
-                // Prioritise minimum cover everywhere when no exact solution can
-                // satisfy both minimum and maximum cover. Choosing the lowest
-                // upper bound keeps every crown at or below its minimum-cover
-                // envelope; excessive depth is then reported for review.
+                // Minimum depth/cover is the safety constraint. Lower the branch
+                // enough to meet it and report any resulting excessive depth.
                 rootElevation = Finite(rootMaximum)
                     ? rootMaximum
-                    : first.UpstreamGround - minimumCover - first.Radius - first.InnerRadius;
+                    : first.UpstreamGround -
+                        minimumCover -
+                        first.Radius -
+                        first.InnerRadius;
                 warnings++;
             }
 
             foreach (GravityPipeStep step in segment)
-                step.HeadwaterInvert = rootElevation - step.CumulativeStartDrop;
+                step.HeadwaterInvert =
+                    rootElevation -
+                    step.CumulativeStartDrop;
         }
 
         private static void ApplyGravitySegment(
@@ -1178,6 +1253,7 @@ namespace CETools.Civil3D
             internal double Radius;
             internal double InnerRadius;
             internal double HeadwaterInvert;
+            internal double MinimumSlope;
             internal double Slope;
             internal double UpstreamGround;
             internal double DownstreamGround;
