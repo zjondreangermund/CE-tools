@@ -477,7 +477,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Locate Sewer Pipe / Structure in Plan",
                         "CE_SEWLOCATEPLAN",
-                        "Select or right-click a sewer pipe, structure or CE incoming-pipe label, switch to Model, zoom to it and keep the source selected.",
+                        "Select or right-click a sewer pipe/structure in plan or any profile view (or a CE incoming-pipe label), switch to Model, zoom to the original network part and keep it selected.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Recent - CE_ROADCENTRECLEAN",
