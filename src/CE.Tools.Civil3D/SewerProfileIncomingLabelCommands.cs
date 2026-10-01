@@ -15,6 +15,7 @@ using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilPipe = Autodesk.Civil.DatabaseServices.Pipe;
 using CivilStructure = Autodesk.Civil.DatabaseServices.Structure;
 using CivilProfileView = Autodesk.Civil.DatabaseServices.ProfileView;
+using CivilNetwork = Autodesk.Civil.DatabaseServices.Network;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.SewerProfileIncomingLabelCommands))]
 

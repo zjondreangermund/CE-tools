@@ -1640,14 +1640,14 @@ namespace CETools.Civil3D
             settings = new SewerExcavationSettings();
             error = string.Empty;
 
-            double units;
-            double trenchWidth;
-            double side;
-            double minimumWidth;
-            double bedding;
-            double blanket;
-            double structureAllowance;
-            double cover;
+            double units = 0.0;
+            double trenchWidth = 0.0;
+            double side = 0.0;
+            double minimumWidth = 0.0;
+            double bedding = 0.0;
+            double blanket = 0.0;
+            double structureAllowance = 0.0;
+            double cover = 0.0;
 
             if (!TryRead("UnitsPerMetre", out units) || units <= 0.0)
                 error = "Drawing units per metre must be greater than zero.";
