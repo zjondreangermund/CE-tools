@@ -470,6 +470,16 @@ namespace CETools.Civil3D
                         "Show every connected pipe opening in manhole profiles and list incoming/outgoing invert levels, including the lowest incoming pipe. Select multiple manholes, pipes or profile views, or use All.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
+                        "Show Incoming Pipe Names / Depths in Profile Views",
+                        "CE_SEWINCOMINGLABELSMULTI",
+                        "Select multiple sewer profile views and label every incoming connection with its pipe name and rim-to-inside-invert depth.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Locate Sewer Pipe / Structure in Plan",
+                        "CE_SEWLOCATEPLAN",
+                        "Select or right-click a sewer pipe, structure or CE incoming-pipe label, switch to Model, zoom to it and keep the source selected.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
                         "Recent - CE_ROADCENTRECLEAN",
                         "CE_ROADCENTRECLEAN",
                         "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
