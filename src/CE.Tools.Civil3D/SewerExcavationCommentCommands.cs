@@ -24,8 +24,8 @@ namespace CETools.Civil3D
     public sealed class SewerExcavationCommentCommands
     {
         private const string LinkRecordName = "CE_SEWER_EXCAVATION_LINKS";
-        private const string LinkSchema = "1";
-        private const int ColumnCount = 10;
+        private const string LinkSchema = "2";
+        private const int ColumnCount = 16;
 
         [CommandMethod("CE_TOOLS", "CE_SEWEREXCAVATION", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void Build()
@@ -34,7 +34,7 @@ namespace CETools.Civil3D
             if (document == null) return;
             PromptSelectionResult selection = GetSelection(
                 document.Editor,
-                "\nSelect sewer pipe objects for the linked excavation schedule: ");
+                "\nSelect sewer pipes and structures for the linked excavation schedule: ");
             if (selection.Status != PromptStatus.OK) return;
 
             var settingsWindow = new SewerExcavationSettingsWindow(new SewerExcavationSettings());
@@ -47,7 +47,7 @@ namespace CETools.Civil3D
             if (extraction.Rows.Count == 0)
             {
                 document.Editor.WriteMessage(
-                    "\nCE_SEWEREXCAVATION stopped. No supported pipe lengths and diameters were found. Rejected={0}.",
+                    "\nCE_SEWEREXCAVATION stopped. No supported sewer pipes/structures were found. Rejected={0}.",
                     extraction.Rejections.Count);
                 foreach (string reason in extraction.Rejections.Take(8))
                     document.Editor.WriteMessage("\n  REJECTED: {0}", reason);
@@ -70,11 +70,12 @@ namespace CETools.Civil3D
                     settings,
                     extraction.UsableHandles);
                 document.Editor.WriteMessage(
-                    "\nCE_SEWEREXCAVATION complete. Pipes={0}; rejected={1}; table={2}; excavation={3:N3} m³.",
-                    extraction.Rows.Count,
+                    "\nCE_SEWEREXCAVATION complete. Pipes={0}; structures={1}; rejected={2}; table={3}; primary excavation={4:N3} m³.",
+                    extraction.Rows.Count(row => row.ObjectType == "Pipe"),
+                    extraction.Rows.Count(row => row.ObjectType == "Structure"),
                     extraction.Rejections.Count,
                     tableId.Handle,
-                    extraction.Rows.Sum(row => row.Excavation));
+                    extraction.Rows.Sum(row => row.PrimaryExcavation));
             }
             catch (System.Exception exception)
             {
@@ -134,14 +135,18 @@ namespace CETools.Civil3D
                     new List<IList<string>>
                     {
                         new List<string> { "Schema", link.Schema },
-                        new List<string> { "Stored pipe handles", link.Handles.Count.ToString(CultureInfo.InvariantCulture) },
-                        new List<string> { "Resolvable pipes", active.ToString(CultureInfo.InvariantCulture) },
-                        new List<string> { "Missing pipes", missing.ToString(CultureInfo.InvariantCulture) },
-                        new List<string> { "Displayed pipe rows", displayedRows.ToString(CultureInfo.InvariantCulture) },
+                        new List<string> { "Stored sewer source handles", link.Handles.Count.ToString(CultureInfo.InvariantCulture) },
+                        new List<string> { "Resolvable sewer sources", active.ToString(CultureInfo.InvariantCulture) },
+                        new List<string> { "Missing sewer sources", missing.ToString(CultureInfo.InvariantCulture) },
+                        new List<string> { "Displayed sewer rows", displayedRows.ToString(CultureInfo.InvariantCulture) },
                         new List<string> { "Drawing units per metre", link.Settings.UnitsPerMetre.ToString("N6", CultureInfo.CurrentCulture) },
-                        new List<string> { "Side allowance each side", link.Settings.SideAllowance.ToString("N3", CultureInfo.CurrentCulture) + " m" },
+                        new List<string> { "Legacy side allowance each side", link.Settings.SideAllowance.ToString("N3", CultureInfo.CurrentCulture) + " m" },
                         new List<string> { "Minimum trench width", link.Settings.MinimumWidth.ToString("N3", CultureInfo.CurrentCulture) + " m" },
+                        new List<string> { "Specified trench width", link.Settings.TrenchWidth.ToString("N3", CultureInfo.CurrentCulture) + " m" },
                         new List<string> { "Bedding thickness", link.Settings.BeddingThickness.ToString("N3", CultureInfo.CurrentCulture) + " m" },
+                        new List<string> { "Blanket above pipe", link.Settings.BlanketAbovePipe.ToString("N3", CultureInfo.CurrentCulture) + " m" },
+                        new List<string> { "Structure side allowance", link.Settings.StructureSideAllowance.ToString("N3", CultureInfo.CurrentCulture) + " m" },
+                        new List<string> { "Primary excavation basis", link.Settings.ExcavationToBottomOnly ? "To bottom of pipe/structure" : "Including bedding" },
                         new List<string> { "Fallback average cover", link.Settings.FallbackCover.ToString("N3", CultureInfo.CurrentCulture) + " m" },
                         new List<string> { "Refresh command", "CE_SEWEREXCAVATIONREFRESH" }
                     },
@@ -243,11 +248,12 @@ namespace CETools.Civil3D
                 }
 
                 document.Editor.WriteMessage(
-                    "\nCE_SEWEREXCAVATIONREFRESH preview. Pipes={0}; stale handles={1}; rejected={2}; excavation={3:N3} m³.",
-                    extraction.Rows.Count,
+                    "\nCE_SEWEREXCAVATIONREFRESH preview. Pipes={0}; structures={1}; stale handles={2}; rejected={3}; primary excavation={4:N3} m³.",
+                    extraction.Rows.Count(row => row.ObjectType == "Pipe"),
+                    extraction.Rows.Count(row => row.ObjectType == "Structure"),
                     stale,
                     extraction.Rejections.Count,
-                    extraction.Rows.Sum(row => row.Excavation));
+                    extraction.Rows.Sum(row => row.PrimaryExcavation));
                 if (askConfirmation && !Confirm(document.Editor, "Replace the displayed excavation quantities"))
                     return false;
 
@@ -269,8 +275,9 @@ namespace CETools.Civil3D
                 }
 
                 document.Editor.WriteMessage(
-                    "\nCE_SEWEREXCAVATIONREFRESH complete. Pipes={0}; stale removed={1}.",
-                    extraction.Rows.Count,
+                    "\nCE_SEWEREXCAVATIONREFRESH complete. Pipes={0}; structures={1}; stale removed={2}.",
+                    extraction.Rows.Count(row => row.ObjectType == "Pipe"),
+                    extraction.Rows.Count(row => row.ObjectType == "Structure"),
                     stale);
                 return true;
             }
