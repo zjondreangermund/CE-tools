@@ -39,6 +39,10 @@ namespace CETools.Civil3D
                 refreshItem.Click += OnDynamicRefreshClick;
                 extension.MenuItems.Add(refreshItem);
 
+                var locateSewerItem = new MenuItem("Locate Sewer Pipe / Structure in Plan");
+                locateSewerItem.Click += OnLocateSewerClick;
+                extension.MenuItems.Add(locateSewerItem);
+
                 ContextMenuApplication.AddDefaultContextMenuExtension(extension);
                 _menuExtension = extension;
                 _attached = true;
@@ -86,6 +90,17 @@ namespace CETools.Civil3D
             // refresh manager directly from a UI event: the command owns the manual
             // refresh transaction/idle safety boundary (including PR #151).
             document.SendStringToExecute(DynamicRefreshAllCommand + " ", true, false, false);
+        }
+
+        private static void OnLocateSewerClick(object sender, EventArgs e)
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+
+            // Preserve the right-click/preselection and let the command resolve
+            // either the native pipe/structure or a CE incoming-pipe annotation.
+            document.SendStringToExecute(
+                "CE_SEWLOCATEPLAN ", true, false, false);
         }
 
         private static void WriteDiagnostic(string message)
