@@ -26,6 +26,9 @@ required_audit = [
     '"CE TOOLS SEWER ENGINEERING AUDIT"',
     '"Sump Clearance"',
     'The network is not modified.',
+    '"Locate Selected"',
+    'ResolveAuditRowSource(',
+    'SewerProfileIncomingLabelCommands.LocateSourceInPlan(',
 ]
 for token in required_audit:
     if token not in audit_source:
