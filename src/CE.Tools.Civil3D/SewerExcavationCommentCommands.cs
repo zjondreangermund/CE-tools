@@ -768,30 +768,50 @@ namespace CETools.Civil3D
             table.SetSize(rows.Count + 3, ColumnCount);
             double height = ResolveTextHeight(database);
             table.SetRowHeight(height * 1.8);
+
             double[] widths =
             {
-                height * 8.0, height * 8.0, height * 5.0, height * 5.0, height * 5.0,
-                height * 5.0, height * 5.0, height * 6.0, height * 6.0, height * 6.0
+                height * 6.0, height * 8.0, height * 8.0, height * 5.5,
+                height * 5.5, height * 5.0, height * 5.0, height * 6.0,
+                height * 7.0, height * 7.0, height * 6.0, height * 6.0,
+                height * 7.0, height * 7.0, height * 7.0, height * 7.0
             };
             for (int column = 0; column < ColumnCount; column++)
                 table.Columns[column].Width = widths[column];
 
-            table.MergeCells(CellRange.Create(table, 0, 0, 0, ColumnCount - 1));
+            table.MergeCells(
+                CellRange.Create(
+                    table,
+                    0,
+                    0,
+                    0,
+                    ColumnCount - 1));
             table.Cells[0, 0].TextString = string.Format(
                 CultureInfo.CurrentCulture,
-                "CE TOOLS LINKED SEWER EXCAVATION - UNITS/M {0:N6}",
-                settings.UnitsPerMetre);
-            table.Cells[0, 0].Alignment = CellAlignment.MiddleCenter;
-            table.Cells[0, 0].TextHeight = height * 1.15;
+                "CE TOOLS LINKED SEWER EXCAVATION - TRENCH {0:N3} m - BEDDING {1:N3} m - BLANKET {2:N3} m",
+                settings.TrenchWidth,
+                settings.BeddingThickness,
+                settings.BlanketAbovePipe);
+            table.Cells[0, 0].Alignment =
+                CellAlignment.MiddleCenter;
+            table.Cells[0, 0].TextHeight =
+                height * 1.15;
+
             string[] headings =
             {
-                "PIPE", "LAYER", "LENGTH m", "NOMINAL Ø mm", "AVG COVER m",
-                "WIDTH m", "DEPTH m", "EXCAVATION m³", "BEDDING m³", "BACKFILL m³"
+                "TYPE", "NAME", "LAYER", "LENGTH m", "SIZE mm",
+                "COVER m", "WIDTH m", "DEPTH TO BOTTOM m",
+                "EXC TO BOTTOM m³", "EXC incl BEDDING m³",
+                "BEDDING m³", "PIPE VOL m³", "BLANKET FILL m³",
+                "FILL ABOVE BLANKET m³", "NET EXC MATERIAL m³",
+                "PRIMARY EXC m³"
             };
+
             for (int column = 0; column < headings.Length; column++)
             {
                 table.Cells[1, column].TextString = headings[column];
-                table.Cells[1, column].Alignment = CellAlignment.MiddleCenter;
+                table.Cells[1, column].Alignment =
+                    CellAlignment.MiddleCenter;
                 table.Cells[1, column].TextHeight = height;
             }
 
@@ -799,37 +819,88 @@ namespace CETools.Civil3D
             {
                 PipeExcavationRow row = rows[index];
                 int tableRow = index + 2;
+                bool pipe = string.Equals(
+                    row.ObjectType,
+                    "Pipe",
+                    StringComparison.OrdinalIgnoreCase);
+
                 string[] values =
                 {
+                    row.ObjectType,
                     row.Name,
                     row.Layer,
-                    row.Length.ToString("N3", CultureInfo.CurrentCulture),
-                    NominalDiameterMm(row.Diameter).ToString(CultureInfo.CurrentCulture),
-                    row.AverageCover.ToString("N3", CultureInfo.CurrentCulture),
+                    pipe
+                        ? row.Length.ToString("N3", CultureInfo.CurrentCulture)
+                        : string.Empty,
+                    NominalDiameterMm(row.Diameter).ToString(
+                        CultureInfo.CurrentCulture),
+                    pipe
+                        ? row.AverageCover.ToString("N3", CultureInfo.CurrentCulture)
+                        : string.Empty,
                     row.TrenchWidth.ToString("N3", CultureInfo.CurrentCulture),
-                    row.TrenchDepth.ToString("N3", CultureInfo.CurrentCulture),
-                    row.Excavation.ToString("N3", CultureInfo.CurrentCulture),
+                    row.DepthToBottom.ToString("N3", CultureInfo.CurrentCulture),
+                    row.ExcavationToBottom.ToString("N3", CultureInfo.CurrentCulture),
+                    row.ExcavationIncludingBedding.ToString("N3", CultureInfo.CurrentCulture),
                     row.Bedding.ToString("N3", CultureInfo.CurrentCulture),
-                    row.Backfill.ToString("N3", CultureInfo.CurrentCulture)
+                    row.PipeVolume.ToString("N3", CultureInfo.CurrentCulture),
+                    row.BlanketFill.ToString("N3", CultureInfo.CurrentCulture),
+                    row.FillAboveBlanket.ToString("N3", CultureInfo.CurrentCulture),
+                    row.ExcavatedMaterialNet.ToString("N3", CultureInfo.CurrentCulture),
+                    row.PrimaryExcavation.ToString("N3", CultureInfo.CurrentCulture)
                 };
+
                 for (int column = 0; column < ColumnCount; column++)
                 {
-                    table.Cells[tableRow, column].TextString = values[column];
-                    table.Cells[tableRow, column].TextHeight = height;
-                    table.Cells[tableRow, column].Alignment = CellAlignment.MiddleCenter;
+                    table.Cells[tableRow, column].TextString =
+                        values[column];
+                    table.Cells[tableRow, column].TextHeight =
+                        height;
+                    table.Cells[tableRow, column].Alignment =
+                        CellAlignment.MiddleCenter;
                 }
             }
 
             int totalRow = rows.Count + 2;
             table.Cells[totalRow, 0].TextString = "TOTAL";
-            table.Cells[totalRow, 2].TextString = rows.Sum(row => row.Length).ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 7].TextString = rows.Sum(row => row.Excavation).ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 8].TextString = rows.Sum(row => row.Bedding).ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 9].TextString = rows.Sum(row => row.Backfill).ToString("N3", CultureInfo.CurrentCulture);
+            table.Cells[totalRow, 1].TextString = string.Format(
+                CultureInfo.CurrentCulture,
+                "Pipes {0}; Structures {1}",
+                rows.Count(row => row.ObjectType == "Pipe"),
+                rows.Count(row => row.ObjectType == "Structure"));
+            table.Cells[totalRow, 3].TextString =
+                rows.Where(row => row.ObjectType == "Pipe")
+                    .Sum(row => row.Length)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+            table.Cells[totalRow, 8].TextString =
+                rows.Sum(row => row.ExcavationToBottom)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+            table.Cells[totalRow, 9].TextString =
+                rows.Sum(row => row.ExcavationIncludingBedding)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+            table.Cells[totalRow, 10].TextString =
+                rows.Sum(row => row.Bedding)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+            table.Cells[totalRow, 11].TextString =
+                rows.Sum(row => row.PipeVolume)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+            table.Cells[totalRow, 12].TextString =
+                rows.Sum(row => row.BlanketFill)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+            table.Cells[totalRow, 13].TextString =
+                rows.Sum(row => row.FillAboveBlanket)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+            table.Cells[totalRow, 14].TextString =
+                rows.Sum(row => row.ExcavatedMaterialNet)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+            table.Cells[totalRow, 15].TextString =
+                rows.Sum(row => row.PrimaryExcavation)
+                    .ToString("N3", CultureInfo.CurrentCulture);
+
             for (int column = 0; column < ColumnCount; column++)
             {
                 table.Cells[totalRow, column].TextHeight = height;
-                table.Cells[totalRow, column].Alignment = CellAlignment.MiddleCenter;
+                table.Cells[totalRow, column].Alignment =
+                    CellAlignment.MiddleCenter;
             }
         }
 
