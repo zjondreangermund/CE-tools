@@ -285,47 +285,12 @@ namespace CETools.Civil3D
         private static void Save(Document document, CeDocumentTelemetry state)
         {
             if (document == null || state == null || !state.Dirty) return;
-            bool undoRecordingDisabled = false;
-            try
-            {
-                // Explicit telemetry persistence must never create an AutoCAD
-                // undo record. Normal CE design commands remain fully undoable.
-                document.Database.DisableUndoRecording(true);
-                undoRecordingDisabled = true;
-                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-                {
-                    DBDictionary named = transaction.GetObject(document.Database.NamedObjectsDictionaryId, OpenMode.ForWrite, false) as DBDictionary;
-                    DBDictionary root;
-                    if (named.Contains(RootName)) root = transaction.GetObject(named.GetAt(RootName), OpenMode.ForWrite, false) as DBDictionary;
-                    else
-                    {
-                        root = new DBDictionary();
-                        named.SetAt(RootName, root);
-                        transaction.AddNewlyCreatedDBObject(root, true);
-                    }
-                    Xrecord record;
-                    if (root.Contains(RecordName)) record = transaction.GetObject(root.GetAt(RecordName), OpenMode.ForWrite, false) as Xrecord;
-                    else
-                    {
-                        record = new Xrecord();
-                        root.SetAt(RecordName, record);
-                        transaction.AddNewlyCreatedDBObject(record, true);
-                    }
-                    record.Data = new ResultBuffer(state.Stats.Values.OrderBy(item => item.Command).Select(item => new TypedValue((int)DxfCode.Text, item.Serialize())).ToArray());
-                    transaction.Commit();
-                }
-                SaveUserProfile(document, state);
-                state.Dirty = false;
-            }
-            catch { }
-            finally
-            {
-                if (undoRecordingDisabled)
-                {
-                    try { document.Database.DisableUndoRecording(false); }
-                    catch { }
-                }
-            }
+
+            // Interaction telemetry is user-profile data only. Never persist it
+            // into the active DWG: even an isolated bookkeeping transaction can
+            // appear in AutoCAD's Undo dropdown as another "Group of commands".
+            SaveUserProfile(document, state);
+            state.Dirty = false;
         }
 
         private static void SaveUserProfile(Document document, CeDocumentTelemetry state)
