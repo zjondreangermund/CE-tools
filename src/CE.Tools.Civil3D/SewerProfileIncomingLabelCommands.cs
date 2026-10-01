@@ -99,7 +99,11 @@ namespace CETools.Civil3D
                         view.AlignmentId, OpenMode.ForRead, false) as CivilAlignment;
                     if (alignment == null) { skipped++; continue; }
 
-                    List<ObjectId> structureIds = StructureIdsInView(view);
+                    List<ObjectId> structureIds = StructureIdsInView(
+                        document.Database,
+                        civil,
+                        viewId,
+                        tr);
                     foreach (ObjectId structureId in structureIds)
                     {
                         CivilStructure structure = tr.GetObject(
@@ -203,24 +207,7 @@ namespace CETools.Civil3D
                 return;
             }
 
-            try { AcApplication.SetSystemVariable("CTAB", "Model"); }
-            catch { }
-
-            try
-            {
-                document.Editor.SetImpliedSelection(new[] { sourceId });
-                document.Editor.Command("_.ZOOM", "_Object", sourceId, "");
-                document.Editor.SetImpliedSelection(new[] { sourceId });
-            }
-            catch
-            {
-                try { document.Editor.SetImpliedSelection(new[] { sourceId }); }
-                catch { }
-            }
-
-            document.Editor.WriteMessage(
-                "\nCE_SEWLOCATEPLAN: source object {0} selected in plan/model space.",
-                sourceId.Handle);
+            LocateSourceInPlan(document, sourceId);
         }
 
         private static List<ObjectId> SelectProfileViews(Document document)
@@ -259,20 +246,77 @@ namespace CETools.Civil3D
             return ids;
         }
 
-        private static List<ObjectId> StructureIdsInView(CivilProfileView view)
+        private static List<ObjectId> StructureIdsInView(
+            Database database,
+            CivilDocument civil,
+            ObjectId viewId,
+            Transaction tr)
         {
-            var ids = new List<ObjectId>();
+            var ids = new HashSet<ObjectId>();
+            if (database == null || civil == null || viewId.IsNull || tr == null)
+                return ids.ToList();
+
+            // StructureOverrides only contains structures with view-specific
+            // overrides in many Civil 3D drawings. It is therefore not a reliable
+            // list of every structure actually drawn in the profile view.
             try
             {
-                using (StructureOverrideCollection overrides = view.StructureOverrides)
+                CivilProfileView view = tr.GetObject(
+                    viewId, OpenMode.ForRead, false) as CivilProfileView;
+                if (view != null)
                 {
-                    foreach (StructureOverride entry in overrides)
-                        if (entry.Draw && !entry.StructId.IsNull)
-                            ids.Add(entry.StructId);
+                    using (StructureOverrideCollection overrides = view.StructureOverrides)
+                    {
+                        foreach (StructureOverride entry in overrides)
+                            if (entry.Draw && !entry.StructId.IsNull)
+                                ids.Add(entry.StructId);
+                    }
                 }
             }
             catch { }
-            return ids.Distinct().ToList();
+
+            // Authoritative fallback: ask every sewer structure which profile
+            // views currently display it. This covers ordinary, non-overridden
+            // structures and fixes the field case where 24 views were selected
+            // but StructureOverrides yielded zero rows/labels.
+            foreach (ObjectId networkId in civil.GetPipeNetworkIds())
+            {
+                CivilNetwork network = null;
+                try
+                {
+                    network = tr.GetObject(
+                        networkId, OpenMode.ForRead, false) as CivilNetwork;
+                }
+                catch { }
+                if (network == null) continue;
+
+                foreach (ObjectId structureId in network.GetStructureIds())
+                {
+                    CivilStructure structure = null;
+                    try
+                    {
+                        structure = tr.GetObject(
+                            structureId, OpenMode.ForRead, false) as CivilStructure;
+                    }
+                    catch { }
+                    if (structure == null) continue;
+
+                    try
+                    {
+                        foreach (ObjectId displayedViewId in
+                            structure.GetProfileViewsDisplayingMe())
+                        {
+                            if (displayedViewId == viewId)
+                            {
+                                ids.Add(structureId);
+                                break;
+                            }
+                        }
+                    }
+                    catch { }
+                }
+            }
+            return ids.ToList();
         }
 
         private static bool TryProfileViewPoint(
@@ -452,8 +496,132 @@ namespace CETools.Civil3D
                 if (entity != null &&
                     TryReadLink(entity, out viewHandle, out sourceHandle))
                     return ResolveHandle(document.Database, sourceHandle);
+
+                // Native profile-view pipe/structure graphics and native profile
+                // labels expose their source/model part through different ObjectId
+                // properties across Civil 3D 2023 object types. Resolve those
+                // reflectively and verify the resolved object is a sewer part.
+                ObjectId profileSource = ResolveProfileSourcePart(
+                    value,
+                    document.Database,
+                    tr);
+                if (!profileSource.IsNull)
+                    return profileSource;
             }
             return ObjectId.Null;
+        }
+
+        internal static bool LocateSourceInPlan(
+            Document document,
+            ObjectId sourceId)
+        {
+            if (document == null || sourceId.IsNull || sourceId.IsErased)
+                return false;
+
+            try { AcApplication.SetSystemVariable("CTAB", "Model"); }
+            catch { }
+
+            try
+            {
+                document.Editor.SetImpliedSelection(new[] { sourceId });
+                document.Editor.Command("_.ZOOM", "_Object", sourceId, "");
+                document.Editor.SetImpliedSelection(new[] { sourceId });
+                document.Editor.WriteMessage(
+                    "\nCE_SEWLOCATEPLAN: source object {0} selected in plan/model space.",
+                    sourceId.Handle);
+                return true;
+            }
+            catch
+            {
+                try
+                {
+                    document.Editor.SetImpliedSelection(new[] { sourceId });
+                    return true;
+                }
+                catch { return false; }
+            }
+        }
+
+        private static ObjectId ResolveProfileSourcePart(
+            DBObject selected,
+            Database database,
+            Transaction tr)
+        {
+            if (selected == null || database == null || tr == null)
+                return ObjectId.Null;
+
+            foreach (string propertyName in new[]
+            {
+                "PartId", "PipeId", "StructureId", "SourcePartId",
+                "SourceId", "ModelPartId", "NetworkPartId", "FeatureId"
+            })
+            {
+                try
+                {
+                    PropertyInfo property = selected.GetType().GetProperty(
+                        propertyName,
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (property == null || !property.CanRead) continue;
+                    object raw = property.GetValue(selected, null);
+                    if (!(raw is ObjectId)) continue;
+                    ObjectId candidate = (ObjectId)raw;
+                    if (IsSewerPart(candidate, tr))
+                        return candidate;
+                }
+                catch { }
+            }
+
+            // Some Civil labels/profile graphics wrap a source object that then
+            // exposes the actual PartId. Follow one level of ObjectId indirection.
+            foreach (PropertyInfo property in selected.GetType().GetProperties(
+                BindingFlags.Public | BindingFlags.Instance))
+            {
+                if (property.PropertyType != typeof(ObjectId) || !property.CanRead)
+                    continue;
+                try
+                {
+                    ObjectId intermediateId = (ObjectId)property.GetValue(selected, null);
+                    if (intermediateId.IsNull || intermediateId.IsErased) continue;
+                    DBObject intermediate = tr.GetObject(
+                        intermediateId, OpenMode.ForRead, false);
+                    if (intermediate is CivilPipe || intermediate is CivilStructure)
+                        return intermediateId;
+
+                    foreach (string nestedName in new[]
+                    {
+                        "PartId", "PipeId", "StructureId",
+                        "SourcePartId", "ModelPartId"
+                    })
+                    {
+                        PropertyInfo nested = intermediate.GetType().GetProperty(
+                            nestedName,
+                            BindingFlags.Public | BindingFlags.Instance);
+                        if (nested == null || !nested.CanRead ||
+                            nested.PropertyType != typeof(ObjectId))
+                            continue;
+                        ObjectId candidate = (ObjectId)nested.GetValue(
+                            intermediate, null);
+                        if (IsSewerPart(candidate, tr))
+                            return candidate;
+                    }
+                }
+                catch { }
+            }
+
+            return ObjectId.Null;
+        }
+
+        private static bool IsSewerPart(
+            ObjectId id,
+            Transaction tr)
+        {
+            if (id.IsNull || id.IsErased || tr == null) return false;
+            try
+            {
+                DBObject value = tr.GetObject(id, OpenMode.ForRead, false);
+                return value is CivilPipe || value is CivilStructure;
+            }
+            catch { return false; }
         }
 
         private static ObjectId ResolveHandle(Database database, string handleText)
