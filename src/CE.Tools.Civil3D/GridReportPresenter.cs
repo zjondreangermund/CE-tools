@@ -53,16 +53,49 @@ namespace CETools.Civil3D
             IList<IList<string>> rows,
             string tableTitle = "")
         {
+            ShowReportAndOfferTable(
+                document,
+                title,
+                note,
+                columns,
+                rows,
+                tableTitle,
+                null,
+                null);
+        }
+
+        public static void ShowReportAndOfferTable(
+            Document document,
+            string title,
+            string note,
+            IList<string> columns,
+            IList<IList<string>> rows,
+            string tableTitle,
+            string locateButtonText,
+            Action<IList<string>> locateAction)
+        {
             if (document == null)
             {
                 return;
             }
 
-            var window = new GridReportWindow(title, note, columns, rows);
+            var window = new GridReportWindow(
+                title,
+                note,
+                columns,
+                rows,
+                locateButtonText,
+                locateAction != null);
             AcApplication.ShowModalWindow(window);
             if (window.PlaceTableRequested)
             {
                 PlaceTable(document, tableTitle, columns, rows);
+            }
+            else if (window.LocateRequested &&
+                     locateAction != null &&
+                     window.SelectedValues != null)
+            {
+                locateAction(window.SelectedValues);
             }
         }
 
@@ -219,7 +252,9 @@ namespace CETools.Civil3D
                 string title,
                 string note,
                 IList<string> columns,
-                IList<IList<string>> rows)
+                IList<IList<string>> rows,
+                string locateButtonText = null,
+                bool allowLocate = false)
             {
                 Title = title ?? "CE Tools Report";
                 Width = 1080;
@@ -293,6 +328,17 @@ namespace CETools.Civil3D
                     dataGrid.FrozenColumnCount = 1;
                 }
 
+                dataGrid.MouseDoubleClick += delegate
+                {
+                    if (!allowLocate) return;
+                    GridReportRow selected = dataGrid.SelectedItem as GridReportRow;
+                    if (selected == null) return;
+                    SelectedValues = selected.Values;
+                    LocateRequested = true;
+                    DialogResult = true;
+                    Close();
+                };
+
                 Grid.SetRow(dataGrid, 2);
                 root.Children.Add(dataGrid);
 
@@ -303,10 +349,30 @@ namespace CETools.Civil3D
                     Margin = new Thickness(0, 12, 0, 0)
                 };
 
+                if (allowLocate)
+                {
+                    var locateButton = CreateButton(
+                        string.IsNullOrWhiteSpace(locateButtonText)
+                            ? "Locate Selected"
+                            : locateButtonText,
+                        150);
+                    locateButton.Click += delegate
+                    {
+                        GridReportRow selected = dataGrid.SelectedItem as GridReportRow;
+                        if (selected == null) return;
+                        SelectedValues = selected.Values;
+                        LocateRequested = true;
+                        DialogResult = true;
+                        Close();
+                    };
+                    buttons.Children.Add(locateButton);
+                }
+
                 var tableButton = CreateButton("Place Table", 110);
                 tableButton.Click += delegate
                 {
                     PlaceTableRequested = true;
+                    LocateRequested = false;
                     DialogResult = true;
                     Close();
                 };
@@ -317,6 +383,7 @@ namespace CETools.Civil3D
                 closeButton.Click += delegate
                 {
                     PlaceTableRequested = false;
+                    LocateRequested = false;
                     DialogResult = false;
                     Close();
                 };
@@ -328,6 +395,8 @@ namespace CETools.Civil3D
             }
 
             public bool PlaceTableRequested { get; private set; }
+            public bool LocateRequested { get; private set; }
+            public IList<string> SelectedValues { get; private set; }
 
             private static Button CreateButton(string text, double width)
             {
