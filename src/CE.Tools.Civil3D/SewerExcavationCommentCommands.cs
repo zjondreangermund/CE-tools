@@ -585,7 +585,7 @@ namespace CETools.Civil3D
 
             double rim;
             double sump;
-            if (!TryReadNumber(
+            if (!TryReadNumberAllowZero(
                     value,
                     out rim,
                     "RimElevation"))
