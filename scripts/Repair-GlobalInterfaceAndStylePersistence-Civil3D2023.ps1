@@ -182,19 +182,20 @@ $loadReplacement = @'
             // Latest user-global values intentionally win over drawing-local popup values.
             CeGlobalProductionSettingsStore.Load(model);
 '@.TrimEnd("`r","`n")
-if (-not $text.Contains('            CeGlobalProductionSettingsStore.Load(model);')) {
+if (-not $text.Contains('            CeGlobalProductionSettingsStore.Load(model);') -and -not $text.Contains('            CrossDrawingProductionSettingsStore.Load(model);')) {
     if (-not $text.Contains($loadAnchor)) { throw 'Shared settings global-load marker was not found.' }
     $text = $text.Replace($loadAnchor,$loadReplacement)
 }
 $saveAnchor = '                CrossDrawingProductionSettingsStore.Save(model);'
-if (-not $text.Contains('                CeGlobalProductionSettingsStore.Save(model);')) {
+if (-not $text.Contains('                CeGlobalProductionSettingsStore.Save(model);') -and -not $text.Contains('                CrossDrawingProductionSettingsStore.Save(model);')) {
     if (-not $text.Contains($saveAnchor)) { throw 'Shared settings global-save marker was not found.' }
     $text = $text.Replace($saveAnchor,$saveAnchor + "`r`n                CeGlobalProductionSettingsStore.Save(model);")
 }
 WriteText $dialogs $text
 $text = ReadText $dialogs
-if (-not $text.Contains('CeGlobalProductionSettingsStore.Load(model);') -or
-    -not $text.Contains('CeGlobalProductionSettingsStore.Save(model);')) {
+$hasLegacyGlobalSettings = $text.Contains('CeGlobalProductionSettingsStore.Load(model);') -and $text.Contains('CeGlobalProductionSettingsStore.Save(model);')
+$hasCurrentCrossDrawingSettings = $text.Contains('CrossDrawingProductionSettingsStore.Load(model);') -and $text.Contains('CrossDrawingProductionSettingsStore.Save(model);')
+if (-not $hasLegacyGlobalSettings -and -not $hasCurrentCrossDrawingSettings) {
     throw 'All-discipline cross-drawing settings persistence wiring failed.'
 }
 Write-Host 'All shared discipline settings now save and restore user-global values across drawings and Civil 3D sessions.' -ForegroundColor Green
@@ -308,8 +309,9 @@ if (-not $text.Contains('CeGlobalDisciplineStyleDefaults.Save(selection);') -or
     throw 'Global discipline style persistence validation failed.'
 }
 $text = ReadText $dialogs
-if (-not $text.Contains('CeGlobalProductionSettingsStore.Load(model);') -or
-    -not $text.Contains('CeGlobalProductionSettingsStore.Save(model);')) {
+$hasLegacyGlobalSettings = $text.Contains('CeGlobalProductionSettingsStore.Load(model);') -and $text.Contains('CeGlobalProductionSettingsStore.Save(model);')
+$hasCurrentCrossDrawingSettings = $text.Contains('CrossDrawingProductionSettingsStore.Load(model);') -and $text.Contains('CrossDrawingProductionSettingsStore.Save(model);')
+if (-not $hasLegacyGlobalSettings -and -not $hasCurrentCrossDrawingSettings) {
     throw 'Global production settings persistence validation failed.'
 }
 $themeSource = ReadText (Required 'CeInterfaceTheme.cs')
