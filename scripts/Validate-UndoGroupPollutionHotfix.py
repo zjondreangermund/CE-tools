@@ -9,8 +9,7 @@ refresh = (ROOT / "src" / "CE.Tools.Civil3D" / "UniversalDynamicRefreshCommands.
 
 required_telemetry = [
     "SaveUserProfile(document, state);",
-    "document.Database.DisableUndoRecording(true);",
-    "document.Database.DisableUndoRecording(false);",
+    "Interaction telemetry is user-profile data only",
     "causes the Undo dropdown to fill with \"Group of commands\" rows",
 ]
 required_refresh = [
@@ -24,6 +23,8 @@ required_refresh = [
     "bool suppressUndoRecording",
     "DisableUndoRecording(true)",
     "IsUndoRedo(command)",
+    "_ceCommandActive = true;",
+    "if (_busy || _ceCommandActive || _undoRedoActive",
 ]
 
 missing = [f"telemetry:{item}" for item in required_telemetry if item not in telemetry]
@@ -33,7 +34,13 @@ finish_start = telemetry.index("        private static void Finish(Document docu
 finish_end = telemetry.index("        private static void FinishElapsed", finish_start)
 finish_block = telemetry[finish_start:finish_end]
 if "Save(document, state);" in finish_block:
-    missing.append("telemetry:Finish still writes an Xrecord after every command")
+    missing.append("telemetry:Finish still writes drawing telemetry after every command")
+
+save_start = telemetry.index("        private static void Save(Document document")
+save_end = telemetry.index("        private static void SaveUserProfile", save_start)
+save_block = telemetry[save_start:save_end]
+if "StartTransaction()" in save_block or "Xrecord" in save_block or "NamedObjectsDictionaryId" in save_block:
+    missing.append("telemetry:Save still mutates the active drawing database")
 
 if 'command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase)' in refresh:
     missing.append("refresh:blanket CE command-ended universal refresh returned")
