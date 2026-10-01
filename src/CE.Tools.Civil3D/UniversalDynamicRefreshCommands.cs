@@ -309,9 +309,15 @@ namespace CETools.Civil3D
 
         private static bool IsCeCommand(string command)
         {
-            return !string.IsNullOrWhiteSpace(command) &&
-                (command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
-                 command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase));
+            if (string.IsNullOrWhiteSpace(command)) return false;
+            string value = command.Trim();
+            bool ceUnderscore =
+                value.Length >= 3 &&
+                (value[0] == 'C' || value[0] == 'c') &&
+                (value[1] == 'E' || value[1] == 'e') &&
+                value[2] == '_';
+            return ceUnderscore ||
+                value.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase);
         }
 
         private static bool IsSewerSequence(string command)
