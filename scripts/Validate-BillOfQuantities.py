@@ -16,9 +16,10 @@ SOURCE = ROOT / "src" / "CE.Tools.Civil3D" / "BillOfQuantitiesCommands.cs"
 RIBBON = ROOT / "src" / "CE.Tools.Civil3D" / "PluginEntry.cs"
 PROJECT = ROOT / "src" / "CE.Tools.Civil3D" / "CE.Tools.Civil3D.csproj"
 QUICK = ROOT / "src" / "CE.Tools.Civil3D" / "QuantityCommands.cs"
+EXCAVATION = ROOT / "src" / "CE.Tools.Civil3D" / "SewerExcavationCommentCommands.cs"
 
 errors: list[str] = []
-for path in (SOURCE, RIBBON, PROJECT, QUICK):
+for path in (SOURCE, RIBBON, PROJECT, QUICK, EXCAVATION):
     if not path.exists():
         errors.append(f"Missing required file: {path.relative_to(ROOT)}")
 
@@ -30,6 +31,7 @@ source = SOURCE.read_text(encoding="utf-8")
 ribbon = RIBBON.read_text(encoding="utf-8")
 project = PROJECT.read_text(encoding="utf-8")
 quick = QUICK.read_text(encoding="utf-8")
+excavation = EXCAVATION.read_text(encoding="utf-8")
 
 commands = [
     "CE_BOQTOOLS",
@@ -77,11 +79,34 @@ required_source_markers = [
     '"Road signs"',
     'new ZipArchive(',
     'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml',
-    '"xl/worksheets/sheet1.xml"',
+    '"xl/worksheets/sheet"',
+    'new XlsxSheet(',
+    '"Summary"',
+    '"Number of pipes"',
+    '"Total pipe length (m)"',
+    'new[] { 110, 160, 200, 250 }',
 ]
 for marker in required_source_markers:
     if marker not in source:
         errors.append(f"Linked BOQ implementation is missing: {marker}")
+
+for marker in [
+    '"CE_SEWEREXCAVATION"',
+    '"Specified trench width (m)"',
+    '"Bedding depth (m)"',
+    '"Blanket above pipe crown (m)"',
+    '"Excavation to pipe bottom (m³)"',
+    '"Structure excavation to bottom (m³)"',
+    '"Pipe volume deducted (m³)"',
+    '"Fill above blanket to NG (m³)"',
+    'ExcavatedMaterialNet',
+    'ExcavationToBottomOnly',
+    'TryBuildStructureRow(',
+    'new XlsxSheet(',
+    '"Summary"',
+]:
+    if marker not in excavation:
+        errors.append(f"Sewer excavation/report implementation is missing: {marker}")
 
 if "Microsoft.Office.Interop" in source or "Excel.Application" in source:
     errors.append("Excel COM automation was introduced; Batch 6 must remain dependency-free")
@@ -113,6 +138,7 @@ if re.search(r"SetColumnWidth\([^\n]*(?:2500|5000)", source):
 for name, text in (
     (SOURCE.name, source),
     (RIBBON.name, ribbon),
+    (EXCAVATION.name, excavation),
 ):
     if text.count("{") != text.count("}"):
         errors.append(f"Unbalanced braces detected in {name}")

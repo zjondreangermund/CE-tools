@@ -6,6 +6,7 @@ using System.IO.Compression;
 using System.Linq;
 using System.Reflection;
 using System.Text;
+using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -265,7 +266,25 @@ namespace CETools.Civil3D
                     cells = ReadTableCells(table);
                 }
 
-                SimpleXlsxWriter.Write(path, title, cells);
+                if (string.Equals(
+                        title,
+                        "Sewer BOQ",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    SimpleXlsxWriter.Write(
+                        path,
+                        new List<XlsxSheet>
+                        {
+                            new XlsxSheet("Sewer BOQ", cells),
+                            new XlsxSheet(
+                                "Summary",
+                                BuildSewerSummaryFromExportCells(cells))
+                        });
+                }
+                else
+                {
+                    SimpleXlsxWriter.Write(path, title, cells);
+                }
                 document.Editor.WriteMessage(
                     "\nCE_BOQEXPORT complete. Excel workbook: {0}",
                     path);
@@ -328,10 +347,33 @@ namespace CETools.Civil3D
 
             try
             {
-                SimpleXlsxWriter.Write(
-                    path,
-                    discipline + " BOQ",
-                    BuildExportCells(discipline, unitsPerMetre, lines));
+                if (discipline == BoqDiscipline.Sewer)
+                {
+                    SimpleXlsxWriter.Write(
+                        path,
+                        new List<XlsxSheet>
+                        {
+                            new XlsxSheet(
+                                "Sewer BOQ",
+                                BuildExportCells(
+                                    discipline,
+                                    unitsPerMetre,
+                                    lines)),
+                            new XlsxSheet(
+                                "Summary",
+                                BuildSewerSummaryCells(lines))
+                        });
+                }
+                else
+                {
+                    SimpleXlsxWriter.Write(
+                        path,
+                        discipline + " BOQ",
+                        BuildExportCells(
+                            discipline,
+                            unitsPerMetre,
+                            lines));
+                }
                 document.Editor.WriteMessage(
                     "\n{0} BOQ export complete. Items={1}; sources={2}; rejected={3}; workbook={4}",
                     discipline,
@@ -1485,6 +1527,198 @@ namespace CETools.Civil3D
             return rows;
         }
 
+        private static List<IList<string>> BuildSewerSummaryCells(
+            IList<BoqLine> lines)
+        {
+            var sizes = new[] { 110, 160, 200, 250 };
+            var counts = sizes.ToDictionary(size => size, size => 0);
+            var lengths = sizes.ToDictionary(size => size, size => 0.0);
+            int totalPipes = 0;
+            double totalLength = 0.0;
+            int totalStructures = 0;
+
+            foreach (BoqLine line in lines ?? new List<BoqLine>())
+            {
+                if (line == null) continue;
+                if (string.Equals(
+                        line.Section,
+                        "Sewer pipes",
+                        StringComparison.OrdinalIgnoreCase) &&
+                    string.Equals(
+                        line.Unit,
+                        "m",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    int size = ReadNominalSizeMillimetres(
+                        line.SourceSummary);
+                    totalPipes += line.SourceCount;
+                    totalLength += line.Quantity;
+                    if (counts.ContainsKey(size))
+                    {
+                        counts[size] += line.SourceCount;
+                        lengths[size] += line.Quantity;
+                    }
+                }
+                else if (string.Equals(
+                        line.Section,
+                        "Sewer structures",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    totalStructures += line.SourceCount;
+                }
+            }
+
+            return BuildSewerSummaryRows(
+                counts,
+                lengths,
+                totalPipes,
+                totalLength,
+                totalStructures);
+        }
+
+        private static List<IList<string>> BuildSewerSummaryFromExportCells(
+            IList<IList<string>> cells)
+        {
+            var sizes = new[] { 110, 160, 200, 250 };
+            var counts = sizes.ToDictionary(size => size, size => 0);
+            var lengths = sizes.ToDictionary(size => size, size => 0.0);
+            int totalPipes = 0;
+            double totalLength = 0.0;
+            int totalStructures = 0;
+
+            if (cells != null)
+            {
+                foreach (IList<string> row in cells.Skip(2))
+                {
+                    if (row == null || row.Count < 10) continue;
+                    string section = row[2] ?? string.Empty;
+                    string unit = row[4] ?? string.Empty;
+                    double quantity;
+                    int sourceCount;
+                    if (!TryParseNumber(row[5], out quantity))
+                        quantity = 0.0;
+                    if (!int.TryParse(
+                            row[8],
+                            NumberStyles.Integer,
+                            CultureInfo.InvariantCulture,
+                            out sourceCount))
+                        sourceCount = 0;
+
+                    if (string.Equals(
+                            section,
+                            "Sewer pipes",
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(
+                            unit,
+                            "m",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        int size = ReadNominalSizeMillimetres(row[9]);
+                        totalPipes += sourceCount;
+                        totalLength += quantity;
+                        if (counts.ContainsKey(size))
+                        {
+                            counts[size] += sourceCount;
+                            lengths[size] += quantity;
+                        }
+                    }
+                    else if (string.Equals(
+                            section,
+                            "Sewer structures",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        totalStructures += sourceCount;
+                    }
+                }
+            }
+
+            return BuildSewerSummaryRows(
+                counts,
+                lengths,
+                totalPipes,
+                totalLength,
+                totalStructures);
+        }
+
+        private static List<IList<string>> BuildSewerSummaryRows(
+            IDictionary<int, int> counts,
+            IDictionary<int, double> lengths,
+            int totalPipes,
+            double totalLength,
+            int totalStructures)
+        {
+            var rows = new List<IList<string>>
+            {
+                new List<string>
+                {
+                    "CE TOOLS SEWER QUANTITY SUMMARY",
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty
+                },
+                new List<string>
+                {
+                    "METRIC",
+                    "110 mm",
+                    "160 mm",
+                    "200 mm",
+                    "250 mm",
+                    "ALL"
+                },
+                new List<string>
+                {
+                    "Number of pipes",
+                    counts[110].ToString(CultureInfo.InvariantCulture),
+                    counts[160].ToString(CultureInfo.InvariantCulture),
+                    counts[200].ToString(CultureInfo.InvariantCulture),
+                    counts[250].ToString(CultureInfo.InvariantCulture),
+                    totalPipes.ToString(CultureInfo.InvariantCulture)
+                },
+                new List<string>
+                {
+                    "Total pipe length (m)",
+                    lengths[110].ToString("0.###", CultureInfo.InvariantCulture),
+                    lengths[160].ToString("0.###", CultureInfo.InvariantCulture),
+                    lengths[200].ToString("0.###", CultureInfo.InvariantCulture),
+                    lengths[250].ToString("0.###", CultureInfo.InvariantCulture),
+                    totalLength.ToString("0.###", CultureInfo.InvariantCulture)
+                },
+                new List<string>
+                {
+                    "Total sewer structures",
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    string.Empty,
+                    totalStructures.ToString(CultureInfo.InvariantCulture)
+                }
+            };
+            return rows;
+        }
+
+        private static int ReadNominalSizeMillimetres(
+            string sourceSummary)
+        {
+            if (string.IsNullOrWhiteSpace(sourceSummary))
+                return 0;
+
+            Match match = Regex.Match(
+                sourceSummary,
+                @"(?<!\d)(110|160|200|250)\s*mm\b",
+                RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+            int size;
+            return match.Success &&
+                int.TryParse(
+                    match.Groups[1].Value,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out size)
+                ? size
+                : 0;
+        }
+
         private static void WritePreview(
             Editor editor,
             BoqDiscipline discipline,
@@ -1857,6 +2091,20 @@ namespace CETools.Civil3D
         }
     }
 
+    internal sealed class XlsxSheet
+    {
+        public XlsxSheet(
+            string name,
+            IList<IList<string>> rows)
+        {
+            Name = string.IsNullOrWhiteSpace(name) ? "Sheet" : name;
+            Rows = rows ?? new List<IList<string>>();
+        }
+
+        public string Name { get; private set; }
+        public IList<IList<string>> Rows { get; private set; }
+    }
+
     /// <summary>
     /// Minimal Open XML workbook writer. It uses only .NET Framework classes,
     /// avoiding Excel COM automation and third-party deployment dependencies.
@@ -1868,10 +2116,29 @@ namespace CETools.Civil3D
             string sheetName,
             IList<IList<string>> rows)
         {
+            Write(
+                path,
+                new List<XlsxSheet>
+                {
+                    new XlsxSheet(sheetName, rows)
+                });
+        }
+
+        public static void Write(
+            string path,
+            IList<XlsxSheet> sheets)
+        {
             if (string.IsNullOrWhiteSpace(path))
                 throw new ArgumentException("Excel path is empty.", nameof(path));
-            if (rows == null || rows.Count == 0)
-                throw new InvalidOperationException("Excel export contains no rows.");
+            if (sheets == null || sheets.Count == 0)
+                throw new InvalidOperationException(
+                    "Excel export contains no worksheets.");
+            if (sheets.Any(sheet =>
+                    sheet == null ||
+                    sheet.Rows == null ||
+                    sheet.Rows.Count == 0))
+                throw new InvalidOperationException(
+                    "Every Excel worksheet must contain at least one row.");
 
             string directory = Path.GetDirectoryName(path);
             if (!string.IsNullOrWhiteSpace(directory))
@@ -1888,17 +2155,24 @@ namespace CETools.Civil3D
                 false,
                 Encoding.UTF8))
             {
-                AddText(
-                    archive,
-                    "[Content_Types].xml",
+                var contentTypes = new StringBuilder();
+                contentTypes.Append(
                     "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
                     "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">" +
                     "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/>" +
                     "<Default Extension=\"xml\" ContentType=\"application/xml\"/>" +
                     "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>" +
-                    "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>" +
-                    "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>" +
-                    "</Types>");
+                    "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/>");
+                for (int index = 0; index < sheets.Count; index++)
+                    contentTypes.Append(
+                        "<Override PartName=\"/xl/worksheets/sheet" +
+                        (index + 1).ToString(CultureInfo.InvariantCulture) +
+                        ".xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>");
+                contentTypes.Append("</Types>");
+                AddText(
+                    archive,
+                    "[Content_Types].xml",
+                    contentTypes.ToString());
 
                 AddText(
                     archive,
@@ -1908,23 +2182,50 @@ namespace CETools.Civil3D
                     "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/>" +
                     "</Relationships>");
 
+                var workbook = new StringBuilder();
+                workbook.Append(
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                    "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" " +
+                    "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\"><sheets>");
+                var usedNames = new HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+                for (int index = 0; index < sheets.Count; index++)
+                {
+                    string name = UniqueSheetName(
+                        sheets[index].Name,
+                        usedNames);
+                    workbook.Append("<sheet name=\"")
+                        .Append(EscapeXml(name))
+                        .Append("\" sheetId=\"")
+                        .Append((index + 1).ToString(CultureInfo.InvariantCulture))
+                        .Append("\" r:id=\"rId")
+                        .Append((index + 1).ToString(CultureInfo.InvariantCulture))
+                        .Append("\"/>");
+                }
+                workbook.Append("</sheets></workbook>");
                 AddText(
                     archive,
                     "xl/workbook.xml",
-                    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
-                    "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" " +
-                    "xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">" +
-                    "<sheets><sheet name=\"" + EscapeXml(SanitizeSheetName(sheetName)) +
-                    "\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+                    workbook.ToString());
 
+                var relationships = new StringBuilder();
+                relationships.Append(
+                    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
+                    "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">");
+                for (int index = 0; index < sheets.Count; index++)
+                    relationships.Append("<Relationship Id=\"rId")
+                        .Append((index + 1).ToString(CultureInfo.InvariantCulture))
+                        .Append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet")
+                        .Append((index + 1).ToString(CultureInfo.InvariantCulture))
+                        .Append(".xml\"/>");
+                relationships.Append("<Relationship Id=\"rId")
+                    .Append((sheets.Count + 1).ToString(CultureInfo.InvariantCulture))
+                    .Append("\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>")
+                    .Append("</Relationships>");
                 AddText(
                     archive,
                     "xl/_rels/workbook.xml.rels",
-                    "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>" +
-                    "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">" +
-                    "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>" +
-                    "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/>" +
-                    "</Relationships>");
+                    relationships.ToString());
 
                 AddText(
                     archive,
@@ -1940,10 +2241,13 @@ namespace CETools.Civil3D
                     "<xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/></cellXfs>" +
                     "</styleSheet>");
 
-                AddText(
-                    archive,
-                    "xl/worksheets/sheet1.xml",
-                    BuildWorksheet(rows));
+                for (int index = 0; index < sheets.Count; index++)
+                    AddText(
+                        archive,
+                        "xl/worksheets/sheet" +
+                            (index + 1).ToString(CultureInfo.InvariantCulture) +
+                            ".xml",
+                        BuildWorksheet(sheets[index].Rows));
             }
         }
 
@@ -1966,9 +2270,6 @@ namespace CETools.Civil3D
                         excelRow.ToString(CultureInfo.InvariantCulture);
                     string value = row[columnIndex] ?? string.Empty;
                     bool numeric = rowIndex >= 2 &&
-                        (columnIndex == 0 || columnIndex == 5 ||
-                         columnIndex == 6 || columnIndex == 7 ||
-                         columnIndex == 8) &&
                         IsInvariantNumber(value);
 
                     if (numeric)
@@ -1991,9 +2292,18 @@ namespace CETools.Civil3D
             }
 
             xml.Append("</sheetData>");
-            xml.Append("<autoFilter ref=\"A2:J")
-                .Append(rows.Count.ToString(CultureInfo.InvariantCulture))
-                .Append("\"/>");
+            int maximumColumns = rows
+                .Where(row => row != null)
+                .Select(row => row.Count)
+                .DefaultIfEmpty(1)
+                .Max();
+            if (rows.Count >= 2 && maximumColumns > 0)
+            {
+                xml.Append("<autoFilter ref=\"A2:")
+                    .Append(ColumnName(maximumColumns))
+                    .Append(rows.Count.ToString(CultureInfo.InvariantCulture))
+                    .Append("\"/>");
+            }
             xml.Append("</worksheet>");
             return xml.ToString();
         }
@@ -2036,6 +2346,29 @@ namespace CETools.Civil3D
                 value /= 26;
             }
             return name.ToString();
+        }
+
+        private static string UniqueSheetName(
+            string value,
+            ISet<string> usedNames)
+        {
+            string baseName = SanitizeSheetName(value);
+            string candidate = baseName;
+            int suffix = 2;
+            while (usedNames.Contains(candidate))
+            {
+                string suffixText = " (" +
+                    suffix.ToString(CultureInfo.InvariantCulture) + ")";
+                int maximumBase = Math.Max(1, 31 - suffixText.Length);
+                candidate =
+                    baseName.Substring(
+                        0,
+                        Math.Min(baseName.Length, maximumBase)) +
+                    suffixText;
+                suffix++;
+            }
+            usedNames.Add(candidate);
+            return candidate;
         }
 
         private static string SanitizeSheetName(string value)
