@@ -124,26 +124,46 @@ namespace CETools.Civil3D
                     DBObject part = read.GetObject(partId, OpenMode.ForRead, false);
                     if (alignment == null || part == null) return false;
 
-                    // Per-part reference alignment is authoritative once the sewer
-                    // branch references have been assigned. This prevents a Branch-2
-                    // part from being drawn into Branch-1 merely because its plan
-                    // geometry happens to sit close to both alignments at a junction.
-                    Part civilPart = part as Part;
-                    if (civilPart != null &&
-                        !civilPart.RefAlignmentId.IsNull &&
-                        !civilPart.RefAlignmentId.IsErased)
-                        return civilPart.RefAlignmentId == view.AlignmentId;
-
                     var pipe = part as Pipe;
                     if (pipe != null)
                     {
+                        // Pipe branch reference is authoritative once assigned.
+                        // This prevents a pipe from leaking into another branch
+                        // profile at a junction where plan geometry is coincident.
+                        if (!pipe.RefAlignmentId.IsNull &&
+                            !pipe.RefAlignmentId.IsErased)
+                            return pipe.RefAlignmentId == view.AlignmentId;
+
                         // Legacy/fallback geometry match for drawings that have not
                         // yet run automatic branch reference assignment.
                         return OnBranch(alignment, pipe.StartPoint) &&
                                OnBranch(alignment, pipe.EndPoint);
                     }
+
                     var structure = part as Structure;
-                    return structure != null && OnBranch(alignment, structure.Position);
+                    if (structure == null) return false;
+
+                    // A junction manhole can legitimately belong to more than one
+                    // sewer branch/profile view even though Civil 3D exposes only
+                    // one RefAlignmentId on the Structure itself. Include it in a
+                    // selected profile view when any connected pipe belongs to that
+                    // view's alignment. This keeps end/start/shared manholes from
+                    // disappearing when several branch profile views are selected.
+                    foreach (ObjectId connectedPipeId in SewerPipeConnections.PipeIds(structure))
+                    {
+                        if (connectedPipeId.IsNull || connectedPipeId.IsErased) continue;
+                        Pipe connectedPipe = read.GetObject(
+                            connectedPipeId, OpenMode.ForRead, false) as Pipe;
+                        if (connectedPipe != null &&
+                            !connectedPipe.RefAlignmentId.IsNull &&
+                            !connectedPipe.RefAlignmentId.IsErased &&
+                            connectedPipe.RefAlignmentId == view.AlignmentId)
+                            return true;
+                    }
+
+                    // Fallback for legacy/unbound drawings: a structure positioned
+                    // on the alignment still belongs in that profile view.
+                    return OnBranch(alignment, structure.Position);
                 }
             }
             catch { return false; }
