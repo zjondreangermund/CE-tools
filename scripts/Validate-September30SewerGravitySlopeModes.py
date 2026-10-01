@@ -42,8 +42,11 @@ if 'double direction = naturalEndZ <= naturalStartZ ? -1.0 : 1.0;' in runtime.sp
     errors.append("CE_SEWLINKSURFACE still chooses gravity direction from natural ground")
 
 for marker in [
-    "constant downhill branch slopes that never reverse uphill with NG",
-    "follow NG at a specified crown depth",
+    "keeps every branch downhill",
+    "uses the specified minimum slope",
+    "never exceeds the specified maximum slope",
+    "respects minimum depth/cover at structures",
+    "Natural-ground and Civil 3D rule-set modes remain separate",
 ]:
     if marker not in menu:
         errors.append("Field Completion description missing: " + marker)
