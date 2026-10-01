@@ -437,7 +437,7 @@ namespace CETools.Civil3D
             GridReportPresenter.ShowReportAndOfferTable(
                 document,
                 "CE Tools - Sewer Limits Audit",
-                note,
+                note + " Select a row and use Locate Selected (or double-click the row) to jump to that pipe/structure in Model space.",
                 new List<string>
                 {
                     "Object", "Name", "Connections", "Start Structure",
@@ -447,7 +447,96 @@ namespace CETools.Civil3D
                     "Rim", "Sump", "Depth", "Drop", "Sump Clearance", "Status"
                 },
                 audit.Rows,
-                "CE TOOLS SEWER ENGINEERING AUDIT");
+                "CE TOOLS SEWER ENGINEERING AUDIT",
+                "Locate Selected",
+                delegate(IList<string> row)
+                {
+                    ObjectId sourceId = ResolveAuditRowSource(
+                        document.Database,
+                        networkId,
+                        row);
+                    if (sourceId.IsNull)
+                    {
+                        document.Editor.WriteMessage(
+                            "\nCE Sewer Audit: the selected row could not be resolved to a current pipe/structure.");
+                        return;
+                    }
+                    SewerProfileIncomingLabelCommands.LocateSourceInPlan(
+                        document,
+                        sourceId);
+                });
+        }
+
+        private static ObjectId ResolveAuditRowSource(
+            Database database,
+            ObjectId networkId,
+            IList<string> row)
+        {
+            if (database == null || networkId.IsNull ||
+                row == null || row.Count < 2)
+                return ObjectId.Null;
+
+            string objectType = row[0] ?? string.Empty;
+            string objectName = row[1] ?? string.Empty;
+            using (Transaction tr =
+                database.TransactionManager.StartTransaction())
+            {
+                CivilNetwork network = null;
+                try
+                {
+                    network = tr.GetObject(
+                        networkId, OpenMode.ForRead, false) as CivilNetwork;
+                }
+                catch { }
+                if (network == null) return ObjectId.Null;
+
+                IEnumerable<ObjectId> ids =
+                    objectType.Equals(
+                        "Pipe",
+                        StringComparison.OrdinalIgnoreCase)
+                    ? network.GetPipeIds().Cast<ObjectId>()
+                    : objectType.Equals(
+                        "Structure",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? network.GetStructureIds().Cast<ObjectId>()
+                        : Enumerable.Empty<ObjectId>();
+
+                foreach (ObjectId id in ids)
+                {
+                    DBObject value = null;
+                    try
+                    {
+                        value = tr.GetObject(
+                            id, OpenMode.ForRead, false);
+                    }
+                    catch { }
+                    if (value == null) continue;
+
+                    string name = string.Empty;
+                    try
+                    {
+                        PropertyInfo property = value.GetType().GetProperty(
+                            "Name",
+                            BindingFlags.Public | BindingFlags.Instance);
+                        if (property != null && property.CanRead)
+                            name = Convert.ToString(
+                                property.GetValue(value, null),
+                                CultureInfo.CurrentCulture) ?? string.Empty;
+                    }
+                    catch { }
+
+                    if (string.Equals(
+                            name,
+                            objectName,
+                            StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(
+                            id.Handle.ToString(),
+                            objectName,
+                            StringComparison.OrdinalIgnoreCase))
+                        return id;
+                }
+            }
+            return ObjectId.Null;
         }
 
         // -----------------------------------------------------------------
