@@ -65,6 +65,7 @@ namespace CETools.Civil3D
         private static DateTime _lastChangeUtc = DateTime.MinValue;
         private static DateTime _lastRefreshUtc = DateTime.MinValue;
         private static DateTime _suppressQueueUntilUtc = DateTime.MinValue;
+        private static bool _ceCommandActive;
 
         internal static bool Enabled { get; set; } = true;
         internal static double DelaySeconds { get; set; } = 1.8;
@@ -225,12 +226,25 @@ namespace CETools.Civil3D
             _database = null;
             _document = null;
             _undoRedoActive = false;
+            _ceCommandActive = false;
         }
 
         private static void OnCommandWillStart(object sender, CommandEventArgs e)
         {
             if (_busy || e == null) return;
             string command = NormalizeCommand(e.GlobalCommandName);
+
+            // A CE command owns its own output transactions. ObjectModified/
+            // ObjectAppended events raised by that command must not arm a second
+            // full-model Application.Idle refresh after the command finishes.
+            // Native AutoCAD/Civil edits still queue linked refresh normally.
+            if (IsCeCommand(command))
+            {
+                _ceCommandActive = true;
+                _pending = false;
+                _lastChangeUtc = DateTime.UtcNow;
+            }
+
             if (IsSewerSequence(command))
             {
                 // A preceding style import or object edit may already have armed an
@@ -249,6 +263,12 @@ namespace CETools.Civil3D
         {
             if (_busy || e == null) return;
             string command = NormalizeCommand(e.GlobalCommandName);
+            if (IsCeCommand(command))
+            {
+                _ceCommandActive = false;
+                _pending = false;
+                _lastChangeUtc = DateTime.UtcNow;
+            }
             if (IsSewerSequence(command))
             {
                 // Network, style and label writes raised by CE_SEWSEQ can queue
@@ -287,6 +307,13 @@ namespace CETools.Civil3D
             return (value ?? string.Empty).Trim().TrimStart('.', '_').ToUpperInvariant();
         }
 
+        private static bool IsCeCommand(string command)
+        {
+            return !string.IsNullOrWhiteSpace(command) &&
+                (command.StartsWith("CE_", StringComparison.OrdinalIgnoreCase) ||
+                 command.StartsWith("CETOOLS", StringComparison.OrdinalIgnoreCase));
+        }
+
         private static bool IsSewerSequence(string command)
         {
             return string.Equals(command, "CE_SEWSEQ", StringComparison.OrdinalIgnoreCase);
@@ -312,7 +339,7 @@ namespace CETools.Civil3D
 
         private static void OnObjectChanged(object sender, ObjectEventArgs e)
         {
-            if (_busy || _undoRedoActive ||
+            if (_busy || _ceCommandActive || _undoRedoActive ||
                 DateTime.UtcNow < _suppressQueueUntilUtc ||
                 e == null || e.DBObject == null) return;
             DBObject value = e.DBObject;
@@ -322,7 +349,7 @@ namespace CETools.Civil3D
 
         private static void OnObjectErased(object sender, ObjectErasedEventArgs e)
         {
-            if (_busy || _undoRedoActive ||
+            if (_busy || _ceCommandActive || _undoRedoActive ||
                 DateTime.UtcNow < _suppressQueueUntilUtc ||
                 e == null || e.DBObject == null) return;
             if (!IsAssemblyObject(e.DBObject) && HasCeLink(e.DBObject)) Queue();
