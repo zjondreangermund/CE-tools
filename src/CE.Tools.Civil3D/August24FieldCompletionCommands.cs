@@ -228,7 +228,41 @@ namespace CETools.Civil3D
                     if (structure == null || structure.IsReferenceObject) { skipped++; continue; }
                     try
                     {
-                        structure.RimElevation = surface.FindElevationAtXY(structure.Position.X, structure.Position.Y) + settings.Double("Height", 0.0);
+                        double height = settings.Double("Height", 0.0);
+                        double targetRim = surface.FindElevationAtXY(
+                            structure.Position.X,
+                            structure.Position.Y) + height;
+
+                        // Prefer Civil 3D's native surface-controlled rim mode so
+                        // the structure/profile geometry really follows the chosen
+                        // surface instead of only changing a reported value.
+                        bool surfaceLinked = TrySetObjectIdProperty(
+                            structure, "RefSurfaceId", surfaceChoice.ObjectId);
+                        bool autoRim = TrySetBoolProperty(
+                            structure, "AutomaticRimSurfaceAdjustment", true);
+                        bool adjustment = TrySetDoubleProperty(
+                            structure, "SurfaceAdjustmentValue", height);
+
+                        // Civil 3D 2023 drawings/part families differ. If the native
+                        // automatic controls are unavailable, force the exact rim
+                        // elevation manually after disabling automatic adjustment.
+                        double currentRim = ReadDoubleProperty(
+                            structure, "RimElevation", double.NaN);
+                        if (!surfaceLinked || !autoRim || !adjustment ||
+                            double.IsNaN(currentRim) ||
+                            Math.Abs(currentRim - targetRim) > 0.001)
+                        {
+                            TrySetBoolProperty(
+                                structure, "AutomaticRimSurfaceAdjustment", false);
+                            if (!TrySetDoubleProperty(
+                                    structure, "RimElevation", targetRim))
+                            {
+                                skipped++;
+                                continue;
+                            }
+                        }
+
+                        structure.RecordGraphicsModified(true);
                         changed++;
                     }
                     catch { skipped++; }
@@ -237,6 +271,63 @@ namespace CETools.Civil3D
             }
             August21DisplayRefresh.Flush(document);
             document.Editor.WriteMessage("\nCE_SEWSURFACERIMS complete. Rims updated={0}; skipped={1}.", changed, skipped);
+        }
+
+        private static bool TrySetObjectIdProperty(object target, string name, ObjectId value)
+        {
+            try
+            {
+                PropertyInfo property = target == null ? null : target.GetType().GetProperty(
+                    name, BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite ||
+                    property.PropertyType != typeof(ObjectId)) return false;
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static bool TrySetBoolProperty(object target, string name, bool value)
+        {
+            try
+            {
+                PropertyInfo property = target == null ? null : target.GetType().GetProperty(
+                    name, BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite ||
+                    property.PropertyType != typeof(bool)) return false;
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static bool TrySetDoubleProperty(object target, string name, double value)
+        {
+            try
+            {
+                PropertyInfo property = target == null ? null : target.GetType().GetProperty(
+                    name, BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite ||
+                    property.PropertyType != typeof(double)) return false;
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch { return false; }
+        }
+
+        private static double ReadDoubleProperty(object target, string name, double fallback)
+        {
+            try
+            {
+                PropertyInfo property = target == null ? null : target.GetType().GetProperty(
+                    name, BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanRead) return fallback;
+                object value = property.GetValue(target, null);
+                return value == null
+                    ? fallback
+                    : Convert.ToDouble(value, CultureInfo.InvariantCulture);
+            }
+            catch { return fallback; }
         }
 
         [CommandMethod("CE_TOOLS", "CE_SEWCONNECTPARTS", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
