@@ -170,7 +170,7 @@ namespace CETools.Civil3D
                     out labelsCreated);
 
                 editor.WriteMessage(
-                    "\nCE_SEWALIGN complete. Alignments created/refreshed: {0}; branch-name labels placed: {1}.",
+                    "\nCE_SEWALIGN complete. Alignments created/refreshed: {0}; branch-name labels placed: {1}. Every branch starts at MH#.1 with station 0+000.",
                     alignmentsCreated,
                     labelsCreated);
             }
@@ -666,6 +666,10 @@ namespace CETools.Civil3D
                                 "Civil 3D did not return the created sewer branch alignment.");
                         }
 
+                        ForceAlignmentStartStationZero(
+                            alignment,
+                            branch.BranchName);
+
                         alignment.Description =
                             "CE sewer alignment - " + branch.BranchName;
                         alignment.XData = BuildTag(branchKey, "Alignment");
@@ -708,6 +712,157 @@ namespace CETools.Civil3D
                 }
 
                 transaction.Commit();
+            }
+        }
+
+        private static void ForceAlignmentStartStationZero(
+            CivilAlignment alignment,
+            string branchName)
+        {
+            if (alignment == null)
+                throw new ArgumentNullException("alignment");
+
+            const double tolerance = 0.0001;
+
+            // Fresh CE branch alignments must always start at 0+000 at MH#.1.
+            // Some Civil 3D drawing templates carry a non-zero default starting
+            // station, so explicitly reset it after creating the alignment.
+            bool changed = TrySetDoubleProperty(
+                alignment,
+                "StartingStation",
+                0.0);
+
+            double start = ReadDoubleProperty(
+                alignment,
+                "StartingStation",
+                double.NaN);
+
+            if (double.IsNaN(start) ||
+                double.IsInfinity(start) ||
+                Math.Abs(start) > tolerance)
+            {
+                // Civil 3D API variants may expose station control through the
+                // reference point instead of a writable StartingStation property.
+                // Pin the first alignment point to station zero as a fallback.
+                Point2d firstPoint = ReadAlignmentStartPoint(alignment);
+                if (!double.IsNaN(firstPoint.X) &&
+                    !double.IsNaN(firstPoint.Y))
+                {
+                    TrySetProperty(
+                        alignment,
+                        "ReferencePoint",
+                        firstPoint);
+                    changed =
+                        TrySetDoubleProperty(
+                            alignment,
+                            "ReferencePointStation",
+                            0.0) || changed;
+                }
+
+                start = ReadDoubleProperty(
+                    alignment,
+                    "StartingStation",
+                    double.NaN);
+            }
+
+            if (!changed ||
+                double.IsNaN(start) ||
+                double.IsInfinity(start) ||
+                Math.Abs(start) > tolerance)
+            {
+                throw new InvalidOperationException(
+                    (branchName ?? "Sewer branch") +
+                    " alignment could not be reset to station 0+000.");
+            }
+        }
+
+        private static Point2d ReadAlignmentStartPoint(
+            CivilAlignment alignment)
+        {
+            if (alignment == null)
+                return new Point2d(double.NaN, double.NaN);
+
+            try
+            {
+                double x = 0.0;
+                double y = 0.0;
+                alignment.PointLocation(
+                    alignment.StartingStation,
+                    0.0,
+                    ref x,
+                    ref y);
+                return new Point2d(x, y);
+            }
+            catch
+            {
+                return new Point2d(double.NaN, double.NaN);
+            }
+        }
+
+        private static bool TrySetDoubleProperty(
+            object target,
+            string propertyName,
+            double value)
+        {
+            return TrySetProperty(
+                target,
+                propertyName,
+                value);
+        }
+
+        private static bool TrySetProperty(
+            object target,
+            string propertyName,
+            object value)
+        {
+            if (target == null ||
+                string.IsNullOrWhiteSpace(propertyName))
+                return false;
+
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanWrite)
+                    return false;
+
+                property.SetValue(target, value, null);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static double ReadDoubleProperty(
+            object target,
+            string propertyName,
+            double fallback)
+        {
+            if (target == null ||
+                string.IsNullOrWhiteSpace(propertyName))
+                return fallback;
+
+            try
+            {
+                PropertyInfo property = target.GetType().GetProperty(
+                    propertyName,
+                    BindingFlags.Public | BindingFlags.Instance);
+                if (property == null || !property.CanRead)
+                    return fallback;
+
+                object value = property.GetValue(target, null);
+                return value == null
+                    ? fallback
+                    : Convert.ToDouble(
+                        value,
+                        CultureInfo.InvariantCulture);
+            }
+            catch
+            {
+                return fallback;
             }
         }
 
