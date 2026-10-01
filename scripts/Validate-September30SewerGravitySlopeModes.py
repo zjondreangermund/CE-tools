@@ -26,6 +26,12 @@ for marker in [
     "ReadStructureName(",
     "preservePipeEndpoints = false",
     "!preservePipeEndpoints",
+    "MinimumSlope = slope",
+    "naturalRequiredSlope",
+    "Math.Min(\n                        maximumSlope",
+    "Minimum depth / cover at structures (m)",
+    "Maximum pipe slope (%)",
+    "minimumSlope > maximumSlope",
 ]:
     if marker not in runtime:
         errors.append("missing sewer gravity/NG marker: " + marker)
