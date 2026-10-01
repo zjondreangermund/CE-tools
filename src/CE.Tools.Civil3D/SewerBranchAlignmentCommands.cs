@@ -458,26 +458,14 @@ namespace CETools.Civil3D
                     return id;
             }
 
-            // If structure names were edited after sequencing, use the endpoint
-            // attached to P{branch}.1 / sequence 1. A valid linear branch has only
-            // one sequence-1 pipe and exactly one of its ends is the branch start.
-            BranchPipeRecord firstPipe = pipeRecords
-                .OrderBy(record => record.SequenceNumber)
-                .ThenBy(record => record.PipeId.Handle.Value)
-                .FirstOrDefault();
-            if (firstPipe != null)
-            {
-                bool startIsEndpoint = endpoints.Contains(firstPipe.StartStructureId);
-                bool endIsEndpoint = endpoints.Contains(firstPipe.EndStructureId);
-                if (startIsEndpoint ^ endIsEndpoint)
-                    return startIsEndpoint
-                        ? firstPipe.StartStructureId
-                        : firstPipe.EndStructureId;
-            }
-
+            // Structure sequence is authoritative for alignment direction. Do not
+            // infer a branch start from pipe object orientation or rim elevation.
+            // If MH#.1 is missing from the branch endpoint, force the user to
+            // resequence so every generated alignment starts at its real start manhole.
             throw new InvalidOperationException(
                 "Branch-" + branchNumber.ToString(CultureInfo.InvariantCulture) +
-                " has no unambiguous sequenced start manhole. Run CE_SEWSEQ before CE_SEWALIGN.");
+                " does not start at " + expectedStartName +
+                ". Run CE_SEWSEQ so the branch start structure is numbered .1 before CE_SEWALIGN.");
         }
 
         private static void AddPipe(
