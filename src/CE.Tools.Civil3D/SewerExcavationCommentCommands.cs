@@ -833,7 +833,7 @@ namespace CETools.Civil3D
 
             string[] headings =
             {
-                "TYPE", "NAME", "LAYER", "LENGTH m", "SIZE mm",
+                "TYPE", "NAME", "LAYER", "LENGTH m", "NOMINAL Ø mm",
                 "COVER m", "WIDTH m", "DEPTH TO BOTTOM m",
                 "EXC TO BOTTOM m³", "EXC incl BEDDING m³",
                 "BEDDING m³", "PIPE VOL m³", "BLANKET FILL m³",
@@ -1110,7 +1110,7 @@ namespace CETools.Civil3D
                         : "including bedding"),
                 new List<string>
                 {
-                    "Type", "Name", "Layer", "Length m", "Size mm",
+                    "Type", "Name", "Layer", "Length m", "NOMINAL Ø mm",
                     "Cover m", "Width m", "Depth to Bottom m",
                     "Exc to Bottom m³", "Exc incl Bedding m³",
                     "Bedding m³", "Pipe Vol m³", "Blanket Fill m³",
