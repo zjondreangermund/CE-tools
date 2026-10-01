@@ -465,7 +465,7 @@ namespace CETools.Civil3D
             throw new InvalidOperationException(
                 "Branch-" + branchNumber.ToString(CultureInfo.InvariantCulture) +
                 " does not start at " + expectedStartName +
-                ". Run CE_SEWSEQ so the branch start structure is numbered .1 before CE_SEWALIGN.");
+                ". Run CE_SEWSEQ before CE_SEWALIGN so the branch start structure is numbered .1.");
         }
 
         private static void AddPipe(
