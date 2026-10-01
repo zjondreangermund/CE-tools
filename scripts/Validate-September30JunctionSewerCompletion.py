@@ -15,6 +15,7 @@ junction = read("src/CE.Tools.Civil3D/September16FieldCommentCompletionCommands.
 references = read("src/CE.Tools.Civil3D/SewerPartAlignmentBinding.cs")
 parts = read("src/CE.Tools.Civil3D/SewerProfilePartsBatchCommands.cs")
 labels = read("src/CE.Tools.Civil3D/SewerProfileLabelStyleBatchCommands.cs")
+incoming = read("src/CE.Tools.Civil3D/SewerProfileIncomingLabelCommands.cs")
 menu = read("src/CE.Tools.Civil3D/September11FieldCompletionMenu.cs")
 
 for marker in [
@@ -64,6 +65,15 @@ for marker in [
 
 if "HasPartLabel(part, tr" in labels:
     errors.append("old global profile-part label suppression is still active")
+
+for marker in [
+    "GetProfileViewsDisplayingMe()",
+    "StructureOverrides only contains structures with view-specific",
+    "ResolveProfileSourcePart(",
+    '"PartId", "PipeId", "StructureId", "SourcePartId"',
+]:
+    if marker not in incoming:
+        errors.append("multi-view incoming label / profile-to-plan navigation missing: " + marker)
 
 for marker in [
     "Batch T/Cross Junction Bellmouths and T-Limits",
