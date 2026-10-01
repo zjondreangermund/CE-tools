@@ -1239,13 +1239,21 @@ namespace CETools.Civil3D
     internal sealed class SewerExcavationSettingsWindow : Window
     {
         private readonly Dictionary<string, TextBox> _values;
+        private readonly CheckBox _toBottomOnly;
         public SewerExcavationSettingsWindow(SewerExcavationSettings initial)
         {
             Title = "CE Tools - Sewer Excavation Settings";
-            Width = 580;
-            Height = 410;
+            Width = 640;
+            Height = 610;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             _values = new Dictionary<string, TextBox>(StringComparer.OrdinalIgnoreCase);
+            _toBottomOnly = new CheckBox
+            {
+                Content = "Use excavation to bottom of pipe/structure as the primary excavation quantity",
+                IsChecked = initial.ExcavationToBottomOnly,
+                Margin = new Thickness(0, 10, 0, 4),
+                ToolTip = "Both gross excavation to pipe bottom and gross excavation including bedding are reported. This option controls the primary total."
+            };
             var root = new DockPanel { Margin = new Thickness(18) };
             Content = root;
             var buttons = new StackPanel
@@ -1279,15 +1287,19 @@ namespace CETools.Civil3D
             root.Children.Add(panel);
             panel.Children.Add(new TextBlock
             {
-                Text = "Values are in metres after applying drawing units per metre. Pipe cover is read from Civil 3D when available; otherwise the fallback cover is used.",
+                Text = "Quantities are measured in metres/m³. Pipe excavation is separated into excavation to pipe bottom, bedding, pipe displacement, blanket fill and fill above the blanket. Structures use rim-to-sump depth and actual structure size where available.",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 12)
             });
             AddField(panel, "UnitsPerMetre", "Drawing units per metre", initial.UnitsPerMetre);
-            AddField(panel, "SideAllowance", "Side allowance each side (m)", initial.SideAllowance);
-            AddField(panel, "MinimumWidth", "Minimum trench width (m)", initial.MinimumWidth);
-            AddField(panel, "BeddingThickness", "Bedding thickness (m)", initial.BeddingThickness);
+            AddField(panel, "TrenchWidth", "Specified trench width (m)", initial.TrenchWidth);
+            AddField(panel, "SideAllowance", "Legacy auto-width side allowance each side (m)", initial.SideAllowance);
+            AddField(panel, "MinimumWidth", "Legacy minimum trench width (m)", initial.MinimumWidth);
+            AddField(panel, "BeddingThickness", "Bedding depth (m)", initial.BeddingThickness);
+            AddField(panel, "BlanketAbovePipe", "Blanket fill above pipe crown (m)", initial.BlanketAbovePipe);
+            AddField(panel, "StructureSideAllowance", "Structure excavation allowance each side (m)", initial.StructureSideAllowance);
             AddField(panel, "FallbackCover", "Fallback average cover (m)", initial.FallbackCover);
+            panel.Children.Add(_toBottomOnly);
         }
 
         public bool Accepted { get; private set; }
@@ -1317,27 +1329,47 @@ namespace CETools.Civil3D
         {
             settings = new SewerExcavationSettings();
             error = string.Empty;
-            double units = 0.0;
-            double side = 0.0;
-            double width = 0.0;
-            double bedding = 0.0;
-            double cover = 0.0;
+
+            double units;
+            double trenchWidth;
+            double side;
+            double minimumWidth;
+            double bedding;
+            double blanket;
+            double structureAllowance;
+            double cover;
+
             if (!TryRead("UnitsPerMetre", out units) || units <= 0.0)
                 error = "Drawing units per metre must be greater than zero.";
+            else if (!TryRead("TrenchWidth", out trenchWidth) || trenchWidth <= 0.0)
+                error = "Specified trench width must be greater than zero.";
             else if (!TryRead("SideAllowance", out side) || side < 0.0)
                 error = "Side allowance cannot be negative.";
-            else if (!TryRead("MinimumWidth", out width) || width <= 0.0)
+            else if (!TryRead("MinimumWidth", out minimumWidth) || minimumWidth <= 0.0)
                 error = "Minimum trench width must be greater than zero.";
-            else if (!TryRead("BeddingThickness", out bedding) || bedding <= 0.0)
-                error = "Bedding thickness must be greater than zero.";
+            else if (!TryRead("BeddingThickness", out bedding) || bedding < 0.0)
+                error = "Bedding depth cannot be negative.";
+            else if (!TryRead("BlanketAbovePipe", out blanket) || blanket < 0.0)
+                error = "Blanket fill depth cannot be negative.";
+            else if (!TryRead("StructureSideAllowance", out structureAllowance) || structureAllowance < 0.0)
+                error = "Structure excavation allowance cannot be negative.";
             else if (!TryRead("FallbackCover", out cover) || cover <= 0.0)
                 error = "Fallback cover must be greater than zero.";
-            if (!string.IsNullOrEmpty(error)) return false;
+
+            if (!string.IsNullOrEmpty(error))
+                return false;
+
             settings.UnitsPerMetre = units;
+            settings.TrenchWidth = trenchWidth;
             settings.SideAllowance = side;
-            settings.MinimumWidth = width;
+            settings.MinimumWidth = minimumWidth;
             settings.BeddingThickness = bedding;
+            settings.BlanketAbovePipe = blanket;
+            settings.StructureSideAllowance = structureAllowance;
             settings.FallbackCover = cover;
+            settings.ExcavationToBottomOnly =
+                _toBottomOnly.IsChecked != false;
+            settings.Validate();
             return true;
         }
 
