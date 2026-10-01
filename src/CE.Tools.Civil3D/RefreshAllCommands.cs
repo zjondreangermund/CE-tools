@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Windows;
+using System.Windows.Controls;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -92,6 +94,7 @@ namespace CETools.Civil3D
             {
                 LinkedTableAutoRefreshManager.EndInternalUpdate();
             }
+            LinkedTableAutoRefreshManager.ClearPending(document);
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
@@ -126,7 +129,7 @@ namespace CETools.Civil3D
             if (document == null) return;
             bool current = LinkedTableAutoRefreshManager.IsEnabled(document.Database);
             var options = new PromptKeywordOptions(
-                "\nAutomatic linked coordinate, setting-out and BOQ table refresh [On/Off] <" +
+                "\nLinked-output out-of-date notifications [On/Off] <" +
                 (current ? "On" : "Off") + ">: ")
             {
                 AllowNone = true
@@ -139,10 +142,8 @@ namespace CETools.Civil3D
                 ? current
                 : string.Equals(result.StringResult, "On", StringComparison.OrdinalIgnoreCase);
             LinkedTableAutoRefreshManager.SetEnabled(document.Database, enabled);
-            if (enabled) LinkedTableAutoRefreshManager.Queue(document);
             document.Editor.WriteMessage(
-                "\nAutomatic linked coordinate, setting-out and BOQ table refresh is {0}. " +
-                "Parking, dynamic-section and cost-estimate managers retain their specialized settings.",
+                "\nLinked-output out-of-date notifications are {0}. CE Tools will not automatically refresh linked BOQs, sewer excavation schedules, annotations or other linked outputs. Use the notification Refresh button or CE_REFRESHALL when you want to update them.",
                 enabled ? "ON" : "OFF");
         }
 
@@ -165,9 +166,10 @@ namespace CETools.Civil3D
                 Pair("Linked surface-comparison entities", SafeCount(delegate { return SurfaceComparisonLinkStore.CountLinkedEntities(database); })),
                 Pair("Linked BOQ tables", SafeCount(delegate { return BillOfQuantitiesCommands.CountLinkedTables(database); })),
                 Pair("Linked dynamic cross sections", SafeCount(delegate { return DynamicSectionUpdateManager.CountLinkedSections(document); })),
-                Pair("Automatic linked-table refresh", LinkedTableAutoRefreshManager.IsEnabled(database) ? "On" : "Off"),
-                Pair("Linked-table refresh manager", LinkedTableAutoRefreshManager.IsInitialized ? "Active" : "Inactive"),
-                Pair("Linked-table refresh pending", LinkedTableAutoRefreshManager.HasPendingRefresh(document) ? "Yes" : "No"),
+                Pair("Out-of-date notifications", LinkedTableAutoRefreshManager.IsEnabled(database) ? "On" : "Off"),
+                Pair("Linked-output change monitor", LinkedTableAutoRefreshManager.IsInitialized ? "Active" : "Inactive"),
+                Pair("Linked outputs marked out of date", LinkedTableAutoRefreshManager.HasPendingRefresh(document) ? "Yes" : "No"),
+                Pair("Automatic linked-output refresh", "Off - explicit refresh only"),
                 Pair("Dynamic section manager", DynamicSectionUpdateManager.IsInitialized ? "Active" : "Inactive"),
                 Pair("Dynamic section refresh pending", DynamicSectionUpdateManager.HasPendingRefresh(document) ? "Yes" : "No"),
                 Pair("Automatic cost-estimate refresh", WaterSewerCostEstimateCommands.IsAutomatic(database) ? "On" : "Off"),
@@ -234,9 +236,10 @@ namespace CETools.Civil3D
     }
 
     /// <summary>
-    /// Defers automatic linked-table rebuilds until the active drawing command
-    /// has ended. Database event handlers only queue work and never start a
-    /// transaction, preventing unsafe nested updates inside ObjectModified.
+    /// Tracks linked outputs that may be stale after drawing edits. Database
+    /// event handlers only mark work as out of date. Nothing is refreshed
+    /// automatically: after the active command ends, a small modeless notification
+    /// offers Refresh or Ignore.
     /// </summary>
     internal static class LinkedTableAutoRefreshManager
     {
@@ -245,6 +248,8 @@ namespace CETools.Civil3D
             new Dictionary<Database, Document>();
         private static readonly HashSet<Database> Pending =
             new HashSet<Database>();
+        private static readonly Dictionary<Database, Window> Notices =
+            new Dictionary<Database, Window>();
         private static bool _internalUpdate;
 
         public static bool IsInitialized { get; private set; }
@@ -267,6 +272,11 @@ namespace CETools.Civil3D
             AcApplication.DocumentManager.DocumentToBeDestroyed -= OnDocumentToBeDestroyed;
             foreach (Document document in new List<Document>(Documents.Values))
                 Detach(document);
+            foreach (Window notice in new List<Window>(Notices.Values))
+            {
+                try { notice.Close(); } catch { }
+            }
+            Notices.Clear();
             Documents.Clear();
             Pending.Clear();
             IsInitialized = false;
@@ -346,14 +356,34 @@ namespace CETools.Civil3D
                 }
                 transaction.Commit();
             }
-            if (!enabled) Pending.Remove(database);
+            if (!enabled)
+            {
+                Window notice;
+                if (Notices.TryGetValue(database, out notice))
+                {
+                    try { notice.Close(); } catch { }
+                    Notices.Remove(database);
+                }
+            }
         }
 
         public static void Queue(Document document)
         {
             Attach(document);
-            if (document != null && IsEnabled(document.Database))
+            if (document != null)
                 Pending.Add(document.Database);
+        }
+
+        public static void ClearPending(Document document)
+        {
+            if (document == null || document.Database == null) return;
+            Pending.Remove(document.Database);
+            Window notice;
+            if (Notices.TryGetValue(document.Database, out notice))
+            {
+                try { notice.Close(); } catch { }
+                Notices.Remove(document.Database);
+            }
         }
 
         public static bool HasPendingRefresh(Document document)
@@ -400,6 +430,12 @@ namespace CETools.Civil3D
             document.CommandCancelled -= OnCommandEnded;
             document.CommandFailed -= OnCommandEnded;
             Pending.Remove(document.Database);
+            Window notice;
+            if (Notices.TryGetValue(document.Database, out notice))
+            {
+                try { notice.Close(); } catch { }
+                Notices.Remove(document.Database);
+            }
             Documents.Remove(document.Database);
         }
 
@@ -432,38 +468,134 @@ namespace CETools.Civil3D
         private static void OnCommandEnded(object sender, CommandEventArgs args)
         {
             Document document = sender as Document;
-            if (document == null || !Pending.Remove(document.Database)) return;
-            if (!IsEnabled(document.Database)) return;
+            if (document == null ||
+                document.Database == null ||
+                !Pending.Contains(document.Database))
+                return;
 
-            _internalUpdate = true;
+            // Never rebuild linked outputs merely because another command ended.
+            // The user decides when to refresh.
+            if (IsEnabled(document.Database))
+                ShowOutOfDateNotice(document);
+        }
+
+        private static void ShowOutOfDateNotice(Document document)
+        {
+            if (document == null || document.Database == null) return;
+            Window existing;
+            if (Notices.TryGetValue(document.Database, out existing))
+            {
+                try
+                {
+                    if (existing.IsVisible) return;
+                    existing.Close();
+                }
+                catch { }
+                Notices.Remove(document.Database);
+            }
+
+            var window = new Window
+            {
+                Title = "CE Tools",
+                Width = 390,
+                Height = 155,
+                ResizeMode = ResizeMode.NoResize,
+                WindowStyle = WindowStyle.ToolWindow,
+                ShowInTaskbar = false,
+                Topmost = true,
+                ShowActivated = false,
+                SizeToContent = SizeToContent.Manual
+            };
+
+            var root = new DockPanel
+            {
+                Margin = new Thickness(14)
+            };
+            window.Content = root;
+
+            var buttons = new StackPanel
+            {
+                Orientation = Orientation.Horizontal,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                Margin = new Thickness(0, 12, 0, 0)
+            };
+            DockPanel.SetDock(buttons, Dock.Bottom);
+            root.Children.Add(buttons);
+
+            var ignore = new Button
+            {
+                Content = "Ignore",
+                MinWidth = 82,
+                Margin = new Thickness(8, 0, 0, 0)
+            };
+            ignore.Click += delegate
+            {
+                ClearPending(document);
+            };
+            buttons.Children.Add(ignore);
+
+            var refresh = new Button
+            {
+                Content = "Refresh",
+                MinWidth = 92,
+                Margin = new Thickness(8, 0, 0, 0),
+                IsDefault = true
+            };
+            refresh.Click += delegate
+            {
+                ClearPending(document);
+                try
+                {
+                    document.SendStringToExecute(
+                        "CE_REFRESHALL ",
+                        true,
+                        false,
+                        false);
+                }
+                catch { }
+            };
+            buttons.Children.Add(refresh);
+
+            var message = new TextBlock
+            {
+                Text = "Important CE Tools linked output may be out of date.\n" +
+                    "BOQs, sewer excavation schedules, linked annotations or other schedules are not refreshed automatically.",
+                TextWrapping = TextWrapping.Wrap
+            };
+            root.Children.Add(message);
+
+            window.Loaded += delegate
+            {
+                try
+                {
+                    Rect area = SystemParameters.WorkArea;
+                    window.Left = Math.Max(
+                        area.Left,
+                        area.Right - window.ActualWidth - 16.0);
+                    window.Top = Math.Max(
+                        area.Top,
+                        area.Bottom - window.ActualHeight - 16.0);
+                }
+                catch { }
+            };
+            window.Closed += delegate
+            {
+                Window current;
+                if (Notices.TryGetValue(
+                        document.Database,
+                        out current) &&
+                    object.ReferenceEquals(current, window))
+                    Notices.Remove(document.Database);
+            };
+
+            Notices[document.Database] = window;
             try
             {
-                DynamicCoordinateLinkStore.Refresh(document);
-                SurveyCoordinateWorkflowCommands.RefreshAll(document);
-                SettingOutScheduleCommands.RefreshAll(document);
-                ProjectSetupCommands.RefreshInformationTables(document);
-                BillOfQuantitiesCommands.RefreshAll(document);
-                AlignmentAnnotationLinkStore.RefreshAll(document);
-                ProfileAnnotationLinkStore.RefreshAll(document);
-                CorridorAnnotationLinkStore.RefreshAll(document);
-                SurfaceComparisonLinkStore.RefreshAll(document);
-                PolylineDirectionCommands.RefreshLinkedArrows(document);
-                NetworkAssetScheduleCommands.RefreshAll(document);
-                RoadCrossSectionScheduleCommands.RefreshAll(document);
-                StandardQuantityTemplateCommands.RefreshAll(document);
-                SewerExcavationCommentCommands.RefreshAll(document);
-                ParkingNumberLinkStore.RefreshAll(document);
-                ParkingReportLinkStore.RefreshAll(document);
+                AcApplication.ShowModelessWindow(window);
             }
-            catch (System.Exception exception)
+            catch
             {
-                document.Editor.WriteMessage(
-                    "\nCE Tools automatic linked-table refresh skipped. {0}",
-                    exception.Message);
-            }
-            finally
-            {
-                _internalUpdate = false;
+                try { window.Show(); } catch { Notices.Remove(document.Database); }
             }
         }
     }
