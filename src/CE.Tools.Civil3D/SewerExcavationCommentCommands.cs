@@ -861,8 +861,14 @@ namespace CETools.Civil3D
                 NumberValue("UnitsPerMetre", link.Settings.UnitsPerMetre),
                 NumberValue("SideAllowance", link.Settings.SideAllowance),
                 NumberValue("MinimumWidth", link.Settings.MinimumWidth),
+                NumberValue("TrenchWidth", link.Settings.TrenchWidth),
                 NumberValue("BeddingThickness", link.Settings.BeddingThickness),
-                NumberValue("FallbackCover", link.Settings.FallbackCover)
+                NumberValue("BlanketAbovePipe", link.Settings.BlanketAbovePipe),
+                NumberValue("StructureSideAllowance", link.Settings.StructureSideAllowance),
+                NumberValue("FallbackCover", link.Settings.FallbackCover),
+                NumberValue(
+                    "ExcavationToBottomOnly",
+                    link.Settings.ExcavationToBottomOnly ? 1.0 : 0.0)
             };
             foreach (string handle in link.Handles.Distinct(StringComparer.OrdinalIgnoreCase))
                 values.Add(TextValue("Handle", handle));
@@ -898,11 +904,15 @@ namespace CETools.Civil3D
                     if (key.Equals("UnitsPerMetre", StringComparison.OrdinalIgnoreCase)) settings.UnitsPerMetre = number;
                     else if (key.Equals("SideAllowance", StringComparison.OrdinalIgnoreCase)) settings.SideAllowance = number;
                     else if (key.Equals("MinimumWidth", StringComparison.OrdinalIgnoreCase)) settings.MinimumWidth = number;
+                    else if (key.Equals("TrenchWidth", StringComparison.OrdinalIgnoreCase)) settings.TrenchWidth = number;
                     else if (key.Equals("BeddingThickness", StringComparison.OrdinalIgnoreCase)) settings.BeddingThickness = number;
+                    else if (key.Equals("BlanketAbovePipe", StringComparison.OrdinalIgnoreCase)) settings.BlanketAbovePipe = number;
+                    else if (key.Equals("StructureSideAllowance", StringComparison.OrdinalIgnoreCase)) settings.StructureSideAllowance = number;
                     else if (key.Equals("FallbackCover", StringComparison.OrdinalIgnoreCase)) settings.FallbackCover = number;
+                    else if (key.Equals("ExcavationToBottomOnly", StringComparison.OrdinalIgnoreCase)) settings.ExcavationToBottomOnly = number >= 0.5;
                 }
             }
-            if (handles.Count == 0) throw new InvalidOperationException("The sewer excavation link has no pipe handles.");
+            if (handles.Count == 0) throw new InvalidOperationException("The sewer excavation link has no sewer source handles.");
             settings.Validate();
             return new SewerExcavationLink(schema, settings, handles);
         }
