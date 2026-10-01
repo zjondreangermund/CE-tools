@@ -75,10 +75,11 @@ foreach ($token in @(
 # keep-source, or September05 native GetSplitCurves keep-source are all recognized.
 $breakEngine = Read (Path 'August25CadSupplementaryBreakEngine.cs')
 $usesAugust26Break = $breakEngine.Contains('August26CadSupplementaryBreakReplacement.TryReplaceBatch')
-$usesSeptember04Break = $breakEngine.Contains('September04VerifiedJunctionBreakRuntime.BreakPolylinesAtJunctions(document);')
-$usesSeptember05Break = $breakEngine.Contains('September04FieldGeometryCompletionCommands.BreakAtJunctions(document);')
+$usesSeptember04Break = $breakEngine -match 'September04VerifiedJunctionBreakRuntime\s*\.\s*BreakPolylinesAtJunctions\s*\(\s*document\s*\)'
+$usesSeptember04CadBreak = $breakEngine -match 'September04CadSupplementaryRuntime\s*\.\s*BreakPolylinesAtJunctions\s*\(\s*document\s*\)'
+$usesSeptember05Break = $breakEngine -match 'September04FieldGeometryCompletionCommands\s*\.\s*BreakAtJunctions\s*\(\s*document\s*\)'
 
-if (-not $usesAugust26Break -and -not $usesSeptember04Break -and -not $usesSeptember05Break) {
+if (-not $usesAugust26Break -and -not $usesSeptember04Break -and -not $usesSeptember04CadBreak -and -not $usesSeptember05Break) {
     throw 'Final Break command is not routed through a recognized guarded Break runtime.'
 }
 
@@ -104,6 +105,18 @@ if ($usesSeptember04Break) {
         if (-not $verifiedBreak.Contains($token)) { throw "September 04 Break compatibility marker missing: $token" }
     }
     if ($verifiedBreak.Contains('.Erase(')) { throw 'September 04 verified Break runtime must not erase selected source entities.' }
+}
+
+if ($usesSeptember04CadBreak) {
+    $cadBreak = Read (Path 'September04CadSupplementaryRuntime.cs')
+    foreach ($token in @(
+        'internal static void BreakPolylinesAtJunctions(Document document)',
+        'ReplacePolylineGeometry(',
+        'selected source',
+        'source is never erased')) {
+        if (-not $cadBreak.Contains($token)) { throw "September 04 CAD Break compatibility marker missing: $token" }
+    }
+    if ($cadBreak.Contains('source.Erase()')) { throw 'September 04 CAD Break runtime must not erase selected source entities.' }
 }
 
 if ($usesSeptember05Break) {
@@ -133,6 +146,9 @@ if ($usesSeptember05Break) {
 }
 elseif ($usesSeptember04Break) {
     Write-Host 'August 26 geometry routes are guarded; Break is already on the September 04 verified keep-source route.' -ForegroundColor Green
+}
+elseif ($usesSeptember04CadBreak) {
+    Write-Host 'August 26 geometry routes are guarded; Break is already on the September 04 CAD keep-source route.' -ForegroundColor Green
 }
 else {
     Write-Host 'Close, FeatureLine stretch, construction offsets, centre construction and multi-polyline Break are on guarded August 26 field routes.' -ForegroundColor Green
