@@ -1146,16 +1146,22 @@ namespace CETools.Civil3D
         private sealed class PipeExcavationRow
         {
             public string Handle { get; set; }
+            public string ObjectType { get; set; }
             public string Name { get; set; }
             public string Layer { get; set; }
             public double Length { get; set; }
             public double Diameter { get; set; }
             public double AverageCover { get; set; }
             public double TrenchWidth { get; set; }
-            public double TrenchDepth { get; set; }
-            public double Excavation { get; set; }
+            public double DepthToBottom { get; set; }
+            public double ExcavationToBottom { get; set; }
+            public double ExcavationIncludingBedding { get; set; }
             public double Bedding { get; set; }
-            public double Backfill { get; set; }
+            public double PipeVolume { get; set; }
+            public double BlanketFill { get; set; }
+            public double FillAboveBlanket { get; set; }
+            public double ExcavatedMaterialNet { get; set; }
+            public double PrimaryExcavation { get; set; }
         }
 
         private sealed class ExtractionResult
@@ -1197,20 +1203,31 @@ namespace CETools.Civil3D
             UnitsPerMetre = 1.0;
             SideAllowance = 0.30;
             MinimumWidth = 0.60;
-            BeddingThickness = 0.15;
+            TrenchWidth = 0.76;
+            BeddingThickness = 0.10;
+            BlanketAbovePipe = 0.30;
+            StructureSideAllowance = 0.30;
             FallbackCover = 1.20;
+            ExcavationToBottomOnly = true;
         }
         public double UnitsPerMetre { get; set; }
         public double SideAllowance { get; set; }
         public double MinimumWidth { get; set; }
+        public double TrenchWidth { get; set; }
         public double BeddingThickness { get; set; }
+        public double BlanketAbovePipe { get; set; }
+        public double StructureSideAllowance { get; set; }
         public double FallbackCover { get; set; }
+        public bool ExcavationToBottomOnly { get; set; }
         public void Validate()
         {
             if (!IsPositive(UnitsPerMetre)) UnitsPerMetre = 1.0;
             if (SideAllowance < 0.0 || double.IsNaN(SideAllowance) || double.IsInfinity(SideAllowance)) SideAllowance = 0.30;
             if (!IsPositive(MinimumWidth)) MinimumWidth = 0.60;
-            if (!IsPositive(BeddingThickness)) BeddingThickness = 0.15;
+            if (TrenchWidth < 0.0 || double.IsNaN(TrenchWidth) || double.IsInfinity(TrenchWidth)) TrenchWidth = 0.76;
+            if (BeddingThickness < 0.0 || double.IsNaN(BeddingThickness) || double.IsInfinity(BeddingThickness)) BeddingThickness = 0.10;
+            if (BlanketAbovePipe < 0.0 || double.IsNaN(BlanketAbovePipe) || double.IsInfinity(BlanketAbovePipe)) BlanketAbovePipe = 0.30;
+            if (StructureSideAllowance < 0.0 || double.IsNaN(StructureSideAllowance) || double.IsInfinity(StructureSideAllowance)) StructureSideAllowance = 0.30;
             if (!IsPositive(FallbackCover)) FallbackCover = 1.20;
         }
         private static bool IsPositive(double value)
