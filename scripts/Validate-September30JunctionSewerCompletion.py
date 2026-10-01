@@ -45,11 +45,13 @@ for marker in [
         errors.append("automatic sewer reference assignment missing: " + marker)
 
 for marker in [
-    "civilPart.RefAlignmentId == view.AlignmentId",
-    "Per-part reference alignment is authoritative",
+    "pipe.RefAlignmentId == view.AlignmentId",
+    "Pipe branch reference is authoritative once assigned",
+    "connectedPipe.RefAlignmentId == view.AlignmentId",
+    "A junction manhole can legitimately belong to more than one",
 ]:
     if marker not in parts:
-        errors.append("sewer profile branch filtering does not use part reference alignment: " + marker)
+        errors.append("sewer profile branch filtering does not use current per-branch part references: " + marker)
 
 for marker in [
     "pipeLabelsInView",
