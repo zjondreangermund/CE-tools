@@ -462,7 +462,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Link Sewer Parts to Surface / Gravity Slopes",
                         "CE_SEWLINKSURFACE",
-                        "Link selected sewer parts to a surface. Use constant downhill branch slopes that never reverse uphill with NG and continue from the lowest incoming invert, follow NG at a specified crown depth, or apply Civil 3D rule sets.",
+                        "Link selected sewer parts to a surface. Gravity mode keeps every branch downhill, uses the specified minimum slope, follows the natural-ground fall where feasible, never exceeds the specified maximum slope, respects minimum depth/cover at structures, and continues from the lowest incoming invert. Natural-ground and Civil 3D rule-set modes remain separate.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Show Manhole Pipe Connections",

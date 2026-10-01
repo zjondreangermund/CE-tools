@@ -77,7 +77,7 @@ for marker in (
     "LinkedTableAutoRefreshManager.Terminate();",
 ):
     if marker not in plugin:
-        errors.append(f"Linked-table automatic-refresh lifecycle is missing: {marker}")
+        errors.append(f"Linked-output stale-monitor lifecycle is missing: {marker}")
 
 for marker in (
     "DocumentToBeDestroyed += OnDocumentToBeDestroyed",
@@ -86,12 +86,30 @@ for marker in (
     "document.Database.ObjectAppended += OnObjectChanged",
     "document.Database.ObjectErased += OnObjectErased",
     "document.CommandEnded += OnCommandEnded",
-    "SurveyCoordinateWorkflowCommands.RefreshAll(document);",
-    "SettingOutScheduleCommands.RefreshAll(document);",
-    "BillOfQuantitiesCommands.RefreshAll(document);",
+    "ShowOutOfDateNotice(document)",
+    '"Refresh"',
+    '"Ignore"',
+    '"CE_REFRESHALL "',
+    "Automatic linked-output refresh",
+    "Off - explicit refresh only",
 ):
     if marker not in refresh:
-        errors.append(f"Safe automatic linked-table refresh is missing: {marker}")
+        errors.append(f"Linked-output stale-notification contract is missing: {marker}")
+
+command_end = refresh.split("private static void OnCommandEnded", 1)[-1].split(
+    "private static void ShowOutOfDateNotice", 1
+)[0]
+for forbidden in (
+    "SewerExcavationCommentCommands.RefreshAll",
+    "BillOfQuantitiesCommands.RefreshAll",
+    "SurveyCoordinateWorkflowCommands.RefreshAll",
+    "SettingOutScheduleCommands.RefreshAll",
+):
+    if forbidden in command_end:
+        errors.append(
+            "Command-ended stale monitor still refreshes automatically: " +
+            forbidden
+        )
 
 modified_handler = refresh.split("private static void OnObjectChanged", 1)[-1].split(
     "private static void OnObjectErased", 1
