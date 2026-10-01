@@ -468,15 +468,50 @@ namespace CETools.Civil3D
         private static void OnCommandEnded(object sender, CommandEventArgs args)
         {
             Document document = sender as Document;
-            if (document == null ||
-                document.Database == null ||
-                !Pending.Contains(document.Database))
+            if (document == null || document.Database == null)
+                return;
+
+            string command = ReadCommandName(args);
+            if (IsExplicitRefreshCommand(command))
+            {
+                // Refresh commands modify their output entities and therefore
+                // raise ObjectModified/ObjectAppended events. Those changes do
+                // not make the freshly rebuilt output stale.
+                ClearPending(document);
+                return;
+            }
+
+            if (!Pending.Contains(document.Database))
                 return;
 
             // Never rebuild linked outputs merely because another command ended.
             // The user decides when to refresh.
             if (IsEnabled(document.Database))
                 ShowOutOfDateNotice(document);
+        }
+
+        private static string ReadCommandName(CommandEventArgs args)
+        {
+            if (args == null) return string.Empty;
+            try
+            {
+                return (args.GlobalCommandName ?? string.Empty).Trim();
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static bool IsExplicitRefreshCommand(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command)) return false;
+            return command.StartsWith(
+                       "CE_",
+                       StringComparison.OrdinalIgnoreCase) &&
+                   command.IndexOf(
+                       "REFRESH",
+                       StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         private static void ShowOutOfDateNotice(Document document)
