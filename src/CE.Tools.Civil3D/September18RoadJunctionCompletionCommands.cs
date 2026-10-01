@@ -2094,8 +2094,36 @@ namespace CETools.Civil3D
         private static T SafeOpen<T>(Transaction transaction, ObjectId id, OpenMode mode) where T : DBObject
         {
             if (transaction == null || id.IsNull || id.IsErased) return null;
-            try { return transaction.GetObject(id, mode, false) as T; }
+            try
+            {
+                T value = transaction.GetObject(
+                    id,
+                    mode == OpenMode.ForWrite ? OpenMode.ForRead : mode,
+                    false) as T;
+                if (value == null) return null;
+
+                if (mode == OpenMode.ForWrite)
+                {
+                    Entity entity = value as Entity;
+                    if (entity != null && IsOnLockedLayer(entity, transaction))
+                        return null;
+                    value.UpgradeOpen();
+                }
+                return value;
+            }
             catch { return null; }
+        }
+
+        private static bool IsOnLockedLayer(Entity entity, Transaction transaction)
+        {
+            if (entity == null || transaction == null || entity.LayerId.IsNull) return false;
+            try
+            {
+                LayerTableRecord layer = transaction.GetObject(
+                    entity.LayerId, OpenMode.ForRead, false) as LayerTableRecord;
+                return layer != null && layer.IsLocked;
+            }
+            catch { return true; }
         }
 
         private static ObjectId ReadObjectId(object value)

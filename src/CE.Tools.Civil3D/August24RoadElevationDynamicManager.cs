@@ -134,7 +134,9 @@ namespace CETools.Civil3D
                     Point3dCollection intersections = new Point3dCollection();
                     try { ((Entity)master).IntersectWith((Entity)target, Intersect.OnBothOperands, intersections, IntPtr.Zero, IntPtr.Zero); } catch { continue; }
                     if (intersections.Count == 0) continue;
-                    target.UpgradeOpen();
+                    if (IsOnLockedLayer(target, transaction)) continue;
+                    try { target.UpgradeOpen(); }
+                    catch { continue; }
                     foreach (Point3d intersection in intersections)
                     {
                         try
@@ -149,6 +151,18 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
             return refreshed;
+        }
+
+        private static bool IsOnLockedLayer(Entity entity, Transaction transaction)
+        {
+            if (entity == null || transaction == null || entity.LayerId.IsNull) return false;
+            try
+            {
+                LayerTableRecord layer = transaction.GetObject(
+                    entity.LayerId, OpenMode.ForRead, false) as LayerTableRecord;
+                return layer != null && layer.IsLocked;
+            }
+            catch { return true; }
         }
 
         private static bool SetCrossingElevation(CivilFeatureLine target, Point3d crossing, double elevation)

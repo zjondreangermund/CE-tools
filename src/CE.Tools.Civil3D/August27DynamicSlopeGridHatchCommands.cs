@@ -650,8 +650,12 @@ namespace CETools.Civil3D
         {
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                Entity source = transaction.GetObject(sourceId, OpenMode.ForWrite, false) as Entity;
-                if (source == null) return;
+                Entity source = null;
+                try { source = transaction.GetObject(sourceId, OpenMode.ForRead, false) as Entity; }
+                catch { return; }
+                if (source == null || IsOnLockedLayer(source, transaction)) return;
+                try { source.UpgradeOpen(); }
+                catch { return; }
                 WriteRecord(source, transaction, SourceKey, new[]
                 {
                     new TypedValue((int)DxfCode.Text, "V1"),
@@ -669,9 +673,24 @@ namespace CETools.Civil3D
         {
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                Entity first = transaction.GetObject(firstId, OpenMode.ForWrite, false) as Entity;
-                Entity second = transaction.GetObject(secondId, OpenMode.ForWrite, false) as Entity;
-                if (first == null || second == null) return;
+                Entity first = null;
+                Entity second = null;
+                try
+                {
+                    first = transaction.GetObject(firstId, OpenMode.ForRead, false) as Entity;
+                    second = transaction.GetObject(secondId, OpenMode.ForRead, false) as Entity;
+                }
+                catch { return; }
+                if (first == null || second == null ||
+                    IsOnLockedLayer(first, transaction) ||
+                    IsOnLockedLayer(second, transaction))
+                    return;
+                try
+                {
+                    first.UpgradeOpen();
+                    second.UpgradeOpen();
+                }
+                catch { return; }
                 WriteCrossfall(first, transaction, second.Handle.ToString(), spacing, paperText, paperArrow, colour);
                 WriteCrossfall(second, transaction, first.Handle.ToString(), spacing, paperText, paperArrow, colour);
                 transaction.Commit();
@@ -753,11 +772,28 @@ namespace CETools.Civil3D
                     bool matchOld = child != null && string.IsNullOrEmpty(otherHandle) && TryReadRecord(child, transaction, OldSlopeChildKey, out values) && values.Length > 0 &&
                         string.Equals(Convert.ToString(values[0].Value, CultureInfo.InvariantCulture), sourceHandle, StringComparison.OrdinalIgnoreCase);
                     if (!matchNew && !matchOld) continue;
-                    child.UpgradeOpen();
-                    child.Erase();
+                    if (IsOnLockedLayer(child, transaction)) continue;
+                    try
+                    {
+                        child.UpgradeOpen();
+                        child.Erase();
+                    }
+                    catch { continue; }
                 }
                 transaction.Commit();
             }
+        }
+
+        private static bool IsOnLockedLayer(Entity entity, Transaction transaction)
+        {
+            if (entity == null || transaction == null || entity.LayerId.IsNull) return false;
+            try
+            {
+                LayerTableRecord layer = transaction.GetObject(
+                    entity.LayerId, OpenMode.ForRead, false) as LayerTableRecord;
+                return layer != null && layer.IsLocked;
+            }
+            catch { return true; }
         }
 
         private static void WriteRecord(DBObject owner, Transaction transaction, string key, IEnumerable<TypedValue> values)
