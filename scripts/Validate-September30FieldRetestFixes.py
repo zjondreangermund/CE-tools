@@ -49,6 +49,10 @@ for marker in [
     ".OrderBy(record => record.SequenceNumber)",
     "Run CE_SEWSEQ before CE_SEWALIGN",
     "alignment starts at sequenced start manhole",
+    "ForceAlignmentStartStationZero(",
+    '"StartingStation"',
+    '"ReferencePointStation"',
+    "Every branch starts at MH#.1 with station 0+000",
 ]:
     if marker not in sewer:
         errors.append("sewer alignment sequence-start guard missing: " + marker)
