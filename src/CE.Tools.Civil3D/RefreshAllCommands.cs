@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Interop;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -399,6 +400,31 @@ namespace CETools.Civil3D
         private static void OnDocumentActivated(object sender, DocumentCollectionEventArgs args)
         {
             Attach(args.Document);
+
+            // A stale-output notice belongs only to the currently active DWG.
+            // Close notices from every other drawing so they cannot remain
+            // visible after the user switches documents.
+            Database activeDatabase =
+                args == null || args.Document == null
+                    ? null
+                    : args.Document.Database;
+            foreach (KeyValuePair<Database, Window> item in
+                new List<KeyValuePair<Database, Window>>(Notices))
+            {
+                if (activeDatabase != null &&
+                    item.Key == activeDatabase)
+                    continue;
+                try { item.Value.Close(); } catch { }
+                Notices.Remove(item.Key);
+            }
+
+            if (args != null &&
+                args.Document != null &&
+                Pending.Contains(args.Document.Database) &&
+                IsEnabled(args.Document.Database))
+            {
+                ShowOutOfDateNotice(args.Document);
+            }
         }
 
         private static void OnDocumentToBeDestroyed(object sender, DocumentCollectionEventArgs args)
@@ -517,6 +543,10 @@ namespace CETools.Civil3D
         private static void ShowOutOfDateNotice(Document document)
         {
             if (document == null || document.Database == null) return;
+            if (!object.ReferenceEquals(
+                    document,
+                    AcApplication.DocumentManager.MdiActiveDocument))
+                return;
             Window existing;
             if (Notices.TryGetValue(document.Database, out existing))
             {
@@ -532,19 +562,31 @@ namespace CETools.Civil3D
             var window = new Window
             {
                 Title = "CE Tools",
-                Width = 390,
-                Height = 155,
+                Width = 245,
+                Height = 92,
                 ResizeMode = ResizeMode.NoResize,
                 WindowStyle = WindowStyle.ToolWindow,
                 ShowInTaskbar = false,
-                Topmost = true,
+                Topmost = false,
                 ShowActivated = false,
-                SizeToContent = SizeToContent.Manual
+                SizeToContent = SizeToContent.Manual,
+                WindowStartupLocation = WindowStartupLocation.Manual
             };
+
+            // Native ownership keeps this modeless notice inside Civil 3D's
+            // z-order. It minimizes/hides with Civil 3D and no longer floats
+            // above Excel, browsers or other applications.
+            try
+            {
+                IntPtr owner = AcApplication.MainWindow.Handle;
+                if (owner != IntPtr.Zero)
+                    new WindowInteropHelper(window).Owner = owner;
+            }
+            catch { }
 
             var root = new DockPanel
             {
-                Margin = new Thickness(14)
+                Margin = new Thickness(7)
             };
             window.Content = root;
 
@@ -552,7 +594,7 @@ namespace CETools.Civil3D
             {
                 Orientation = Orientation.Horizontal,
                 HorizontalAlignment = HorizontalAlignment.Right,
-                Margin = new Thickness(0, 12, 0, 0)
+                Margin = new Thickness(0, 5, 0, 0)
             };
             DockPanel.SetDock(buttons, Dock.Bottom);
             root.Children.Add(buttons);
@@ -560,8 +602,9 @@ namespace CETools.Civil3D
             var ignore = new Button
             {
                 Content = "Ignore",
-                MinWidth = 82,
-                Margin = new Thickness(8, 0, 0, 0)
+                MinWidth = 58,
+                Padding = new Thickness(5, 1, 5, 1),
+                Margin = new Thickness(5, 0, 0, 0)
             };
             ignore.Click += delegate
             {
@@ -572,8 +615,9 @@ namespace CETools.Civil3D
             var refresh = new Button
             {
                 Content = "Refresh",
-                MinWidth = 92,
-                Margin = new Thickness(8, 0, 0, 0),
+                MinWidth = 64,
+                Padding = new Thickness(5, 1, 5, 1),
+                Margin = new Thickness(5, 0, 0, 0),
                 IsDefault = true
             };
             refresh.Click += delegate
@@ -593,9 +637,10 @@ namespace CETools.Civil3D
 
             var message = new TextBlock
             {
-                Text = "Important CE Tools linked output may be out of date.\n" +
-                    "BOQs, sewer excavation schedules, linked annotations or other schedules are not refreshed automatically.",
-                TextWrapping = TextWrapping.Wrap
+                Text = "CE Tools linked output may be out of date. Refresh?",
+                TextWrapping = TextWrapping.Wrap,
+                FontSize = 10.0,
+                VerticalAlignment = VerticalAlignment.Center
             };
             root.Children.Add(message);
 
@@ -606,10 +651,10 @@ namespace CETools.Civil3D
                     Rect area = SystemParameters.WorkArea;
                     window.Left = Math.Max(
                         area.Left,
-                        area.Right - window.ActualWidth - 16.0);
+                        area.Right - window.ActualWidth - 10.0);
                     window.Top = Math.Max(
                         area.Top,
-                        area.Bottom - window.ActualHeight - 16.0);
+                        area.Bottom - window.ActualHeight - 10.0);
                 }
                 catch { }
             };
