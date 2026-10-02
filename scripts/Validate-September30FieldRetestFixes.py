@@ -52,7 +52,7 @@ for marker in [
     "ForceAlignmentStartStationZero(",
     '"StartingStation"',
     '"ReferencePointStation"',
-    "Every branch starts at MH#.1 with station 0+000",
+    "Every branch is anchored and verified at MH#.1 with station 0+000",
 ]:
     if marker not in sewer:
         errors.append("sewer alignment sequence-start guard missing: " + marker)
