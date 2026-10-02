@@ -814,6 +814,131 @@ namespace CETools.Civil3D
             }
         }
 
+        private static bool TryCreateSlopeLines(
+            Database database,
+            SourceSnapshot source,
+            IList<Point3d> daylight,
+            GradeLink link,
+            out List<ObjectId> lineIds,
+            out string error)
+        {
+            lineIds = new List<ObjectId>();
+            error = string.Empty;
+            if (database == null ||
+                source == null ||
+                source.Points == null ||
+                daylight == null ||
+                source.Points.Count != daylight.Count)
+            {
+                error = "Source/daylight vertices are unavailable for slope-line creation.";
+                return false;
+            }
+
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    ObjectId cutLayerId = EnsureLayer(
+                        database,
+                        transaction,
+                        SafeName(link.CutSlopeLayer, "CE-JUNCTION-CUT-SLOPES"),
+                        1);
+                    ObjectId fillLayerId = EnsureLayer(
+                        database,
+                        transaction,
+                        SafeName(link.FillSlopeLayer, "CE-JUNCTION-FILL-SLOPES"),
+                        3);
+                    BlockTableRecord space = transaction.GetObject(
+                        SymbolUtilityServices.GetBlockModelSpaceId(database),
+                        OpenMode.ForWrite,
+                        false) as BlockTableRecord;
+                    if (space == null)
+                        throw new InvalidOperationException(
+                            "Model space is unavailable.");
+
+                    for (int index = 0; index < source.Points.Count; index++)
+                    {
+                        Point3d start = source.Points[index];
+                        Point3d end = daylight[index];
+                        if (!Finite(start) || !Finite(end) ||
+                            start.DistanceTo(end) <= Tolerance)
+                            continue;
+
+                        bool cut = end.Z > start.Z + 0.005;
+                        var line = new Line(start, end);
+                        line.SetDatabaseDefaults(database);
+                        line.LayerId = cut ? cutLayerId : fillLayerId;
+                        line.ColorIndex = 256;
+                        ObjectId id = space.AppendEntity(line);
+                        transaction.AddNewlyCreatedDBObject(line, true);
+                        lineIds.Add(id);
+                    }
+
+                    transaction.Commit();
+                }
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                error = exception.Message;
+                foreach (ObjectId id in lineIds)
+                    Cleanup(database, id);
+                lineIds.Clear();
+                return false;
+            }
+        }
+
+        private static ObjectId EnsureLayer(
+            Database database,
+            Transaction transaction,
+            string layerName,
+            short colorIndex)
+        {
+            LayerTable table = transaction.GetObject(
+                database.LayerTableId,
+                OpenMode.ForRead,
+                false) as LayerTable;
+            if (table == null)
+                throw new InvalidOperationException(
+                    "Layer table is unavailable.");
+
+            if (table.Has(layerName))
+                return table[layerName];
+
+            table.UpgradeOpen();
+            var layer = new LayerTableRecord
+            {
+                Name = layerName,
+                Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(
+                    Autodesk.AutoCAD.Colors.ColorMethod.ByAci,
+                    colorIndex)
+            };
+            ObjectId id = table.Add(layer);
+            transaction.AddNewlyCreatedDBObject(layer, true);
+            return id;
+        }
+
+        private static void CleanupHandleList(
+            Database database,
+            string handles)
+        {
+            if (database == null ||
+                string.IsNullOrWhiteSpace(handles))
+                return;
+
+            foreach (string value in handles.Split(
+                new[] { ';' },
+                StringSplitOptions.RemoveEmptyEntries))
+            {
+                ObjectId id = ResolveHandle(
+                    database,
+                    value.Trim());
+                if (!id.IsNull)
+                    Cleanup(database, id);
+            }
+        }
+
         private static bool TryCreateFeatureLineCandidate(Document document, SourceSnapshot source, IList<Point3d> points, out ObjectId featureLineId, out string error)
         {
             featureLineId = ObjectId.Null;
@@ -1369,7 +1494,11 @@ namespace CETools.Civil3D
                     new TypedValue((int)DxfCode.Real, link.MaxDistance),
                     new TypedValue((int)DxfCode.Real, link.SearchStep),
                     new TypedValue((int)DxfCode.Text, link.Side ?? "Auto"),
-                    new TypedValue((int)DxfCode.Int16, link.NativeInfill ? 1 : 0));
+                    new TypedValue((int)DxfCode.Int16, link.NativeInfill ? 1 : 0),
+                    new TypedValue((int)DxfCode.Int16, link.ShowSlopeLines ? 1 : 0),
+                    new TypedValue((int)DxfCode.Text, link.CutSlopeLayer ?? "CE-JUNCTION-CUT-SLOPES"),
+                    new TypedValue((int)DxfCode.Text, link.FillSlopeLayer ?? "CE-JUNCTION-FILL-SLOPES"),
+                    new TypedValue((int)DxfCode.Text, link.SlopeLineHandles ?? string.Empty));
                 transaction.Commit();
             }
         }
@@ -1406,7 +1535,18 @@ namespace CETools.Civil3D
                     MaxDistance = Convert.ToDouble(values[6].Value, CultureInfo.InvariantCulture),
                     SearchStep = Convert.ToDouble(values[7].Value, CultureInfo.InvariantCulture),
                     Side = SafeSide(Convert.ToString(values[8].Value, CultureInfo.InvariantCulture)),
-                    NativeInfill = Convert.ToInt16(values[9].Value, CultureInfo.InvariantCulture) != 0
+                    NativeInfill = Convert.ToInt16(values[9].Value, CultureInfo.InvariantCulture) != 0,
+                    ShowSlopeLines = values.Length > 10 &&
+                        Convert.ToInt16(values[10].Value, CultureInfo.InvariantCulture) != 0,
+                    CutSlopeLayer = values.Length > 11
+                        ? Convert.ToString(values[11].Value, CultureInfo.InvariantCulture)
+                        : "CE-JUNCTION-CUT-SLOPES",
+                    FillSlopeLayer = values.Length > 12
+                        ? Convert.ToString(values[12].Value, CultureInfo.InvariantCulture)
+                        : "CE-JUNCTION-FILL-SLOPES",
+                    SlopeLineHandles = values.Length > 13
+                        ? Convert.ToString(values[13].Value, CultureInfo.InvariantCulture)
+                        : string.Empty
                 };
                 return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
             }
