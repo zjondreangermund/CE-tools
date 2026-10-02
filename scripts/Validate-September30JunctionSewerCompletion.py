@@ -33,6 +33,19 @@ for marker in [
 if "August26CadSupplementaryFieldRuntime.CloseOpenMultiple(document, true);" in junction:
     errors.append("junction bellmouth workflow still closes selected feature lines into loops")
 
+
+alignments = read("src/CE.Tools.Civil3D/SewerBranchAlignmentCommands.cs")
+
+for marker in [
+    "ReferencePointStation",
+    "alignment.StationOffset(",
+    "branch.PlanPoints[0]",
+    "alignment could not anchor its start manhole at station 0+000",
+    "MH#.1",
+]:
+    if marker not in alignments:
+        errors.append("sewer branch alignment zero-station anchoring missing: " + marker)
+
 for marker in [
     '"Entire selected sewer network - automatic by branch"',
     "AssignEntireNetworksByBranch(",
