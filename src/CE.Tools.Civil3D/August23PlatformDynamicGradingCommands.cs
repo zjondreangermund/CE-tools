@@ -831,55 +831,104 @@ namespace CETools.Civil3D
             if (database == null ||
                 source == null ||
                 source.Points == null ||
-                daylight == null ||
-                source.Points.Count != daylight.Count)
+                source.Points.Count < 2)
             {
-                error = "Source/daylight vertices are unavailable for slope-line creation.";
+                error = "Source geometry is unavailable for slope-line creation.";
+                return false;
+            }
+
+            ObjectId surfaceId = ResolveHandle(
+                database,
+                link.SurfaceHandle);
+            if (surfaceId.IsNull)
+            {
+                error = "The target surface is unavailable for slope-line creation.";
                 return false;
             }
 
             try
             {
+                ObjectId cutLayerId;
+                ObjectId fillLayerId;
                 using (Transaction transaction =
                     database.TransactionManager.StartTransaction())
                 {
-                    ObjectId cutLayerId = EnsureLayer(
+                    cutLayerId = EnsureLayer(
                         database,
                         transaction,
                         SafeName(link.CutSlopeLayer, "CE-JUNCTION-CUT-SLOPES"),
                         1);
-                    ObjectId fillLayerId = EnsureLayer(
+                    fillLayerId = EnsureLayer(
                         database,
                         transaction,
                         SafeName(link.FillSlopeLayer, "CE-JUNCTION-FILL-SLOPES"),
                         3);
-                    BlockTableRecord space = transaction.GetObject(
-                        SymbolUtilityServices.GetBlockModelSpaceId(database),
-                        OpenMode.ForWrite,
-                        false) as BlockTableRecord;
-                    if (space == null)
-                        throw new InvalidOperationException(
-                            "Model space is unavailable.");
+                    transaction.Commit();
+                }
 
-                    for (int index = 0; index < source.Points.Count; index++)
+                double spacing = Math.Max(
+                    0.10,
+                    link.SlopeLineInterval <= Tolerance
+                        ? 5.0
+                        : link.SlopeLineInterval);
+                List<SlopeRaySample> samples =
+                    BuildSlopeRaySamples(source, link.Side, spacing);
+
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilSurface surface = transaction.GetObject(
+                        surfaceId,
+                        OpenMode.ForRead,
+                        false) as CivilSurface;
+                    if (surface == null)
+                        throw new InvalidOperationException(
+                            "The selected target surface is not readable.");
+
+                    int index = 0;
+                    foreach (SlopeRaySample sample in samples)
                     {
-                        Point3d start = source.Points[index];
-                        Point3d end = daylight[index];
-                        if (!Finite(start) || !Finite(end) ||
-                            start.DistanceTo(end) <= Tolerance)
+                        Point3d endPoint;
+                        if (!TryFindDaylight(
+                                surface,
+                                sample.Point,
+                                sample.Direction,
+                                link,
+                                out endPoint))
+                            continue;
+                        if (!Finite(endPoint) ||
+                            sample.Point.DistanceTo(endPoint) <= Tolerance)
                             continue;
 
-                        bool cut = end.Z > start.Z + 0.005;
-                        var line = new Line(start, end);
-                        line.SetDatabaseDefaults(database);
-                        line.LayerId = cut ? cutLayerId : fillLayerId;
-                        line.ColorIndex = 256;
-                        ObjectId id = space.AppendEntity(line);
-                        transaction.AddNewlyCreatedDBObject(line, true);
-                        lineIds.Add(id);
+                        bool cut =
+                            endPoint.Z > sample.Point.Z + 0.005;
+                        ObjectId rayId;
+                        string rayError;
+                        if (!TryCreateCivilSlopeRay(
+                                database,
+                                source,
+                                sample.Point,
+                                endPoint,
+                                cut ? cutLayerId : fillLayerId,
+                                cut ? "CUT" : "FILL",
+                                index++,
+                                out rayId,
+                                out rayError))
+                        {
+                            error = rayError;
+                            foreach (ObjectId created in lineIds)
+                                Cleanup(database, created);
+                            lineIds.Clear();
+                            return false;
+                        }
+                        lineIds.Add(rayId);
                     }
+                }
 
-                    transaction.Commit();
+                if (lineIds.Count == 0)
+                {
+                    error = "No valid Civil 3D cut/fill slope rays could be created.";
+                    return false;
                 }
                 return true;
             }
@@ -891,6 +940,206 @@ namespace CETools.Civil3D
                 lineIds.Clear();
                 return false;
             }
+        }
+
+        private static List<SlopeRaySample> BuildSlopeRaySamples(
+            SourceSnapshot source,
+            string side,
+            double spacing)
+        {
+            var result = new List<SlopeRaySample>();
+            if (source == null ||
+                source.Points == null ||
+                source.Points.Count < 2)
+                return result;
+
+            double area = source.Closed
+                ? SignedArea(source.Points)
+                : 0.0;
+            for (int segment = 0;
+                 segment < source.Points.Count - 1;
+                 segment++)
+            {
+                Point3d a = source.Points[segment];
+                Point3d b = source.Points[segment + 1];
+                Vector2d tangent = new Vector2d(
+                    b.X - a.X,
+                    b.Y - a.Y);
+                double length = tangent.Length;
+                if (length <= Tolerance)
+                    continue;
+                tangent = tangent.GetNormal();
+                Vector2d direction = ResolveSlopeRayDirection(
+                    tangent,
+                    source.Closed,
+                    area,
+                    side);
+
+                double last =
+                    segment == source.Points.Count - 2
+                        ? length
+                        : Math.Max(0.0, length - 0.001);
+                for (double distance = 0.0;
+                     distance <= last + Tolerance;
+                     distance += spacing)
+                {
+                    double t = Math.Min(1.0, distance / length);
+                    result.Add(new SlopeRaySample
+                    {
+                        Point = new Point3d(
+                            a.X + (b.X - a.X) * t,
+                            a.Y + (b.Y - a.Y) * t,
+                            a.Z + (b.Z - a.Z) * t),
+                        Direction = direction
+                    });
+                }
+
+                // Always include the end of a segment when the spacing did not
+                // land on it. This keeps bellmouth tangent/arc endpoints visible.
+                if (result.Count == 0 ||
+                    result[result.Count - 1].Point.DistanceTo(b) >
+                        Math.Min(0.01, spacing * 0.05))
+                {
+                    result.Add(new SlopeRaySample
+                    {
+                        Point = b,
+                        Direction = direction
+                    });
+                }
+            }
+            return result;
+        }
+
+        private static Vector2d ResolveSlopeRayDirection(
+            Vector2d tangent,
+            bool closed,
+            double signedArea,
+            string side)
+        {
+            Vector2d left = new Vector2d(
+                -tangent.Y,
+                tangent.X);
+            double sign;
+            if (string.Equals(
+                    side,
+                    "Inside",
+                    StringComparison.OrdinalIgnoreCase))
+                sign = closed
+                    ? (signedArea >= 0.0 ? 1.0 : -1.0)
+                    : -1.0;
+            else if (string.Equals(
+                side,
+                "Outside",
+                StringComparison.OrdinalIgnoreCase))
+                sign = closed
+                    ? (signedArea >= 0.0 ? -1.0 : 1.0)
+                    : 1.0;
+            else if (string.Equals(
+                side,
+                "Right",
+                StringComparison.OrdinalIgnoreCase))
+                sign = -1.0;
+            else
+                sign = 1.0;
+            return left.MultiplyBy(sign);
+        }
+
+        private static bool TryCreateCivilSlopeRay(
+            Database database,
+            SourceSnapshot source,
+            Point3d start,
+            Point3d end,
+            ObjectId layerId,
+            string mode,
+            int index,
+            out ObjectId featureLineId,
+            out string error)
+        {
+            featureLineId = ObjectId.Null;
+            error = string.Empty;
+            ObjectId temporaryId = ObjectId.Null;
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    BlockTableRecord space = transaction.GetObject(
+                        SymbolUtilityServices.GetBlockModelSpaceId(database),
+                        OpenMode.ForWrite,
+                        false) as BlockTableRecord;
+                    if (space == null)
+                        throw new InvalidOperationException(
+                            "Model space is unavailable.");
+                    var temporary = new Polyline3d(
+                        Poly3dType.SimplePoly,
+                        new Point3dCollection(
+                            new[] { start, end }),
+                        false);
+                    temporary.SetDatabaseDefaults(database);
+                    temporary.LayerId = layerId;
+                    temporaryId = space.AppendEntity(temporary);
+                    transaction.AddNewlyCreatedDBObject(
+                        temporary,
+                        true);
+                    transaction.Commit();
+                }
+
+                string requested =
+                    "CE-" + mode + "-SLOPE-" +
+                    (source.ObjectId.IsNull
+                        ? "JUNCTION"
+                        : source.ObjectId.Handle.ToString()) +
+                    "-" + (index + 1).ToString(
+                        CultureInfo.InvariantCulture);
+                string name = UniqueFeatureLineName(
+                    database,
+                    requested,
+                    ObjectId.Null);
+
+                featureLineId = source.SiteId.IsNull
+                    ? CivilFeatureLine.Create(
+                        name,
+                        temporaryId)
+                    : CivilFeatureLine.Create(
+                        name,
+                        temporaryId,
+                        source.SiteId);
+
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine ray = OpenFeatureLine(
+                        transaction,
+                        featureLineId,
+                        OpenMode.ForWrite);
+                    if (ray == null)
+                        throw new InvalidOperationException(
+                            "Civil 3D did not create the slope-ray feature line.");
+                    ray.LayerId = layerId;
+                    ray.ColorIndex = 256;
+                    transaction.Commit();
+                }
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                error = exception.Message;
+                if (!featureLineId.IsNull)
+                    Cleanup(database, featureLineId);
+                featureLineId = ObjectId.Null;
+                return false;
+            }
+            finally
+            {
+                if (!temporaryId.IsNull)
+                    Cleanup(database, temporaryId);
+            }
+        }
+
+        private sealed class SlopeRaySample
+        {
+            internal Point3d Point;
+            internal Vector2d Direction;
         }
 
         private static ObjectId EnsureLayer(
