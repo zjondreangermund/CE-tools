@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
+using System.IO;
 using System.Linq;
+using System.Text;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
@@ -17,7 +20,9 @@ namespace CETools.Civil3D
     {
         private static string _lastSelectedStyle;
         private static bool _lastShowLabels = true;
-        private static bool _lastOpenNative = false;
+        private static int _lastSingleAction;
+        private static int _lastMultiAction;
+        private static bool _preferencesLoaded;
         private readonly IList<string> _styleNames;
         private readonly IList<string> _viewNames;
         private readonly ComboBox _bandSet;
@@ -26,6 +31,7 @@ namespace CETools.Civil3D
 
         private ProfileViewBandImportDialog(IList<string> styleNames, IList<string> viewNames)
         {
+            LoadPreferences();
             _styleNames = styleNames ?? new List<string>();
             _viewNames = viewNames ?? new List<string>();
 
@@ -186,7 +192,9 @@ namespace CETools.Civil3D
                         "Open Band Data Sources for selected views",
                         "Edit first selected in native properties, apply to all others"
                     },
-                SelectedIndex = _viewNames.Count == 1 && _lastOpenNative ? 1 : 0,
+                SelectedIndex = _viewNames.Count == 1
+                    ? Math.Max(0, Math.Min(1, _lastSingleAction))
+                    : Math.Max(0, Math.Min(2, _lastMultiAction)),
                 VerticalAlignment = VerticalAlignment.Center,
                 Margin = new Thickness(0, 0, 18, 0),
                 MinWidth = 360,
@@ -257,10 +265,118 @@ namespace CETools.Civil3D
             OpenEditMatch = _viewNames.Count > 1 && postAction == 2;
             _lastSelectedStyle = SelectedStyleName;
             _lastShowLabels = ShowLabels;
-            _lastOpenNative = OpenNativeDialog;
+            if (_viewNames.Count == 1)
+                _lastSingleAction = postAction;
+            else
+                _lastMultiAction = postAction;
+            SavePreferences();
             Accepted = true;
             DialogResult = true;
             Close();
+        }
+
+        private static string PreferencePath
+        {
+            get
+            {
+                string folder = Path.Combine(
+                    Environment.GetFolderPath(
+                        Environment.SpecialFolder.ApplicationData),
+                    "CE Tools");
+                Directory.CreateDirectory(folder);
+                return Path.Combine(
+                    folder,
+                    "ProfileViewBandImport.defaults");
+            }
+        }
+
+        private static void LoadPreferences()
+        {
+            if (_preferencesLoaded) return;
+            _preferencesLoaded = true;
+            try
+            {
+                if (!File.Exists(PreferencePath)) return;
+                foreach (string line in File.ReadAllLines(
+                    PreferencePath,
+                    Encoding.UTF8))
+                {
+                    int split = line.IndexOf('=');
+                    if (split <= 0) continue;
+                    string key = line.Substring(0, split).Trim();
+                    string value = line.Substring(split + 1).Trim();
+                    if (key.Equals(
+                            "Style",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        try
+                        {
+                            _lastSelectedStyle =
+                                Encoding.UTF8.GetString(
+                                    Convert.FromBase64String(value));
+                        }
+                        catch { }
+                    }
+                    else if (key.Equals(
+                        "ShowLabels",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        bool parsed;
+                        if (bool.TryParse(value, out parsed))
+                            _lastShowLabels = parsed;
+                    }
+                    else if (key.Equals(
+                        "SingleAction",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        int parsed;
+                        if (int.TryParse(value, out parsed))
+                            _lastSingleAction = parsed;
+                    }
+                    else if (key.Equals(
+                        "MultiAction",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        int parsed;
+                        if (int.TryParse(value, out parsed))
+                            _lastMultiAction = parsed;
+                    }
+                }
+            }
+            catch
+            {
+                // A damaged preference file must never block band imports.
+            }
+        }
+
+        private static void SavePreferences()
+        {
+            try
+            {
+                string encodedStyle = Convert.ToBase64String(
+                    Encoding.UTF8.GetBytes(
+                        _lastSelectedStyle ?? string.Empty));
+                File.WriteAllLines(
+                    PreferencePath,
+                    new[]
+                    {
+                        "Style=" + encodedStyle,
+                        "ShowLabels=" +
+                            _lastShowLabels.ToString(
+                                CultureInfo.InvariantCulture),
+                        "SingleAction=" +
+                            _lastSingleAction.ToString(
+                                CultureInfo.InvariantCulture),
+                        "MultiAction=" +
+                            _lastMultiAction.ToString(
+                                CultureInfo.InvariantCulture)
+                    },
+                    Encoding.UTF8);
+            }
+            catch
+            {
+                // Remembering the last choice is helpful, never mandatory.
+            }
         }
 
         private static StackPanel LabelBlock(string label, string description)
