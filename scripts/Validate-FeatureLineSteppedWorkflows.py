@@ -83,6 +83,13 @@ required = {
         '"CutGrade"',
         '"FillSlope"',
         '"FillGrade"',
+        '"ShowSlopeLines"',
+        '"CutSlopeLayer"',
+        '"FillSlopeLayer"',
+        'TryCreateSlopeLines(',
+        'CleanupHandleList(',
+        '"CE-JUNCTION-CUT-SLOPES"',
+        '"CE-JUNCTION-FILL-SLOPES"',
     ),
 }
 
@@ -131,6 +138,17 @@ if 'settings.Text("VerticalMode")' not in create_body or 'settings.Text("SlopeDi
     errors.append("Linked stepped offsets must calculate vertical change from the selected elevation/grade/slope mode")
 if 'ResolveNamedOffsetSign' not in create_body:
     errors.append("Linked stepped offsets must retain selectable side control for bellmouth/source offsets")
+
+if '"Select multiple SOURCE feature lines for stepped offsets: "' not in relative:
+    errors.append("CE_FLRELCREATE must expose one batch selection set for multiple source feature lines")
+if 'selection.Value.GetObjectIds().Distinct()' not in create_body:
+    errors.append("CE_FLRELCREATE must process every distinct selected feature line")
+if '"Show cut / fill slope lines"' not in grading:
+    errors.append("Junction grading must expose the slope-line display option")
+if 'new Line(start, end)' not in grading:
+    errors.append("Junction grading must draw source-to-daylight cut/fill slope projection lines")
+if 'line.LayerId = cut ? cutLayerId : fillLayerId' not in grading:
+    errors.append("Cut and fill slope projection lines must be separated by layer")
 
 if "gapTolerance" not in healing or "best.Distance > gapTolerance" not in healing:
     errors.append("Stepped healing no longer protects the maximum bridge distance")
