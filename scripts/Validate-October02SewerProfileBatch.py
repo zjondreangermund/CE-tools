@@ -52,7 +52,7 @@ required = {
         '"SwapPartFamilyAndSize"',
         '"Pipe family / size"',
         '"Structure / manhole family / size"',
-        '"Select multiple sewer pipes/structures in plan or profile views: "',
+        '"profile views: "',
         "PartsList",
         "PartFamily",
         "PartSize",
