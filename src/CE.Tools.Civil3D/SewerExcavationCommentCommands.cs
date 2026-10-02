@@ -1911,6 +1911,115 @@ namespace CETools.Civil3D
         }
     }
 
+    internal static class SewerExcavationPreferenceStore
+    {
+        private static string FolderPath
+        {
+            get
+            {
+                return Path.Combine(
+                    Environment.GetFolderPath(
+                        Environment.SpecialFolder.LocalApplicationData),
+                    "CE Tools");
+            }
+        }
+
+        private static string SettingsPath
+        {
+            get { return Path.Combine(FolderPath, "SewerExcavation.defaults"); }
+        }
+
+        private static string ExportPathFile
+        {
+            get { return Path.Combine(FolderPath, "SewerExcavation.last-export"); }
+        }
+
+        internal static SewerExcavationSettings LoadSettings()
+        {
+            var settings = new SewerExcavationSettings();
+            try
+            {
+                if (!File.Exists(SettingsPath))
+                    return settings;
+
+                foreach (string line in File.ReadAllLines(SettingsPath))
+                {
+                    if (string.IsNullOrWhiteSpace(line)) continue;
+                    int equals = line.IndexOf('=');
+                    if (equals <= 0) continue;
+                    string key = line.Substring(0, equals).Trim();
+                    string value = line.Substring(equals + 1).Trim();
+                    double number;
+                    if (!double.TryParse(
+                            value,
+                            NumberStyles.Float,
+                            CultureInfo.InvariantCulture,
+                            out number))
+                        continue;
+
+                    if (key.Equals("UnitsPerMetre", StringComparison.OrdinalIgnoreCase)) settings.UnitsPerMetre = number;
+                    else if (key.Equals("SideAllowance", StringComparison.OrdinalIgnoreCase)) settings.SideAllowance = number;
+                    else if (key.Equals("MinimumWidth", StringComparison.OrdinalIgnoreCase)) settings.MinimumWidth = number;
+                    else if (key.Equals("TrenchWidth", StringComparison.OrdinalIgnoreCase)) settings.TrenchWidth = number;
+                    else if (key.Equals("BeddingThickness", StringComparison.OrdinalIgnoreCase)) settings.BeddingThickness = number;
+                    else if (key.Equals("BlanketAbovePipe", StringComparison.OrdinalIgnoreCase)) settings.BlanketAbovePipe = number;
+                    else if (key.Equals("StructureSideAllowance", StringComparison.OrdinalIgnoreCase)) settings.StructureSideAllowance = number;
+                    else if (key.Equals("FallbackCover", StringComparison.OrdinalIgnoreCase)) settings.FallbackCover = number;
+                }
+            }
+            catch { }
+            settings.ExcavationToBottomOnly = false;
+            settings.Validate();
+            return settings;
+        }
+
+        internal static void SaveSettings(
+            SewerExcavationSettings settings)
+        {
+            if (settings == null) return;
+            try
+            {
+                Directory.CreateDirectory(FolderPath);
+                File.WriteAllLines(
+                    SettingsPath,
+                    new[]
+                    {
+                        "UnitsPerMetre=" + settings.UnitsPerMetre.ToString("R", CultureInfo.InvariantCulture),
+                        "SideAllowance=" + settings.SideAllowance.ToString("R", CultureInfo.InvariantCulture),
+                        "MinimumWidth=" + settings.MinimumWidth.ToString("R", CultureInfo.InvariantCulture),
+                        "TrenchWidth=" + settings.TrenchWidth.ToString("R", CultureInfo.InvariantCulture),
+                        "BeddingThickness=" + settings.BeddingThickness.ToString("R", CultureInfo.InvariantCulture),
+                        "BlanketAbovePipe=" + settings.BlanketAbovePipe.ToString("R", CultureInfo.InvariantCulture),
+                        "StructureSideAllowance=" + settings.StructureSideAllowance.ToString("R", CultureInfo.InvariantCulture),
+                        "FallbackCover=" + settings.FallbackCover.ToString("R", CultureInfo.InvariantCulture)
+                    });
+            }
+            catch { }
+        }
+
+        internal static string LoadLastExportPath()
+        {
+            try
+            {
+                return File.Exists(ExportPathFile)
+                    ? File.ReadAllText(ExportPathFile).Trim()
+                    : string.Empty;
+            }
+            catch { return string.Empty; }
+        }
+
+        internal static void SaveLastExportPath(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path)) return;
+            try
+            {
+                Directory.CreateDirectory(FolderPath);
+                File.WriteAllText(ExportPathFile, path);
+            }
+            catch { }
+        }
+    }
+
     internal sealed class SewerExcavationSettings
     {
         public SewerExcavationSettings()
