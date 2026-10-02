@@ -460,6 +460,16 @@ namespace CETools.Civil3D
                         "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
+                        "Swap Multiple Sewer Pipes / Structures",
+                        "CE_SEWPARTSWAPMULTI",
+                        "Select multiple gravity-network pipes and structures in plan or profile views, choose one replacement pipe family/size and/or structure family/size, and swap the same Civil 3D parts everywhere they are displayed.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Sewer Branch Alignments - MH#.1 at 0+000",
+                        "CE_SEWALIGN",
+                        "Use AllNetworkParts or select sewer parts. Every branch is rebuilt in structure-number order, automatically reversed where required so MH1.1, MH2.1, MH3.1, etc. are the alignment start, then anchored at station 0+000.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
                         "Link Sewer Parts to Surface / Gravity Slopes",
                         "CE_SEWLINKSURFACE",
                         "Choose AllNetworkParts or manually select sewer parts. Gravity mode keeps P#.1 at the specified starting slope and remaining pipes at the specified minimum slope by default. It only steepens where a lower incoming invert or minimum structure depth/cover requires it, never above the specified maximum. Optional deep-run raising keeps branches within a specified depth trigger where continuity allows, then re-applies the same rules. Natural-ground and Civil 3D rule-set modes remain separate.",
@@ -553,6 +563,11 @@ namespace CETools.Civil3D
                         "Assign Sewer Reference Alignments by Branch",
                         "CE_PIPEALIGNMENTMULTI",
                         "Automatically expand selected sewer parts to the entire network and assign P1.x/MH1.x to Branch-1, P2.x/MH2.x to Branch-2, and so on. Manual selected-part assignment remains available.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Arrange Multiple Profile Views",
+                        "CE_PROFILEVIEWARRANGE",
+                        "Select multiple profile views, sort them by branch/alignment, profile-view name or current position, then space them horizontally, vertically or in a configurable grid.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Import Band Set / Repair Road Band Sources",
