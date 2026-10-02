@@ -492,8 +492,12 @@ namespace CETools.Civil3D
                 return false;
             }
 
-            double rawStartGround;
-            double rawEndGround;
+            // Initialise both values because the second surface sample is
+            // behind a short-circuiting && expression. If the start sample fails,
+            // C# correctly treats rawEndGround as potentially unassigned even
+            // though it is only consumed when exactSurface is true.
+            double rawStartGround = 0.0;
+            double rawEndGround = 0.0;
             bool exactSurface =
                 TryReferenceSurfaceElevation(
                     value,
