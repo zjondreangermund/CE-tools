@@ -885,7 +885,6 @@ namespace CETools.Civil3D
                         throw new InvalidOperationException(
                             "The selected target surface is not readable.");
 
-                    int index = 0;
                     foreach (SlopeRaySample sample in samples)
                     {
                         Point3d endPoint;
@@ -900,29 +899,37 @@ namespace CETools.Civil3D
                             sample.Point.DistanceTo(endPoint) <= Tolerance)
                             continue;
 
-                        bool cut =
+                        sample.EndPoint = endPoint;
+                        sample.Cut =
                             endPoint.Z > sample.Point.Z + 0.005;
-                        ObjectId rayId;
-                        string rayError;
-                        if (!TryCreateCivilSlopeRay(
-                                database,
-                                source,
-                                sample.Point,
-                                endPoint,
-                                cut ? cutLayerId : fillLayerId,
-                                cut ? "CUT" : "FILL",
-                                index++,
-                                out rayId,
-                                out rayError))
-                        {
-                            error = rayError;
-                            foreach (ObjectId created in lineIds)
-                                Cleanup(database, created);
-                            lineIds.Clear();
-                            return false;
-                        }
-                        lineIds.Add(rayId);
+                        sample.Valid = true;
                     }
+                }
+
+                int index = 0;
+                foreach (SlopeRaySample sample in
+                    samples.Where(item => item.Valid))
+                {
+                    ObjectId rayId;
+                    string rayError;
+                    if (!TryCreateCivilSlopeRay(
+                            database,
+                            source,
+                            sample.Point,
+                            sample.EndPoint,
+                            sample.Cut ? cutLayerId : fillLayerId,
+                            sample.Cut ? "CUT" : "FILL",
+                            index++,
+                            out rayId,
+                            out rayError))
+                    {
+                        error = rayError;
+                        foreach (ObjectId created in lineIds)
+                            Cleanup(database, created);
+                        lineIds.Clear();
+                        return false;
+                    }
+                    lineIds.Add(rayId);
                 }
 
                 if (lineIds.Count == 0)
@@ -1140,6 +1147,9 @@ namespace CETools.Civil3D
         {
             internal Point3d Point;
             internal Vector2d Direction;
+            internal Point3d EndPoint;
+            internal bool Cut;
+            internal bool Valid;
         }
 
         private static ObjectId EnsureLayer(
