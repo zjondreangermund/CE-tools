@@ -170,7 +170,7 @@ namespace CETools.Civil3D
                     out labelsCreated);
 
                 editor.WriteMessage(
-                    "\nCE_SEWALIGN complete. Alignments created/refreshed: {0}; branch-name labels placed: {1}. Every branch starts at MH#.1 with station 0+000.",
+                    "\nCE_SEWALIGN complete. Alignments created/refreshed: {0}; branch-name labels placed: {1}. Every branch is anchored and verified at MH#.1 with station 0+000.",
                     alignmentsCreated,
                     labelsCreated);
             }
@@ -535,6 +535,40 @@ namespace CETools.Civil3D
                 }
             }
 
+            // Anchor the branch geometry to the actual sequenced
+            // structure centres. Pipe endpoint geometry can be slightly offset
+            // from structure insertion points in some Civil 3D networks; using
+            // MH#.1 explicitly guarantees station 0.000 is at the true branch
+            // start manhole rather than at a nearby inherited pipe endpoint.
+            if (points.Count > 0 && structureIds.Count > 0)
+            {
+                CivilStructure firstStructure = transaction.GetObject(
+                    structureIds[0],
+                    OpenMode.ForRead,
+                    false) as CivilStructure;
+                if (firstStructure != null)
+                {
+                    Point3d first = firstStructure.Position;
+                    points[0] = new Point3d(
+                        first.X,
+                        first.Y,
+                        points[0].Z);
+                }
+
+                CivilStructure lastStructure = transaction.GetObject(
+                    structureIds[structureIds.Count - 1],
+                    OpenMode.ForRead,
+                    false) as CivilStructure;
+                if (lastStructure != null)
+                {
+                    Point3d last = lastStructure.Position;
+                    points[points.Count - 1] = new Point3d(
+                        last.X,
+                        last.Y,
+                        points[points.Count - 1].Z);
+                }
+            }
+
             return points;
         }
 
@@ -668,7 +702,8 @@ namespace CETools.Civil3D
 
                         ForceAlignmentStartStationZero(
                             alignment,
-                            branch.BranchName);
+                            branch.BranchName,
+                            branch.PlanPoints[0]);
 
                         alignment.Description =
                             "CE sewer alignment - " + branch.BranchName;
@@ -717,62 +752,87 @@ namespace CETools.Civil3D
 
         private static void ForceAlignmentStartStationZero(
             CivilAlignment alignment,
-            string branchName)
+            string branchName,
+            Point3d sequencedStartPoint)
         {
             if (alignment == null)
                 throw new ArgumentNullException("alignment");
 
-            const double tolerance = 0.0001;
+            const double tolerance = 0.001;
+            Point2d startPoint = new Point2d(
+                sequencedStartPoint.X,
+                sequencedStartPoint.Y);
 
-            // Fresh CE branch alignments must always start at 0+000 at MH#.1.
-            // Some Civil 3D drawing templates carry a non-zero default starting
-            // station, so explicitly reset it after creating the alignment.
-            bool changed = TrySetDoubleProperty(
+            // StartingStation alone is not sufficient in all Civil 3D 2023
+            // templates. The effective stationing can still be controlled by the
+            // alignment reference point. Always pin the true branch-start manhole
+            // to station 0.000 and also reset StartingStation where writable.
+            TrySetDoubleProperty(
                 alignment,
                 "StartingStation",
                 0.0);
-
-            double start = ReadDoubleProperty(
+            bool referencePointSet = TrySetProperty(
                 alignment,
-                "StartingStation",
-                double.NaN);
+                "ReferencePoint",
+                startPoint);
+            bool referenceStationSet = TrySetDoubleProperty(
+                alignment,
+                "ReferencePointStation",
+                0.0);
 
-            if (double.IsNaN(start) ||
-                double.IsInfinity(start) ||
-                Math.Abs(start) > tolerance)
+            // Verify what Civil 3D itself reports at MH#.1 rather than trusting
+            // reflected property values. This catches inherited 4030/4040-style
+            // stationing before the transaction can commit.
+            double station = double.NaN;
+            double offset = double.NaN;
+            try
             {
-                // Civil 3D API variants may expose station control through the
-                // reference point instead of a writable StartingStation property.
-                // Pin the first alignment point to station zero as a fallback.
-                Point2d firstPoint = ReadAlignmentStartPoint(alignment);
-                if (!double.IsNaN(firstPoint.X) &&
-                    !double.IsNaN(firstPoint.Y))
-                {
-                    TrySetProperty(
-                        alignment,
-                        "ReferencePoint",
-                        firstPoint);
-                    changed =
-                        TrySetDoubleProperty(
-                            alignment,
-                            "ReferencePointStation",
-                            0.0) || changed;
-                }
+                alignment.StationOffset(
+                    startPoint.X,
+                    startPoint.Y,
+                    ref station,
+                    ref offset);
+            }
+            catch { }
 
-                start = ReadDoubleProperty(
+            if (double.IsNaN(station) ||
+                double.IsInfinity(station) ||
+                Math.Abs(station) > tolerance)
+            {
+                // One more explicit reference-point write after geometry creation
+                // handles drawings where Civil 3D materialises alignment station
+                // data lazily on first station query.
+                TrySetProperty(
                     alignment,
-                    "StartingStation",
-                    double.NaN);
+                    "ReferencePoint",
+                    startPoint);
+                TrySetDoubleProperty(
+                    alignment,
+                    "ReferencePointStation",
+                    0.0);
+
+                station = double.NaN;
+                offset = double.NaN;
+                try
+                {
+                    alignment.StationOffset(
+                        startPoint.X,
+                        startPoint.Y,
+                        ref station,
+                        ref offset);
+                }
+                catch { }
             }
 
-            if (!changed ||
-                double.IsNaN(start) ||
-                double.IsInfinity(start) ||
-                Math.Abs(start) > tolerance)
+            if (!referencePointSet ||
+                !referenceStationSet ||
+                double.IsNaN(station) ||
+                double.IsInfinity(station) ||
+                Math.Abs(station) > tolerance)
             {
                 throw new InvalidOperationException(
                     (branchName ?? "Sewer branch") +
-                    " alignment could not be reset to station 0+000.");
+                    " alignment could not anchor its start manhole at station 0+000.");
             }
         }
 
