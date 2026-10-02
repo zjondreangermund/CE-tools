@@ -36,10 +36,45 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            PromptSelectionResult selection = GetSelection(
-                document.Editor,
-                "\nSelect sewer pipes and structures for the linked excavation schedule: ");
-            if (selection.Status != PromptStatus.OK) return;
+            List<ObjectId> sourceIds;
+            var scope = new PromptKeywordOptions(
+                "\nSewer excavation scope [AllNetworkParts/Select] <AllNetworkParts>: ")
+            {
+                AllowNone = true
+            };
+            scope.Keywords.Add("AllNetworkParts");
+            scope.Keywords.Add("Select");
+            PromptResult scopeResult = document.Editor.GetKeywords(scope);
+            bool selectManually =
+                scopeResult.Status == PromptStatus.OK &&
+                string.Equals(
+                    scopeResult.StringResult,
+                    "Select",
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (selectManually)
+            {
+                PromptSelectionResult selection = GetSelection(
+                    document.Editor,
+                    "\nSelect sewer pipes and structures for the linked excavation schedule: ");
+                if (selection.Status != PromptStatus.OK ||
+                    selection.Value == null)
+                    return;
+                sourceIds = selection.Value.GetObjectIds().ToList();
+            }
+            else
+            {
+                sourceIds = ReadAllSupportedSewerParts(document.Database);
+                if (sourceIds.Count == 0)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_SEWEREXCAVATION: no Civil 3D sewer pipes/structures were found in model space.");
+                    return;
+                }
+                document.Editor.WriteMessage(
+                    "\nCE_SEWEREXCAVATION: selected all supported sewer parts. Objects={0}.",
+                    sourceIds.Count);
+            }
 
             SewerExcavationSettings defaults =
                 SewerExcavationPreferenceStore.LoadSettings();
@@ -50,7 +85,6 @@ namespace CETools.Civil3D
             SewerExcavationSettings settings = settingsWindow.Settings;
             SewerExcavationPreferenceStore.SaveSettings(settings);
 
-            List<ObjectId> sourceIds = selection.Value.GetObjectIds().ToList();
             ExtractionResult extraction = Extract(document.Database, sourceIds, settings);
             if (extraction.Rows.Count == 0)
             {
@@ -439,6 +473,108 @@ namespace CETools.Civil3D
                 }
             }
 
+            List<PipeExcavationRow> ordered = result.Rows
+                .OrderBy(row => SewerBranchNumber(row.Name))
+                .ThenBy(row => string.Equals(
+                    row.ObjectType,
+                    "Structure",
+                    StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(row => SewerSequenceNumber(row.Name))
+                .ThenBy(row => row.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+            result.Rows.Clear();
+            result.Rows.AddRange(ordered);
+
+            // Keep linked handles in the same deterministic branch order as the
+            // rows so refresh/export never appears random.
+            result.UsableHandles.Clear();
+            result.UsableHandles.AddRange(
+                ordered.Select(row => row.Handle));
+
+            return result;
+        }
+
+        private static int SewerBranchNumber(string name)
+        {
+            int branch;
+            int sequence;
+            return TryParseSewerName(name, out branch, out sequence)
+                ? branch
+                : int.MaxValue;
+        }
+
+        private static int SewerSequenceNumber(string name)
+        {
+            int branch;
+            int sequence;
+            return TryParseSewerName(name, out branch, out sequence)
+                ? sequence
+                : int.MaxValue;
+        }
+
+        private static bool TryParseSewerName(
+            string name,
+            out int branch,
+            out int sequence)
+        {
+            branch = int.MaxValue;
+            sequence = int.MaxValue;
+            if (string.IsNullOrWhiteSpace(name))
+                return false;
+
+            string value = name.Trim().ToUpperInvariant();
+            int prefix = value.StartsWith("MH", StringComparison.Ordinal)
+                ? 2
+                : value.StartsWith("P", StringComparison.Ordinal)
+                    ? 1
+                    : 0;
+            if (prefix == 0)
+                return false;
+
+            string[] parts = value.Substring(prefix).Split('.');
+            return parts.Length >= 2 &&
+                int.TryParse(
+                    parts[0],
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out branch) &&
+                int.TryParse(
+                    parts[1],
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out sequence);
+        }
+
+        private static List<ObjectId> ReadAllSupportedSewerParts(
+            Database database)
+        {
+            var result = new List<ObjectId>();
+            if (database == null) return result;
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord model = transaction.GetObject(
+                    SymbolUtilityServices.GetBlockModelSpaceId(database),
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (model == null) return result;
+                foreach (ObjectId id in model)
+                {
+                    DBObject value = null;
+                    try
+                    {
+                        value = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false);
+                    }
+                    catch { }
+                    if (value != null &&
+                        (LooksLikePipe(value) ||
+                         LooksLikeStructure(value)))
+                        result.Add(id);
+                }
+            }
             return result;
         }
 
