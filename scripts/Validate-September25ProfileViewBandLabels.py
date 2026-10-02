@@ -83,6 +83,21 @@ for marker in [
     if marker not in command:
         raise SystemExit(f"Road band label regeneration/verification missing: {marker}")
 
+band_dialog = (ROOT / "src/CE.Tools.Civil3D/ProfileViewBandImportDialog.cs").read_text(encoding="utf-8")
+for marker in [
+    "ProfileViewBandImport.defaults",
+    "LoadPreferences();",
+    "SavePreferences();",
+    "_lastSelectedStyle",
+    "_lastShowLabels",
+    "_lastSingleAction",
+    "_lastMultiAction",
+]:
+    if marker not in band_dialog:
+        raise SystemExit(
+            f"Profile-view band popup does not persist its previous selections: {marker}"
+        )
+
 road_import = (ROOT / "src/CE.Tools.Civil3D/September14AlignmentBandStyleCommands.cs").read_text(encoding="utf-8")
 import_command = road_import.split("public void ApplyRoadBandSetAndShowLabels()", 1)[1].split(
     "private static int EnableBandLabels(", 1
