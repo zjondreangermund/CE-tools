@@ -581,8 +581,24 @@ namespace CETools.Civil3D
                             false) as CivilPart;
                     }
                     catch { }
-                    if (part is CivilPipe ||
-                        part is CivilStructure)
+                    if (!(part is CivilPipe) &&
+                        !(part is CivilStructure))
+                        continue;
+
+                    string partName = string.Empty;
+                    try { partName = part.Name ?? string.Empty; }
+                    catch { }
+                    bool sequencedPipe =
+                        part is CivilPipe &&
+                        PipeNamePattern.IsMatch(partName);
+                    bool sequencedStructure =
+                        part is CivilStructure &&
+                        Regex.IsMatch(
+                            partName,
+                            @"^MH\d+\.\d+$",
+                            RegexOptions.IgnoreCase |
+                            RegexOptions.CultureInvariant);
+                    if (sequencedPipe || sequencedStructure)
                         result.Add(id);
                 }
             }
