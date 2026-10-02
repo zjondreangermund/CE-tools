@@ -80,6 +80,25 @@ for marker in (
         errors.append(f"Linked-output stale-monitor lifecycle is missing: {marker}")
 
 for marker in (
+    "DocumentActivated += OnDocumentActivated",
+    "MdiActiveDocument",
+    "new WindowInteropHelper(window).Owner",
+    "AcApplication.MainWindow.Handle",
+    "Topmost = false",
+    "Width = 245",
+    "Height = 92",
+):
+    if marker not in refresh:
+        errors.append(
+            "Active-drawing compact stale notice is missing: " + marker
+        )
+
+if "Topmost = true" in refresh:
+    errors.append(
+        "Stale-output notice is still globally topmost over other applications."
+    )
+
+for marker in (
     "DocumentToBeDestroyed += OnDocumentToBeDestroyed",
     "DocumentToBeDestroyed -= OnDocumentToBeDestroyed",
     "document.Database.ObjectModified += OnObjectChanged",

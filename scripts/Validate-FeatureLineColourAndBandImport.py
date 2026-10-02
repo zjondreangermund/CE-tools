@@ -42,7 +42,11 @@ require(bands,
 if "SetImpliedSelection(new[] { profileViewIds[0] })" in bands:
     raise SystemExit("Multi-profile band import must not collapse selection to the first profile view.")
 require(band_dialog,
-        "private static bool _lastOpenNative = false;",
+        "private static int _lastSingleAction;",
+        "private static int _lastMultiAction;",
+        "ProfileViewBandImport.defaults",
+        "LoadPreferences();",
+        "SavePreferences();",
         "IsEnabled = true",
         "Finish batch and keep all selected",
         "Open Band Data Sources for selected views",
