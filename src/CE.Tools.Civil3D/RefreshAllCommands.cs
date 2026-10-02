@@ -562,8 +562,8 @@ namespace CETools.Civil3D
             var window = new Window
             {
                 Title = "CE Tools",
-                Width = 245,
-                Height = 92,
+                Width = 255,
+                Height = 84,
                 ResizeMode = ResizeMode.NoResize,
                 WindowStyle = WindowStyle.ToolWindow,
                 ShowInTaskbar = false,
@@ -637,9 +637,10 @@ namespace CETools.Civil3D
 
             var message = new TextBlock
             {
-                Text = "CE Tools linked output may be out of date. Refresh?",
+                Text = "Linked CE output may be stale. Refresh?",
                 TextWrapping = TextWrapping.Wrap,
-                FontSize = 10.0,
+                FontSize = 9.0,
+                ToolTip = "BOQs, sewer excavation schedules, linked annotations and other linked schedules are not refreshed automatically.",
                 VerticalAlignment = VerticalAlignment.Center
             };
             root.Children.Add(message);
