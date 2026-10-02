@@ -76,7 +76,8 @@ for marker in [
     "TrySetAnnotative(label)",
     "incoming.SideEntry",
     "dropsAtStructure",
-    "Ordinary through-pipes at a continuous manhole are intentionally not labelled",
+    "side/lateral pipe entering this manhole",
+    "continuous manhole are intentionally not labelled.",
 ]:
     if marker not in incoming:
         errors.append("multi-view incoming label / bidirectional navigation missing: " + marker)
