@@ -462,7 +462,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Link Sewer Parts to Surface / Gravity Slopes",
                         "CE_SEWLINKSURFACE",
-                        "Choose AllNetworkParts or manually select sewer parts. Gravity mode keeps P#.1 at the starting slope and remaining pipes at the minimum slope; optional deep-run raising keeps branches within a specified depth trigger where continuity allows, then re-applies min/max slope and cover rules.",
+                        "Choose AllNetworkParts or manually select sewer parts. Gravity mode keeps P#.1 at the specified starting slope and remaining pipes at the specified minimum slope by default. It only steepens where a lower incoming invert or minimum structure depth/cover requires it, never above the specified maximum. Optional deep-run raising keeps branches within a specified depth trigger where continuity allows, then re-applies the same rules. Natural-ground and Civil 3D rule-set modes remain separate.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Show Manhole Pipe Connections",
