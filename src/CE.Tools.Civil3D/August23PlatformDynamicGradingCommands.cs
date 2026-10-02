@@ -210,6 +210,9 @@ namespace CETools.Civil3D
             settings.AddText(
                 "FillSlopeLayer", "08 Presentation", "Fill slope-line layer", "CE-JUNCTION-FILL-SLOPES",
                 "Layer used for fill projection lines.");
+            settings.AddPositiveDouble(
+                "SlopeLineInterval", "08 Presentation", "Slope-line interval / frequency (m)", 5.0,
+                "Spacing along curves and bellmouth feature lines for Civil 3D cut/fill slope rays. Smaller values draw more slope rays.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
@@ -238,7 +241,8 @@ namespace CETools.Civil3D
                 NativeInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase),
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
                 CutSlopeLayer = SafeName(settings.Text("CutSlopeLayer"), "CE-JUNCTION-CUT-SLOPES"),
-                FillSlopeLayer = SafeName(settings.Text("FillSlopeLayer"), "CE-JUNCTION-FILL-SLOPES")
+                FillSlopeLayer = SafeName(settings.Text("FillSlopeLayer"), "CE-JUNCTION-FILL-SLOPES"),
+                SlopeLineInterval = Math.Max(0.10, settings.Double("SlopeLineInterval", 5.0))
             };
 
             int completed = 0;
@@ -1498,7 +1502,8 @@ namespace CETools.Civil3D
                     new TypedValue((int)DxfCode.Int16, link.ShowSlopeLines ? 1 : 0),
                     new TypedValue((int)DxfCode.Text, link.CutSlopeLayer ?? "CE-JUNCTION-CUT-SLOPES"),
                     new TypedValue((int)DxfCode.Text, link.FillSlopeLayer ?? "CE-JUNCTION-FILL-SLOPES"),
-                    new TypedValue((int)DxfCode.Text, link.SlopeLineHandles ?? string.Empty));
+                    new TypedValue((int)DxfCode.Text, link.SlopeLineHandles ?? string.Empty),
+                    new TypedValue((int)DxfCode.Real, link.SlopeLineInterval));
                 transaction.Commit();
             }
         }
@@ -1546,7 +1551,10 @@ namespace CETools.Civil3D
                         : "CE-JUNCTION-FILL-SLOPES",
                     SlopeLineHandles = values.Length > 13
                         ? Convert.ToString(values[13].Value, CultureInfo.InvariantCulture)
-                        : string.Empty
+                        : string.Empty,
+                    SlopeLineInterval = values.Length > 14
+                        ? Convert.ToDouble(values[14].Value, CultureInfo.InvariantCulture)
+                        : 5.0
                 };
                 return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
             }
@@ -1743,6 +1751,7 @@ namespace CETools.Civil3D
             internal string CutSlopeLayer { get; set; }
             internal string FillSlopeLayer { get; set; }
             internal string SlopeLineHandles { get; set; }
+            internal double SlopeLineInterval { get; set; }
 
             internal GradeLink Clone()
             {
@@ -1761,7 +1770,8 @@ namespace CETools.Civil3D
                     ShowSlopeLines = ShowSlopeLines,
                     CutSlopeLayer = CutSlopeLayer,
                     FillSlopeLayer = FillSlopeLayer,
-                    SlopeLineHandles = SlopeLineHandles
+                    SlopeLineHandles = SlopeLineHandles,
+                    SlopeLineInterval = SlopeLineInterval
                 };
             }
         }
