@@ -362,8 +362,7 @@ namespace CETools.Civil3D
                     {
                         "Style=" + encodedStyle,
                         "ShowLabels=" +
-                            _lastShowLabels.ToString(
-                                CultureInfo.InvariantCulture),
+                            _lastShowLabels.ToString(),
                         "SingleAction=" +
                             _lastSingleAction.ToString(
                                 CultureInfo.InvariantCulture),
