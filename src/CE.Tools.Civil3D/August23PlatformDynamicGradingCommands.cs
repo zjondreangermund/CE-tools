@@ -200,6 +200,16 @@ namespace CETools.Civil3D
                 "Infill", "07 Grading group", "Create native grading group / infill where possible", "Yes",
                 "For closed feature lines CE Tools also attempts a Civil 3D grading group/infill. Open bellmouth strings still receive the linked Grade-to-Surface daylight geometry.",
                 new[] { "Yes", "No" });
+            settings.AddChoice(
+                "ShowSlopeLines", "08 Presentation", "Show cut / fill slope lines", "Yes",
+                "Draw one visible projection line from every selected junction source vertex to its calculated daylight point. Cut and fill lines are placed on separate layers.",
+                new[] { "Yes", "No" });
+            settings.AddText(
+                "CutSlopeLayer", "08 Presentation", "Cut slope-line layer", "CE-JUNCTION-CUT-SLOPES",
+                "Layer used for cut projection lines.");
+            settings.AddText(
+                "FillSlopeLayer", "08 Presentation", "Fill slope-line layer", "CE-JUNCTION-FILL-SLOPES",
+                "Layer used for fill projection lines.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
@@ -225,18 +235,23 @@ namespace CETools.Civil3D
                 MaxDistance = Math.Max(0.10, settings.Double("MaxDistance", 50.0)),
                 SearchStep = Math.Max(0.05, settings.Double("SearchStep", 0.5)),
                 Side = SafeSide(settings.Text("Side")),
-                NativeInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase)
+                NativeInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase),
+                ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
+                CutSlopeLayer = SafeName(settings.Text("CutSlopeLayer"), "CE-JUNCTION-CUT-SLOPES"),
+                FillSlopeLayer = SafeName(settings.Text("FillSlopeLayer"), "CE-JUNCTION-FILL-SLOPES")
             };
 
             int completed = 0;
             int skipped = 0;
             int infills = 0;
+            int slopeLines = 0;
             foreach (ObjectId sourceId in selection.Value.GetObjectIds().Distinct())
             {
                 GradeBuildResult result = BuildOrRefreshGrade(document, sourceId, requested, true);
                 if (result.Success)
                 {
                     completed++;
+                    slopeLines += result.SlopeLinesCreated;
                     if (result.NativeInfillCreated) infills++;
                 }
                 else
@@ -249,8 +264,9 @@ namespace CETools.Civil3D
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
             document.Editor.WriteMessage(
-                "\nCE_PLATFORMGRADETOSURFACE complete. Dynamic daylight links={0}; native infills={1}; skipped={2}.",
+                "\nCE_PLATFORMGRADETOSURFACE complete. Selected junction/source feature lines graded={0}; cut/fill slope lines drawn={1}; native infills={2}; skipped={3}.",
                 completed,
+                slopeLines,
                 infills,
                 skipped);
         }
@@ -401,6 +417,12 @@ namespace CETools.Civil3D
             if (string.IsNullOrWhiteSpace(link.ChildHandle) && existing != null) link.ChildHandle = existing.ChildHandle;
             if (string.IsNullOrWhiteSpace(link.GroupHandle) && existing != null) link.GroupHandle = existing.GroupHandle;
             if (string.IsNullOrWhiteSpace(link.InfillHandle) && existing != null) link.InfillHandle = existing.InfillHandle;
+            if (string.IsNullOrWhiteSpace(link.SlopeLineHandles) && existing != null)
+                link.SlopeLineHandles = existing.SlopeLineHandles;
+            if (existing != null && string.IsNullOrWhiteSpace(link.CutSlopeLayer))
+                link.CutSlopeLayer = existing.CutSlopeLayer;
+            if (existing != null && string.IsNullOrWhiteSpace(link.FillSlopeLayer))
+                link.FillSlopeLayer = existing.FillSlopeLayer;
 
             ObjectId surfaceId = ResolveHandle(document.Database, link.SurfaceHandle);
             if (surfaceId.IsNull)
@@ -462,6 +484,48 @@ namespace CETools.Civil3D
             }
 
             link.ChildHandle = candidateId.Handle.ToString();
+
+            // Rebuild visible slope projection lines only after the new daylight
+            // geometry has been successfully created and swapped into place.
+            string previousSlopeHandles = link.SlopeLineHandles;
+            link.SlopeLineHandles = string.Empty;
+            if (link.ShowSlopeLines)
+            {
+                List<ObjectId> newSlopeLines;
+                if (TryCreateSlopeLines(
+                        document.Database,
+                        source,
+                        daylight,
+                        link,
+                        out newSlopeLines,
+                        out error))
+                {
+                    link.SlopeLineHandles = string.Join(
+                        ";",
+                        newSlopeLines.Select(
+                            id => id.Handle.ToString()));
+                    CleanupHandleList(
+                        document.Database,
+                        previousSlopeHandles);
+                    result.SlopeLinesCreated =
+                        newSlopeLines.Count;
+                }
+                else if (explicitCommand)
+                {
+                    document.Editor.WriteMessage(
+                        "\nDaylight was created, but cut/fill slope projection lines were skipped. " +
+                        error);
+                    link.SlopeLineHandles =
+                        previousSlopeHandles ?? string.Empty;
+                }
+            }
+            else
+            {
+                CleanupHandleList(
+                    document.Database,
+                    previousSlopeHandles);
+            }
+
             ObjectId groupId = ResolveHandle(document.Database, link.GroupHandle);
             ObjectId previousInfillId = ResolveHandle(document.Database, link.InfillHandle);
             link.InfillHandle = string.Empty;
@@ -1535,6 +1599,10 @@ namespace CETools.Civil3D
             internal double SearchStep { get; set; }
             internal string Side { get; set; }
             internal bool NativeInfill { get; set; }
+            internal bool ShowSlopeLines { get; set; }
+            internal string CutSlopeLayer { get; set; }
+            internal string FillSlopeLayer { get; set; }
+            internal string SlopeLineHandles { get; set; }
 
             internal GradeLink Clone()
             {
@@ -1549,7 +1617,11 @@ namespace CETools.Civil3D
                     MaxDistance = MaxDistance,
                     SearchStep = SearchStep,
                     Side = SafeSide(Side),
-                    NativeInfill = NativeInfill
+                    NativeInfill = NativeInfill,
+                    ShowSlopeLines = ShowSlopeLines,
+                    CutSlopeLayer = CutSlopeLayer,
+                    FillSlopeLayer = FillSlopeLayer,
+                    SlopeLineHandles = SlopeLineHandles
                 };
             }
         }
@@ -1570,6 +1642,7 @@ namespace CETools.Civil3D
         {
             internal bool Success { get; set; }
             internal bool NativeInfillCreated { get; set; }
+            internal int SlopeLinesCreated { get; set; }
             internal string Message { get; set; }
         }
     }
