@@ -84,7 +84,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Grade Junction Bellmouths to Surface",
                         "CE_JUNCTIONGRADETOSURFACE",
-                        "Select the junction bellmouth feature lines and target surface, choose grading side, then Grade-to-Surface cut/fill formats independently as Grade (%) or Slope (H:V).",
+                        "Batch-select multiple junction bellmouth feature lines, choose the target surface and cut/fill slopes, then create linked Civil 3D daylight feature lines plus Civil 3D cut/fill slope rays at a configurable interval/frequency.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
                         "Reverse Multiple Road Alignments + Profiles",
@@ -297,7 +297,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Recent - CE_PLATFORMGRADETOSURFACE",
                         "CE_PLATFORMGRADETOSURFACE",
-                        "Select a Civil 3D surface and multiple source feature lines, then set separate daylight cut and fill slopes.",
+                        "Select a Civil 3D surface and multiple source feature lines, set separate cut/fill slopes, and create linked Civil 3D daylight/slope-ray feature lines with configurable frequency.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Recent - CE_FLCLOSEGAP",
@@ -462,7 +462,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Link Sewer Parts to Surface / Gravity Slopes",
                         "CE_SEWLINKSURFACE",
-                        "Link selected sewer parts to a surface. Gravity mode keeps P#.1 at the specified starting slope and remaining pipes at the specified minimum slope by default. It only steepens where a lower incoming invert or minimum structure depth/cover requires it, never above the specified maximum. Natural-ground and Civil 3D rule-set modes remain separate.",
+                        "Choose AllNetworkParts or manually select sewer parts. Gravity mode keeps P#.1 at the starting slope and remaining pipes at the minimum slope; optional deep-run raising keeps branches within a specified depth trigger where continuity allows, then re-applies min/max slope and cover rules.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Show Manhole Pipe Connections",
