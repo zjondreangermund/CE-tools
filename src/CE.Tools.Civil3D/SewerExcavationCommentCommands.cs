@@ -469,49 +469,110 @@ namespace CETools.Civil3D
                 return false;
             }
 
-            double length =
-                rawLength / settings.UnitsPerMetre;
-            double diameter =
-                rawDiameter / settings.UnitsPerMetre;
-            if (!Positive(length) || !Positive(diameter))
+            Point3d startPoint;
+            Point3d endPoint;
+            if (!TryReadPoint(value, "StartPoint", out startPoint) ||
+                !TryReadPoint(value, "EndPoint", out endPoint))
             {
-                reason =
-                    "converted pipe length or diameter is invalid.";
+                reason = "pipe endpoint elevations are unavailable.";
                 return false;
             }
 
-            double cover =
-                ReadAverageCover(value, settings);
+            double length = rawLength / settings.UnitsPerMetre;
+            double diameter = rawDiameter / settings.UnitsPerMetre;
+            if (!Positive(length) || !Positive(diameter))
+            {
+                reason = "converted pipe length or diameter is invalid.";
+                return false;
+            }
+
+            double rawStartGround;
+            double rawEndGround;
+            bool exactSurface =
+                TryReferenceSurfaceElevation(
+                    value,
+                    startPoint,
+                    transaction,
+                    out rawStartGround) &&
+                TryReferenceSurfaceElevation(
+                    value,
+                    endPoint,
+                    transaction,
+                    out rawEndGround);
+
+            double startCover;
+            double endCover;
+            string depthSource;
+            if (exactSurface)
+            {
+                double radiusRaw = rawDiameter / 2.0;
+                startCover = Math.Max(
+                    0.0,
+                    (rawStartGround -
+                     (startPoint.Z + radiusRaw)) /
+                    settings.UnitsPerMetre);
+                endCover = Math.Max(
+                    0.0,
+                    (rawEndGround -
+                     (endPoint.Z + radiusRaw)) /
+                    settings.UnitsPerMetre);
+                depthSource = "Reference surface";
+            }
+            else
+            {
+                double cover = ReadAverageCover(
+                    value,
+                    settings);
+                startCover = cover;
+                endCover = cover;
+                depthSource = "Fallback cover";
+            }
+
+            double averageCover =
+                (startCover + endCover) / 2.0;
             double width = settings.TrenchWidth > 0.0
-                ? Math.Max(
-                    settings.TrenchWidth,
-                    diameter)
+                ? Math.Max(settings.TrenchWidth, diameter)
                 : Math.Max(
                     settings.MinimumWidth,
-                    diameter +
-                        (2.0 * settings.SideAllowance));
+                    diameter + (2.0 * settings.SideAllowance));
 
-            // Surface to outside bottom of pipe. Bedding is reported
-            // separately so the user can choose whether the headline
-            // excavation stops at the pipe bottom or includes bedding.
-            double depthToBottom =
-                cover + diameter;
-            double grossToBottom =
-                length * width * depthToBottom;
+            // Exact long-section trench depths are measured from the reference
+            // natural-ground surface to the bottom of the bedding layer.
+            double startDepthToPipeBottom =
+                startCover + diameter;
+            double endDepthToPipeBottom =
+                endCover + diameter;
+            double startDepthToBeddingBottom =
+                startDepthToPipeBottom +
+                settings.BeddingThickness;
+            double endDepthToBeddingBottom =
+                endDepthToPipeBottom +
+                settings.BeddingThickness;
+            double averageDepthToBeddingBottom =
+                (startDepthToBeddingBottom +
+                 endDepthToBeddingBottom) / 2.0;
+
+            double excavationToPipeBottom =
+                length *
+                width *
+                ((startDepthToPipeBottom +
+                  endDepthToPipeBottom) / 2.0);
             double bedding =
                 length *
                 width *
                 settings.BeddingThickness;
-            double grossIncludingBedding =
-                grossToBottom + bedding;
+
+            // Total trench excavation is always to the bottom of bedding.
+            double totalExcavation =
+                length *
+                width *
+                averageDepthToBeddingBottom;
 
             double pipeVolume =
                 Math.PI *
                 Math.Pow(diameter / 2.0, 2.0) *
                 length;
 
-            // Blanket is measured from the top of bedding, around the
-            // pipe and up to the specified height above the crown.
             double blanketZone =
                 length *
                 width *
@@ -522,20 +583,18 @@ namespace CETools.Civil3D
                     0.0,
                     blanketZone - pipeVolume);
 
-            // Remaining normal fill from the top of the blanket to NG.
             double fillAboveBlanket =
                 length *
                 width *
                 Math.Max(
                     0.0,
-                    cover -
-                        settings.BlanketAbovePipe);
+                    averageCover -
+                    settings.BlanketAbovePipe);
 
             double excavatedMaterialNet =
                 Math.Max(
                     0.0,
-                    grossIncludingBedding -
-                        pipeVolume);
+                    totalExcavation - pipeVolume);
 
             row = new PipeExcavationRow
             {
@@ -548,12 +607,20 @@ namespace CETools.Civil3D
                 Layer = entity.Layer,
                 Length = length,
                 Diameter = diameter,
-                AverageCover = cover,
+                StartCover = startCover,
+                EndCover = endCover,
+                AverageCover = averageCover,
                 TrenchWidth = width,
-                DepthToBottom = depthToBottom,
-                ExcavationToBottom = grossToBottom,
+                StartDepthToBeddingBottom =
+                    startDepthToBeddingBottom,
+                EndDepthToBeddingBottom =
+                    endDepthToBeddingBottom,
+                DepthToBottom =
+                    averageDepthToBeddingBottom,
+                ExcavationToBottom =
+                    excavationToPipeBottom,
                 ExcavationIncludingBedding =
-                    grossIncludingBedding,
+                    totalExcavation,
                 Bedding = bedding,
                 PipeVolume = pipeVolume,
                 BlanketFill = blanketFill,
@@ -561,9 +628,8 @@ namespace CETools.Civil3D
                 ExcavatedMaterialNet =
                     excavatedMaterialNet,
                 PrimaryExcavation =
-                    settings.ExcavationToBottomOnly
-                        ? grossToBottom
-                        : grossIncludingBedding
+                    totalExcavation,
+                DepthSource = depthSource
             };
             return true;
         }
@@ -572,6 +638,7 @@ namespace CETools.Civil3D
             ObjectId objectId,
             DBObject value,
             Entity entity,
+            Transaction transaction,
             SewerExcavationSettings settings,
             out PipeExcavationRow row,
             out string reason)
@@ -594,45 +661,99 @@ namespace CETools.Civil3D
                 return false;
             }
 
-            double rim;
-            double sump;
-            if (!TryReadNumberAllowZero(
-                    value,
-                    out rim,
-                    "RimElevation"))
+            Point3d position;
+            if (!TryReadPoint(value, "Position", out position))
             {
-                reason =
-                    "structure rim elevation is unavailable.";
+                reason = "structure plan position is unavailable.";
                 return false;
             }
+
+            double ground;
+            bool exactGround = TryReferenceSurfaceElevation(
+                value,
+                position,
+                transaction,
+                out ground);
+
+            double floor;
             if (!TryReadNumberAllowZero(
                     value,
-                    out sump,
+                    out floor,
                     "SumpElevation"))
             {
-                reason =
-                    "structure sump/bottom elevation is unavailable.";
-                return false;
+                floor = position.Z;
+            }
+
+            // Include the lowest connected pipe inside invert. The structure
+            // excavation reaches the lower of that invert or the structure floor.
+            CivilStructure structure = value as CivilStructure;
+            if (structure != null)
+            {
+                foreach (ObjectId pipeId in
+                    SewerPipeConnections.PipeIds(structure))
+                {
+                    if (pipeId.IsNull ||
+                        pipeId.IsErased)
+                        continue;
+                    CivilPipe pipe = null;
+                    try
+                    {
+                        pipe = transaction.GetObject(
+                            pipeId,
+                            OpenMode.ForRead,
+                            false) as CivilPipe;
+                    }
+                    catch { }
+                    if (pipe == null) continue;
+
+                    bool atStart =
+                        pipe.StartStructureId == objectId;
+                    try
+                    {
+                        double invert =
+                            SewerPipeConnections.Invert(
+                                pipe,
+                                atStart);
+                        if (!double.IsNaN(invert) &&
+                            !double.IsInfinity(invert))
+                            floor = Math.Min(floor, invert);
+                    }
+                    catch { }
+                }
+            }
+
+            if (!exactGround)
+            {
+                if (!TryReadNumberAllowZero(
+                        value,
+                        out ground,
+                        "RimElevation"))
+                {
+                    reason =
+                        "reference-surface ground elevation is unavailable.";
+                    return false;
+                }
             }
 
             double structureSize =
                 rawSize / settings.UnitsPerMetre;
             double depthToBottom =
-                Math.Abs(rim - sump) /
+                (ground - floor) /
                 settings.UnitsPerMetre;
             if (!Positive(structureSize) ||
                 !Positive(depthToBottom))
             {
                 reason =
-                    "converted structure size or depth is invalid.";
+                    "natural-ground-to-structure-bottom depth is invalid.";
                 return false;
             }
 
             double width =
-                structureSize +
-                (2.0 *
-                 settings.StructureSideAllowance);
-            width = Math.Max(width, structureSize);
+                Math.Max(
+                    structureSize,
+                    structureSize +
+                    (2.0 *
+                     settings.StructureSideAllowance));
             double excavation =
                 width *
                 width *
@@ -649,35 +770,195 @@ namespace CETools.Civil3D
                 Layer = entity.Layer,
                 Length = 0.0,
                 Diameter = structureSize,
+                StartCover = 0.0,
+                EndCover = 0.0,
                 AverageCover = 0.0,
                 TrenchWidth = width,
+                StartDepthToBeddingBottom =
+                    depthToBottom,
+                EndDepthToBeddingBottom =
+                    depthToBottom,
                 DepthToBottom = depthToBottom,
                 ExcavationToBottom = excavation,
-                ExcavationIncludingBedding = excavation,
+                ExcavationIncludingBedding =
+                    excavation,
                 Bedding = 0.0,
                 PipeVolume = 0.0,
                 BlanketFill = 0.0,
                 FillAboveBlanket = 0.0,
                 ExcavatedMaterialNet = excavation,
-                PrimaryExcavation = excavation
+                PrimaryExcavation = excavation,
+                DepthSource = exactGround
+                    ? "Reference surface"
+                    : "Rim fallback"
             };
             return true;
         }
 
-        private static double ReadAverageCover(object value, SewerExcavationSettings settings)
+        private static double ReadAverageCover(
+            object value,
+            SewerExcavationSettings settings)
         {
             double raw;
-            if (TryReadNumber(value, out raw, "AverageCover", "Cover"))
-                return Math.Max(0.0, raw / settings.UnitsPerMetre);
+            if (TryReadNumber(
+                    value,
+                    out raw,
+                    "AverageCover",
+                    "Cover"))
+                return Math.Max(
+                    0.0,
+                    raw / settings.UnitsPerMetre);
             double start;
             double end;
-            bool hasStart = TryReadNumber(value, out start, "StartCover", "CoverAtStart");
-            bool hasEnd = TryReadNumber(value, out end, "EndCover", "CoverAtEnd");
+            bool hasStart = TryReadNumber(
+                value,
+                out start,
+                "StartCover",
+                "CoverAtStart");
+            bool hasEnd = TryReadNumber(
+                value,
+                out end,
+                "EndCover",
+                "CoverAtEnd");
             if (hasStart && hasEnd)
-                return Math.Max(0.0, ((start + end) / 2.0) / settings.UnitsPerMetre);
-            if (hasStart) return Math.Max(0.0, start / settings.UnitsPerMetre);
-            if (hasEnd) return Math.Max(0.0, end / settings.UnitsPerMetre);
+                return Math.Max(
+                    0.0,
+                    ((start + end) / 2.0) /
+                    settings.UnitsPerMetre);
+            if (hasStart)
+                return Math.Max(
+                    0.0,
+                    start / settings.UnitsPerMetre);
+            if (hasEnd)
+                return Math.Max(
+                    0.0,
+                    end / settings.UnitsPerMetre);
             return settings.FallbackCover;
+        }
+
+        private static bool TryReferenceSurfaceElevation(
+            object part,
+            Point3d point,
+            Transaction transaction,
+            out double elevation)
+        {
+            elevation = 0.0;
+            if (part == null || transaction == null)
+                return false;
+
+            ObjectId surfaceId;
+            if (!TryReadObjectId(
+                    part,
+                    "RefSurfaceId",
+                    out surfaceId) ||
+                surfaceId.IsNull ||
+                surfaceId.IsErased)
+            {
+                // Pipe parts can inherit the surface through a connected
+                // structure when RefSurfaceId is not populated on the pipe.
+                foreach (string endpointName in new[]
+                {
+                    "StartStructureId",
+                    "EndStructureId"
+                })
+                {
+                    ObjectId structureId;
+                    if (!TryReadObjectId(
+                            part,
+                            endpointName,
+                            out structureId) ||
+                        structureId.IsNull ||
+                        structureId.IsErased)
+                        continue;
+                    try
+                    {
+                        DBObject structure =
+                            transaction.GetObject(
+                                structureId,
+                                OpenMode.ForRead,
+                                false);
+                        if (TryReadObjectId(
+                                structure,
+                                "RefSurfaceId",
+                                out surfaceId) &&
+                            !surfaceId.IsNull &&
+                            !surfaceId.IsErased)
+                            break;
+                    }
+                    catch { }
+                }
+            }
+
+            if (surfaceId.IsNull ||
+                surfaceId.IsErased)
+                return false;
+
+            try
+            {
+                DBObject surface = transaction.GetObject(
+                    surfaceId,
+                    OpenMode.ForRead,
+                    false);
+                MethodInfo method =
+                    surface.GetType().GetMethod(
+                        "FindElevationAtXY",
+                        BindingFlags.Public |
+                        BindingFlags.Instance,
+                        null,
+                        new[]
+                        {
+                            typeof(double),
+                            typeof(double)
+                        },
+                        null);
+                if (method == null) return false;
+                object raw = method.Invoke(
+                    surface,
+                    new object[]
+                    {
+                        point.X,
+                        point.Y
+                    });
+                elevation = Convert.ToDouble(
+                    raw,
+                    CultureInfo.InvariantCulture);
+                return !double.IsNaN(elevation) &&
+                       !double.IsInfinity(elevation);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TryReadObjectId(
+            object value,
+            string propertyName,
+            out ObjectId id)
+        {
+            id = ObjectId.Null;
+            if (value == null) return false;
+            try
+            {
+                PropertyInfo property =
+                    value.GetType().GetProperty(
+                        propertyName,
+                        BindingFlags.Public |
+                        BindingFlags.Instance);
+                if (property == null ||
+                    !property.CanRead ||
+                    property.PropertyType !=
+                        typeof(ObjectId))
+                    return false;
+                id = (ObjectId)property.GetValue(
+                    value,
+                    null);
+                return !id.IsNull;
+            }
+            catch
+            {
+                return false;
+            }
         }
 
         private static bool TryGetLength(object value, out double length)
