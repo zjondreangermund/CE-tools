@@ -34,6 +34,11 @@ for marker in [
     "Minimum depth / cover at structures (m)",
     "Maximum pipe slope (%)",
     "minimumSlope > maximumSlope",
+    '"AllNetworkParts"',
+    '"RaiseDeepRuns"',
+    '"DeepRaiseThreshold"',
+    '"DeepRaiseTarget"',
+    "ReadAllGravityParts(",
 ]:
     if marker not in runtime:
         errors.append("missing sewer gravity/NG marker: " + marker)
