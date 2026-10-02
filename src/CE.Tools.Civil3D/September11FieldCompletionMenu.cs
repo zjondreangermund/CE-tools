@@ -462,7 +462,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Link Sewer Parts to Surface / Gravity Slopes",
                         "CE_SEWLINKSURFACE",
-                        "Link selected sewer parts to a surface. Gravity mode keeps every branch downhill, uses the specified minimum slope, follows the natural-ground fall where feasible, never exceeds the specified maximum slope, respects minimum depth/cover at structures, and continues from the lowest incoming invert. Natural-ground and Civil 3D rule-set modes remain separate.",
+                        "Link selected sewer parts to a surface. Gravity mode keeps P#.1 at the specified starting slope and remaining pipes at the specified minimum slope by default. It only steepens where a lower incoming invert or minimum structure depth/cover requires it, never above the specified maximum. Natural-ground and Civil 3D rule-set modes remain separate.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Show Manhole Pipe Connections",
@@ -472,12 +472,12 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Show Incoming Pipe Names / Depths in Profile Views",
                         "CE_SEWINCOMINGLABELSMULTI",
-                        "Select multiple sewer profile views and label every incoming connection with its pipe name and rim-to-inside-invert depth.",
+                        "Select multiple sewer profile views and create annotative incoming-pipe labels only for side/lateral entries and upper incoming pipes at real manhole drops. Ordinary continuous through-pipes are not labelled.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Locate Sewer Pipe / Structure in Plan",
                         "CE_SEWLOCATEPLAN",
-                        "Select or right-click a sewer pipe/structure in plan or any profile view (or a CE incoming-pipe label), switch to Model, zoom to the original network part and keep it selected.",
+                        "Bidirectional locate: select a sewer pipe/structure in plan to zoom/select its displayed profile representation, or select it in a profile view (including a CE incoming label) to jump back to the plan/model location.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Recent - CE_ROADCENTRECLEAN",
