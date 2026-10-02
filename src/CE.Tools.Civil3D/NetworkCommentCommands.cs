@@ -49,6 +49,13 @@ namespace CETools.Civil3D
                     network.Fittings.ToString(CultureInfo.InvariantCulture),
                     network.Appurtenances.ToString(CultureInfo.InvariantCulture),
                     network.TotalLength.ToString("N3", CultureInfo.CurrentCulture),
+                    network.PipeSizes,
+                    network.TrenchWidths,
+                    network.ExcavationToBottom,
+                    network.Bedding,
+                    network.Blanket,
+                    network.Fill,
+                    network.TotalExcavationToBedding,
                     network.PartsList,
                     network.ReferenceState
                 });
@@ -60,7 +67,9 @@ namespace CETools.Civil3D
                 "Current gravity and pressure network inventory. Re-run or use CE_REFRESHALL after model changes.",
                 new List<string>
                 {
-                    "Network", "Discipline", "Type", "Pipes/Runs", "Structures", "Fittings", "Appurtenances", "Total Length", "Parts List", "Reference"
+                    "Network", "Discipline", "Type", "Pipes/Runs", "Structures", "Fittings", "Appurtenances", "Total Length",
+                    "Pipe Sizes", "Trench Width(s)", "Exc to Bottom m³", "Bedding m³", "Blanket m³", "Fill m³", "Total Exc to Bedding m³",
+                    "Parts List", "Reference"
                 },
                 rows,
                 "CE TOOLS NETWORK SUMMARY");
@@ -224,16 +233,43 @@ namespace CETools.Civil3D
                         }
                         catch { }
                     }
+                    string discipline = ClassifyDiscipline(name);
+                    SewerExcavationCommentCommands.NetworkExcavationSummary excavation = null;
+                    if (string.Equals(
+                            item.Value,
+                            "Gravity",
+                            StringComparison.OrdinalIgnoreCase) &&
+                        string.Equals(
+                            discipline,
+                            "Sewer",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        var excavationIds = new List<ObjectId>();
+                        excavationIds.AddRange(pipes);
+                        excavationIds.AddRange(structures);
+                        excavation =
+                            SewerExcavationCommentCommands.BuildNetworkSummary(
+                                document.Database,
+                                excavationIds);
+                    }
+
                     result.Add(new NetworkRow
                     {
                         Name = name,
-                        Discipline = ClassifyDiscipline(name),
+                        Discipline = discipline,
                         NetworkType = item.Value,
                         Pipes = pipes.Count,
                         Structures = structures.Count,
                         Fittings = fittings.Count,
                         Appurtenances = appurtenances.Count,
                         TotalLength = length,
+                        PipeSizes = excavation == null ? string.Empty : excavation.PipeSizes,
+                        TrenchWidths = excavation == null ? string.Empty : excavation.TrenchWidths,
+                        ExcavationToBottom = FormatVolume(excavation == null ? (double?)null : excavation.ExcavationToBottom),
+                        Bedding = FormatVolume(excavation == null ? (double?)null : excavation.Bedding),
+                        Blanket = FormatVolume(excavation == null ? (double?)null : excavation.Blanket),
+                        Fill = FormatVolume(excavation == null ? (double?)null : excavation.Fill),
+                        TotalExcavationToBedding = FormatVolume(excavation == null ? (double?)null : excavation.TotalExcavationToBedding),
                         PartsList = ReadText(network, "PartsListName", ReadText(network, "PartsList", "<Not exposed>")),
                         ReferenceState = ReadBool(network, "IsReferenceObject") ? "Reference" : "Editable"
                     });
@@ -328,6 +364,15 @@ namespace CETools.Civil3D
                 : width.ToString("N0", CultureInfo.CurrentCulture);
         }
 
+        private static string FormatVolume(double? value)
+        {
+            return value.HasValue
+                ? value.Value.ToString(
+                    "N3",
+                    CultureInfo.CurrentCulture)
+                : string.Empty;
+        }
+
         private static string ClassifyDiscipline(string name)
         {
             string value = (name ?? string.Empty).ToUpperInvariant();
@@ -418,6 +463,13 @@ namespace CETools.Civil3D
             public int Fittings { get; set; }
             public int Appurtenances { get; set; }
             public double TotalLength { get; set; }
+            public string PipeSizes { get; set; }
+            public string TrenchWidths { get; set; }
+            public string ExcavationToBottom { get; set; }
+            public string Bedding { get; set; }
+            public string Blanket { get; set; }
+            public string Fill { get; set; }
+            public string TotalExcavationToBedding { get; set; }
             public string PartsList { get; set; }
             public string ReferenceState { get; set; }
         }
