@@ -63,37 +63,63 @@ namespace CETools.Civil3D
                 return;
             }
 
-            PromptSelectionResult selection = editor.SelectImplied();
-            if (selection.Status != PromptStatus.OK ||
-                selection.Value == null ||
-                selection.Value.Count == 0)
-            {
-                var options = new PromptSelectionOptions
-                {
-                    MessageForAdding =
-                        "\nSelect one or more CE-sequenced sewer pipes or structures: ",
-                    AllowDuplicates = false,
-                    RejectObjectsFromNonCurrentSpace = true
-                };
-                selection = editor.GetSelection(options);
-            }
-
-            if (selection.Status != PromptStatus.OK ||
-                selection.Value == null ||
-                selection.Value.Count == 0)
-            {
-                return;
-            }
-
             List<ObjectId> networkIds;
-            int unsupported;
+            int unsupported = 0;
+            var scope = new PromptKeywordOptions(
+                "\nSewer alignment scope [AllNetworkParts/Select] <AllNetworkParts>: ")
+            {
+                AllowNone = true
+            };
+            scope.Keywords.Add("AllNetworkParts");
+            scope.Keywords.Add("Select");
+            PromptResult scopeResult = editor.GetKeywords(scope);
+            if (scopeResult.Status == PromptStatus.Cancel)
+                return;
+
+            bool selectManually =
+                scopeResult.Status == PromptStatus.OK &&
+                string.Equals(
+                    scopeResult.StringResult,
+                    "Select",
+                    StringComparison.OrdinalIgnoreCase);
+
             try
             {
-                ReadSelectedNetworks(
-                    database,
-                    selection.Value.GetObjectIds(),
-                    out networkIds,
-                    out unsupported);
+                if (selectManually)
+                {
+                    PromptSelectionResult selection =
+                        editor.SelectImplied();
+                    if (selection.Status != PromptStatus.OK ||
+                        selection.Value == null ||
+                        selection.Value.Count == 0)
+                    {
+                        selection = editor.GetSelection(
+                            new PromptSelectionOptions
+                            {
+                                MessageForAdding =
+                                    "\nSelect one or more CE-sequenced sewer pipes or structures: ",
+                                AllowDuplicates = false,
+                                RejectObjectsFromNonCurrentSpace = true
+                            });
+                    }
+
+                    if (selection.Status != PromptStatus.OK ||
+                        selection.Value == null ||
+                        selection.Value.Count == 0)
+                        return;
+
+                    ReadSelectedNetworks(
+                        database,
+                        selection.Value.GetObjectIds(),
+                        out networkIds,
+                        out unsupported);
+                }
+                else
+                {
+                    networkIds = ReadAllSequencedSewerNetworks(
+                        database,
+                        civilDocument);
+                }
             }
             catch (System.Exception exception)
             {
@@ -180,6 +206,74 @@ namespace CETools.Civil3D
                     "\nCE_SEWALIGN cancelled. The transaction was not committed: " +
                     exception.Message);
             }
+        }
+
+        private static List<ObjectId> ReadAllSequencedSewerNetworks(
+            Database database,
+            CivilDocument civilDocument)
+        {
+            var result = new List<ObjectId>();
+            if (database == null || civilDocument == null)
+                return result;
+
+            IEnumerable networkIds = null;
+            try
+            {
+                MethodInfo method = civilDocument.GetType().GetMethod(
+                    "GetPipeNetworkIds",
+                    BindingFlags.Public | BindingFlags.Instance,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+                networkIds = method == null
+                    ? null
+                    : method.Invoke(civilDocument, null) as IEnumerable;
+            }
+            catch { }
+
+            if (networkIds == null)
+                return result;
+
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                foreach (object rawId in networkIds)
+                {
+                    if (!(rawId is ObjectId))
+                        continue;
+                    ObjectId networkId = (ObjectId)rawId;
+                    CivilNetwork network = transaction.GetObject(
+                        networkId,
+                        OpenMode.ForRead,
+                        false) as CivilNetwork;
+                    if (network == null || network.IsReferenceObject)
+                        continue;
+
+                    bool hasSequencedPipe = false;
+                    foreach (ObjectId pipeId in network.GetPipeIds())
+                    {
+                        CivilPipe pipe = transaction.GetObject(
+                            pipeId,
+                            OpenMode.ForRead,
+                            false) as CivilPipe;
+                        if (pipe != null &&
+                            PipeNamePattern.IsMatch(
+                                pipe.Name ?? string.Empty))
+                        {
+                            hasSequencedPipe = true;
+                            break;
+                        }
+                    }
+
+                    if (hasSequencedPipe)
+                        result.Add(networkId);
+                }
+            }
+
+            return result
+                .Distinct()
+                .OrderBy(id => id.Handle.Value)
+                .ToList();
         }
 
         private static void ReadSelectedNetworks(
@@ -700,6 +794,11 @@ namespace CETools.Civil3D
                                 "Civil 3D did not return the created sewer branch alignment.");
                         }
 
+                        EnsureAlignmentDirectionAtBranchStart(
+                            alignment,
+                            branch.BranchName,
+                            branch.PlanPoints[0]);
+
                         ForceAlignmentStartStationZero(
                             alignment,
                             branch.BranchName,
@@ -748,6 +847,94 @@ namespace CETools.Civil3D
 
                 transaction.Commit();
             }
+        }
+
+        private static void EnsureAlignmentDirectionAtBranchStart(
+            CivilAlignment alignment,
+            string branchName,
+            Point3d sequencedStartPoint)
+        {
+            if (alignment == null)
+                throw new ArgumentNullException("alignment");
+
+            Point2d expected = new Point2d(
+                sequencedStartPoint.X,
+                sequencedStartPoint.Y);
+            Point2d start = ReadAlignmentStartPoint(alignment);
+            Point2d end = ReadAlignmentEndPoint(alignment);
+
+            double startDistance = PlanDistance(start, expected);
+            double endDistance = PlanDistance(end, expected);
+            if (startDistance <= endDistance + 0.001)
+                return;
+
+            MethodInfo reverse = alignment.GetType().GetMethod(
+                "Reverse",
+                BindingFlags.Public | BindingFlags.Instance,
+                null,
+                Type.EmptyTypes,
+                null);
+            if (reverse == null)
+                throw new InvalidOperationException(
+                    (branchName ?? "Sewer branch") +
+                    " was created opposite to MH#.1, but Civil 3D did not expose Alignment.Reverse().");
+
+            reverse.Invoke(alignment, null);
+
+            start = ReadAlignmentStartPoint(alignment);
+            end = ReadAlignmentEndPoint(alignment);
+            startDistance = PlanDistance(start, expected);
+            endDistance = PlanDistance(end, expected);
+            if (startDistance > endDistance + 0.001)
+                throw new InvalidOperationException(
+                    (branchName ?? "Sewer branch") +
+                    " could not be reversed to start at its .1 manhole.");
+        }
+
+        private static Point2d ReadAlignmentEndPoint(
+            CivilAlignment alignment)
+        {
+            if (alignment == null)
+                return new Point2d(double.NaN, double.NaN);
+
+            try
+            {
+                double station = ReadDoubleProperty(
+                    alignment,
+                    "EndingStation",
+                    double.NaN);
+                if (double.IsNaN(station) ||
+                    double.IsInfinity(station))
+                    return new Point2d(double.NaN, double.NaN);
+
+                double x = 0.0;
+                double y = 0.0;
+                alignment.PointLocation(
+                    station,
+                    0.0,
+                    ref x,
+                    ref y);
+                return new Point2d(x, y);
+            }
+            catch
+            {
+                return new Point2d(double.NaN, double.NaN);
+            }
+        }
+
+        private static double PlanDistance(
+            Point2d first,
+            Point2d second)
+        {
+            if (double.IsNaN(first.X) ||
+                double.IsNaN(first.Y) ||
+                double.IsNaN(second.X) ||
+                double.IsNaN(second.Y))
+                return double.PositiveInfinity;
+
+            double dx = first.X - second.X;
+            double dy = first.Y - second.Y;
+            return Math.Sqrt((dx * dx) + (dy * dy));
         }
 
         private static void ForceAlignmentStartStationZero(
