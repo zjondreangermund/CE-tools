@@ -50,6 +50,7 @@ namespace CETools.Civil3D
                     network.Appurtenances.ToString(CultureInfo.InvariantCulture),
                     network.TotalLength.ToString("N3", CultureInfo.CurrentCulture),
                     network.PipeSizes,
+                    network.PipeSizeQuantities,
                     network.TrenchWidths,
                     network.ExcavationToBottom,
                     network.Bedding,
@@ -68,7 +69,7 @@ namespace CETools.Civil3D
                 new List<string>
                 {
                     "Network", "Discipline", "Type", "Pipes/Runs", "Structures", "Fittings", "Appurtenances", "Total Length",
-                    "Pipe Sizes", "Trench Width(s)", "Exc to Bottom m³", "Bedding m³", "Blanket m³", "Fill m³", "Total Exc to Bedding m³",
+                    "Pipe Sizes", "Pipe-size Excavation", "Trench Width(s)", "Exc to Bottom m³", "Bedding m³", "Blanket m³", "Fill m³", "Total Exc to Bedding m³",
                     "Parts List", "Reference"
                 },
                 rows,
@@ -264,6 +265,7 @@ namespace CETools.Civil3D
                         Appurtenances = appurtenances.Count,
                         TotalLength = length,
                         PipeSizes = excavation == null ? string.Empty : excavation.PipeSizes,
+                        PipeSizeQuantities = excavation == null ? string.Empty : excavation.PipeSizeQuantities,
                         TrenchWidths = excavation == null ? string.Empty : excavation.TrenchWidths,
                         ExcavationToBottom = FormatVolume(excavation == null ? (double?)null : excavation.ExcavationToBottom),
                         Bedding = FormatVolume(excavation == null ? (double?)null : excavation.Bedding),
@@ -464,6 +466,7 @@ namespace CETools.Civil3D
             public int Appurtenances { get; set; }
             public double TotalLength { get; set; }
             public string PipeSizes { get; set; }
+            public string PipeSizeQuantities { get; set; }
             public string TrenchWidths { get; set; }
             public string ExcavationToBottom { get; set; }
             public string Bedding { get; set; }
