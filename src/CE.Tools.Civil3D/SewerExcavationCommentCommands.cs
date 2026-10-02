@@ -1349,8 +1349,55 @@ namespace CETools.Civil3D
             ExtractionResult extraction,
             SewerExcavationSettings settings)
         {
+            IList<string> columns = new List<string>
+            {
+                "Type", "Name", "Layer", "Length m", "NOMINAL Ø mm",
+                "Cover Start m", "Cover End m", "Avg Cover m",
+                "Trench Width m",
+                "Depth Start to Bedding m", "Depth End to Bedding m",
+                "Avg Depth to Bedding m",
+                "Exc to Pipe Bottom m³", "Total Exc to Bedding m³",
+                "Bedding m³", "Pipe Vol m³", "Blanket Fill m³",
+                "Fill above Blanket m³", "Net Excavated Material m³",
+                "Depth Source", "Total Excavation m³"
+            };
+
+            List<IList<string>> rows =
+                BuildExcavationDetailRows(extraction.Rows);
+
+            GridReportPresenter.ShowReportAndOfferTable(
+                document,
+                "CE Tools - Sewer Excavation Preview",
+                string.Format(
+                    CultureInfo.CurrentCulture,
+                    "Pipes={0}; structures={1}; rejected={2}; trench width={3:N3} m; bedding={4:N3} m; blanket above crown={5:N3} m. Covers and trench depths use the Civil 3D reference surface and actual pipe long-section elevations where available. Total excavation is to bottom of bedding.",
+                    extraction.Rows.Count(row => row.ObjectType == "Pipe"),
+                    extraction.Rows.Count(row => row.ObjectType == "Structure"),
+                    extraction.Rejections.Count,
+                    settings.TrenchWidth,
+                    settings.BeddingThickness,
+                    settings.BlanketAbovePipe),
+                columns,
+                rows,
+                "CE TOOLS SEWER EXCAVATION PREVIEW",
+                null,
+                null,
+                "Export Excel",
+                delegate
+                {
+                    ExportReviewedQuantities(
+                        document,
+                        extraction,
+                        settings);
+                });
+        }
+
+        private static List<IList<string>> BuildExcavationDetailRows(
+            IList<PipeExcavationRow> source)
+        {
             var rows = new List<IList<string>>();
-            foreach (PipeExcavationRow row in extraction.Rows)
+            foreach (PipeExcavationRow row in
+                source ?? new List<PipeExcavationRow>())
             {
                 bool pipe = string.Equals(
                     row.ObjectType,
@@ -1361,53 +1408,27 @@ namespace CETools.Civil3D
                     row.ObjectType,
                     row.Name,
                     row.Layer,
-                    pipe
-                        ? row.Length.ToString("N3", CultureInfo.CurrentCulture)
-                        : string.Empty,
-                    NominalDiameterMm(row.Diameter).ToString(
-                        CultureInfo.CurrentCulture),
-                    pipe
-                        ? row.AverageCover.ToString("N3", CultureInfo.CurrentCulture)
-                        : string.Empty,
-                    row.TrenchWidth.ToString("N3", CultureInfo.CurrentCulture),
-                    row.DepthToBottom.ToString("N3", CultureInfo.CurrentCulture),
-                    row.ExcavationToBottom.ToString("N3", CultureInfo.CurrentCulture),
-                    row.ExcavationIncludingBedding.ToString("N3", CultureInfo.CurrentCulture),
-                    row.Bedding.ToString("N3", CultureInfo.CurrentCulture),
-                    row.PipeVolume.ToString("N3", CultureInfo.CurrentCulture),
-                    row.BlanketFill.ToString("N3", CultureInfo.CurrentCulture),
-                    row.FillAboveBlanket.ToString("N3", CultureInfo.CurrentCulture),
-                    row.ExcavatedMaterialNet.ToString("N3", CultureInfo.CurrentCulture),
-                    row.PrimaryExcavation.ToString("N3", CultureInfo.CurrentCulture)
+                    pipe ? row.Length.ToString("0.###", CultureInfo.InvariantCulture) : string.Empty,
+                    NominalDiameterMm(row.Diameter).ToString(CultureInfo.InvariantCulture),
+                    pipe ? row.StartCover.ToString("0.###", CultureInfo.InvariantCulture) : string.Empty,
+                    pipe ? row.EndCover.ToString("0.###", CultureInfo.InvariantCulture) : string.Empty,
+                    pipe ? row.AverageCover.ToString("0.###", CultureInfo.InvariantCulture) : string.Empty,
+                    row.TrenchWidth.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.StartDepthToBeddingBottom.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.EndDepthToBeddingBottom.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.DepthToBottom.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.ExcavationToBottom.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.ExcavationIncludingBedding.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.Bedding.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.PipeVolume.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.BlanketFill.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.FillAboveBlanket.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.ExcavatedMaterialNet.ToString("0.###", CultureInfo.InvariantCulture),
+                    row.DepthSource ?? string.Empty,
+                    row.PrimaryExcavation.ToString("0.###", CultureInfo.InvariantCulture)
                 });
             }
-
-            GridReportPresenter.ShowReportAndOfferTable(
-                document,
-                "CE Tools - Sewer Excavation Preview",
-                string.Format(
-                    CultureInfo.CurrentCulture,
-                    "Pipes={0}; structures={1}; rejected={2}; trench width={3:N3} m; bedding={4:N3} m; blanket above crown={5:N3} m; primary basis={6}. Pipe volume is deducted from excavated material.",
-                    extraction.Rows.Count(row => row.ObjectType == "Pipe"),
-                    extraction.Rows.Count(row => row.ObjectType == "Structure"),
-                    extraction.Rejections.Count,
-                    settings.TrenchWidth,
-                    settings.BeddingThickness,
-                    settings.BlanketAbovePipe,
-                    settings.ExcavationToBottomOnly
-                        ? "to bottom of pipe/structure"
-                        : "including bedding"),
-                new List<string>
-                {
-                    "Type", "Name", "Layer", "Length m", "NOMINAL Ø mm",
-                    "Cover m", "Width m", "Depth to Bottom m",
-                    "Exc to Bottom m³", "Exc incl Bedding m³",
-                    "Bedding m³", "Pipe Vol m³", "Blanket Fill m³",
-                    "Fill above Blanket m³", "Net Excavated Material m³",
-                    "Primary Excavation m³"
-                },
-                rows,
-                "CE TOOLS SEWER EXCAVATION PREVIEW");
+            return rows;
         }
 
         private static List<IList<string>> BuildExcavationSummaryRows(
@@ -1418,7 +1439,7 @@ namespace CETools.Civil3D
             int[] sizes = { 110, 160, 200, 250 };
             var counts = sizes.ToDictionary(size => size, size => 0);
             var lengths = sizes.ToDictionary(size => size, size => 0.0);
-            var excBottom = sizes.ToDictionary(size => size, size => 0.0);
+            var totalExc = sizes.ToDictionary(size => size, size => 0.0);
             var bedding = sizes.ToDictionary(size => size, size => 0.0);
             var blanket = sizes.ToDictionary(size => size, size => 0.0);
             var fillAbove = sizes.ToDictionary(size => size, size => 0.0);
@@ -1437,7 +1458,7 @@ namespace CETools.Civil3D
                 if (!counts.ContainsKey(size)) continue;
                 counts[size]++;
                 lengths[size] += row.Length;
-                excBottom[size] += row.ExcavationToBottom;
+                totalExc[size] += row.ExcavationIncludingBedding;
                 bedding[size] += row.Bedding;
                 blanket[size] += row.BlanketFill;
                 fillAbove[size] += row.FillAboveBlanket;
@@ -1477,56 +1498,53 @@ namespace CETools.Civil3D
                 new List<string>
                 {
                     "Total pipe length (m)",
-                    number(lengths, 110),
-                    number(lengths, 160),
-                    number(lengths, 200),
-                    number(lengths, 250),
+                    number(lengths, 110), number(lengths, 160),
+                    number(lengths, 200), number(lengths, 250),
                     pipes.Sum(row => row.Length).ToString("0.###", CultureInfo.InvariantCulture)
                 },
                 new List<string>
                 {
-                    "Excavation to pipe bottom (m³)",
-                    number(excBottom, 110),
-                    number(excBottom, 160),
-                    number(excBottom, 200),
-                    number(excBottom, 250),
-                    pipes.Sum(row => row.ExcavationToBottom).ToString("0.###", CultureInfo.InvariantCulture)
+                    "Total excavation to bottom of bedding (m³)",
+                    number(totalExc, 110), number(totalExc, 160),
+                    number(totalExc, 200), number(totalExc, 250),
+                    pipes.Sum(row => row.ExcavationIncludingBedding).ToString("0.###", CultureInfo.InvariantCulture)
                 },
                 new List<string>
                 {
                     "Bedding (m³)",
-                    number(bedding, 110),
-                    number(bedding, 160),
-                    number(bedding, 200),
-                    number(bedding, 250),
+                    number(bedding, 110), number(bedding, 160),
+                    number(bedding, 200), number(bedding, 250),
                     pipes.Sum(row => row.Bedding).ToString("0.###", CultureInfo.InvariantCulture)
                 },
                 new List<string>
                 {
-                    "Pipe volume deducted (m³)",
-                    number(pipeVolume, 110),
-                    number(pipeVolume, 160),
-                    number(pipeVolume, 200),
-                    number(pipeVolume, 250),
-                    pipes.Sum(row => row.PipeVolume).ToString("0.###", CultureInfo.InvariantCulture)
-                },
-                new List<string>
-                {
                     "Blanket fill (m³)",
-                    number(blanket, 110),
-                    number(blanket, 160),
-                    number(blanket, 200),
-                    number(blanket, 250),
+                    number(blanket, 110), number(blanket, 160),
+                    number(blanket, 200), number(blanket, 250),
                     pipes.Sum(row => row.BlanketFill).ToString("0.###", CultureInfo.InvariantCulture)
                 },
                 new List<string>
                 {
-                    "Fill above blanket to NG (m³)",
-                    number(fillAbove, 110),
-                    number(fillAbove, 160),
-                    number(fillAbove, 200),
-                    number(fillAbove, 250),
+                    "Fill above blanket to natural ground (m³)",
+                    number(fillAbove, 110), number(fillAbove, 160),
+                    number(fillAbove, 200), number(fillAbove, 250),
                     pipes.Sum(row => row.FillAboveBlanket).ToString("0.###", CultureInfo.InvariantCulture)
+                },
+                new List<string>
+                {
+                    "Pipe volume deducted (m³)",
+                    number(pipeVolume, 110), number(pipeVolume, 160),
+                    number(pipeVolume, 200), number(pipeVolume, 250),
+                    pipes.Sum(row => row.PipeVolume).ToString("0.###", CultureInfo.InvariantCulture)
+                },
+                new List<string>
+                {
+                    "Trench width (m)",
+                    settings.TrenchWidth.ToString("0.###", CultureInfo.InvariantCulture),
+                    settings.TrenchWidth.ToString("0.###", CultureInfo.InvariantCulture),
+                    settings.TrenchWidth.ToString("0.###", CultureInfo.InvariantCulture),
+                    settings.TrenchWidth.ToString("0.###", CultureInfo.InvariantCulture),
+                    settings.TrenchWidth.ToString("0.###", CultureInfo.InvariantCulture)
                 },
                 new List<string>
                 {
@@ -1537,31 +1555,17 @@ namespace CETools.Civil3D
                 },
                 new List<string>
                 {
-                    "Structure excavation to bottom (m³)",
+                    "Structure excavation: NG to lowest invert/floor (m³)",
                     string.Empty, string.Empty, string.Empty,
                     string.Empty,
-                    structures.Sum(row => row.ExcavationToBottom).ToString("0.###", CultureInfo.InvariantCulture)
+                    structures.Sum(row => row.PrimaryExcavation).ToString("0.###", CultureInfo.InvariantCulture)
                 },
                 new List<string>
                 {
-                    "Net excavated material after pipe volume (m³)",
-                    string.Empty, string.Empty, string.Empty,
-                    string.Empty,
-                    rows.Sum(row => row.ExcavatedMaterialNet).ToString("0.###", CultureInfo.InvariantCulture)
-                },
-                new List<string>
-                {
-                    "Primary excavation total (m³)",
+                    "Overall excavation incl. structures (m³)",
                     string.Empty, string.Empty, string.Empty,
                     string.Empty,
                     rows.Sum(row => row.PrimaryExcavation).ToString("0.###", CultureInfo.InvariantCulture)
-                },
-                new List<string>
-                {
-                    "Specified trench width (m)",
-                    string.Empty, string.Empty, string.Empty,
-                    string.Empty,
-                    settings.TrenchWidth.ToString("0.###", CultureInfo.InvariantCulture)
                 },
                 new List<string>
                 {
@@ -1578,6 +1582,107 @@ namespace CETools.Civil3D
                     settings.BlanketAbovePipe.ToString("0.###", CultureInfo.InvariantCulture)
                 }
             };
+        }
+
+        private static void ExportReviewedQuantities(
+            Document document,
+            ExtractionResult extraction,
+            SewerExcavationSettings settings)
+        {
+            if (document == null || extraction == null) return;
+
+            string lastPath =
+                SewerExcavationPreferenceStore.LoadLastExportPath();
+            var options = new PromptSaveFileOptions(
+                "\nSelect sewer excavation Excel workbook output path: ")
+            {
+                Filter = "Excel Workbook (*.xlsx)|*.xlsx",
+                DialogCaption =
+                    "Export CE Tools Sewer Excavation Schedule",
+                InitialFileName =
+                    string.IsNullOrWhiteSpace(lastPath)
+                        ? "CE-Tools-Sewer-Excavation.xlsx"
+                        : lastPath
+            };
+            PromptFileNameResult pathResult =
+                document.Editor.GetFileNameForSave(options);
+            if (pathResult.Status != PromptStatus.OK) return;
+
+            string path = pathResult.StringResult;
+            if (!path.EndsWith(
+                    ".xlsx",
+                    StringComparison.OrdinalIgnoreCase))
+                path += ".xlsx";
+
+            try
+            {
+                var detailRows = new List<IList<string>>
+                {
+                    new List<string>
+                    {
+                        "TYPE", "NAME", "LAYER", "LENGTH m",
+                        "NOMINAL Ø mm", "COVER START m", "COVER END m",
+                        "AVG COVER m", "TRENCH WIDTH m",
+                        "DEPTH START TO BEDDING m",
+                        "DEPTH END TO BEDDING m",
+                        "AVG DEPTH TO BEDDING m",
+                        "EXC TO PIPE BOTTOM m³",
+                        "TOTAL EXC TO BEDDING m³",
+                        "BEDDING m³", "PIPE VOL m³",
+                        "BLANKET FILL m³",
+                        "FILL ABOVE BLANKET m³",
+                        "NET EXC MATERIAL m³",
+                        "DEPTH SOURCE", "TOTAL EXC m³"
+                    }
+                };
+                foreach (IList<string> row in
+                    BuildExcavationDetailRows(extraction.Rows))
+                    detailRows.Add(row);
+
+                SimpleXlsxWriter.Write(
+                    path,
+                    new List<XlsxSheet>
+                    {
+                        new XlsxSheet(
+                            "Sewer Excavation",
+                            detailRows),
+                        new XlsxSheet(
+                            "Summary",
+                            BuildExcavationSummaryRows(
+                                extraction.Rows,
+                                settings))
+                    });
+
+                SewerExcavationPreferenceStore.SaveLastExportPath(
+                    path);
+                TryOpenExcelWorkbook(path);
+
+                document.Editor.WriteMessage(
+                    "\nCE sewer excavation workbook saved and opened: {0}",
+                    path);
+            }
+            catch (System.Exception exception)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE sewer excavation export failed. {0}",
+                    exception.Message);
+            }
+        }
+
+        private static void TryOpenExcelWorkbook(string path)
+        {
+            if (string.IsNullOrWhiteSpace(path) ||
+                !File.Exists(path))
+                return;
+            try
+            {
+                Process.Start(
+                    new ProcessStartInfo(path)
+                    {
+                        UseShellExecute = true
+                    });
+            }
+            catch { }
         }
 
         private static List<IList<string>> ReadTableCells(Table table)
