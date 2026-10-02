@@ -154,7 +154,7 @@ namespace CETools.Civil3D
                         new List<string> { "Bedding thickness", link.Settings.BeddingThickness.ToString("N3", CultureInfo.CurrentCulture) + " m" },
                         new List<string> { "Blanket above pipe", link.Settings.BlanketAbovePipe.ToString("N3", CultureInfo.CurrentCulture) + " m" },
                         new List<string> { "Structure side allowance", link.Settings.StructureSideAllowance.ToString("N3", CultureInfo.CurrentCulture) + " m" },
-                        new List<string> { "Primary excavation basis", link.Settings.ExcavationToBottomOnly ? "To bottom of pipe/structure" : "Including bedding" },
+                        new List<string> { "Total excavation basis", "Natural ground to bottom of bedding / structure floor" },
                         new List<string> { "Fallback average cover", link.Settings.FallbackCover.ToString("N3", CultureInfo.CurrentCulture) + " m" },
                         new List<string> { "Refresh command", "CE_SEWEREXCAVATIONREFRESH" }
                     },
@@ -181,11 +181,15 @@ namespace CETools.Civil3D
                 if (!RefreshTable(document, tableResult.ObjectId, false)) return;
             }
 
+            string lastExport =
+                SewerExcavationPreferenceStore.LoadLastExportPath();
             var options = new PromptSaveFileOptions("\nSelect sewer excavation Excel workbook output path: ")
             {
                 Filter = "Excel Workbook (*.xlsx)|*.xlsx",
                 DialogCaption = "Export CE Tools Sewer Excavation Schedule",
-                InitialFileName = "CE-Tools-Sewer-Excavation.xlsx"
+                InitialFileName = string.IsNullOrWhiteSpace(lastExport)
+                    ? "CE-Tools-Sewer-Excavation.xlsx"
+                    : lastExport
             };
             PromptFileNameResult pathResult = document.Editor.GetFileNameForSave(options);
             if (pathResult.Status != PromptStatus.OK) return;
@@ -236,8 +240,10 @@ namespace CETools.Civil3D
                                 extraction.Rows,
                                 link.Settings))
                     });
+                SewerExcavationPreferenceStore.SaveLastExportPath(path);
+                TryOpenExcelWorkbook(path);
                 document.Editor.WriteMessage(
-                    "\nCE_SEWEREXCAVATIONEXPORT complete. Workbook includes Sewer Excavation and Summary sheets: {0}",
+                    "\nCE_SEWEREXCAVATIONEXPORT complete. Workbook includes Sewer Excavation and Summary sheets and was opened in the default Excel application: {0}",
                     path);
             }
             catch (System.Exception exception)
