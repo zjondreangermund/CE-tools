@@ -104,6 +104,10 @@ for marker in [
     'TryBuildStructureRow(',
     'new XlsxSheet(',
     '"Summary"',
+    '"AllNetworkParts"',
+    'ReadAllSupportedSewerParts(',
+    'SewerBranchNumber(',
+    'SewerSequenceNumber(',
 ]:
     if marker not in excavation:
         errors.append(f"Sewer excavation/report implementation is missing: {marker}")
