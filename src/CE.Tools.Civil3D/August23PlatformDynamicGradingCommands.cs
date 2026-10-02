@@ -1103,14 +1103,12 @@ namespace CETools.Civil3D
                     requested,
                     ObjectId.Null);
 
-                featureLineId = source.SiteId.IsNull
-                    ? CivilFeatureLine.Create(
-                        name,
-                        temporaryId)
-                    : CivilFeatureLine.Create(
-                        name,
-                        temporaryId,
-                        source.SiteId);
+                // Keep presentation slope rays site-less so they remain
+                // native Civil 3D feature-line objects without participating in
+                // site crossing/elevation interactions with the design bellmouth.
+                featureLineId = CivilFeatureLine.Create(
+                    name,
+                    temporaryId);
 
                 using (Transaction transaction =
                     database.TransactionManager.StartTransaction())
