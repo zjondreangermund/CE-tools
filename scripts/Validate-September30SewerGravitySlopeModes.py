@@ -27,8 +27,10 @@ for marker in [
     "preservePipeEndpoints = false",
     "!preservePipeEndpoints",
     "MinimumSlope = slope",
-    "naturalRequiredSlope",
-    "Math.Min(\n                        maximumSlope",
+    "step.Slope = minimumSlope",
+    "downstreamCover < minimumCover",
+    "requiredIncrease",
+    "Math.Min(maximumSlope, requested)",
     "Minimum depth / cover at structures (m)",
     "Maximum pipe slope (%)",
     "minimumSlope > maximumSlope",
@@ -42,10 +44,10 @@ if 'double direction = naturalEndZ <= naturalStartZ ? -1.0 : 1.0;' in runtime.sp
     errors.append("CE_SEWLINKSURFACE still chooses gravity direction from natural ground")
 
 for marker in [
-    "keeps every branch downhill",
-    "uses the specified minimum slope",
-    "never exceeds the specified maximum slope",
-    "respects minimum depth/cover at structures",
+    "keeps P#.1 at the specified starting slope",
+    "remaining pipes at the specified minimum slope by default",
+    "only steepens where a lower incoming invert or minimum structure depth/cover requires it",
+    "never above the specified maximum",
     "Natural-ground and Civil 3D rule-set modes remain separate",
 ]:
     if marker not in menu:
