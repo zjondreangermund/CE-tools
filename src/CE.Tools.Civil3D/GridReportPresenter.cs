@@ -74,6 +74,31 @@ namespace CETools.Civil3D
             string locateButtonText,
             Action<IList<string>> locateAction)
         {
+            ShowReportAndOfferTable(
+                document,
+                title,
+                note,
+                columns,
+                rows,
+                tableTitle,
+                locateButtonText,
+                locateAction,
+                null,
+                null);
+        }
+
+        public static void ShowReportAndOfferTable(
+            Document document,
+            string title,
+            string note,
+            IList<string> columns,
+            IList<IList<string>> rows,
+            string tableTitle,
+            string locateButtonText,
+            Action<IList<string>> locateAction,
+            string actionButtonText,
+            Action action)
+        {
             if (document == null)
             {
                 return;
@@ -85,7 +110,9 @@ namespace CETools.Civil3D
                 columns,
                 rows,
                 locateButtonText,
-                locateAction != null);
+                locateAction != null,
+                actionButtonText,
+                action != null);
             AcApplication.ShowModalWindow(window);
             if (window.PlaceTableRequested)
             {
@@ -96,6 +123,10 @@ namespace CETools.Civil3D
                      window.SelectedValues != null)
             {
                 locateAction(window.SelectedValues);
+            }
+            else if (window.ActionRequested && action != null)
+            {
+                action();
             }
         }
 
@@ -254,7 +285,9 @@ namespace CETools.Civil3D
                 IList<string> columns,
                 IList<IList<string>> rows,
                 string locateButtonText = null,
-                bool allowLocate = false)
+                bool allowLocate = false,
+                string actionButtonText = null,
+                bool allowAction = false)
             {
                 Title = title ?? "CE Tools Report";
                 Width = 1080;
@@ -368,11 +401,30 @@ namespace CETools.Civil3D
                     buttons.Children.Add(locateButton);
                 }
 
+                if (allowAction)
+                {
+                    var actionButton = CreateButton(
+                        string.IsNullOrWhiteSpace(actionButtonText)
+                            ? "Action"
+                            : actionButtonText,
+                        125);
+                    actionButton.Click += delegate
+                    {
+                        PlaceTableRequested = false;
+                        LocateRequested = false;
+                        ActionRequested = true;
+                        DialogResult = true;
+                        Close();
+                    };
+                    buttons.Children.Add(actionButton);
+                }
+
                 var tableButton = CreateButton("Place Table", 110);
                 tableButton.Click += delegate
                 {
                     PlaceTableRequested = true;
                     LocateRequested = false;
+                    ActionRequested = false;
                     DialogResult = true;
                     Close();
                 };
@@ -384,6 +436,7 @@ namespace CETools.Civil3D
                 {
                     PlaceTableRequested = false;
                     LocateRequested = false;
+                    ActionRequested = false;
                     DialogResult = false;
                     Close();
                 };
@@ -396,6 +449,7 @@ namespace CETools.Civil3D
 
             public bool PlaceTableRequested { get; private set; }
             public bool LocateRequested { get; private set; }
+            public bool ActionRequested { get; private set; }
             public IList<string> SelectedValues { get; private set; }
 
             private static Button CreateButton(string text, double width)
