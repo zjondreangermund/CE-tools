@@ -300,6 +300,126 @@ namespace CETools.Civil3D
             return refreshed;
         }
 
+        internal static NetworkExcavationSummary BuildNetworkSummary(
+            Database database,
+            IEnumerable<ObjectId> sourceIds)
+        {
+            var summary = new NetworkExcavationSummary();
+            if (database == null || sourceIds == null)
+                return summary;
+
+            SewerExcavationSettings settings =
+                SewerExcavationPreferenceStore.LoadSettings();
+            ExtractionResult extraction = Extract(
+                database,
+                sourceIds,
+                settings);
+
+            List<PipeExcavationRow> pipes = extraction.Rows
+                .Where(row => string.Equals(
+                    row.ObjectType,
+                    "Pipe",
+                    StringComparison.OrdinalIgnoreCase))
+                .ToList();
+
+            summary.Pipes = pipes.Count;
+            summary.Structures = extraction.Rows.Count(row =>
+                string.Equals(
+                    row.ObjectType,
+                    "Structure",
+                    StringComparison.OrdinalIgnoreCase));
+            summary.ExcavationToBottom =
+                extraction.Rows.Sum(row => row.ExcavationToBottom);
+            summary.TotalExcavationToBedding =
+                extraction.Rows.Sum(row => row.ExcavationIncludingBedding);
+            summary.Bedding =
+                extraction.Rows.Sum(row => row.Bedding);
+            summary.Blanket =
+                extraction.Rows.Sum(row => row.BlanketFill);
+            summary.Fill =
+                extraction.Rows.Sum(row => row.FillAboveBlanket);
+
+            summary.TrenchWidths = string.Join(
+                "; ",
+                pipes
+                    .Select(row => row.TrenchWidth)
+                    .Where(value => value > 0.0)
+                    .Select(value => Math.Round(value, 3))
+                    .Distinct()
+                    .OrderBy(value => value)
+                    .Select(value =>
+                        value.ToString(
+                            "0.###",
+                            CultureInfo.CurrentCulture) + " m"));
+
+            summary.PipeSizes = string.Join(
+                "; ",
+                pipes
+                    .GroupBy(row => NominalMillimetres(row.Diameter))
+                    .OrderBy(group => group.Key)
+                    .Select(group =>
+                        "Ø" +
+                        group.Key.ToString(
+                            "0",
+                            CultureInfo.CurrentCulture) +
+                        " mm: " +
+                        group.Count().ToString(
+                            CultureInfo.InvariantCulture) +
+                        " / " +
+                        group.Sum(row => row.Length).ToString(
+                            "N1",
+                            CultureInfo.CurrentCulture) +
+                        " m"));
+
+            summary.PipeSizeQuantities = string.Join(
+                "; ",
+                pipes
+                    .GroupBy(row => NominalMillimetres(row.Diameter))
+                    .OrderBy(group => group.Key)
+                    .Select(group =>
+                        "Ø" +
+                        group.Key.ToString(
+                            "0",
+                            CultureInfo.CurrentCulture) +
+                        ": ExcBottom " +
+                        group.Sum(row => row.ExcavationToBottom).ToString(
+                            "N2",
+                            CultureInfo.CurrentCulture) +
+                        ", Bedding " +
+                        group.Sum(row => row.Bedding).ToString(
+                            "N2",
+                            CultureInfo.CurrentCulture) +
+                        ", Blanket " +
+                        group.Sum(row => row.BlanketFill).ToString(
+                            "N2",
+                            CultureInfo.CurrentCulture) +
+                        ", Fill " +
+                        group.Sum(row => row.FillAboveBlanket).ToString(
+                            "N2",
+                            CultureInfo.CurrentCulture) +
+                        ", Total " +
+                        group.Sum(row => row.ExcavationIncludingBedding).ToString(
+                            "N2",
+                            CultureInfo.CurrentCulture) +
+                        " m³"));
+
+            return summary;
+        }
+
+        private static double NominalMillimetres(double diameter)
+        {
+            double value = Math.Abs(diameter);
+            if (value <= 0.0 ||
+                double.IsNaN(value) ||
+                double.IsInfinity(value))
+                return 0.0;
+            return Math.Round(
+                value < 10.0
+                    ? value * 1000.0
+                    : value,
+                0);
+        }
+
         private static bool RefreshTable(Document document, ObjectId tableId, bool askConfirmation)
         {
             try
@@ -2002,6 +2122,20 @@ namespace CETools.Civil3D
         private static Document ActiveDocument()
         {
             return AcApplication.DocumentManager.MdiActiveDocument;
+        }
+
+        internal sealed class NetworkExcavationSummary
+        {
+            internal int Pipes { get; set; }
+            internal int Structures { get; set; }
+            internal string PipeSizes { get; set; } = string.Empty;
+            internal string PipeSizeQuantities { get; set; } = string.Empty;
+            internal string TrenchWidths { get; set; } = string.Empty;
+            internal double ExcavationToBottom { get; set; }
+            internal double TotalExcavationToBedding { get; set; }
+            internal double Bedding { get; set; }
+            internal double Blanket { get; set; }
+            internal double Fill { get; set; }
         }
 
         private sealed class PipeExcavationRow
