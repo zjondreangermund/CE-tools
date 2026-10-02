@@ -67,6 +67,9 @@ jobs:
       - name: Validate September 30 sewer Apply Rules downhill
         run: python3 scripts/Validate-September30ApplyRulesDownhill.py
 
+      - name: Validate October 2 sewer/profile batch completion
+        run: python3 scripts/Validate-October02SewerProfileBatch.py
+
       - name: Validate dynamic corridor annotation completion
         run: python3 scripts/Validate-September15CorridorAnnotationCompletion.py
 
