@@ -475,7 +475,7 @@ namespace CETools.Civil3D
                         "Select multiple sewer profile views and create annotative incoming-pipe labels only for side/lateral entries and upper incoming pipes at real manhole drops. Ordinary continuous through-pipes are not labelled.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
-                        "Locate Sewer Pipe / Structure in Plan",
+                        "Locate Sewer Pipe / Structure Plan ↔ Profile",
                         "CE_SEWLOCATEPLAN",
                         "Bidirectional locate: select a sewer pipe/structure in plan to zoom/select its displayed profile representation, or select it in a profile view (including a CE incoming label) to jump back to the plan/model location.",
                         "06 Latest Field Completion"),
