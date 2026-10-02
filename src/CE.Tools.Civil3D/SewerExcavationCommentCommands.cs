@@ -569,7 +569,18 @@ namespace CETools.Civil3D
                             false);
                     }
                     catch { }
-                    if (value != null &&
+                    if (value == null)
+                        continue;
+                    string name = ReadText(
+                        value,
+                        "Name",
+                        string.Empty);
+                    int branch;
+                    int sequence;
+                    if (TryParseSewerName(
+                            name,
+                            out branch,
+                            out sequence) &&
                         (LooksLikePipe(value) ||
                          LooksLikeStructure(value)))
                         result.Add(id);
