@@ -145,10 +145,14 @@ if 'selection.Value.GetObjectIds().Distinct()' not in create_body:
     errors.append("CE_FLRELCREATE must process every distinct selected feature line")
 if '"Show cut / fill slope lines"' not in grading:
     errors.append("Junction grading must expose the slope-line display option")
-if 'new Line(start, end)' not in grading:
-    errors.append("Junction grading must draw source-to-daylight cut/fill slope projection lines")
-if 'line.LayerId = cut ? cutLayerId : fillLayerId' not in grading:
-    errors.append("Cut and fill slope projection lines must be separated by layer")
+if '"CE_FLRELCREATEBATCH"' not in relative or '"CE_FLRELCREATEBATCH"' not in junction:
+    errors.append("Junction stepped offsets must expose and route through the explicit multi-feature-line batch command")
+if '"Slope-line interval / frequency (m)"' not in grading or '"SlopeLineInterval"' not in grading:
+    errors.append("Junction grading must expose configurable slope-ray spacing/frequency")
+if 'TryCreateCivilSlopeRay(' not in grading or 'CivilFeatureLine.Create(' not in grading:
+    errors.append("Junction cut/fill slope rays must be native Civil 3D feature lines rather than plain AutoCAD lines")
+if 'cut ? cutLayerId : fillLayerId' not in grading:
+    errors.append("Cut and fill Civil 3D slope rays must be separated by layer")
 
 if "gapTolerance" not in healing or "best.Distance > gapTolerance" not in healing:
     errors.append("Stepped healing no longer protects the maximum bridge distance")
