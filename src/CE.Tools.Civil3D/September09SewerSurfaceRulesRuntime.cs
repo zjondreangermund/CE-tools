@@ -1043,10 +1043,10 @@ namespace CETools.Civil3D
             }
 
             double maximumSlope = Math.Abs(
-                settings.Double("MaxSlope", 12.0)) / 100.0;
+                settings.Double("MaxSlope", 2.5)) / 100.0;
             double minimumCover = Math.Max(
                 0.0,
-                settings.Double("MinCover", 0.834));
+                settings.Double("MinCover", 1.0));
 
             SewerGravityPlan plan = null;
             for (int pass = 0; pass < 6; pass++)
