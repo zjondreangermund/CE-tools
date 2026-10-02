@@ -297,17 +297,47 @@ namespace CETools.Civil3D
             if (document == null || civilDocument == null) return;
             Editor editor = document.Editor;
             Database database = document.Database;
-            PromptSelectionResult selection = editor.GetSelection(
-                new PromptSelectionOptions
-                {
-                    MessageForAdding = "\nSelect sewer pipes and structures to link to one surface: ",
-                    MessageForRemoval = "\nRemove network parts: ",
-                    AllowDuplicates = false,
-                    RejectObjectsFromNonCurrentSpace = true
-                });
-            if (selection.Status != PromptStatus.OK || selection.Value == null || selection.Value.Count == 0) return;
+            List<ObjectId> partIds;
+            var scope = new PromptKeywordOptions(
+                "\nSewer surface/rules scope [AllNetworkParts/Select] <AllNetworkParts>: ")
+            {
+                AllowNone = true
+            };
+            scope.Keywords.Add("AllNetworkParts");
+            scope.Keywords.Add("Select");
+            PromptResult scopeResult = editor.GetKeywords(scope);
+            bool selectManually =
+                scopeResult.Status == PromptStatus.OK &&
+                string.Equals(
+                    scopeResult.StringResult,
+                    "Select",
+                    StringComparison.OrdinalIgnoreCase);
 
-            List<ObjectId> partIds = FilterGravityParts(database, selection.Value.GetObjectIds());
+            if (selectManually)
+            {
+                PromptSelectionResult selection = editor.GetSelection(
+                    new PromptSelectionOptions
+                    {
+                        MessageForAdding = "\nSelect multiple sewer pipes and structures to link to one surface: ",
+                        MessageForRemoval = "\nRemove network parts: ",
+                        AllowDuplicates = false,
+                        RejectObjectsFromNonCurrentSpace = true
+                    });
+                if (selection.Status != PromptStatus.OK ||
+                    selection.Value == null ||
+                    selection.Value.Count == 0)
+                    return;
+                partIds = FilterGravityParts(
+                    database,
+                    selection.Value.GetObjectIds());
+            }
+            else
+            {
+                partIds = ReadAllGravityParts(database);
+                editor.WriteMessage(
+                    "\nCE_SEWLINKSURFACE: all gravity-network pipes/structures selected. Parts={0}.",
+                    partIds.Count);
+            }
             if (partIds.Count == 0)
             {
                 editor.WriteMessage("\nCE_SEWLINKSURFACE: select one or more Civil 3D gravity-network pipes/structures.");
@@ -350,6 +380,13 @@ namespace CETools.Civil3D
                 "Minimum depth from the selected surface to pipe crown at each connected structure in Gravity mode. This constraint is used when choosing the actual pipe slope between the minimum and maximum values.");
             settings.AddPositiveDouble("MaxCover", "02 Pipe geometry", "Maximum cover (m)", 10.0,
                 "Cover constraint in Gravity mode. If the exact downhill grade and cover range cannot both be satisfied, CE Tools preserves gravity slope and reports a warning instead of making a pipe run uphill.");
+            settings.AddChoice("RaiseDeepRuns", "02 Pipe geometry", "Raise pipes when structures become too deep", "Yes",
+                "When enabled, CE Tools raises each gravity branch as high as the slope/connection rules allow before a structure exceeds the specified trigger depth. The normal minimum/maximum slope and cover rules are then re-applied.",
+                new[] { "Yes", "No" });
+            settings.AddPositiveDouble("DeepRaiseThreshold", "02 Pipe geometry", "Deep structure trigger depth (m)", 3.5,
+                "If branch cover/depth would exceed this value, CE Tools uses it as the maximum permitted gravity cover envelope where continuity allows.");
+            settings.AddPositiveDouble("DeepRaiseTarget", "02 Pipe geometry", "Minimum depth after raising (m)", 1.0,
+                "Target minimum natural-ground cover/depth after the branch is raised. The final pipe levels still obey the configured minimum/maximum slope rules.");
             settings.AddPositiveDouble("MinLength", "02 Pipe geometry", "Minimum pipe length (m)", 2.440,
                 "Short pipes are reported because structure positions are preserved.");
             settings.AddPositiveDouble("MaxLength", "02 Pipe geometry", "Maximum pipe length (m)", 100.0,
@@ -518,6 +555,54 @@ namespace CETools.Civil3D
                     "\nNatural-ground mode follows the selected surface at the specified depth to pipe crown; uphill ground is therefore allowed in this mode by design.");
             using (document.LockDocument())
                 SewerManholeConnectionCommands.EnableAndReport(document, connectionStructures, gravity);
+        }
+
+        private static List<ObjectId> ReadAllGravityParts(
+            Database database)
+        {
+            var result = new List<ObjectId>();
+            if (database == null) return result;
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord model = transaction.GetObject(
+                    SymbolUtilityServices.GetBlockModelSpaceId(database),
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (model == null) return result;
+                foreach (ObjectId id in model)
+                {
+                    CivilPart part = null;
+                    try
+                    {
+                        part = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false) as CivilPart;
+                    }
+                    catch { }
+                    if (!(part is CivilPipe) &&
+                        !(part is CivilStructure))
+                        continue;
+
+                    string partName = string.Empty;
+                    try { partName = part.Name ?? string.Empty; }
+                    catch { }
+                    bool sequencedPipe =
+                        part is CivilPipe &&
+                        PipeNamePattern.IsMatch(partName);
+                    bool sequencedStructure =
+                        part is CivilStructure &&
+                        Regex.IsMatch(
+                            partName,
+                            @"^MH\d+\.\d+$",
+                            RegexOptions.IgnoreCase |
+                            RegexOptions.CultureInvariant);
+                    if (sequencedPipe || sequencedStructure)
+                        result.Add(id);
+                }
+            }
+            return result;
         }
 
         internal static void CreateBranchAlignmentsSafe(Document document, CivilDocument civilDocument)
@@ -895,12 +980,27 @@ namespace CETools.Civil3D
         {
             if (segment == null || segment.Count == 0) return;
 
+            bool raiseDeepRuns = string.Equals(
+                settings.Text("RaiseDeepRuns"),
+                "Yes",
+                StringComparison.OrdinalIgnoreCase);
             double minimumCover = Math.Max(
                 0.0,
                 settings.Double("MinCover", 1.0));
+            if (raiseDeepRuns)
+                minimumCover = Math.Max(
+                    minimumCover,
+                    settings.Double("DeepRaiseTarget", 1.0));
+
             double maximumCover = Math.Max(
                 minimumCover,
                 settings.Double("MaxCover", 10.0));
+            if (raiseDeepRuns)
+                maximumCover = Math.Max(
+                    minimumCover,
+                    Math.Min(
+                        maximumCover,
+                        settings.Double("DeepRaiseThreshold", 3.5)));
             double maximumSlope = Math.Abs(
                 settings.Double("MaxSlope", 2.5)) / 100.0;
             double minLength = Math.Max(
@@ -1044,9 +1144,17 @@ namespace CETools.Civil3D
 
             double maximumSlope = Math.Abs(
                 settings.Double("MaxSlope", 2.5)) / 100.0;
+            bool raiseDeepRuns = string.Equals(
+                settings.Text("RaiseDeepRuns"),
+                "Yes",
+                StringComparison.OrdinalIgnoreCase);
             double minimumCover = Math.Max(
                 0.0,
                 settings.Double("MinCover", 1.0));
+            if (raiseDeepRuns)
+                minimumCover = Math.Max(
+                    minimumCover,
+                    settings.Double("DeepRaiseTarget", 1.0));
 
             SewerGravityPlan plan = null;
             for (int pass = 0; pass < 6; pass++)
@@ -1148,6 +1256,12 @@ namespace CETools.Civil3D
             double maximumCover = Math.Max(
                 minimumCover,
                 settings.Double("MaxCover", 10.0));
+            if (raiseDeepRuns)
+                maximumCover = Math.Max(
+                    minimumCover,
+                    Math.Min(
+                        maximumCover,
+                        settings.Double("DeepRaiseThreshold", 3.5)));
             foreach (SewerGravityGrade grade in plan.Grades)
             {
                 GravityPipeStep step = byId[grade.Pipe.Id];

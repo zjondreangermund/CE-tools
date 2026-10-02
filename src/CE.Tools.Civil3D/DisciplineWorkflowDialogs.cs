@@ -122,7 +122,7 @@ namespace CETools.Civil3D
             var heading = new TextBlock
             {
                 Text = title ?? "CE Tools Workflow",
-                FontSize = 23,
+                FontSize = 20,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(Color.FromRgb(24, 52, 74)),
                 Margin = new Thickness(0, 0, 0, 5)
@@ -148,7 +148,7 @@ namespace CETools.Civil3D
                 stack.Children.Add(new TextBlock
                 {
                     Text = group.Key,
-                    FontSize = 15,
+                    FontSize = 13,
                     FontWeight = FontWeights.SemiBold,
                     Foreground = new SolidColorBrush(Color.FromRgb(40, 113, 151)),
                     Margin = new Thickness(0, 8, 0, 7)
@@ -223,7 +223,7 @@ namespace CETools.Civil3D
             {
                 Text = action.Title,
                 FontWeight = FontWeights.SemiBold,
-                FontSize = 14,
+                FontSize = 12.5,
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 3)
             });
@@ -233,19 +233,50 @@ namespace CETools.Civil3D
                 FontFamily = new FontFamily("Consolas"),
                 Foreground = Brushes.DimGray,
                 TextWrapping = TextWrapping.Wrap,
-                FontSize = 11.5
+                FontSize = 10.5
             });
             Grid.SetColumn(title, 0);
             grid.Children.Add(title);
 
-            var description = new TextBlock
+            UIElement description;
+            string details = action.Description ?? string.Empty;
+            if (details.Length > 90)
             {
-                Text = action.Description,
-                TextWrapping = TextWrapping.Wrap,
-                VerticalAlignment = VerticalAlignment.Center,
-                Foreground = Brushes.DimGray,
-                LineHeight = 18
-            };
+                var expander = new Expander
+                {
+                    Header = details.Length > 72
+                        ? details.Substring(0, 69) + "..."
+                        : details,
+                    IsExpanded = false,
+                    FontSize = 10.5,
+                    FontWeight = FontWeights.Normal,
+                    Foreground = Brushes.DimGray,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Content = new TextBlock
+                    {
+                        Text = details,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontSize = 10.5,
+                        FontWeight = FontWeights.Normal,
+                        Foreground = Brushes.DimGray,
+                        LineHeight = 15,
+                        Margin = new Thickness(0, 4, 0, 0)
+                    }
+                };
+                description = expander;
+            }
+            else
+            {
+                description = new TextBlock
+                {
+                    Text = details,
+                    TextWrapping = TextWrapping.Wrap,
+                    VerticalAlignment = VerticalAlignment.Center,
+                    Foreground = Brushes.DimGray,
+                    FontSize = 10.5,
+                    LineHeight = 15
+                };
+            }
             Grid.SetColumn(description, 2);
             grid.Children.Add(description);
             return grid;
@@ -487,8 +518,8 @@ namespace CETools.Civil3D
         {
             _model = model;
             Title = model.Title;
-            Width = 880;
-            Height = 720;
+            Width = 820;
+            Height = 680;
             MinWidth = 660;
             MinHeight = 480;
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
@@ -505,7 +536,7 @@ namespace CETools.Civil3D
             var heading = new TextBlock
             {
                 Text = model.Title,
-                FontSize = 23,
+                FontSize = 20,
                 FontWeight = FontWeights.SemiBold,
                 Foreground = new SolidColorBrush(Color.FromRgb(24, 52, 74)),
                 Margin = new Thickness(0, 0, 0, 5)
@@ -587,14 +618,43 @@ namespace CETools.Civil3D
                 Text = field.Label,
                 FontWeight = FontWeights.SemiBold
             });
-            label.Children.Add(new TextBlock
+            if (!string.IsNullOrWhiteSpace(field.Description))
             {
-                Text = field.Description,
-                TextWrapping = TextWrapping.Wrap,
-                FontSize = 11,
-                FontWeight = FontWeights.Normal,
-                Foreground = Brushes.DimGray
-            });
+                string fieldDetails = field.Description;
+                if (fieldDetails.Length > 100)
+                {
+                    label.Children.Add(new Expander
+                    {
+                        Header = fieldDetails.Length > 68
+                            ? fieldDetails.Substring(0, 65) + "..."
+                            : fieldDetails,
+                        IsExpanded = false,
+                        FontSize = 10,
+                        FontWeight = FontWeights.Normal,
+                        Foreground = Brushes.DimGray,
+                        Content = new TextBlock
+                        {
+                            Text = fieldDetails,
+                            TextWrapping = TextWrapping.Wrap,
+                            FontSize = 10,
+                            FontWeight = FontWeights.Normal,
+                            Foreground = Brushes.DimGray,
+                            Margin = new Thickness(0, 3, 0, 0)
+                        }
+                    });
+                }
+                else
+                {
+                    label.Children.Add(new TextBlock
+                    {
+                        Text = fieldDetails,
+                        TextWrapping = TextWrapping.Wrap,
+                        FontSize = 10,
+                        FontWeight = FontWeights.Normal,
+                        Foreground = Brushes.DimGray
+                    });
+                }
+            }
             grid.Children.Add(label);
 
             Control control;
