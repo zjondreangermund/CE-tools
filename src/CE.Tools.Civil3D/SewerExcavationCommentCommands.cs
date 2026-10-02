@@ -1095,15 +1095,9 @@ namespace CETools.Civil3D
             double height = ResolveTextHeight(database);
             table.SetRowHeight(height * 1.8);
 
-            double[] widths =
-            {
-                height * 6.0, height * 8.0, height * 8.0, height * 5.5,
-                height * 5.5, height * 5.0, height * 5.0, height * 6.0,
-                height * 7.0, height * 7.0, height * 6.0, height * 6.0,
-                height * 7.0, height * 7.0, height * 7.0, height * 7.0
-            };
             for (int column = 0; column < ColumnCount; column++)
-                table.Columns[column].Width = widths[column];
+                table.Columns[column].Width =
+                    height * (column <= 2 ? 8.0 : 6.4);
 
             table.MergeCells(
                 CellRange.Create(
@@ -1114,7 +1108,7 @@ namespace CETools.Civil3D
                     ColumnCount - 1));
             table.Cells[0, 0].TextString = string.Format(
                 CultureInfo.CurrentCulture,
-                "CE TOOLS LINKED SEWER EXCAVATION - TRENCH {0:N3} m - BEDDING {1:N3} m - BLANKET {2:N3} m",
+                "CE TOOLS LINKED SEWER EXCAVATION - TRENCH {0:N3} m - BEDDING {1:N3} m - BLANKET {2:N3} m - TOTAL EXCAVATION TO BOTTOM OF BEDDING",
                 settings.TrenchWidth,
                 settings.BeddingThickness,
                 settings.BlanketAbovePipe);
@@ -1126,11 +1120,14 @@ namespace CETools.Civil3D
             string[] headings =
             {
                 "TYPE", "NAME", "LAYER", "LENGTH m", "NOMINAL Ø mm",
-                "COVER m", "WIDTH m", "DEPTH TO BOTTOM m",
-                "EXC TO BOTTOM m³", "EXC incl BEDDING m³",
+                "COVER START m", "COVER END m", "AVG COVER m",
+                "TRENCH WIDTH m",
+                "DEPTH START TO BEDDING m", "DEPTH END TO BEDDING m",
+                "AVG DEPTH TO BEDDING m",
+                "EXC TO PIPE BOTTOM m³", "TOTAL EXC TO BEDDING m³",
                 "BEDDING m³", "PIPE VOL m³", "BLANKET FILL m³",
                 "FILL ABOVE BLANKET m³", "NET EXC MATERIAL m³",
-                "PRIMARY EXC m³"
+                "DEPTH SOURCE", "TOTAL EXC m³"
             };
 
             for (int column = 0; column < headings.Length; column++)
@@ -1155,15 +1152,14 @@ namespace CETools.Civil3D
                     row.ObjectType,
                     row.Name,
                     row.Layer,
-                    pipe
-                        ? row.Length.ToString("N3", CultureInfo.CurrentCulture)
-                        : string.Empty,
-                    NominalDiameterMm(row.Diameter).ToString(
-                        CultureInfo.CurrentCulture),
-                    pipe
-                        ? row.AverageCover.ToString("N3", CultureInfo.CurrentCulture)
-                        : string.Empty,
+                    pipe ? row.Length.ToString("N3", CultureInfo.CurrentCulture) : string.Empty,
+                    NominalDiameterMm(row.Diameter).ToString(CultureInfo.CurrentCulture),
+                    pipe ? row.StartCover.ToString("N3", CultureInfo.CurrentCulture) : string.Empty,
+                    pipe ? row.EndCover.ToString("N3", CultureInfo.CurrentCulture) : string.Empty,
+                    pipe ? row.AverageCover.ToString("N3", CultureInfo.CurrentCulture) : string.Empty,
                     row.TrenchWidth.ToString("N3", CultureInfo.CurrentCulture),
+                    row.StartDepthToBeddingBottom.ToString("N3", CultureInfo.CurrentCulture),
+                    row.EndDepthToBeddingBottom.ToString("N3", CultureInfo.CurrentCulture),
                     row.DepthToBottom.ToString("N3", CultureInfo.CurrentCulture),
                     row.ExcavationToBottom.ToString("N3", CultureInfo.CurrentCulture),
                     row.ExcavationIncludingBedding.ToString("N3", CultureInfo.CurrentCulture),
@@ -1172,6 +1168,7 @@ namespace CETools.Civil3D
                     row.BlanketFill.ToString("N3", CultureInfo.CurrentCulture),
                     row.FillAboveBlanket.ToString("N3", CultureInfo.CurrentCulture),
                     row.ExcavatedMaterialNet.ToString("N3", CultureInfo.CurrentCulture),
+                    row.DepthSource ?? string.Empty,
                     row.PrimaryExcavation.ToString("N3", CultureInfo.CurrentCulture)
                 };
 
@@ -1197,28 +1194,28 @@ namespace CETools.Civil3D
                 rows.Where(row => row.ObjectType == "Pipe")
                     .Sum(row => row.Length)
                     .ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 8].TextString =
+            table.Cells[totalRow, 12].TextString =
                 rows.Sum(row => row.ExcavationToBottom)
                     .ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 9].TextString =
+            table.Cells[totalRow, 13].TextString =
                 rows.Sum(row => row.ExcavationIncludingBedding)
                     .ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 10].TextString =
+            table.Cells[totalRow, 14].TextString =
                 rows.Sum(row => row.Bedding)
                     .ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 11].TextString =
+            table.Cells[totalRow, 15].TextString =
                 rows.Sum(row => row.PipeVolume)
                     .ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 12].TextString =
+            table.Cells[totalRow, 16].TextString =
                 rows.Sum(row => row.BlanketFill)
                     .ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 13].TextString =
+            table.Cells[totalRow, 17].TextString =
                 rows.Sum(row => row.FillAboveBlanket)
                     .ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 14].TextString =
+            table.Cells[totalRow, 18].TextString =
                 rows.Sum(row => row.ExcavatedMaterialNet)
                     .ToString("N3", CultureInfo.CurrentCulture);
-            table.Cells[totalRow, 15].TextString =
+            table.Cells[totalRow, 20].TextString =
                 rows.Sum(row => row.PrimaryExcavation)
                     .ToString("N3", CultureInfo.CurrentCulture);
 
