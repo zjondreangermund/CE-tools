@@ -85,8 +85,9 @@ for marker in (
     "new WindowInteropHelper(window).Owner",
     "AcApplication.MainWindow.Handle",
     "Topmost = false",
-    "Width = 245",
-    "Height = 92",
+    "Width = 255",
+    "Height = 84",
+    'FontSize = 9.0',
 ):
     if marker not in refresh:
         errors.append(
