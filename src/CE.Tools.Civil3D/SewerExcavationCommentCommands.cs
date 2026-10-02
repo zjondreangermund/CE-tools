@@ -371,6 +371,38 @@ namespace CETools.Civil3D
                             CultureInfo.CurrentCulture) +
                         " m"));
 
+            summary.PipeSizeQuantities = string.Join(
+                "; ",
+                pipes
+                    .GroupBy(row => NominalMillimetres(row.Diameter))
+                    .OrderBy(group => group.Key)
+                    .Select(group =>
+                        "Ø" +
+                        group.Key.ToString(
+                            "0",
+                            CultureInfo.CurrentCulture) +
+                        ": ExcBottom " +
+                        group.Sum(row => row.ExcavationToBottom).ToString(
+                            "N2",
+                            CultureInfo.CurrentCulture) +
+                        ", Bedding " +
+                        group.Sum(row => row.Bedding).ToString(
+                            "N2",
+                            CultureInfo.CurrentCulture) +
+                        ", Blanket " +
+                        group.Sum(row => row.BlanketFill).ToString(
+                            "N2",
+                            CultureInfo.CurrentCulture) +
+                        ", Fill " +
+                        group.Sum(row => row.FillAboveBlanket).ToString(
+                            "N2",
+                            CultureInfo.CurrentCulture) +
+                        ", Total " +
+                        group.Sum(row => row.ExcavationIncludingBedding).ToString(
+                            "N2",
+                            CultureInfo.CurrentCulture) +
+                        " m³"));
+
             return summary;
         }
 
@@ -2097,6 +2129,7 @@ namespace CETools.Civil3D
             internal int Pipes { get; set; }
             internal int Structures { get; set; }
             internal string PipeSizes { get; set; } = string.Empty;
+            internal string PipeSizeQuantities { get; set; } = string.Empty;
             internal string TrenchWidths { get; set; } = string.Empty;
             internal double ExcavationToBottom { get; set; }
             internal double TotalExcavationToBedding { get; set; }
