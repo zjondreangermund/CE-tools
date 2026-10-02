@@ -54,6 +54,13 @@ namespace CETools.Civil3D
             if (document != null) Create(document);
         }
 
+        [CommandMethod("CE_TOOLS", "CE_FLRELCREATEBATCH", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void CreateBatchCommand()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document != null) Create(document);
+        }
+
         [CommandMethod("CE_TOOLS", "CE_FLRELUPDATE", CommandFlags.Modal | CommandFlags.Redraw)]
         public void UpdateCommand()
         {
