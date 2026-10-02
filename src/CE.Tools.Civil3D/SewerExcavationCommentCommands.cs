@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.IO;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -11,6 +13,8 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+using CivilPipe = Autodesk.Civil.DatabaseServices.Pipe;
+using CivilStructure = Autodesk.Civil.DatabaseServices.Structure;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.SewerExcavationCommentCommands))]
 
@@ -24,8 +28,8 @@ namespace CETools.Civil3D
     public sealed class SewerExcavationCommentCommands
     {
         private const string LinkRecordName = "CE_SEWER_EXCAVATION_LINKS";
-        private const string LinkSchema = "2";
-        private const int ColumnCount = 16;
+        private const string LinkSchema = "3";
+        private const int ColumnCount = 21;
 
         [CommandMethod("CE_TOOLS", "CE_SEWEREXCAVATION", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void Build()
@@ -37,10 +41,14 @@ namespace CETools.Civil3D
                 "\nSelect sewer pipes and structures for the linked excavation schedule: ");
             if (selection.Status != PromptStatus.OK) return;
 
-            var settingsWindow = new SewerExcavationSettingsWindow(new SewerExcavationSettings());
+            SewerExcavationSettings defaults =
+                SewerExcavationPreferenceStore.LoadSettings();
+            var settingsWindow =
+                new SewerExcavationSettingsWindow(defaults);
             AcApplication.ShowModalWindow(settingsWindow);
             if (!settingsWindow.Accepted) return;
             SewerExcavationSettings settings = settingsWindow.Settings;
+            SewerExcavationPreferenceStore.SaveSettings(settings);
 
             List<ObjectId> sourceIds = selection.Value.GetObjectIds().ToList();
             ExtractionResult extraction = Extract(document.Database, sourceIds, settings);
@@ -379,6 +387,7 @@ namespace CETools.Civil3D
                                 objectId,
                                 value,
                                 entity,
+                                transaction,
                                 settings,
                                 out pipeRow,
                                 out reason))
@@ -402,6 +411,7 @@ namespace CETools.Civil3D
                                 objectId,
                                 value,
                                 entity,
+                                transaction,
                                 settings,
                                 out structureRow,
                                 out reason))
@@ -430,6 +440,7 @@ namespace CETools.Civil3D
             ObjectId objectId,
             DBObject value,
             Entity entity,
+            Transaction transaction,
             SewerExcavationSettings settings,
             out PipeExcavationRow row,
             out string reason)
