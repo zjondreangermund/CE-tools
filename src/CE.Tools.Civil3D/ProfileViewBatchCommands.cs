@@ -9,6 +9,7 @@ using System.Windows.Controls;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
+using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
@@ -133,6 +134,81 @@ namespace CETools.Civil3D
             ShowResult(document, result, "CE Tools - Profile View Fit Result");
         }
 
+        [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWARRANGE", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void ArrangeProfileViews()
+        {
+            Document document = ActiveDocument();
+            if (document == null) return;
+
+            List<ProfileViewItem> views = PromptScope(
+                document,
+                ReadProfileViews(document));
+            if (views.Count == 0) return;
+
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Arrange Multiple Profile Views",
+                "Sort and space multiple selected Civil 3D profile views without changing their profile, band or label data. Horizontal, vertical and grid layouts use the actual displayed view extents.");
+            settings.AddChoice(
+                "Layout",
+                "01 Layout",
+                "Arrangement",
+                "Grid",
+                "Choose the placement pattern for the selected profile views.",
+                new[] { "Horizontal", "Vertical", "Grid" });
+            settings.AddChoice(
+                "Sort",
+                "01 Layout",
+                "Sort order",
+                "Branch / alignment order",
+                "Branch/alignment order places Branch-1, Branch-2, Branch-3, etc. in sequence. Current position orders the existing views top-to-bottom then left-to-right.",
+                new[] { "Branch / alignment order", "Profile view name", "Current position" });
+            settings.AddPositiveDouble(
+                "HorizontalSpacing",
+                "02 Spacing",
+                "Horizontal spacing (drawing units)",
+                20.0,
+                "Clear gap between adjacent profile-view extents.");
+            settings.AddPositiveDouble(
+                "VerticalSpacing",
+                "02 Spacing",
+                "Vertical spacing (drawing units)",
+                20.0,
+                "Clear gap between adjacent profile-view extents.");
+            settings.AddPositiveInteger(
+                "GridColumns",
+                "03 Grid",
+                "Grid columns",
+                3,
+                "Number of columns used only for Grid arrangement.");
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+
+            string layout = settings.Text("Layout");
+            string sort = settings.Text("Sort");
+            double horizontalSpacing =
+                settings.Double("HorizontalSpacing", 20.0);
+            double verticalSpacing =
+                settings.Double("VerticalSpacing", 20.0);
+            int gridColumns =
+                Math.Max(1, settings.Integer("GridColumns", 3));
+
+            int moved = ArrangeViews(
+                document,
+                views,
+                layout,
+                sort,
+                horizontalSpacing,
+                verticalSpacing,
+                gridColumns);
+
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWARRANGE complete. Views arranged={0}; layout={1}; horizontal gap={2:0.###}; vertical gap={3:0.###}.",
+                moved,
+                layout,
+                horizontalSpacing,
+                verticalSpacing);
+        }
+
         [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWBATCHINFO", CommandFlags.Modal | CommandFlags.Redraw)]
         public void ProfileViewBatchInformation()
         {
@@ -175,6 +251,192 @@ namespace CETools.Civil3D
                 },
                 rows,
                 "CE TOOLS PROFILE VIEW BATCH INFORMATION");
+        }
+
+        private static int ArrangeViews(
+            Document document,
+            IList<ProfileViewItem> views,
+            string layout,
+            string sort,
+            double horizontalSpacing,
+            double verticalSpacing,
+            int gridColumns)
+        {
+            if (document == null ||
+                views == null ||
+                views.Count == 0)
+                return 0;
+
+            var items = new List<ProfileViewPlacement>();
+            using (Transaction read =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ProfileViewItem view in views)
+                {
+                    Entity entity = null;
+                    try
+                    {
+                        entity = read.GetObject(
+                            view.ObjectId,
+                            OpenMode.ForRead,
+                            false) as Entity;
+                    }
+                    catch { }
+                    if (entity == null) continue;
+
+                    Extents3d extents;
+                    try { extents = entity.GeometricExtents; }
+                    catch { continue; }
+
+                    items.Add(new ProfileViewPlacement
+                    {
+                        Item = view,
+                        Min = extents.MinPoint,
+                        Max = extents.MaxPoint
+                    });
+                }
+            }
+
+            if (items.Count == 0) return 0;
+
+            if (string.Equals(
+                    sort,
+                    "Current position",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                items = items
+                    .OrderByDescending(item => item.Max.Y)
+                    .ThenBy(item => item.Min.X)
+                    .ToList();
+            }
+            else if (string.Equals(
+                sort,
+                "Profile view name",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                items = items
+                    .OrderBy(item => item.Item.Name,
+                        StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+            }
+            else
+            {
+                items = items
+                    .OrderBy(item => BranchSortNumber(
+                        item.Item.AlignmentName))
+                    .ThenBy(item => item.Item.AlignmentName,
+                        StringComparer.CurrentCultureIgnoreCase)
+                    .ThenBy(item => item.Item.Name,
+                        StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+            }
+
+            ProfileViewPlacement anchor = items[0];
+            double anchorLeft = anchor.Min.X;
+            double anchorTop = anchor.Max.Y;
+            double maxWidth = items.Max(item =>
+                Math.Max(0.001, item.Max.X - item.Min.X));
+            double maxHeight = items.Max(item =>
+                Math.Max(0.001, item.Max.Y - item.Min.Y));
+
+            int moved = 0;
+            using (DocumentLock documentLock =
+                document.LockDocument())
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                double horizontalCursor = anchorLeft;
+                double verticalCursorTop = anchorTop;
+
+                for (int index = 0; index < items.Count; index++)
+                {
+                    ProfileViewPlacement item = items[index];
+                    double targetLeft;
+                    double targetTop;
+
+                    if (string.Equals(
+                            layout,
+                            "Horizontal",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetLeft = horizontalCursor;
+                        targetTop = anchorTop;
+                        horizontalCursor +=
+                            (item.Max.X - item.Min.X) +
+                            horizontalSpacing;
+                    }
+                    else if (string.Equals(
+                        layout,
+                        "Vertical",
+                        StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetLeft = anchorLeft;
+                        targetTop = verticalCursorTop;
+                        verticalCursorTop -=
+                            (item.Max.Y - item.Min.Y) +
+                            verticalSpacing;
+                    }
+                    else
+                    {
+                        int column = index % gridColumns;
+                        int row = index / gridColumns;
+                        targetLeft =
+                            anchorLeft +
+                            column * (maxWidth + horizontalSpacing);
+                        targetTop =
+                            anchorTop -
+                            row * (maxHeight + verticalSpacing);
+                    }
+
+                    double dx = targetLeft - item.Min.X;
+                    double dy = targetTop - item.Max.Y;
+                    if (Math.Abs(dx) <= 1e-9 &&
+                        Math.Abs(dy) <= 1e-9)
+                        continue;
+
+                    Entity entity = null;
+                    try
+                    {
+                        entity = transaction.GetObject(
+                            item.Item.ObjectId,
+                            OpenMode.ForWrite,
+                            false) as Entity;
+                    }
+                    catch { }
+                    if (entity == null) continue;
+
+                    entity.TransformBy(
+                        Matrix3d.Displacement(
+                            new Vector3d(dx, dy, 0.0)));
+                    moved++;
+                }
+
+                transaction.Commit();
+            }
+
+            return moved;
+        }
+
+        private static int BranchSortNumber(string alignmentName)
+        {
+            if (string.IsNullOrWhiteSpace(alignmentName))
+                return int.MaxValue;
+
+            string value = alignmentName.Trim();
+            int dash = value.IndexOf('-');
+            string candidate = dash >= 0
+                ? value.Substring(dash + 1)
+                : value;
+            int number;
+            return int.TryParse(
+                new string(candidate
+                    .TakeWhile(char.IsDigit)
+                    .ToArray()),
+                NumberStyles.Integer,
+                CultureInfo.InvariantCulture,
+                out number)
+                ? number
+                : int.MaxValue;
         }
 
         private static ProfileViewBatchResult ApplyBatch(
@@ -845,6 +1107,13 @@ namespace CETools.Civil3D
         public List<ProfileViewStyleChoice> BandSetStyles { get; private set; }
     }
 
+    internal sealed class ProfileViewPlacement
+    {
+        internal ProfileViewItem Item { get; set; }
+        internal Point3d Min { get; set; }
+        internal Point3d Max { get; set; }
+    }
+
     internal sealed class ProfileViewBatchResult
     {
         public int ViewsChanged { get; set; }
@@ -1016,7 +1285,7 @@ namespace CETools.Civil3D
         {
             Title = "CE Tools - Profile View Batch Tools";
             Width = 460;
-            Height = 435;
+            Height = 485;
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             var root = new StackPanel { Margin = new Thickness(18) };
@@ -1041,6 +1310,7 @@ namespace CETools.Civil3D
             AddButton(root, "Repair Sewer Pipe Network Band Labels", "CE_SEWPIPEBANDGROUPS ");
             AddButton(root, "Import Road Band Set + Show Labels", "CE_ROADBANDLABELS ");
             AddButton(root, "Fit all selected profile views", "CE_PROFILEVIEWFITALL ");
+            AddButton(root, "Arrange selected profile views - horizontal / vertical / grid", "CE_PROFILEVIEWARRANGE ");
             AddButton(root, "Profile-view information", "CE_PROFILEVIEWBATCHINFO ");
         }
 
