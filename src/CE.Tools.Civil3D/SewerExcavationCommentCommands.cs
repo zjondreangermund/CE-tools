@@ -1753,9 +1753,14 @@ namespace CETools.Civil3D
             public string Layer { get; set; }
             public double Length { get; set; }
             public double Diameter { get; set; }
+            public double StartCover { get; set; }
+            public double EndCover { get; set; }
             public double AverageCover { get; set; }
             public double TrenchWidth { get; set; }
+            public double StartDepthToBeddingBottom { get; set; }
+            public double EndDepthToBeddingBottom { get; set; }
             public double DepthToBottom { get; set; }
+            public string DepthSource { get; set; }
             public double ExcavationToBottom { get; set; }
             public double ExcavationIncludingBedding { get; set; }
             public double Bedding { get; set; }
@@ -1810,7 +1815,7 @@ namespace CETools.Civil3D
             BlanketAbovePipe = 0.30;
             StructureSideAllowance = 0.30;
             FallbackCover = 1.20;
-            ExcavationToBottomOnly = true;
+            ExcavationToBottomOnly = false;
         }
         public double UnitsPerMetre { get; set; }
         public double SideAllowance { get; set; }
@@ -1851,10 +1856,10 @@ namespace CETools.Civil3D
             _values = new Dictionary<string, TextBox>(StringComparer.OrdinalIgnoreCase);
             _toBottomOnly = new CheckBox
             {
-                Content = "Use excavation to bottom of pipe/structure as the primary excavation quantity",
-                IsChecked = initial.ExcavationToBottomOnly,
-                Margin = new Thickness(0, 10, 0, 4),
-                ToolTip = "Both gross excavation to pipe bottom and gross excavation including bedding are reported. This option controls the primary total."
+                Content = "Total excavation is measured to the bottom of bedding.",
+                IsChecked = true,
+                IsEnabled = false,
+                Margin = new Thickness(0, 10, 0, 4)
             };
             var root = new DockPanel { Margin = new Thickness(18) };
             Content = root;
@@ -1889,7 +1894,7 @@ namespace CETools.Civil3D
             root.Children.Add(panel);
             panel.Children.Add(new TextBlock
             {
-                Text = "Quantities are measured in metres/m³. Pipe excavation is separated into excavation to pipe bottom, bedding, pipe displacement, blanket fill and fill above the blanket. Structures use rim-to-sump depth and actual structure size where available.",
+                Text = "Quantities use the sewer reference surface and actual long-section pipe elevations. Cover is natural ground to pipe crown; trench depth is natural ground to bottom of bedding. Total excavation is always to bottom of bedding. Structures use natural ground to the lower of the lowest connected pipe invert or structure floor.",
                 TextWrapping = TextWrapping.Wrap,
                 Margin = new Thickness(0, 0, 0, 12)
             });
@@ -1969,8 +1974,7 @@ namespace CETools.Civil3D
             settings.BlanketAbovePipe = blanket;
             settings.StructureSideAllowance = structureAllowance;
             settings.FallbackCover = cover;
-            settings.ExcavationToBottomOnly =
-                _toBottomOnly.IsChecked != false;
+            settings.ExcavationToBottomOnly = false;
             settings.Validate();
             return true;
         }
