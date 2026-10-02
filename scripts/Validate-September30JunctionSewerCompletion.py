@@ -71,9 +71,16 @@ for marker in [
     "StructureOverrides only contains structures with view-specific",
     "ResolveProfileSourcePart(",
     '"PartId", "PipeId", "StructureId", "SourcePartId"',
+    "LocateBidirectional(",
+    "LocateSourceInProfile(",
+    "TrySetAnnotative(label)",
+    "incoming.SideEntry",
+    "dropsAtStructure",
+    "side/lateral pipe entering this manhole",
+    "continuous manhole are intentionally not labelled.",
 ]:
     if marker not in incoming:
-        errors.append("multi-view incoming label / profile-to-plan navigation missing: " + marker)
+        errors.append("multi-view incoming label / bidirectional navigation missing: " + marker)
 
 for marker in [
     "Batch T/Cross Junction Bellmouths and T-Limits",

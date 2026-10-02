@@ -127,7 +127,8 @@ namespace CETools.Civil3D
                         if (double.IsNaN(rim) || double.IsInfinity(rim))
                             rim = structure.Position.Z;
 
-                        int connectionIndex = 0;
+                        var incomingPipes = new List<IncomingPipeInfo>();
+                        var outgoingInverts = new List<double>();
                         foreach (ObjectId pipeId in SewerPipeConnections.PipeIds(structure))
                         {
                             CivilPipe pipe = tr.GetObject(
@@ -139,40 +140,100 @@ namespace CETools.Civil3D
                             if (!SewerPipeConnections.TryForward(pipe, tr, out forward))
                                 continue;
 
-                            // Existing CE flow convention: atStart != forward is IN.
                             bool incoming = atStart != forward;
-                            if (!incoming) continue;
-
                             double invert = SewerPipeConnections.Invert(pipe, atStart);
+                            if (double.IsNaN(invert) || double.IsInfinity(invert))
+                                continue;
+
+                            if (incoming)
+                            {
+                                bool sideEntry =
+                                    !pipe.RefAlignmentId.IsNull &&
+                                    !pipe.RefAlignmentId.IsErased &&
+                                    pipe.RefAlignmentId != view.AlignmentId;
+                                incomingPipes.Add(new IncomingPipeInfo
+                                {
+                                    Pipe = pipe,
+                                    PipeId = pipeId,
+                                    Invert = invert,
+                                    SideEntry = sideEntry
+                                });
+                            }
+                            else
+                            {
+                                outgoingInverts.Add(invert);
+                            }
+                        }
+
+                        double lowestOutgoing = outgoingInverts.Count == 0
+                            ? double.NaN
+                            : outgoingInverts.Min();
+                        int connectionIndex = 0;
+                        foreach (IncomingPipeInfo incoming in incomingPipes
+                            .OrderByDescending(item => item.Invert))
+                        {
+                            // Only annotate connections that matter in a long
+                            // section: a side/lateral pipe entering this manhole,
+                            // or the upper incoming pipe where the outgoing run
+                            // drops to a lower invert. Ordinary through-pipes at a
+                            // continuous manhole are intentionally not labelled.
+                            bool dropsAtStructure =
+                                !double.IsNaN(lowestOutgoing) &&
+                                incoming.Invert >
+                                    lowestOutgoing + 0.001;
+                            if (!incoming.SideEntry &&
+                                !dropsAtStructure)
+                                continue;
+
                             Point3d graphPoint;
                             if (!TryProfileViewPoint(
-                                    view, station, invert, out graphPoint))
+                                    view,
+                                    station,
+                                    incoming.Invert,
+                                    out graphPoint))
                             {
                                 skipped++;
                                 continue;
                             }
 
-                            double depth = rim - invert;
-                            string pipeName = string.IsNullOrWhiteSpace(pipe.Name)
-                                ? "Pipe " + pipeId.Handle
-                                : pipe.Name;
+                            double depth = rim - incoming.Invert;
+                            string pipeName =
+                                string.IsNullOrWhiteSpace(
+                                    incoming.Pipe.Name)
+                                    ? "Pipe " +
+                                        incoming.PipeId.Handle
+                                    : incoming.Pipe.Name;
 
                             var label = new MText();
-                            label.SetDatabaseDefaults(document.Database);
+                            label.SetDatabaseDefaults(
+                                document.Database);
                             label.LayerId = layerId;
                             label.TextHeight = textHeight;
-                            label.Attachment = AttachmentPoint.MiddleLeft;
+                            label.Attachment =
+                                AttachmentPoint.MiddleLeft;
+                            TrySetAnnotative(label);
                             label.Location = new Point3d(
                                 graphPoint.X + offsetX,
                                 graphPoint.Y + offsetY +
-                                    connectionIndex * textHeight * 1.35,
+                                    connectionIndex *
+                                    textHeight * 1.35,
                                 graphPoint.Z);
-                            label.Contents = pipeName + "\\P" +
-                                "D=" + depth.ToString("0.000", CultureInfo.InvariantCulture) + "m";
-                            label.XData = BuildLinkData(viewId, pipeId, structureId);
+                            label.Contents =
+                                pipeName + "\\P" +
+                                "D=" +
+                                depth.ToString(
+                                    "0.000",
+                                    CultureInfo.InvariantCulture) +
+                                "m";
+                            label.XData = BuildLinkData(
+                                viewId,
+                                incoming.PipeId,
+                                structureId);
 
                             model.AppendEntity(label);
-                            tr.AddNewlyCreatedDBObject(label, true);
+                            tr.AddNewlyCreatedDBObject(
+                                label,
+                                true);
                             created++;
                             connectionIndex++;
                         }
@@ -189,7 +250,7 @@ namespace CETools.Civil3D
             catch { }
 
             document.Editor.WriteMessage(
-                "\nCE_SEWINCOMINGLABELSMULTI complete. Profile views={0}; labels created={1}; old labels removed={2}; skipped={3}. Labels show incoming pipe name and rim-to-inside-invert depth.",
+                "\nCE_SEWINCOMINGLABELSMULTI complete. Profile views={0}; labels created={1}; old labels removed={2}; skipped={3}. Annotative labels are limited to side-entry pipes and upper incoming pipes at real structure drops.",
                 viewIds.Count, created, removed, skipped);
         }
 
@@ -208,7 +269,374 @@ namespace CETools.Civil3D
                 return;
             }
 
-            LocateSourceInPlan(document, sourceId);
+            if (!LocateBidirectional(document, sourceId))
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_SEWLOCATEPLAN: no matching plan/profile representation could be located.");
+            }
+        }
+
+        private sealed class IncomingPipeInfo
+        {
+            internal CivilPipe Pipe;
+            internal ObjectId PipeId;
+            internal double Invert;
+            internal bool SideEntry;
+        }
+
+        private static void TrySetAnnotative(Entity entity)
+        {
+            if (entity == null) return;
+            try
+            {
+                PropertyInfo property =
+                    entity.GetType().GetProperty(
+                        "Annotative",
+                        BindingFlags.Public |
+                        BindingFlags.Instance);
+                if (property == null ||
+                    !property.CanWrite)
+                    return;
+
+                if (property.PropertyType == typeof(bool))
+                {
+                    property.SetValue(
+                        entity,
+                        true,
+                        null);
+                    return;
+                }
+
+                if (property.PropertyType.IsEnum)
+                {
+                    object value = Enum.Parse(
+                        property.PropertyType,
+                        "True",
+                        true);
+                    property.SetValue(
+                        entity,
+                        value,
+                        null);
+                }
+            }
+            catch { }
+        }
+
+        private static bool LocateBidirectional(
+            Document document,
+            ObjectId sourceId)
+        {
+            if (document == null ||
+                sourceId.IsNull ||
+                sourceId.IsErased)
+                return false;
+
+            Point3d planPoint;
+            List<ProfileLocation> profileLocations;
+            if (!ReadPlanAndProfileLocations(
+                    document,
+                    sourceId,
+                    out planPoint,
+                    out profileLocations))
+                return LocateSourceInPlan(
+                    document,
+                    sourceId);
+
+            if (profileLocations.Count == 0)
+                return LocateSourceInPlan(
+                    document,
+                    sourceId);
+
+            Point2d centre;
+            double viewHeight = 100.0;
+            try
+            {
+                using (ViewTableRecord current =
+                    document.Editor.GetCurrentView())
+                {
+                    centre = current.CenterPoint;
+                    viewHeight = Math.Max(
+                        1.0,
+                        current.Height);
+                }
+            }
+            catch
+            {
+                centre = new Point2d(
+                    planPoint.X,
+                    planPoint.Y);
+            }
+
+            double planDistance =
+                Distance2d(
+                    centre,
+                    new Point2d(
+                        planPoint.X,
+                        planPoint.Y));
+            ProfileLocation nearest =
+                profileLocations
+                    .OrderBy(item =>
+                        Distance2d(
+                            centre,
+                            new Point2d(
+                                item.GraphPoint.X,
+                                item.GraphPoint.Y)))
+                    .First();
+            double profileDistance =
+                Distance2d(
+                    centre,
+                    new Point2d(
+                        nearest.GraphPoint.X,
+                        nearest.GraphPoint.Y));
+
+            // When the current viewport is closer to the plan geometry, jump
+            // to the profile representation. When it is already closer to a
+            // profile graph, jump back to the plan representation.
+            if (planDistance <= profileDistance)
+                return LocateSourceInProfile(
+                    document,
+                    sourceId,
+                    nearest,
+                    viewHeight);
+
+            return LocateSourceInPlan(
+                document,
+                sourceId);
+        }
+
+        private sealed class ProfileLocation
+        {
+            internal ObjectId ViewId;
+            internal Point3d GraphPoint;
+        }
+
+        private static bool ReadPlanAndProfileLocations(
+            Document document,
+            ObjectId sourceId,
+            out Point3d planPoint,
+            out List<ProfileLocation> locations)
+        {
+            planPoint = Point3d.Origin;
+            locations = new List<ProfileLocation>();
+            if (document == null ||
+                sourceId.IsNull)
+                return false;
+
+            using (Transaction tr =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                DBObject source = null;
+                try
+                {
+                    source = tr.GetObject(
+                        sourceId,
+                        OpenMode.ForRead,
+                        false);
+                }
+                catch { return false; }
+
+                CivilPipe pipe = source as CivilPipe;
+                CivilStructure structure =
+                    source as CivilStructure;
+                double elevation;
+
+                if (pipe != null)
+                {
+                    Point3d start = pipe.StartPoint;
+                    Point3d end = pipe.EndPoint;
+                    planPoint = new Point3d(
+                        (start.X + end.X) * 0.5,
+                        (start.Y + end.Y) * 0.5,
+                        0.0);
+                    elevation =
+                        (start.Z + end.Z) * 0.5;
+                }
+                else if (structure != null)
+                {
+                    planPoint = structure.Position;
+                    elevation = structure.Position.Z;
+                    try
+                    {
+                        List<double> inverts =
+                            SewerPipeConnections.PipeIds(
+                                structure)
+                                .Select(id =>
+                                {
+                                    CivilPipe connected =
+                                        tr.GetObject(
+                                            id,
+                                            OpenMode.ForRead,
+                                            false) as CivilPipe;
+                                    if (connected == null)
+                                        return double.NaN;
+                                    bool atStart =
+                                        connected.StartStructureId ==
+                                        sourceId;
+                                    return SewerPipeConnections.Invert(
+                                        connected,
+                                        atStart);
+                                })
+                                .Where(value =>
+                                    !double.IsNaN(value) &&
+                                    !double.IsInfinity(value))
+                                .ToList();
+                        if (inverts.Count > 0)
+                            elevation = inverts.Min();
+                    }
+                    catch { }
+                }
+                else
+                {
+                    return false;
+                }
+
+                foreach (ObjectId viewId in
+                    GetDisplayedProfileViews(
+                        source))
+                {
+                    CivilProfileView view = null;
+                    CivilAlignment alignment = null;
+                    try
+                    {
+                        view = tr.GetObject(
+                            viewId,
+                            OpenMode.ForRead,
+                            false) as CivilProfileView;
+                        if (view == null)
+                            continue;
+                        alignment = tr.GetObject(
+                            view.AlignmentId,
+                            OpenMode.ForRead,
+                            false) as CivilAlignment;
+                    }
+                    catch { }
+                    if (view == null ||
+                        alignment == null)
+                        continue;
+
+                    double station = 0.0;
+                    double offset = 0.0;
+                    try
+                    {
+                        alignment.StationOffset(
+                            planPoint.X,
+                            planPoint.Y,
+                            ref station,
+                            ref offset);
+                    }
+                    catch { continue; }
+
+                    Point3d graphPoint;
+                    if (TryProfileViewPoint(
+                            view,
+                            station,
+                            elevation,
+                            out graphPoint))
+                    {
+                        locations.Add(
+                            new ProfileLocation
+                            {
+                                ViewId = viewId,
+                                GraphPoint = graphPoint
+                            });
+                    }
+                }
+            }
+            return true;
+        }
+
+        private static IEnumerable<ObjectId>
+            GetDisplayedProfileViews(DBObject part)
+        {
+            if (part == null)
+                yield break;
+
+            MethodInfo method = null;
+            try
+            {
+                method = part.GetType().GetMethod(
+                    "GetProfileViewsDisplayingMe",
+                    BindingFlags.Public |
+                    BindingFlags.Instance,
+                    null,
+                    Type.EmptyTypes,
+                    null);
+            }
+            catch { }
+
+            if (method == null)
+                yield break;
+
+            object value = null;
+            try
+            {
+                value = method.Invoke(
+                    part,
+                    null);
+            }
+            catch { }
+
+            System.Collections.IEnumerable items =
+                value as System.Collections.IEnumerable;
+            if (items == null)
+                yield break;
+
+            foreach (object item in items)
+            {
+                if (item is ObjectId)
+                    yield return (ObjectId)item;
+            }
+        }
+
+        private static bool LocateSourceInProfile(
+            Document document,
+            ObjectId sourceId,
+            ProfileLocation location,
+            double currentViewHeight)
+        {
+            if (document == null ||
+                location == null)
+                return false;
+
+            try
+            {
+                double height = Math.Max(
+                    20.0,
+                    Math.Min(
+                        currentViewHeight * 0.35,
+                        250.0));
+                document.Editor.Command(
+                    "_.ZOOM",
+                    "_C",
+                    location.GraphPoint,
+                    height);
+                document.Editor.SetImpliedSelection(
+                    new[] { sourceId });
+                document.Editor.WriteMessage(
+                    "\nCE_SEWLOCATEPLAN: source object {0} selected in its sewer profile view.",
+                    sourceId.Handle);
+                return true;
+            }
+            catch
+            {
+                try
+                {
+                    document.Editor.SetImpliedSelection(
+                        new[] { sourceId });
+                    return true;
+                }
+                catch { return false; }
+            }
+        }
+
+        private static double Distance2d(
+            Point2d first,
+            Point2d second)
+        {
+            double dx = first.X - second.X;
+            double dy = first.Y - second.Y;
+            return Math.Sqrt(
+                dx * dx + dy * dy);
         }
 
         private static List<ObjectId> SelectProfileViews(Document document)

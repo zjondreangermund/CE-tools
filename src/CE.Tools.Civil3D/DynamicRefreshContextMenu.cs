@@ -39,7 +39,7 @@ namespace CETools.Civil3D
                 refreshItem.Click += OnDynamicRefreshClick;
                 extension.MenuItems.Add(refreshItem);
 
-                var locateSewerItem = new MenuItem("Locate Sewer Pipe / Structure in Plan");
+                var locateSewerItem = new MenuItem("Locate Sewer Pipe / Structure Plan ↔ Profile");
                 locateSewerItem.Click += OnLocateSewerClick;
                 extension.MenuItems.Add(locateSewerItem);
 
