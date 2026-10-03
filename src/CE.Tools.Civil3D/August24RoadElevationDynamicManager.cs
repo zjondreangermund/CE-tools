@@ -101,7 +101,19 @@ namespace CETools.Civil3D
             try
             {
                 int refreshed = RefreshAffected(document, changed);
-                if (refreshed > 0) August21DisplayRefresh.Flush(document);
+
+                // Road/bellmouth Grade-to-Surface links are deliberately refreshed
+                // only for feature lines that changed in the command that just
+                // ended. This gives automatic cut/fill daylight when a linked road
+                // is moved above/below natural ground without restoring the old
+                // full-document platform refresh loop.
+                refreshed +=
+                    August23PlatformDynamicGradingCommands.RefreshLinkedGrades(
+                        document,
+                        changed);
+
+                if (refreshed > 0)
+                    August21DisplayRefresh.Flush(document);
             }
             catch
             {
