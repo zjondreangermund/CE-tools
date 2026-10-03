@@ -202,7 +202,7 @@ namespace CETools.Civil3D
                 new[] { "Yes", "No" });
             settings.AddChoice(
                 "ShowSlopeLines", "08 Presentation", "Show cut / fill slope lines", "Yes",
-                "Draw one visible projection line from every selected junction source vertex to its calculated daylight point. Cut and fill lines are placed on separate layers.",
+                "Draw grading slope rays normal to the actual bellmouth curve. Full-length rays reach daylight; every second ray is drawn at half length on the same cut/fill side for the conventional grading pattern.",
                 new[] { "Yes", "No" });
             settings.AddText(
                 "CutSlopeLayer", "08 Presentation", "Cut slope-line layer", "CE-JUNCTION-CUT-SLOPES",
@@ -212,7 +212,7 @@ namespace CETools.Civil3D
                 "Layer used for fill projection lines.");
             settings.AddPositiveDouble(
                 "SlopeLineInterval", "08 Presentation", "Slope-line interval / frequency (m)", 5.0,
-                "Spacing along curves and bellmouth feature lines for Civil 3D cut/fill slope rays. Smaller values draw more slope rays.");
+                "True chainage spacing along the bellmouth geometry. Rays follow each curve tangent; every second cut/fill ray is half length.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
@@ -872,7 +872,7 @@ namespace CETools.Civil3D
                         ? 5.0
                         : link.SlopeLineInterval);
                 List<SlopeRaySample> samples =
-                    BuildSlopeRaySamples(source, link.Side, spacing);
+                    BuildSlopeRaySamples(database, source, link.Side, spacing);
 
                 using (Transaction transaction =
                     database.TransactionManager.StartTransaction())
@@ -885,6 +885,7 @@ namespace CETools.Civil3D
                         throw new InvalidOperationException(
                             "The selected target surface is not readable.");
 
+                    int validRayIndex = 0;
                     foreach (SlopeRaySample sample in samples)
                     {
                         Point3d endPoint;
@@ -902,6 +903,10 @@ namespace CETools.Civil3D
                         sample.EndPoint = endPoint;
                         sample.Cut =
                             endPoint.Z > sample.Point.Z + 0.005;
+                        // Conventional grading display: long/short/long/short.
+                        // Classification is still based on the full daylight ray,
+                        // so the half ray always remains on the correct CUT/FILL side.
+                        sample.HalfLength = (validRayIndex++ % 2) == 1;
                         sample.Valid = true;
                     }
                 }
@@ -912,11 +917,14 @@ namespace CETools.Civil3D
                 {
                     ObjectId rayId;
                     string rayError;
+                    Point3d rayEnd = sample.HalfLength
+                        ? Halfway(sample.Point, sample.EndPoint)
+                        : sample.EndPoint;
                     if (!TryCreateCivilSlopeRay(
                             database,
                             source,
                             sample.Point,
-                            sample.EndPoint,
+                            rayEnd,
                             sample.Cut ? cutLayerId : fillLayerId,
                             sample.Cut ? "CUT" : "FILL",
                             index++,
@@ -950,12 +958,14 @@ namespace CETools.Civil3D
         }
 
         private static List<SlopeRaySample> BuildSlopeRaySamples(
+            Database database,
             SourceSnapshot source,
             string side,
             double spacing)
         {
             var result = new List<SlopeRaySample>();
-            if (source == null ||
+            if (database == null ||
+                source == null ||
                 source.Points == null ||
                 source.Points.Count < 2)
                 return result;
@@ -963,6 +973,129 @@ namespace CETools.Civil3D
             double area = source.Closed
                 ? SignedArea(source.Points)
                 : 0.0;
+
+            // Use the real Civil 3D feature-line geometry first. Exploding the
+            // feature line gives AutoCAD Curve segments (Line/Arc/Polyline, etc.),
+            // so sampling by curve distance follows the bellmouth arc rather than
+            // interpolating straight chords between PI/elevation points.
+            DBObjectCollection exploded = new DBObjectCollection();
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine featureLine = OpenFeatureLine(
+                        transaction,
+                        source.ObjectId,
+                        OpenMode.ForRead);
+                    if (featureLine != null)
+                        featureLine.Explode(exploded);
+                }
+
+                foreach (DBObject item in exploded)
+                {
+                    Curve curve = item as Curve;
+                    if (curve == null)
+                        continue;
+
+                    double length;
+                    try
+                    {
+                        length = curve.GetDistanceAtParameter(
+                                     curve.EndParam) -
+                                 curve.GetDistanceAtParameter(
+                                     curve.StartParam);
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+                    if (!Finite(length) || length <= Tolerance)
+                        continue;
+
+                    double finalDistance = Math.Max(0.0, length);
+                    for (double distance = 0.0;
+                         distance <= finalDistance + Tolerance;
+                         distance += spacing)
+                    {
+                        double localDistance = Math.Min(
+                            finalDistance,
+                            distance);
+                        Point3d point;
+                        Vector3d derivative;
+                        try
+                        {
+                            point = curve.GetPointAtDist(localDistance);
+                            derivative = curve.GetFirstDerivative(point);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        Vector2d tangent = new Vector2d(
+                            derivative.X,
+                            derivative.Y);
+                        if (tangent.Length <= Tolerance)
+                            continue;
+                        tangent = tangent.GetNormal();
+
+                        AddSlopeRaySample(
+                            result,
+                            point,
+                            ResolveSlopeRayDirection(
+                                tangent,
+                                source.Closed,
+                                area,
+                                side),
+                            spacing);
+                    }
+
+                    // Always retain the exact segment end where spacing does not
+                    // land on it, while using the local end tangent of the curve.
+                    try
+                    {
+                        Point3d end = curve.EndPoint;
+                        Vector3d derivative =
+                            curve.GetFirstDerivative(end);
+                        Vector2d tangent = new Vector2d(
+                            derivative.X,
+                            derivative.Y);
+                        if (tangent.Length > Tolerance)
+                        {
+                            AddSlopeRaySample(
+                                result,
+                                end,
+                                ResolveSlopeRayDirection(
+                                    tangent.GetNormal(),
+                                    source.Closed,
+                                    area,
+                                    side),
+                                spacing);
+                        }
+                    }
+                    catch { }
+                }
+            }
+            catch
+            {
+                result.Clear();
+            }
+            finally
+            {
+                foreach (DBObject item in exploded)
+                {
+                    try { item.Dispose(); }
+                    catch { }
+                }
+            }
+
+            if (result.Count > 1)
+                return result;
+
+            // Safe fallback for unusual FeatureLine implementations that do not
+            // expose explodable Curve geometry in the installed Civil 3D build.
+            result.Clear();
             for (int segment = 0;
                  segment < source.Points.Count - 1;
                  segment++)
@@ -991,30 +1124,55 @@ namespace CETools.Civil3D
                      distance += spacing)
                 {
                     double t = Math.Min(1.0, distance / length);
-                    result.Add(new SlopeRaySample
-                    {
-                        Point = new Point3d(
+                    AddSlopeRaySample(
+                        result,
+                        new Point3d(
                             a.X + (b.X - a.X) * t,
                             a.Y + (b.Y - a.Y) * t,
                             a.Z + (b.Z - a.Z) * t),
-                        Direction = direction
-                    });
+                        direction,
+                        spacing);
                 }
 
-                // Always include the end of a segment when the spacing did not
-                // land on it. This keeps bellmouth tangent/arc endpoints visible.
-                if (result.Count == 0 ||
-                    result[result.Count - 1].Point.DistanceTo(b) >
-                        Math.Min(0.01, spacing * 0.05))
-                {
-                    result.Add(new SlopeRaySample
-                    {
-                        Point = b,
-                        Direction = direction
-                    });
-                }
+                AddSlopeRaySample(
+                    result,
+                    b,
+                    direction,
+                    spacing);
             }
             return result;
+        }
+
+        private static void AddSlopeRaySample(
+            IList<SlopeRaySample> samples,
+            Point3d point,
+            Vector2d direction,
+            double spacing)
+        {
+            if (samples == null ||
+                !Finite(point) ||
+                direction.Length <= Tolerance)
+                return;
+            if (samples.Count > 0 &&
+                samples[samples.Count - 1].Point.DistanceTo(point) <=
+                    Math.Min(0.01, spacing * 0.05))
+                return;
+
+            samples.Add(new SlopeRaySample
+            {
+                Point = point,
+                Direction = direction.GetNormal()
+            });
+        }
+
+        private static Point3d Halfway(
+            Point3d start,
+            Point3d end)
+        {
+            return new Point3d(
+                start.X + (end.X - start.X) * 0.5,
+                start.Y + (end.Y - start.Y) * 0.5,
+                start.Z + (end.Z - start.Z) * 0.5);
         }
 
         private static Vector2d ResolveSlopeRayDirection(
@@ -1147,6 +1305,7 @@ namespace CETools.Civil3D
             internal Vector2d Direction;
             internal Point3d EndPoint;
             internal bool Cut;
+            internal bool HalfLength;
             internal bool Valid;
         }
 
