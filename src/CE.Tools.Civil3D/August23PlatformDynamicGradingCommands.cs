@@ -285,6 +285,8 @@ namespace CETools.Civil3D
             int groups = 0;
             int infills = 0;
             int slopeLines = 0;
+            int cutSlopeLines = 0;
+            int fillSlopeLines = 0;
             foreach (ObjectId sourceId in selection.Value.GetObjectIds().Distinct())
             {
                 GradeBuildResult result = BuildOrRefreshGrade(document, sourceId, requested, true);
@@ -292,6 +294,8 @@ namespace CETools.Civil3D
                 {
                     completed++;
                     slopeLines += result.SlopeLinesCreated;
+                    cutSlopeLines += result.CutSlopeLinesCreated;
+                    fillSlopeLines += result.FillSlopeLinesCreated;
                     if (result.NativeGroupReady) groups++;
                     if (result.NativeInfillCreated) infills++;
                 }
@@ -305,9 +309,11 @@ namespace CETools.Civil3D
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
             document.Editor.WriteMessage(
-                "\nCE_PLATFORMGRADETOSURFACE complete. Selected junction/source feature lines graded={0}; cut/fill slope lines drawn={1}; grading groups ready={2}; native infills ready={3}; skipped={4}.",
+                "\nCE_PLATFORMGRADETOSURFACE complete. Selected junction/source feature lines graded={0}; slope lines={1} (cut={2}, fill={3}); grading groups ready={4}; native infills ready={5}; skipped={6}.",
                 completed,
                 slopeLines,
+                cutSlopeLines,
+                fillSlopeLines,
                 groups,
                 infills,
                 skipped);
@@ -687,6 +693,16 @@ namespace CETools.Civil3D
                         previousSlopeHandles);
                     result.SlopeLinesCreated =
                         newSlopeLines.Count;
+                    result.CutSlopeLinesCreated =
+                        resolvedSamples.Count(
+                            item =>
+                                item.Valid &&
+                                item.Cut);
+                    result.FillSlopeLinesCreated =
+                        resolvedSamples.Count(
+                            item =>
+                                item.Valid &&
+                                !item.Cut);
                 }
                 else if (explicitCommand)
                 {
@@ -3320,6 +3336,8 @@ namespace CETools.Civil3D
             internal bool NativeGroupReady { get; set; }
             internal bool NativeInfillCreated { get; set; }
             internal int SlopeLinesCreated { get; set; }
+            internal int CutSlopeLinesCreated { get; set; }
+            internal int FillSlopeLinesCreated { get; set; }
             internal string Message { get; set; }
         }
     }
