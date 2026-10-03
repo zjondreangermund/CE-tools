@@ -210,6 +210,9 @@ namespace CETools.Civil3D
             settings.AddText(
                 "FillSlopeLayer", "08 Presentation", "Fill slope-line layer", "CE-JUNCTION-FILL-SLOPES",
                 "Layer used for fill projection lines.");
+            settings.AddText(
+                "ToeLayer", "08 Presentation", "Toe / daylight layer", "CE-JUNCTION-TOE",
+                "Layer used for the generated toe/daylight feature line. The toe is built through the full-length slope-ray end points.");
             settings.AddPositiveDouble(
                 "SlopeLineInterval", "08 Presentation", "Slope-line interval / frequency (m)", 5.0,
                 "True chainage spacing along the bellmouth geometry. Rays follow each curve tangent; every second cut/fill ray is half length.");
@@ -242,6 +245,7 @@ namespace CETools.Civil3D
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
                 CutSlopeLayer = SafeName(settings.Text("CutSlopeLayer"), "CE-JUNCTION-CUT-SLOPES"),
                 FillSlopeLayer = SafeName(settings.Text("FillSlopeLayer"), "CE-JUNCTION-FILL-SLOPES"),
+                ToeLayer = SafeName(settings.Text("ToeLayer"), "CE-JUNCTION-TOE"),
                 SlopeLineInterval = Math.Max(0.10, settings.Double("SlopeLineInterval", 5.0))
             };
 
@@ -508,6 +512,8 @@ namespace CETools.Civil3D
                 link.CutSlopeLayer = existing.CutSlopeLayer;
             if (existing != null && string.IsNullOrWhiteSpace(link.FillSlopeLayer))
                 link.FillSlopeLayer = existing.FillSlopeLayer;
+            if (existing != null && string.IsNullOrWhiteSpace(link.ToeLayer))
+                link.ToeLayer = existing.ToeLayer;
 
             ObjectId surfaceId = ResolveHandle(document.Database, link.SurfaceHandle);
             if (surfaceId.IsNull)
@@ -550,7 +556,13 @@ namespace CETools.Civil3D
             }
 
             ObjectId candidateId;
-            if (!TryCreateFeatureLineCandidate(document, source, daylight, out candidateId, out error))
+            if (!TryCreateFeatureLineCandidate(
+                    document,
+                    source,
+                    daylight,
+                    SafeName(link.ToeLayer, "CE-JUNCTION-TOE"),
+                    out candidateId,
+                    out error))
             {
                 result.Message = error;
                 return result;
@@ -655,75 +667,138 @@ namespace CETools.Civil3D
         {
             daylight = new List<Point3d>();
             error = string.Empty;
-            if (source.Points == null || source.Points.Count < 2)
+            if (source == null ||
+                source.Points == null ||
+                source.Points.Count < 2)
             {
                 error = "The source feature line has too few points.";
                 return false;
             }
 
-            // Daylight must follow the actual bellmouth/road curve, not straight
-            // chords between FeatureLine PI/elevation points. Sample the exploded
-            // Civil 3D curve geometry at a fine chainage interval and use each
-            // sample's local tangent normal for the cut/fill search.
-            double curveSampleSpacing = Math.Max(
-                0.25,
-                Math.Min(
-                    1.0,
-                    link.SlopeLineInterval <= Tolerance
-                        ? 1.0
-                        : link.SlopeLineInterval * 0.25));
-            List<SlopeRaySample> curveSamples =
-                BuildSlopeRaySamples(
+            double spacing = Math.Max(
+                0.10,
+                link.SlopeLineInterval <= Tolerance
+                    ? 5.0
+                    : link.SlopeLineInterval);
+
+            List<SlopeRaySample> samples;
+            if (!TryResolveSlopeRaySamples(
                     database,
+                    surfaceId,
                     source,
-                    link.Side,
-                    curveSampleSpacing);
-            if (curveSamples.Count < 2)
+                    link,
+                    spacing,
+                    out samples,
+                    out error))
+                return false;
+
+            // The toe/daylight feature line is intentionally defined ONLY by the
+            // full-length grading rays. The short presentation rays stop halfway
+            // and do not control the toe. This keeps every toe vertex exactly on
+            // a visible long slope-line endpoint.
+            daylight = samples
+                .Where(item => item.Valid && !item.HalfLength)
+                .Select(item => item.EndPoint)
+                .ToList();
+
+            if (daylight.Count < 2)
             {
-                error = "The source bellmouth/road curve could not be sampled for daylight grading.";
+                error = "Too few full-length slope-ray endpoints were available to create the toe/daylight line.";
+                daylight.Clear();
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryResolveSlopeRaySamples(
+            Database database,
+            ObjectId surfaceId,
+            SourceSnapshot source,
+            GradeLink link,
+            double spacing,
+            out List<SlopeRaySample> samples,
+            out string error)
+        {
+            samples = BuildSlopeRaySamples(
+                database,
+                source,
+                link.Side,
+                spacing);
+            error = string.Empty;
+
+            if (samples.Count < 2)
+            {
+                error = "The bellmouth/road curve could not be sampled for grading.";
                 return false;
             }
 
             try
             {
-                using (Transaction transaction = database.TransactionManager.StartTransaction())
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
                 {
-                    CivilSurface surface = transaction.GetObject(surfaceId, OpenMode.ForRead, false) as CivilSurface;
+                    CivilSurface surface = transaction.GetObject(
+                        surfaceId,
+                        OpenMode.ForRead,
+                        false) as CivilSurface;
                     if (surface == null)
                     {
                         error = "The target surface is not readable.";
                         return false;
                     }
 
-                    for (int index = 0; index < curveSamples.Count; index++)
+                    foreach (SlopeRaySample sample in samples)
                     {
-                        SlopeRaySample sample = curveSamples[index];
-                        Point3d intersection;
+                        Point3d endPoint;
                         if (!TryFindDaylight(
                                 surface,
                                 sample.Point,
                                 sample.Direction,
                                 link,
-                                out intersection))
+                                out endPoint))
                         {
                             error =
                                 "No cut/fill daylight intersection was found within " +
                                 link.MaxDistance.ToString("N2", CultureInfo.CurrentCulture) +
-                                " at bellmouth/road curve sample " +
-                                (index + 1).ToString(CultureInfo.InvariantCulture) +
-                                ". The previous linked daylight, if any, was kept.";
+                                " at a bellmouth/road curve sample. The previous linked grading, if any, was kept.";
                             return false;
                         }
-                        daylight.Add(intersection);
+
+                        if (!Finite(endPoint) ||
+                            sample.Point.DistanceTo(endPoint) <= Tolerance)
+                            continue;
+
+                        sample.EndPoint = endPoint;
+                        sample.Cut =
+                            endPoint.Z > sample.Point.Z + 0.005;
+                        sample.Valid = true;
                     }
                 }
+
+                List<SlopeRaySample> valid =
+                    samples.Where(item => item.Valid).ToList();
+                if (valid.Count < 2)
+                {
+                    error = "Too few valid cut/fill daylight rays were resolved.";
+                    return false;
+                }
+
+                for (int index = 0; index < valid.Count; index++)
+                    valid[index].HalfLength = (index % 2) == 1;
+
+                // Always keep both ends as long rays so the toe starts and ends
+                // on actual full-length grading-line endpoints.
+                valid[0].HalfLength = false;
+                valid[valid.Count - 1].HalfLength = false;
+                return true;
             }
             catch (System.Exception exception)
             {
-                error = "Target-surface daylight sampling failed safely: " + exception.Message;
+                error = "Target-surface grading sampling failed safely: " +
+                    exception.Message;
                 return false;
             }
-            return true;
         }
 
         private static bool TryFindDaylight(CivilSurface surface, Point3d source, Vector2d direction, GradeLink link, out Point3d result)
@@ -978,45 +1053,17 @@ namespace CETools.Civil3D
                     link.SlopeLineInterval <= Tolerance
                         ? 5.0
                         : link.SlopeLineInterval);
-                List<SlopeRaySample> samples =
-                    BuildSlopeRaySamples(database, source, link.Side, spacing);
 
-                using (Transaction transaction =
-                    database.TransactionManager.StartTransaction())
-                {
-                    CivilSurface surface = transaction.GetObject(
+                List<SlopeRaySample> samples;
+                if (!TryResolveSlopeRaySamples(
+                        database,
                         surfaceId,
-                        OpenMode.ForRead,
-                        false) as CivilSurface;
-                    if (surface == null)
-                        throw new InvalidOperationException(
-                            "The selected target surface is not readable.");
-
-                    int validRayIndex = 0;
-                    foreach (SlopeRaySample sample in samples)
-                    {
-                        Point3d endPoint;
-                        if (!TryFindDaylight(
-                                surface,
-                                sample.Point,
-                                sample.Direction,
-                                link,
-                                out endPoint))
-                            continue;
-                        if (!Finite(endPoint) ||
-                            sample.Point.DistanceTo(endPoint) <= Tolerance)
-                            continue;
-
-                        sample.EndPoint = endPoint;
-                        sample.Cut =
-                            endPoint.Z > sample.Point.Z + 0.005;
-                        // Conventional grading display: long/short/long/short.
-                        // Classification is still based on the full daylight ray,
-                        // so the half ray always remains on the correct CUT/FILL side.
-                        sample.HalfLength = (validRayIndex++ % 2) == 1;
-                        sample.Valid = true;
-                    }
-                }
+                        source,
+                        link,
+                        spacing,
+                        out samples,
+                        out error))
+                    return false;
 
                 int index = 0;
                 foreach (SlopeRaySample sample in
@@ -1466,7 +1513,7 @@ namespace CETools.Civil3D
             }
         }
 
-        private static bool TryCreateFeatureLineCandidate(Document document, SourceSnapshot source, IList<Point3d> points, out ObjectId featureLineId, out string error)
+        private static bool TryCreateFeatureLineCandidate(Document document, SourceSnapshot source, IList<Point3d> points, string toeLayerName, out ObjectId featureLineId, out string error)
         {
             featureLineId = ObjectId.Null;
             error = string.Empty;
@@ -1479,9 +1526,14 @@ namespace CETools.Civil3D
                         SymbolUtilityServices.GetBlockModelSpaceId(document.Database),
                         OpenMode.ForWrite,
                         false) as BlockTableRecord;
+                    ObjectId toeLayerId = EnsureLayer(
+                        document.Database,
+                        transaction,
+                        SafeName(toeLayerName, "CE-JUNCTION-TOE"),
+                        2);
                     var temporary = new Polyline3d(Poly3dType.SimplePoly, new Point3dCollection(points.ToArray()), source.Closed);
                     temporary.SetDatabaseDefaults(document.Database);
-                    if (!source.LayerId.IsNull) temporary.LayerId = source.LayerId;
+                    temporary.LayerId = toeLayerId;
                     temporaryId = space.AppendEntity(temporary);
                     transaction.AddNewlyCreatedDBObject(temporary, true);
                     transaction.Commit();
@@ -1496,8 +1548,13 @@ namespace CETools.Civil3D
                     CivilFeatureLine featureLine = OpenFeatureLine(transaction, featureLineId, OpenMode.ForWrite);
                     if (featureLine == null || featureLine.IsReferenceObject)
                         throw new InvalidOperationException("Civil 3D did not return an editable daylight feature line.");
-                    if (!source.LayerId.IsNull) featureLine.LayerId = source.LayerId;
-                    featureLine.ColorIndex = source.ColorIndex;
+                    ObjectId toeLayerId = EnsureLayer(
+                        document.Database,
+                        transaction,
+                        SafeName(toeLayerName, "CE-JUNCTION-TOE"),
+                        2);
+                    featureLine.LayerId = toeLayerId;
+                    featureLine.ColorIndex = 256;
                     if (!string.IsNullOrWhiteSpace(source.StyleName))
                     {
                         try { featureLine.StyleName = source.StyleName; } catch { }
@@ -2026,7 +2083,8 @@ namespace CETools.Civil3D
                     new TypedValue((int)DxfCode.Text, link.CutSlopeLayer ?? "CE-JUNCTION-CUT-SLOPES"),
                     new TypedValue((int)DxfCode.Text, link.FillSlopeLayer ?? "CE-JUNCTION-FILL-SLOPES"),
                     new TypedValue((int)DxfCode.Text, link.SlopeLineHandles ?? string.Empty),
-                    new TypedValue((int)DxfCode.Real, link.SlopeLineInterval));
+                    new TypedValue((int)DxfCode.Real, link.SlopeLineInterval),
+                    new TypedValue((int)DxfCode.Text, link.ToeLayer ?? "CE-JUNCTION-TOE"));
                 transaction.Commit();
             }
         }
@@ -2077,7 +2135,10 @@ namespace CETools.Civil3D
                         : string.Empty,
                     SlopeLineInterval = values.Length > 14
                         ? Convert.ToDouble(values[14].Value, CultureInfo.InvariantCulture)
-                        : 5.0
+                        : 5.0,
+                    ToeLayer = values.Length > 15
+                        ? Convert.ToString(values[15].Value, CultureInfo.InvariantCulture)
+                        : "CE-JUNCTION-TOE"
                 };
                 return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
             }
@@ -2275,6 +2336,7 @@ namespace CETools.Civil3D
             internal string FillSlopeLayer { get; set; }
             internal string SlopeLineHandles { get; set; }
             internal double SlopeLineInterval { get; set; }
+            internal string ToeLayer { get; set; }
 
             internal GradeLink Clone()
             {
@@ -2294,7 +2356,8 @@ namespace CETools.Civil3D
                     CutSlopeLayer = CutSlopeLayer,
                     FillSlopeLayer = FillSlopeLayer,
                     SlopeLineHandles = SlopeLineHandles,
-                    SlopeLineInterval = SlopeLineInterval
+                    SlopeLineInterval = SlopeLineInterval,
+                    ToeLayer = ToeLayer
                 };
             }
         }

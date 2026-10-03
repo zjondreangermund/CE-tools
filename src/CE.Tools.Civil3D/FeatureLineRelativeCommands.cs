@@ -177,6 +177,9 @@ namespace CETools.Civil3D
             settings.AddText(
                 "Prefix", "02 Naming", "Feature-line name prefix", defaultPrefix,
                 "For multiple sources, CE Tools keeps each source set separate. Default naming uses the source feature-line name; a custom prefix receives a source index.");
+            settings.AddText(
+                "Layer", "03 Output", "Output layer", "<Source layer>",
+                "Enter an existing/new layer name for all generated stepped feature lines, or keep <Source layer> to use each selected source layer.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             double horizontalStep = settings.Double("HorizontalStep", 1.0);
@@ -215,6 +218,9 @@ namespace CETools.Civil3D
             string prefix = string.IsNullOrWhiteSpace(settings.Text("Prefix"))
                 ? defaultPrefix
                 : settings.Text("Prefix");
+            string outputLayerName = string.IsNullOrWhiteSpace(settings.Text("Layer"))
+                ? "<Source layer>"
+                : settings.Text("Layer").Trim();
 
             string side = settings.Text("Side");
             Point3d sidePoint = Point3d.Origin;
@@ -227,95 +233,176 @@ namespace CETools.Civil3D
             }
             int created = 0;
             int failed = 0;
-            using (DocumentLock documentLock = document.LockDocument())
+            var pending = new List<PendingOffset>();
+            HashSet<string> names;
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
             {
-                for (int sourceIndex = 0; sourceIndex < sourceIds.Count; sourceIndex++)
+                BlockTableRecord modelSpace = GetModelSpace(
+                    document.Database,
+                    transaction,
+                    OpenMode.ForRead);
+                names = ReadFeatureLineNames(modelSpace, transaction);
+            }
+
+            for (int sourceIndex = 0;
+                 sourceIndex < sourceIds.Count;
+                 sourceIndex++)
+            {
+                ObjectId sourceId = sourceIds[sourceIndex];
+                try
                 {
-                    ObjectId sourceId = sourceIds[sourceIndex];
-                    int localCreated = 0;
-                    try
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
                     {
-                        using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-                        {
-                            CivilFeatureLine source = OpenFeatureLine(
-                                transaction, sourceId, OpenMode.ForRead);
-                            EnsureEditable(source, transaction);
-                            BlockTableRecord modelSpace = GetModelSpace(
-                                document.Database, transaction, OpenMode.ForWrite);
-                            HashSet<string> names = ReadFeatureLineNames(modelSpace, transaction);
-                            string sourceName = string.IsNullOrWhiteSpace(source.Name)
-                                ? "FeatureLine-" + source.Handle.ToString()
+                        CivilFeatureLine source = OpenFeatureLine(
+                            transaction,
+                            sourceId,
+                            OpenMode.ForRead);
+                        EnsureEditable(source, transaction);
+
+                        string sourceName =
+                            string.IsNullOrWhiteSpace(source.Name)
+                                ? "FeatureLine-" +
+                                  source.Handle.ToString()
                                 : source.Name;
-                            bool defaultName = string.Equals(prefix, defaultPrefix, StringComparison.OrdinalIgnoreCase);
-                            string sourcePrefix = defaultName
-                                ? sourceName + "-STEP"
-                                : sourceIds.Count == 1
-                                    ? prefix
-                                    : prefix + "-" + (sourceIndex + 1).ToString(CultureInfo.InvariantCulture);
-                            double sign;
 
-                            using (Polyline plan = BuildPlanPolyline(source))
+                        ObjectId childLayerId = source.LayerId;
+                        if (!string.Equals(
+                                outputLayerName,
+                                "<Source layer>",
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            childLayerId = GetOrCreateLayer(
+                                document.Database,
+                                transaction,
+                                outputLayerName);
+                        }
+
+                        bool defaultName = string.Equals(
+                            prefix,
+                            defaultPrefix,
+                            StringComparison.OrdinalIgnoreCase);
+                        string sourcePrefix = defaultName
+                            ? sourceName + "-STEP"
+                            : sourceIds.Count == 1
+                                ? prefix
+                                : prefix + "-" +
+                                  (sourceIndex + 1).ToString(
+                                      CultureInfo.InvariantCulture);
+
+                        using (Polyline plan =
+                            BuildPlanPolyline(source))
+                        {
+                            double sign = string.Equals(
+                                    side,
+                                    "Pick side in drawing",
+                                    StringComparison.OrdinalIgnoreCase)
+                                ? ResolveOffsetSign(
+                                    plan,
+                                    horizontalStep,
+                                    sidePoint)
+                                : ResolveNamedOffsetSign(
+                                    plan,
+                                    horizontalStep,
+                                    side);
+
+                            int sides = string.Equals(
+                                    side,
+                                    "Both sides",
+                                    StringComparison.OrdinalIgnoreCase)
+                                ? 2
+                                : 1;
+
+                            for (int sideIndex = 0;
+                                 sideIndex < sides;
+                                 sideIndex++)
                             {
-                                sign = string.Equals(side, "Pick side in drawing", StringComparison.OrdinalIgnoreCase)
-                                    ? ResolveOffsetSign(plan, horizontalStep, sidePoint)
-                                    : ResolveNamedOffsetSign(plan, horizontalStep, side);
-                                modelSpace.AppendEntity(plan);
-                                transaction.AddNewlyCreatedDBObject(plan, true);
-
-                                int sides = string.Equals(side, "Both sides", StringComparison.OrdinalIgnoreCase) ? 2 : 1;
-                                for (int sideIndex = 0; sideIndex < sides; sideIndex++)
-                                for (int index = 1; index <= count; index++)
+                                for (int index = 1;
+                                     index <= count;
+                                     index++)
                                 {
-                                    double direction = sideIndex == 0 ? sign : -sign;
-                                    double horizontal = direction * horizontalStep * index;
-                                    double vertical = verticalStep * index;
+                                    double direction =
+                                        sideIndex == 0
+                                            ? sign
+                                            : -sign;
+                                    double horizontal =
+                                        direction *
+                                        horizontalStep *
+                                        index;
+                                    double vertical =
+                                        verticalStep * index;
                                     string name = UniqueName(
-                                        sourcePrefix + (sides == 2 ? (sideIndex == 0 ? "-OUTSIDE" : "-INSIDE") : "") +
-                                        "-" + index.ToString(CultureInfo.InvariantCulture), names);
-                                    ObjectId childId = CreateChild(
-                                        source,
-                                        plan,
+                                        sourcePrefix +
+                                        (sides == 2
+                                            ? (sideIndex == 0
+                                                ? "-OUTSIDE"
+                                                : "-INSIDE")
+                                            : string.Empty) +
+                                        "-" +
+                                        index.ToString(
+                                            CultureInfo.InvariantCulture),
+                                        names);
+
+                                    pending.Add(new PendingOffset(
+                                        sourceId,
                                         horizontal,
                                         vertical,
                                         name,
-                                        source.LayerId,
-                                        source.StyleName,
-                                        source.SiteId,
-                                        modelSpace,
-                                        transaction);
-                                    CivilFeatureLine child = OpenFeatureLine(
-                                        transaction, childId, OpenMode.ForWrite);
-                                    WriteRelation(
-                                        child,
-                                        source.Handle.ToString(),
-                                        horizontal,
-                                        vertical,
-                                        sideIndex * count + index,
-                                        transaction);
-                                    localCreated++;
+                                        childLayerId,
+                                        sideIndex * count + index));
                                 }
-
-                                if (!plan.IsErased) plan.Erase();
                             }
-                            transaction.Commit();
                         }
-                        created += localCreated;
+
+                        transaction.Commit();
                     }
-                    catch (System.Exception exception)
+                }
+                catch (System.Exception exception)
+                {
+                    failed++;
+                    editor.WriteMessage(
+                        "\nStepped offsets skipped for feature line {0}: {1}",
+                        sourceId.Handle,
+                        exception.Message);
+                }
+            }
+
+            using (DocumentLock documentLock =
+                document.LockDocument())
+            {
+                foreach (PendingOffset request in pending)
+                {
+                    ObjectId childId;
+                    string error;
+                    if (August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(
+                            document,
+                            request.SourceId,
+                            request.HorizontalOffset,
+                            request.VerticalOffset,
+                            request.Name,
+                            request.LayerId,
+                            request.Sequence,
+                            out childId,
+                            out error))
+                    {
+                        created++;
+                    }
+                    else
                     {
                         failed++;
                         editor.WriteMessage(
-                            "\nStepped offsets skipped for feature line {0}: {1}",
-                            sourceId.Handle,
-                            exception.Message);
+                            "\nStepped offset '{0}' was skipped safely. {1}",
+                            request.Name,
+                            error);
                     }
                 }
             }
 
             editor.Regen();
             editor.WriteMessage(
-                "\nCE_FLREL complete. Multiple selected sources processed={0}; rejected={1}; linked feature lines created={2}; failed source sets={3}; vertical mode={4}. Each source retains its own linked stepped set.",
-                sourceIds.Count, rejected, created, failed, verticalMode);
+                "\nCE_FLREL complete. Multiple selected sources processed={0}; rejected={1}; linked feature lines created={2}; failed source sets={3}; vertical mode={4}; output layer={5}. Each source retains its own linked stepped set.",
+                sourceIds.Count, rejected, created, failed, verticalMode, outputLayerName);
         }
 
         private static void Update(Document document)
@@ -1046,6 +1133,30 @@ namespace CETools.Civil3D
             return layer != null && layer.IsLocked;
         }
 
+        private static ObjectId GetOrCreateLayer(
+            Database database,
+            Transaction transaction,
+            string layerName)
+        {
+            string name = string.IsNullOrWhiteSpace(layerName)
+                ? "CE-STEP-OFFSETS"
+                : layerName.Trim();
+            LayerTable table = transaction.GetObject(
+                database.LayerTableId,
+                OpenMode.ForRead,
+                false) as LayerTable;
+            if (table == null)
+                throw new InvalidOperationException("Layer table is unavailable.");
+            if (table.Has(name))
+                return table[name];
+
+            table.UpgradeOpen();
+            var layer = new LayerTableRecord { Name = name };
+            ObjectId id = table.Add(layer);
+            transaction.AddNewlyCreatedDBObject(layer, true);
+            return id;
+        }
+
         private static BlockTableRecord GetModelSpace(
             Database database,
             Transaction transaction,
@@ -1129,6 +1240,32 @@ namespace CETools.Civil3D
             PromptResult result = editor.GetKeywords(options);
             return result.Status == PromptStatus.OK &&
                    result.StringResult.Equals("Yes", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private sealed class PendingOffset
+        {
+            internal PendingOffset(
+                ObjectId sourceId,
+                double horizontalOffset,
+                double verticalOffset,
+                string name,
+                ObjectId layerId,
+                int sequence)
+            {
+                SourceId = sourceId;
+                HorizontalOffset = horizontalOffset;
+                VerticalOffset = verticalOffset;
+                Name = name;
+                LayerId = layerId;
+                Sequence = sequence;
+            }
+
+            internal ObjectId SourceId { get; private set; }
+            internal double HorizontalOffset { get; private set; }
+            internal double VerticalOffset { get; private set; }
+            internal string Name { get; private set; }
+            internal ObjectId LayerId { get; private set; }
+            internal int Sequence { get; private set; }
         }
 
         private sealed class Relation

@@ -92,6 +92,63 @@ namespace CETools.Civil3D
             return created;
         }
 
+        internal static bool TryCreateLinkedOffset(
+            Document document,
+            ObjectId sourceId,
+            double horizontalOffset,
+            double verticalOffset,
+            string requestedName,
+            ObjectId layerOverride,
+            int sequence,
+            out ObjectId childId,
+            out string error)
+        {
+            childId = ObjectId.Null;
+            error = string.Empty;
+            if (document == null || sourceId.IsNull)
+            {
+                error = "The source feature line is unavailable.";
+                return false;
+            }
+
+            string name = string.IsNullOrWhiteSpace(requestedName)
+                ? "FeatureLine-STEP-" + Guid.NewGuid().ToString("N")
+                : requestedName.Trim();
+
+            if (!TryCreateOffsetCandidate(
+                    document,
+                    sourceId,
+                    horizontalOffset,
+                    verticalOffset,
+                    name,
+                    layerOverride,
+                    null,
+                    ObjectId.Null,
+                    out childId,
+                    out error))
+                return false;
+
+            try
+            {
+                WriteRelation(document, childId, new Relation
+                {
+                    SourceHandle = sourceId.Handle.ToString(),
+                    HorizontalOffset = horizontalOffset,
+                    VerticalOffset = verticalOffset,
+                    Sequence = sequence
+                });
+                VerifyFeatureLine(document, childId);
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                Cleanup(document, childId);
+                childId = ObjectId.Null;
+                error = exception.Message;
+                return false;
+            }
+        }
+
         internal static int RebuildRelativeSource(Document document, ObjectId sourceId)
         {
             if (document == null || sourceId.IsNull || !sourceId.IsValid || sourceId.IsErased)

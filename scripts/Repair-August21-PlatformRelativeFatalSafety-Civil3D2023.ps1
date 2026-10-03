@@ -205,7 +205,13 @@ $relativeCreate = @'
                     "\nCE_FLREL stopped safely. Existing/source geometry was kept. " + exception.Message);
             }
 '@
-$relative = ReplaceMethodBody $relative 'private static void Create(Document document)' $relativeCreate 'FeatureLineRelative.Create'
+$modernRelativeCreate =
+    $relative.Contains('"CE Tools - Multiple Selected Stepped Feature Lines"') -and
+    $relative.Contains('"Output layer"') -and
+    $relative.Contains('August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(')
+if (-not $modernRelativeCreate) {
+    $relative = ReplaceMethodBody $relative 'private static void Create(Document document)' $relativeCreate 'FeatureLineRelative.Create'
+}
 $relativeRebuild = @'
             if (document == null || sourceId.IsNull) return 0;
             return August21PlatformRelativeFatalSafety.RebuildRelativeSource(document, sourceId);
@@ -262,7 +268,15 @@ $platformSteps = @'
                 result.Created,
                 result.Skipped);
 '@
-$platform = ReplaceMethodBody $platform 'public void StepOffsets()' $platformSteps 'Platform.StepOffsets'
+$modernPlatformSteps =
+    $platform.Contains('"CE Tools - Multiple Selected Platform Stepped Offsets"') -and
+    $platform.Contains('"Grade (%)"') -and
+    $platform.Contains('"Slope (H:V)"') -and
+    $platform.Contains('"Output layer"') -and
+    $platform.Contains('August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(')
+if (-not $modernPlatformSteps) {
+    $platform = ReplaceMethodBody $platform 'public void StepOffsets()' $platformSteps 'Platform.StepOffsets'
+}
 
 $platformDrape = @'
             PlatformDynamicRefreshManager.EnsureInitialized();
@@ -557,14 +571,20 @@ $universalCheck = ReadText $universalPath
 $sewerCheck = ReadText $sewerPath
 $autoCheck = ReadText $autoPath
 
+if (-not $relativeCheck.Contains('August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(') -and
+    -not $relativeCheck.Contains('August21PlatformRelativeFatalSafety.CreateRelativeSet(')) {
+    throw 'Relative feature-line final safety missing committed-candidate offset creation.'
+}
 foreach ($required in @(
-    'August21PlatformRelativeFatalSafety.CreateRelativeSet(',
     'August21PlatformRelativeFatalSafety.RebuildRelativeSource(document, sourceId)',
     'Unsafe in-transaction FeatureLine.Create path disabled')) {
     if (-not $relativeCheck.Contains($required)) { throw "Relative feature-line final safety missing: $required" }
 }
+if (-not $platformCheck.Contains('August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(') -and
+    -not $platformCheck.Contains('August21PlatformRelativeFatalSafety.CreatePlatformSteps(')) {
+    throw 'Platform final safety missing committed-candidate stepped-offset creation.'
+}
 foreach ($required in @(
-    'August21PlatformRelativeFatalSafety.CreatePlatformSteps(',
     'August21PlatformRelativeFatalSafety.DrapeSelection(',
     'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)')) {
     if (-not $platformCheck.Contains($required)) { throw "Platform final safety missing: $required" }
