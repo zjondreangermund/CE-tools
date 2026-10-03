@@ -84,7 +84,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Grade Junction Bellmouths to Surface",
                         "CE_JUNCTIONGRADETOSURFACE",
-                        "Batch-select multiple junction bellmouth feature lines, choose the target surface and cut/fill slopes, then create linked Civil 3D daylight feature lines plus Civil 3D cut/fill slope rays at a configurable interval/frequency.",
+                        "Batch-select bellmouth/road feature lines, target surface and grading side. Daylight follows the actual curve; cut/fill rays use the curve normal with every second ray half length. The stored link refreshes automatically when the source road elevation changes.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
                         "Reverse Multiple Road Alignments + Profiles",
@@ -467,17 +467,17 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Sewer Branch Alignments - Start Structure at 0+000",
                         "CE_SEWALIGN",
-                        "Use AllNetworkParts or select sewer parts. Branch direction follows the actual P#.1 topology, including shared start structures such as MH1.1, MH1.2, MH1.3, etc. Alignments are automatically reversed where required, station equations are cleared, and the resolved start structure is verified at 0+000.",
+                        "Use AllNetworkParts or select sewer parts. Branch direction follows P#.1 topology. On one-pipe/short branches the branch's own MH#.1 is preferred over a shared downstream junction; alignments are automatically reversed where required and the resolved start is verified at 0+000.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Repair Existing Sewer Alignment Starts",
                         "CE_SEWALIGNSTARTFIX",
-                        "Repair already-created sewer branch alignments in place. The command resolves the true branch start from P#.1 and shared junction structure numbering, reverses any alignment that runs toward its start structure, clears inherited station equations, and verifies the start structure at 0+000.",
+                        "Repair already-created sewer branch alignments in place. The command resolves the P#.1 start, explicitly protects one-pipe/short branches from starting at a shared downstream junction, reverses incorrect directions, clears station equations and verifies 0+000.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Link Sewer Parts to Surface / Gravity Slopes",
                         "CE_SEWLINKSURFACE",
-                        "Choose AllNetworkParts or manually select sewer parts. Gravity mode keeps P#.1 at the specified starting slope and remaining pipes at the specified minimum slope by default. It only steepens where a lower incoming invert or minimum structure depth/cover requires it, never above the specified maximum. Optional deep-run raising keeps branches within a specified depth trigger where continuity allows, then re-applies the same rules. Natural-ground and Civil 3D rule-set modes remain separate.",
+                        "Choose AllNetworkParts or manually select sewer parts. Gravity mode keeps P#.1 at the starting minimum and later pipes at the normal minimum slope. Deep-run raising now acts only when the actual crown depth exceeds the trigger, then lifts toward the requested post-raise depth as far as continuity, minimum cover and slope rules allow. Natural-ground and Civil 3D rule-set modes remain separate.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Show Manhole Pipe Connections",
