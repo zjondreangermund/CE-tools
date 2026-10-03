@@ -55,10 +55,11 @@ if 'double direction = naturalEndZ <= naturalStartZ ? -1.0 : 1.0;' in runtime.sp
     errors.append("CE_SEWLINKSURFACE still chooses gravity direction from natural ground")
 
 for marker in [
-    "keeps P#.1 at the specified starting slope",
-    "remaining pipes at the specified minimum slope by default",
-    "only steepens where a lower incoming invert or minimum structure depth/cover requires it",
-    "never above the specified maximum",
+    "keeps P#.1 at the starting minimum",
+    "later pipes at the normal minimum slope",
+    "actual crown depth exceeds the trigger",
+    "requested post-raise depth",
+    "continuity, minimum cover and slope rules allow",
     "Natural-ground and Civil 3D rule-set modes remain separate",
 ]:
     if marker not in menu:
