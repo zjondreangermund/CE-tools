@@ -199,82 +199,229 @@ namespace CETools.Civil3D
             string side = settings.Text("Side");
             int created = 0;
             int skipped = 0;
+            var pending = new List<PendingPlatformStep>();
 
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
             {
-                BlockTableRecord space = ModelSpace(document.Database, transaction, OpenMode.ForWrite);
-                var names = new HashSet<string>(ReadFeatureLineNames(space, transaction), StringComparer.OrdinalIgnoreCase);
+                BlockTableRecord space = ModelSpace(
+                    document.Database,
+                    transaction,
+                    OpenMode.ForRead);
+                var names = new HashSet<string>(
+                    ReadFeatureLineNames(space, transaction),
+                    StringComparer.OrdinalIgnoreCase);
+
                 ObjectId outputLayerId = ObjectId.Null;
                 string outputLayer = settings.Text("Layer");
                 if (!string.IsNullOrWhiteSpace(outputLayer) &&
-                    !string.Equals(outputLayer, "<Source layer>", StringComparison.OrdinalIgnoreCase))
-                    outputLayerId = Layer(document.Database, transaction, outputLayer.Trim());
-
-                foreach (ObjectId id in selection.Value.GetObjectIds())
+                    !string.Equals(
+                        outputLayer,
+                        "<Source layer>",
+                        StringComparison.OrdinalIgnoreCase))
                 {
-                    CivilFeatureLine source = OpenFeatureLine(transaction, id, OpenMode.ForRead);
-                    if (!Editable(source, transaction)) { skipped++; continue; }
+                    outputLayerId = Layer(
+                        document.Database,
+                        transaction,
+                        outputLayer.Trim());
+                }
+
+                foreach (ObjectId id in selectedSourceIds)
+                {
+                    CivilFeatureLine source = OpenFeatureLine(
+                        transaction,
+                        id,
+                        OpenMode.ForRead);
+                    if (!Editable(source, transaction))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
                     try
                     {
                         using (Polyline plan = BuildPlan(source))
                         {
                             bool curved = HasCurvedSegments(plan);
-                            if (string.Equals(geometry, "Curved only", StringComparison.OrdinalIgnoreCase) && !curved) { skipped++; continue; }
-                            if (string.Equals(geometry, "Straight only", StringComparison.OrdinalIgnoreCase) && curved) { skipped++; continue; }
+                            if (string.Equals(
+                                    geometry,
+                                    "Curved only",
+                                    StringComparison.OrdinalIgnoreCase) &&
+                                !curved)
+                            {
+                                skipped++;
+                                continue;
+                            }
+                            if (string.Equals(
+                                    geometry,
+                                    "Straight only",
+                                    StringComparison.OrdinalIgnoreCase) &&
+                                curved)
+                            {
+                                skipped++;
+                                continue;
+                            }
 
-                            double automaticSign = plan.Closed ? OutwardSign(plan, horizontal) : 1.0;
+                            double automaticSign =
+                                plan.Closed
+                                    ? OutwardSign(plan, horizontal)
+                                    : 1.0;
                             double sign = automaticSign;
-                            if (string.Equals(side, "Inside", StringComparison.OrdinalIgnoreCase))
+                            if (string.Equals(
+                                    side,
+                                    "Inside",
+                                    StringComparison.OrdinalIgnoreCase))
                                 sign = -automaticSign;
-                            else if (string.Equals(side, "Left / positive", StringComparison.OrdinalIgnoreCase))
+                            else if (string.Equals(
+                                    side,
+                                    "Left / positive",
+                                    StringComparison.OrdinalIgnoreCase))
                                 sign = 1.0;
-                            else if (string.Equals(side, "Right / negative", StringComparison.OrdinalIgnoreCase))
+                            else if (string.Equals(
+                                    side,
+                                    "Right / negative",
+                                    StringComparison.OrdinalIgnoreCase))
                                 sign = -1.0;
 
-                            Point3dCollection sourcePoints = source.GetPoints(FeatureLinePointType.AllPoints);
-                            double referenceElevation = sourcePoints == null || sourcePoints.Count == 0 ? 0.0 : sourcePoints[0].Z;
-                            string baseName = string.IsNullOrWhiteSpace(source.Name) ? "PLATFORM" : source.Name;
-                            for (int step = 1; step <= count; step++)
+                            Point3dCollection sourcePoints =
+                                source.GetPoints(
+                                    FeatureLinePointType.AllPoints);
+                            double referenceElevation =
+                                sourcePoints == null ||
+                                sourcePoints.Count == 0
+                                    ? 0.0
+                                    : sourcePoints[0].Z;
+                            string baseName =
+                                string.IsNullOrWhiteSpace(source.Name)
+                                    ? "PLATFORM"
+                                    : source.Name;
+
+                            for (int step = 1;
+                                 step <= count;
+                                 step++)
                             {
-                                double offset = sign * horizontal * step;
+                                double offset =
+                                    sign * horizontal * step;
                                 double dz;
-                                if (string.Equals(verticalMode, "Grade (%)", StringComparison.OrdinalIgnoreCase))
+                                if (string.Equals(
+                                        verticalMode,
+                                        "Grade (%)",
+                                        StringComparison.OrdinalIgnoreCase))
                                 {
-                                    dz = verticalValue / 100.0 * horizontal * step;
+                                    dz =
+                                        verticalValue /
+                                        100.0 *
+                                        horizontal *
+                                        step;
                                 }
-                                else if (string.Equals(verticalMode, "Slope (H:V)", StringComparison.OrdinalIgnoreCase))
+                                else if (string.Equals(
+                                        verticalMode,
+                                        "Slope (H:V)",
+                                        StringComparison.OrdinalIgnoreCase))
                                 {
-                                    double ratio = Math.Abs(verticalValue);
+                                    double ratio =
+                                        Math.Abs(verticalValue);
                                     if (ratio <= Tol)
                                         throw new InvalidOperationException(
                                             "Slope (H:V) must be greater than zero.");
-                                    double verticalSign = string.Equals(
-                                        slopeDirection,
-                                        "Rise / positive",
-                                        StringComparison.OrdinalIgnoreCase)
-                                        ? 1.0
-                                        : -1.0;
-                                    dz = verticalSign * horizontal * step / ratio;
+                                    double verticalSign =
+                                        string.Equals(
+                                            slopeDirection,
+                                            "Rise / positive",
+                                            StringComparison.OrdinalIgnoreCase)
+                                            ? 1.0
+                                            : -1.0;
+                                    dz =
+                                        verticalSign *
+                                        horizontal *
+                                        step /
+                                        ratio;
                                 }
-                                else if (string.Equals(verticalMode, "Absolute elevation", StringComparison.OrdinalIgnoreCase))
-                                    dz = verticalValue - referenceElevation;
-                                else if (string.Equals(verticalMode, "Variable per step", StringComparison.OrdinalIgnoreCase))
-                                    dz = variableValues[Math.Min(step - 1, variableValues.Count - 1)];
+                                else if (string.Equals(
+                                        verticalMode,
+                                        "Absolute elevation",
+                                        StringComparison.OrdinalIgnoreCase))
+                                {
+                                    dz =
+                                        verticalValue -
+                                        referenceElevation;
+                                }
+                                else if (string.Equals(
+                                        verticalMode,
+                                        "Variable per step",
+                                        StringComparison.OrdinalIgnoreCase))
+                                {
+                                    dz = variableValues[
+                                        Math.Min(
+                                            step - 1,
+                                            variableValues.Count - 1)];
+                                }
                                 else
+                                {
                                     dz = verticalValue * step;
+                                }
 
-                                string name = UniqueName(baseName + "-" + suffix + "-" + step.ToString(CultureInfo.InvariantCulture), names);
-                                ObjectId childId = CreateOffsetFeatureLine(source, plan, offset, dz, name, space, transaction, outputLayerId);
-                                CivilFeatureLine child = OpenFeatureLine(transaction, childId, OpenMode.ForWrite);
-                                if (child != null) WriteStep(child, transaction, new StepRelation(source.Handle.ToString(), offset, dz, step));
-                                created++;
+                                string name = UniqueName(
+                                    baseName + "-" +
+                                    suffix + "-" +
+                                    step.ToString(
+                                        CultureInfo.InvariantCulture),
+                                    names);
+                                pending.Add(
+                                    new PendingPlatformStep(
+                                        id,
+                                        offset,
+                                        dz,
+                                        name,
+                                        outputLayerId,
+                                        step));
                             }
                         }
                     }
-                    catch { skipped++; }
+                    catch (System.Exception exception)
+                    {
+                        skipped++;
+                        document.Editor.WriteMessage(
+                            "\nPlatform stepped offsets skipped for source {0}: {1}",
+                            id.Handle,
+                            exception.Message);
+                    }
                 }
+
                 transaction.Commit();
             }
+
+            using (DocumentLock documentLock =
+                document.LockDocument())
+            {
+                foreach (PendingPlatformStep request in pending)
+                {
+                    ObjectId childId;
+                    string error;
+                    if (August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(
+                            document,
+                            request.SourceId,
+                            request.HorizontalOffset,
+                            request.VerticalOffset,
+                            request.Name,
+                            request.LayerId,
+                            request.Sequence,
+                            out childId,
+                            out error))
+                    {
+                        created++;
+                    }
+                    else
+                    {
+                        skipped++;
+                        document.Editor.WriteMessage(
+                            "\nPlatform step '{0}' was skipped safely. {1}",
+                            request.Name,
+                            error);
+                    }
+                }
+            }
+
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
             document.Editor.WriteMessage("\nCE_PLATFORMSTEPOFFSETS complete. Selected sources={0}; linked steps={1}; skipped={2}; side={3}; geometry={4}; vertical rule={5}.", selectedSourceIds.Length, created, skipped, side, geometry, verticalMode);
@@ -1340,6 +1487,32 @@ namespace CETools.Civil3D
         private static ObjectId Layer(Database database, Transaction transaction, string name) { LayerTable table = transaction.GetObject(database.LayerTableId, OpenMode.ForRead, false) as LayerTable; if (table.Has(name)) return table[name]; table.UpgradeOpen(); var layer = new LayerTableRecord { Name = name }; ObjectId id = table.Add(layer); transaction.AddNewlyCreatedDBObject(layer, true); return id; }
         private static void Dispose(DBObjectCollection values) { if (values == null) return; foreach (DBObject value in values) if (value != null) value.Dispose(); }
         private static Document ActiveDocument() { return AcApplication.DocumentManager.MdiActiveDocument; }
+
+        private sealed class PendingPlatformStep
+        {
+            internal PendingPlatformStep(
+                ObjectId sourceId,
+                double horizontalOffset,
+                double verticalOffset,
+                string name,
+                ObjectId layerId,
+                int sequence)
+            {
+                SourceId = sourceId;
+                HorizontalOffset = horizontalOffset;
+                VerticalOffset = verticalOffset;
+                Name = name;
+                LayerId = layerId;
+                Sequence = sequence;
+            }
+
+            internal ObjectId SourceId { get; private set; }
+            internal double HorizontalOffset { get; private set; }
+            internal double VerticalOffset { get; private set; }
+            internal string Name { get; private set; }
+            internal ObjectId LayerId { get; private set; }
+            internal int Sequence { get; private set; }
+        }
 
         private sealed class StepRelation
         {
