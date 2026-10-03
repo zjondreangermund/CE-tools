@@ -40,8 +40,10 @@ checks = {
         '"Offset side"',
         '"Both sides"',
         "sourceIds.Count",
-        "for (int sourceIndex = 0; sourceIndex < sourceIds.Count; sourceIndex++)",
-        "localCreated++",
+        "PendingOffset",
+        "August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(",
+        "request.SourceId",
+        "request.LayerId",
     ],
 }
 
