@@ -40,8 +40,10 @@ for marker in [
     "ReferencePointStation",
     "alignment.StationOffset(",
     "branch.PlanPoints[0]",
-    "alignment could not anchor its start manhole at station 0+000",
-    "MH#.1",
+    "alignment.StationEquations.Remove(",
+    "alignment failed its final start-chainage verification",
+    "branch.StartStructureName",
+    "shared main-branch structure such as MH1.2",
 ]:
     if marker not in alignments:
         errors.append("sewer branch alignment zero-station anchoring missing: " + marker)
