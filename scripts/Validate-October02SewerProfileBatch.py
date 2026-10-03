@@ -81,7 +81,9 @@ required = {
         '"CE_SEWPARTSWAPMULTI"',
         '"CE_SEWALIGN"',
         '"CE_PROFILEVIEWARRANGE"',
-        "MH1.1, MH1.2, MH1.3",
+        "P#.1 topology",
+        "one-pipe/short branches",
+        "branch's own MH#.1",
     ],
 }
 
