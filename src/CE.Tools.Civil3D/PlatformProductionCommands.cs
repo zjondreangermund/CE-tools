@@ -84,7 +84,7 @@ namespace CETools.Civil3D
             int skipped = 0;
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                foreach (ObjectId id in selection.Value.GetObjectIds())
+                foreach (ObjectId id in selectedSourceIds)
                 {
                     CivilFeatureLine featureLine = OpenFeatureLine(transaction, id, OpenMode.ForWrite);
                     if (!Editable(featureLine, transaction)) { skipped++; continue; }
@@ -128,9 +128,23 @@ namespace CETools.Civil3D
             PlatformDynamicRefreshManager.EnsureInitialized();
             Document document = ActiveDocument();
             if (document == null) return;
+
+            PromptSelectionResult selection = SelectFeatureLines(
+                document.Editor,
+                "\nSelect MULTIPLE platform source feature lines for stepped offsets: ");
+            if (selection.Status != PromptStatus.OK ||
+                selection.Value == null ||
+                selection.Value.Count == 0)
+                return;
+
+            ObjectId[] selectedSourceIds =
+                selection.Value.GetObjectIds().Distinct().ToArray();
+
             var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Multiple Platform Stepped Offsets",
-                "Create linked steps from multiple feature lines. Choose inside/outside, filter straight or curved sources, and define vertical change as elevation, grade, absolute level or a per-step variable list.");
+                "CE Tools - Multiple Selected Platform Stepped Offsets",
+                "Apply one stepped-offset rule to all " +
+                selectedSourceIds.Length.ToString(CultureInfo.InvariantCulture) +
+                " selected source feature line(s). Each source is processed independently. Choose side, geometry filter and vertical control as elevation difference, Grade (%), Slope (H:V), absolute elevation or variable per step.");
             settings.AddPositiveDouble("Horizontal", "01 Steps", "Horizontal step", 1.0, "Horizontal offset per step.");
             settings.AddChoice("Side", "01 Steps", "Offset side", "Automatic",
                 "Closed lines use automatic outside by default. Inside reverses the closed-line side; for open lines Inside/Outside map to negative/positive offset sides.",
@@ -139,10 +153,13 @@ namespace CETools.Civil3D
                 "Process all sources, only sources containing curved segments, or only straight sources.",
                 new[] { "Straight and curved", "Straight only", "Curved only" });
             settings.AddChoice("VerticalMode", "03 Levels", "Vertical rule", "Elevation difference",
-                "Elevation difference is a signed vertical step; grade uses horizontal step x grade; absolute elevation targets the source reference level; variable uses cumulative values for each child.",
-                new[] { "Elevation difference", "Grade / slope (%)", "Absolute elevation", "Variable per step" });
-            settings.AddText("VerticalValue", "03 Levels", "Elevation / grade value", "-0.500",
-                "Signed elevation difference, grade percent, or absolute elevation depending on the vertical rule.");
+                "Elevation difference is a signed vertical step. Grade (%) uses horizontal step x grade. Slope (H:V) uses horizontal/ratio with a selectable rise/fall direction. Absolute elevation targets the source reference level; variable uses cumulative values for each child.",
+                new[] { "Elevation difference", "Grade (%)", "Slope (H:V)", "Absolute elevation", "Variable per step" });
+            settings.AddText("VerticalValue", "03 Levels", "Elevation / grade / slope value", "-0.500",
+                "Elevation difference: signed drawing units. Grade (%): signed percent, e.g. -2.0. Slope (H:V): positive ratio, e.g. 2.0 for 2H:1V. Absolute elevation: target level.");
+            settings.AddChoice("SlopeDirection", "03 Levels", "H:V slope direction", "Fall / negative",
+                "Used only with Slope (H:V). Choose whether each selected-side step falls or rises from its source.",
+                new[] { "Fall / negative", "Rise / positive" });
             settings.AddText("VariableValues", "03 Levels", "Variable values per step", "-0.500,-0.750,-1.000",
                 "Comma-separated cumulative vertical offsets for child 1, child 2, child 3 and so on.");
             settings.AddPositiveInteger("Count", "04 Output", "Step count", 1, "Number of linked children per source.");
@@ -154,7 +171,7 @@ namespace CETools.Civil3D
             double verticalValue;
             if (!TryParseDouble(settings.Text("VerticalValue"), out verticalValue))
             {
-                document.Editor.WriteMessage("\nCE_PLATFORMSTEPOFFSETS cancelled. Enter a valid elevation/grade value.");
+                document.Editor.WriteMessage("\nCE_PLATFORMSTEPOFFSETS cancelled. Enter a valid elevation / Grade (%) / Slope (H:V) value.");
                 return;
             }
 
@@ -173,13 +190,12 @@ namespace CETools.Civil3D
                 }
             }
 
-            PromptSelectionResult selection = SelectFeatureLines(document.Editor, "\nSelect multiple platform source feature lines: ");
-            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
             double horizontal = Math.Max(0.001, settings.Double("Horizontal", 1.0));
             int count = Math.Max(1, settings.Integer("Count", 1));
             string suffix = string.IsNullOrWhiteSpace(settings.Text("Suffix")) ? "STEP" : settings.Text("Suffix").Trim();
             string geometry = settings.Text("Geometry");
             string verticalMode = settings.Text("VerticalMode");
+            string slopeDirection = settings.Text("SlopeDirection");
             string side = settings.Text("Side");
             int created = 0;
             int skipped = 0;
@@ -222,8 +238,24 @@ namespace CETools.Civil3D
                             {
                                 double offset = sign * horizontal * step;
                                 double dz;
-                                if (string.Equals(verticalMode, "Grade / slope (%)", StringComparison.OrdinalIgnoreCase))
+                                if (string.Equals(verticalMode, "Grade (%)", StringComparison.OrdinalIgnoreCase))
+                                {
                                     dz = verticalValue / 100.0 * horizontal * step;
+                                }
+                                else if (string.Equals(verticalMode, "Slope (H:V)", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    double ratio = Math.Abs(verticalValue);
+                                    if (ratio <= Tol)
+                                        throw new InvalidOperationException(
+                                            "Slope (H:V) must be greater than zero.");
+                                    double verticalSign = string.Equals(
+                                        slopeDirection,
+                                        "Rise / positive",
+                                        StringComparison.OrdinalIgnoreCase)
+                                        ? 1.0
+                                        : -1.0;
+                                    dz = verticalSign * horizontal * step / ratio;
+                                }
                                 else if (string.Equals(verticalMode, "Absolute elevation", StringComparison.OrdinalIgnoreCase))
                                     dz = verticalValue - referenceElevation;
                                 else if (string.Equals(verticalMode, "Variable per step", StringComparison.OrdinalIgnoreCase))
@@ -245,7 +277,7 @@ namespace CETools.Civil3D
             }
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
-            document.Editor.WriteMessage("\nCE_PLATFORMSTEPOFFSETS complete. Linked steps={0}; skipped={1}; side={2}; geometry={3}; vertical rule={4}.", created, skipped, side, geometry, verticalMode);
+            document.Editor.WriteMessage("\nCE_PLATFORMSTEPOFFSETS complete. Selected sources={0}; linked steps={1}; skipped={2}; side={3}; geometry={4}; vertical rule={5}.", selectedSourceIds.Length, created, skipped, side, geometry, verticalMode);
         }
 
         [CommandMethod("CE_TOOLS", "CE_PLATFORMDRAPE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
