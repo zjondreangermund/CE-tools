@@ -63,8 +63,8 @@ required = {
         "EnsureAlignmentDirectionAtBranchStart(",
         '"Reverse"',
         "ForceAlignmentStartStationZero(",
-        '"MH" +',
-        '".1"',
+        "firstPipe.SequenceNumber != 1",
+        "branch.StartStructureName",
     ],
     "profile": [
         '"CE_PROFILEVIEWARRANGE"',
@@ -81,7 +81,7 @@ required = {
         '"CE_SEWPARTSWAPMULTI"',
         '"CE_SEWALIGN"',
         '"CE_PROFILEVIEWARRANGE"',
-        "MH1.1, MH2.1, MH3.1",
+        "MH1.1, MH1.2, MH1.3",
     ],
 }
 
