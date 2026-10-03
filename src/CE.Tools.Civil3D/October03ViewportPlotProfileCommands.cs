@@ -34,24 +34,6 @@ namespace CETools.Civil3D
 
         [CommandMethod(
             "CE_TOOLS",
-            "CE_VIEWPORTLOCKALL",
-            CommandFlags.Modal | CommandFlags.Redraw)]
-        public void LockViewports()
-        {
-            SetViewportLock(true);
-        }
-
-        [CommandMethod(
-            "CE_TOOLS",
-            "CE_VIEWPORTUNLOCKALL",
-            CommandFlags.Modal | CommandFlags.Redraw)]
-        public void UnlockViewports()
-        {
-            SetViewportLock(false);
-        }
-
-        [CommandMethod(
-            "CE_TOOLS",
             "CE_VIEWPORTREGENALL",
             CommandFlags.Modal | CommandFlags.Redraw)]
         public void RegenerateViewports()
@@ -316,7 +298,7 @@ namespace CETools.Civil3D
                 layoutName);
         }
 
-        private static void SetViewportLock(bool locked)
+        internal static void SetViewportLock(bool locked)
         {
             Document document =
                 AcApplication.DocumentManager.MdiActiveDocument;
