@@ -33,6 +33,7 @@ namespace CETools.Civil3D
             UniversalDynamicRefreshManager.Initialize();
             PlatformDynamicRefreshManager.EnsureInitialized();
             August24RoadElevationDynamicManager.Initialize();
+            October03PlotPdfManager.Initialize();
             CeGlobalShortcutManager.Initialize();
             August11SurveyRuntimeManager.Initialize();
             RoadAlignmentNameSync.Initialize();
@@ -45,6 +46,7 @@ namespace CETools.Civil3D
             DynamicRefreshContextMenu.Detach();
             UniversalDynamicRefreshManager.Terminate();
             August24RoadElevationDynamicManager.Terminate();
+            October03PlotPdfManager.Terminate();
             RoadAlignmentNameSync.Terminate();
             CeInteractionTelemetryManager.Terminate();
             SewerNetworkDynamicSequenceManager.Terminate();
