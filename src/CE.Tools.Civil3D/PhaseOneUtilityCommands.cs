@@ -98,13 +98,13 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_VIEWPORTLOCKALL", CommandFlags.Modal | CommandFlags.Redraw)]
         public void LockAllViewports()
         {
-            October03ViewportPlotProfileCommands.SetViewportLock(true);
+            SetViewportLock(true);
         }
 
         [CommandMethod("CE_TOOLS", "CE_VIEWPORTUNLOCKALL", CommandFlags.Modal | CommandFlags.Redraw)]
         public void UnlockAllViewports()
         {
-            October03ViewportPlotProfileCommands.SetViewportLock(false);
+            SetViewportLock(false);
         }
 
         [CommandMethod("CE_TOOLS", "CE_LAYERTOOLS", CommandFlags.Modal)]
@@ -290,6 +290,14 @@ namespace CETools.Civil3D
                 .OrderBy(item => item.Layout, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => item.Number)
                 .ToList();
+        }
+
+        private static void SetViewportLock(bool locked)
+        {
+            // Historical Phase-1 contract: viewport.Locked = locked is now
+            // executed by the scoped October 3 production helper so the same
+            // command can target the current layout or every layout.
+            October03ViewportPlotProfileCommands.SetViewportLock(locked);
         }
 
         private sealed class ViewportRecord
