@@ -60,8 +60,10 @@ namespace CETools.Civil3D
                 new List<DisciplineWorkflowAction>
                 {
                     Action("Viewport report", "CE_VIEWPORTREPORT", "Report layout, viewport number, scale, size, layer and lock state.", "01 Review"),
-                    Action("Lock all viewports", "CE_VIEWPORTLOCKALL", "Lock every floating paper-space viewport.", "02 Control"),
-                    Action("Unlock all viewports", "CE_VIEWPORTUNLOCKALL", "Unlock every floating paper-space viewport.", "02 Control")
+                    Action("Fit branch profile views", "CE_PROFILEVIEWPORTFIT", "Fit selected/all branch profile views into existing layout viewports with clearance, smart packing and long-branch splitting.", "02 Control"),
+                    Action("Lock viewports", "CE_VIEWPORTLOCKALL", "Choose current layout or all layouts in the drawing, then lock every floating paper-space viewport in scope.", "02 Control"),
+                    Action("Unlock viewports", "CE_VIEWPORTUNLOCKALL", "Choose current layout or all layouts in the drawing, then unlock every floating paper-space viewport in scope.", "02 Control"),
+                    Action("Regenerate viewports", "CE_VIEWPORTREGENALL", "Regenerate model viewports in the current layout or across every paper layout.", "02 Control")
                 });
         }
 
@@ -96,13 +98,13 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_VIEWPORTLOCKALL", CommandFlags.Modal | CommandFlags.Redraw)]
         public void LockAllViewports()
         {
-            SetViewportLock(true);
+            October03ViewportPlotProfileCommands.SetViewportLock(true);
         }
 
         [CommandMethod("CE_TOOLS", "CE_VIEWPORTUNLOCKALL", CommandFlags.Modal | CommandFlags.Redraw)]
         public void UnlockAllViewports()
         {
-            SetViewportLock(false);
+            October03ViewportPlotProfileCommands.SetViewportLock(false);
         }
 
         [CommandMethod("CE_TOOLS", "CE_LAYERTOOLS", CommandFlags.Modal)]
@@ -288,61 +290,6 @@ namespace CETools.Civil3D
                 .OrderBy(item => item.Layout, StringComparer.OrdinalIgnoreCase)
                 .ThenBy(item => item.Number)
                 .ToList();
-        }
-
-        private static void SetViewportLock(bool locked)
-        {
-            Document document = ActiveDocument();
-            if (document == null) return;
-            List<ViewportRecord> existing = ReadViewports(document.Database);
-            int affected = existing.Count(item => item.Locked != locked);
-            if (affected == 0)
-            {
-                document.Editor.WriteMessage(
-                    "\nCE Tools: all {0} floating viewport(s) are already {1}.",
-                    existing.Count,
-                    locked ? "locked" : "unlocked");
-                return;
-            }
-            if (!DisciplineWorkflowDialogs.Confirm(
-                    "CE Tools - Viewport Tools",
-                    (locked ? "Lock " : "Unlock ") +
-                    affected.ToString(CultureInfo.CurrentCulture) +
-                    " floating paper-space viewport(s) across all layouts?"))
-                return;
-
-            int changed = 0;
-            using (DocumentLock documentLock = document.LockDocument())
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-            {
-                DBDictionary layouts = (DBDictionary)transaction.GetObject(
-                    document.Database.LayoutDictionaryId,
-                    OpenMode.ForRead,
-                    false);
-                foreach (DictionaryEntry entry in layouts)
-                {
-                    Layout layout = transaction.GetObject((ObjectId)entry.Value, OpenMode.ForRead, false) as Layout;
-                    if (layout == null || layout.ModelType) continue;
-                    BlockTableRecord space = transaction.GetObject(
-                        layout.BlockTableRecordId,
-                        OpenMode.ForRead,
-                        false) as BlockTableRecord;
-                    if (space == null) continue;
-                    foreach (ObjectId id in space)
-                    {
-                        Viewport viewport = transaction.GetObject(id, OpenMode.ForRead, false) as Viewport;
-                        if (viewport == null || viewport.Number <= 1 || viewport.Locked == locked) continue;
-                        viewport.UpgradeOpen();
-                        viewport.Locked = locked;
-                        changed++;
-                    }
-                }
-                transaction.Commit();
-            }
-            document.Editor.WriteMessage(
-                "\nCE Tools: {0} floating viewport(s) {1}.",
-                changed,
-                locked ? "locked" : "unlocked");
         }
 
         private sealed class ViewportRecord
