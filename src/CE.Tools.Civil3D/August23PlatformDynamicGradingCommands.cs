@@ -564,9 +564,25 @@ namespace CETools.Civil3D
                 return result;
             }
 
+            SourceSnapshot source;
+            string error;
+            if (!TryReadSource(
+                    document.Database,
+                    sourceId,
+                    out source,
+                    out error))
+            {
+                result.Message = error;
+                return result;
+            }
+
             bool explicitSite =
                 !IsAutomaticSiteChoice(link.SiteName);
-            if (link.NativeInfill || explicitSite)
+            bool needsNativeSite =
+                link.NativeInfill &&
+                source.Closed;
+            if (needsNativeSite ||
+                explicitSite)
             {
                 try
                 {
@@ -574,7 +590,20 @@ namespace CETools.Civil3D
                         document,
                         sourceId,
                         link.SiteName,
-                        link.NativeInfill);
+                        needsNativeSite);
+
+                    // Moving a feature line to a Site changes its SiteId and can
+                    // trigger native topology bookkeeping. Re-read the source so
+                    // the toe and grading group are created in that exact Site.
+                    if (!TryReadSource(
+                            document.Database,
+                            sourceId,
+                            out source,
+                            out error))
+                    {
+                        result.Message = error;
+                        return result;
+                    }
                 }
                 catch (System.Exception exception)
                 {
@@ -583,14 +612,6 @@ namespace CETools.Civil3D
                             "\nGrading Site preparation failed; daylight geometry will still be attempted. " +
                             exception.Message);
                 }
-            }
-
-            SourceSnapshot source;
-            string error;
-            if (!TryReadSource(document.Database, sourceId, out source, out error))
-            {
-                result.Message = error;
-                return result;
             }
 
             List<Point3d> daylight;
