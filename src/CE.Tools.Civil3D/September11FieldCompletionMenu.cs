@@ -575,6 +575,26 @@ namespace CETools.Civil3D
                         "Select multiple profile views, sort them by branch/alignment, profile-view name or current position, then space them horizontally, vertically or in a configurable grid.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
+                        "Fit Branch Profile Views Into Layout Viewports",
+                        "CE_PROFILEVIEWPORTFIT",
+                        "Fit selected or all profile views into existing paper-space viewports in branch order. Set horizontal/vertical clearance, smart packing, long-branch splitting, viewport locking and full regeneration.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Lock Viewports - Current / All Layouts",
+                        "CE_VIEWPORTLOCKALL",
+                        "Lock every model viewport on the current paper layout or every paper-space layout in the drawing.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Unlock Viewports - Current / All Layouts",
+                        "CE_VIEWPORTUNLOCKALL",
+                        "Unlock every model viewport on the current paper layout or every paper-space layout in the drawing.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Regenerate Viewports - Current / All Layouts",
+                        "CE_VIEWPORTREGENALL",
+                        "Mark paper-space model viewports for graphics refresh and run REGENALL, with current-layout or whole-drawing scope.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
                         "Import Band Set / Repair Road Band Sources",
                         "CE_PROFILEVIEWDATASOURCES",
                         "Import the selected band set and bind each view to its own road profiles, or repair existing band sources.",
