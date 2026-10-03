@@ -1101,26 +1101,48 @@ namespace CETools.Civil3D
                 sequencedStartPoint.X,
                 sequencedStartPoint.Y);
 
-            // StartingStation alone is not sufficient in all Civil 3D 2023
-            // templates. The effective stationing can still be controlled by the
-            // alignment reference point. Always pin the true branch-start manhole
-            // to station 0.000 and also reset StartingStation where writable.
-            TrySetDoubleProperty(
-                alignment,
-                "StartingStation",
-                0.0);
-            bool referencePointSet = TrySetProperty(
-                alignment,
-                "ReferencePoint",
-                startPoint);
-            bool referenceStationSet = TrySetDoubleProperty(
-                alignment,
-                "ReferencePointStation",
-                0.0);
+            // Sewer branch alignments must use continuous chainage from their
+            // resolved start structure. Old/manual alignments can carry station
+            // equations such as 40+40 / 40+52 even after their geometry is
+            // reversed. Remove those equations first, then anchor the reference
+            // point itself at 0+000.
+            try
+            {
+                while (alignment.StationEquations.Count > 0)
+                    alignment.StationEquations.Remove(
+                        alignment.StationEquations.Count - 1);
+            }
+            catch (System.Exception exception)
+            {
+                throw new InvalidOperationException(
+                    (branchName ?? "Sewer branch") +
+                    " could not clear inherited station equations before resetting " +
+                    (string.IsNullOrWhiteSpace(startStructureName)
+                        ? "the branch start"
+                        : startStructureName) +
+                    " to 0+000. " +
+                    exception.Message,
+                    exception);
+            }
 
-            // Verify what Civil 3D itself reports at MH#.1 rather than trusting
-            // reflected property values. This catches inherited 4030/4040-style
-            // stationing before the transaction can commit.
+            try
+            {
+                alignment.ReferencePoint = startPoint;
+                alignment.ReferencePointStation = 0.0;
+            }
+            catch (System.Exception exception)
+            {
+                throw new InvalidOperationException(
+                    (branchName ?? "Sewer branch") +
+                    " could not assign station 0+000 to start structure " +
+                    (string.IsNullOrWhiteSpace(startStructureName)
+                        ? "<unknown>"
+                        : startStructureName) +
+                    ". " +
+                    exception.Message,
+                    exception);
+            }
+
             double station = double.NaN;
             double offset = double.NaN;
             try
@@ -1135,44 +1157,24 @@ namespace CETools.Civil3D
 
             if (double.IsNaN(station) ||
                 double.IsInfinity(station) ||
-                Math.Abs(station) > tolerance)
-            {
-                // One more explicit reference-point write after geometry creation
-                // handles drawings where Civil 3D materialises alignment station
-                // data lazily on first station query.
-                TrySetProperty(
-                    alignment,
-                    "ReferencePoint",
-                    startPoint);
-                TrySetDoubleProperty(
-                    alignment,
-                    "ReferencePointStation",
-                    0.0);
-
-                station = double.NaN;
-                offset = double.NaN;
-                try
-                {
-                    alignment.StationOffset(
-                        startPoint.X,
-                        startPoint.Y,
-                        ref station,
-                        ref offset);
-                }
-                catch { }
-            }
-
-            if (!referencePointSet ||
-                !referenceStationSet ||
-                double.IsNaN(station) ||
-                double.IsInfinity(station) ||
-                Math.Abs(station) > tolerance)
+                Math.Abs(station) > tolerance ||
+                double.IsNaN(offset) ||
+                double.IsInfinity(offset) ||
+                Math.Abs(offset) > tolerance)
             {
                 throw new InvalidOperationException(
                     (branchName ?? "Sewer branch") +
-                    " alignment could not anchor start structure " +
-                    (string.IsNullOrWhiteSpace(startStructureName) ? "<unknown>" : startStructureName) +
-                    " at station 0+000.");
+                    " alignment failed its final start-chainage verification. " +
+                    (string.IsNullOrWhiteSpace(startStructureName)
+                        ? "Resolved branch start"
+                        : startStructureName) +
+                    " reports station " +
+                    (double.IsNaN(station)
+                        ? "<unavailable>"
+                        : station.ToString(
+                            "0.###",
+                            CultureInfo.InvariantCulture)) +
+                    " instead of 0+000.");
             }
         }
 
