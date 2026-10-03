@@ -1324,9 +1324,7 @@ namespace CETools.Civil3D
                                     out before);
                             return !existed ||
                                 item.Time >
-                                    before.AddMilliseconds(50) ||
-                                item.Time >=
-                                    startedUtc.AddSeconds(-1);
+                                    before.AddMilliseconds(50);
                         })
                         .OrderByDescending(item => item.Time)
                         .Select(item => item.File)
