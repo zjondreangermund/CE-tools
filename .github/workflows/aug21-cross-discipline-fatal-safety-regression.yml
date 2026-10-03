@@ -176,14 +176,20 @@ jobs:
           $auto = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\AugustAutomaticRefreshManager.cs') -Raw
           $helper = Get-Content -LiteralPath (Join-Path $env:STAGE 'src\CE.Tools.Civil3D\August21PlatformRelativeFatalSafety.cs') -Raw
 
+          if (-not $relative.Contains('August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(') -and
+              -not $relative.Contains('August21PlatformRelativeFatalSafety.CreateRelativeSet(')) {
+            throw 'Linked feature-line safety is missing committed-candidate offset creation.'
+          }
           foreach ($marker in @(
-            'August21PlatformRelativeFatalSafety.CreateRelativeSet(',
             'August21PlatformRelativeFatalSafety.RebuildRelativeSource(document, sourceId)',
             'Unsafe in-transaction FeatureLine.Create path disabled')) {
             if (-not $relative.Contains($marker)) { throw "Linked feature-line safety marker missing: $marker" }
           }
+          if (-not $platform.Contains('August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(') -and
+              -not $platform.Contains('August21PlatformRelativeFatalSafety.CreatePlatformSteps(')) {
+            throw 'Platform safety is missing committed-candidate stepped-offset creation.'
+          }
           foreach ($marker in @(
-            'August21PlatformRelativeFatalSafety.CreatePlatformSteps(',
             'August21PlatformRelativeFatalSafety.DrapeSelection(',
             'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)')) {
             if (-not $platform.Contains($marker)) { throw "Platform safety marker missing: $marker" }
