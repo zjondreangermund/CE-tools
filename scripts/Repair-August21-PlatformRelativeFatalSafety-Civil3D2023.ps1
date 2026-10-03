@@ -571,14 +571,20 @@ $universalCheck = ReadText $universalPath
 $sewerCheck = ReadText $sewerPath
 $autoCheck = ReadText $autoPath
 
+if (-not $relativeCheck.Contains('August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(') -and
+    -not $relativeCheck.Contains('August21PlatformRelativeFatalSafety.CreateRelativeSet(')) {
+    throw 'Relative feature-line final safety missing committed-candidate offset creation.'
+}
 foreach ($required in @(
-    'August21PlatformRelativeFatalSafety.CreateRelativeSet(',
     'August21PlatformRelativeFatalSafety.RebuildRelativeSource(document, sourceId)',
     'Unsafe in-transaction FeatureLine.Create path disabled')) {
     if (-not $relativeCheck.Contains($required)) { throw "Relative feature-line final safety missing: $required" }
 }
+if (-not $platformCheck.Contains('August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(') -and
+    -not $platformCheck.Contains('August21PlatformRelativeFatalSafety.CreatePlatformSteps(')) {
+    throw 'Platform final safety missing committed-candidate stepped-offset creation.'
+}
 foreach ($required in @(
-    'August21PlatformRelativeFatalSafety.CreatePlatformSteps(',
     'August21PlatformRelativeFatalSafety.DrapeSelection(',
     'August21PlatformRelativeFatalSafety.RefreshPlatformDrapes(document)')) {
     if (-not $platformCheck.Contains($required)) { throw "Platform final safety missing: $required" }
