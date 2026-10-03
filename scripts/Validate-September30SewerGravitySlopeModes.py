@@ -38,6 +38,12 @@ for marker in [
     '"RaiseDeepRuns"',
     '"DeepRaiseThreshold"',
     '"DeepRaiseTarget"',
+    "DeepestSegmentCover(",
+    "deepestExistingCover >",
+    "deepRaiseTrigger + 1e-6",
+    "deepestExistingCover -",
+    "deepRaiseTarget",
+    "boundedExistingRoot +",
     "ReadAllGravityParts(",
 ]:
     if marker not in runtime:
