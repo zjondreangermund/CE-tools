@@ -202,7 +202,7 @@ namespace CETools.Civil3D
                     out labelsCreated);
 
                 editor.WriteMessage(
-                    "\nCE_SEWALIGN complete. Alignments created/refreshed: {0}; branch-name labels placed: {1}. Every branch is anchored and verified at MH#.1 with station 0+000.",
+                    "\nCE_SEWALIGN complete. Alignments created/refreshed: {0}; branch-name labels placed: {1}. Every branch is oriented from its resolved P#.1 start structure and verified at station 0+000.",
                     alignmentsCreated,
                     labelsCreated);
             }
@@ -340,8 +340,7 @@ namespace CETools.Civil3D
                                 alignmentId,
                                 OpenMode.ForWrite,
                                 false) as CivilAlignment;
-                            if (alignment == null ||
-                                alignment.IsReferenceObject)
+                            if (alignment == null)
                             {
                                 missingAlignments++;
                                 continue;
@@ -1074,8 +1073,9 @@ namespace CETools.Civil3D
             // Anchor the branch geometry to the actual sequenced
             // structure centres. Pipe endpoint geometry can be slightly offset
             // from structure insertion points in some Civil 3D networks; using
-            // MH#.1 explicitly guarantees station 0.000 is at the true branch
-            // start manhole rather than at a nearby inherited pipe endpoint.
+            // The resolved branch-start structure explicitly guarantees station
+            // 0.000 is at the true P#.1 start (including shared structures such
+            // as MH1.2/MH1.3), not at a nearby inherited pipe endpoint.
             if (points.Count > 0 && structureIds.Count > 0)
             {
                 CivilStructure firstStructure = transaction.GetObject(
