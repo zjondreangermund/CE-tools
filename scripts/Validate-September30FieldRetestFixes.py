@@ -45,17 +45,21 @@ for marker in [
 
 for marker in [
     "ResolveSequencedBranchStart(",
-    'string expectedStartName = "MH"',
     ".OrderBy(record => record.SequenceNumber)",
-    "Run CE_SEWSEQ before CE_SEWALIGN",
-    "alignment starts at sequenced start manhole",
+    "firstPipe.SequenceNumber != 1",
+    "firstPipe.StartStructureId",
+    "firstPipe.EndStructureId",
+    "shared main-branch structure such as MH1.2",
     "ForceAlignmentStartStationZero(",
-    '"StartingStation"',
-    '"ReferencePointStation"',
-    "Every branch is anchored and verified at MH#.1 with station 0+000",
+    "alignment.StationEquations.Remove(",
+    "alignment.ReferencePoint = startPoint",
+    "alignment.ReferencePointStation = 0.0",
+    "Every branch is oriented from its resolved P#.1 start structure and verified at station 0+000",
 ]:
     if marker not in sewer:
         errors.append("sewer alignment sequence-start guard missing: " + marker)
+if 'string expectedStartName = "MH"' in sewer:
+    errors.append("sewer alignment still assumes Branch-N starts at MHN.1")
 if ".OrderByDescending(id => GetRimElevation(id, transaction))" in sewer:
     errors.append("sewer alignment still re-derives branch start from rim elevation")
 
