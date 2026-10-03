@@ -667,75 +667,138 @@ namespace CETools.Civil3D
         {
             daylight = new List<Point3d>();
             error = string.Empty;
-            if (source.Points == null || source.Points.Count < 2)
+            if (source == null ||
+                source.Points == null ||
+                source.Points.Count < 2)
             {
                 error = "The source feature line has too few points.";
                 return false;
             }
 
-            // Daylight must follow the actual bellmouth/road curve, not straight
-            // chords between FeatureLine PI/elevation points. Sample the exploded
-            // Civil 3D curve geometry at a fine chainage interval and use each
-            // sample's local tangent normal for the cut/fill search.
-            double curveSampleSpacing = Math.Max(
-                0.25,
-                Math.Min(
-                    1.0,
-                    link.SlopeLineInterval <= Tolerance
-                        ? 1.0
-                        : link.SlopeLineInterval * 0.25));
-            List<SlopeRaySample> curveSamples =
-                BuildSlopeRaySamples(
+            double spacing = Math.Max(
+                0.10,
+                link.SlopeLineInterval <= Tolerance
+                    ? 5.0
+                    : link.SlopeLineInterval);
+
+            List<SlopeRaySample> samples;
+            if (!TryResolveSlopeRaySamples(
                     database,
+                    surfaceId,
                     source,
-                    link.Side,
-                    curveSampleSpacing);
-            if (curveSamples.Count < 2)
+                    link,
+                    spacing,
+                    out samples,
+                    out error))
+                return false;
+
+            // The toe/daylight feature line is intentionally defined ONLY by the
+            // full-length grading rays. The short presentation rays stop halfway
+            // and do not control the toe. This keeps every toe vertex exactly on
+            // a visible long slope-line endpoint.
+            daylight = samples
+                .Where(item => item.Valid && !item.HalfLength)
+                .Select(item => item.EndPoint)
+                .ToList();
+
+            if (daylight.Count < 2)
             {
-                error = "The source bellmouth/road curve could not be sampled for daylight grading.";
+                error = "Too few full-length slope-ray endpoints were available to create the toe/daylight line.";
+                daylight.Clear();
+                return false;
+            }
+
+            return true;
+        }
+
+        private static bool TryResolveSlopeRaySamples(
+            Database database,
+            ObjectId surfaceId,
+            SourceSnapshot source,
+            GradeLink link,
+            double spacing,
+            out List<SlopeRaySample> samples,
+            out string error)
+        {
+            samples = BuildSlopeRaySamples(
+                database,
+                source,
+                link.Side,
+                spacing);
+            error = string.Empty;
+
+            if (samples.Count < 2)
+            {
+                error = "The bellmouth/road curve could not be sampled for grading.";
                 return false;
             }
 
             try
             {
-                using (Transaction transaction = database.TransactionManager.StartTransaction())
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
                 {
-                    CivilSurface surface = transaction.GetObject(surfaceId, OpenMode.ForRead, false) as CivilSurface;
+                    CivilSurface surface = transaction.GetObject(
+                        surfaceId,
+                        OpenMode.ForRead,
+                        false) as CivilSurface;
                     if (surface == null)
                     {
                         error = "The target surface is not readable.";
                         return false;
                     }
 
-                    for (int index = 0; index < curveSamples.Count; index++)
+                    foreach (SlopeRaySample sample in samples)
                     {
-                        SlopeRaySample sample = curveSamples[index];
-                        Point3d intersection;
+                        Point3d endPoint;
                         if (!TryFindDaylight(
                                 surface,
                                 sample.Point,
                                 sample.Direction,
                                 link,
-                                out intersection))
+                                out endPoint))
                         {
                             error =
                                 "No cut/fill daylight intersection was found within " +
                                 link.MaxDistance.ToString("N2", CultureInfo.CurrentCulture) +
-                                " at bellmouth/road curve sample " +
-                                (index + 1).ToString(CultureInfo.InvariantCulture) +
-                                ". The previous linked daylight, if any, was kept.";
+                                " at a bellmouth/road curve sample. The previous linked grading, if any, was kept.";
                             return false;
                         }
-                        daylight.Add(intersection);
+
+                        if (!Finite(endPoint) ||
+                            sample.Point.DistanceTo(endPoint) <= Tolerance)
+                            continue;
+
+                        sample.EndPoint = endPoint;
+                        sample.Cut =
+                            endPoint.Z > sample.Point.Z + 0.005;
+                        sample.Valid = true;
                     }
                 }
+
+                List<SlopeRaySample> valid =
+                    samples.Where(item => item.Valid).ToList();
+                if (valid.Count < 2)
+                {
+                    error = "Too few valid cut/fill daylight rays were resolved.";
+                    return false;
+                }
+
+                for (int index = 0; index < valid.Count; index++)
+                    valid[index].HalfLength = (index % 2) == 1;
+
+                // Always keep both ends as long rays so the toe starts and ends
+                // on actual full-length grading-line endpoints.
+                valid[0].HalfLength = false;
+                valid[valid.Count - 1].HalfLength = false;
+                return true;
             }
             catch (System.Exception exception)
             {
-                error = "Target-surface daylight sampling failed safely: " + exception.Message;
+                error = "Target-surface grading sampling failed safely: " +
+                    exception.Message;
                 return false;
             }
-            return true;
         }
 
         private static bool TryFindDaylight(CivilSurface surface, Point3d source, Vector2d direction, GradeLink link, out Point3d result)
@@ -990,45 +1053,17 @@ namespace CETools.Civil3D
                     link.SlopeLineInterval <= Tolerance
                         ? 5.0
                         : link.SlopeLineInterval);
-                List<SlopeRaySample> samples =
-                    BuildSlopeRaySamples(database, source, link.Side, spacing);
 
-                using (Transaction transaction =
-                    database.TransactionManager.StartTransaction())
-                {
-                    CivilSurface surface = transaction.GetObject(
+                List<SlopeRaySample> samples;
+                if (!TryResolveSlopeRaySamples(
+                        database,
                         surfaceId,
-                        OpenMode.ForRead,
-                        false) as CivilSurface;
-                    if (surface == null)
-                        throw new InvalidOperationException(
-                            "The selected target surface is not readable.");
-
-                    int validRayIndex = 0;
-                    foreach (SlopeRaySample sample in samples)
-                    {
-                        Point3d endPoint;
-                        if (!TryFindDaylight(
-                                surface,
-                                sample.Point,
-                                sample.Direction,
-                                link,
-                                out endPoint))
-                            continue;
-                        if (!Finite(endPoint) ||
-                            sample.Point.DistanceTo(endPoint) <= Tolerance)
-                            continue;
-
-                        sample.EndPoint = endPoint;
-                        sample.Cut =
-                            endPoint.Z > sample.Point.Z + 0.005;
-                        // Conventional grading display: long/short/long/short.
-                        // Classification is still based on the full daylight ray,
-                        // so the half ray always remains on the correct CUT/FILL side.
-                        sample.HalfLength = (validRayIndex++ % 2) == 1;
-                        sample.Valid = true;
-                    }
-                }
+                        source,
+                        link,
+                        spacing,
+                        out samples,
+                        out error))
+                    return false;
 
                 int index = 0;
                 foreach (SlopeRaySample sample in
