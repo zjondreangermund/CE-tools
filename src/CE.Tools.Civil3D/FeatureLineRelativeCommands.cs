@@ -177,6 +177,9 @@ namespace CETools.Civil3D
             settings.AddText(
                 "Prefix", "02 Naming", "Feature-line name prefix", defaultPrefix,
                 "For multiple sources, CE Tools keeps each source set separate. Default naming uses the source feature-line name; a custom prefix receives a source index.");
+            settings.AddText(
+                "Layer", "03 Output", "Output layer", "<Source layer>",
+                "Enter an existing/new layer name for all generated stepped feature lines, or keep <Source layer> to use each selected source layer.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             double horizontalStep = settings.Double("HorizontalStep", 1.0);
@@ -215,6 +218,9 @@ namespace CETools.Civil3D
             string prefix = string.IsNullOrWhiteSpace(settings.Text("Prefix"))
                 ? defaultPrefix
                 : settings.Text("Prefix");
+            string outputLayerName = string.IsNullOrWhiteSpace(settings.Text("Layer"))
+                ? "<Source layer>"
+                : settings.Text("Layer").Trim();
 
             string side = settings.Text("Side");
             Point3d sidePoint = Point3d.Origin;
@@ -246,6 +252,18 @@ namespace CETools.Civil3D
                             string sourceName = string.IsNullOrWhiteSpace(source.Name)
                                 ? "FeatureLine-" + source.Handle.ToString()
                                 : source.Name;
+                            ObjectId childLayerId = source.LayerId;
+                            if (!string.Equals(
+                                    outputLayerName,
+                                    "<Source layer>",
+                                    StringComparison.OrdinalIgnoreCase))
+                            {
+                                childLayerId = GetOrCreateLayer(
+                                    document.Database,
+                                    transaction,
+                                    outputLayerName);
+                            }
+
                             bool defaultName = string.Equals(prefix, defaultPrefix, StringComparison.OrdinalIgnoreCase);
                             string sourcePrefix = defaultName
                                 ? sourceName + "-STEP"
@@ -278,7 +296,7 @@ namespace CETools.Civil3D
                                         horizontal,
                                         vertical,
                                         name,
-                                        source.LayerId,
+                                        childLayerId,
                                         source.StyleName,
                                         source.SiteId,
                                         modelSpace,
@@ -314,8 +332,8 @@ namespace CETools.Civil3D
 
             editor.Regen();
             editor.WriteMessage(
-                "\nCE_FLREL complete. Multiple selected sources processed={0}; rejected={1}; linked feature lines created={2}; failed source sets={3}; vertical mode={4}. Each source retains its own linked stepped set.",
-                sourceIds.Count, rejected, created, failed, verticalMode);
+                "\nCE_FLREL complete. Multiple selected sources processed={0}; rejected={1}; linked feature lines created={2}; failed source sets={3}; vertical mode={4}; output layer={5}. Each source retains its own linked stepped set.",
+                sourceIds.Count, rejected, created, failed, verticalMode, outputLayerName);
         }
 
         private static void Update(Document document)
@@ -1044,6 +1062,30 @@ namespace CETools.Civil3D
             LayerTableRecord layer = transaction.GetObject(
                 layerId, OpenMode.ForRead, false) as LayerTableRecord;
             return layer != null && layer.IsLocked;
+        }
+
+        private static ObjectId GetOrCreateLayer(
+            Database database,
+            Transaction transaction,
+            string layerName)
+        {
+            string name = string.IsNullOrWhiteSpace(layerName)
+                ? "CE-STEP-OFFSETS"
+                : layerName.Trim();
+            LayerTable table = transaction.GetObject(
+                database.LayerTableId,
+                OpenMode.ForRead,
+                false) as LayerTable;
+            if (table == null)
+                throw new InvalidOperationException("Layer table is unavailable.");
+            if (table.Has(name))
+                return table[name];
+
+            table.UpgradeOpen();
+            var layer = new LayerTableRecord { Name = name };
+            ObjectId id = table.Add(layer);
+            transaction.AddNewlyCreatedDBObject(layer, true);
+            return id;
         }
 
         private static BlockTableRecord GetModelSpace(
