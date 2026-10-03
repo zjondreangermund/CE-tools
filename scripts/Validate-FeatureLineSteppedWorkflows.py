@@ -26,6 +26,7 @@ ribbon = read("PluginEntry.cs")
 refresh = read("CommentPresentationCommands.cs")
 junction = read("August13JunctionFallbackCommands.cs")
 grading = read("August23PlatformDynamicGradingCommands.cs")
+road_refresh = read("August24RoadElevationDynamicManager.cs")
 
 required = {
     "FeatureLineRelativeCommands.cs": (
@@ -101,6 +102,7 @@ texts = {
     "CommentPresentationCommands.cs": refresh,
     "August13JunctionFallbackCommands.cs": junction,
     "August23PlatformDynamicGradingCommands.cs": grading,
+    "August24RoadElevationDynamicManager.cs": road_refresh,
 }
 
 for name, markers in required.items():
@@ -159,6 +161,14 @@ if 'curve.GetFirstDerivative(point)' not in grading:
     errors.append("Bellmouth grading rays must use the local curve tangent for their normal direction")
 if 'sample.HalfLength = (validRayIndex++ % 2) == 1' not in grading or 'Halfway(sample.Point, sample.EndPoint)' not in grading:
     errors.append("Every second cut/fill grading ray must be half length while preserving the full daylight classification")
+if 'curveSampleSpacing' not in grading or 'BuildSlopeRaySamples(' not in grading or 'curveSamples[index]' not in grading:
+    errors.append("Grade-to-surface daylight boundary must be sampled from the real bellmouth/road curve geometry")
+if 'internal static int RefreshLinkedGrades(' not in grading:
+    errors.append("Linked road/junction grade-to-surface sources must expose targeted automatic refresh")
+if 'August23PlatformDynamicGradingCommands.RefreshLinkedGrades(' not in road_refresh:
+    errors.append("Road elevation edits must refresh only affected linked daylight/grading sources")
+if 'August24RoadElevationDynamicManager.Initialize();' not in ribbon or 'August24RoadElevationDynamicManager.Terminate();' not in ribbon:
+    errors.append("Targeted road daylight refresh manager must be initialized and terminated with CE Tools")
 
 if "gapTolerance" not in healing or "best.Distance > gapTolerance" not in healing:
     errors.append("Stepped healing no longer protects the maximum bridge distance")

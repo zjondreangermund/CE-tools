@@ -101,7 +101,19 @@ namespace CETools.Civil3D
             try
             {
                 int refreshed = RefreshAffected(document, changed);
-                if (refreshed > 0) August21DisplayRefresh.Flush(document);
+
+                // Road/bellmouth Grade-to-Surface links are deliberately refreshed
+                // only for feature lines that changed in the command that just
+                // ended. This gives automatic cut/fill daylight when a linked road
+                // is moved above/below natural ground without restoring the old
+                // full-document platform refresh loop.
+                refreshed +=
+                    August23PlatformDynamicGradingCommands.RefreshLinkedGrades(
+                        document,
+                        changed);
+
+                if (refreshed > 0)
+                    August21DisplayRefresh.Flush(document);
             }
             catch
             {
@@ -143,7 +155,14 @@ namespace CETools.Civil3D
                         {
                             Point3d masterPoint = master.GetClosestPointTo(new Point3d(intersection.X, intersection.Y, 0.0), Vector3d.ZAxis, false);
                             Point3d targetPoint = target.GetClosestPointTo(new Point3d(intersection.X, intersection.Y, 0.0), Vector3d.ZAxis, false);
-                            if (SetCrossingElevation(target, targetPoint, masterPoint.Z)) refreshed++;
+                            if (SetCrossingElevation(target, targetPoint, masterPoint.Z))
+                            {
+                                refreshed++;
+                                // A dependent road/bellmouth feature line can
+                                // itself own a Grade-to-Surface link. Include it
+                                // in the same targeted daylight refresh batch.
+                                changedHandles.Add(targetHandle);
+                            }
                         }
                         catch { }
                     }

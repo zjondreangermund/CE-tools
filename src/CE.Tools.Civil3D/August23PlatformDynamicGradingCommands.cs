@@ -157,14 +157,14 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Junction / Feature-Line Grade to Surface",
-                "Grade selected junction bellmouth or other feature lines to a Civil 3D surface in the same order as the native Grade to Surface workflow: target, grading side, criteria, cut format/value, then fill format/value.");
+                "Grade selected junction bellmouth or road feature lines to a Civil 3D surface. The side and cut/fill criteria are stored with each source so linked daylight and grading rays can refresh automatically after road elevation edits.");
             settings.AddChoice(
                 "Surface", "01 Target", "Target surface", surfaces[0].Name,
                 "Natural ground / controlling surface that the bellmouth grading must daylight to.",
                 surfaces.Select(item => item.Name));
             settings.AddChoice(
                 "Side", "02 Grading side", "Projection / grading side", "Auto",
-                "Auto uses the outward side for closed feature lines. For open bellmouth strings choose Outside/Inside or explicit Left/Right when needed.",
+                "Auto uses the outward side for closed feature lines. For open bellmouth/road strings choose Outside/Inside or explicit Left/Right. The chosen side is stored with the link and reused when road elevations move.",
                 new[] { "Auto", "Outside", "Inside", "Left", "Right" });
             settings.AddChoice(
                 "Criteria", "03 Grading criteria", "Grading criteria", "Grade to Surface",
@@ -361,6 +361,87 @@ namespace CETools.Civil3D
                 GradeBuildResult result = BuildOrRefreshGrade(document, item.Key, item.Value, false);
                 if (result.Success) refreshed++;
                 else document.Editor.WriteMessage("\nA linked grade-to-surface daylight was kept unchanged. " + result.Message);
+            }
+            return refreshed;
+        }
+
+        internal static int RefreshLinkedGrades(
+            Document document,
+            ISet<string> changedHandles)
+        {
+            if (document == null ||
+                document.Database == null ||
+                changedHandles == null ||
+                changedHandles.Count == 0)
+                return 0;
+
+            var grades =
+                new List<KeyValuePair<ObjectId, GradeLink>>();
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord space = transaction.GetObject(
+                    SymbolUtilityServices.GetBlockModelSpaceId(
+                        document.Database),
+                    OpenMode.ForRead,
+                    false) as BlockTableRecord;
+                if (space == null)
+                    return 0;
+
+                foreach (ObjectId id in space)
+                {
+                    CivilFeatureLine featureLine =
+                        OpenFeatureLine(
+                            transaction,
+                            id,
+                            OpenMode.ForRead);
+                    if (featureLine == null)
+                        continue;
+
+                    string handle;
+                    try
+                    {
+                        handle =
+                            featureLine.Handle.ToString();
+                    }
+                    catch
+                    {
+                        continue;
+                    }
+
+                    if (!changedHandles.Contains(handle))
+                        continue;
+
+                    GradeLink grade;
+                    if (TryReadGradeLink(
+                            featureLine,
+                            transaction,
+                            out grade) &&
+                        grade != null)
+                    {
+                        grades.Add(
+                            new KeyValuePair<ObjectId, GradeLink>(
+                                id,
+                                grade));
+                    }
+                }
+            }
+
+            int refreshed = 0;
+            foreach (KeyValuePair<ObjectId, GradeLink> item in grades)
+            {
+                GradeBuildResult result =
+                    BuildOrRefreshGrade(
+                        document,
+                        item.Key,
+                        item.Value,
+                        false);
+                if (result.Success)
+                    refreshed++;
+                else
+                    document.Editor.WriteMessage(
+                        "\nLinked road/junction daylight was kept unchanged after an automatic source-elevation refresh. " +
+                        result.Message);
             }
             return refreshed;
         }
@@ -580,7 +661,29 @@ namespace CETools.Civil3D
                 return false;
             }
 
-            double area = source.Closed ? SignedArea(source.Points) : 0.0;
+            // Daylight must follow the actual bellmouth/road curve, not straight
+            // chords between FeatureLine PI/elevation points. Sample the exploded
+            // Civil 3D curve geometry at a fine chainage interval and use each
+            // sample's local tangent normal for the cut/fill search.
+            double curveSampleSpacing = Math.Max(
+                0.25,
+                Math.Min(
+                    1.0,
+                    link.SlopeLineInterval <= Tolerance
+                        ? 1.0
+                        : link.SlopeLineInterval * 0.25));
+            List<SlopeRaySample> curveSamples =
+                BuildSlopeRaySamples(
+                    database,
+                    source,
+                    link.Side,
+                    curveSampleSpacing);
+            if (curveSamples.Count < 2)
+            {
+                error = "The source bellmouth/road curve could not be sampled for daylight grading.";
+                return false;
+            }
+
             try
             {
                 using (Transaction transaction = database.TransactionManager.StartTransaction())
@@ -592,19 +695,23 @@ namespace CETools.Civil3D
                         return false;
                     }
 
-                    for (int index = 0; index < source.Points.Count; index++)
+                    for (int index = 0; index < curveSamples.Count; index++)
                     {
-                        Point3d sourcePoint = source.Points[index];
-                        Vector2d direction;
-                        if (!TryProjectionDirection(source.Points, index, source.Closed, area, link.Side, out direction))
-                        {
-                            error = "A source vertex has no usable plan direction for daylight projection.";
-                            return false;
-                        }
+                        SlopeRaySample sample = curveSamples[index];
                         Point3d intersection;
-                        if (!TryFindDaylight(surface, sourcePoint, direction, link, out intersection))
+                        if (!TryFindDaylight(
+                                surface,
+                                sample.Point,
+                                sample.Direction,
+                                link,
+                                out intersection))
                         {
-                            error = "No cut/fill daylight intersection was found within " + link.MaxDistance.ToString("N2", CultureInfo.CurrentCulture) + " at source point " + (index + 1).ToString(CultureInfo.InvariantCulture) + ". The previous linked daylight, if any, was kept.";
+                            error =
+                                "No cut/fill daylight intersection was found within " +
+                                link.MaxDistance.ToString("N2", CultureInfo.CurrentCulture) +
+                                " at bellmouth/road curve sample " +
+                                (index + 1).ToString(CultureInfo.InvariantCulture) +
+                                ". The previous linked daylight, if any, was kept.";
                             return false;
                         }
                         daylight.Add(intersection);

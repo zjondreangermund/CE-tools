@@ -27,6 +27,10 @@ required_align = [
     "alignment.StationOffset(",
     "ResolveExistingBranchAlignmentId(",
     "branch.StartStructureName",
+    "currentBranchCandidates",
+    "item.Key.Value.Branch == branchNumber",
+    "key.Value.Sequence == 1",
+    "SewerPipeConnections.TryForward(",
 ]
 for marker in required_align:
     if marker not in align:
@@ -42,8 +46,9 @@ for forbidden in [
 required_menu = [
     '"Sewer Branch Alignments - Start Structure at 0+000"',
     '"CE_SEWALIGNSTARTFIX"',
-    "MH1.1, MH1.2, MH1.3",
     "P#.1 topology",
+    "one-pipe/short branches",
+    "branch's own MH#.1",
 ]
 for marker in required_menu:
     if marker not in menu:

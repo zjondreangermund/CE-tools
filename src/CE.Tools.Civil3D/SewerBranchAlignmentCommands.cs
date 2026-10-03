@@ -884,36 +884,71 @@ namespace CETools.Civil3D
             if (firstPipeEndpoints.Count == 1)
                 return firstPipeEndpoints[0];
 
-            // One-pipe branches have both pipe ends as branch endpoints, so use
-            // the shared-junction metadata first. A branch that starts on the
-            // main line retains the earlier branch structure name/description
-            // (for example Branch-2 can start at MH1.2).
-            string currentBranchName =
-                "Branch-" +
-                branchNumber.ToString(CultureInfo.InvariantCulture);
-
-            List<ObjectId> sharedCandidates = endpoints
-                .Where(id =>
+            // One-pipe/very short branches expose both ends as branch
+            // endpoints. CE_SEWSEQ numbers the newly owned/free end as
+            // MH{branch}.1 and keeps the shared downstream junction under the
+            // earlier branch number. Therefore the current branch's own MH#.1
+            // is authoritative; choosing the shared earlier-branch structure
+            // reverses short alignments.
+            List<ObjectId> currentBranchCandidates = endpoints
+                .Select(id => new
                 {
-                    CivilStructure structure = transaction.GetObject(
-                        id,
-                        OpenMode.ForRead,
-                        false) as CivilStructure;
-                    return structure != null &&
-                        !string.IsNullOrWhiteSpace(structure.Description) &&
-                        !string.Equals(
-                            structure.Description.Trim(),
-                            currentBranchName,
-                            StringComparison.OrdinalIgnoreCase);
+                    Id = id,
+                    Key = ReadStructureSortKey(id, transaction)
                 })
+                .Where(item =>
+                    item.Key.HasValue &&
+                    item.Key.Value.Branch == branchNumber)
+                .OrderBy(item => item.Key.Value.Sequence)
+                .ThenBy(item => item.Id.Handle.Value)
+                .Select(item => item.Id)
                 .ToList();
-            if (sharedCandidates.Count == 1)
-                return sharedCandidates[0];
 
-            // For a non-shared single-pipe branch, prefer the numerically first
-            // structure name. This yields MH1.1 before MH1.2 on Branch-1, while
-            // still choosing a shared earlier-branch junction such as MH1.3 over
-            // a new Branch-3 structure such as MH3.1.
+            ObjectId exactBranchStart = currentBranchCandidates
+                .FirstOrDefault(id =>
+                {
+                    StructureSortKey? key =
+                        ReadStructureSortKey(id, transaction);
+                    return key.HasValue &&
+                        key.Value.Sequence == 1;
+                });
+            if (!exactBranchStart.IsNull)
+                return exactBranchStart;
+
+            if (currentBranchCandidates.Count == 1)
+                return currentBranchCandidates[0];
+
+            // If the current-branch name is unavailable (legacy/manual naming),
+            // prefer the P#.1 flow-upstream endpoint before falling back to
+            // deterministic structure naming. This keeps repaired short branches
+            // aligned with the gravity-network pipe direction.
+            CivilPipe firstPipeEntity = null;
+            try
+            {
+                firstPipeEntity = transaction.GetObject(
+                    firstPipe.PipeId,
+                    OpenMode.ForRead,
+                    false) as CivilPipe;
+            }
+            catch { }
+            if (firstPipeEntity != null)
+            {
+                bool forward;
+                if (SewerPipeConnections.TryForward(
+                        firstPipeEntity,
+                        transaction,
+                        out forward))
+                {
+                    ObjectId flowStart = forward
+                        ? firstPipeEntity.StartStructureId
+                        : firstPipeEntity.EndStructureId;
+                    if (endpoints.Contains(flowStart))
+                        return flowStart;
+                }
+            }
+
+            // Last named fallback: use the numerically first endpoint only when
+            // no current-branch MH#.1 and no usable P#.1 flow direction exists.
             ObjectId namedStart = endpoints
                 .Select(id => new
                 {
