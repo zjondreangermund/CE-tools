@@ -18,7 +18,7 @@ for marker in [
     '"CE_ROADPROFILEVIEWSPLIT"',
     'settings.AddText(',
     '"Start station"',
-    '"Zero is valid."',
+    'Zero is valid.',
     'ProductionSettingsDialogModel.TryDouble(',
     'start={1:0.###}',
 ]:
