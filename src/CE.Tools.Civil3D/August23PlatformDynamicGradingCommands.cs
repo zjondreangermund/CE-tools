@@ -870,12 +870,14 @@ namespace CETools.Civil3D
                     foreach (SlopeRaySample sample in samples)
                     {
                         Point3d endPoint;
+                        bool isCut;
                         if (!TryFindDaylight(
                                 surface,
                                 sample.Point,
                                 sample.Direction,
                                 link,
-                                out endPoint))
+                                out endPoint,
+                                out isCut))
                         {
                             error =
                                 "No cut/fill daylight intersection was found within " +
@@ -889,8 +891,7 @@ namespace CETools.Civil3D
                             continue;
 
                         sample.EndPoint = endPoint;
-                        sample.Cut =
-                            endPoint.Z > sample.Point.Z + 0.005;
+                        sample.Cut = isCut;
                         sample.Valid = true;
                     }
                 }
@@ -928,52 +929,121 @@ namespace CETools.Civil3D
             }
         }
 
-        private static bool TryFindDaylight(CivilSurface surface, Point3d source, Vector2d direction, GradeLink link, out Point3d result)
+        private static bool TryFindDaylight(
+            CivilSurface surface,
+            Point3d source,
+            Vector2d direction,
+            GradeLink link,
+            out Point3d result,
+            out bool isCut)
         {
             result = Point3d.Origin;
-            double step = Math.Max(0.05, Math.Min(link.SearchStep, link.MaxDistance));
+            isCut = false;
+            double step =
+                Math.Max(
+                    0.05,
+                    Math.Min(
+                        link.SearchStep,
+                        link.MaxDistance));
             bool modeKnown = false;
             bool cut = false;
             bool previousValid = false;
             double previousDistance = 0.0;
             double previousDifference = 0.0;
 
-            for (double distance = 0.0; distance <= link.MaxDistance + Tolerance; distance += step)
+            for (double distance = 0.0;
+                 distance <= link.MaxDistance + Tolerance;
+                 distance += step)
             {
                 double terrain;
-                if (!TrySurfaceElevation(surface, source, direction, distance, out terrain))
+                if (!TrySurfaceElevation(
+                        surface,
+                        source,
+                        direction,
+                        distance,
+                        out terrain))
                 {
                     previousValid = false;
                     continue;
                 }
+
                 if (!modeKnown)
                 {
-                    double delta = terrain - source.Z;
-                    if (Math.Abs(delta) <= 0.005 && distance <= Tolerance)
+                    double delta =
+                        terrain - source.Z;
+
+                    // At the exact source point an existing-ground triangle may
+                    // coincide with the design feature line. Do not classify
+                    // that zero-distance touch as fill or terminate the ray.
+                    // Continue outward until the terrain is meaningfully above
+                    // or below the design level, which matches Civil 3D's
+                    // cut/fill grading intent.
+                    if (Math.Abs(delta) <= 0.005)
                     {
-                        result = new Point3d(source.X, source.Y, terrain);
-                        return true;
+                        if (distance <= Tolerance)
+                            continue;
                     }
-                    cut = delta > 0.0;
-                    modeKnown = true;
+                    else
+                    {
+                        cut = delta > 0.0;
+                        modeKnown = true;
+                        isCut = cut;
+                    }
+
+                    if (!modeKnown)
+                        continue;
                 }
 
-                double ratio = cut ? link.CutRatio : link.FillRatio;
-                double gradeElevation = source.Z + (cut ? distance / ratio : -distance / ratio);
-                double difference = gradeElevation - terrain;
-                if (Math.Abs(difference) <= 0.005)
+                double ratio =
+                    cut
+                        ? link.CutRatio
+                        : link.FillRatio;
+                double gradeElevation =
+                    source.Z +
+                    (cut
+                        ? distance / ratio
+                        : -distance / ratio);
+                double difference =
+                    gradeElevation - terrain;
+
+                if (Math.Abs(difference) <= 0.005 &&
+                    distance > Tolerance)
                 {
-                    result = new Point3d(source.X + direction.X * distance, source.Y + direction.Y * distance, terrain);
+                    result = new Point3d(
+                        source.X +
+                            direction.X * distance,
+                        source.Y +
+                            direction.Y * distance,
+                        terrain);
+                    isCut = cut;
                     return true;
                 }
 
-                if (previousValid && Math.Sign(previousDifference) != Math.Sign(difference))
-                    return TryBisectDaylight(surface, source, direction, cut, ratio, previousDistance, distance, previousDifference, difference, out result);
+                if (previousValid &&
+                    Math.Sign(previousDifference) !=
+                        Math.Sign(difference))
+                {
+                    bool found =
+                        TryBisectDaylight(
+                            surface,
+                            source,
+                            direction,
+                            cut,
+                            ratio,
+                            previousDistance,
+                            distance,
+                            previousDifference,
+                            difference,
+                            out result);
+                    isCut = cut;
+                    return found;
+                }
 
                 previousValid = true;
                 previousDistance = distance;
                 previousDifference = difference;
             }
+
             return false;
         }
 
@@ -1131,6 +1201,7 @@ namespace CETools.Civil3D
             Database database,
             SourceSnapshot source,
             IList<Point3d> daylight,
+            IList<SlopeRaySample> resolvedSamples,
             GradeLink link,
             out List<ObjectId> lineIds,
             out string error)
@@ -1146,12 +1217,10 @@ namespace CETools.Civil3D
                 return false;
             }
 
-            ObjectId surfaceId = ResolveHandle(
-                database,
-                link.SurfaceHandle);
-            if (surfaceId.IsNull)
+            if (resolvedSamples == null ||
+                resolvedSamples.Count < 2)
             {
-                error = "The target surface is unavailable for slope-line creation.";
+                error = "Resolved grading rays are unavailable for slope-line creation.";
                 return false;
             }
 
@@ -1175,32 +1244,37 @@ namespace CETools.Civil3D
                     transaction.Commit();
                 }
 
-                double spacing = Math.Max(
-                    0.10,
-                    link.SlopeLineInterval <= Tolerance
-                        ? 5.0
-                        : link.SlopeLineInterval);
-
-                List<SlopeRaySample> samples;
-                if (!TryResolveSlopeRaySamples(
-                        database,
-                        surfaceId,
-                        source,
-                        link,
-                        spacing,
-                        out samples,
-                        out error))
-                    return false;
-
                 int index = 0;
                 foreach (SlopeRaySample sample in
-                    samples.Where(item => item.Valid))
+                    resolvedSamples.Where(item => item.Valid))
                 {
                     ObjectId rayId;
                     string rayError;
-                    Point3d rayEnd = sample.HalfLength
-                        ? Halfway(sample.Point, sample.EndPoint)
-                        : sample.EndPoint;
+                    Point3d rayEnd;
+                    if (sample.HalfLength)
+                    {
+                        rayEnd =
+                            Halfway(
+                                sample.Point,
+                                sample.EndPoint);
+                    }
+                    else if (!TrySnapToToeVertex(
+                                 daylight,
+                                 sample.EndPoint,
+                                 out rayEnd))
+                    {
+                        error =
+                            "A long slope ray could not be matched to its toe/daylight vertex.";
+                        foreach (ObjectId created in lineIds)
+                            Cleanup(database, created);
+                        lineIds.Clear();
+                        return false;
+                    }
+
+                    short rayColour =
+                        sample.Cut
+                            ? link.CutColorIndex
+                            : link.FillColorIndex;
                     if (!TryCreateCivilSlopeRay(
                             database,
                             source,
@@ -1208,6 +1282,7 @@ namespace CETools.Civil3D
                             rayEnd,
                             sample.Cut ? cutLayerId : fillLayerId,
                             sample.Cut ? "CUT" : "FILL",
+                            rayColour,
                             index++,
                             out rayId,
                             out rayError))
@@ -1497,6 +1572,7 @@ namespace CETools.Civil3D
             Point3d end,
             ObjectId layerId,
             string mode,
+            short colorIndex,
             int index,
             out ObjectId featureLineId,
             out string error)
@@ -1560,7 +1636,8 @@ namespace CETools.Civil3D
                         throw new InvalidOperationException(
                             "Civil 3D did not create the slope-ray feature line.");
                     ray.LayerId = layerId;
-                    ray.ColorIndex = 256;
+                    ray.ColorIndex =
+                        NormalizeAciColor(colorIndex);
                     transaction.Commit();
                 }
                 return true;
@@ -1640,7 +1717,14 @@ namespace CETools.Civil3D
             }
         }
 
-        private static bool TryCreateFeatureLineCandidate(Document document, SourceSnapshot source, IList<Point3d> points, string toeLayerName, out ObjectId featureLineId, out string error)
+        private static bool TryCreateFeatureLineCandidate(
+            Document document,
+            SourceSnapshot source,
+            IList<Point3d> points,
+            string toeLayerName,
+            short toeColorIndex,
+            out ObjectId featureLineId,
+            out string error)
         {
             featureLineId = ObjectId.Null;
             error = string.Empty;
@@ -1681,7 +1765,8 @@ namespace CETools.Civil3D
                         SafeName(toeLayerName, "CE-JUNCTION-TOE"),
                         2);
                     featureLine.LayerId = toeLayerId;
-                    featureLine.ColorIndex = 256;
+                    featureLine.ColorIndex =
+                        NormalizeAciColor(toeColorIndex);
                     if (!string.IsNullOrWhiteSpace(source.StyleName))
                     {
                         try { featureLine.StyleName = source.StyleName; } catch { }
