@@ -2945,6 +2945,252 @@ namespace CETools.Civil3D
             return new Point3d(points.Average(point => point.X), points.Average(point => point.Y), points.Average(point => point.Z));
         }
 
+        private static List<string> ReadSiteNames(
+            Document document)
+        {
+            var result = new List<string>();
+            CivilDocument civilDocument =
+                CivilApplication.ActiveDocument;
+            if (document == null ||
+                civilDocument == null)
+                return result;
+
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in
+                        civilDocument.GetSiteIds())
+                    {
+                        DBObject site = null;
+                        try
+                        {
+                            site =
+                                transaction.GetObject(
+                                    id,
+                                    OpenMode.ForRead,
+                                    false);
+                        }
+                        catch { }
+
+                        string name =
+                            ReadStringProperty(
+                                site,
+                                "Name");
+                        if (!string.IsNullOrWhiteSpace(name))
+                            result.Add(name);
+                    }
+                }
+            }
+            catch { }
+
+            return result
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .OrderBy(
+                    item => item,
+                    StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        private static string ReadStringProperty(
+            object value,
+            string propertyName)
+        {
+            if (value == null ||
+                string.IsNullOrWhiteSpace(propertyName))
+                return string.Empty;
+            try
+            {
+                PropertyInfo property =
+                    value.GetType()
+                        .GetProperty(
+                            propertyName,
+                            BindingFlags.Public |
+                            BindingFlags.Instance);
+                if (property == null ||
+                    !property.CanRead)
+                    return string.Empty;
+                return Convert.ToString(
+                           property.GetValue(
+                               value,
+                               null),
+                           CultureInfo.CurrentCulture) ??
+                       string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static bool TrySnapToToeVertex(
+            IList<Point3d> toePoints,
+            Point3d target,
+            out Point3d snapped)
+        {
+            snapped = target;
+            if (toePoints == null ||
+                toePoints.Count == 0)
+                return false;
+
+            double best =
+                double.MaxValue;
+            Point3d candidate =
+                target;
+            foreach (Point3d point in toePoints)
+            {
+                double distance =
+                    point.DistanceTo(target);
+                if (distance < best)
+                {
+                    best = distance;
+                    candidate = point;
+                }
+            }
+
+            // The toe and long rays are built from the same resolved sample
+            // collection, so this should normally be exactly zero. The small
+            // tolerance only absorbs database round-off after native feature-
+            // line creation.
+            if (best > 0.01)
+                return false;
+
+            snapped = candidate;
+            return true;
+        }
+
+        private static Point3d InteriorSeed(
+            IList<Point3d> points)
+        {
+            if (points == null ||
+                points.Count == 0)
+                return Point3d.Origin;
+
+            Point3d centre =
+                Centre(points);
+            if (PointInsidePlan(
+                    points,
+                    centre))
+                return centre;
+
+            Point3d first =
+                points[0];
+            for (int division = 2;
+                 division <= 16;
+                 division++)
+            {
+                double factor =
+                    1.0 / division;
+                Point3d candidate =
+                    new Point3d(
+                        first.X +
+                            (centre.X - first.X) * factor,
+                        first.Y +
+                            (centre.Y - first.Y) * factor,
+                        first.Z +
+                            (centre.Z - first.Z) * factor);
+                if (PointInsidePlan(
+                        points,
+                        candidate))
+                    return candidate;
+            }
+
+            // Civil 3D will reject an exterior seed. Returning the arithmetic
+            // centre preserves the safest deterministic fallback and allows the
+            // caller to report the native CreateInfill failure explicitly.
+            return centre;
+        }
+
+        private static bool PointInsidePlan(
+            IList<Point3d> points,
+            Point3d point)
+        {
+            if (points == null ||
+                points.Count < 3)
+                return false;
+
+            bool inside = false;
+            int j =
+                points.Count - 1;
+            for (int i = 0;
+                 i < points.Count;
+                 j = i++)
+            {
+                Point3d a =
+                    points[i];
+                Point3d b =
+                    points[j];
+                bool crosses =
+                    ((a.Y > point.Y) !=
+                     (b.Y > point.Y)) &&
+                    point.X <
+                    (b.X - a.X) *
+                    (point.Y - a.Y) /
+                    (Math.Abs(b.Y - a.Y) <=
+                        1e-20
+                        ? 1e-20
+                        : b.Y - a.Y) +
+                    a.X;
+                if (crosses)
+                    inside = !inside;
+            }
+            return inside;
+        }
+
+        private static short ParseAciColor(
+            string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) ||
+                string.Equals(
+                    value.Trim(),
+                    "ByLayer",
+                    StringComparison.OrdinalIgnoreCase))
+                return 256;
+
+            short parsed;
+            return short.TryParse(
+                       value.Trim(),
+                       NumberStyles.Integer,
+                       CultureInfo.InvariantCulture,
+                       out parsed) &&
+                   parsed >= 1 &&
+                   parsed <= 255
+                ? parsed
+                : (short)256;
+        }
+
+        private static short NormalizeAciColor(
+            short value)
+        {
+            return value >= 1 &&
+                   value <= 255
+                ? value
+                : (short)256;
+        }
+
+        private static string SafePatternMode(
+            string value)
+        {
+            return string.Equals(
+                       value,
+                       "All rays full to toe",
+                       StringComparison.OrdinalIgnoreCase)
+                ? "All rays full to toe"
+                : "Corridor-style long / short";
+        }
+
+        private static bool IsAutomaticSiteChoice(
+            string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ||
+                   string.Equals(
+                       value.Trim(),
+                       "<Auto: source site / CE-PLATFORM-SITE>",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string SafeName(string value, string fallback)
         {
             return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
