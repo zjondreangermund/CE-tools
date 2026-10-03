@@ -545,6 +545,14 @@ namespace CETools.Civil3D
                 link.FillSlopeLayer = existing.FillSlopeLayer;
             if (existing != null && string.IsNullOrWhiteSpace(link.ToeLayer))
                 link.ToeLayer = existing.ToeLayer;
+            if (existing != null && string.IsNullOrWhiteSpace(link.SiteName))
+                link.SiteName = existing.SiteName;
+            if (existing != null && string.IsNullOrWhiteSpace(link.SlopePatternMode))
+                link.SlopePatternMode = existing.SlopePatternMode;
+            link.CutColorIndex = NormalizeAciColor(link.CutColorIndex);
+            link.FillColorIndex = NormalizeAciColor(link.FillColorIndex);
+            link.ToeColorIndex = NormalizeAciColor(link.ToeColorIndex);
+            link.SlopePatternMode = SafePatternMode(link.SlopePatternMode);
 
             ObjectId surfaceId = ResolveHandle(document.Database, link.SurfaceHandle);
             if (surfaceId.IsNull)
@@ -553,16 +561,24 @@ namespace CETools.Civil3D
                 return result;
             }
 
-            if (link.NativeInfill)
+            bool explicitSite =
+                !IsAutomaticSiteChoice(link.SiteName);
+            if (link.NativeInfill || explicitSite)
             {
                 try
                 {
-                    EnsureSourceHasSite(document, sourceId);
+                    EnsureSourceHasSite(
+                        document,
+                        sourceId,
+                        link.SiteName,
+                        link.NativeInfill);
                 }
                 catch (System.Exception exception)
                 {
                     if (explicitCommand)
-                        document.Editor.WriteMessage("\nNative infill site preparation was skipped; daylight generation will continue. " + exception.Message);
+                        document.Editor.WriteMessage(
+                            "\nGrading Site preparation failed; daylight geometry will still be attempted. " +
+                            exception.Message);
                 }
             }
 
@@ -575,7 +591,15 @@ namespace CETools.Civil3D
             }
 
             List<Point3d> daylight;
-            if (!TryBuildDaylight(document.Database, surfaceId, source, link, out daylight, out error))
+            List<SlopeRaySample> resolvedSamples;
+            if (!TryBuildDaylight(
+                    document.Database,
+                    surfaceId,
+                    source,
+                    link,
+                    out daylight,
+                    out resolvedSamples,
+                    out error))
             {
                 result.Message = error;
                 return result;
@@ -592,6 +616,7 @@ namespace CETools.Civil3D
                     source,
                     daylight,
                     SafeName(link.ToeLayer, "CE-JUNCTION-TOE"),
+                    link.ToeColorIndex,
                     out candidateId,
                     out error))
             {
@@ -624,6 +649,7 @@ namespace CETools.Civil3D
                         document.Database,
                         source,
                         daylight,
+                        resolvedSamples,
                         link,
                         out newSlopeLines,
                         out error))
@@ -654,29 +680,84 @@ namespace CETools.Civil3D
                     previousSlopeHandles);
             }
 
-            ObjectId groupId = ResolveHandle(document.Database, link.GroupHandle);
-            ObjectId previousInfillId = ResolveHandle(document.Database, link.InfillHandle);
-            link.InfillHandle = string.Empty;
+            ObjectId groupId =
+                ResolveHandle(
+                    document.Database,
+                    link.GroupHandle);
+            ObjectId previousInfillId =
+                ResolveHandle(
+                    document.Database,
+                    link.InfillHandle);
 
-            if (!previousInfillId.IsNull)
-                Cleanup(document.Database, previousInfillId);
-
-            if (link.NativeInfill && source.Closed && !source.SiteId.IsNull)
+            if (link.NativeInfill &&
+                source.Closed &&
+                !source.SiteId.IsNull)
             {
+                string groupError = string.Empty;
                 if (groupId.IsNull)
                 {
-                    groupId = TryCreateGradingGroup(document.Database, source.SiteId, "CE-PLATFORM-GRADE-" + sourceId.Handle.ToString());
-                    if (!groupId.IsNull) link.GroupHandle = groupId.Handle.ToString();
+                    groupId = TryCreateGradingGroup(
+                        document.Database,
+                        source.SiteId,
+                        "CE-PLATFORM-GRADE-" +
+                            sourceId.Handle.ToString(),
+                        out groupError);
+                    if (!groupId.IsNull)
+                        link.GroupHandle =
+                            groupId.Handle.ToString();
                 }
+
                 if (!groupId.IsNull)
                 {
-                    ObjectId infillId;
-                    if (TryCreateInfill(groupId, Centre(source.Points), out infillId))
+                    result.NativeGroupReady = true;
+
+                    // A Civil 3D infill is linked to its Site/feature-line
+                    // topology, so a valid existing infill should be retained
+                    // through a linked daylight refresh rather than erased and
+                    // recreated on every road/platform elevation edit.
+                    if (!previousInfillId.IsNull)
                     {
-                        link.InfillHandle = infillId.IsNull ? string.Empty : infillId.Handle.ToString();
                         result.NativeInfillCreated = true;
                     }
+                    else
+                    {
+                        ObjectId infillId;
+                        string infillError;
+                        Point3d seed =
+                            InteriorSeed(source.Points);
+                        if (TryCreateInfill(
+                                groupId,
+                                seed,
+                                out infillId,
+                                out infillError))
+                        {
+                            link.InfillHandle =
+                                infillId.IsNull
+                                    ? string.Empty
+                                    : infillId.Handle.ToString();
+                            result.NativeInfillCreated = true;
+                        }
+                        else if (explicitCommand)
+                        {
+                            document.Editor.WriteMessage(
+                                "\nNative grading group exists, but Civil 3D could not create the infill. " +
+                                infillError);
+                        }
+                    }
                 }
+                else if (explicitCommand)
+                {
+                    document.Editor.WriteMessage(
+                        "\nNative grading group could not be created. " +
+                        groupError);
+                }
+            }
+            else if (link.NativeInfill &&
+                     explicitCommand &&
+                     !source.Closed)
+            {
+                document.Editor.WriteMessage(
+                    "\nNative infill requires a closed feature line. The open bellmouth still received toe/daylight and cut/fill slope lines.");
             }
 
             try
@@ -694,9 +775,17 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static bool TryBuildDaylight(Database database, ObjectId surfaceId, SourceSnapshot source, GradeLink link, out List<Point3d> daylight, out string error)
+        private static bool TryBuildDaylight(
+            Database database,
+            ObjectId surfaceId,
+            SourceSnapshot source,
+            GradeLink link,
+            out List<Point3d> daylight,
+            out List<SlopeRaySample> samples,
+            out string error)
         {
             daylight = new List<Point3d>();
+            samples = new List<SlopeRaySample>();
             error = string.Empty;
             if (source == null ||
                 source.Points == null ||
@@ -712,7 +801,6 @@ namespace CETools.Civil3D
                     ? 5.0
                     : link.SlopeLineInterval);
 
-            List<SlopeRaySample> samples;
             if (!TryResolveSlopeRaySamples(
                     database,
                     surfaceId,
@@ -815,11 +903,19 @@ namespace CETools.Civil3D
                     return false;
                 }
 
+                bool corridorPattern =
+                    !string.Equals(
+                        SafePatternMode(link.SlopePatternMode),
+                        "All rays full to toe",
+                        StringComparison.OrdinalIgnoreCase);
                 for (int index = 0; index < valid.Count; index++)
-                    valid[index].HalfLength = (index % 2) == 1;
+                    valid[index].HalfLength =
+                        corridorPattern &&
+                        (index % 2) == 1;
 
-                // Always keep both ends as long rays so the toe starts and ends
-                // on actual full-length grading-line endpoints.
+                // Always keep both ends as long rays so the toe starts/ends on
+                // exact projection-line endpoints. The exact same resolved
+                // samples are reused when visible rays are created.
                 valid[0].HalfLength = false;
                 valid[valid.Count - 1].HalfLength = false;
                 return true;
