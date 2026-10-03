@@ -52,8 +52,9 @@ for marker in [
 for marker in [
     '"CE_VIEWPORTLOCKALL"',
     '"CE_VIEWPORTUNLOCKALL"',
-    'October03ViewportPlotProfileCommands.SetViewportLock(true)',
-    'October03ViewportPlotProfileCommands.SetViewportLock(false)',
+    'October03ViewportPlotProfileCommands.SetViewportLock(locked)',
+    'SetViewportLock(true)',
+    'SetViewportLock(false)',
     '"CE_PROFILEVIEWPORTFIT"',
     '"CE_VIEWPORTREGENALL"',
 ]:
