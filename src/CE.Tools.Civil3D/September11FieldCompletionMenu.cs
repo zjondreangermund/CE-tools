@@ -477,7 +477,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Link Sewer Parts to Surface / Gravity Slopes",
                         "CE_SEWLINKSURFACE",
-                        "Choose AllNetworkParts or manually select sewer parts. Gravity mode keeps P#.1 at the starting minimum and later pipes at the normal minimum slope. Deep-run raising now acts only when the actual crown depth exceeds the trigger, then lifts toward the requested post-raise depth as far as continuity, minimum cover and slope rules allow. Natural-ground and Civil 3D rule-set modes remain separate.",
+                        "Choose AllNetworkParts or manually select sewer parts. Gravity mode keeps P#.1 at the starting minimum and later pipes at the normal minimum slope. Deep-run raising now triggers from the actual manhole rim-to-sump depth shown as D= in profile views, then lifts the connected branch toward the requested pipe-crown cover target as far as continuity, minimum cover and slope rules allow. Natural-ground and Civil 3D rule-set modes remain separate.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Show Manhole Pipe Connections",

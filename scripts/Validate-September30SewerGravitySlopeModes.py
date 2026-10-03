@@ -39,10 +39,14 @@ for marker in [
     '"DeepRaiseThreshold"',
     '"DeepRaiseTarget"',
     "DeepestSegmentCover(",
-    "deepestExistingCover >",
+    "DeepestSegmentStructureDepth(",
+    "deepestExistingStructureDepth >",
     "deepRaiseTrigger + 1e-6",
     "deepestExistingCover -",
     "deepRaiseTarget",
+    "settings.Double(\"SumpDepth\", 0.500)",
+    "deepestSolvedStructureDepth",
+    "Deep-structure raise remains constrained",
     "boundedExistingRoot +",
     "ReadAllGravityParts(",
 ]:
@@ -57,8 +61,8 @@ if 'double direction = naturalEndZ <= naturalStartZ ? -1.0 : 1.0;' in runtime.sp
 for marker in [
     "keeps P#.1 at the starting minimum",
     "later pipes at the normal minimum slope",
-    "actual crown depth exceeds the trigger",
-    "requested post-raise depth",
+    "actual manhole rim-to-sump depth shown as D=",
+    "requested pipe-crown cover target",
     "continuity, minimum cover and slope rules allow",
     "Natural-ground and Civil 3D rule-set modes remain separate",
 ]:

@@ -384,9 +384,9 @@ namespace CETools.Civil3D
                 "When enabled, CE Tools first checks the existing gravity branch depth. A branch is raised only when its deepest pipe crown exceeds the trigger depth, and is then lifted toward the requested post-raise depth while preserving downhill slope, connections and the normal minimum cover.",
                 new[] { "Yes", "No" });
             settings.AddPositiveDouble("DeepRaiseThreshold", "02 Pipe geometry", "Deep structure trigger depth (m)", 3.5,
-                "Actual trigger. If the deepest crown cover in a branch is greater than this value, the branch is raised as far as the gravity/connection/minimum-cover rules allow.");
+                "Actual manhole-depth trigger. CE Tools estimates rim-to-sump depth from the selected surface, connected pipe invert and Sump depth. If any structure in the branch exceeds this value, the branch is raised where gravity continuity allows.");
             settings.AddPositiveDouble("DeepRaiseTarget", "02 Pipe geometry", "Minimum depth after raising (m)", 1.0,
-                "Requested crown cover after a deep-run raise. CE Tools never raises a pipe above the normal Minimum depth / cover setting, and reports when a fixed incoming connection prevents the target from being reached.");
+                "Target pipe-crown cover after a deep-structure raise. This is clamped to the normal Minimum depth / cover setting; pipe slopes, incoming connections and maximum slope still take precedence.");
             settings.AddPositiveDouble("MinLength", "02 Pipe geometry", "Minimum pipe length (m)", 2.440,
                 "Short pipes are reported because structure positions are preserved.");
             settings.AddPositiveDouble("MaxLength", "02 Pipe geometry", "Maximum pipe length (m)", 100.0,
@@ -996,6 +996,9 @@ namespace CETools.Civil3D
             double deepRaiseTarget = Math.Max(
                 minimumCover,
                 settings.Double("DeepRaiseTarget", 1.0));
+            double sumpDepth = Math.Max(
+                0.0,
+                settings.Double("SumpDepth", 0.500));
             double maximumSlope = Math.Abs(
                 settings.Double("MaxSlope", 2.5)) / 100.0;
             double minLength = Math.Max(
@@ -1104,13 +1107,21 @@ namespace CETools.Civil3D
                                 existingRoot));
                         rootElevation = boundedExistingRoot;
 
-                        double deepestExistingCover =
-                            DeepestSegmentCover(
+                        double deepestExistingStructureDepth =
+                            DeepestSegmentStructureDepth(
                                 segment,
-                                boundedExistingRoot);
-                        if (deepestExistingCover >
+                                boundedExistingRoot,
+                                sumpDepth);
+                        if (deepestExistingStructureDepth >
                             deepRaiseTrigger + 1e-6)
                         {
+                            // The trigger is a MANHOLE depth, matching the D= value
+                            // shown in profile views. Once triggered, raise the branch
+                            // toward the requested pipe-crown cover target.
+                            double deepestExistingCover =
+                                DeepestSegmentCover(
+                                    segment,
+                                    boundedExistingRoot);
                             double requestedRaise = Math.Max(
                                 0.0,
                                 deepestExistingCover -
@@ -1124,10 +1135,15 @@ namespace CETools.Civil3D
                                 DeepestSegmentCover(
                                     segment,
                                     rootElevation);
-                            if (remainingDeepestCover >
-                                deepRaiseTrigger + 1e-6 ||
+                            double remainingStructureDepth =
+                                DeepestSegmentStructureDepth(
+                                    segment,
+                                    rootElevation,
+                                    sumpDepth);
+                            if (remainingStructureDepth >
+                                    deepRaiseTrigger + 1e-6 ||
                                 remainingDeepestCover >
-                                deepRaiseTarget + 0.01)
+                                    deepRaiseTarget + 0.01)
                                 warnings++;
                         }
                     }
@@ -1191,6 +1207,42 @@ namespace CETools.Civil3D
                 : double.PositiveInfinity;
         }
 
+        private static double DeepestSegmentStructureDepth(
+            IEnumerable<GravityPipeStep> segment,
+            double rootInvert,
+            double sumpDepth)
+        {
+            double deepest = double.NegativeInfinity;
+            foreach (GravityPipeStep step in segment)
+            {
+                double upstreamInvert =
+                    rootInvert -
+                    step.CumulativeStartDrop;
+                double downstreamInvert =
+                    rootInvert -
+                    step.CumulativeEndDrop;
+
+                // Rim is controlled from the selected surface in this workflow.
+                // Structure sump is set below the lowest connected inside invert.
+                // This mirrors the D= manhole depth shown in Civil 3D profiles.
+                double upstreamDepth =
+                    step.UpstreamGround -
+                    (upstreamInvert - sumpDepth);
+                double downstreamDepth =
+                    step.DownstreamGround -
+                    (downstreamInvert - sumpDepth);
+
+                if (Finite(upstreamDepth))
+                    deepest = Math.Max(deepest, upstreamDepth);
+                if (Finite(downstreamDepth))
+                    deepest = Math.Max(deepest, downstreamDepth);
+            }
+
+            return Finite(deepest)
+                ? deepest
+                : double.PositiveInfinity;
+        }
+
         private static void ApplyGravitySegment(
             IList<GravityPipeStep> steps, Transaction transaction,
             ProductionSettingsDialogModel settings, ref int adjusted, ref int warnings)
@@ -1236,6 +1288,9 @@ namespace CETools.Civil3D
             double deepRaiseTarget = Math.Max(
                 minimumCover,
                 settings.Double("DeepRaiseTarget", 1.0));
+            double sumpDepth = Math.Max(
+                0.0,
+                settings.Double("SumpDepth", 0.500));
 
             SewerGravityPlan plan = null;
             for (int pass = 0; pass < 6; pass++)
@@ -1312,6 +1367,7 @@ namespace CETools.Civil3D
             if (raiseDeepRuns)
             {
                 double deepestSolvedCover = double.NegativeInfinity;
+                double deepestSolvedStructureDepth = double.NegativeInfinity;
                 foreach (SewerGravityGrade grade in plan.Grades)
                 {
                     GravityPipeStep step = byId[grade.Pipe.Id];
@@ -1326,15 +1382,24 @@ namespace CETools.Civil3D
                                 (upstreamCentre + step.Radius),
                             step.DownstreamGround -
                                 (downstreamCentre + step.Radius)));
+                    deepestSolvedStructureDepth = Math.Max(
+                        deepestSolvedStructureDepth,
+                        Math.Max(
+                            step.UpstreamGround -
+                                (grade.UpstreamInvert - sumpDepth),
+                            step.DownstreamGround -
+                                (grade.DownstreamInvert - sumpDepth)));
                 }
-                if (Finite(deepestSolvedCover) &&
-                    deepestSolvedCover > deepRaiseTrigger + 1e-6)
+                if (Finite(deepestSolvedStructureDepth) &&
+                    deepestSolvedStructureDepth >
+                        deepRaiseTrigger + 1e-6)
                 {
                     AcApplication.DocumentManager.MdiActiveDocument.Editor.WriteMessage(
-                        "\nDeep-run raise remains constrained: deepest cover={0:N3} m; trigger={1:N3} m; target={2:N3} m. Fixed incoming invert, minimum slope or minimum cover may control the result.",
-                        deepestSolvedCover,
+                        "\nDeep-structure raise remains constrained: deepest manhole depth={0:N3} m; trigger={1:N3} m; crown-cover target={2:N3} m; deepest crown cover={3:N3} m. Fixed incoming invert, minimum slope, minimum cover or another connected branch may control the result.",
+                        deepestSolvedStructureDepth,
                         deepRaiseTrigger,
-                        deepRaiseTarget);
+                        deepRaiseTarget,
+                        deepestSolvedCover);
                 }
             }
 
@@ -1396,14 +1461,24 @@ namespace CETools.Civil3D
                     downstreamCover < minimumCover - 1e-6 || downstreamCover > maximumCover + 1e-6)
                     warnings++; // Fixed incoming inverts take precedence over the hard cover envelope.
 
-                if (raiseDeepRuns &&
-                    (upstreamCover > deepRaiseTrigger + 1e-6 ||
-                     downstreamCover > deepRaiseTrigger + 1e-6))
+                if (raiseDeepRuns)
                 {
-                    // The branch was triggered for raising but a fixed incoming
-                    // connection / minimum slope / minimum cover prevented the
-                    // requested post-raise target from being fully achieved.
-                    warnings++;
+                    double upstreamStructureDepth =
+                        step.UpstreamGround -
+                        (grade.UpstreamInvert - sumpDepth);
+                    double downstreamStructureDepth =
+                        step.DownstreamGround -
+                        (grade.DownstreamInvert - sumpDepth);
+                    if (upstreamStructureDepth >
+                            deepRaiseTrigger + 1e-6 ||
+                        downstreamStructureDepth >
+                            deepRaiseTrigger + 1e-6)
+                    {
+                        // The actual manhole-depth trigger is still exceeded after
+                        // grading. Report it without silently changing the requested
+                        // gravity direction/maximum slope.
+                        warnings++;
+                    }
                 }
                 adjusted++;
             }

@@ -29,6 +29,11 @@ required_audit = [
     '"Locate Selected"',
     'ResolveAuditRowSource(',
     'SewerProfileIncomingLabelCommands.LocateSourceInPlan(',
+    'result.Rows.Sort(CompareSewerAuditRows)',
+    'TryReadSewerAuditOrder(',
+    'SewerAuditObjectRank(',
+    'firstBranch.CompareTo(secondBranch)',
+    'firstSequence.CompareTo(secondSequence)',
 ]
 for token in required_audit:
     if token not in audit_source:
