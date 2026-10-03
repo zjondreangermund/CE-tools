@@ -46,7 +46,7 @@ for marker in [
     "deepRaiseTarget",
     "settings.Double(\"SumpDepth\", 0.500)",
     "deepestSolvedStructureDepth",
-    "deep-structure raise remains constrained",
+    "Deep-structure raise remains constrained",
     "boundedExistingRoot +",
     "ReadAllGravityParts(",
 ]:
