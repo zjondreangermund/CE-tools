@@ -1822,20 +1822,65 @@ namespace CETools.Civil3D
             }
         }
 
-        private static void EnsureSourceHasSite(Document document, ObjectId sourceId)
+        private static void EnsureSourceHasSite(
+            Document document,
+            ObjectId sourceId,
+            string requestedSite,
+            bool requireSite)
         {
             ObjectId currentSite = ObjectId.Null;
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
             {
-                CivilFeatureLine source = OpenFeatureLine(transaction, sourceId, OpenMode.ForRead);
-                if (source == null || source.IsReferenceObject) throw new InvalidOperationException("The source feature line is unavailable or referenced.");
+                CivilFeatureLine source =
+                    OpenFeatureLine(
+                        transaction,
+                        sourceId,
+                        OpenMode.ForRead);
+                if (source == null ||
+                    source.IsReferenceObject)
+                    throw new InvalidOperationException(
+                        "The source feature line is unavailable or referenced.");
                 currentSite = source.SiteId;
             }
-            if (!currentSite.IsNull) return;
 
-            ObjectId siteId = EnsureSite(document.Database, CivilApplication.ActiveDocument, PlatformSiteName);
-            if (siteId.IsNull) throw new InvalidOperationException("Civil 3D could not create or resolve the CE platform site.");
-            if (!MoveToSite(sourceId, siteId)) throw new InvalidOperationException("Civil 3D could not move the source feature line into the CE platform site.");
+            bool automatic =
+                IsAutomaticSiteChoice(requestedSite);
+            if (automatic &&
+                !currentSite.IsNull)
+                return;
+            if (automatic &&
+                currentSite.IsNull &&
+                !requireSite)
+                return;
+
+            string siteName =
+                automatic
+                    ? PlatformSiteName
+                    : SafeName(
+                        requestedSite,
+                        PlatformSiteName);
+            ObjectId siteId =
+                EnsureSite(
+                    document.Database,
+                    CivilApplication.ActiveDocument,
+                    siteName);
+            if (siteId.IsNull)
+                throw new InvalidOperationException(
+                    "Civil 3D could not create or resolve Site '" +
+                    siteName +
+                    "'.");
+
+            if (currentSite == siteId)
+                return;
+
+            if (!MoveToSite(
+                    sourceId,
+                    siteId))
+                throw new InvalidOperationException(
+                    "Civil 3D could not move the source feature line into Site '" +
+                    siteName +
+                    "'.");
         }
 
         private static ObjectId EnsureSite(Database database, CivilDocument civilDocument, string name)
@@ -1874,78 +1919,461 @@ namespace CETools.Civil3D
             return ObjectId.Null;
         }
 
-        private static bool MoveToSite(ObjectId featureLineId, ObjectId siteId)
+        private static bool MoveToSite(
+            ObjectId featureLineId,
+            ObjectId siteId)
         {
-            foreach (MethodInfo method in typeof(CivilFeatureLine).GetMethods(BindingFlags.Public | BindingFlags.Static).Where(item => item.Name.IndexOf("MoveToSite", StringComparison.OrdinalIgnoreCase) >= 0))
+            if (featureLineId.IsNull ||
+                siteId.IsNull)
+                return false;
+            try
             {
-                ParameterInfo[] parameters = method.GetParameters();
-                if (parameters.Length != 2 || parameters.Any(parameter => parameter.ParameterType != typeof(ObjectId))) continue;
-                try { method.Invoke(null, new object[] { featureLineId, siteId }); return true; }
+                CivilFeatureLine.MoveToSite(
+                    featureLineId,
+                    siteId);
+                return true;
+            }
+            catch { }
+
+            // Compatibility fallback for unusual host shims.
+            foreach (MethodInfo method in
+                typeof(CivilFeatureLine)
+                    .GetMethods(
+                        BindingFlags.Public |
+                        BindingFlags.Static)
+                    .Where(item =>
+                        item.Name.IndexOf(
+                            "MoveToSite",
+                            StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                ParameterInfo[] parameters =
+                    method.GetParameters();
+                if (parameters.Length != 2 ||
+                    parameters.Any(parameter =>
+                        parameter.ParameterType != typeof(ObjectId)))
+                    continue;
+                try
+                {
+                    method.Invoke(
+                        null,
+                        new object[]
+                        {
+                            featureLineId,
+                            siteId
+                        });
+                    return true;
+                }
                 catch { }
             }
             return false;
         }
 
-        private static ObjectId TryCreateGradingGroup(Database database, ObjectId siteId, string name)
+        private static ObjectId TryCreateGradingGroup(
+            Database database,
+            ObjectId siteId,
+            string name,
+            out string error)
         {
-            CivilDocument civilDocument = CivilApplication.ActiveDocument;
-            Type groupType = typeof(CivilFeatureLine).Assembly.GetType("Autodesk.Civil.DatabaseServices.GradingGroup", false);
-            if (groupType == null) return ObjectId.Null;
-            ObjectId id = ObjectId.Null;
-            foreach (MethodInfo method in groupType.GetMethods(BindingFlags.Public | BindingFlags.Static).Where(item => string.Equals(item.Name, "Create", StringComparison.OrdinalIgnoreCase)).OrderBy(item => item.GetParameters().Length))
+            error = string.Empty;
+            CivilDocument civilDocument =
+                CivilApplication.ActiveDocument;
+            if (database == null ||
+                civilDocument == null ||
+                siteId.IsNull)
             {
-                object[] args = BuildHostArguments(method.GetParameters(), database, civilDocument, name, siteId, Point3d.Origin);
-                if (args == null) continue;
+                error =
+                    "The active Civil 3D document or grading Site is unavailable.";
+                return ObjectId.Null;
+            }
+
+            Type groupType =
+                typeof(CivilFeatureLine)
+                    .Assembly
+                    .GetType(
+                        "Autodesk.Civil.DatabaseServices.GradingGroup",
+                        false);
+            if (groupType == null)
+            {
+                error =
+                    "The Civil 3D GradingGroup API is unavailable.";
+                return ObjectId.Null;
+            }
+
+            ObjectId existing =
+                FindGradingGroup(
+                    database,
+                    siteId,
+                    name,
+                    groupType);
+            if (!existing.IsNull)
+            {
+                ConfigureGradingGroup(
+                    database,
+                    existing,
+                    name);
+                return existing;
+            }
+
+            string lastError = string.Empty;
+            foreach (MethodInfo method in
+                groupType
+                    .GetMethods(
+                        BindingFlags.Public |
+                        BindingFlags.Static)
+                    .Where(item =>
+                        string.Equals(
+                            item.Name,
+                            "Create",
+                            StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(item =>
+                        item.GetParameters().Length))
+            {
+                object[] args =
+                    BuildGradingGroupArguments(
+                        method.GetParameters(),
+                        database,
+                        civilDocument,
+                        name,
+                        siteId);
+                if (args == null)
+                    continue;
+
                 try
                 {
-                    object value = method.Invoke(null, args);
-                    if (value is ObjectId) { id = (ObjectId)value; break; }
+                    object value =
+                        method.Invoke(
+                            null,
+                            args);
+                    ObjectId id =
+                        value is ObjectId
+                            ? (ObjectId)value
+                            : value is DBObject
+                                ? ((DBObject)value).ObjectId
+                                : ObjectId.Null;
+                    if (id.IsNull)
+                        continue;
+
+                    ConfigureGradingGroup(
+                        database,
+                        id,
+                        name);
+                    return id;
                 }
-                catch { }
+                catch (System.Exception exception)
+                {
+                    lastError =
+                        exception.InnerException == null
+                            ? exception.Message
+                            : exception.InnerException.Message;
+                }
             }
-            if (id.IsNull) return id;
+
+            error =
+                string.IsNullOrWhiteSpace(lastError)
+                    ? "No compatible Civil 3D GradingGroup.Create overload succeeded."
+                    : lastError;
+            return ObjectId.Null;
+        }
+
+        private static ObjectId FindGradingGroup(
+            Database database,
+            ObjectId siteId,
+            string name,
+            Type groupType)
+        {
             try
             {
-                using (Transaction transaction = database.TransactionManager.StartTransaction())
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
                 {
-                    DBObject group = transaction.GetObject(id, OpenMode.ForWrite, false);
-                    SetProperty(group, "AutomaticSurfaceCreation", false);
+                    DBObject site =
+                        transaction.GetObject(
+                            siteId,
+                            OpenMode.ForRead,
+                            false);
+                    if (site == null)
+                        return ObjectId.Null;
+
+                    foreach (MethodInfo method in
+                        site.GetType()
+                            .GetMethods(
+                                BindingFlags.Public |
+                                BindingFlags.Instance)
+                            .Where(item =>
+                                item.GetParameters().Length == 0 &&
+                                item.Name.IndexOf(
+                                    "GradingGroup",
+                                    StringComparison.OrdinalIgnoreCase) >= 0 &&
+                                item.Name.StartsWith(
+                                    "Get",
+                                    StringComparison.OrdinalIgnoreCase)))
+                    {
+                        object value;
+                        try
+                        {
+                            value =
+                                method.Invoke(
+                                    site,
+                                    null);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        IEnumerable enumerable =
+                            value as IEnumerable;
+                        if (enumerable == null)
+                            continue;
+
+                        foreach (object entry in enumerable)
+                        {
+                            if (!(entry is ObjectId))
+                                continue;
+                            ObjectId id =
+                                (ObjectId)entry;
+                            DBObject group = null;
+                            try
+                            {
+                                group =
+                                    transaction.GetObject(
+                                        id,
+                                        OpenMode.ForRead,
+                                        false);
+                            }
+                            catch { }
+                            if (group == null ||
+                                !groupType.IsAssignableFrom(
+                                    group.GetType()))
+                                continue;
+
+                            string current =
+                                ReadStringProperty(
+                                    group,
+                                    "Name");
+                            if (string.Equals(
+                                    current,
+                                    name,
+                                    StringComparison.OrdinalIgnoreCase))
+                                return id;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return ObjectId.Null;
+        }
+
+        private static void ConfigureGradingGroup(
+            Database database,
+            ObjectId groupId,
+            string name)
+        {
+            if (database == null ||
+                groupId.IsNull)
+                return;
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    DBObject group =
+                        transaction.GetObject(
+                            groupId,
+                            OpenMode.ForWrite,
+                            false);
+                    if (group == null)
+                        return;
+
+                    SetProperty(
+                        group,
+                        "Name",
+                        name);
+                    // Native Civil 3D grading/infill is much easier to verify in
+                    // Prospector when the group maintains its dynamic surface.
+                    SetProperty(
+                        group,
+                        "AutomaticSurfaceCreation",
+                        true);
+                    SetProperty(
+                        group,
+                        "SurfaceName",
+                        name + "-SURFACE");
                     transaction.Commit();
                 }
             }
             catch { }
-            return id;
         }
 
-        private static bool TryCreateInfill(ObjectId groupId, Point3d seed, out ObjectId infillId)
+        private static object[] BuildGradingGroupArguments(
+            ParameterInfo[] parameters,
+            Database database,
+            CivilDocument civilDocument,
+            string name,
+            ObjectId siteId)
+        {
+            var args =
+                new object[parameters.Length];
+            int objectIdCount =
+                parameters.Count(parameter =>
+                    parameter.ParameterType ==
+                    typeof(ObjectId));
+            for (int index = 0;
+                 index < parameters.Length;
+                 index++)
+            {
+                ParameterInfo parameter =
+                    parameters[index];
+                Type type =
+                    parameter.ParameterType;
+                string parameterName =
+                    (parameter.Name ?? string.Empty)
+                        .ToLowerInvariant();
+
+                if (type == typeof(Database))
+                    args[index] = database;
+                else if (type == typeof(CivilDocument))
+                    args[index] = civilDocument;
+                else if (type == typeof(string))
+                    args[index] = name;
+                else if (type == typeof(ObjectId))
+                {
+                    if (parameterName.Contains("site") ||
+                        objectIdCount == 1)
+                        args[index] = siteId;
+                    else
+                        args[index] = ObjectId.Null;
+                }
+                else if (type == typeof(bool))
+                    args[index] = true;
+                else if (type == typeof(double))
+                    args[index] = 1.0;
+                else if (parameter.HasDefaultValue)
+                    args[index] =
+                        parameter.DefaultValue;
+                else
+                    return null;
+            }
+            return args;
+        }
+
+        private static bool TryCreateInfill(
+            ObjectId groupId,
+            Point3d seed,
+            out ObjectId infillId,
+            out string error)
         {
             infillId = ObjectId.Null;
-            Type gradingType = typeof(CivilFeatureLine).Assembly.GetType("Autodesk.Civil.DatabaseServices.Grading", false);
-            if (gradingType == null) return false;
-            foreach (MethodInfo method in gradingType.GetMethods(BindingFlags.Public | BindingFlags.Static).Where(item => item.Name.IndexOf("CreateInfill", StringComparison.OrdinalIgnoreCase) >= 0))
+            error = string.Empty;
+
+            Type gradingType =
+                typeof(CivilFeatureLine)
+                    .Assembly
+                    .GetType(
+                        "Autodesk.Civil.DatabaseServices.Grading",
+                        false);
+            if (gradingType == null)
             {
-                ParameterInfo[] parameters = method.GetParameters();
-                var args = new object[parameters.Length];
+                error =
+                    "The Civil 3D Grading API is unavailable.";
+                return false;
+            }
+
+            string lastError = string.Empty;
+            foreach (MethodInfo method in
+                gradingType
+                    .GetMethods(
+                        BindingFlags.Public |
+                        BindingFlags.Static)
+                    .Where(item =>
+                        item.Name.IndexOf(
+                            "CreateInfill",
+                            StringComparison.OrdinalIgnoreCase) >= 0)
+                    .OrderBy(item =>
+                        item.GetParameters().Length))
+            {
+                ParameterInfo[] parameters =
+                    method.GetParameters();
+                var args =
+                    new object[parameters.Length];
                 bool valid = true;
-                for (int index = 0; index < parameters.Length; index++)
+                int objectIdSeen = 0;
+
+                for (int index = 0;
+                     index < parameters.Length;
+                     index++)
                 {
-                    Type type = parameters[index].ParameterType;
-                    if (type == typeof(ObjectId)) args[index] = groupId;
-                    else if (type == typeof(Point3d)) args[index] = seed;
-                    else if (type == typeof(string)) args[index] = "CE Platform Grade Infill";
-                    else if (type == typeof(bool)) args[index] = true;
-                    else if (parameters[index].HasDefaultValue) args[index] = parameters[index].DefaultValue;
-                    else { valid = false; break; }
+                    Type type =
+                        parameters[index].ParameterType;
+                    string parameterName =
+                        (parameters[index].Name ?? string.Empty)
+                            .ToLowerInvariant();
+
+                    if (type == typeof(ObjectId))
+                    {
+                        // The grading-group ObjectId is the controlling parent.
+                        // Any optional style/object ids are left null instead of
+                        // incorrectly receiving the group id.
+                        args[index] =
+                            objectIdSeen == 0 ||
+                            parameterName.Contains("group")
+                                ? groupId
+                                : ObjectId.Null;
+                        objectIdSeen++;
+                    }
+                    else if (type == typeof(Point3d))
+                        args[index] = seed;
+                    else if (type == typeof(string))
+                        args[index] =
+                            "CE Platform Grade Infill";
+                    else if (type == typeof(bool))
+                        args[index] = true;
+                    else if (type == typeof(double))
+                        args[index] = 0.0;
+                    else if (parameters[index].HasDefaultValue)
+                        args[index] =
+                            parameters[index].DefaultValue;
+                    else
+                    {
+                        valid = false;
+                        break;
+                    }
                 }
-                if (!valid) continue;
+
+                if (!valid)
+                    continue;
+
                 try
                 {
-                    object value = method.Invoke(null, args);
-                    if (value is ObjectId) infillId = (ObjectId)value;
+                    object value =
+                        method.Invoke(
+                            null,
+                            args);
+                    if (value is ObjectId)
+                        infillId =
+                            (ObjectId)value;
+                    else if (value is DBObject)
+                        infillId =
+                            ((DBObject)value).ObjectId;
+
+                    // Some Civil 3D builds expose CreateInfill as void. A
+                    // successful invocation still means the native infill was
+                    // created even when no ObjectId is returned.
                     return true;
                 }
-                catch { }
+                catch (System.Exception exception)
+                {
+                    lastError =
+                        exception.InnerException == null
+                            ? exception.Message
+                            : exception.InnerException.Message;
+                }
             }
+
+            error =
+                string.IsNullOrWhiteSpace(lastError)
+                    ? "No compatible Civil 3D Grading.CreateInfill overload succeeded."
+                    : lastError;
             return false;
         }
 
