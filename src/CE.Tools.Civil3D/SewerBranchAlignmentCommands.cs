@@ -214,6 +214,305 @@ namespace CETools.Civil3D
             }
         }
 
+        [CommandMethod(
+            "CE_TOOLS",
+            "CE_SEWALIGNSTARTFIX",
+            CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void RepairExistingAlignmentStarts()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (document == null || civilDocument == null)
+                return;
+
+            Editor editor = document.Editor;
+            List<ObjectId> networkIds;
+            int unsupported = 0;
+
+            var scope = new PromptKeywordOptions(
+                "\nSewer alignment start repair scope [AllNetworkParts/Select] <AllNetworkParts>: ")
+            {
+                AllowNone = true
+            };
+            scope.Keywords.Add("AllNetworkParts");
+            scope.Keywords.Add("Select");
+            PromptResult scopeResult = editor.GetKeywords(scope);
+            if (scopeResult.Status == PromptStatus.Cancel)
+                return;
+
+            bool selectManually =
+                scopeResult.Status == PromptStatus.OK &&
+                string.Equals(
+                    scopeResult.StringResult,
+                    "Select",
+                    StringComparison.OrdinalIgnoreCase);
+
+            try
+            {
+                if (selectManually)
+                {
+                    PromptSelectionResult selection = editor.SelectImplied();
+                    if (selection.Status != PromptStatus.OK ||
+                        selection.Value == null ||
+                        selection.Value.Count == 0)
+                    {
+                        selection = editor.GetSelection(
+                            new PromptSelectionOptions
+                            {
+                                MessageForAdding =
+                                    "\nSelect sewer pipes/structures whose branch alignments must start at the branch-start structure: ",
+                                AllowDuplicates = false,
+                                RejectObjectsFromNonCurrentSpace = true
+                            });
+                    }
+
+                    if (selection.Status != PromptStatus.OK ||
+                        selection.Value == null ||
+                        selection.Value.Count == 0)
+                        return;
+
+                    ReadSelectedNetworks(
+                        document.Database,
+                        selection.Value.GetObjectIds(),
+                        out networkIds,
+                        out unsupported);
+                }
+                else
+                {
+                    networkIds = ReadAllSequencedSewerNetworks(
+                        document.Database,
+                        civilDocument);
+                }
+            }
+            catch (System.Exception exception)
+            {
+                editor.WriteMessage(
+                    "\nCE_SEWALIGNSTARTFIX cancelled while resolving sewer networks. " +
+                    exception.Message);
+                return;
+            }
+
+            if (networkIds.Count == 0)
+            {
+                editor.WriteMessage(
+                    "\nCE_SEWALIGNSTARTFIX: no CE-sequenced sewer networks were found.");
+                return;
+            }
+
+            List<NetworkAlignmentPlan> plans;
+            using (Transaction read =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                plans = networkIds
+                    .OrderBy(id => id.Handle.Value)
+                    .Select(id => BuildNetworkPlan(id, read))
+                    .ToList();
+            }
+
+            int checkedAlignments = 0;
+            int reversedAlignments = 0;
+            int missingAlignments = 0;
+            var repaired = new List<string>();
+
+            try
+            {
+                using (DocumentLock documentLock = document.LockDocument())
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (NetworkAlignmentPlan plan in plans)
+                    {
+                        foreach (BranchAlignmentPlan branch in plan.Branches)
+                        {
+                            ObjectId alignmentId =
+                                ResolveExistingBranchAlignmentId(
+                                    civilDocument,
+                                    plan,
+                                    branch,
+                                    transaction);
+                            if (alignmentId.IsNull)
+                            {
+                                missingAlignments++;
+                                continue;
+                            }
+
+                            CivilAlignment alignment = transaction.GetObject(
+                                alignmentId,
+                                OpenMode.ForWrite,
+                                false) as CivilAlignment;
+                            if (alignment == null ||
+                                alignment.IsReferenceObject)
+                            {
+                                missingAlignments++;
+                                continue;
+                            }
+
+                            Point2d expected = new Point2d(
+                                branch.PlanPoints[0].X,
+                                branch.PlanPoints[0].Y);
+                            bool reverseNeeded =
+                                PlanDistance(
+                                    ReadAlignmentStartPoint(alignment),
+                                    expected) >
+                                PlanDistance(
+                                    ReadAlignmentEndPoint(alignment),
+                                    expected) + 0.001;
+
+                            EnsureAlignmentDirectionAtBranchStart(
+                                alignment,
+                                branch.BranchName,
+                                branch.StartStructureName,
+                                branch.PlanPoints[0]);
+                            ForceAlignmentStartStationZero(
+                                alignment,
+                                branch.BranchName,
+                                branch.StartStructureName,
+                                branch.PlanPoints[0]);
+
+                            checkedAlignments++;
+                            if (reverseNeeded)
+                                reversedAlignments++;
+                            repaired.Add(
+                                branch.BranchName +
+                                " -> " +
+                                branch.StartStructureName +
+                                " = 0+000");
+                        }
+                    }
+
+                    transaction.Commit();
+                }
+            }
+            catch (System.Exception exception)
+            {
+                editor.WriteMessage(
+                    "\nCE_SEWALIGNSTARTFIX cancelled; no repair transaction was committed. " +
+                    exception.Message);
+                return;
+            }
+
+            document.Editor.Regen();
+            editor.WriteMessage(
+                "\nCE_SEWALIGNSTARTFIX complete. Alignments verified/repaired={0}; reversed={1}; missing/unresolved={2}; unsupported selections ignored={3}.",
+                checkedAlignments,
+                reversedAlignments,
+                missingAlignments,
+                unsupported);
+            foreach (string item in repaired.Take(20))
+                editor.WriteMessage("\n  " + item);
+            if (repaired.Count > 20)
+                editor.WriteMessage(
+                    "\n  ... plus {0} additional branch alignments.",
+                    repaired.Count - 20);
+        }
+
+        private static ObjectId ResolveExistingBranchAlignmentId(
+            CivilDocument civilDocument,
+            NetworkAlignmentPlan plan,
+            BranchAlignmentPlan branch,
+            Transaction transaction)
+        {
+            string branchKey = BuildBranchKey(
+                plan.NetworkId.Handle.ToString(),
+                branch.BranchName);
+
+            foreach (ObjectId alignmentId in civilDocument.GetAlignmentIds())
+            {
+                CivilAlignment alignment = null;
+                try
+                {
+                    alignment = transaction.GetObject(
+                        alignmentId,
+                        OpenMode.ForRead,
+                        false) as CivilAlignment;
+                }
+                catch { }
+                if (alignment != null &&
+                    HasTag(
+                        alignment,
+                        branchKey,
+                        "Alignment"))
+                    return alignmentId;
+            }
+
+            var referenced = new Dictionary<ObjectId, int>();
+            foreach (ObjectId pipeId in branch.PipeIds)
+            {
+                CivilPipe pipe = null;
+                try
+                {
+                    pipe = transaction.GetObject(
+                        pipeId,
+                        OpenMode.ForRead,
+                        false) as CivilPipe;
+                }
+                catch { }
+                if (pipe == null ||
+                    pipe.RefAlignmentId.IsNull ||
+                    pipe.RefAlignmentId.IsErased)
+                    continue;
+
+                int count;
+                referenced.TryGetValue(
+                    pipe.RefAlignmentId,
+                    out count);
+                referenced[pipe.RefAlignmentId] = count + 1;
+            }
+
+            foreach (KeyValuePair<ObjectId, int> item in referenced
+                .OrderByDescending(pair => pair.Value)
+                .ThenBy(pair => pair.Key.Handle.Value))
+            {
+                CivilAlignment alignment = null;
+                try
+                {
+                    alignment = transaction.GetObject(
+                        item.Key,
+                        OpenMode.ForRead,
+                        false) as CivilAlignment;
+                }
+                catch { }
+                if (alignment != null)
+                    return item.Key;
+            }
+
+            string exactBranchName = branch.BranchName;
+            string networkBranchName =
+                (plan.NetworkName ?? string.Empty).Trim() +
+                " - " +
+                branch.BranchName;
+            foreach (ObjectId alignmentId in civilDocument.GetAlignmentIds())
+            {
+                CivilAlignment alignment = null;
+                try
+                {
+                    alignment = transaction.GetObject(
+                        alignmentId,
+                        OpenMode.ForRead,
+                        false) as CivilAlignment;
+                }
+                catch { }
+                if (alignment == null)
+                    continue;
+
+                if (string.Equals(
+                        alignment.Name,
+                        exactBranchName,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(
+                        alignment.Name,
+                        networkBranchName,
+                        StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(
+                        alignment.Description,
+                        "CE sewer alignment - " + branch.BranchName,
+                        StringComparison.OrdinalIgnoreCase))
+                    return alignmentId;
+            }
+
+            return ObjectId.Null;
+        }
+
         private static List<ObjectId> ReadAllSequencedSewerNetworks(
             Database database,
             CivilDocument civilDocument)
