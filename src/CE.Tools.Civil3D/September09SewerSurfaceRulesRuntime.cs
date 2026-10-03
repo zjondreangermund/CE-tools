@@ -381,12 +381,12 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble("MaxCover", "02 Pipe geometry", "Maximum cover (m)", 10.0,
                 "Cover constraint in Gravity mode. If the exact downhill grade and cover range cannot both be satisfied, CE Tools preserves gravity slope and reports a warning instead of making a pipe run uphill.");
             settings.AddChoice("RaiseDeepRuns", "02 Pipe geometry", "Raise pipes when structures become too deep", "Yes",
-                "When enabled, CE Tools raises each gravity branch as high as the slope/connection rules allow before a structure exceeds the specified trigger depth. The normal minimum/maximum slope and cover rules are then re-applied.",
+                "When enabled, CE Tools first checks the existing gravity branch depth. A branch is raised only when its deepest pipe crown exceeds the trigger depth, and is then lifted toward the requested post-raise depth while preserving downhill slope, connections and the normal minimum cover.",
                 new[] { "Yes", "No" });
             settings.AddPositiveDouble("DeepRaiseThreshold", "02 Pipe geometry", "Deep structure trigger depth (m)", 3.5,
-                "If branch cover/depth would exceed this value, CE Tools uses it as the maximum permitted gravity cover envelope where continuity allows.");
+                "Actual trigger. If the deepest crown cover in a branch is greater than this value, the branch is raised as far as the gravity/connection/minimum-cover rules allow.");
             settings.AddPositiveDouble("DeepRaiseTarget", "02 Pipe geometry", "Minimum depth after raising (m)", 1.0,
-                "Target minimum natural-ground cover/depth after the branch is raised. The final pipe levels still obey the configured minimum/maximum slope rules.");
+                "Requested crown cover after a deep-run raise. CE Tools never raises a pipe above the normal Minimum depth / cover setting, and reports when a fixed incoming connection prevents the target from being reached.");
             settings.AddPositiveDouble("MinLength", "02 Pipe geometry", "Minimum pipe length (m)", 2.440,
                 "Short pipes are reported because structure positions are preserved.");
             settings.AddPositiveDouble("MaxLength", "02 Pipe geometry", "Maximum pipe length (m)", 100.0,
@@ -987,20 +987,15 @@ namespace CETools.Civil3D
             double minimumCover = Math.Max(
                 0.0,
                 settings.Double("MinCover", 1.0));
-            if (raiseDeepRuns)
-                minimumCover = Math.Max(
-                    minimumCover,
-                    settings.Double("DeepRaiseTarget", 1.0));
-
             double maximumCover = Math.Max(
                 minimumCover,
                 settings.Double("MaxCover", 10.0));
-            if (raiseDeepRuns)
-                maximumCover = Math.Max(
-                    minimumCover,
-                    Math.Min(
-                        maximumCover,
-                        settings.Double("DeepRaiseThreshold", 3.5)));
+            double deepRaiseTrigger = Math.Max(
+                minimumCover,
+                settings.Double("DeepRaiseThreshold", 3.5));
+            double deepRaiseTarget = Math.Max(
+                minimumCover,
+                settings.Double("DeepRaiseTarget", 1.0));
             double maximumSlope = Math.Abs(
                 settings.Double("MaxSlope", 2.5)) / 100.0;
             double minLength = Math.Max(
@@ -1089,9 +1084,54 @@ namespace CETools.Civil3D
             double rootElevation;
             if (rootMinimum <= rootMaximum)
             {
-                // Shallowest valid start while respecting minimum depth at every
-                // structure and the selected maximum-cover envelope.
+                // Normal gravity mode uses the shallowest valid root. Deep-run
+                // raising is different: preserve the existing branch root until
+                // the configured trigger is actually exceeded, then lift the
+                // complete branch toward the requested post-raise cover.
                 rootElevation = rootMaximum;
+
+                if (raiseDeepRuns)
+                {
+                    double existingRoot =
+                        first.Upstream.Z -
+                        first.InnerRadius;
+                    if (Finite(existingRoot))
+                    {
+                        double boundedExistingRoot = Math.Max(
+                            rootMinimum,
+                            Math.Min(
+                                rootMaximum,
+                                existingRoot));
+                        rootElevation = boundedExistingRoot;
+
+                        double deepestExistingCover =
+                            DeepestSegmentCover(
+                                segment,
+                                boundedExistingRoot);
+                        if (deepestExistingCover >
+                            deepRaiseTrigger + 1e-6)
+                        {
+                            double requestedRaise = Math.Max(
+                                0.0,
+                                deepestExistingCover -
+                                deepRaiseTarget);
+                            rootElevation = Math.Min(
+                                rootMaximum,
+                                boundedExistingRoot +
+                                requestedRaise);
+
+                            double remainingDeepestCover =
+                                DeepestSegmentCover(
+                                    segment,
+                                    rootElevation);
+                            if (remainingDeepestCover >
+                                deepRaiseTrigger + 1e-6 ||
+                                remainingDeepestCover >
+                                deepRaiseTarget + 0.01)
+                                warnings++;
+                        }
+                    }
+                }
             }
             else
             {
@@ -1110,6 +1150,45 @@ namespace CETools.Civil3D
                 step.HeadwaterInvert =
                     rootElevation -
                     step.CumulativeStartDrop;
+        }
+
+        private static double DeepestSegmentCover(
+            IEnumerable<GravityPipeStep> segment,
+            double rootInvert)
+        {
+            double deepest = double.NegativeInfinity;
+            foreach (GravityPipeStep step in segment)
+            {
+                double upstreamInvert =
+                    rootInvert -
+                    step.CumulativeStartDrop;
+                double downstreamInvert =
+                    rootInvert -
+                    step.CumulativeEndDrop;
+                double upstreamCover =
+                    step.UpstreamGround -
+                    (upstreamInvert +
+                     step.InnerRadius +
+                     step.Radius);
+                double downstreamCover =
+                    step.DownstreamGround -
+                    (downstreamInvert +
+                     step.InnerRadius +
+                     step.Radius);
+
+                if (Finite(upstreamCover))
+                    deepest = Math.Max(
+                        deepest,
+                        upstreamCover);
+                if (Finite(downstreamCover))
+                    deepest = Math.Max(
+                        deepest,
+                        downstreamCover);
+            }
+
+            return Finite(deepest)
+                ? deepest
+                : double.PositiveInfinity;
         }
 
         private static void ApplyGravitySegment(
@@ -1151,10 +1230,12 @@ namespace CETools.Civil3D
             double minimumCover = Math.Max(
                 0.0,
                 settings.Double("MinCover", 1.0));
-            if (raiseDeepRuns)
-                minimumCover = Math.Max(
-                    minimumCover,
-                    settings.Double("DeepRaiseTarget", 1.0));
+            double deepRaiseTrigger = Math.Max(
+                minimumCover,
+                settings.Double("DeepRaiseThreshold", 3.5));
+            double deepRaiseTarget = Math.Max(
+                minimumCover,
+                settings.Double("DeepRaiseTarget", 1.0));
 
             SewerGravityPlan plan = null;
             for (int pass = 0; pass < 6; pass++)
@@ -1228,6 +1309,35 @@ namespace CETools.Civil3D
             if (plan == null)
                 return;
 
+            if (raiseDeepRuns)
+            {
+                double deepestSolvedCover = double.NegativeInfinity;
+                foreach (SewerGravityGrade grade in plan.Grades)
+                {
+                    GravityPipeStep step = byId[grade.Pipe.Id];
+                    double upstreamCentre =
+                        grade.UpstreamInvert + step.InnerRadius;
+                    double downstreamCentre =
+                        grade.DownstreamInvert + step.InnerRadius;
+                    deepestSolvedCover = Math.Max(
+                        deepestSolvedCover,
+                        Math.Max(
+                            step.UpstreamGround -
+                                (upstreamCentre + step.Radius),
+                            step.DownstreamGround -
+                                (downstreamCentre + step.Radius)));
+                }
+                if (Finite(deepestSolvedCover) &&
+                    deepestSolvedCover > deepRaiseTrigger + 1e-6)
+                {
+                    AcApplication.DocumentManager.MdiActiveDocument.Editor.WriteMessage(
+                        "\nDeep-run raise remains constrained: deepest cover={0:N3} m; trigger={1:N3} m; target={2:N3} m. Fixed incoming invert, minimum slope or minimum cover may control the result.",
+                        deepestSolvedCover,
+                        deepRaiseTrigger,
+                        deepRaiseTarget);
+                }
+            }
+
             // Re-solve once with the final slope set so the grade written to
             // Civil 3D always matches the last depth-driven adjustment.
             plan = SewerGravityGradeSolver.Solve(
@@ -1256,12 +1366,6 @@ namespace CETools.Civil3D
             double maximumCover = Math.Max(
                 minimumCover,
                 settings.Double("MaxCover", 10.0));
-            if (raiseDeepRuns)
-                maximumCover = Math.Max(
-                    minimumCover,
-                    Math.Min(
-                        maximumCover,
-                        settings.Double("DeepRaiseThreshold", 3.5)));
             foreach (SewerGravityGrade grade in plan.Grades)
             {
                 GravityPipeStep step = byId[grade.Pipe.Id];
@@ -1290,7 +1394,17 @@ namespace CETools.Civil3D
                 double downstreamCover = step.DownstreamGround - (downstreamZ + step.Radius);
                 if (upstreamCover < minimumCover - 1e-6 || upstreamCover > maximumCover + 1e-6 ||
                     downstreamCover < minimumCover - 1e-6 || downstreamCover > maximumCover + 1e-6)
-                    warnings++; // Fixed incoming inverts take precedence over the cover envelope.
+                    warnings++; // Fixed incoming inverts take precedence over the hard cover envelope.
+
+                if (raiseDeepRuns &&
+                    (upstreamCover > deepRaiseTrigger + 1e-6 ||
+                     downstreamCover > deepRaiseTrigger + 1e-6))
+                {
+                    // The branch was triggered for raising but a fixed incoming
+                    // connection / minimum slope / minimum cover prevented the
+                    // requested post-raise target from being fully achieved.
+                    warnings++;
+                }
                 adjusted++;
             }
             // Recheck the complete network after every setter has run: a native
