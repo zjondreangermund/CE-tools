@@ -1241,7 +1241,121 @@ namespace CETools.Civil3D
                     });
                 }
             }
+
+            // Civil 3D network ObjectId order is creation/database order, not the
+            // CE sewer branch sequence. Present the audit in engineering order:
+            // Branch 1, Branch 2, ... with P#.1, P#.2, ... then MH#.1, MH#.2, ...
+            // inside each branch. This also makes missing sequence numbers obvious.
+            result.Rows.Sort(CompareSewerAuditRows);
             return result;
+        }
+
+        private static int CompareSewerAuditRows(
+            IList<string> first,
+            IList<string> second)
+        {
+            int firstBranch;
+            int firstSequence;
+            int secondBranch;
+            int secondSequence;
+            bool firstSequenced = TryReadSewerAuditOrder(
+                first,
+                out firstBranch,
+                out firstSequence);
+            bool secondSequenced = TryReadSewerAuditOrder(
+                second,
+                out secondBranch,
+                out secondSequence);
+
+            if (firstSequenced != secondSequenced)
+                return firstSequenced ? -1 : 1;
+
+            if (firstSequenced)
+            {
+                int branchCompare =
+                    firstBranch.CompareTo(secondBranch);
+                if (branchCompare != 0)
+                    return branchCompare;
+
+                int typeCompare =
+                    SewerAuditObjectRank(first)
+                        .CompareTo(SewerAuditObjectRank(second));
+                if (typeCompare != 0)
+                    return typeCompare;
+
+                int sequenceCompare =
+                    firstSequence.CompareTo(secondSequence);
+                if (sequenceCompare != 0)
+                    return sequenceCompare;
+            }
+
+            string firstName =
+                first != null && first.Count > 1
+                    ? first[1] ?? string.Empty
+                    : string.Empty;
+            string secondName =
+                second != null && second.Count > 1
+                    ? second[1] ?? string.Empty
+                    : string.Empty;
+            return string.Compare(
+                firstName,
+                secondName,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool TryReadSewerAuditOrder(
+            IList<string> row,
+            out int branch,
+            out int sequence)
+        {
+            branch = int.MaxValue;
+            sequence = int.MaxValue;
+            if (row == null || row.Count < 2)
+                return false;
+
+            string name =
+                (row[1] ?? string.Empty).Trim();
+            if (name.StartsWith(
+                    "MH",
+                    StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(2);
+            else if (name.StartsWith(
+                    "P",
+                    StringComparison.OrdinalIgnoreCase))
+                name = name.Substring(1);
+            else
+                return false;
+
+            string[] pieces = name.Split('.');
+            return pieces.Length == 2 &&
+                int.TryParse(
+                    pieces[0],
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out branch) &&
+                int.TryParse(
+                    pieces[1],
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out sequence);
+        }
+
+        private static int SewerAuditObjectRank(
+            IList<string> row)
+        {
+            if (row == null || row.Count == 0)
+                return 2;
+            if (string.Equals(
+                    row[0],
+                    "Pipe",
+                    StringComparison.OrdinalIgnoreCase))
+                return 0;
+            if (string.Equals(
+                    row[0],
+                    "Structure",
+                    StringComparison.OrdinalIgnoreCase))
+                return 1;
+            return 2;
         }
 
         private static void AddEndpoint(IDictionary<ObjectId, List<double>> values, ObjectId id, double elevation)
