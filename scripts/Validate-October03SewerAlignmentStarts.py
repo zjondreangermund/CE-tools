@@ -27,6 +27,10 @@ required_align = [
     "alignment.StationOffset(",
     "ResolveExistingBranchAlignmentId(",
     "branch.StartStructureName",
+    "currentBranchCandidates",
+    "item.Key.Value.Branch == branchNumber",
+    "key.Value.Sequence == 1",
+    "SewerPipeConnections.TryForward(",
 ]
 for marker in required_align:
     if marker not in align:
