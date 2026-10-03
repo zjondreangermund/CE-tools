@@ -152,11 +152,11 @@ namespace CETools.Civil3D
             }
 
             var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Linked Stepped Feature Lines",
-                "Create a complete linked offset set for every selected source. Each set is rebuilt automatically by CE Tools when its source drawing geometry changes.");
+                "CE Tools - Multiple Selected Stepped Feature Lines",
+                "Create the same linked stepped-offset rule from every selected source feature line in one batch. Each selected source keeps its own linked child set and refreshes from its own geometry.");
             settings.AddPositiveDouble(
                 "HorizontalStep", "01 Stepped offsets", "Horizontal step", 1.0,
-                "Drawing-unit offset between successive linked feature lines.");
+                "Drawing-unit offset applied independently to every selected source feature line.");
             settings.AddChoice(
                 "VerticalMode", "01 Stepped offsets", "Vertical control", "Elevation difference",
                 "Choose how CE Tools calculates the vertical change for every horizontal offset.",
@@ -170,13 +170,13 @@ namespace CETools.Civil3D
                 new[] { "Fall / negative", "Rise / positive" });
             settings.AddPositiveInteger(
                 "Count", "01 Stepped offsets", "Number of offsets", 1,
-                "Create this many linked stepped feature lines from every selected source.");
+                "Create this many linked stepped feature lines for EACH selected source.");
             settings.AddChoice("Side", "01 Stepped offsets", "Offset side", "Pick side in drawing",
                 "Choose which side of the selected bellmouth/feature lines receives the offsets. The same choice is applied to every selected source.",
                 new[] { "Pick side in drawing", "Left", "Right", "Inside", "Outside", "Both sides" });
             settings.AddText(
                 "Prefix", "02 Naming", "Feature-line name prefix", defaultPrefix,
-                "Names are created as Prefix-1, Prefix-2, and so on.");
+                "For multiple sources, CE Tools keeps each source set separate. Default naming uses the source feature-line name; a custom prefix receives a source index.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             double horizontalStep = settings.Double("HorizontalStep", 1.0);
@@ -314,8 +314,8 @@ namespace CETools.Civil3D
 
             editor.Regen();
             editor.WriteMessage(
-                "\nCE_FLREL complete. Selected source feature lines={0}; rejected={1}; linked feature lines created={2}; failed source sets={3}. Automatic linked refresh is enabled; CE_FLRELUPDATEMULTI rebuilds multiple sets on demand.",
-                sourceIds.Count, rejected, created, failed);
+                "\nCE_FLREL complete. Multiple selected sources processed={0}; rejected={1}; linked feature lines created={2}; failed source sets={3}; vertical mode={4}. Each source retains its own linked stepped set.",
+                sourceIds.Count, rejected, created, failed, verticalMode);
         }
 
         private static void Update(Document document)

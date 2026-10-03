@@ -27,12 +27,14 @@ refresh = read("CommentPresentationCommands.cs")
 junction = read("August13JunctionFallbackCommands.cs")
 grading = read("August23PlatformDynamicGradingCommands.cs")
 road_refresh = read("August24RoadElevationDynamicManager.cs")
+platform = read("PlatformProductionCommands.cs")
 
 required = {
     "FeatureLineRelativeCommands.cs": (
         '"CE_FLRELCREATE"',
         '"CE_FLRELUPDATE"',
-        '"CE Tools - Linked Stepped Feature Lines"',
+        '"CE Tools - Multiple Selected Stepped Feature Lines"',
+        '"Create the same linked stepped-offset rule from every selected source feature line in one batch."',
         'settings.AddPositiveDouble(',
         'settings.AddPositiveInteger(',
         'public static int RefreshAll(Document document)',
@@ -72,6 +74,17 @@ required = {
         '"CE_GRADINGSLOPETOOLS"',
         '"CE_JUNCTIONGRADETOSURFACE"',
     ),
+    "PlatformProductionCommands.cs": (
+        '"CE_PLATFORMSTEPOFFSETS"',
+        '"CE Tools - Multiple Selected Platform Stepped Offsets"',
+        '"Select MULTIPLE platform source feature lines for stepped offsets: "',
+        '"Grade (%)"',
+        '"Slope (H:V)"',
+        '"SlopeDirection"',
+        '"Fall / negative"',
+        '"Rise / positive"',
+        "selectedSourceIds",
+    ),
     "August23PlatformDynamicGradingCommands.cs": (
         '"CE_PLATFORMGRADETOSURFACE"',
         '"CE_JUNCTIONGRADETOSURFACE"',
@@ -103,6 +116,7 @@ texts = {
     "August13JunctionFallbackCommands.cs": junction,
     "August23PlatformDynamicGradingCommands.cs": grading,
     "August24RoadElevationDynamicManager.cs": road_refresh,
+    "PlatformProductionCommands.cs": platform,
 }
 
 for name, markers in required.items():
@@ -138,6 +152,12 @@ if '100.0 / Math.Max(0.001, Math.Abs(settings.Double("FillGrade", 50.0)))' not i
     errors.append("Junction grade-to-surface must convert fill Grade (%) to the equivalent H:V daylight ratio")
 if 'settings.Text("VerticalMode")' not in create_body or 'settings.Text("SlopeDirection")' not in create_body:
     errors.append("Linked stepped offsets must calculate vertical change from the selected elevation/grade/slope mode")
+if '"Grade (%)"' not in platform or '"Slope (H:V)"' not in platform:
+    errors.append("Multiple platform stepped offsets must expose separate Grade (%) and Slope (H:V) vertical modes")
+if 'verticalSign * horizontal * step / ratio' not in platform:
+    errors.append("Multiple platform stepped offsets must convert H:V slope ratio into vertical step")
+if 'selection.Value.GetObjectIds().Distinct().ToArray()' not in platform:
+    errors.append("Multiple platform stepped offsets must process the complete selected multi-source set")
 if 'ResolveNamedOffsetSign' not in create_body:
     errors.append("Linked stepped offsets must retain selectable side control for bellmouth/source offsets")
 
@@ -183,5 +203,5 @@ if errors:
 
 print(
     "Stepped feature-line workflows passed: popup multi-offset creation, automatic linked refresh, "
-    "multi-source creation, bellmouth side control, curve-following alternating long/half cut-fill grading rays, grade/slope vertical modes, one-selection set rebuild, gap-tolerant healing and endpoint-vertex preservation are protected."
+    "multi-source creation, batch platform offsets, Grade (%) and H:V slope vertical modes, bellmouth side control, curve-following alternating long/half cut-fill grading rays, one-selection set rebuild, gap-tolerant healing and endpoint-vertex preservation are protected."
 )
