@@ -28,6 +28,8 @@ junction = read("August13JunctionFallbackCommands.cs")
 grading = read("August23PlatformDynamicGradingCommands.cs")
 road_refresh = read("August24RoadElevationDynamicManager.cs")
 platform = read("PlatformProductionCommands.cs")
+fatal_safety = read("August21PlatformRelativeFatalSafety.cs")
+repair = (ROOT / "scripts" / "Repair-August21-PlatformRelativeFatalSafety-Civil3D2023.ps1").read_text(encoding="utf-8-sig")
 
 required = {
     "FeatureLineRelativeCommands.cs": (
@@ -47,6 +49,9 @@ required = {
         '"Right"',
         '"Both sides"',
         '"Select multiple SOURCE feature lines for stepped offsets: "',
+        '"Output layer"',
+        'GetOrCreateLayer(',
+        'August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(',
     ),
     "FeatureLineSteppedJoinCommands.cs": (
         '"CE_FLSTEPJOIN"',
@@ -83,7 +88,17 @@ required = {
         '"SlopeDirection"',
         '"Fall / negative"',
         '"Rise / positive"',
+        '"Output layer"',
         "selectedSourceIds",
+        "foreach (ObjectId id in selectedSourceIds)",
+        "PendingPlatformStep",
+        "August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(",
+    ),
+    "August21PlatformRelativeFatalSafety.cs": (
+        "internal static bool TryCreateLinkedOffset(",
+        "TryCreateOffsetCandidate(",
+        "WriteRelation(document, childId",
+        "VerifyFeatureLine(document, childId)",
     ),
     "August23PlatformDynamicGradingCommands.cs": (
         '"CE_PLATFORMGRADETOSURFACE"',
@@ -100,6 +115,9 @@ required = {
         '"ShowSlopeLines"',
         '"CutSlopeLayer"',
         '"FillSlopeLayer"',
+        '"ToeLayer"',
+        '"Toe / daylight layer"',
+        '"CE-JUNCTION-TOE"',
         'TryCreateSlopeLines(',
         'CleanupHandleList(',
         '"CE-JUNCTION-CUT-SLOPES"',
@@ -117,6 +135,7 @@ texts = {
     "August23PlatformDynamicGradingCommands.cs": grading,
     "August24RoadElevationDynamicManager.cs": road_refresh,
     "PlatformProductionCommands.cs": platform,
+    "August21PlatformRelativeFatalSafety.cs": fatal_safety,
 }
 
 for name, markers in required.items():
@@ -179,16 +198,27 @@ if 'featureLine.Explode(exploded)' not in grading or 'curve.GetPointAtDist(local
     errors.append("Bellmouth grading rays must sample the actual exploded curve geometry by chainage")
 if 'curve.GetFirstDerivative(point)' not in grading:
     errors.append("Bellmouth grading rays must use the local curve tangent for their normal direction")
-if 'sample.HalfLength = (validRayIndex++ % 2) == 1' not in grading or 'Halfway(sample.Point, sample.EndPoint)' not in grading:
+if 'valid[index].HalfLength = (index % 2) == 1' not in grading or 'Halfway(sample.Point, sample.EndPoint)' not in grading:
     errors.append("Every second cut/fill grading ray must be half length while preserving the full daylight classification")
-if 'curveSampleSpacing' not in grading or 'BuildSlopeRaySamples(' not in grading or 'curveSamples[index]' not in grading:
-    errors.append("Grade-to-surface daylight boundary must be sampled from the real bellmouth/road curve geometry")
+if 'TryResolveSlopeRaySamples(' not in grading or 'BuildSlopeRaySamples(' not in grading:
+    errors.append("Grade-to-surface must resolve the toe and slope rays from one shared bellmouth/road curve sample set")
+if '.Where(item => item.Valid && !item.HalfLength)' not in grading or '.Select(item => item.EndPoint)' not in grading:
+    errors.append("Toe/daylight line must be built through the full-length slope-ray endpoints")
+if 'valid[0].HalfLength = false' not in grading or 'valid[valid.Count - 1].HalfLength = false' not in grading:
+    errors.append("First and last grading rays must remain full length so the toe has controlled endpoints")
+if '"ToeLayer"' not in grading or 'SafeName(link.ToeLayer, "CE-JUNCTION-TOE")' not in grading:
+    errors.append("Toe/daylight feature line must support its own specified output layer")
 if 'internal static int RefreshLinkedGrades(' not in grading:
     errors.append("Linked road/junction grade-to-surface sources must expose targeted automatic refresh")
 if 'August23PlatformDynamicGradingCommands.RefreshLinkedGrades(' not in road_refresh:
     errors.append("Road elevation edits must refresh only affected linked daylight/grading sources")
 if 'August24RoadElevationDynamicManager.Initialize();' not in ribbon or 'August24RoadElevationDynamicManager.Terminate();' not in ribbon:
     errors.append("Targeted road daylight refresh manager must be initialized and terminated with CE Tools")
+
+if '$modernRelativeCreate' not in repair or '$modernPlatformSteps' not in repair:
+    errors.append("August 21 finalizer must preserve the modern multi-source stepped-offset dialogs")
+if 'August21PlatformRelativeFatalSafety.TryCreateLinkedOffset(' not in fatal_safety:
+    errors.append("Fatal-safety helper must expose committed candidate creation for modern stepped-offset UIs")
 
 if "gapTolerance" not in healing or "best.Distance > gapTolerance" not in healing:
     errors.append("Stepped healing no longer protects the maximum bridge distance")
@@ -203,5 +233,5 @@ if errors:
 
 print(
     "Stepped feature-line workflows passed: popup multi-offset creation, automatic linked refresh, "
-    "multi-source creation, batch platform offsets, Grade (%) and H:V slope vertical modes, bellmouth side control, curve-following alternating long/half cut-fill grading rays, one-selection set rebuild, gap-tolerant healing and endpoint-vertex preservation are protected."
+    "multi-source creation, selectable output layers, batch platform offsets, Grade (%) and H:V slope vertical modes, bellmouth side control, toe-through-long-ray endpoints, alternating long/half cut-fill rays, finalizer preservation, one-selection set rebuild, gap-tolerant healing and endpoint-vertex preservation are protected."
 )
