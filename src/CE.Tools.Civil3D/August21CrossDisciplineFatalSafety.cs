@@ -388,9 +388,13 @@ namespace CETools.Civil3D
                     }
                     if (!SafeCurve(temporary as Curve, out error)) return false;
 
-                    featureLineId = siteId.IsNull
-                        ? CivilFeatureLine.Create(string.Empty, temporaryId)
-                        : CivilFeatureLine.Create(string.Empty, temporaryId, siteId);
+                    if (siteId.IsNull)
+                        featureLineId = CivilFeatureLine.Create(string.Empty, temporaryId);
+                    else
+                        featureLineId = CivilFeatureLine.Create(
+                            string.Empty,
+                            temporaryId,
+                            siteId);
                     if (featureLineId.IsNull || !featureLineId.IsValid || featureLineId.IsErased)
                     {
                         error = "Civil 3D returned no valid feature-line ObjectId.";
