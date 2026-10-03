@@ -155,7 +155,14 @@ namespace CETools.Civil3D
                         {
                             Point3d masterPoint = master.GetClosestPointTo(new Point3d(intersection.X, intersection.Y, 0.0), Vector3d.ZAxis, false);
                             Point3d targetPoint = target.GetClosestPointTo(new Point3d(intersection.X, intersection.Y, 0.0), Vector3d.ZAxis, false);
-                            if (SetCrossingElevation(target, targetPoint, masterPoint.Z)) refreshed++;
+                            if (SetCrossingElevation(target, targetPoint, masterPoint.Z))
+                            {
+                                refreshed++;
+                                // A dependent road/bellmouth feature line can
+                                // itself own a Grade-to-Surface link. Include it
+                                // in the same targeted daylight refresh batch.
+                                changedHandles.Add(targetHandle);
+                            }
                         }
                         catch { }
                     }
