@@ -878,6 +878,26 @@ namespace CETools.Civil3D
                     // keeps the complete profile height and clearance, so vertical
                     // scale/readability stays consistent while a long branch moves
                     // through consecutive available paper-space viewports.
+                    double requiredCoreWidth =
+                        Math.Max(
+                            0.0,
+                            profile.Max.X - profile.Min.X);
+                    double availableCoreWidth = free.Sum(slotUse =>
+                        CoreModelWidthAtVerticalScale(
+                            profile,
+                            slotUse.Slot,
+                            horizontalClearance,
+                            verticalClearance));
+                    if (availableCoreWidth + Tol <
+                        requiredCoreWidth)
+                    {
+                        // Never leave a branch half-fitted. If the remaining
+                        // viewports cannot display the complete long profile,
+                        // leave them untouched and report the branch as pending.
+                        result.ProfilesNotFitted++;
+                        continue;
+                    }
+
                     double x = profile.Min.X;
                     int usedForProfile = 0;
                     foreach (SlotUse slotUse in free)
