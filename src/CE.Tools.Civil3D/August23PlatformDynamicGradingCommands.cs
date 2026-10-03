@@ -155,9 +155,15 @@ namespace CETools.Civil3D
                 return;
             }
 
+            List<string> siteNames = ReadSiteNames(document);
+            string[] siteChoices = new[] { "<Auto: source site / CE-PLATFORM-SITE>" }
+                .Concat(siteNames)
+                .ToArray();
+
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Junction / Feature-Line Grade to Surface",
-                "Grade selected junction bellmouth or road feature lines to a Civil 3D surface. The side and cut/fill criteria are stored with each source so linked daylight and grading rays can refresh automatically after road elevation edits.");
+                "Grade selected junction bellmouth or platform feature lines to a Civil 3D surface. " +
+                "Cut/fill is resolved from the target surface at each source sample, long rays terminate exactly on the toe/daylight line, and the saved settings refresh with linked grading.");
             settings.AddChoice(
                 "Surface", "01 Target", "Target surface", surfaces[0].Name,
                 "Natural ground / controlling surface that the bellmouth grading must daylight to.",
@@ -198,12 +204,20 @@ namespace CETools.Civil3D
                 "Horizontal search increment before the final surface intersection is bisected.");
             settings.AddChoice(
                 "Infill", "07 Grading group", "Create native grading group / infill where possible", "Yes",
-                "For closed feature lines CE Tools also attempts a Civil 3D grading group/infill. Open bellmouth strings still receive the linked Grade-to-Surface daylight geometry.",
+                "For closed feature lines CE Tools creates/resolves a Site, grading group and native infill. Open bellmouth strings still receive linked Grade-to-Surface daylight geometry.",
                 new[] { "Yes", "No" });
             settings.AddChoice(
+                "Site", "07 Grading group", "Grading / toe Site", "<Auto: source site / CE-PLATFORM-SITE>",
+                "Reuse the source feature line Site. If it is siteless and native infill is requested, CE-PLATFORM-SITE is created. Choose an existing Site or type a new Site name to move the source/toe grading there.",
+                siteChoices);
+            settings.AddChoice(
                 "ShowSlopeLines", "08 Presentation", "Show cut / fill slope lines", "Yes",
-                "Draw grading slope rays normal to the actual bellmouth curve. Full-length rays reach daylight; every second ray is drawn at half length on the same cut/fill side for the conventional grading pattern.",
+                "Draw Civil 3D feature-line slope rays normal to the source. Long rays terminate exactly at toe/daylight vertices.",
                 new[] { "Yes", "No" });
+            settings.AddChoice(
+                "SlopePatternMode", "08 Presentation", "Slope-line pattern", "Corridor-style long / short",
+                "Corridor-style alternates long rays to toe with half-length rays. Full-to-toe makes every projection line terminate on the toe.",
+                new[] { "Corridor-style long / short", "All rays full to toe" });
             settings.AddText(
                 "CutSlopeLayer", "08 Presentation", "Cut slope-line layer", "CE-JUNCTION-CUT-SLOPES",
                 "Layer used for cut projection lines.");
@@ -212,10 +226,22 @@ namespace CETools.Civil3D
                 "Layer used for fill projection lines.");
             settings.AddText(
                 "ToeLayer", "08 Presentation", "Toe / daylight layer", "CE-JUNCTION-TOE",
-                "Layer used for the generated toe/daylight feature line. The toe is built through the full-length slope-ray end points.");
+                "Layer used for the generated toe/daylight feature line. The toe connects every long slope-line endpoint.");
+            settings.AddChoice(
+                "CutColor", "08 Presentation", "Cut slope-line colour (ACI)", "ByLayer",
+                "ByLayer or an AutoCAD colour index from 1 to 255. The field is editable.",
+                new[] { "ByLayer", "1", "2", "3", "4", "5", "6", "7", "8", "9", "250" });
+            settings.AddChoice(
+                "FillColor", "08 Presentation", "Fill slope-line colour (ACI)", "ByLayer",
+                "ByLayer or an AutoCAD colour index from 1 to 255. The field is editable.",
+                new[] { "ByLayer", "1", "2", "3", "4", "5", "6", "7", "8", "9", "250" });
+            settings.AddChoice(
+                "ToeColor", "08 Presentation", "Toe / daylight colour (ACI)", "ByLayer",
+                "ByLayer or an AutoCAD colour index from 1 to 255. The field is editable.",
+                new[] { "ByLayer", "1", "2", "3", "4", "5", "6", "7", "8", "9", "250" });
             settings.AddPositiveDouble(
                 "SlopeLineInterval", "08 Presentation", "Slope-line interval / frequency (m)", 5.0,
-                "True chainage spacing along the bellmouth geometry. Rays follow each curve tangent; every second cut/fill ray is half length.");
+                "True chainage spacing along the bellmouth/platform geometry.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
@@ -242,10 +268,15 @@ namespace CETools.Civil3D
                 SearchStep = Math.Max(0.05, settings.Double("SearchStep", 0.5)),
                 Side = SafeSide(settings.Text("Side")),
                 NativeInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase),
+                SiteName = SafeName(settings.Text("Site"), "<Auto: source site / CE-PLATFORM-SITE>"),
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
+                SlopePatternMode = SafePatternMode(settings.Text("SlopePatternMode")),
                 CutSlopeLayer = SafeName(settings.Text("CutSlopeLayer"), "CE-JUNCTION-CUT-SLOPES"),
                 FillSlopeLayer = SafeName(settings.Text("FillSlopeLayer"), "CE-JUNCTION-FILL-SLOPES"),
                 ToeLayer = SafeName(settings.Text("ToeLayer"), "CE-JUNCTION-TOE"),
+                CutColorIndex = ParseAciColor(settings.Text("CutColor")),
+                FillColorIndex = ParseAciColor(settings.Text("FillColor")),
+                ToeColorIndex = ParseAciColor(settings.Text("ToeColor")),
                 SlopeLineInterval = Math.Max(0.10, settings.Double("SlopeLineInterval", 5.0))
             };
 
@@ -2084,7 +2115,12 @@ namespace CETools.Civil3D
                     new TypedValue((int)DxfCode.Text, link.FillSlopeLayer ?? "CE-JUNCTION-FILL-SLOPES"),
                     new TypedValue((int)DxfCode.Text, link.SlopeLineHandles ?? string.Empty),
                     new TypedValue((int)DxfCode.Real, link.SlopeLineInterval),
-                    new TypedValue((int)DxfCode.Text, link.ToeLayer ?? "CE-JUNCTION-TOE"));
+                    new TypedValue((int)DxfCode.Text, link.ToeLayer ?? "CE-JUNCTION-TOE"),
+                    new TypedValue((int)DxfCode.Text, link.SiteName ?? "<Auto: source site / CE-PLATFORM-SITE>"),
+                    new TypedValue((int)DxfCode.Text, link.SlopePatternMode ?? "Corridor-style long / short"),
+                    new TypedValue((int)DxfCode.Int16, link.CutColorIndex),
+                    new TypedValue((int)DxfCode.Int16, link.FillColorIndex),
+                    new TypedValue((int)DxfCode.Int16, link.ToeColorIndex));
                 transaction.Commit();
             }
         }
@@ -2138,7 +2174,22 @@ namespace CETools.Civil3D
                         : 5.0,
                     ToeLayer = values.Length > 15
                         ? Convert.ToString(values[15].Value, CultureInfo.InvariantCulture)
-                        : "CE-JUNCTION-TOE"
+                        : "CE-JUNCTION-TOE",
+                    SiteName = values.Length > 16
+                        ? Convert.ToString(values[16].Value, CultureInfo.InvariantCulture)
+                        : "<Auto: source site / CE-PLATFORM-SITE>",
+                    SlopePatternMode = values.Length > 17
+                        ? SafePatternMode(Convert.ToString(values[17].Value, CultureInfo.InvariantCulture))
+                        : "Corridor-style long / short",
+                    CutColorIndex = values.Length > 18
+                        ? Convert.ToInt16(values[18].Value, CultureInfo.InvariantCulture)
+                        : (short)256,
+                    FillColorIndex = values.Length > 19
+                        ? Convert.ToInt16(values[19].Value, CultureInfo.InvariantCulture)
+                        : (short)256,
+                    ToeColorIndex = values.Length > 20
+                        ? Convert.ToInt16(values[20].Value, CultureInfo.InvariantCulture)
+                        : (short)256
                 };
                 return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
             }
@@ -2331,12 +2382,17 @@ namespace CETools.Civil3D
             internal double SearchStep { get; set; }
             internal string Side { get; set; }
             internal bool NativeInfill { get; set; }
+            internal string SiteName { get; set; }
             internal bool ShowSlopeLines { get; set; }
+            internal string SlopePatternMode { get; set; }
             internal string CutSlopeLayer { get; set; }
             internal string FillSlopeLayer { get; set; }
             internal string SlopeLineHandles { get; set; }
             internal double SlopeLineInterval { get; set; }
             internal string ToeLayer { get; set; }
+            internal short CutColorIndex { get; set; }
+            internal short FillColorIndex { get; set; }
+            internal short ToeColorIndex { get; set; }
 
             internal GradeLink Clone()
             {
@@ -2352,12 +2408,17 @@ namespace CETools.Civil3D
                     SearchStep = SearchStep,
                     Side = SafeSide(Side),
                     NativeInfill = NativeInfill,
+                    SiteName = SiteName,
                     ShowSlopeLines = ShowSlopeLines,
+                    SlopePatternMode = SafePatternMode(SlopePatternMode),
                     CutSlopeLayer = CutSlopeLayer,
                     FillSlopeLayer = FillSlopeLayer,
                     SlopeLineHandles = SlopeLineHandles,
                     SlopeLineInterval = SlopeLineInterval,
-                    ToeLayer = ToeLayer
+                    ToeLayer = ToeLayer,
+                    CutColorIndex = NormalizeAciColor(CutColorIndex),
+                    FillColorIndex = NormalizeAciColor(FillColorIndex),
+                    ToeColorIndex = NormalizeAciColor(ToeColorIndex)
                 };
             }
         }
