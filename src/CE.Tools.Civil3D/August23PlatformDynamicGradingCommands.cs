@@ -210,6 +210,9 @@ namespace CETools.Civil3D
             settings.AddText(
                 "FillSlopeLayer", "08 Presentation", "Fill slope-line layer", "CE-JUNCTION-FILL-SLOPES",
                 "Layer used for fill projection lines.");
+            settings.AddText(
+                "ToeLayer", "08 Presentation", "Toe / daylight layer", "CE-JUNCTION-TOE",
+                "Layer used for the generated toe/daylight feature line. The toe is built through the full-length slope-ray end points.");
             settings.AddPositiveDouble(
                 "SlopeLineInterval", "08 Presentation", "Slope-line interval / frequency (m)", 5.0,
                 "True chainage spacing along the bellmouth geometry. Rays follow each curve tangent; every second cut/fill ray is half length.");
@@ -242,6 +245,7 @@ namespace CETools.Civil3D
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
                 CutSlopeLayer = SafeName(settings.Text("CutSlopeLayer"), "CE-JUNCTION-CUT-SLOPES"),
                 FillSlopeLayer = SafeName(settings.Text("FillSlopeLayer"), "CE-JUNCTION-FILL-SLOPES"),
+                ToeLayer = SafeName(settings.Text("ToeLayer"), "CE-JUNCTION-TOE"),
                 SlopeLineInterval = Math.Max(0.10, settings.Double("SlopeLineInterval", 5.0))
             };
 
@@ -508,6 +512,8 @@ namespace CETools.Civil3D
                 link.CutSlopeLayer = existing.CutSlopeLayer;
             if (existing != null && string.IsNullOrWhiteSpace(link.FillSlopeLayer))
                 link.FillSlopeLayer = existing.FillSlopeLayer;
+            if (existing != null && string.IsNullOrWhiteSpace(link.ToeLayer))
+                link.ToeLayer = existing.ToeLayer;
 
             ObjectId surfaceId = ResolveHandle(document.Database, link.SurfaceHandle);
             if (surfaceId.IsNull)
@@ -550,7 +556,13 @@ namespace CETools.Civil3D
             }
 
             ObjectId candidateId;
-            if (!TryCreateFeatureLineCandidate(document, source, daylight, out candidateId, out error))
+            if (!TryCreateFeatureLineCandidate(
+                    document,
+                    source,
+                    daylight,
+                    SafeName(link.ToeLayer, "CE-JUNCTION-TOE"),
+                    out candidateId,
+                    out error))
             {
                 result.Message = error;
                 return result;
@@ -1466,7 +1478,7 @@ namespace CETools.Civil3D
             }
         }
 
-        private static bool TryCreateFeatureLineCandidate(Document document, SourceSnapshot source, IList<Point3d> points, out ObjectId featureLineId, out string error)
+        private static bool TryCreateFeatureLineCandidate(Document document, SourceSnapshot source, IList<Point3d> points, string toeLayerName, out ObjectId featureLineId, out string error)
         {
             featureLineId = ObjectId.Null;
             error = string.Empty;
@@ -1479,9 +1491,14 @@ namespace CETools.Civil3D
                         SymbolUtilityServices.GetBlockModelSpaceId(document.Database),
                         OpenMode.ForWrite,
                         false) as BlockTableRecord;
+                    ObjectId toeLayerId = EnsureLayer(
+                        document.Database,
+                        transaction,
+                        SafeName(toeLayerName, "CE-JUNCTION-TOE"),
+                        2);
                     var temporary = new Polyline3d(Poly3dType.SimplePoly, new Point3dCollection(points.ToArray()), source.Closed);
                     temporary.SetDatabaseDefaults(document.Database);
-                    if (!source.LayerId.IsNull) temporary.LayerId = source.LayerId;
+                    temporary.LayerId = toeLayerId;
                     temporaryId = space.AppendEntity(temporary);
                     transaction.AddNewlyCreatedDBObject(temporary, true);
                     transaction.Commit();
@@ -1496,8 +1513,13 @@ namespace CETools.Civil3D
                     CivilFeatureLine featureLine = OpenFeatureLine(transaction, featureLineId, OpenMode.ForWrite);
                     if (featureLine == null || featureLine.IsReferenceObject)
                         throw new InvalidOperationException("Civil 3D did not return an editable daylight feature line.");
-                    if (!source.LayerId.IsNull) featureLine.LayerId = source.LayerId;
-                    featureLine.ColorIndex = source.ColorIndex;
+                    ObjectId toeLayerId = EnsureLayer(
+                        document.Database,
+                        transaction,
+                        SafeName(toeLayerName, "CE-JUNCTION-TOE"),
+                        2);
+                    featureLine.LayerId = toeLayerId;
+                    featureLine.ColorIndex = 256;
                     if (!string.IsNullOrWhiteSpace(source.StyleName))
                     {
                         try { featureLine.StyleName = source.StyleName; } catch { }
@@ -2026,7 +2048,8 @@ namespace CETools.Civil3D
                     new TypedValue((int)DxfCode.Text, link.CutSlopeLayer ?? "CE-JUNCTION-CUT-SLOPES"),
                     new TypedValue((int)DxfCode.Text, link.FillSlopeLayer ?? "CE-JUNCTION-FILL-SLOPES"),
                     new TypedValue((int)DxfCode.Text, link.SlopeLineHandles ?? string.Empty),
-                    new TypedValue((int)DxfCode.Real, link.SlopeLineInterval));
+                    new TypedValue((int)DxfCode.Real, link.SlopeLineInterval),
+                    new TypedValue((int)DxfCode.Text, link.ToeLayer ?? "CE-JUNCTION-TOE"));
                 transaction.Commit();
             }
         }
@@ -2077,7 +2100,10 @@ namespace CETools.Civil3D
                         : string.Empty,
                     SlopeLineInterval = values.Length > 14
                         ? Convert.ToDouble(values[14].Value, CultureInfo.InvariantCulture)
-                        : 5.0
+                        : 5.0,
+                    ToeLayer = values.Length > 15
+                        ? Convert.ToString(values[15].Value, CultureInfo.InvariantCulture)
+                        : "CE-JUNCTION-TOE"
                 };
                 return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
             }
@@ -2275,6 +2301,7 @@ namespace CETools.Civil3D
             internal string FillSlopeLayer { get; set; }
             internal string SlopeLineHandles { get; set; }
             internal double SlopeLineInterval { get; set; }
+            internal string ToeLayer { get; set; }
 
             internal GradeLink Clone()
             {
@@ -2294,7 +2321,8 @@ namespace CETools.Civil3D
                     CutSlopeLayer = CutSlopeLayer,
                     FillSlopeLayer = FillSlopeLayer,
                     SlopeLineHandles = SlopeLineHandles,
-                    SlopeLineInterval = SlopeLineInterval
+                    SlopeLineInterval = SlopeLineInterval,
+                    ToeLayer = ToeLayer
                 };
             }
         }
