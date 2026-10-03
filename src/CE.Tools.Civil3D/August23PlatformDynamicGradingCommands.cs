@@ -282,6 +282,7 @@ namespace CETools.Civil3D
 
             int completed = 0;
             int skipped = 0;
+            int groups = 0;
             int infills = 0;
             int slopeLines = 0;
             foreach (ObjectId sourceId in selection.Value.GetObjectIds().Distinct())
@@ -291,6 +292,7 @@ namespace CETools.Civil3D
                 {
                     completed++;
                     slopeLines += result.SlopeLinesCreated;
+                    if (result.NativeGroupReady) groups++;
                     if (result.NativeInfillCreated) infills++;
                 }
                 else
@@ -303,9 +305,10 @@ namespace CETools.Civil3D
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
             document.Editor.WriteMessage(
-                "\nCE_PLATFORMGRADETOSURFACE complete. Selected junction/source feature lines graded={0}; cut/fill slope lines drawn={1}; native infills={2}; skipped={3}.",
+                "\nCE_PLATFORMGRADETOSURFACE complete. Selected junction/source feature lines graded={0}; cut/fill slope lines drawn={1}; grading groups ready={2}; native infills ready={3}; skipped={4}.",
                 completed,
                 slopeLines,
+                groups,
                 infills,
                 skipped);
         }
@@ -2619,6 +2622,7 @@ namespace CETools.Civil3D
         private sealed class GradeBuildResult
         {
             internal bool Success { get; set; }
+            internal bool NativeGroupReady { get; set; }
             internal bool NativeInfillCreated { get; set; }
             internal int SlopeLinesCreated { get; set; }
             internal string Message { get; set; }
