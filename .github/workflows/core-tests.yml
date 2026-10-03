@@ -70,6 +70,9 @@ jobs:
       - name: Validate October 2 sewer/profile batch completion
         run: python3 scripts/Validate-October02SewerProfileBatch.py
 
+      - name: Validate October 3 sewer alignment starts
+        run: python3 scripts/Validate-October03SewerAlignmentStarts.py
+
       - name: Validate dynamic corridor annotation completion
         run: python3 scripts/Validate-September15CorridorAnnotationCompletion.py
 

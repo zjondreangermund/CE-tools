@@ -465,9 +465,14 @@ namespace CETools.Civil3D
                         "Select multiple gravity-network pipes and structures in plan or profile views, choose one replacement pipe family/size and/or structure family/size, and swap the same Civil 3D parts everywhere they are displayed.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
-                        "Sewer Branch Alignments - MH#.1 at 0+000",
+                        "Sewer Branch Alignments - Start Structure at 0+000",
                         "CE_SEWALIGN",
-                        "Use AllNetworkParts or select sewer parts. Every branch is rebuilt in structure-number order, automatically reversed where required so MH1.1, MH2.1, MH3.1, etc. are the alignment start, then anchored at station 0+000.",
+                        "Use AllNetworkParts or select sewer parts. Branch direction follows the actual P#.1 topology, including shared start structures such as MH1.1, MH1.2, MH1.3, etc. Alignments are automatically reversed where required, station equations are cleared, and the resolved start structure is verified at 0+000.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Repair Existing Sewer Alignment Starts",
+                        "CE_SEWALIGNSTARTFIX",
+                        "Repair already-created sewer branch alignments in place. The command resolves the true branch start from P#.1 and shared junction structure numbering, reverses any alignment that runs toward its start structure, clears inherited station equations, and verifies the start structure at 0+000.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Link Sewer Parts to Surface / Gravity Slopes",
