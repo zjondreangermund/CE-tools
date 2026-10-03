@@ -42,6 +42,10 @@ namespace CETools.Civil3D
             @"^Branch\s*-\s*(?<branch>\d+)$",
             RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
 
+        private static readonly Regex StructureNamePattern = new Regex(
+            @"^MH(?<branch>\d+)\.(?<sequence>\d+)$",
+            RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
         [CommandMethod(
             "CE_TOOLS",
             "CE_SEWALIGN",
@@ -168,11 +172,12 @@ namespace CETools.Civil3D
                 foreach (BranchAlignmentPlan branch in plan.Branches)
                 {
                     editor.WriteMessage(
-                        "\n    {0}: pipes={1}; structures={2}; sampled vertices={3}; alignment starts at sequenced start manhole",
+                        "\n    {0}: pipes={1}; structures={2}; sampled vertices={3}; start structure={4} -> station 0+000",
                         branch.BranchName,
                         branch.PipeIds.Count,
                         branch.StructureIds.Count,
-                        branch.PlanPoints.Count);
+                        branch.PlanPoints.Count,
+                        branch.StartStructureName);
                 }
             }
 
@@ -477,6 +482,10 @@ namespace CETools.Civil3D
                 pipeRecords,
                 transaction);
 
+            string startStructureName = ReadStructureName(
+                startId,
+                transaction);
+
             var unusedPipes = new HashSet<ObjectId>(
                 pipeRecords.Select(record => record.PipeId));
             var orderedStructures = new List<ObjectId>();
@@ -524,6 +533,7 @@ namespace CETools.Civil3D
             return new BranchAlignmentPlan(
                 networkId,
                 branchNumber,
+                startStructureName,
                 orderedStructures,
                 orderedPipes,
                 planPoints);
@@ -535,32 +545,164 @@ namespace CETools.Civil3D
             IReadOnlyList<BranchPipeRecord> pipeRecords,
             Transaction transaction)
         {
-            string expectedStartName = "MH" +
-                branchNumber.ToString(CultureInfo.InvariantCulture) + ".1";
+            if (endpoints == null || endpoints.Count != 2)
+                throw new InvalidOperationException(
+                    "Branch-" +
+                    branchNumber.ToString(CultureInfo.InvariantCulture) +
+                    " does not expose exactly two branch endpoints.");
 
-            // The sewer sequence owns branch direction. Prefer the actual first
-            // sequenced manhole instead of re-deriving direction from rim levels;
-            // otherwise CE_SEWALIGN can reverse a correctly sequenced branch.
-            foreach (ObjectId id in endpoints)
+            // The branch-start structure is defined by pipe sequence, not by
+            // assuming that every branch begins at MH{branch}.1. Side branches
+            // commonly begin on a shared main-branch structure such as MH1.2,
+            // MH1.3, etc. P#.1 is therefore authoritative: the endpoint touched
+            // by P#.1 but not by the next pipe in the same branch is the start.
+            BranchPipeRecord firstPipe = pipeRecords
+                .OrderBy(record => record.SequenceNumber)
+                .ThenBy(record => record.PipeId.Handle.Value)
+                .FirstOrDefault();
+            if (firstPipe == null)
+                throw new InvalidOperationException(
+                    "Branch-" +
+                    branchNumber.ToString(CultureInfo.InvariantCulture) +
+                    " contains no sequenced pipe.");
+
+            if (firstPipe.SequenceNumber != 1)
             {
-                CivilStructure structure = transaction.GetObject(
-                    id, OpenMode.ForRead, false) as CivilStructure;
-                if (structure != null &&
-                    string.Equals(
-                        structure.Name,
-                        expectedStartName,
-                        StringComparison.OrdinalIgnoreCase))
-                    return id;
+                throw new InvalidOperationException(
+                    "Branch-" +
+                    branchNumber.ToString(CultureInfo.InvariantCulture) +
+                    " does not contain P" +
+                    branchNumber.ToString(CultureInfo.InvariantCulture) +
+                    ".1 as its first sequenced pipe. Run CE_SEWSEQ before rebuilding sewer alignments.");
             }
 
-            // Structure sequence is authoritative for alignment direction. Do not
-            // infer a branch start from pipe object orientation or rim elevation.
-            // If MH#.1 is missing from the branch endpoint, force the user to
-            // resequence so every generated alignment starts at its real start manhole.
-            throw new InvalidOperationException(
-                "Branch-" + branchNumber.ToString(CultureInfo.InvariantCulture) +
-                " does not start at " + expectedStartName +
-                ". Run CE_SEWSEQ before CE_SEWALIGN so the branch start structure is numbered .1.");
+            List<ObjectId> firstPipeEndpoints = endpoints
+                .Where(id =>
+                    id == firstPipe.StartStructureId ||
+                    id == firstPipe.EndStructureId)
+                .Distinct()
+                .ToList();
+
+            if (firstPipeEndpoints.Count == 1)
+                return firstPipeEndpoints[0];
+
+            // One-pipe branches have both pipe ends as branch endpoints, so use
+            // the shared-junction metadata first. A branch that starts on the
+            // main line retains the earlier branch structure name/description
+            // (for example Branch-2 can start at MH1.2).
+            string currentBranchName =
+                "Branch-" +
+                branchNumber.ToString(CultureInfo.InvariantCulture);
+
+            List<ObjectId> sharedCandidates = endpoints
+                .Where(id =>
+                {
+                    CivilStructure structure = transaction.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as CivilStructure;
+                    return structure != null &&
+                        !string.IsNullOrWhiteSpace(structure.Description) &&
+                        !string.Equals(
+                            structure.Description.Trim(),
+                            currentBranchName,
+                            StringComparison.OrdinalIgnoreCase);
+                })
+                .ToList();
+            if (sharedCandidates.Count == 1)
+                return sharedCandidates[0];
+
+            // For a non-shared single-pipe branch, prefer the numerically first
+            // structure name. This yields MH1.1 before MH1.2 on Branch-1, while
+            // still choosing a shared earlier-branch junction such as MH1.3 over
+            // a new Branch-3 structure such as MH3.1.
+            ObjectId namedStart = endpoints
+                .Select(id => new
+                {
+                    Id = id,
+                    Key = ReadStructureSortKey(id, transaction)
+                })
+                .Where(item => item.Key.HasValue)
+                .OrderBy(item => item.Key.Value.Branch)
+                .ThenBy(item => item.Key.Value.Sequence)
+                .Select(item => item.Id)
+                .FirstOrDefault();
+            if (!namedStart.IsNull)
+                return namedStart;
+
+            // Final deterministic fallback: use the first-pipe endpoint with the
+            // lowest handle. Do not derive branch direction from rim elevation;
+            // alignment chainage must follow the CE pipe/structure sequence.
+            if (firstPipeEndpoints.Count > 0)
+                return firstPipeEndpoints
+                    .OrderBy(id => id.Handle.Value)
+                    .First();
+
+            return endpoints
+                .OrderBy(id => id.Handle.Value)
+                .First();
+        }
+
+        private static string ReadStructureName(
+            ObjectId structureId,
+            Transaction transaction)
+        {
+            try
+            {
+                CivilStructure structure = transaction.GetObject(
+                    structureId,
+                    OpenMode.ForRead,
+                    false) as CivilStructure;
+                return structure == null ||
+                    string.IsNullOrWhiteSpace(structure.Name)
+                    ? structureId.Handle.ToString()
+                    : structure.Name;
+            }
+            catch
+            {
+                return structureId.Handle.ToString();
+            }
+        }
+
+        private static StructureSortKey? ReadStructureSortKey(
+            ObjectId structureId,
+            Transaction transaction)
+        {
+            try
+            {
+                CivilStructure structure = transaction.GetObject(
+                    structureId,
+                    OpenMode.ForRead,
+                    false) as CivilStructure;
+                Match match = StructureNamePattern.Match(
+                    structure == null
+                        ? string.Empty
+                        : structure.Name ?? string.Empty);
+                if (!match.Success)
+                    return null;
+
+                int branch;
+                int sequence;
+                if (!int.TryParse(
+                        match.Groups["branch"].Value,
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out branch) ||
+                    !int.TryParse(
+                        match.Groups["sequence"].Value,
+                        NumberStyles.None,
+                        CultureInfo.InvariantCulture,
+                        out sequence))
+                    return null;
+
+                return new StructureSortKey(
+                    branch,
+                    sequence);
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static void AddPipe(
@@ -798,11 +940,13 @@ namespace CETools.Civil3D
                         EnsureAlignmentDirectionAtBranchStart(
                             alignment,
                             branch.BranchName,
+                            branch.StartStructureName,
                             branch.PlanPoints[0]);
 
                         ForceAlignmentStartStationZero(
                             alignment,
                             branch.BranchName,
+                            branch.StartStructureName,
                             branch.PlanPoints[0]);
 
                         alignment.Description =
@@ -853,6 +997,7 @@ namespace CETools.Civil3D
         private static void EnsureAlignmentDirectionAtBranchStart(
             CivilAlignment alignment,
             string branchName,
+            string startStructureName,
             Point3d sequencedStartPoint)
         {
             if (alignment == null)
@@ -878,7 +1023,9 @@ namespace CETools.Civil3D
             if (reverse == null)
                 throw new InvalidOperationException(
                     (branchName ?? "Sewer branch") +
-                    " was created opposite to MH#.1, but Civil 3D did not expose Alignment.Reverse().");
+                    " was created opposite to start structure " +
+                    (string.IsNullOrWhiteSpace(startStructureName) ? "<unknown>" : startStructureName) +
+                    ", but Civil 3D did not expose Alignment.Reverse().");
 
             reverse.Invoke(alignment, null);
 
@@ -889,7 +1036,9 @@ namespace CETools.Civil3D
             if (startDistance > endDistance + 0.001)
                 throw new InvalidOperationException(
                     (branchName ?? "Sewer branch") +
-                    " could not be reversed to start at its .1 manhole.");
+                    " could not be reversed to start at " +
+                    (string.IsNullOrWhiteSpace(startStructureName) ? "the resolved branch-start structure" : startStructureName) +
+                    ".");
         }
 
         private static Point2d ReadAlignmentEndPoint(
@@ -941,6 +1090,7 @@ namespace CETools.Civil3D
         private static void ForceAlignmentStartStationZero(
             CivilAlignment alignment,
             string branchName,
+            string startStructureName,
             Point3d sequencedStartPoint)
         {
             if (alignment == null)
@@ -1020,7 +1170,9 @@ namespace CETools.Civil3D
             {
                 throw new InvalidOperationException(
                     (branchName ?? "Sewer branch") +
-                    " alignment could not anchor its start manhole at station 0+000.");
+                    " alignment could not anchor start structure " +
+                    (string.IsNullOrWhiteSpace(startStructureName) ? "<unknown>" : startStructureName) +
+                    " at station 0+000.");
             }
         }
 
@@ -1412,12 +1564,14 @@ namespace CETools.Civil3D
             public BranchAlignmentPlan(
                 ObjectId networkId,
                 int branchNumber,
+                string startStructureName,
                 IReadOnlyList<ObjectId> structureIds,
                 IReadOnlyList<ObjectId> pipeIds,
                 IReadOnlyList<Point3d> planPoints)
             {
                 NetworkId = networkId;
                 BranchNumber = branchNumber;
+                StartStructureName = startStructureName ?? string.Empty;
                 StructureIds = structureIds;
                 PipeIds = pipeIds;
                 PlanPoints = planPoints;
@@ -1427,9 +1581,24 @@ namespace CETools.Civil3D
             public int BranchNumber { get; }
             public string BranchName =>
                 "Branch-" + BranchNumber.ToString(CultureInfo.InvariantCulture);
+            public string StartStructureName { get; }
             public IReadOnlyList<ObjectId> StructureIds { get; }
             public IReadOnlyList<ObjectId> PipeIds { get; }
             public IReadOnlyList<Point3d> PlanPoints { get; }
+        }
+
+        private struct StructureSortKey
+        {
+            public StructureSortKey(
+                int branch,
+                int sequence)
+            {
+                Branch = branch;
+                Sequence = sequence;
+            }
+
+            public int Branch { get; private set; }
+            public int Sequence { get; private set; }
         }
 
         private sealed class BranchPipeRecord
