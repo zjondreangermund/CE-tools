@@ -83,7 +83,8 @@ for marker in [
     'ResolveOutputLayer(',
     'ParseAciColor(',
     'TryResolveOrCreateSite(',
-    'CivilFeatureLine.Create(string.Empty, temporaryId, siteId)',
+    'siteId.IsNull',
+    'temporaryId,\n                            siteId)',
     'featureLine.ColorIndex =',
 ]:
     if marker not in feature:
