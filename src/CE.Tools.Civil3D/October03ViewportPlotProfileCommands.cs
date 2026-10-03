@@ -492,7 +492,7 @@ namespace CETools.Civil3D
             if (dictionary == null)
                 return result;
 
-            foreach (DBDictionaryEntry entry in dictionary)
+            foreach (System.Collections.DictionaryEntry entry in dictionary)
             {
                 Layout layout = null;
                 try
