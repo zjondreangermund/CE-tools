@@ -6,6 +6,7 @@ SRC = ROOT / "src" / "CE.Tools.Civil3D"
 
 split = (SRC / "August13RoadProfileSectionCommands.cs").read_text(encoding="utf-8-sig")
 viewport = (SRC / "October03ViewportPlotProfileCommands.cs").read_text(encoding="utf-8-sig")
+phase_one = (SRC / "PhaseOneUtilityCommands.cs").read_text(encoding="utf-8-sig")
 feature = (SRC / "August21CrossDisciplineFatalSafety.cs").read_text(encoding="utf-8-sig")
 dialogs = (SRC / "DisciplineWorkflowDialogs.cs").read_text(encoding="utf-8-sig")
 plugin = (SRC / "PluginEntry.cs").read_text(encoding="utf-8-sig")
@@ -29,8 +30,6 @@ if 'AddPositiveDouble(\n                "Start"' in split:
     errors.append("Split road profile start station regressed to PositiveDouble; 0+000 would be rejected.")
 
 for marker in [
-    '"CE_VIEWPORTLOCKALL"',
-    '"CE_VIEWPORTUNLOCKALL"',
     '"CE_VIEWPORTREGENALL"',
     '"CE_PROFILEVIEWPORTFIT"',
     '"All layouts in drawing"',
@@ -49,6 +48,17 @@ for marker in [
 ]:
     if marker not in viewport:
         errors.append("Viewport/profile production marker missing: " + marker)
+
+for marker in [
+    '"CE_VIEWPORTLOCKALL"',
+    '"CE_VIEWPORTUNLOCKALL"',
+    'October03ViewportPlotProfileCommands.SetViewportLock(true)',
+    'October03ViewportPlotProfileCommands.SetViewportLock(false)',
+    '"CE_PROFILEVIEWPORTFIT"',
+    '"CE_VIEWPORTREGENALL"',
+]:
+    if marker not in phase_one:
+        errors.append("Phase 1 viewport command marker missing: " + marker)
 
 for marker in [
     'October03PlotPdfManager',
