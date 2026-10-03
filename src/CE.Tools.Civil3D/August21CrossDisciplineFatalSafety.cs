@@ -33,9 +33,13 @@ namespace CETools.Civil3D
             string[] surfaceNames = new[] { "<Keep source elevations>" }
                 .Concat(surfaces.Select(item => item.Name))
                 .ToArray();
+            List<string> layerNames = ReadLayerNames(document.Database);
+            List<string> siteNames = ReadSiteNames(document);
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Create Feature Lines (Fatal-Safe)",
-                "Creates each feature line independently from a committed temporary clone. The selected source object is never given to the native Civil 3D create call and is never erased.");
+                "Creates each feature line independently from a committed temporary clone. " +
+                "Choose surface/elevation handling plus the output layer, ACI colour and Civil 3D Site. " +
+                "Saved choices become the defaults for the next drawing/session.");
             settings.AddChoice(
                 "Surface", "01 Elevation", "Surface", surfaceNames[0],
                 "Keep source elevations or safely sample a Civil 3D surface after the feature line has been created and verified.",
@@ -44,12 +48,44 @@ namespace CETools.Civil3D
                 "Intermediate", "01 Elevation", "Intermediate surface points", "No",
                 "For Civil 3D 2023 fatal-safety, surface elevations are sampled at existing feature-line points. Native intermediate TIN insertion is deliberately avoided.",
                 new[] { "No", "Yes" });
+            settings.AddChoice(
+                "Layer", "02 Output", "Layer", "<Source layer>",
+                "Use each source object's layer, choose an existing layer, or type a new layer name to create it.",
+                new[] { "<Source layer>" }.Concat(layerNames));
+            settings.AddChoice(
+                "Color", "02 Output", "Colour (ACI)", "ByLayer",
+                "ByLayer is recommended. You may also enter an AutoCAD colour index from 1 to 255.",
+                new[] { "ByLayer", "1", "2", "3", "4", "5", "6", "7", "8", "9", "250" });
+            settings.AddChoice(
+                "Site", "02 Output", "Civil 3D Site", "<Siteless>",
+                "Keep the feature lines siteless, choose an existing Site, or type a new Site name to create it.",
+                new[] { "<Siteless>" }.Concat(siteNames));
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             SurfaceChoice selectedSurface = surfaces.FirstOrDefault(item =>
                 string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
             bool requestedIntermediate = string.Equals(
                 settings.Text("Intermediate"), "Yes", StringComparison.OrdinalIgnoreCase);
+            string outputLayer = string.IsNullOrWhiteSpace(settings.Text("Layer"))
+                ? "<Source layer>"
+                : settings.Text("Layer").Trim();
+            int outputColor = ParseAciColor(settings.Text("Color"));
+            string requestedSite = string.IsNullOrWhiteSpace(settings.Text("Site"))
+                ? "<Siteless>"
+                : settings.Text("Site").Trim();
+            ObjectId outputSiteId;
+            string siteError;
+            if (!TryResolveOrCreateSite(
+                    document,
+                    requestedSite,
+                    out outputSiteId,
+                    out siteError))
+            {
+                editor.WriteMessage(
+                    "\nCE_FLCREATE cancelled. Site could not be resolved/created: {0}",
+                    siteError);
+                return;
+            }
 
             PromptSelectionResult selection = editor.SelectImplied();
             if (selection.Status != PromptStatus.OK || selection.Value == null || selection.Value.Count == 0)
@@ -77,6 +113,9 @@ namespace CETools.Civil3D
                     FeatureCreateState state = TryCreateFromProtectedClone(
                         document,
                         sourceId,
+                        outputLayer,
+                        outputColor,
+                        outputSiteId,
                         out featureLineId,
                         out error);
                     if (state == FeatureCreateState.Skipped)
@@ -113,8 +152,14 @@ namespace CETools.Civil3D
 
             try { editor.Regen(); AcApplication.UpdateScreen(); } catch { }
             editor.WriteMessage(
-                "\nCE_FLCREATE complete (fatal-safe). Created={0}; unsupported/invalid={1}; failed={2}; surface updates skipped={3}. Source objects retained.",
-                created, skipped, failed, surfaceFailures);
+                "\nCE_FLCREATE complete (fatal-safe). Created={0}; unsupported/invalid={1}; failed={2}; surface updates skipped={3}; layer={4}; colour={5}; site={6}. Source objects retained.",
+                created,
+                skipped,
+                failed,
+                surfaceFailures,
+                outputLayer,
+                outputColor == 256 ? "ByLayer" : outputColor.ToString(CultureInfo.InvariantCulture),
+                requestedSite);
         }
 
         internal static void RunPlatformFeatureLinesAtSlope(Document document)
@@ -209,6 +254,8 @@ namespace CETools.Civil3D
                             document,
                             tempId,
                             sourceLayer,
+                            ObjectId.Null,
+                            256,
                             out featureLineId,
                             out createError))
                     {
@@ -233,6 +280,9 @@ namespace CETools.Civil3D
         private static FeatureCreateState TryCreateFromProtectedClone(
             Document document,
             ObjectId sourceId,
+            string outputLayerName,
+            int outputColor,
+            ObjectId siteId,
             out ObjectId featureLineId,
             out string error)
         {
@@ -280,7 +330,11 @@ namespace CETools.Civil3D
                     temporary.LayerId = source.LayerId;
                     temporaryId = space.AppendEntity(temporary);
                     transaction.AddNewlyCreatedDBObject(temporary, true);
-                    sourceLayer = source.LayerId;
+                    sourceLayer = ResolveOutputLayer(
+                        document.Database,
+                        transaction,
+                        outputLayerName,
+                        source.LayerId);
                     transaction.Commit();
                 }
 
@@ -288,6 +342,8 @@ namespace CETools.Civil3D
                         document,
                         temporaryId,
                         sourceLayer,
+                        siteId,
+                        outputColor,
                         out featureLineId,
                         out error))
                 {
@@ -309,6 +365,8 @@ namespace CETools.Civil3D
             Document document,
             ObjectId temporaryId,
             ObjectId layerId,
+            ObjectId siteId,
+            int colorIndex,
             out ObjectId featureLineId,
             out string error)
         {
@@ -330,7 +388,13 @@ namespace CETools.Civil3D
                     }
                     if (!SafeCurve(temporary as Curve, out error)) return false;
 
-                    featureLineId = CivilFeatureLine.Create(string.Empty, temporaryId);
+                    if (siteId.IsNull)
+                        featureLineId = CivilFeatureLine.Create(string.Empty, temporaryId);
+                    else
+                        featureLineId = CivilFeatureLine.Create(
+                            string.Empty,
+                            temporaryId,
+                            siteId);
                     if (featureLineId.IsNull || !featureLineId.IsValid || featureLineId.IsErased)
                     {
                         error = "Civil 3D returned no valid feature-line ObjectId.";
@@ -354,6 +418,10 @@ namespace CETools.Civil3D
                         return false;
                     }
                     if (!layerId.IsNull) featureLine.LayerId = layerId;
+                    featureLine.ColorIndex =
+                        colorIndex >= 1 && colorIndex <= 255
+                            ? colorIndex
+                            : 256;
                     try { featureLine.RecordGraphicsModified(true); } catch { }
                     transaction.Commit();
                 }
@@ -471,6 +539,197 @@ namespace CETools.Civil3D
             {
                 error = exception.Message;
                 Cleanup(document, temporaryId, ObjectId.Null);
+                return false;
+            }
+        }
+
+        private static List<string> ReadLayerNames(
+            Database database)
+        {
+            var result = new List<string>();
+            if (database == null) return result;
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    LayerTable table = transaction.GetObject(
+                        database.LayerTableId,
+                        OpenMode.ForRead,
+                        false) as LayerTable;
+                    if (table == null) return result;
+                    foreach (ObjectId id in table)
+                    {
+                        LayerTableRecord layer = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false) as LayerTableRecord;
+                        if (layer != null &&
+                            !string.IsNullOrWhiteSpace(layer.Name))
+                            result.Add(layer.Name);
+                    }
+                }
+            }
+            catch { }
+            return result
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(item => item, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        private static ObjectId ResolveOutputLayer(
+            Database database,
+            Transaction transaction,
+            string requested,
+            ObjectId sourceLayerId)
+        {
+            if (database == null || transaction == null)
+                return sourceLayerId;
+            if (string.IsNullOrWhiteSpace(requested) ||
+                string.Equals(
+                    requested,
+                    "<Source layer>",
+                    StringComparison.OrdinalIgnoreCase))
+                return sourceLayerId;
+
+            string name = requested.Trim();
+            LayerTable table = transaction.GetObject(
+                database.LayerTableId,
+                OpenMode.ForRead,
+                false) as LayerTable;
+            if (table == null)
+                return sourceLayerId;
+            if (table.Has(name))
+                return table[name];
+
+            table.UpgradeOpen();
+            var layer = new LayerTableRecord { Name = name };
+            ObjectId id = table.Add(layer);
+            transaction.AddNewlyCreatedDBObject(layer, true);
+            return id;
+        }
+
+        private static int ParseAciColor(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) ||
+                string.Equals(
+                    value.Trim(),
+                    "ByLayer",
+                    StringComparison.OrdinalIgnoreCase))
+                return 256;
+            int parsed;
+            return int.TryParse(
+                    value.Trim(),
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out parsed) &&
+                parsed >= 1 &&
+                parsed <= 255
+                    ? parsed
+                    : 256;
+        }
+
+        private static List<string> ReadSiteNames(
+            Document document)
+        {
+            var result = new List<string>();
+            if (document == null) return result;
+            Autodesk.Civil.ApplicationServices.CivilDocument civil =
+                Autodesk.Civil.ApplicationServices.CivilApplication.ActiveDocument;
+            if (civil == null) return result;
+
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in civil.GetSiteIds())
+                    {
+                        Autodesk.Civil.DatabaseServices.Site site =
+                            transaction.GetObject(
+                                id,
+                                OpenMode.ForRead,
+                                false) as Autodesk.Civil.DatabaseServices.Site;
+                        if (site != null &&
+                            !string.IsNullOrWhiteSpace(site.Name))
+                            result.Add(site.Name);
+                    }
+                }
+            }
+            catch { }
+
+            return result
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(item => item, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        private static bool TryResolveOrCreateSite(
+            Document document,
+            string requested,
+            out ObjectId siteId,
+            out string error)
+        {
+            siteId = ObjectId.Null;
+            error = string.Empty;
+            if (document == null)
+            {
+                error = "No active document.";
+                return false;
+            }
+
+            if (string.IsNullOrWhiteSpace(requested) ||
+                string.Equals(
+                    requested,
+                    "<Siteless>",
+                    StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            Autodesk.Civil.ApplicationServices.CivilDocument civil =
+                Autodesk.Civil.ApplicationServices.CivilApplication.ActiveDocument;
+            if (civil == null)
+            {
+                error = "No active Civil 3D document.";
+                return false;
+            }
+
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in civil.GetSiteIds())
+                    {
+                        Autodesk.Civil.DatabaseServices.Site site =
+                            transaction.GetObject(
+                                id,
+                                OpenMode.ForRead,
+                                false) as Autodesk.Civil.DatabaseServices.Site;
+                        if (site != null &&
+                            string.Equals(
+                                site.Name,
+                                requested,
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            siteId = id;
+                            return true;
+                        }
+                    }
+                }
+
+                siteId = Autodesk.Civil.DatabaseServices.Site.Create(
+                    civil,
+                    requested.Trim());
+                if (siteId.IsNull)
+                {
+                    error = "Civil 3D returned no Site ObjectId.";
+                    return false;
+                }
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                error = exception.Message;
                 return false;
             }
         }
