@@ -114,10 +114,20 @@ $finalPlatform = ReadText $platformPath
 $requiredDynamic = @(
     '"CE_PLATFORMDRAPEMULTI"',
     '"CE_PLATFORMGRADETOSURFACE"',
+    '"CE_JUNCTIONGRADETOSURFACE"',
     'internal static int RefreshAll(Document document)',
     'August21SurfaceSafety.TryApplyFeatureLineElevations',
     'TryCreateGradingGroup',
-    'TryCreateInfill')
+    'TryCreateInfill',
+    'CivilFeatureLine.MoveToSite(',
+    'TrySnapToToeVertex(',
+    '"CutColor"',
+    '"FillColor"',
+    '"ToeColor"',
+    '"Grading / toe Site"',
+    '"Corridor-style long / short"',
+    '"AutomaticSurfaceCreation"',
+    'InteriorSeed(source.Points)')
 foreach ($marker in $requiredDynamic) {
     if (-not $dynamic.Contains($marker)) { throw "August 23 dynamic Platform guard failed: $marker" }
 }

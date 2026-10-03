@@ -155,9 +155,15 @@ namespace CETools.Civil3D
                 return;
             }
 
+            List<string> siteNames = ReadSiteNames(document);
+            string[] siteChoices = new[] { "<Auto: source site / CE-PLATFORM-SITE>" }
+                .Concat(siteNames)
+                .ToArray();
+
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Junction / Feature-Line Grade to Surface",
-                "Grade selected junction bellmouth or road feature lines to a Civil 3D surface. The side and cut/fill criteria are stored with each source so linked daylight and grading rays can refresh automatically after road elevation edits.");
+                "Grade selected junction bellmouth or platform feature lines to a Civil 3D surface. " +
+                "Cut/fill is resolved from the target surface at each source sample, long rays terminate exactly on the toe/daylight line, and the saved settings refresh with linked grading.");
             settings.AddChoice(
                 "Surface", "01 Target", "Target surface", surfaces[0].Name,
                 "Natural ground / controlling surface that the bellmouth grading must daylight to.",
@@ -198,12 +204,20 @@ namespace CETools.Civil3D
                 "Horizontal search increment before the final surface intersection is bisected.");
             settings.AddChoice(
                 "Infill", "07 Grading group", "Create native grading group / infill where possible", "Yes",
-                "For closed feature lines CE Tools also attempts a Civil 3D grading group/infill. Open bellmouth strings still receive the linked Grade-to-Surface daylight geometry.",
+                "For closed feature lines CE Tools creates/resolves a Site, grading group and native infill. Open bellmouth strings still receive linked Grade-to-Surface daylight geometry.",
                 new[] { "Yes", "No" });
             settings.AddChoice(
+                "Site", "07 Grading group", "Grading / toe Site", "<Auto: source site / CE-PLATFORM-SITE>",
+                "Reuse the source feature line Site. If it is siteless and native infill is requested, CE-PLATFORM-SITE is created. Choose an existing Site or type a new Site name to move the source/toe grading there.",
+                siteChoices);
+            settings.AddChoice(
                 "ShowSlopeLines", "08 Presentation", "Show cut / fill slope lines", "Yes",
-                "Draw grading slope rays normal to the actual bellmouth curve. Full-length rays reach daylight; every second ray is drawn at half length on the same cut/fill side for the conventional grading pattern.",
+                "Draw Civil 3D feature-line slope rays normal to the source. Long rays terminate exactly at toe/daylight vertices.",
                 new[] { "Yes", "No" });
+            settings.AddChoice(
+                "SlopePatternMode", "08 Presentation", "Slope-line pattern", "Corridor-style long / short",
+                "Corridor-style alternates long rays to toe with half-length rays. Full-to-toe makes every projection line terminate on the toe.",
+                new[] { "Corridor-style long / short", "All rays full to toe" });
             settings.AddText(
                 "CutSlopeLayer", "08 Presentation", "Cut slope-line layer", "CE-JUNCTION-CUT-SLOPES",
                 "Layer used for cut projection lines.");
@@ -212,10 +226,22 @@ namespace CETools.Civil3D
                 "Layer used for fill projection lines.");
             settings.AddText(
                 "ToeLayer", "08 Presentation", "Toe / daylight layer", "CE-JUNCTION-TOE",
-                "Layer used for the generated toe/daylight feature line. The toe is built through the full-length slope-ray end points.");
+                "Layer used for the generated toe/daylight feature line. The toe connects every long slope-line endpoint.");
+            settings.AddChoice(
+                "CutColor", "08 Presentation", "Cut slope-line colour (ACI)", "ByLayer",
+                "ByLayer or an AutoCAD colour index from 1 to 255. The field is editable.",
+                new[] { "ByLayer", "1", "2", "3", "4", "5", "6", "7", "8", "9", "250" });
+            settings.AddChoice(
+                "FillColor", "08 Presentation", "Fill slope-line colour (ACI)", "ByLayer",
+                "ByLayer or an AutoCAD colour index from 1 to 255. The field is editable.",
+                new[] { "ByLayer", "1", "2", "3", "4", "5", "6", "7", "8", "9", "250" });
+            settings.AddChoice(
+                "ToeColor", "08 Presentation", "Toe / daylight colour (ACI)", "ByLayer",
+                "ByLayer or an AutoCAD colour index from 1 to 255. The field is editable.",
+                new[] { "ByLayer", "1", "2", "3", "4", "5", "6", "7", "8", "9", "250" });
             settings.AddPositiveDouble(
                 "SlopeLineInterval", "08 Presentation", "Slope-line interval / frequency (m)", 5.0,
-                "True chainage spacing along the bellmouth geometry. Rays follow each curve tangent; every second cut/fill ray is half length.");
+                "True chainage spacing along the bellmouth/platform geometry.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
@@ -242,17 +268,25 @@ namespace CETools.Civil3D
                 SearchStep = Math.Max(0.05, settings.Double("SearchStep", 0.5)),
                 Side = SafeSide(settings.Text("Side")),
                 NativeInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase),
+                SiteName = SafeName(settings.Text("Site"), "<Auto: source site / CE-PLATFORM-SITE>"),
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
+                SlopePatternMode = SafePatternMode(settings.Text("SlopePatternMode")),
                 CutSlopeLayer = SafeName(settings.Text("CutSlopeLayer"), "CE-JUNCTION-CUT-SLOPES"),
                 FillSlopeLayer = SafeName(settings.Text("FillSlopeLayer"), "CE-JUNCTION-FILL-SLOPES"),
                 ToeLayer = SafeName(settings.Text("ToeLayer"), "CE-JUNCTION-TOE"),
+                CutColorIndex = ParseAciColor(settings.Text("CutColor")),
+                FillColorIndex = ParseAciColor(settings.Text("FillColor")),
+                ToeColorIndex = ParseAciColor(settings.Text("ToeColor")),
                 SlopeLineInterval = Math.Max(0.10, settings.Double("SlopeLineInterval", 5.0))
             };
 
             int completed = 0;
             int skipped = 0;
+            int groups = 0;
             int infills = 0;
             int slopeLines = 0;
+            int cutSlopeLines = 0;
+            int fillSlopeLines = 0;
             foreach (ObjectId sourceId in selection.Value.GetObjectIds().Distinct())
             {
                 GradeBuildResult result = BuildOrRefreshGrade(document, sourceId, requested, true);
@@ -260,6 +294,9 @@ namespace CETools.Civil3D
                 {
                     completed++;
                     slopeLines += result.SlopeLinesCreated;
+                    cutSlopeLines += result.CutSlopeLinesCreated;
+                    fillSlopeLines += result.FillSlopeLinesCreated;
+                    if (result.NativeGroupReady) groups++;
                     if (result.NativeInfillCreated) infills++;
                 }
                 else
@@ -272,9 +309,12 @@ namespace CETools.Civil3D
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
             document.Editor.WriteMessage(
-                "\nCE_PLATFORMGRADETOSURFACE complete. Selected junction/source feature lines graded={0}; cut/fill slope lines drawn={1}; native infills={2}; skipped={3}.",
+                "\nCE_PLATFORMGRADETOSURFACE complete. Selected junction/source feature lines graded={0}; slope lines={1} (cut={2}, fill={3}); grading groups ready={4}; native infills ready={5}; skipped={6}.",
                 completed,
                 slopeLines,
+                cutSlopeLines,
+                fillSlopeLines,
+                groups,
                 infills,
                 skipped);
         }
@@ -514,6 +554,14 @@ namespace CETools.Civil3D
                 link.FillSlopeLayer = existing.FillSlopeLayer;
             if (existing != null && string.IsNullOrWhiteSpace(link.ToeLayer))
                 link.ToeLayer = existing.ToeLayer;
+            if (existing != null && string.IsNullOrWhiteSpace(link.SiteName))
+                link.SiteName = existing.SiteName;
+            if (existing != null && string.IsNullOrWhiteSpace(link.SlopePatternMode))
+                link.SlopePatternMode = existing.SlopePatternMode;
+            link.CutColorIndex = NormalizeAciColor(link.CutColorIndex);
+            link.FillColorIndex = NormalizeAciColor(link.FillColorIndex);
+            link.ToeColorIndex = NormalizeAciColor(link.ToeColorIndex);
+            link.SlopePatternMode = SafePatternMode(link.SlopePatternMode);
 
             ObjectId surfaceId = ResolveHandle(document.Database, link.SurfaceHandle);
             if (surfaceId.IsNull)
@@ -522,29 +570,66 @@ namespace CETools.Civil3D
                 return result;
             }
 
-            if (link.NativeInfill)
-            {
-                try
-                {
-                    EnsureSourceHasSite(document, sourceId);
-                }
-                catch (System.Exception exception)
-                {
-                    if (explicitCommand)
-                        document.Editor.WriteMessage("\nNative infill site preparation was skipped; daylight generation will continue. " + exception.Message);
-                }
-            }
-
             SourceSnapshot source;
             string error;
-            if (!TryReadSource(document.Database, sourceId, out source, out error))
+            if (!TryReadSource(
+                    document.Database,
+                    sourceId,
+                    out source,
+                    out error))
             {
                 result.Message = error;
                 return result;
             }
 
+            bool explicitSite =
+                !IsAutomaticSiteChoice(link.SiteName);
+            bool needsNativeSite =
+                link.NativeInfill &&
+                source.Closed;
+            if (needsNativeSite ||
+                explicitSite)
+            {
+                try
+                {
+                    EnsureSourceHasSite(
+                        document,
+                        sourceId,
+                        link.SiteName,
+                        needsNativeSite);
+
+                    // Moving a feature line to a Site changes its SiteId and can
+                    // trigger native topology bookkeeping. Re-read the source so
+                    // the toe and grading group are created in that exact Site.
+                    if (!TryReadSource(
+                            document.Database,
+                            sourceId,
+                            out source,
+                            out error))
+                    {
+                        result.Message = error;
+                        return result;
+                    }
+                }
+                catch (System.Exception exception)
+                {
+                    if (explicitCommand)
+                        document.Editor.WriteMessage(
+                            "\nGrading Site preparation failed; daylight geometry will still be attempted. " +
+                            exception.Message);
+                }
+            }
+
             List<Point3d> daylight;
-            if (!TryBuildDaylight(document.Database, surfaceId, source, link, out daylight, out error))
+            List<SlopeRaySample> resolvedSamples;
+            if (!TryBuildDaylight(
+                    document.Database,
+                    surfaceId,
+                    source,
+                    link,
+                    out daylight,
+                    out resolvedSamples,
+                    out error))
             {
                 result.Message = error;
                 return result;
@@ -561,6 +646,7 @@ namespace CETools.Civil3D
                     source,
                     daylight,
                     SafeName(link.ToeLayer, "CE-JUNCTION-TOE"),
+                    link.ToeColorIndex,
                     out candidateId,
                     out error))
             {
@@ -593,6 +679,7 @@ namespace CETools.Civil3D
                         document.Database,
                         source,
                         daylight,
+                        resolvedSamples,
                         link,
                         out newSlopeLines,
                         out error))
@@ -606,6 +693,16 @@ namespace CETools.Civil3D
                         previousSlopeHandles);
                     result.SlopeLinesCreated =
                         newSlopeLines.Count;
+                    result.CutSlopeLinesCreated =
+                        resolvedSamples.Count(
+                            item =>
+                                item.Valid &&
+                                item.Cut);
+                    result.FillSlopeLinesCreated =
+                        resolvedSamples.Count(
+                            item =>
+                                item.Valid &&
+                                !item.Cut);
                 }
                 else if (explicitCommand)
                 {
@@ -623,29 +720,84 @@ namespace CETools.Civil3D
                     previousSlopeHandles);
             }
 
-            ObjectId groupId = ResolveHandle(document.Database, link.GroupHandle);
-            ObjectId previousInfillId = ResolveHandle(document.Database, link.InfillHandle);
-            link.InfillHandle = string.Empty;
+            ObjectId groupId =
+                ResolveHandle(
+                    document.Database,
+                    link.GroupHandle);
+            ObjectId previousInfillId =
+                ResolveHandle(
+                    document.Database,
+                    link.InfillHandle);
 
-            if (!previousInfillId.IsNull)
-                Cleanup(document.Database, previousInfillId);
-
-            if (link.NativeInfill && source.Closed && !source.SiteId.IsNull)
+            if (link.NativeInfill &&
+                source.Closed &&
+                !source.SiteId.IsNull)
             {
+                string groupError = string.Empty;
                 if (groupId.IsNull)
                 {
-                    groupId = TryCreateGradingGroup(document.Database, source.SiteId, "CE-PLATFORM-GRADE-" + sourceId.Handle.ToString());
-                    if (!groupId.IsNull) link.GroupHandle = groupId.Handle.ToString();
+                    groupId = TryCreateGradingGroup(
+                        document.Database,
+                        source.SiteId,
+                        "CE-PLATFORM-GRADE-" +
+                            sourceId.Handle.ToString(),
+                        out groupError);
+                    if (!groupId.IsNull)
+                        link.GroupHandle =
+                            groupId.Handle.ToString();
                 }
+
                 if (!groupId.IsNull)
                 {
-                    ObjectId infillId;
-                    if (TryCreateInfill(groupId, Centre(source.Points), out infillId))
+                    result.NativeGroupReady = true;
+
+                    // A Civil 3D infill is linked to its Site/feature-line
+                    // topology, so a valid existing infill should be retained
+                    // through a linked daylight refresh rather than erased and
+                    // recreated on every road/platform elevation edit.
+                    if (!previousInfillId.IsNull)
                     {
-                        link.InfillHandle = infillId.IsNull ? string.Empty : infillId.Handle.ToString();
                         result.NativeInfillCreated = true;
                     }
+                    else
+                    {
+                        ObjectId infillId;
+                        string infillError;
+                        Point3d seed =
+                            InteriorSeed(source.Points);
+                        if (TryCreateInfill(
+                                groupId,
+                                seed,
+                                out infillId,
+                                out infillError))
+                        {
+                            link.InfillHandle =
+                                infillId.IsNull
+                                    ? string.Empty
+                                    : infillId.Handle.ToString();
+                            result.NativeInfillCreated = true;
+                        }
+                        else if (explicitCommand)
+                        {
+                            document.Editor.WriteMessage(
+                                "\nNative grading group exists, but Civil 3D could not create the infill. " +
+                                infillError);
+                        }
+                    }
                 }
+                else if (explicitCommand)
+                {
+                    document.Editor.WriteMessage(
+                        "\nNative grading group could not be created. " +
+                        groupError);
+                }
+            }
+            else if (link.NativeInfill &&
+                     explicitCommand &&
+                     !source.Closed)
+            {
+                document.Editor.WriteMessage(
+                    "\nNative infill requires a closed feature line. The open bellmouth still received toe/daylight and cut/fill slope lines.");
             }
 
             try
@@ -663,9 +815,17 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static bool TryBuildDaylight(Database database, ObjectId surfaceId, SourceSnapshot source, GradeLink link, out List<Point3d> daylight, out string error)
+        private static bool TryBuildDaylight(
+            Database database,
+            ObjectId surfaceId,
+            SourceSnapshot source,
+            GradeLink link,
+            out List<Point3d> daylight,
+            out List<SlopeRaySample> samples,
+            out string error)
         {
             daylight = new List<Point3d>();
+            samples = new List<SlopeRaySample>();
             error = string.Empty;
             if (source == null ||
                 source.Points == null ||
@@ -681,7 +841,6 @@ namespace CETools.Civil3D
                     ? 5.0
                     : link.SlopeLineInterval);
 
-            List<SlopeRaySample> samples;
             if (!TryResolveSlopeRaySamples(
                     database,
                     surfaceId,
@@ -751,12 +910,14 @@ namespace CETools.Civil3D
                     foreach (SlopeRaySample sample in samples)
                     {
                         Point3d endPoint;
+                        bool isCut;
                         if (!TryFindDaylight(
                                 surface,
                                 sample.Point,
                                 sample.Direction,
                                 link,
-                                out endPoint))
+                                out endPoint,
+                                out isCut))
                         {
                             error =
                                 "No cut/fill daylight intersection was found within " +
@@ -770,8 +931,7 @@ namespace CETools.Civil3D
                             continue;
 
                         sample.EndPoint = endPoint;
-                        sample.Cut =
-                            endPoint.Z > sample.Point.Z + 0.005;
+                        sample.Cut = isCut;
                         sample.Valid = true;
                     }
                 }
@@ -784,11 +944,19 @@ namespace CETools.Civil3D
                     return false;
                 }
 
+                bool corridorPattern =
+                    !string.Equals(
+                        SafePatternMode(link.SlopePatternMode),
+                        "All rays full to toe",
+                        StringComparison.OrdinalIgnoreCase);
                 for (int index = 0; index < valid.Count; index++)
-                    valid[index].HalfLength = (index % 2) == 1;
+                    valid[index].HalfLength =
+                        corridorPattern &&
+                        (index % 2) == 1;
 
-                // Always keep both ends as long rays so the toe starts and ends
-                // on actual full-length grading-line endpoints.
+                // Always keep both ends as long rays so the toe starts/ends on
+                // exact projection-line endpoints. The exact same resolved
+                // samples are reused when visible rays are created.
                 valid[0].HalfLength = false;
                 valid[valid.Count - 1].HalfLength = false;
                 return true;
@@ -801,52 +969,121 @@ namespace CETools.Civil3D
             }
         }
 
-        private static bool TryFindDaylight(CivilSurface surface, Point3d source, Vector2d direction, GradeLink link, out Point3d result)
+        private static bool TryFindDaylight(
+            CivilSurface surface,
+            Point3d source,
+            Vector2d direction,
+            GradeLink link,
+            out Point3d result,
+            out bool isCut)
         {
             result = Point3d.Origin;
-            double step = Math.Max(0.05, Math.Min(link.SearchStep, link.MaxDistance));
+            isCut = false;
+            double step =
+                Math.Max(
+                    0.05,
+                    Math.Min(
+                        link.SearchStep,
+                        link.MaxDistance));
             bool modeKnown = false;
             bool cut = false;
             bool previousValid = false;
             double previousDistance = 0.0;
             double previousDifference = 0.0;
 
-            for (double distance = 0.0; distance <= link.MaxDistance + Tolerance; distance += step)
+            for (double distance = 0.0;
+                 distance <= link.MaxDistance + Tolerance;
+                 distance += step)
             {
                 double terrain;
-                if (!TrySurfaceElevation(surface, source, direction, distance, out terrain))
+                if (!TrySurfaceElevation(
+                        surface,
+                        source,
+                        direction,
+                        distance,
+                        out terrain))
                 {
                     previousValid = false;
                     continue;
                 }
+
                 if (!modeKnown)
                 {
-                    double delta = terrain - source.Z;
-                    if (Math.Abs(delta) <= 0.005 && distance <= Tolerance)
+                    double delta =
+                        terrain - source.Z;
+
+                    // At the exact source point an existing-ground triangle may
+                    // coincide with the design feature line. Do not classify
+                    // that zero-distance touch as fill or terminate the ray.
+                    // Continue outward until the terrain is meaningfully above
+                    // or below the design level, which matches Civil 3D's
+                    // cut/fill grading intent.
+                    if (Math.Abs(delta) <= 0.005)
                     {
-                        result = new Point3d(source.X, source.Y, terrain);
-                        return true;
+                        if (distance <= Tolerance)
+                            continue;
                     }
-                    cut = delta > 0.0;
-                    modeKnown = true;
+                    else
+                    {
+                        cut = delta > 0.0;
+                        modeKnown = true;
+                        isCut = cut;
+                    }
+
+                    if (!modeKnown)
+                        continue;
                 }
 
-                double ratio = cut ? link.CutRatio : link.FillRatio;
-                double gradeElevation = source.Z + (cut ? distance / ratio : -distance / ratio);
-                double difference = gradeElevation - terrain;
-                if (Math.Abs(difference) <= 0.005)
+                double ratio =
+                    cut
+                        ? link.CutRatio
+                        : link.FillRatio;
+                double gradeElevation =
+                    source.Z +
+                    (cut
+                        ? distance / ratio
+                        : -distance / ratio);
+                double difference =
+                    gradeElevation - terrain;
+
+                if (Math.Abs(difference) <= 0.005 &&
+                    distance > Tolerance)
                 {
-                    result = new Point3d(source.X + direction.X * distance, source.Y + direction.Y * distance, terrain);
+                    result = new Point3d(
+                        source.X +
+                            direction.X * distance,
+                        source.Y +
+                            direction.Y * distance,
+                        terrain);
+                    isCut = cut;
                     return true;
                 }
 
-                if (previousValid && Math.Sign(previousDifference) != Math.Sign(difference))
-                    return TryBisectDaylight(surface, source, direction, cut, ratio, previousDistance, distance, previousDifference, difference, out result);
+                if (previousValid &&
+                    Math.Sign(previousDifference) !=
+                        Math.Sign(difference))
+                {
+                    bool found =
+                        TryBisectDaylight(
+                            surface,
+                            source,
+                            direction,
+                            cut,
+                            ratio,
+                            previousDistance,
+                            distance,
+                            previousDifference,
+                            difference,
+                            out result);
+                    isCut = cut;
+                    return found;
+                }
 
                 previousValid = true;
                 previousDistance = distance;
                 previousDifference = difference;
             }
+
             return false;
         }
 
@@ -1004,6 +1241,7 @@ namespace CETools.Civil3D
             Database database,
             SourceSnapshot source,
             IList<Point3d> daylight,
+            IList<SlopeRaySample> resolvedSamples,
             GradeLink link,
             out List<ObjectId> lineIds,
             out string error)
@@ -1019,12 +1257,10 @@ namespace CETools.Civil3D
                 return false;
             }
 
-            ObjectId surfaceId = ResolveHandle(
-                database,
-                link.SurfaceHandle);
-            if (surfaceId.IsNull)
+            if (resolvedSamples == null ||
+                resolvedSamples.Count < 2)
             {
-                error = "The target surface is unavailable for slope-line creation.";
+                error = "Resolved grading rays are unavailable for slope-line creation.";
                 return false;
             }
 
@@ -1048,32 +1284,37 @@ namespace CETools.Civil3D
                     transaction.Commit();
                 }
 
-                double spacing = Math.Max(
-                    0.10,
-                    link.SlopeLineInterval <= Tolerance
-                        ? 5.0
-                        : link.SlopeLineInterval);
-
-                List<SlopeRaySample> samples;
-                if (!TryResolveSlopeRaySamples(
-                        database,
-                        surfaceId,
-                        source,
-                        link,
-                        spacing,
-                        out samples,
-                        out error))
-                    return false;
-
                 int index = 0;
                 foreach (SlopeRaySample sample in
-                    samples.Where(item => item.Valid))
+                    resolvedSamples.Where(item => item.Valid))
                 {
                     ObjectId rayId;
                     string rayError;
-                    Point3d rayEnd = sample.HalfLength
-                        ? Halfway(sample.Point, sample.EndPoint)
-                        : sample.EndPoint;
+                    Point3d rayEnd;
+                    if (sample.HalfLength)
+                    {
+                        rayEnd =
+                            Halfway(
+                                sample.Point,
+                                sample.EndPoint);
+                    }
+                    else if (!TrySnapToToeVertex(
+                                 daylight,
+                                 sample.EndPoint,
+                                 out rayEnd))
+                    {
+                        error =
+                            "A long slope ray could not be matched to its toe/daylight vertex.";
+                        foreach (ObjectId created in lineIds)
+                            Cleanup(database, created);
+                        lineIds.Clear();
+                        return false;
+                    }
+
+                    short rayColour =
+                        sample.Cut
+                            ? link.CutColorIndex
+                            : link.FillColorIndex;
                     if (!TryCreateCivilSlopeRay(
                             database,
                             source,
@@ -1081,6 +1322,7 @@ namespace CETools.Civil3D
                             rayEnd,
                             sample.Cut ? cutLayerId : fillLayerId,
                             sample.Cut ? "CUT" : "FILL",
+                            rayColour,
                             index++,
                             out rayId,
                             out rayError))
@@ -1370,6 +1612,7 @@ namespace CETools.Civil3D
             Point3d end,
             ObjectId layerId,
             string mode,
+            short colorIndex,
             int index,
             out ObjectId featureLineId,
             out string error)
@@ -1433,7 +1676,8 @@ namespace CETools.Civil3D
                         throw new InvalidOperationException(
                             "Civil 3D did not create the slope-ray feature line.");
                     ray.LayerId = layerId;
-                    ray.ColorIndex = 256;
+                    ray.ColorIndex =
+                        NormalizeAciColor(colorIndex);
                     transaction.Commit();
                 }
                 return true;
@@ -1513,7 +1757,14 @@ namespace CETools.Civil3D
             }
         }
 
-        private static bool TryCreateFeatureLineCandidate(Document document, SourceSnapshot source, IList<Point3d> points, string toeLayerName, out ObjectId featureLineId, out string error)
+        private static bool TryCreateFeatureLineCandidate(
+            Document document,
+            SourceSnapshot source,
+            IList<Point3d> points,
+            string toeLayerName,
+            short toeColorIndex,
+            out ObjectId featureLineId,
+            out string error)
         {
             featureLineId = ObjectId.Null;
             error = string.Empty;
@@ -1554,7 +1805,8 @@ namespace CETools.Civil3D
                         SafeName(toeLayerName, "CE-JUNCTION-TOE"),
                         2);
                     featureLine.LayerId = toeLayerId;
-                    featureLine.ColorIndex = 256;
+                    featureLine.ColorIndex =
+                        NormalizeAciColor(toeColorIndex);
                     if (!string.IsNullOrWhiteSpace(source.StyleName))
                     {
                         try { featureLine.StyleName = source.StyleName; } catch { }
@@ -1607,20 +1859,65 @@ namespace CETools.Civil3D
             }
         }
 
-        private static void EnsureSourceHasSite(Document document, ObjectId sourceId)
+        private static void EnsureSourceHasSite(
+            Document document,
+            ObjectId sourceId,
+            string requestedSite,
+            bool requireSite)
         {
             ObjectId currentSite = ObjectId.Null;
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
             {
-                CivilFeatureLine source = OpenFeatureLine(transaction, sourceId, OpenMode.ForRead);
-                if (source == null || source.IsReferenceObject) throw new InvalidOperationException("The source feature line is unavailable or referenced.");
+                CivilFeatureLine source =
+                    OpenFeatureLine(
+                        transaction,
+                        sourceId,
+                        OpenMode.ForRead);
+                if (source == null ||
+                    source.IsReferenceObject)
+                    throw new InvalidOperationException(
+                        "The source feature line is unavailable or referenced.");
                 currentSite = source.SiteId;
             }
-            if (!currentSite.IsNull) return;
 
-            ObjectId siteId = EnsureSite(document.Database, CivilApplication.ActiveDocument, PlatformSiteName);
-            if (siteId.IsNull) throw new InvalidOperationException("Civil 3D could not create or resolve the CE platform site.");
-            if (!MoveToSite(sourceId, siteId)) throw new InvalidOperationException("Civil 3D could not move the source feature line into the CE platform site.");
+            bool automatic =
+                IsAutomaticSiteChoice(requestedSite);
+            if (automatic &&
+                !currentSite.IsNull)
+                return;
+            if (automatic &&
+                currentSite.IsNull &&
+                !requireSite)
+                return;
+
+            string siteName =
+                automatic
+                    ? PlatformSiteName
+                    : SafeName(
+                        requestedSite,
+                        PlatformSiteName);
+            ObjectId siteId =
+                EnsureSite(
+                    document.Database,
+                    CivilApplication.ActiveDocument,
+                    siteName);
+            if (siteId.IsNull)
+                throw new InvalidOperationException(
+                    "Civil 3D could not create or resolve Site '" +
+                    siteName +
+                    "'.");
+
+            if (currentSite == siteId)
+                return;
+
+            if (!MoveToSite(
+                    sourceId,
+                    siteId))
+                throw new InvalidOperationException(
+                    "Civil 3D could not move the source feature line into Site '" +
+                    siteName +
+                    "'.");
         }
 
         private static ObjectId EnsureSite(Database database, CivilDocument civilDocument, string name)
@@ -1659,78 +1956,461 @@ namespace CETools.Civil3D
             return ObjectId.Null;
         }
 
-        private static bool MoveToSite(ObjectId featureLineId, ObjectId siteId)
+        private static bool MoveToSite(
+            ObjectId featureLineId,
+            ObjectId siteId)
         {
-            foreach (MethodInfo method in typeof(CivilFeatureLine).GetMethods(BindingFlags.Public | BindingFlags.Static).Where(item => item.Name.IndexOf("MoveToSite", StringComparison.OrdinalIgnoreCase) >= 0))
+            if (featureLineId.IsNull ||
+                siteId.IsNull)
+                return false;
+            try
             {
-                ParameterInfo[] parameters = method.GetParameters();
-                if (parameters.Length != 2 || parameters.Any(parameter => parameter.ParameterType != typeof(ObjectId))) continue;
-                try { method.Invoke(null, new object[] { featureLineId, siteId }); return true; }
+                CivilFeatureLine.MoveToSite(
+                    featureLineId,
+                    siteId);
+                return true;
+            }
+            catch { }
+
+            // Compatibility fallback for unusual host shims.
+            foreach (MethodInfo method in
+                typeof(CivilFeatureLine)
+                    .GetMethods(
+                        BindingFlags.Public |
+                        BindingFlags.Static)
+                    .Where(item =>
+                        item.Name.IndexOf(
+                            "MoveToSite",
+                            StringComparison.OrdinalIgnoreCase) >= 0))
+            {
+                ParameterInfo[] parameters =
+                    method.GetParameters();
+                if (parameters.Length != 2 ||
+                    parameters.Any(parameter =>
+                        parameter.ParameterType != typeof(ObjectId)))
+                    continue;
+                try
+                {
+                    method.Invoke(
+                        null,
+                        new object[]
+                        {
+                            featureLineId,
+                            siteId
+                        });
+                    return true;
+                }
                 catch { }
             }
             return false;
         }
 
-        private static ObjectId TryCreateGradingGroup(Database database, ObjectId siteId, string name)
+        private static ObjectId TryCreateGradingGroup(
+            Database database,
+            ObjectId siteId,
+            string name,
+            out string error)
         {
-            CivilDocument civilDocument = CivilApplication.ActiveDocument;
-            Type groupType = typeof(CivilFeatureLine).Assembly.GetType("Autodesk.Civil.DatabaseServices.GradingGroup", false);
-            if (groupType == null) return ObjectId.Null;
-            ObjectId id = ObjectId.Null;
-            foreach (MethodInfo method in groupType.GetMethods(BindingFlags.Public | BindingFlags.Static).Where(item => string.Equals(item.Name, "Create", StringComparison.OrdinalIgnoreCase)).OrderBy(item => item.GetParameters().Length))
+            error = string.Empty;
+            CivilDocument civilDocument =
+                CivilApplication.ActiveDocument;
+            if (database == null ||
+                civilDocument == null ||
+                siteId.IsNull)
             {
-                object[] args = BuildHostArguments(method.GetParameters(), database, civilDocument, name, siteId, Point3d.Origin);
-                if (args == null) continue;
+                error =
+                    "The active Civil 3D document or grading Site is unavailable.";
+                return ObjectId.Null;
+            }
+
+            Type groupType =
+                typeof(CivilFeatureLine)
+                    .Assembly
+                    .GetType(
+                        "Autodesk.Civil.DatabaseServices.GradingGroup",
+                        false);
+            if (groupType == null)
+            {
+                error =
+                    "The Civil 3D GradingGroup API is unavailable.";
+                return ObjectId.Null;
+            }
+
+            ObjectId existing =
+                FindGradingGroup(
+                    database,
+                    siteId,
+                    name,
+                    groupType);
+            if (!existing.IsNull)
+            {
+                ConfigureGradingGroup(
+                    database,
+                    existing,
+                    name);
+                return existing;
+            }
+
+            string lastError = string.Empty;
+            foreach (MethodInfo method in
+                groupType
+                    .GetMethods(
+                        BindingFlags.Public |
+                        BindingFlags.Static)
+                    .Where(item =>
+                        string.Equals(
+                            item.Name,
+                            "Create",
+                            StringComparison.OrdinalIgnoreCase))
+                    .OrderBy(item =>
+                        item.GetParameters().Length))
+            {
+                object[] args =
+                    BuildGradingGroupArguments(
+                        method.GetParameters(),
+                        database,
+                        civilDocument,
+                        name,
+                        siteId);
+                if (args == null)
+                    continue;
+
                 try
                 {
-                    object value = method.Invoke(null, args);
-                    if (value is ObjectId) { id = (ObjectId)value; break; }
+                    object value =
+                        method.Invoke(
+                            null,
+                            args);
+                    ObjectId id =
+                        value is ObjectId
+                            ? (ObjectId)value
+                            : value is DBObject
+                                ? ((DBObject)value).ObjectId
+                                : ObjectId.Null;
+                    if (id.IsNull)
+                        continue;
+
+                    ConfigureGradingGroup(
+                        database,
+                        id,
+                        name);
+                    return id;
                 }
-                catch { }
+                catch (System.Exception exception)
+                {
+                    lastError =
+                        exception.InnerException == null
+                            ? exception.Message
+                            : exception.InnerException.Message;
+                }
             }
-            if (id.IsNull) return id;
+
+            error =
+                string.IsNullOrWhiteSpace(lastError)
+                    ? "No compatible Civil 3D GradingGroup.Create overload succeeded."
+                    : lastError;
+            return ObjectId.Null;
+        }
+
+        private static ObjectId FindGradingGroup(
+            Database database,
+            ObjectId siteId,
+            string name,
+            Type groupType)
+        {
             try
             {
-                using (Transaction transaction = database.TransactionManager.StartTransaction())
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
                 {
-                    DBObject group = transaction.GetObject(id, OpenMode.ForWrite, false);
-                    SetProperty(group, "AutomaticSurfaceCreation", false);
+                    DBObject site =
+                        transaction.GetObject(
+                            siteId,
+                            OpenMode.ForRead,
+                            false);
+                    if (site == null)
+                        return ObjectId.Null;
+
+                    foreach (MethodInfo method in
+                        site.GetType()
+                            .GetMethods(
+                                BindingFlags.Public |
+                                BindingFlags.Instance)
+                            .Where(item =>
+                                item.GetParameters().Length == 0 &&
+                                item.Name.IndexOf(
+                                    "GradingGroup",
+                                    StringComparison.OrdinalIgnoreCase) >= 0 &&
+                                item.Name.StartsWith(
+                                    "Get",
+                                    StringComparison.OrdinalIgnoreCase)))
+                    {
+                        object value;
+                        try
+                        {
+                            value =
+                                method.Invoke(
+                                    site,
+                                    null);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        IEnumerable enumerable =
+                            value as IEnumerable;
+                        if (enumerable == null)
+                            continue;
+
+                        foreach (object entry in enumerable)
+                        {
+                            if (!(entry is ObjectId))
+                                continue;
+                            ObjectId id =
+                                (ObjectId)entry;
+                            DBObject group = null;
+                            try
+                            {
+                                group =
+                                    transaction.GetObject(
+                                        id,
+                                        OpenMode.ForRead,
+                                        false);
+                            }
+                            catch { }
+                            if (group == null ||
+                                !groupType.IsAssignableFrom(
+                                    group.GetType()))
+                                continue;
+
+                            string current =
+                                ReadStringProperty(
+                                    group,
+                                    "Name");
+                            if (string.Equals(
+                                    current,
+                                    name,
+                                    StringComparison.OrdinalIgnoreCase))
+                                return id;
+                        }
+                    }
+                }
+            }
+            catch { }
+            return ObjectId.Null;
+        }
+
+        private static void ConfigureGradingGroup(
+            Database database,
+            ObjectId groupId,
+            string name)
+        {
+            if (database == null ||
+                groupId.IsNull)
+                return;
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    DBObject group =
+                        transaction.GetObject(
+                            groupId,
+                            OpenMode.ForWrite,
+                            false);
+                    if (group == null)
+                        return;
+
+                    SetProperty(
+                        group,
+                        "Name",
+                        name);
+                    // Native Civil 3D grading/infill is much easier to verify in
+                    // Prospector when the group maintains its dynamic surface.
+                    SetProperty(
+                        group,
+                        "AutomaticSurfaceCreation",
+                        true);
+                    SetProperty(
+                        group,
+                        "SurfaceName",
+                        name + "-SURFACE");
                     transaction.Commit();
                 }
             }
             catch { }
-            return id;
         }
 
-        private static bool TryCreateInfill(ObjectId groupId, Point3d seed, out ObjectId infillId)
+        private static object[] BuildGradingGroupArguments(
+            ParameterInfo[] parameters,
+            Database database,
+            CivilDocument civilDocument,
+            string name,
+            ObjectId siteId)
+        {
+            var args =
+                new object[parameters.Length];
+            int objectIdCount =
+                parameters.Count(parameter =>
+                    parameter.ParameterType ==
+                    typeof(ObjectId));
+            for (int index = 0;
+                 index < parameters.Length;
+                 index++)
+            {
+                ParameterInfo parameter =
+                    parameters[index];
+                Type type =
+                    parameter.ParameterType;
+                string parameterName =
+                    (parameter.Name ?? string.Empty)
+                        .ToLowerInvariant();
+
+                if (type == typeof(Database))
+                    args[index] = database;
+                else if (type == typeof(CivilDocument))
+                    args[index] = civilDocument;
+                else if (type == typeof(string))
+                    args[index] = name;
+                else if (type == typeof(ObjectId))
+                {
+                    if (parameterName.Contains("site") ||
+                        objectIdCount == 1)
+                        args[index] = siteId;
+                    else
+                        args[index] = ObjectId.Null;
+                }
+                else if (type == typeof(bool))
+                    args[index] = true;
+                else if (type == typeof(double))
+                    args[index] = 1.0;
+                else if (parameter.HasDefaultValue)
+                    args[index] =
+                        parameter.DefaultValue;
+                else
+                    return null;
+            }
+            return args;
+        }
+
+        private static bool TryCreateInfill(
+            ObjectId groupId,
+            Point3d seed,
+            out ObjectId infillId,
+            out string error)
         {
             infillId = ObjectId.Null;
-            Type gradingType = typeof(CivilFeatureLine).Assembly.GetType("Autodesk.Civil.DatabaseServices.Grading", false);
-            if (gradingType == null) return false;
-            foreach (MethodInfo method in gradingType.GetMethods(BindingFlags.Public | BindingFlags.Static).Where(item => item.Name.IndexOf("CreateInfill", StringComparison.OrdinalIgnoreCase) >= 0))
+            error = string.Empty;
+
+            Type gradingType =
+                typeof(CivilFeatureLine)
+                    .Assembly
+                    .GetType(
+                        "Autodesk.Civil.DatabaseServices.Grading",
+                        false);
+            if (gradingType == null)
             {
-                ParameterInfo[] parameters = method.GetParameters();
-                var args = new object[parameters.Length];
+                error =
+                    "The Civil 3D Grading API is unavailable.";
+                return false;
+            }
+
+            string lastError = string.Empty;
+            foreach (MethodInfo method in
+                gradingType
+                    .GetMethods(
+                        BindingFlags.Public |
+                        BindingFlags.Static)
+                    .Where(item =>
+                        item.Name.IndexOf(
+                            "CreateInfill",
+                            StringComparison.OrdinalIgnoreCase) >= 0)
+                    .OrderBy(item =>
+                        item.GetParameters().Length))
+            {
+                ParameterInfo[] parameters =
+                    method.GetParameters();
+                var args =
+                    new object[parameters.Length];
                 bool valid = true;
-                for (int index = 0; index < parameters.Length; index++)
+                int objectIdSeen = 0;
+
+                for (int index = 0;
+                     index < parameters.Length;
+                     index++)
                 {
-                    Type type = parameters[index].ParameterType;
-                    if (type == typeof(ObjectId)) args[index] = groupId;
-                    else if (type == typeof(Point3d)) args[index] = seed;
-                    else if (type == typeof(string)) args[index] = "CE Platform Grade Infill";
-                    else if (type == typeof(bool)) args[index] = true;
-                    else if (parameters[index].HasDefaultValue) args[index] = parameters[index].DefaultValue;
-                    else { valid = false; break; }
+                    Type type =
+                        parameters[index].ParameterType;
+                    string parameterName =
+                        (parameters[index].Name ?? string.Empty)
+                            .ToLowerInvariant();
+
+                    if (type == typeof(ObjectId))
+                    {
+                        // The grading-group ObjectId is the controlling parent.
+                        // Any optional style/object ids are left null instead of
+                        // incorrectly receiving the group id.
+                        args[index] =
+                            objectIdSeen == 0 ||
+                            parameterName.Contains("group")
+                                ? groupId
+                                : ObjectId.Null;
+                        objectIdSeen++;
+                    }
+                    else if (type == typeof(Point3d))
+                        args[index] = seed;
+                    else if (type == typeof(string))
+                        args[index] =
+                            "CE Platform Grade Infill";
+                    else if (type == typeof(bool))
+                        args[index] = true;
+                    else if (type == typeof(double))
+                        args[index] = 0.0;
+                    else if (parameters[index].HasDefaultValue)
+                        args[index] =
+                            parameters[index].DefaultValue;
+                    else
+                    {
+                        valid = false;
+                        break;
+                    }
                 }
-                if (!valid) continue;
+
+                if (!valid)
+                    continue;
+
                 try
                 {
-                    object value = method.Invoke(null, args);
-                    if (value is ObjectId) infillId = (ObjectId)value;
+                    object value =
+                        method.Invoke(
+                            null,
+                            args);
+                    if (value is ObjectId)
+                        infillId =
+                            (ObjectId)value;
+                    else if (value is DBObject)
+                        infillId =
+                            ((DBObject)value).ObjectId;
+
+                    // Some Civil 3D builds expose CreateInfill as void. A
+                    // successful invocation still means the native infill was
+                    // created even when no ObjectId is returned.
                     return true;
                 }
-                catch { }
+                catch (System.Exception exception)
+                {
+                    lastError =
+                        exception.InnerException == null
+                            ? exception.Message
+                            : exception.InnerException.Message;
+                }
             }
+
+            error =
+                string.IsNullOrWhiteSpace(lastError)
+                    ? "No compatible Civil 3D Grading.CreateInfill overload succeeded."
+                    : lastError;
             return false;
         }
 
@@ -2084,7 +2764,12 @@ namespace CETools.Civil3D
                     new TypedValue((int)DxfCode.Text, link.FillSlopeLayer ?? "CE-JUNCTION-FILL-SLOPES"),
                     new TypedValue((int)DxfCode.Text, link.SlopeLineHandles ?? string.Empty),
                     new TypedValue((int)DxfCode.Real, link.SlopeLineInterval),
-                    new TypedValue((int)DxfCode.Text, link.ToeLayer ?? "CE-JUNCTION-TOE"));
+                    new TypedValue((int)DxfCode.Text, link.ToeLayer ?? "CE-JUNCTION-TOE"),
+                    new TypedValue((int)DxfCode.Text, link.SiteName ?? "<Auto: source site / CE-PLATFORM-SITE>"),
+                    new TypedValue((int)DxfCode.Text, link.SlopePatternMode ?? "Corridor-style long / short"),
+                    new TypedValue((int)DxfCode.Int16, link.CutColorIndex),
+                    new TypedValue((int)DxfCode.Int16, link.FillColorIndex),
+                    new TypedValue((int)DxfCode.Int16, link.ToeColorIndex));
                 transaction.Commit();
             }
         }
@@ -2138,7 +2823,22 @@ namespace CETools.Civil3D
                         : 5.0,
                     ToeLayer = values.Length > 15
                         ? Convert.ToString(values[15].Value, CultureInfo.InvariantCulture)
-                        : "CE-JUNCTION-TOE"
+                        : "CE-JUNCTION-TOE",
+                    SiteName = values.Length > 16
+                        ? Convert.ToString(values[16].Value, CultureInfo.InvariantCulture)
+                        : "<Auto: source site / CE-PLATFORM-SITE>",
+                    SlopePatternMode = values.Length > 17
+                        ? SafePatternMode(Convert.ToString(values[17].Value, CultureInfo.InvariantCulture))
+                        : "Corridor-style long / short",
+                    CutColorIndex = values.Length > 18
+                        ? Convert.ToInt16(values[18].Value, CultureInfo.InvariantCulture)
+                        : (short)256,
+                    FillColorIndex = values.Length > 19
+                        ? Convert.ToInt16(values[19].Value, CultureInfo.InvariantCulture)
+                        : (short)256,
+                    ToeColorIndex = values.Length > 20
+                        ? Convert.ToInt16(values[20].Value, CultureInfo.InvariantCulture)
+                        : (short)256
                 };
                 return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
             }
@@ -2282,6 +2982,252 @@ namespace CETools.Civil3D
             return new Point3d(points.Average(point => point.X), points.Average(point => point.Y), points.Average(point => point.Z));
         }
 
+        private static List<string> ReadSiteNames(
+            Document document)
+        {
+            var result = new List<string>();
+            CivilDocument civilDocument =
+                CivilApplication.ActiveDocument;
+            if (document == null ||
+                civilDocument == null)
+                return result;
+
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in
+                        civilDocument.GetSiteIds())
+                    {
+                        DBObject site = null;
+                        try
+                        {
+                            site =
+                                transaction.GetObject(
+                                    id,
+                                    OpenMode.ForRead,
+                                    false);
+                        }
+                        catch { }
+
+                        string name =
+                            ReadStringProperty(
+                                site,
+                                "Name");
+                        if (!string.IsNullOrWhiteSpace(name))
+                            result.Add(name);
+                    }
+                }
+            }
+            catch { }
+
+            return result
+                .Distinct(
+                    StringComparer.OrdinalIgnoreCase)
+                .OrderBy(
+                    item => item,
+                    StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+        }
+
+        private static string ReadStringProperty(
+            object value,
+            string propertyName)
+        {
+            if (value == null ||
+                string.IsNullOrWhiteSpace(propertyName))
+                return string.Empty;
+            try
+            {
+                PropertyInfo property =
+                    value.GetType()
+                        .GetProperty(
+                            propertyName,
+                            BindingFlags.Public |
+                            BindingFlags.Instance);
+                if (property == null ||
+                    !property.CanRead)
+                    return string.Empty;
+                return Convert.ToString(
+                           property.GetValue(
+                               value,
+                               null),
+                           CultureInfo.CurrentCulture) ??
+                       string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static bool TrySnapToToeVertex(
+            IList<Point3d> toePoints,
+            Point3d target,
+            out Point3d snapped)
+        {
+            snapped = target;
+            if (toePoints == null ||
+                toePoints.Count == 0)
+                return false;
+
+            double best =
+                double.MaxValue;
+            Point3d candidate =
+                target;
+            foreach (Point3d point in toePoints)
+            {
+                double distance =
+                    point.DistanceTo(target);
+                if (distance < best)
+                {
+                    best = distance;
+                    candidate = point;
+                }
+            }
+
+            // The toe and long rays are built from the same resolved sample
+            // collection, so this should normally be exactly zero. The small
+            // tolerance only absorbs database round-off after native feature-
+            // line creation.
+            if (best > 0.01)
+                return false;
+
+            snapped = candidate;
+            return true;
+        }
+
+        private static Point3d InteriorSeed(
+            IList<Point3d> points)
+        {
+            if (points == null ||
+                points.Count == 0)
+                return Point3d.Origin;
+
+            Point3d centre =
+                Centre(points);
+            if (PointInsidePlan(
+                    points,
+                    centre))
+                return centre;
+
+            Point3d first =
+                points[0];
+            for (int division = 2;
+                 division <= 16;
+                 division++)
+            {
+                double factor =
+                    1.0 / division;
+                Point3d candidate =
+                    new Point3d(
+                        first.X +
+                            (centre.X - first.X) * factor,
+                        first.Y +
+                            (centre.Y - first.Y) * factor,
+                        first.Z +
+                            (centre.Z - first.Z) * factor);
+                if (PointInsidePlan(
+                        points,
+                        candidate))
+                    return candidate;
+            }
+
+            // Civil 3D will reject an exterior seed. Returning the arithmetic
+            // centre preserves the safest deterministic fallback and allows the
+            // caller to report the native CreateInfill failure explicitly.
+            return centre;
+        }
+
+        private static bool PointInsidePlan(
+            IList<Point3d> points,
+            Point3d point)
+        {
+            if (points == null ||
+                points.Count < 3)
+                return false;
+
+            bool inside = false;
+            int j =
+                points.Count - 1;
+            for (int i = 0;
+                 i < points.Count;
+                 j = i++)
+            {
+                Point3d a =
+                    points[i];
+                Point3d b =
+                    points[j];
+                bool crosses =
+                    ((a.Y > point.Y) !=
+                     (b.Y > point.Y)) &&
+                    point.X <
+                    (b.X - a.X) *
+                    (point.Y - a.Y) /
+                    (Math.Abs(b.Y - a.Y) <=
+                        1e-20
+                        ? 1e-20
+                        : b.Y - a.Y) +
+                    a.X;
+                if (crosses)
+                    inside = !inside;
+            }
+            return inside;
+        }
+
+        private static short ParseAciColor(
+            string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) ||
+                string.Equals(
+                    value.Trim(),
+                    "ByLayer",
+                    StringComparison.OrdinalIgnoreCase))
+                return 256;
+
+            short parsed;
+            return short.TryParse(
+                       value.Trim(),
+                       NumberStyles.Integer,
+                       CultureInfo.InvariantCulture,
+                       out parsed) &&
+                   parsed >= 1 &&
+                   parsed <= 255
+                ? parsed
+                : (short)256;
+        }
+
+        private static short NormalizeAciColor(
+            short value)
+        {
+            return value >= 1 &&
+                   value <= 255
+                ? value
+                : (short)256;
+        }
+
+        private static string SafePatternMode(
+            string value)
+        {
+            return string.Equals(
+                       value,
+                       "All rays full to toe",
+                       StringComparison.OrdinalIgnoreCase)
+                ? "All rays full to toe"
+                : "Corridor-style long / short";
+        }
+
+        private static bool IsAutomaticSiteChoice(
+            string value)
+        {
+            return string.IsNullOrWhiteSpace(value) ||
+                   string.Equals(
+                       value.Trim(),
+                       "<Auto: source site / CE-PLATFORM-SITE>",
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
         private static string SafeName(string value, string fallback)
         {
             return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim();
@@ -2331,12 +3277,17 @@ namespace CETools.Civil3D
             internal double SearchStep { get; set; }
             internal string Side { get; set; }
             internal bool NativeInfill { get; set; }
+            internal string SiteName { get; set; }
             internal bool ShowSlopeLines { get; set; }
+            internal string SlopePatternMode { get; set; }
             internal string CutSlopeLayer { get; set; }
             internal string FillSlopeLayer { get; set; }
             internal string SlopeLineHandles { get; set; }
             internal double SlopeLineInterval { get; set; }
             internal string ToeLayer { get; set; }
+            internal short CutColorIndex { get; set; }
+            internal short FillColorIndex { get; set; }
+            internal short ToeColorIndex { get; set; }
 
             internal GradeLink Clone()
             {
@@ -2352,12 +3303,17 @@ namespace CETools.Civil3D
                     SearchStep = SearchStep,
                     Side = SafeSide(Side),
                     NativeInfill = NativeInfill,
+                    SiteName = SiteName,
                     ShowSlopeLines = ShowSlopeLines,
+                    SlopePatternMode = SafePatternMode(SlopePatternMode),
                     CutSlopeLayer = CutSlopeLayer,
                     FillSlopeLayer = FillSlopeLayer,
                     SlopeLineHandles = SlopeLineHandles,
                     SlopeLineInterval = SlopeLineInterval,
-                    ToeLayer = ToeLayer
+                    ToeLayer = ToeLayer,
+                    CutColorIndex = NormalizeAciColor(CutColorIndex),
+                    FillColorIndex = NormalizeAciColor(FillColorIndex),
+                    ToeColorIndex = NormalizeAciColor(ToeColorIndex)
                 };
             }
         }
@@ -2377,8 +3333,11 @@ namespace CETools.Civil3D
         private sealed class GradeBuildResult
         {
             internal bool Success { get; set; }
+            internal bool NativeGroupReady { get; set; }
             internal bool NativeInfillCreated { get; set; }
             internal int SlopeLinesCreated { get; set; }
+            internal int CutSlopeLinesCreated { get; set; }
+            internal int FillSlopeLinesCreated { get; set; }
             internal string Message { get; set; }
         }
     }
