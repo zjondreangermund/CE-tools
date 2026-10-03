@@ -153,6 +153,12 @@ if 'TryCreateCivilSlopeRay(' not in grading or 'CivilFeatureLine.Create(' not in
     errors.append("Junction cut/fill slope rays must be native Civil 3D feature lines rather than plain AutoCAD lines")
 if 'cut ? cutLayerId : fillLayerId' not in grading:
     errors.append("Cut and fill Civil 3D slope rays must be separated by layer")
+if 'featureLine.Explode(exploded)' not in grading or 'curve.GetPointAtDist(localDistance)' not in grading:
+    errors.append("Bellmouth grading rays must sample the actual exploded curve geometry by chainage")
+if 'curve.GetFirstDerivative(point)' not in grading:
+    errors.append("Bellmouth grading rays must use the local curve tangent for their normal direction")
+if 'sample.HalfLength = (validRayIndex++ % 2) == 1' not in grading or 'Halfway(sample.Point, sample.EndPoint)' not in grading:
+    errors.append("Every second cut/fill grading ray must be half length while preserving the full daylight classification")
 
 if "gapTolerance" not in healing or "best.Distance > gapTolerance" not in healing:
     errors.append("Stepped healing no longer protects the maximum bridge distance")
@@ -167,5 +173,5 @@ if errors:
 
 print(
     "Stepped feature-line workflows passed: popup multi-offset creation, automatic linked refresh, "
-    "multi-source creation, bellmouth side control, grade/slope vertical modes, one-selection set rebuild, gap-tolerant healing and endpoint-vertex preservation are protected."
+    "multi-source creation, bellmouth side control, curve-following alternating long/half cut-fill grading rays, grade/slope vertical modes, one-selection set rebuild, gap-tolerant healing and endpoint-vertex preservation are protected."
 )
