@@ -34,7 +34,8 @@ fill_anchor = boq.find("double fillAboveBlanket")
 if fill_anchor < 0:
     errors.append("Missing fillAboveBlanket calculation.")
 else:
-    snippet = boq[fill_anchor:fill_anchor + 450]
+    next_anchor = boq.find("double excavatedMaterialNet", fill_anchor)
+    snippet = boq[fill_anchor:next_anchor if next_anchor > fill_anchor else fill_anchor + 350]
     if "pipeVolume" in snippet:
         errors.append("Pipe volume is still being deducted from fill above blanket.")
 
