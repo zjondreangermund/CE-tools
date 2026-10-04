@@ -27,7 +27,7 @@ namespace CETools.Civil3D
             if (!August12SurfaceSelectionPopup.TrySelectOne(
                     document,
                     "CE Tools - Road BOQ Existing Ground",
-                    "Choose the existing-ground/base surface. CE Tools compares it with each road corridor CE-BOTTOM (Datum) surface for cut/fill to datum.",
+                    "Choose the existing-ground/base surface. CE Tools compares it with each road-numbered BOTTOM-RD-* corridor surface (Datum/Subgrade) for cut/fill to datum.",
                     "Existing ground / base surface",
                     out baseSurfaceId))
                 return;
