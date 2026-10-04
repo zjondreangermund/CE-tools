@@ -43,6 +43,35 @@ namespace CETools.Civil3D
                 locateSewerItem.Click += OnLocateSewerClick;
                 extension.MenuItems.Add(locateSewerItem);
 
+                AddCommandItem(
+                    extension,
+                    "Export Selected Table(s) to Excel",
+                    "CE_TABLEEXPORTEXCEL");
+                AddCommandItem(
+                    extension,
+                    "Field Completion",
+                    "CE_FIELDCOMPLETION");
+                AddCommandItem(
+                    extension,
+                    "Sewer Supplementary",
+                    "CE_SEWERFIELDSUPPLEMENTARY");
+                AddCommandItem(
+                    extension,
+                    "Road Supplementary",
+                    "CE_ROADFIELDSUPPLEMENTARY");
+                AddCommandItem(
+                    extension,
+                    "CAD Supplementary",
+                    "CE_CADSUPPLEMENTARY");
+                AddCommandItem(
+                    extension,
+                    "Platform Supplementary",
+                    "CE_PLATFORMFIELDSUPPLEMENTARY");
+                AddCommandItem(
+                    extension,
+                    "Survey Supplementary",
+                    "CE_SURVEYFIELDSUPPLEMENTARY");
+
                 ContextMenuApplication.AddDefaultContextMenuExtension(extension);
                 _menuExtension = extension;
                 _attached = true;
@@ -76,6 +105,39 @@ namespace CETools.Civil3D
             {
                 extension.Dispose();
             }
+        }
+
+        private static void AddCommandItem(
+            ContextMenuExtension extension,
+            string title,
+            string command)
+        {
+            if (extension == null ||
+                string.IsNullOrWhiteSpace(title) ||
+                string.IsNullOrWhiteSpace(command))
+                return;
+
+            var item = new MenuItem(title);
+            item.Click += delegate
+            {
+                QueueCommand(command);
+            };
+            extension.MenuItems.Add(item);
+        }
+
+        private static void QueueCommand(string command)
+        {
+            Document document =
+                AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null ||
+                string.IsNullOrWhiteSpace(command))
+                return;
+
+            document.SendStringToExecute(
+                command.Trim() + " ",
+                true,
+                false,
+                false);
         }
 
         private static void OnDynamicRefreshClick(object sender, EventArgs e)
