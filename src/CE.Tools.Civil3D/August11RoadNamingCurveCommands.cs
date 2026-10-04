@@ -300,6 +300,25 @@ namespace CETools.Civil3D
                 try { entity = transaction.GetObject(id, OpenMode.ForRead, false) as Entity; }
                 catch { continue; }
                 if (entity == null) continue;
+
+                // Labels created by CE_ROADNAMEANNOTATE are output annotations
+                // derived from the alignment name itself. They must not be fed
+                // back into the older CE_ROADNAMESYNC source-label workflow,
+                // otherwise a dense road layout can rename a nearby alignment
+                // from the nearest generated annotation.
+                try
+                {
+                    ResultBuffer generated =
+                        entity.GetXDataForApplication(
+                            "CE_ROAD_NAME_ANNOTATION");
+                    if (generated != null)
+                    {
+                        generated.Dispose();
+                        continue;
+                    }
+                }
+                catch { }
+
                 string text = string.Empty;
                 Point3d position = Point3d.Origin;
                 DBText dbText = entity as DBText;
