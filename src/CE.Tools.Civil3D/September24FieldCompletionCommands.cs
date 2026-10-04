@@ -896,9 +896,14 @@ namespace CETools.Civil3D
         internal static IList<CivilChoice> PickMultiple(
             string title,
             string message,
-            IEnumerable<CivilChoice> choices)
+            IEnumerable<CivilChoice> choices,
+            IEnumerable<ObjectId> initiallySelected = null)
         {
-            var window = new FieldCompletionMultiChoiceWindow(title, message, choices);
+            var window = new FieldCompletionMultiChoiceWindow(
+                title,
+                message,
+                choices,
+                initiallySelected);
             AcApplication.ShowModalWindow(window);
             return window.Accepted ? window.Selected : null;
         }
@@ -1106,9 +1111,12 @@ namespace CETools.Civil3D
         internal FieldCompletionMultiChoiceWindow(
             string title,
             string message,
-            IEnumerable<CivilChoice> choices)
+            IEnumerable<CivilChoice> choices,
+            IEnumerable<ObjectId> initiallySelected = null)
         {
             Title = title;
+            var selectedIds = new HashSet<ObjectId>(
+                initiallySelected ?? Enumerable.Empty<ObjectId>());
             Width = 700;
             Height = 560;
             WindowStartupLocation = System.Windows.WindowStartupLocation.CenterOwner;
@@ -1194,7 +1202,8 @@ namespace CETools.Civil3D
                 {
                     Content = choice.Name,
                     Padding = new System.Windows.Thickness(5),
-                    MinHeight = 26
+                    MinHeight = 26,
+                    IsChecked = selectedIds.Contains(choice.Id)
                 };
                 _checks.Add(new KeyValuePair<CivilChoice, System.Windows.Controls.CheckBox>(choice, check));
                 _items.Children.Add(check);
