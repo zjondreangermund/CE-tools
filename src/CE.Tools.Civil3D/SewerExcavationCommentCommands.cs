@@ -1413,7 +1413,23 @@ namespace CETools.Civil3D
             IList<PipeExcavationRow> rows,
             SewerExcavationSettings settings)
         {
-            table.SetSize(rows.Count + 3, ColumnCount);
+            rows = rows ?? new List<PipeExcavationRow>();
+            List<PipeExcavationRow> orderedRows =
+                OrderRowsByBranch(rows).ToList();
+            int branchHeaderCount =
+                orderedRows
+                    .Select(row =>
+                        string.IsNullOrWhiteSpace(row.BranchName)
+                            ? "UNASSIGNED"
+                            : row.BranchName)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .Count();
+
+            table.SetSize(
+                orderedRows.Count +
+                branchHeaderCount +
+                3,
+                ColumnCount);
             double height = ResolveTextHeight(database);
             table.SetRowHeight(height * 1.8);
 
@@ -1430,7 +1446,7 @@ namespace CETools.Civil3D
                     ColumnCount - 1));
             table.Cells[0, 0].TextString = string.Format(
                 CultureInfo.CurrentCulture,
-                "CE TOOLS LINKED SEWER EXCAVATION - TRENCH {0:N3} m - BEDDING {1:N3} m - BLANKET {2:N3} m - TOTAL EXCAVATION TO BOTTOM OF BEDDING",
+                "CE TOOLS LINKED SEWER EXCAVATION - TRENCH {0:N3} m - BEDDING {1:N3} m - BLANKET {2:N3} m - PIPE VOLUME DEDUCTED FROM BLANKET - TOTAL EXCAVATION TO BOTTOM OF BEDDING",
                 settings.TrenchWidth,
                 settings.BeddingThickness,
                 settings.BlanketAbovePipe);
@@ -1460,10 +1476,37 @@ namespace CETools.Civil3D
                 table.Cells[1, column].TextHeight = height;
             }
 
-            for (int index = 0; index < rows.Count; index++)
+            int tableRow = 2;
+            string activeBranch = null;
+            foreach (PipeExcavationRow row in orderedRows)
             {
-                PipeExcavationRow row = rows[index];
-                int tableRow = index + 2;
+                string branch =
+                    string.IsNullOrWhiteSpace(row.BranchName)
+                        ? "UNASSIGNED"
+                        : row.BranchName;
+
+                if (!string.Equals(
+                        branch,
+                        activeBranch,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    table.MergeCells(
+                        CellRange.Create(
+                            table,
+                            tableRow,
+                            0,
+                            tableRow,
+                            ColumnCount - 1));
+                    table.Cells[tableRow, 0].TextString =
+                        branch.ToUpperInvariant();
+                    table.Cells[tableRow, 0].Alignment =
+                        CellAlignment.MiddleLeft;
+                    table.Cells[tableRow, 0].TextHeight =
+                        height * 1.10;
+                    activeBranch = branch;
+                    tableRow++;
+                }
+
                 bool pipe = string.Equals(
                     row.ObjectType,
                     "Pipe",
@@ -1503,13 +1546,15 @@ namespace CETools.Civil3D
                     table.Cells[tableRow, column].Alignment =
                         CellAlignment.MiddleCenter;
                 }
+                tableRow++;
             }
 
-            int totalRow = rows.Count + 2;
+            int totalRow = tableRow;
             table.Cells[totalRow, 0].TextString = "TOTAL";
             table.Cells[totalRow, 1].TextString = string.Format(
                 CultureInfo.CurrentCulture,
-                "Pipes {0}; Structures {1}",
+                "Branches {0}; Pipes {1}; Structures {2}",
+                branchHeaderCount,
                 rows.Count(row => row.ObjectType == "Pipe"),
                 rows.Count(row => row.ObjectType == "Structure"));
             table.Cells[totalRow, 3].TextString =
@@ -1718,9 +1763,34 @@ namespace CETools.Civil3D
             IList<PipeExcavationRow> source)
         {
             var rows = new List<IList<string>>();
+            string activeBranch = null;
+
             foreach (PipeExcavationRow row in
-                source ?? new List<PipeExcavationRow>())
+                OrderRowsByBranch(
+                    source ??
+                    new List<PipeExcavationRow>()))
             {
+                string branch =
+                    string.IsNullOrWhiteSpace(row.BranchName)
+                        ? "UNASSIGNED"
+                        : row.BranchName;
+
+                if (!string.Equals(
+                        branch,
+                        activeBranch,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    var branchRow =
+                        Enumerable.Repeat(
+                            string.Empty,
+                            ColumnCount)
+                            .ToList();
+                    branchRow[0] =
+                        branch.ToUpperInvariant();
+                    rows.Add(branchRow);
+                    activeBranch = branch;
+                }
+
                 bool pipe = string.Equals(
                     row.ObjectType,
                     "Pipe",
