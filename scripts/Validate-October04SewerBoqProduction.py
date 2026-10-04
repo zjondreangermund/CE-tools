@@ -7,11 +7,11 @@ SRC = ROOT / "src" / "CE.Tools.Civil3D"
 
 boq = (SRC / "SewerExcavationCommentCommands.cs").read_text(encoding="utf-8-sig")
 ribbon = (SRC / "August11ProductionCentreCommands.cs").read_text(encoding="utf-8-sig")
+boq_owner = (SRC / "BillOfQuantitiesCommands.cs").read_text(encoding="utf-8-sig")
 
 errors = []
 
 for marker in [
-    '"CE_BOQSEWER"',
     '"AllNetworkParts"',
     '"Select"',
     'sourceIds = selection.Value.GetObjectIds().ToList();',
@@ -38,6 +38,13 @@ else:
     snippet = boq[fill_anchor:next_anchor if next_anchor > fill_anchor else fill_anchor + 350]
     if "pipeVolume" in snippet:
         errors.append("Pipe volume is still being deducted from fill above blanket.")
+
+for marker in [
+    '"CE_BOQSEWER"',
+    'SewerExcavationCommentCommands.ExportBoq(',
+]:
+    if marker not in boq_owner:
+        errors.append("Missing CE_BOQSEWER owner routing marker: " + marker)
 
 for marker in [
     '"CE_PROD_QUANTITY"',
