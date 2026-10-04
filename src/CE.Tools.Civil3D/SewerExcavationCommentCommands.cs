@@ -1586,13 +1586,6 @@ namespace CETools.Civil3D
                         activeBranch,
                         StringComparison.OrdinalIgnoreCase))
                 {
-                    table.MergeCells(
-                        CellRange.Create(
-                            table,
-                            tableRow,
-                            0,
-                            tableRow,
-                            ColumnCount - 1));
                     table.Cells[tableRow, 0].TextString =
                         branch.ToUpperInvariant();
                     table.Cells[tableRow, 0].Alignment =
