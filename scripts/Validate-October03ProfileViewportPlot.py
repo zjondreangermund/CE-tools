@@ -63,7 +63,7 @@ for marker in [
 
 for marker in [
     'October03PlotPdfManager',
-    '"DefaultPlotToFilePath"',
+    '"PLOTTOFILEPATH"',
     'DrawingFolder(document)',
     'Directory.GetFiles(',
     '"*.pdf"',
