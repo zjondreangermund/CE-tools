@@ -2941,11 +2941,6 @@ namespace CETools.Civil3D
                                 assemblyId,
                                 OpenMode.ForWrite,
                                 false) as CivilAssembly;
-                        CivilSubassembly old =
-                            transaction.GetObject(
-                                source.ObjectId,
-                                OpenMode.ForWrite,
-                                false) as CivilSubassembly;
                         CivilSubassembly replacement =
                             transaction.GetObject(
                                 replacementId,
@@ -2956,13 +2951,13 @@ namespace CETools.Civil3D
                             throw new InvalidOperationException(
                                 "The assembly or sloped sidewalk became unavailable.");
 
+                        // Replace first and keep the detached stock BasicSidewalk
+                        // object intact. Civil 3D can retain references to the
+                        // original object while rebuilding assembly groups; erasing
+                        // it here can make an otherwise valid replacement roll back.
                         assembly.ReplaceSubassembly(
                             replacementId,
                             source.ObjectId);
-
-                        if (old != null &&
-                            !old.IsErased)
-                            old.Erase();
 
                         try
                         {
