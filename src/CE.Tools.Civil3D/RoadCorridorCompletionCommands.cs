@@ -351,12 +351,24 @@ namespace CETools.Civil3D
                 document,
                 "CE Tools - Road Corridor Completion",
                 string.Format(CultureInfo.CurrentCulture,
-                    "Corridors={0}; baselines={1}; regions={2}; frequency values={3}; targets={4}; surfaces={5}; boundaries={6}; visibility settings={7}; automatic rebuild={8}; slope patterns={9}; rebuilt={10}; profile-view bindings={11}; warnings={12}.",
-                    result.Corridors, result.Baselines, result.Regions, result.FrequencySettings,
-                    result.Targets, result.Surfaces, result.Boundaries,
-                    result.VisibilitySettings, result.AutomaticRebuildSettings,
-                    result.SlopePatterns, result.Rebuilt, result.ProfileViewBindings, result.Warnings),
-                new List<string> { "Corridor", "Target Surface", "Baselines", "Regions", "Frequencies", "Targets", "Surfaces", "Boundaries", "Visible", "Auto Rebuild", "Slope Patterns", "Status" },
+                    "Corridors={0}; total road length={1:N3} m; baselines={2}; regions={3}; frequency values={4}; targets={5}; surfaces={6}; boundaries={7}; code-set assignments={8}; BasicSidewalk upgrades={9}; visibility settings={10}; automatic rebuild={11}; slope patterns={12}; rebuilt={13}; profile-view bindings={14}; warnings={15}.",
+                    result.Corridors,
+                    result.TotalRoadLength,
+                    result.Baselines,
+                    result.Regions,
+                    result.FrequencySettings,
+                    result.Targets,
+                    result.Surfaces,
+                    result.Boundaries,
+                    result.CodeSetAssignments,
+                    result.SidewalkUpgrades,
+                    result.VisibilitySettings,
+                    result.AutomaticRebuildSettings,
+                    result.SlopePatterns,
+                    result.Rebuilt,
+                    result.ProfileViewBindings,
+                    result.Warnings),
+                new List<string> { "Corridor", "Road Length (m)", "Target Surface", "Baselines", "Regions", "Frequencies", "Targets", "Surfaces", "Boundaries", "Visible", "Auto Rebuild", "Slope Patterns", "Code Set", "Status" },
                 result.Rows,
                 "CE TOOLS ROAD CORRIDOR COMPLETION REGISTER");
         }
@@ -377,12 +389,32 @@ namespace CETools.Civil3D
             ProjectStyleSelection project = ProjectStyleCenterCommands.ReadSelection(document.Database);
             RoadProductionSettings road = RoadProductionSettings.Read(document.Database);
 
+            if (options.ApplyBasicSidewalkSlope)
+            {
+                int sidewalkWarnings = 0;
+                result.SidewalkUpgrades =
+                    UpgradeBasicSidewalksForCorridors(
+                        document,
+                        civilDocument,
+                        options,
+                        ref sidewalkWarnings);
+                result.Warnings += sidewalkWarnings;
+            }
+
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 string corridorStyleName;
                 ObjectId corridorStyleId = ResolveOptionalStyle(document.Database, civilDocument, road, project, "Corridor Style", transaction, out corridorStyleName);
                 string codeSetName;
-                ObjectId codeSetStyleId = ResolveOptionalStyle(document.Database, civilDocument, road, project, "Code Set Style", transaction, out codeSetName);
+                ObjectId codeSetStyleId = ResolveRequestedOrProjectStyle(
+                    document.Database,
+                    civilDocument,
+                    road,
+                    project,
+                    "Code Set Style",
+                    options.CodeSetStyleName,
+                    transaction,
+                    out codeSetName);
                 ObjectId profileStyleId = FieldCompletionBatchUi.ResolveStyleId(
                     document.Database,
                     civilDocument,
@@ -442,10 +474,15 @@ namespace CETools.Civil3D
                     int beforeVisibility = result.VisibilitySettings;
                     int beforeAutomaticRebuild = result.AutomaticRebuildSettings;
                     int beforeSlope = result.SlopePatterns;
+                    int beforeCodeSet = result.CodeSetAssignments;
                     int beforeWarnings = result.Warnings;
+                    double corridorLength = 0.0;
 
-                    if (!corridorStyleId.IsNull) TrySetObjectId(corridor, corridorStyleId, "StyleId", "CorridorStyleId");
-                    if (!codeSetStyleId.IsNull) TrySetObjectId(corridor, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle");
+                    if (!corridorStyleId.IsNull)
+                        TrySetObjectId(corridor, corridorStyleId, "StyleId", "CorridorStyleId");
+                    if (!codeSetStyleId.IsNull &&
+                        TrySetObjectId(corridor, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle"))
+                        result.CodeSetAssignments++;
                     if (!corridorLayerId.IsNull) TrySetObjectId(corridor, corridorLayerId, "LayerId");
                     if (options.EnsureVisible)
                     {
@@ -489,6 +526,7 @@ namespace CETools.Civil3D
                     {
                         if (baseline == null) continue;
                         result.Baselines++;
+                        corridorLength += ReadBaselineLength(baseline);
                         if (!profileStyleId.IsNull)
                         {
                             ObjectId alignmentId = ReadObjectId(baseline, "AlignmentId");
@@ -510,7 +548,36 @@ namespace CETools.Civil3D
                             if (options.EnsureVisible &&
                                 TrySetBoolean(region, true, "IsEnabled", "Enabled", "IsProcessed"))
                                 result.VisibilitySettings++;
-                            if (!codeSetStyleId.IsNull) TrySetObjectId(region, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle");
+                            if (!codeSetStyleId.IsNull &&
+                                TrySetObjectId(region, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle"))
+                                result.CodeSetAssignments++;
+
+                            ObjectId regionAssemblyId =
+                                ReadObjectId(region, "AssemblyId");
+                            if (!codeSetStyleId.IsNull &&
+                                !regionAssemblyId.IsNull)
+                            {
+                                try
+                                {
+                                    CivilAssembly assembly =
+                                        transaction.GetObject(
+                                            regionAssemblyId,
+                                            OpenMode.ForWrite,
+                                            false) as CivilAssembly;
+                                    if (assembly != null &&
+                                        assembly.CodeSetStyleId != codeSetStyleId)
+                                    {
+                                        assembly.CodeSetStyleId =
+                                            codeSetStyleId;
+                                        result.CodeSetAssignments++;
+                                    }
+                                }
+                                catch
+                                {
+                                    result.Warnings++;
+                                }
+                            }
+
                             if (!existingAssemblyId.IsNull)
                             {
                                 int assignments = ApplyAssemblyToRegion(region, existingAssemblyId);
@@ -574,9 +641,11 @@ namespace CETools.Civil3D
                         result.SlopePatterns += DisableSlopePatterns(corridor);
 
                     bool rebuilt = options.RebuildCorridors && Invoke(corridor, "Rebuild");
+                    result.TotalRoadLength += corridorLength;
                     result.Rows.Add(new List<string>
                     {
                         name,
+                        corridorLength.ToString("N3", CultureInfo.CurrentCulture),
                         string.IsNullOrWhiteSpace(options.TargetSurfaceName) ? "-" : options.TargetSurfaceName,
                         (result.Baselines - beforeBaseline).ToString(CultureInfo.CurrentCulture),
                         (result.Regions - beforeRegion).ToString(CultureInfo.CurrentCulture),
@@ -587,6 +656,7 @@ namespace CETools.Civil3D
                         (result.VisibilitySettings - beforeVisibility).ToString(CultureInfo.CurrentCulture),
                         (result.AutomaticRebuildSettings - beforeAutomaticRebuild).ToString(CultureInfo.CurrentCulture),
                         (result.SlopePatterns - beforeSlope).ToString(CultureInfo.CurrentCulture),
+                        (result.CodeSetAssignments - beforeCodeSet).ToString(CultureInfo.CurrentCulture),
                         result.Warnings == beforeWarnings
                             ? "Completed"
                             : rebuilt ? "Completed with warnings" : "Settings applied; rebuild unavailable"
@@ -2514,6 +2584,9 @@ namespace CETools.Civil3D
         internal int VisibilitySettings { get; set; }
         internal int AutomaticRebuildSettings { get; set; }
         internal int SlopePatterns { get; set; }
+        internal int CodeSetAssignments { get; set; }
+        internal int SidewalkUpgrades { get; set; }
+        internal double TotalRoadLength { get; set; }
         internal int Rebuilt { get; set; }
         internal int ProfileViewBindings { get; set; }
         internal int Warnings { get; set; }
