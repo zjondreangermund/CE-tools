@@ -405,6 +405,315 @@ namespace CETools.Civil3D
                     repaired.Count - 20);
         }
 
+        [CommandMethod(
+            "CE_TOOLS",
+            "CE_SEWBRANCHNAMES",
+            CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void RefreshBranchNames()
+        {
+            Document document =
+                AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civilDocument =
+                CivilApplication.ActiveDocument;
+            if (document == null ||
+                civilDocument == null)
+                return;
+
+            Editor editor = document.Editor;
+            Database database = document.Database;
+            SewerProductionSettings productionSettings =
+                SewerProductionSettings.Read(database);
+
+            var model =
+                new ProductionSettingsDialogModel(
+                    "CE Tools - Sewer Branch Names",
+                    "Add or refresh green Branch-x names like the plan example: centred on each straight sewer branch section, rotated with the pipe run and offset clear above the sewer annotation.");
+
+            model.AddChoice(
+                "Scope",
+                "01 Branches",
+                "Branches to label",
+                "All sewer branches",
+                "Label every CE-sequenced sewer branch, or only branches from multiple selected sewer pipes/structures.",
+                new[]
+                {
+                    "All sewer branches",
+                    "Selected sewer parts"
+                });
+            model.AddChoice(
+                "Side",
+                "02 Presentation",
+                "Branch-name side",
+                "Above",
+                "Above matches the requested plan presentation. Below and alternating remain available where drawing congestion requires them.",
+                new[]
+                {
+                    "Above",
+                    "Below",
+                    "Alternating"
+                });
+            model.AddPaperHeight(
+                "Height",
+                "02 Presentation",
+                "Branch-name paper height",
+                productionSettings.LabelHeight,
+                "Annotative paper height for the green Branch-x names.");
+            model.AddPositiveDouble(
+                "AboveOffset",
+                "02 Presentation",
+                "Above offset (paper mm)",
+                productionSettings.BranchLabelAboveOffset,
+                "Perpendicular paper distance from the sewer centreline when the name is placed above.");
+            model.AddPositiveDouble(
+                "BelowOffset",
+                "02 Presentation",
+                "Below offset (paper mm)",
+                productionSettings.BranchLabelBelowOffset,
+                "Perpendicular paper distance from the sewer centreline when the name is placed below.");
+            model.AddPositiveDouble(
+                "LongThreshold",
+                "03 Long branches",
+                "Long straight section threshold (m)",
+                productionSettings.BranchLabelLongSectionLength,
+                "Each straight run always receives one centred Branch-x name. Runs longer than this also receive extra names at pipe centres.");
+            model.AddChoice(
+                "LongFrequency",
+                "03 Long branches",
+                "Long-section repeat frequency",
+                productionSettings.BranchLabelLongSectionFrequency,
+                "For long straight runs, repeat the branch name at every pipe centre or every second pipe centre.",
+                new[]
+                {
+                    "Every pipe",
+                    "Every second pipe"
+                });
+
+            if (!DisciplineWorkflowDialogs.EditSettings(model))
+                return;
+
+            bool selectManually =
+                string.Equals(
+                    model.Text("Scope"),
+                    "Selected sewer parts",
+                    StringComparison.OrdinalIgnoreCase);
+
+            productionSettings.BranchLabelSide =
+                model.Text("Side");
+            productionSettings.LabelHeight =
+                PaperAnnotationScale.NormalizeConfiguredPaperHeight(
+                    model.Double(
+                        "Height",
+                        productionSettings.LabelHeight));
+            productionSettings.BranchLabelAboveOffset =
+                model.Double(
+                    "AboveOffset",
+                    productionSettings.BranchLabelAboveOffset);
+            productionSettings.BranchLabelBelowOffset =
+                model.Double(
+                    "BelowOffset",
+                    productionSettings.BranchLabelBelowOffset);
+            productionSettings.BranchLabelLongSectionLength =
+                model.Double(
+                    "LongThreshold",
+                    productionSettings.BranchLabelLongSectionLength);
+            productionSettings.BranchLabelLongSectionFrequency =
+                model.Text("LongFrequency");
+            productionSettings.Write(database);
+
+            List<ObjectId> networkIds;
+            int unsupported = 0;
+            if (selectManually)
+            {
+                PromptSelectionResult selection =
+                    editor.SelectImplied();
+                if (selection.Status != PromptStatus.OK ||
+                    selection.Value == null ||
+                    selection.Value.Count == 0)
+                {
+                    selection =
+                        editor.GetSelection(
+                            new PromptSelectionOptions
+                            {
+                                MessageForAdding =
+                                    "\nSelect multiple sewer pipes / structures whose Branch names must be added: ",
+                                AllowDuplicates = false,
+                                RejectObjectsFromNonCurrentSpace = true
+                            });
+                }
+
+                if (selection.Status != PromptStatus.OK ||
+                    selection.Value == null ||
+                    selection.Value.Count == 0)
+                    return;
+
+                ReadSelectedNetworks(
+                    database,
+                    selection.Value.GetObjectIds(),
+                    out networkIds,
+                    out unsupported);
+            }
+            else
+            {
+                networkIds =
+                    ReadAllSequencedSewerNetworks(
+                        database,
+                        civilDocument);
+            }
+
+            if (networkIds == null ||
+                networkIds.Count == 0)
+            {
+                editor.WriteMessage(
+                    "\nCE_SEWBRANCHNAMES: no CE-sequenced sewer branches were found.");
+                return;
+            }
+
+            var plans =
+                new List<NetworkAlignmentPlan>();
+            try
+            {
+                using (Transaction read =
+                    database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId networkId in
+                        networkIds
+                            .Distinct()
+                            .OrderBy(id =>
+                                id.Handle.Value))
+                    {
+                        plans.Add(
+                            BuildNetworkPlan(
+                                networkId,
+                                read));
+                    }
+                }
+            }
+            catch (System.Exception exception)
+            {
+                editor.WriteMessage(
+                    "\nCE_SEWBRANCHNAMES cancelled while reading branch geometry. " +
+                    exception.Message);
+                return;
+            }
+
+            int labelsCreated = 0;
+            int branchesLabelled = 0;
+            try
+            {
+                using (DocumentLock documentLock =
+                    document.LockDocument())
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    EnsureRegApp(
+                        database,
+                        transaction);
+                    ObjectId layerId =
+                        GetOrCreateLayer(
+                            database,
+                            transaction);
+
+                    BlockTable blockTable =
+                        (BlockTable)transaction.GetObject(
+                            database.BlockTableId,
+                            OpenMode.ForRead,
+                            false);
+                    BlockTableRecord modelSpace =
+                        (BlockTableRecord)transaction.GetObject(
+                            blockTable[BlockTableRecord.ModelSpace],
+                            OpenMode.ForWrite,
+                            false);
+
+                    foreach (NetworkAlignmentPlan plan in plans)
+                    {
+                        string networkHandle =
+                            plan.NetworkId.Handle.ToString();
+                        foreach (BranchAlignmentPlan branchPlan in
+                            plan.Branches)
+                        {
+                            string branchKey =
+                                BuildBranchKey(
+                                    networkHandle,
+                                    branchPlan.BranchName);
+
+                            RemoveExistingGeneratedLabels(
+                                modelSpace,
+                                branchKey,
+                                transaction);
+
+                            IReadOnlyList<SewerBranchLabelPlacement.Placement> placements =
+                                SewerBranchLabelPlacement.BuildPlacements(
+                                    branchPlan.PlanPoints,
+                                    productionSettings.BranchLabelLongSectionLength,
+                                    productionSettings.BranchLabelLongSectionFrequency);
+
+                            bool placeAbove =
+                                string.Equals(
+                                    productionSettings.BranchLabelSide,
+                                    "Above",
+                                    StringComparison.OrdinalIgnoreCase) ||
+                                (!string.Equals(
+                                    productionSettings.BranchLabelSide,
+                                    "Below",
+                                    StringComparison.OrdinalIgnoreCase) &&
+                                 (branchPlan.BranchNumber % 2) != 0);
+
+                            foreach (SewerBranchLabelPlacement.Placement placement in
+                                placements)
+                            {
+                                var label =
+                                    new MText();
+                                label.SetDatabaseDefaults(
+                                    database);
+                                label.LayerId =
+                                    layerId;
+                                SewerBranchLabelPlacement.ConfigureLabel(
+                                    label,
+                                    database,
+                                    placement,
+                                    branchPlan.BranchName,
+                                    productionSettings.LabelHeight,
+                                    productionSettings.BranchLabelAboveOffset,
+                                    productionSettings.BranchLabelBelowOffset,
+                                    placeAbove);
+                                label.XData =
+                                    BuildTag(
+                                        branchKey,
+                                        "Label");
+                                modelSpace.AppendEntity(
+                                    label);
+                                transaction.AddNewlyCreatedDBObject(
+                                    label,
+                                    true);
+                                labelsCreated++;
+                            }
+
+                            if (placements.Count > 0)
+                                branchesLabelled++;
+                        }
+                    }
+
+                    transaction.Commit();
+                }
+            }
+            catch (System.Exception exception)
+            {
+                editor.WriteMessage(
+                    "\nCE_SEWBRANCHNAMES cancelled. No partial label transaction was committed. " +
+                    exception.Message);
+                return;
+            }
+
+            document.Editor.SetImpliedSelection(
+                new ObjectId[0]);
+            document.Editor.Regen();
+            editor.WriteMessage(
+                "\nCE_SEWBRANCHNAMES complete. Branches labelled={0}; green Branch-x labels={1}; unsupported selected objects ignored={2}.",
+                branchesLabelled,
+                labelsCreated,
+                unsupported);
+        }
+
         private static ObjectId ResolveExistingBranchAlignmentId(
             CivilDocument civilDocument,
             NetworkAlignmentPlan plan,
@@ -1696,6 +2005,44 @@ namespace CETools.Civil3D
             }
 
             return text;
+        }
+
+        private static void RemoveExistingGeneratedLabels(
+            BlockTableRecord modelSpace,
+            string branchKey,
+            Transaction transaction)
+        {
+            if (modelSpace == null ||
+                transaction == null)
+                return;
+
+            foreach (ObjectId entityId in modelSpace)
+            {
+                DBObject entity = null;
+                try
+                {
+                    entity =
+                        transaction.GetObject(
+                            entityId,
+                            OpenMode.ForRead,
+                            false);
+                }
+                catch { }
+
+                if (entity == null ||
+                    !HasTag(
+                        entity,
+                        branchKey,
+                        "Label"))
+                    continue;
+
+                try
+                {
+                    entity.UpgradeOpen();
+                    entity.Erase();
+                }
+                catch { }
+            }
         }
 
         private static void RemoveExistingGeneratedObjects(
