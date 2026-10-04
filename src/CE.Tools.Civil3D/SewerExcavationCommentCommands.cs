@@ -2013,7 +2013,7 @@ namespace CETools.Civil3D
                 },
                 new List<string>
                 {
-                    "Pipe volume deducted from blanket fill (m³)",
+                    "Pipe volume deducted (m³)",
                     number(pipeVolume, 110), number(pipeVolume, 160),
                     number(pipeVolume, 200), number(pipeVolume, 250),
                     pipes.Sum(row => row.PipeVolume).ToString("0.###", CultureInfo.InvariantCulture)
