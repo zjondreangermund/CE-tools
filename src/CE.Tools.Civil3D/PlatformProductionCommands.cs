@@ -84,7 +84,7 @@ namespace CETools.Civil3D
             int skipped = 0;
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                foreach (ObjectId id in selectedSourceIds)
+                foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
                 {
                     CivilFeatureLine featureLine = OpenFeatureLine(transaction, id, OpenMode.ForWrite);
                     if (!Editable(featureLine, transaction)) { skipped++; continue; }
