@@ -419,6 +419,8 @@ namespace CETools.Civil3D
             AddPanel(tab, "CE_PROD_BW", "BULK WATER", "Bulk Water Production", "CE_BULKWATERPRODUCTIONCENTRE ");
             AddPanel(tab, "CE_PROD_PARK", "PARKING", "Parking Production", "CE_PARKINGPRODUCTIONCENTRE ");
             AddPanel(tab, "CE_PROD_FLOOD", "FLOOD", "Flood Production", "CE_FLOODPRODUCTIONCENTRE ");
+            AddPanel(tab, "CE_PROD_QUANTITY", "QUANTITY", "Quantity Production", "CE_BOQCENTER ");
+            AddPanel(tab, "CE_PROD_REPORT", "REPORT", "Report Production", "CE_REPORTCENTER ");
             return true;
         }
 
