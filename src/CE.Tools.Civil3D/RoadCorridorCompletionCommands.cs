@@ -2089,6 +2089,171 @@ namespace CETools.Civil3D
             return id;
         }
 
+        private static IList<ObjectId> ReadCompleteCorridorSelection(
+            Database database,
+            out ObjectId surfaceId)
+        {
+            surfaceId = ObjectId.Null;
+            var corridors = new List<ObjectId>();
+            if (database == null) return corridors;
+
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    DBDictionary named =
+                        transaction.GetObject(
+                            database.NamedObjectsDictionaryId,
+                            OpenMode.ForRead,
+                            false) as DBDictionary;
+                    if (named == null ||
+                        !named.Contains(CompleteSelectionKey))
+                        return corridors;
+
+                    Xrecord record =
+                        transaction.GetObject(
+                            named.GetAt(CompleteSelectionKey),
+                            OpenMode.ForRead,
+                            false) as Xrecord;
+                    TypedValue[] values =
+                        record == null || record.Data == null
+                            ? null
+                            : record.Data.AsArray();
+                    if (values == null ||
+                        values.Length == 0)
+                        return corridors;
+
+                    string surfaceHandle =
+                        Convert.ToString(
+                            values[0].Value,
+                            CultureInfo.InvariantCulture);
+                    surfaceId =
+                        ResolveStoredHandle(
+                            database,
+                            surfaceHandle);
+
+                    for (int index = 1;
+                         index < values.Length;
+                         index++)
+                    {
+                        ObjectId id =
+                            ResolveStoredHandle(
+                                database,
+                                Convert.ToString(
+                                    values[index].Value,
+                                    CultureInfo.InvariantCulture));
+                        if (!id.IsNull &&
+                            !corridors.Contains(id))
+                            corridors.Add(id);
+                    }
+                }
+            }
+            catch { }
+
+            return corridors;
+        }
+
+        private static void WriteCompleteCorridorSelection(
+            Database database,
+            IEnumerable<ObjectId> corridorIds,
+            ObjectId surfaceId)
+        {
+            if (database == null) return;
+            try
+            {
+                var values = new List<TypedValue>
+                {
+                    new TypedValue(
+                        (int)DxfCode.Text,
+                        surfaceId.IsNull
+                            ? string.Empty
+                            : surfaceId.Handle.ToString())
+                };
+                foreach (ObjectId id in
+                    (corridorIds ?? Enumerable.Empty<ObjectId>())
+                        .Where(value =>
+                            !value.IsNull &&
+                            !value.IsErased)
+                        .Distinct())
+                {
+                    values.Add(
+                        new TypedValue(
+                            (int)DxfCode.Text,
+                            id.Handle.ToString()));
+                }
+
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    DBDictionary named =
+                        transaction.GetObject(
+                            database.NamedObjectsDictionaryId,
+                            OpenMode.ForWrite,
+                            false) as DBDictionary;
+                    if (named == null) return;
+
+                    Xrecord record;
+                    if (named.Contains(CompleteSelectionKey))
+                    {
+                        record =
+                            transaction.GetObject(
+                                named.GetAt(CompleteSelectionKey),
+                                OpenMode.ForWrite,
+                                false) as Xrecord;
+                    }
+                    else
+                    {
+                        record = new Xrecord();
+                        named.SetAt(
+                            CompleteSelectionKey,
+                            record);
+                        transaction.AddNewlyCreatedDBObject(
+                            record,
+                            true);
+                    }
+
+                    if (record != null)
+                        record.Data =
+                            new ResultBuffer(
+                                values.ToArray());
+                    transaction.Commit();
+                }
+            }
+            catch { }
+        }
+
+        private static ObjectId ResolveStoredHandle(
+            Database database,
+            string value)
+        {
+            if (database == null ||
+                string.IsNullOrWhiteSpace(value))
+                return ObjectId.Null;
+            try
+            {
+                long number;
+                if (!long.TryParse(
+                        value.Trim(),
+                        NumberStyles.HexNumber,
+                        CultureInfo.InvariantCulture,
+                        out number))
+                    return ObjectId.Null;
+                ObjectId id =
+                    database.GetObjectId(
+                        false,
+                        new Handle(number),
+                        0);
+                return id.IsNull || id.IsErased
+                    ? ObjectId.Null
+                    : id;
+            }
+            catch
+            {
+                return ObjectId.Null;
+            }
+        }
+
         private static string SafeName(string value, string fallback) { return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim(); }
         private static IList<string> SplitCodes(string value, IEnumerable<string> fallback)
         {
