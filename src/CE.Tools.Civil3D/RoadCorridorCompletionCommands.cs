@@ -2139,6 +2139,398 @@ namespace CETools.Civil3D
             return changed;
         }
 
+        private static int CreateMissingSlopePatterns(
+            Corridor corridor,
+            IDictionary<string, ObjectId> styleIds)
+        {
+            if (corridor == null ||
+                styleIds == null)
+                return 0;
+
+            CorridorSlopePatternCollection patterns =
+                corridor.SlopePatterns;
+            if (patterns == null)
+                return 0;
+
+            int created = 0;
+            foreach (Baseline baseline in corridor.Baselines)
+            {
+                if (baseline == null)
+                    continue;
+
+                List<CorridorFeatureLine> lines =
+                    ReadSlopeFeatureLines(baseline);
+                if (lines.Count == 0)
+                    continue;
+
+                List<CorridorFeatureLine> genericHinges =
+                    lines.Where(item =>
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "HINGE") ||
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "EPS") ||
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "ETW") ||
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "EDGE"))
+                    .ToList();
+                List<CorridorFeatureLine> cutHinges =
+                    lines.Where(item =>
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "HINGE_CUT"))
+                    .Concat(genericHinges)
+                    .Distinct()
+                    .ToList();
+                List<CorridorFeatureLine> fillHinges =
+                    lines.Where(item =>
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "HINGE_FILL"))
+                    .Concat(genericHinges)
+                    .Distinct()
+                    .ToList();
+                List<CorridorFeatureLine> cutOuters =
+                    lines.Where(item =>
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "DAYLIGHT_CUT"))
+                    .ToList();
+                List<CorridorFeatureLine> fillOuters =
+                    lines.Where(item =>
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "DAYLIGHT_FILL"))
+                    .ToList();
+
+                created += CreateSlopePatternsForCondition(
+                    patterns,
+                    baseline,
+                    cutHinges,
+                    cutOuters,
+                    true,
+                    styleIds);
+                created += CreateSlopePatternsForCondition(
+                    patterns,
+                    baseline,
+                    fillHinges,
+                    fillOuters,
+                    false,
+                    styleIds);
+            }
+            return created;
+        }
+
+        private static int CreateSlopePatternsForCondition(
+            CorridorSlopePatternCollection patterns,
+            Baseline baseline,
+            IEnumerable<CorridorFeatureLine> hinges,
+            IEnumerable<CorridorFeatureLine> outers,
+            bool cut,
+            IDictionary<string, ObjectId> styleIds)
+        {
+            if (patterns == null ||
+                baseline == null ||
+                hinges == null ||
+                outers == null)
+                return 0;
+
+            List<CorridorFeatureLine> hingeList =
+                hinges.Where(item => item != null).ToList();
+            int created = 0;
+
+            foreach (CorridorFeatureLine outer in
+                outers.Where(item => item != null))
+            {
+                double outerOffset =
+                    AverageSlopeOffset(outer);
+                CorridorFeatureLine hinge =
+                    FindSameSideSlopeHinge(
+                        hingeList,
+                        outerOffset);
+                if (hinge == null ||
+                    HasNativeSlopePattern(
+                        patterns,
+                        hinge,
+                        outer))
+                    continue;
+
+                string side =
+                    outerOffset < 0.0
+                        ? "Left"
+                        : "Right";
+                string styleKey =
+                    side +
+                    (cut ? "Cut" : "Fill");
+                ObjectId styleId;
+                if (!styleIds.TryGetValue(
+                        styleKey,
+                        out styleId) ||
+                    styleId.IsNull)
+                {
+                    styleId =
+                        styleIds.Values
+                            .FirstOrDefault(id =>
+                                !id.IsNull);
+                }
+                if (styleId.IsNull)
+                    continue;
+
+                double start;
+                double end;
+                if (!TrySharedSlopeStationRange(
+                        hinge,
+                        outer,
+                        baseline,
+                        out start,
+                        out end))
+                    continue;
+
+                try
+                {
+                    CorridorSlopePattern pattern =
+                        patterns.Add(
+                            hinge,
+                            outer,
+                            styleId);
+                    if (pattern == null)
+                        continue;
+                    pattern.StartStation = start;
+                    pattern.EndStation = end;
+                    TrySetBoolean(
+                        pattern,
+                        true,
+                        "Visible",
+                        "IsVisible",
+                        "Enabled");
+                    try { pattern.Rebuild(); }
+                    catch { }
+                    created++;
+                }
+                catch { }
+            }
+
+            return created;
+        }
+
+        private static List<CorridorFeatureLine> ReadSlopeFeatureLines(
+            Baseline baseline)
+        {
+            var result =
+                new List<CorridorFeatureLine>();
+            if (baseline == null)
+                return result;
+
+            try
+            {
+                BaselineFeatureLines main =
+                    baseline.MainBaselineFeatureLines;
+                if (main == null)
+                    return result;
+
+                foreach (FeatureLineCollection collection in
+                    main.FeatureLineCollectionMap)
+                {
+                    if (collection == null)
+                        continue;
+                    foreach (CorridorFeatureLine line in collection)
+                    {
+                        if (line != null)
+                            result.Add(line);
+                    }
+                }
+            }
+            catch { }
+
+            return result;
+        }
+
+        private static CorridorFeatureLine FindSameSideSlopeHinge(
+            IEnumerable<CorridorFeatureLine> candidates,
+            double outerOffset)
+        {
+            if (candidates == null)
+                return null;
+
+            List<CorridorFeatureLine> sameSide =
+                candidates
+                    .Where(item => item != null)
+                    .Where(item =>
+                    {
+                        double offset =
+                            AverageSlopeOffset(item);
+                        return Math.Abs(outerOffset) < 0.001 ||
+                               Math.Abs(offset) < 0.001 ||
+                               Math.Sign(offset) ==
+                                   Math.Sign(outerOffset);
+                    })
+                    .OrderBy(item =>
+                        Math.Abs(
+                            AverageSlopeOffset(item) -
+                            outerOffset))
+                    .ToList();
+
+            return sameSide.FirstOrDefault();
+        }
+
+        private static bool TrySharedSlopeStationRange(
+            CorridorFeatureLine first,
+            CorridorFeatureLine second,
+            Baseline baseline,
+            out double start,
+            out double end)
+        {
+            start = baseline.StartStation;
+            end = baseline.EndStation;
+
+            foreach (CorridorFeatureLine line in
+                new[] { first, second })
+            {
+                var stations = new List<double>();
+                try
+                {
+                    foreach (FeatureLinePoint point in
+                        line.FeatureLinePoints)
+                    {
+                        if (point != null)
+                            stations.Add(point.Station);
+                    }
+                }
+                catch { }
+
+                if (stations.Count < 2)
+                    return false;
+                start =
+                    Math.Max(
+                        start,
+                        stations.Min());
+                end =
+                    Math.Min(
+                        end,
+                        stations.Max());
+            }
+
+            return end > start + 0.000001;
+        }
+
+        private static bool HasNativeSlopePattern(
+            CorridorSlopePatternCollection patterns,
+            CorridorFeatureLine first,
+            CorridorFeatureLine second)
+        {
+            if (patterns == null ||
+                first == null ||
+                second == null)
+                return false;
+
+            double firstOffset =
+                AverageSlopeOffset(first);
+            double secondOffset =
+                AverageSlopeOffset(second);
+
+            foreach (CorridorSlopePattern pattern in patterns)
+            {
+                if (pattern == null)
+                    continue;
+                try
+                {
+                    CorridorFeatureLine p1 =
+                        pattern.FeatureLine1;
+                    CorridorFeatureLine p2 =
+                        pattern.FeatureLine2;
+                    if (p1 == null ||
+                        p2 == null)
+                        continue;
+
+                    bool forward =
+                        IsSlopeFeatureCode(
+                            p1.CodeName,
+                            first.CodeName) &&
+                        IsSlopeFeatureCode(
+                            p2.CodeName,
+                            second.CodeName) &&
+                        Math.Abs(
+                            AverageSlopeOffset(p1) -
+                            firstOffset) < 0.01 &&
+                        Math.Abs(
+                            AverageSlopeOffset(p2) -
+                            secondOffset) < 0.01;
+                    bool reverse =
+                        IsSlopeFeatureCode(
+                            p2.CodeName,
+                            first.CodeName) &&
+                        IsSlopeFeatureCode(
+                            p1.CodeName,
+                            second.CodeName) &&
+                        Math.Abs(
+                            AverageSlopeOffset(p2) -
+                            firstOffset) < 0.01 &&
+                        Math.Abs(
+                            AverageSlopeOffset(p1) -
+                            secondOffset) < 0.01;
+                    if (forward || reverse)
+                        return true;
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
+        private static double AverageSlopeOffset(
+            CorridorFeatureLine line)
+        {
+            if (line == null)
+                return 0.0;
+
+            double total = 0.0;
+            int count = 0;
+            try
+            {
+                foreach (FeatureLinePoint point in
+                    line.FeatureLinePoints)
+                {
+                    if (point == null)
+                        continue;
+                    total += point.Offset;
+                    count++;
+                }
+            }
+            catch { }
+
+            return count == 0
+                ? 0.0
+                : total / count;
+        }
+
+        private static bool IsSlopeFeatureCode(
+            string value,
+            string expected)
+        {
+            string left =
+                NormalizeSlopeCode(value);
+            string right =
+                NormalizeSlopeCode(expected);
+            return string.Equals(
+                left,
+                right,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeSlopeCode(
+            string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty)
+                .Replace(" ", string.Empty)
+                .ToUpperInvariant();
+        }
+
         private static int DisableSlopePatterns(object corridor)
         {
             if (corridor == null) return 0;
