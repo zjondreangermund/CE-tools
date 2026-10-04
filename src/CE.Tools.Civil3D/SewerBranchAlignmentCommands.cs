@@ -1290,7 +1290,10 @@ namespace CETools.Civil3D
                         alignmentsCreated++;
 
                         IReadOnlyList<SewerBranchLabelPlacement.Placement> placements =
-                            SewerBranchLabelPlacement.BuildPlacements(branch.PlanPoints);
+                            SewerBranchLabelPlacement.BuildPlacements(
+                                branch.PlanPoints,
+                                productionSettings.BranchLabelLongSectionLength,
+                                productionSettings.BranchLabelLongSectionFrequency);
                         double paperHeight = productionSettings.LabelHeight;
                         bool placeAbove = string.Equals(
                                 productionSettings.BranchLabelSide,
