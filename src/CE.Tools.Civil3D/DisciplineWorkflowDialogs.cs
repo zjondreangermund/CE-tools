@@ -20,12 +20,18 @@ namespace CETools.Civil3D
     /// </summary>
     internal static class DisciplineWorkflowDialogs
     {
+        private static readonly Dictionary<string, string> LastWorkflowCommands =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         public static string SelectWorkflow(
             string title,
             string note,
             IList<DisciplineWorkflowAction> actions)
         {
-            var window = new DisciplineWorkflowWindow(title, note, actions);
+            var window = new DisciplineWorkflowWindow(
+                title,
+                note,
+                actions,
+                LastWorkflowCommand(title));
             AcApplication.ShowModalWindow(window);
             return window.SelectedCommand ?? string.Empty;
         }
@@ -37,11 +43,39 @@ namespace CETools.Civil3D
             IList<DisciplineWorkflowAction> actions)
         {
             if (document == null) return;
-            var window = new DisciplineWorkflowWindow(title, note, actions)
+            var window = new DisciplineWorkflowWindow(
+                title,
+                note,
+                actions,
+                LastWorkflowCommand(title))
             {
                 KeepOpenOnAction = true
             };
             AcApplication.ShowModelessWindow(window);
+        }
+
+        internal static void RememberWorkflowCommand(
+            string title,
+            string command)
+        {
+            if (string.IsNullOrWhiteSpace(title) ||
+                string.IsNullOrWhiteSpace(command))
+                return;
+            LastWorkflowCommands[title.Trim()] =
+                command.Trim();
+        }
+
+        private static string LastWorkflowCommand(
+            string title)
+        {
+            if (string.IsNullOrWhiteSpace(title))
+                return string.Empty;
+            string command;
+            return LastWorkflowCommands.TryGetValue(
+                       title.Trim(),
+                       out command)
+                ? command
+                : string.Empty;
         }
 
         public static bool EditSettings(ProductionSettingsDialogModel model)
@@ -101,9 +135,11 @@ namespace CETools.Civil3D
         public DisciplineWorkflowWindow(
             string title,
             string note,
-            IList<DisciplineWorkflowAction> actions)
+            IList<DisciplineWorkflowAction> actions,
+            string initiallySelectedCommand = "")
         {
             Title = title ?? "CE Tools Workflow";
+            Button initialButton = null;
             Width = 760;
             Height = 620;
             MinWidth = 600;
@@ -164,6 +200,15 @@ namespace CETools.Civil3D
                         Content = BuildActionContent(action)
                     };
                     button.Click += OnActionClick;
+                    if (!string.IsNullOrWhiteSpace(initiallySelectedCommand) &&
+                        string.Equals(
+                            action.Command,
+                            initiallySelectedCommand,
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        initialButton = button;
+                        button.IsDefault = true;
+                    }
                     stack.Children.Add(button);
                 }
             }
@@ -188,6 +233,19 @@ namespace CETools.Civil3D
             Grid.SetRow(close, 3);
             root.Children.Add(close);
             Content = root;
+
+            if (initialButton != null)
+            {
+                Loaded += delegate
+                {
+                    try
+                    {
+                        initialButton.Focus();
+                        initialButton.BringIntoView();
+                    }
+                    catch { }
+                };
+            }
         }
 
         public string SelectedCommand { get; private set; }
@@ -288,6 +346,9 @@ namespace CETools.Civil3D
             var action = button == null ? null : button.Tag as DisciplineWorkflowAction;
             if (action == null || string.IsNullOrWhiteSpace(action.Command)) return;
             SelectedCommand = action.Command;
+            DisciplineWorkflowDialogs.RememberWorkflowCommand(
+                Title,
+                action.Command);
 
             if (KeepOpenOnAction)
             {
