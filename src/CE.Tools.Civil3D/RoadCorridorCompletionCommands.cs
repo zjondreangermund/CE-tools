@@ -2579,6 +2579,741 @@ namespace CETools.Civil3D
                 (description ?? string.Empty).IndexOf("CE road", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static ObjectId ResolveRequestedOrProjectStyle(
+            Database database,
+            CivilDocument civilDocument,
+            RoadProductionSettings road,
+            ProjectStyleSelection project,
+            string category,
+            string requested,
+            Transaction transaction,
+            out string actual)
+        {
+            actual = string.Empty;
+            if (!string.IsNullOrWhiteSpace(requested) &&
+                !requested.StartsWith(
+                    "<",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    return CivilStyleCatalogV2.ResolveStyleId(
+                        database,
+                        civilDocument,
+                        category,
+                        requested.Trim(),
+                        transaction,
+                        out actual);
+                }
+                catch { }
+            }
+
+            return ResolveOptionalStyle(
+                database,
+                civilDocument,
+                road,
+                project,
+                category,
+                transaction,
+                out actual);
+        }
+
+        private static double ReadBaselineLength(
+            object baseline)
+        {
+            if (baseline == null)
+                return 0.0;
+            try
+            {
+                double start =
+                    Convert.ToDouble(
+                        ReadProperty(
+                            baseline,
+                            "StartStation"),
+                        CultureInfo.InvariantCulture);
+                double end =
+                    Convert.ToDouble(
+                        ReadProperty(
+                            baseline,
+                            "EndStation"),
+                        CultureInfo.InvariantCulture);
+                double length =
+                    Math.Abs(end - start);
+                return double.IsNaN(length) ||
+                       double.IsInfinity(length)
+                    ? 0.0
+                    : length;
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+
+        private static int UpgradeBasicSidewalksForCorridors(
+            Document document,
+            CivilDocument civilDocument,
+            RoadCorridorCompletionOptions options,
+            ref int warnings)
+        {
+            if (document == null ||
+                civilDocument == null ||
+                options == null)
+                return 0;
+
+            var assemblyIds =
+                new HashSet<ObjectId>();
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    object collection =
+                        ReadProperty(
+                            civilDocument,
+                            "CorridorCollection");
+                    List<ObjectId> corridorIds =
+                        options.CorridorIds != null &&
+                        options.CorridorIds.Count > 0
+                            ? options.CorridorIds
+                                .Where(id =>
+                                    !id.IsNull &&
+                                    !id.IsErased)
+                                .Distinct()
+                                .ToList()
+                            : ReadCorridorIds(
+                                collection,
+                                document.Database,
+                                transaction);
+
+                    foreach (ObjectId corridorId in corridorIds)
+                    {
+                        Corridor corridor = null;
+                        try
+                        {
+                            corridor =
+                                transaction.GetObject(
+                                    corridorId,
+                                    OpenMode.ForRead,
+                                    false) as Corridor;
+                        }
+                        catch { }
+                        if (corridor == null)
+                            continue;
+
+                        foreach (Baseline baseline in
+                            corridor.Baselines)
+                        {
+                            if (baseline == null)
+                                continue;
+                            foreach (BaselineRegion region in
+                                baseline.BaselineRegions)
+                            {
+                                if (region == null)
+                                    continue;
+                                ObjectId assemblyId =
+                                    ReadObjectId(
+                                        region,
+                                        "AssemblyId");
+                                if (!assemblyId.IsNull)
+                                    assemblyIds.Add(
+                                        assemblyId);
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                warnings++;
+            }
+
+            int upgraded = 0;
+            foreach (ObjectId assemblyId in assemblyIds)
+            {
+                upgraded +=
+                    UpgradeBasicSidewalksInAssembly(
+                        document,
+                        civilDocument,
+                        assemblyId,
+                        options.BasicSidewalkSlopePercent,
+                        ref warnings);
+            }
+            return upgraded;
+        }
+
+        private static int UpgradeBasicSidewalksInAssembly(
+            Document document,
+            CivilDocument civilDocument,
+            ObjectId assemblyId,
+            double slopePercent,
+            ref int warnings)
+        {
+            if (document == null ||
+                civilDocument == null ||
+                assemblyId.IsNull)
+                return 0;
+
+            var targets =
+                new List<BasicSidewalkSnapshot>();
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    CivilAssembly assembly =
+                        transaction.GetObject(
+                            assemblyId,
+                            OpenMode.ForRead,
+                            false) as CivilAssembly;
+                    if (assembly == null)
+                        return 0;
+
+                    foreach (AssemblyGroup group in
+                        assembly.Groups)
+                    {
+                        if (group == null)
+                            continue;
+                        ObjectIdCollection ids =
+                            group.GetSubassemblyIds();
+                        foreach (ObjectId id in ids)
+                        {
+                            CivilSubassembly subassembly = null;
+                            try
+                            {
+                                subassembly =
+                                    transaction.GetObject(
+                                        id,
+                                        OpenMode.ForRead,
+                                        false) as CivilSubassembly;
+                            }
+                            catch { }
+                            if (subassembly == null ||
+                                !IsBasicSidewalk(
+                                    subassembly))
+                                continue;
+
+                            targets.Add(
+                                new BasicSidewalkSnapshot
+                                {
+                                    ObjectId = id,
+                                    Name =
+                                        string.IsNullOrWhiteSpace(
+                                            subassembly.Name)
+                                            ? "BasicSidewalk"
+                                            : subassembly.Name,
+                                    LayerId =
+                                        subassembly.LayerId,
+                                    StyleId =
+                                        subassembly.StyleId,
+                                    Side =
+                                        ReadProperty(
+                                            subassembly,
+                                            "Side"),
+                                    Parameters =
+                                        ReadSubassemblyDoubleParameters(
+                                            subassembly)
+                                });
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                warnings++;
+                return 0;
+            }
+
+            int upgraded = 0;
+            foreach (BasicSidewalkSnapshot source in targets)
+            {
+                ObjectId replacementId =
+                    ObjectId.Null;
+                try
+                {
+                    string importName =
+                        source.Name +
+                        "-CE-SLOPED-" +
+                        source.ObjectId.Handle.ToString();
+                    replacementId =
+                        civilDocument
+                            .SubassemblyCollection
+                            .ImportStockSubassembly(
+                                importName,
+                                "Subassembly.SidewalkSlopesAndBase",
+                                Point3d.Origin);
+                    if (replacementId.IsNull)
+                    {
+                        warnings++;
+                        continue;
+                    }
+
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
+                    {
+                        CivilSubassembly replacement =
+                            transaction.GetObject(
+                                replacementId,
+                                OpenMode.ForWrite,
+                                false) as CivilSubassembly;
+                        if (replacement == null)
+                            throw new InvalidOperationException(
+                                "Civil 3D did not return the imported sloped sidewalk.");
+
+                        if (!source.LayerId.IsNull)
+                            replacement.LayerId =
+                                source.LayerId;
+                        if (!source.StyleId.IsNull)
+                            replacement.StyleId =
+                                source.StyleId;
+                        SetCompatibleProperty(
+                            replacement,
+                            "Side",
+                            source.Side);
+
+                        ApplySidewalkParameter(
+                            replacement,
+                            new[]
+                            {
+                                "SIDEWALKWIDTH",
+                                "WIDTH"
+                            },
+                            ReadSidewalkSourceValue(
+                                source.Parameters,
+                                new[]
+                                {
+                                    "WIDTH"
+                                }));
+                        ApplySidewalkParameter(
+                            replacement,
+                            new[]
+                            {
+                                "SIDEWALKDEPTH",
+                                "DEPTH"
+                            },
+                            ReadSidewalkSourceValue(
+                                source.Parameters,
+                                new[]
+                                {
+                                    "DEPTH"
+                                }));
+                        ApplySidewalkParameter(
+                            replacement,
+                            new[]
+                            {
+                                "INSIDEBOULEVARDWIDTH",
+                                "INSIDEBUFFERWIDTH",
+                                "BUFFERWIDTH1"
+                            },
+                            ReadSidewalkSourceValue(
+                                source.Parameters,
+                                new[]
+                                {
+                                    "BUFFERWIDTH1",
+                                    "INSIDEBUFFERWIDTH"
+                                }));
+                        ApplySidewalkParameter(
+                            replacement,
+                            new[]
+                            {
+                                "OUTSIDEBOULEVARDWIDTH",
+                                "OUTSIDEBUFFERWIDTH",
+                                "BUFFERWIDTH2"
+                            },
+                            ReadSidewalkSourceValue(
+                                source.Parameters,
+                                new[]
+                                {
+                                    "BUFFERWIDTH2",
+                                    "OUTSIDEBUFFERWIDTH"
+                                }));
+                        ApplySidewalkSlopeParameter(
+                            replacement,
+                            slopePercent);
+                        transaction.Commit();
+                    }
+
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
+                    {
+                        CivilAssembly assembly =
+                            transaction.GetObject(
+                                assemblyId,
+                                OpenMode.ForWrite,
+                                false) as CivilAssembly;
+                        CivilSubassembly old =
+                            transaction.GetObject(
+                                source.ObjectId,
+                                OpenMode.ForWrite,
+                                false) as CivilSubassembly;
+                        CivilSubassembly replacement =
+                            transaction.GetObject(
+                                replacementId,
+                                OpenMode.ForWrite,
+                                false) as CivilSubassembly;
+                        if (assembly == null ||
+                            replacement == null)
+                            throw new InvalidOperationException(
+                                "The assembly or sloped sidewalk became unavailable.");
+
+                        assembly.ReplaceSubassembly(
+                            replacementId,
+                            source.ObjectId);
+
+                        if (old != null &&
+                            !old.IsErased)
+                            old.Erase();
+
+                        try
+                        {
+                            replacement.Name =
+                                source.Name;
+                        }
+                        catch { }
+
+                        transaction.Commit();
+                    }
+                    upgraded++;
+                }
+                catch
+                {
+                    warnings++;
+                    if (!replacementId.IsNull)
+                    {
+                        try
+                        {
+                            using (Transaction cleanup =
+                                document.Database.TransactionManager.StartTransaction())
+                            {
+                                DBObject replacement =
+                                    cleanup.GetObject(
+                                        replacementId,
+                                        OpenMode.ForWrite,
+                                        false);
+                                if (replacement != null &&
+                                    !replacement.IsErased)
+                                    replacement.Erase();
+                                cleanup.Commit();
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            return upgraded;
+        }
+
+        private static bool IsBasicSidewalk(
+            CivilSubassembly subassembly)
+        {
+            if (subassembly == null)
+                return false;
+            string identity =
+                (
+                    (subassembly.Name ?? string.Empty) +
+                    " " +
+                    Convert.ToString(
+                        ReadProperty(
+                            subassembly,
+                            "Description"),
+                        CultureInfo.CurrentCulture) +
+                    " " +
+                    Convert.ToString(
+                        ReadProperty(
+                            subassembly,
+                            "ResourceModule"),
+                        CultureInfo.CurrentCulture) +
+                    " " +
+                    Convert.ToString(
+                        ReadProperty(
+                            subassembly,
+                            "ClassName"),
+                        CultureInfo.CurrentCulture))
+                .Replace(
+                    " ",
+                    string.Empty)
+                .ToUpperInvariant();
+
+            return identity.Contains(
+                       "BASICSIDEWALK") &&
+                   !identity.Contains(
+                       "SIDEWALKSLOPESANDBASE");
+        }
+
+        private static IDictionary<string, double> ReadSubassemblyDoubleParameters(
+            CivilSubassembly subassembly)
+        {
+            var values =
+                new Dictionary<string, double>(
+                    StringComparer.OrdinalIgnoreCase);
+            if (subassembly == null)
+                return values;
+
+            object collection =
+                ReadProperty(
+                    subassembly,
+                    "ParamsDouble");
+            foreach (object item in
+                CivilStyleDiscovery.Enumerate(
+                    collection))
+            {
+                if (item == null)
+                    continue;
+                string name =
+                    Convert.ToString(
+                        ReadProperty(
+                            item,
+                            "Name"),
+                        CultureInfo.CurrentCulture);
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    name =
+                        Convert.ToString(
+                            ReadProperty(
+                                item,
+                                "DisplayName"),
+                            CultureInfo.CurrentCulture);
+                }
+                if (string.IsNullOrWhiteSpace(name))
+                    continue;
+
+                try
+                {
+                    double value =
+                        Convert.ToDouble(
+                            ReadProperty(
+                                item,
+                                "Value"),
+                            CultureInfo.InvariantCulture);
+                    values[
+                        NormalizeParameterName(
+                            name)] = value;
+                }
+                catch { }
+            }
+            return values;
+        }
+
+        private static double? ReadSidewalkSourceValue(
+            IDictionary<string, double> values,
+            IEnumerable<string> names)
+        {
+            if (values == null ||
+                names == null)
+                return null;
+            foreach (string requested in names)
+            {
+                string key =
+                    NormalizeParameterName(
+                        requested);
+                double value;
+                if (values.TryGetValue(
+                        key,
+                        out value))
+                    return value;
+            }
+            return null;
+        }
+
+        private static void ApplySidewalkParameter(
+            CivilSubassembly subassembly,
+            IEnumerable<string> names,
+            double? value)
+        {
+            if (subassembly == null ||
+                names == null ||
+                !value.HasValue)
+                return;
+
+            TrySetSubassemblyDoubleParameter(
+                subassembly,
+                names,
+                value.Value,
+                false);
+        }
+
+        private static void ApplySidewalkSlopeParameter(
+            CivilSubassembly subassembly,
+            double slopePercent)
+        {
+            if (subassembly == null ||
+                double.IsNaN(slopePercent) ||
+                double.IsInfinity(slopePercent))
+                return;
+
+            TrySetSubassemblyDoubleParameter(
+                subassembly,
+                new[]
+                {
+                    "SIDEWALKSLOPE",
+                    "CROSSSLOPE",
+                    "SLOPE"
+                },
+                slopePercent,
+                true);
+        }
+
+        private static bool TrySetSubassemblyDoubleParameter(
+            CivilSubassembly subassembly,
+            IEnumerable<string> names,
+            double requestedValue,
+            bool percentValue)
+        {
+            object collection =
+                ReadProperty(
+                    subassembly,
+                    "ParamsDouble");
+            if (collection == null)
+                return false;
+
+            var requestedNames =
+                new HashSet<string>(
+                    (names ?? Enumerable.Empty<string>())
+                        .Select(
+                            NormalizeParameterName),
+                    StringComparer.OrdinalIgnoreCase);
+            foreach (object item in
+                CivilStyleDiscovery.Enumerate(
+                    collection))
+            {
+                if (item == null)
+                    continue;
+                string name =
+                    Convert.ToString(
+                        ReadProperty(
+                            item,
+                            "Name"),
+                        CultureInfo.CurrentCulture);
+                if (string.IsNullOrWhiteSpace(name))
+                    name =
+                        Convert.ToString(
+                            ReadProperty(
+                                item,
+                                "DisplayName"),
+                            CultureInfo.CurrentCulture);
+                string normalized =
+                    NormalizeParameterName(
+                        name);
+                bool match =
+                    requestedNames.Contains(
+                        normalized) ||
+                    requestedNames.Any(candidate =>
+                        normalized.Contains(
+                            candidate) ||
+                        candidate.Contains(
+                            normalized));
+                if (!match)
+                    continue;
+
+                double value =
+                    requestedValue;
+                if (percentValue)
+                {
+                    try
+                    {
+                        double current =
+                            Convert.ToDouble(
+                                ReadProperty(
+                                    item,
+                                    "Value"),
+                                CultureInfo.InvariantCulture);
+                        // Stock Civil 3D subassemblies differ: some expose
+                        // percent parameters as 2.0, others as 0.02. Preserve
+                        // the representation used by the imported component.
+                        if (Math.Abs(current) <= 1.0)
+                            value =
+                                requestedValue / 100.0;
+                    }
+                    catch
+                    {
+                        value =
+                            requestedValue / 100.0;
+                    }
+                }
+
+                try
+                {
+                    PropertyInfo property =
+                        item.GetType()
+                            .GetProperty(
+                                "Value",
+                                BindingFlags.Public |
+                                BindingFlags.Instance);
+                    if (property != null &&
+                        property.CanWrite)
+                    {
+                        object converted =
+                            Convert.ChangeType(
+                                value,
+                                property.PropertyType,
+                                CultureInfo.InvariantCulture);
+                        property.SetValue(
+                            item,
+                            converted,
+                            null);
+                        return true;
+                    }
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
+        private static string NormalizeParameterName(
+            string value)
+        {
+            return new string(
+                (value ?? string.Empty)
+                    .Where(
+                        char.IsLetterOrDigit)
+                    .Select(
+                        char.ToUpperInvariant)
+                    .ToArray());
+        }
+
+        private static void SetCompatibleProperty(
+            object target,
+            string propertyName,
+            object value)
+        {
+            if (target == null ||
+                value == null ||
+                string.IsNullOrWhiteSpace(propertyName))
+                return;
+            try
+            {
+                PropertyInfo property =
+                    target.GetType()
+                        .GetProperty(
+                            propertyName,
+                            BindingFlags.Public |
+                            BindingFlags.Instance);
+                if (property != null &&
+                    property.CanWrite &&
+                    property.PropertyType.IsInstanceOfType(
+                        value))
+                {
+                    property.SetValue(
+                        target,
+                        value,
+                        null);
+                }
+            }
+            catch { }
+        }
+
+        private sealed class BasicSidewalkSnapshot
+        {
+            internal ObjectId ObjectId { get; set; }
+            internal string Name { get; set; }
+            internal ObjectId LayerId { get; set; }
+            internal ObjectId StyleId { get; set; }
+            internal object Side { get; set; }
+            internal IDictionary<string, double> Parameters { get; set; }
+        }
+
         private static ObjectId ResolveOptionalStyle(Database database, CivilDocument civilDocument, RoadProductionSettings road, ProjectStyleSelection project, string category, Transaction transaction, out string actual)
         {
             actual = string.Empty;
