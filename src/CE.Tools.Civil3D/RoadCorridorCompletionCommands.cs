@@ -2335,7 +2335,24 @@ namespace CETools.Civil3D
     internal sealed class CivilChoiceWindow : System.Windows.Window
     {
         private readonly System.Windows.Controls.ListBox _list;
-        internal CivilChoiceWindow(string title, string message, IEnumerable<CivilChoice> choices)
+
+        internal CivilChoiceWindow(
+            string title,
+            string message,
+            IEnumerable<CivilChoice> choices)
+            : this(
+                title,
+                message,
+                choices,
+                ObjectId.Null)
+        {
+        }
+
+        internal CivilChoiceWindow(
+            string title,
+            string message,
+            IEnumerable<CivilChoice> choices,
+            ObjectId initiallySelected)
         {
             Title = title;
             Width = 620;
@@ -2354,8 +2371,35 @@ namespace CETools.Civil3D
             var heading = new System.Windows.Controls.TextBlock { Text = message, TextWrapping = System.Windows.TextWrapping.Wrap, Margin = new System.Windows.Thickness(0, 0, 0, 10) };
             System.Windows.Controls.DockPanel.SetDock(heading, System.Windows.Controls.Dock.Top);
             root.Children.Add(heading);
-            _list = new System.Windows.Controls.ListBox { ItemsSource = choices == null ? new List<CivilChoice>() : choices.ToList(), DisplayMemberPath = "Name" };
-            if (_list.Items.Count > 0) _list.SelectedIndex = 0;
+            _list = new System.Windows.Controls.ListBox
+            {
+                ItemsSource = choices == null
+                    ? new List<CivilChoice>()
+                    : choices.ToList(),
+                DisplayMemberPath = "Name"
+            };
+            if (_list.Items.Count > 0)
+            {
+                int initialIndex = 0;
+                if (!initiallySelected.IsNull)
+                {
+                    for (int index = 0;
+                         index < _list.Items.Count;
+                         index++)
+                    {
+                        CivilChoice choice =
+                            _list.Items[index] as CivilChoice;
+                        if (choice != null &&
+                            choice.Id == initiallySelected)
+                        {
+                            initialIndex = index;
+                            break;
+                        }
+                    }
+                }
+                _list.SelectedIndex = initialIndex;
+                _list.ScrollIntoView(_list.SelectedItem);
+            }
             _list.MouseDoubleClick += delegate
             {
                 Selected = _list.SelectedItem as CivilChoice;
