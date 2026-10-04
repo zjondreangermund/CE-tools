@@ -9,6 +9,7 @@ using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+using FeatureLinePointType = Autodesk.Civil.FeatureLinePointType;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.August13RoadConstructionBoqCommands))]
 

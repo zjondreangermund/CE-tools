@@ -497,10 +497,17 @@ namespace CETools.Civil3D
                 Layout layout = null;
                 try
                 {
-                    layout = transaction.GetObject(
-                        entry.Value,
-                        OpenMode.ForRead,
-                        false) as Layout;
+                    ObjectId layoutId =
+                        entry.Value is ObjectId
+                            ? (ObjectId)entry.Value
+                            : ObjectId.Null;
+                    if (!layoutId.IsNull)
+                    {
+                        layout = transaction.GetObject(
+                            layoutId,
+                            OpenMode.ForRead,
+                            false) as Layout;
+                    }
                 }
                 catch { }
                 if (layout != null)
@@ -1318,7 +1325,8 @@ namespace CETools.Civil3D
                         })
                         .Where(item =>
                         {
-                            DateTime before;
+                            DateTime before =
+                                DateTime.MinValue;
                             bool existed =
                                 baseline != null &&
                                 baseline.TryGetValue(
@@ -1389,44 +1397,25 @@ namespace CETools.Civil3D
         private static void ApplyDrawingFolder(
             Document document)
         {
-            string folder = DrawingFolder(document);
+            string folder =
+                DrawingFolder(document);
             if (string.IsNullOrWhiteSpace(folder))
                 return;
 
+            // Civil 3D / AutoCAD 2023 exposes the current plot-to-file folder
+            // through the PLOTTOFILEPATH system variable. Do not depend on
+            // Application.AcadApplication here: that COM bridge is not exposed
+            // by the referenced 2023 managed Application type in all installs.
             try
             {
-                object acad =
-                    AcApplication.AcadApplication;
-                if (acad == null) return;
-                object preferences =
-                    acad.GetType().InvokeMember(
-                        "Preferences",
-                        BindingFlags.GetProperty,
-                        null,
-                        acad,
-                        null,
-                        CultureInfo.InvariantCulture);
-                if (preferences == null) return;
-                object output =
-                    preferences.GetType().InvokeMember(
-                        "Output",
-                        BindingFlags.GetProperty,
-                        null,
-                        preferences,
-                        null,
-                        CultureInfo.InvariantCulture);
-                if (output == null) return;
-                output.GetType().InvokeMember(
-                    "DefaultPlotToFilePath",
-                    BindingFlags.SetProperty,
-                    null,
-                    output,
-                    new object[] { folder },
-                    CultureInfo.InvariantCulture);
+                AcApplication.SetSystemVariable(
+                    "PLOTTOFILEPATH",
+                    folder);
             }
             catch
             {
-                // Plot folder convenience must never interfere with plotting.
+                // Plotting remains available even when a host build does not
+                // expose this system variable.
             }
         }
     }
