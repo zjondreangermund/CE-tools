@@ -2187,7 +2187,7 @@ namespace CETools.Civil3D
         public string StructurePlanLabelStyle { get; set; } = string.Empty;
         public string ProfileLayer { get; set; } = "CE-SEWER-PROFILE";
         public double LabelHeight { get; set; } = 5.0;
-        public string BranchLabelSide { get; set; } = "Alternating";
+        public string BranchLabelSide { get; set; } = "Above";
         public double BranchLabelAboveOffset { get; set; } = 10.0;
         public double BranchLabelBelowOffset { get; set; } = 10.0;
         public double BranchLabelLongSectionLength { get; set; } = 50.0;
