@@ -15,6 +15,8 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilProfile = Autodesk.Civil.DatabaseServices.Profile;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
+using CivilAssembly = Autodesk.Civil.DatabaseServices.Assembly;
+using CivilSubassembly = Autodesk.Civil.DatabaseServices.Subassembly;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.RoadCorridorCompletionCommands))]
 
@@ -27,6 +29,8 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class RoadCorridorCompletionCommands
     {
+        private const string CompleteSelectionKey =
+            "CE_ROADCORRIDORCOMPLETE_LAST_SELECTION";
         [CommandMethod("CE_TOOLS", "CE_ROADPROFILEFULL", CommandFlags.Modal | CommandFlags.Redraw)]
         public void CreateFullProfiles()
         {
@@ -189,14 +193,25 @@ namespace CETools.Civil3D
             if (civilDocument == null) return;
 
             IList<CivilChoice> selectedCorridors = null;
-            List<CivilChoice> corridorChoices = FieldCompletionBatchUi.ReadCorridorChoices(document, civilDocument);
+            ObjectId rememberedSurfaceId;
+            IList<ObjectId> rememberedCorridorIds =
+                ReadCompleteCorridorSelection(
+                    document.Database,
+                    out rememberedSurfaceId);
+            List<CivilChoice> corridorChoices =
+                FieldCompletionBatchUi.ReadCorridorChoices(
+                    document,
+                    civilDocument);
             if (corridorChoices.Count > 0)
             {
                 selectedCorridors = FieldCompletionBatchUi.PickMultiple(
                     "CE Tools - Corridor Selection",
-                    "Select the corridors to complete. Only the selected corridors are processed.",
-                    corridorChoices);
-                if (selectedCorridors == null || selectedCorridors.Count == 0) return;
+                    "Select the corridors to complete. The previous successful selection is checked by default.",
+                    corridorChoices,
+                    rememberedCorridorIds);
+                if (selectedCorridors == null ||
+                    selectedCorridors.Count == 0)
+                    return;
             }
 
             List<CivilChoice> surfaces = ReadSurfaces(document, civilDocument);
@@ -207,10 +222,20 @@ namespace CETools.Civil3D
             }
             var surfacePicker = new CivilChoiceWindow(
                 "CE Tools - Corridor Target Surface",
-                "Select the existing-ground or target surface used for width/elevation surface targets.",
-                surfaces);
+                "Select the existing-ground or target surface used for width/elevation surface targets. The previous choice is selected by default.",
+                surfaces,
+                rememberedSurfaceId);
             AcApplication.ShowModalWindow(surfacePicker);
-            if (!surfacePicker.Accepted || surfacePicker.Selected == null) return;
+            if (!surfacePicker.Accepted ||
+                surfacePicker.Selected == null)
+                return;
+
+            WriteCompleteCorridorSelection(
+                document.Database,
+                selectedCorridors == null
+                    ? Enumerable.Empty<ObjectId>()
+                    : selectedCorridors.Select(item => item.Id),
+                surfacePicker.Selected.Id);
 
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Complete Road Corridors",
@@ -226,10 +251,32 @@ namespace CETools.Civil3D
                 document.Database, civilDocument, "Profile Style", "<Use drawing default>");
             IList<string> slopeStyles = FieldCompletionBatchUi.ReadStyleChoices(
                 document.Database, civilDocument, "Slope Pattern Style", "<Use current>");
+            IList<string> codeSetStyles = FieldCompletionBatchUi.ReadStyleChoices(
+                document.Database, civilDocument, "Code Set Style", "<Use project / current>");
             model.AddChoice("ProfileStyle", "00 Selection / Output", "Design profile style",
                 profileStyles[0],
                 "Apply the selected Civil 3D profile style to non-ground road profiles used by the selected corridors.",
                 profileStyles);
+            model.AddChoice(
+                "CodeSetStyle",
+                "00 Selection / Output",
+                "Code set style",
+                codeSetStyles[0],
+                "Apply one Civil 3D code set style to the selected corridors, their regions and referenced assemblies. Use project/current keeps the configured project style.",
+                codeSetStyles);
+            model.AddChoice(
+                "BasicSidewalkSlopeMode",
+                "00 Assembly / Sidewalk",
+                "BasicSidewalk cross slope",
+                "Apply sloped sidewalk",
+                "BasicSidewalk is a stock horizontal-only subassembly. When enabled, CE Tools replaces it in the referenced road assembly with Autodesk SidewalkSlopesAndBase while preserving side, width, depth and buffer widths, then applies the requested sidewalk slope.",
+                new[] { "Apply sloped sidewalk", "Keep current" });
+            model.AddDouble(
+                "BasicSidewalkSlope",
+                "00 Assembly / Sidewalk",
+                "Sidewalk slope (%)",
+                2.0,
+                "Cross slope for upgraded BasicSidewalk components. Positive values use the stock sidewalk side/direction behavior.");
             List<string> assemblyNames = ReadAssemblyNames(document, civilDocument);
             model.AddChoice("Assembly", "00 Baseline and Region", "Assembly for missing corridor regions",
                 assemblyNames.Count == 0 ? string.Empty : assemblyNames[0],
@@ -262,6 +309,12 @@ namespace CETools.Civil3D
                     : selectedCorridors.Select(item => item.Id).ToList(),
                 CorridorLayerName = model.Text("CorridorLayer"),
                 ProfileStyleName = model.Text("ProfileStyle"),
+                CodeSetStyleName = model.Text("CodeSetStyle"),
+                ApplyBasicSidewalkSlope = string.Equals(
+                    model.Text("BasicSidewalkSlopeMode"),
+                    "Apply sloped sidewalk",
+                    StringComparison.OrdinalIgnoreCase),
+                BasicSidewalkSlopePercent = model.Double("BasicSidewalkSlope", 2.0),
                 LeftCutSlopeStyle = model.Text("LeftCutSlopeStyle"),
                 LeftFillSlopeStyle = model.Text("LeftFillSlopeStyle"),
                 RightCutSlopeStyle = model.Text("RightCutSlopeStyle"),
@@ -298,12 +351,24 @@ namespace CETools.Civil3D
                 document,
                 "CE Tools - Road Corridor Completion",
                 string.Format(CultureInfo.CurrentCulture,
-                    "Corridors={0}; baselines={1}; regions={2}; frequency values={3}; targets={4}; surfaces={5}; boundaries={6}; visibility settings={7}; automatic rebuild={8}; slope patterns={9}; rebuilt={10}; profile-view bindings={11}; warnings={12}.",
-                    result.Corridors, result.Baselines, result.Regions, result.FrequencySettings,
-                    result.Targets, result.Surfaces, result.Boundaries,
-                    result.VisibilitySettings, result.AutomaticRebuildSettings,
-                    result.SlopePatterns, result.Rebuilt, result.ProfileViewBindings, result.Warnings),
-                new List<string> { "Corridor", "Target Surface", "Baselines", "Regions", "Frequencies", "Targets", "Surfaces", "Boundaries", "Visible", "Auto Rebuild", "Slope Patterns", "Status" },
+                    "Corridors={0}; total road length={1:N3} m; baselines={2}; regions={3}; frequency values={4}; targets={5}; surfaces={6}; boundaries={7}; code-set assignments={8}; BasicSidewalk upgrades={9}; visibility settings={10}; automatic rebuild={11}; slope patterns={12}; rebuilt={13}; profile-view bindings={14}; warnings={15}.",
+                    result.Corridors,
+                    result.TotalRoadLength,
+                    result.Baselines,
+                    result.Regions,
+                    result.FrequencySettings,
+                    result.Targets,
+                    result.Surfaces,
+                    result.Boundaries,
+                    result.CodeSetAssignments,
+                    result.SidewalkUpgrades,
+                    result.VisibilitySettings,
+                    result.AutomaticRebuildSettings,
+                    result.SlopePatterns,
+                    result.Rebuilt,
+                    result.ProfileViewBindings,
+                    result.Warnings),
+                new List<string> { "Corridor", "Road Length (m)", "Target Surface", "Baselines", "Regions", "Frequencies", "Targets", "Surfaces", "Boundaries", "Visible", "Auto Rebuild", "Slope Patterns", "Code Set", "Status" },
                 result.Rows,
                 "CE TOOLS ROAD CORRIDOR COMPLETION REGISTER");
         }
@@ -324,12 +389,32 @@ namespace CETools.Civil3D
             ProjectStyleSelection project = ProjectStyleCenterCommands.ReadSelection(document.Database);
             RoadProductionSettings road = RoadProductionSettings.Read(document.Database);
 
+            if (options.ApplyBasicSidewalkSlope)
+            {
+                int sidewalkWarnings = 0;
+                result.SidewalkUpgrades =
+                    UpgradeBasicSidewalksForCorridors(
+                        document,
+                        civilDocument,
+                        options,
+                        ref sidewalkWarnings);
+                result.Warnings += sidewalkWarnings;
+            }
+
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 string corridorStyleName;
                 ObjectId corridorStyleId = ResolveOptionalStyle(document.Database, civilDocument, road, project, "Corridor Style", transaction, out corridorStyleName);
                 string codeSetName;
-                ObjectId codeSetStyleId = ResolveOptionalStyle(document.Database, civilDocument, road, project, "Code Set Style", transaction, out codeSetName);
+                ObjectId codeSetStyleId = ResolveRequestedOrProjectStyle(
+                    document.Database,
+                    civilDocument,
+                    road,
+                    project,
+                    "Code Set Style",
+                    options.CodeSetStyleName,
+                    transaction,
+                    out codeSetName);
                 ObjectId profileStyleId = FieldCompletionBatchUi.ResolveStyleId(
                     document.Database,
                     civilDocument,
@@ -389,10 +474,15 @@ namespace CETools.Civil3D
                     int beforeVisibility = result.VisibilitySettings;
                     int beforeAutomaticRebuild = result.AutomaticRebuildSettings;
                     int beforeSlope = result.SlopePatterns;
+                    int beforeCodeSet = result.CodeSetAssignments;
                     int beforeWarnings = result.Warnings;
+                    double corridorLength = 0.0;
 
-                    if (!corridorStyleId.IsNull) TrySetObjectId(corridor, corridorStyleId, "StyleId", "CorridorStyleId");
-                    if (!codeSetStyleId.IsNull) TrySetObjectId(corridor, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle");
+                    if (!corridorStyleId.IsNull)
+                        TrySetObjectId(corridor, corridorStyleId, "StyleId", "CorridorStyleId");
+                    if (!codeSetStyleId.IsNull &&
+                        TrySetObjectId(corridor, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle"))
+                        result.CodeSetAssignments++;
                     if (!corridorLayerId.IsNull) TrySetObjectId(corridor, corridorLayerId, "LayerId");
                     if (options.EnsureVisible)
                     {
@@ -436,6 +526,7 @@ namespace CETools.Civil3D
                     {
                         if (baseline == null) continue;
                         result.Baselines++;
+                        corridorLength += ReadBaselineLength(baseline);
                         if (!profileStyleId.IsNull)
                         {
                             ObjectId alignmentId = ReadObjectId(baseline, "AlignmentId");
@@ -457,7 +548,36 @@ namespace CETools.Civil3D
                             if (options.EnsureVisible &&
                                 TrySetBoolean(region, true, "IsEnabled", "Enabled", "IsProcessed"))
                                 result.VisibilitySettings++;
-                            if (!codeSetStyleId.IsNull) TrySetObjectId(region, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle");
+                            if (!codeSetStyleId.IsNull &&
+                                TrySetObjectId(region, codeSetStyleId, "CodeSetStyleId", "CodeSetStyle"))
+                                result.CodeSetAssignments++;
+
+                            ObjectId regionAssemblyId =
+                                ReadObjectId(region, "AssemblyId");
+                            if (!codeSetStyleId.IsNull &&
+                                !regionAssemblyId.IsNull)
+                            {
+                                try
+                                {
+                                    CivilAssembly assembly =
+                                        transaction.GetObject(
+                                            regionAssemblyId,
+                                            OpenMode.ForWrite,
+                                            false) as CivilAssembly;
+                                    if (assembly != null &&
+                                        assembly.CodeSetStyleId != codeSetStyleId)
+                                    {
+                                        assembly.CodeSetStyleId =
+                                            codeSetStyleId;
+                                        result.CodeSetAssignments++;
+                                    }
+                                }
+                                catch
+                                {
+                                    result.Warnings++;
+                                }
+                            }
+
                             if (!existingAssemblyId.IsNull)
                             {
                                 int assignments = ApplyAssemblyToRegion(region, existingAssemblyId);
@@ -521,9 +641,11 @@ namespace CETools.Civil3D
                         result.SlopePatterns += DisableSlopePatterns(corridor);
 
                     bool rebuilt = options.RebuildCorridors && Invoke(corridor, "Rebuild");
+                    result.TotalRoadLength += corridorLength;
                     result.Rows.Add(new List<string>
                     {
                         name,
+                        corridorLength.ToString("N3", CultureInfo.CurrentCulture),
                         string.IsNullOrWhiteSpace(options.TargetSurfaceName) ? "-" : options.TargetSurfaceName,
                         (result.Baselines - beforeBaseline).ToString(CultureInfo.CurrentCulture),
                         (result.Regions - beforeRegion).ToString(CultureInfo.CurrentCulture),
@@ -534,6 +656,7 @@ namespace CETools.Civil3D
                         (result.VisibilitySettings - beforeVisibility).ToString(CultureInfo.CurrentCulture),
                         (result.AutomaticRebuildSettings - beforeAutomaticRebuild).ToString(CultureInfo.CurrentCulture),
                         (result.SlopePatterns - beforeSlope).ToString(CultureInfo.CurrentCulture),
+                        (result.CodeSetAssignments - beforeCodeSet).ToString(CultureInfo.CurrentCulture),
                         result.Warnings == beforeWarnings
                             ? "Completed"
                             : rebuilt ? "Completed with warnings" : "Settings applied; rebuild unavailable"
@@ -1667,6 +1790,37 @@ namespace CETools.Civil3D
             }
             if (surface == null) { result.Warnings++; return null; }
 
+            // A CorridorSurface can exist in the collection while its build
+            // switch is off.  That is the state that previously produced
+            // BOTTOM-RD-* names in the corridor settings but no usable Civil 3D
+            // surface/SurfaceId for BOQ earthworks.
+            bool bottom =
+                name.IndexOf(
+                    "BOTTOM",
+                    StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf(
+                    "DATUM",
+                    StringComparison.OrdinalIgnoreCase) >= 0;
+            if (TrySetBoolean(
+                    surface,
+                    true,
+                    "IsBuild",
+                    "Build",
+                    "Enabled"))
+                result.Surfaces++;
+            TrySetEnum(
+                surface,
+                bottom
+                    ? new[] { "BottomLinks", "Bottom" }
+                    : new[] { "TopLinks", "Top" },
+                "OverhangCorrection");
+            TrySetString(
+                surface,
+                bottom
+                    ? "CE road BOTTOM corridor surface | Datum/Subgrade links | Build enabled"
+                    : "CE road TOP corridor surface | Top/Pave links | Build enabled",
+                "Description");
+
             foreach (string code in codes ?? Enumerable.Empty<string>())
             {
                 // Civil 3D 2023 drawings expose both one- and two-argument
@@ -1963,7 +2117,418 @@ namespace CETools.Civil3D
                 if (TrySetBoolean(pattern, true, "Visible", "IsVisible", "Enabled")) changed++;
                 Invoke(pattern, "Rebuild");
             }
+
+            // Re-running CE_ROADCORRIDORCOMPLETE previously only refreshed
+            // slope patterns that already existed. If the collection was empty,
+            // nothing was displayed. Build the missing native patterns from
+            // same-side Hinge/EPS and Daylight_Cut/Daylight_Fill corridor
+            // feature lines, then leave them visible.
+            Corridor typedCorridor = corridor as Corridor;
+            if (typedCorridor != null)
+            {
+                changed += CreateMissingSlopePatterns(
+                    typedCorridor,
+                    styleIds);
+                try
+                {
+                    typedCorridor.Rebuild();
+                    typedCorridor.RecordGraphicsModified(true);
+                }
+                catch { }
+            }
             return changed;
+        }
+
+        private static int CreateMissingSlopePatterns(
+            Corridor corridor,
+            IDictionary<string, ObjectId> styleIds)
+        {
+            if (corridor == null ||
+                styleIds == null)
+                return 0;
+
+            CorridorSlopePatternCollection patterns =
+                corridor.SlopePatterns;
+            if (patterns == null)
+                return 0;
+
+            int created = 0;
+            foreach (Baseline baseline in corridor.Baselines)
+            {
+                if (baseline == null)
+                    continue;
+
+                List<CorridorFeatureLine> lines =
+                    ReadSlopeFeatureLines(baseline);
+                if (lines.Count == 0)
+                    continue;
+
+                List<CorridorFeatureLine> genericHinges =
+                    lines.Where(item =>
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "HINGE") ||
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "EPS") ||
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "ETW") ||
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "EDGE"))
+                    .ToList();
+                List<CorridorFeatureLine> cutHinges =
+                    lines.Where(item =>
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "HINGE_CUT"))
+                    .Concat(genericHinges)
+                    .Distinct()
+                    .ToList();
+                List<CorridorFeatureLine> fillHinges =
+                    lines.Where(item =>
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "HINGE_FILL"))
+                    .Concat(genericHinges)
+                    .Distinct()
+                    .ToList();
+                List<CorridorFeatureLine> cutOuters =
+                    lines.Where(item =>
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "DAYLIGHT_CUT"))
+                    .ToList();
+                List<CorridorFeatureLine> fillOuters =
+                    lines.Where(item =>
+                        IsSlopeFeatureCode(
+                            item.CodeName,
+                            "DAYLIGHT_FILL"))
+                    .ToList();
+
+                created += CreateSlopePatternsForCondition(
+                    patterns,
+                    baseline,
+                    cutHinges,
+                    cutOuters,
+                    true,
+                    styleIds);
+                created += CreateSlopePatternsForCondition(
+                    patterns,
+                    baseline,
+                    fillHinges,
+                    fillOuters,
+                    false,
+                    styleIds);
+            }
+            return created;
+        }
+
+        private static int CreateSlopePatternsForCondition(
+            CorridorSlopePatternCollection patterns,
+            Baseline baseline,
+            IEnumerable<CorridorFeatureLine> hinges,
+            IEnumerable<CorridorFeatureLine> outers,
+            bool cut,
+            IDictionary<string, ObjectId> styleIds)
+        {
+            if (patterns == null ||
+                baseline == null ||
+                hinges == null ||
+                outers == null)
+                return 0;
+
+            List<CorridorFeatureLine> hingeList =
+                hinges.Where(item => item != null).ToList();
+            int created = 0;
+
+            foreach (CorridorFeatureLine outer in
+                outers.Where(item => item != null))
+            {
+                double outerOffset =
+                    AverageSlopeOffset(outer);
+                CorridorFeatureLine hinge =
+                    FindSameSideSlopeHinge(
+                        hingeList,
+                        outerOffset);
+                if (hinge == null ||
+                    HasNativeSlopePattern(
+                        patterns,
+                        hinge,
+                        outer))
+                    continue;
+
+                string side =
+                    outerOffset < 0.0
+                        ? "Left"
+                        : "Right";
+                string styleKey =
+                    side +
+                    (cut ? "Cut" : "Fill");
+                ObjectId styleId;
+                if (!styleIds.TryGetValue(
+                        styleKey,
+                        out styleId) ||
+                    styleId.IsNull)
+                {
+                    styleId =
+                        styleIds.Values
+                            .FirstOrDefault(id =>
+                                !id.IsNull);
+                }
+                if (styleId.IsNull)
+                    continue;
+
+                double start;
+                double end;
+                if (!TrySharedSlopeStationRange(
+                        hinge,
+                        outer,
+                        baseline,
+                        out start,
+                        out end))
+                    continue;
+
+                try
+                {
+                    CorridorSlopePattern pattern =
+                        patterns.Add(
+                            hinge,
+                            outer,
+                            styleId);
+                    if (pattern == null)
+                        continue;
+                    pattern.StartStation = start;
+                    pattern.EndStation = end;
+                    TrySetBoolean(
+                        pattern,
+                        true,
+                        "Visible",
+                        "IsVisible",
+                        "Enabled");
+                    try { pattern.Rebuild(); }
+                    catch { }
+                    created++;
+                }
+                catch { }
+            }
+
+            return created;
+        }
+
+        private static List<CorridorFeatureLine> ReadSlopeFeatureLines(
+            Baseline baseline)
+        {
+            var result =
+                new List<CorridorFeatureLine>();
+            if (baseline == null)
+                return result;
+
+            try
+            {
+                BaselineFeatureLines main =
+                    baseline.MainBaselineFeatureLines;
+                if (main == null)
+                    return result;
+
+                foreach (FeatureLineCollection collection in
+                    main.FeatureLineCollectionMap)
+                {
+                    if (collection == null)
+                        continue;
+                    foreach (CorridorFeatureLine line in collection)
+                    {
+                        if (line != null)
+                            result.Add(line);
+                    }
+                }
+            }
+            catch { }
+
+            return result;
+        }
+
+        private static CorridorFeatureLine FindSameSideSlopeHinge(
+            IEnumerable<CorridorFeatureLine> candidates,
+            double outerOffset)
+        {
+            if (candidates == null)
+                return null;
+
+            List<CorridorFeatureLine> sameSide =
+                candidates
+                    .Where(item => item != null)
+                    .Where(item =>
+                    {
+                        double offset =
+                            AverageSlopeOffset(item);
+                        return Math.Abs(outerOffset) < 0.001 ||
+                               Math.Abs(offset) < 0.001 ||
+                               Math.Sign(offset) ==
+                                   Math.Sign(outerOffset);
+                    })
+                    .OrderBy(item =>
+                        Math.Abs(
+                            AverageSlopeOffset(item) -
+                            outerOffset))
+                    .ToList();
+
+            return sameSide.FirstOrDefault();
+        }
+
+        private static bool TrySharedSlopeStationRange(
+            CorridorFeatureLine first,
+            CorridorFeatureLine second,
+            Baseline baseline,
+            out double start,
+            out double end)
+        {
+            start = baseline.StartStation;
+            end = baseline.EndStation;
+
+            foreach (CorridorFeatureLine line in
+                new[] { first, second })
+            {
+                var stations = new List<double>();
+                try
+                {
+                    foreach (FeatureLinePoint point in
+                        line.FeatureLinePoints)
+                    {
+                        if (point != null)
+                            stations.Add(point.Station);
+                    }
+                }
+                catch { }
+
+                if (stations.Count < 2)
+                    return false;
+                start =
+                    Math.Max(
+                        start,
+                        stations.Min());
+                end =
+                    Math.Min(
+                        end,
+                        stations.Max());
+            }
+
+            return end > start + 0.000001;
+        }
+
+        private static bool HasNativeSlopePattern(
+            CorridorSlopePatternCollection patterns,
+            CorridorFeatureLine first,
+            CorridorFeatureLine second)
+        {
+            if (patterns == null ||
+                first == null ||
+                second == null)
+                return false;
+
+            double firstOffset =
+                AverageSlopeOffset(first);
+            double secondOffset =
+                AverageSlopeOffset(second);
+
+            foreach (CorridorSlopePattern pattern in patterns)
+            {
+                if (pattern == null)
+                    continue;
+                try
+                {
+                    CorridorFeatureLine p1 =
+                        pattern.FeatureLine1;
+                    CorridorFeatureLine p2 =
+                        pattern.FeatureLine2;
+                    if (p1 == null ||
+                        p2 == null)
+                        continue;
+
+                    bool forward =
+                        IsSlopeFeatureCode(
+                            p1.CodeName,
+                            first.CodeName) &&
+                        IsSlopeFeatureCode(
+                            p2.CodeName,
+                            second.CodeName) &&
+                        Math.Abs(
+                            AverageSlopeOffset(p1) -
+                            firstOffset) < 0.01 &&
+                        Math.Abs(
+                            AverageSlopeOffset(p2) -
+                            secondOffset) < 0.01;
+                    bool reverse =
+                        IsSlopeFeatureCode(
+                            p2.CodeName,
+                            first.CodeName) &&
+                        IsSlopeFeatureCode(
+                            p1.CodeName,
+                            second.CodeName) &&
+                        Math.Abs(
+                            AverageSlopeOffset(p2) -
+                            firstOffset) < 0.01 &&
+                        Math.Abs(
+                            AverageSlopeOffset(p1) -
+                            secondOffset) < 0.01;
+                    if (forward || reverse)
+                        return true;
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
+        private static double AverageSlopeOffset(
+            CorridorFeatureLine line)
+        {
+            if (line == null)
+                return 0.0;
+
+            double total = 0.0;
+            int count = 0;
+            try
+            {
+                foreach (FeatureLinePoint point in
+                    line.FeatureLinePoints)
+                {
+                    if (point == null)
+                        continue;
+                    total += point.Offset;
+                    count++;
+                }
+            }
+            catch { }
+
+            return count == 0
+                ? 0.0
+                : total / count;
+        }
+
+        private static bool IsSlopeFeatureCode(
+            string value,
+            string expected)
+        {
+            string left =
+                NormalizeSlopeCode(value);
+            string right =
+                NormalizeSlopeCode(expected);
+            return string.Equals(
+                left,
+                right,
+                StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static string NormalizeSlopeCode(
+            string value)
+        {
+            return (value ?? string.Empty)
+                .Replace("_", string.Empty)
+                .Replace("-", string.Empty)
+                .Replace(" ", string.Empty)
+                .ToUpperInvariant();
         }
 
         private static int DisableSlopePatterns(object corridor)
@@ -2014,6 +2579,736 @@ namespace CETools.Civil3D
                 (description ?? string.Empty).IndexOf("CE road", StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
+        private static ObjectId ResolveRequestedOrProjectStyle(
+            Database database,
+            CivilDocument civilDocument,
+            RoadProductionSettings road,
+            ProjectStyleSelection project,
+            string category,
+            string requested,
+            Transaction transaction,
+            out string actual)
+        {
+            actual = string.Empty;
+            if (!string.IsNullOrWhiteSpace(requested) &&
+                !requested.StartsWith(
+                    "<",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                try
+                {
+                    return CivilStyleCatalogV2.ResolveStyleId(
+                        database,
+                        civilDocument,
+                        category,
+                        requested.Trim(),
+                        transaction,
+                        out actual);
+                }
+                catch { }
+            }
+
+            return ResolveOptionalStyle(
+                database,
+                civilDocument,
+                road,
+                project,
+                category,
+                transaction,
+                out actual);
+        }
+
+        private static double ReadBaselineLength(
+            object baseline)
+        {
+            if (baseline == null)
+                return 0.0;
+            try
+            {
+                double start =
+                    Convert.ToDouble(
+                        ReadProperty(
+                            baseline,
+                            "StartStation"),
+                        CultureInfo.InvariantCulture);
+                double end =
+                    Convert.ToDouble(
+                        ReadProperty(
+                            baseline,
+                            "EndStation"),
+                        CultureInfo.InvariantCulture);
+                double length =
+                    Math.Abs(end - start);
+                return double.IsNaN(length) ||
+                       double.IsInfinity(length)
+                    ? 0.0
+                    : length;
+            }
+            catch
+            {
+                return 0.0;
+            }
+        }
+
+        private static int UpgradeBasicSidewalksForCorridors(
+            Document document,
+            CivilDocument civilDocument,
+            RoadCorridorCompletionOptions options,
+            ref int warnings)
+        {
+            if (document == null ||
+                civilDocument == null ||
+                options == null)
+                return 0;
+
+            var assemblyIds =
+                new HashSet<ObjectId>();
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    object collection =
+                        ReadProperty(
+                            civilDocument,
+                            "CorridorCollection");
+                    List<ObjectId> corridorIds =
+                        options.CorridorIds != null &&
+                        options.CorridorIds.Count > 0
+                            ? options.CorridorIds
+                                .Where(id =>
+                                    !id.IsNull &&
+                                    !id.IsErased)
+                                .Distinct()
+                                .ToList()
+                            : ReadCorridorIds(
+                                collection,
+                                document.Database,
+                                transaction);
+
+                    foreach (ObjectId corridorId in corridorIds)
+                    {
+                        Corridor corridor = null;
+                        try
+                        {
+                            corridor =
+                                transaction.GetObject(
+                                    corridorId,
+                                    OpenMode.ForRead,
+                                    false) as Corridor;
+                        }
+                        catch { }
+                        if (corridor == null)
+                            continue;
+
+                        foreach (Baseline baseline in
+                            corridor.Baselines)
+                        {
+                            if (baseline == null)
+                                continue;
+                            foreach (BaselineRegion region in
+                                baseline.BaselineRegions)
+                            {
+                                if (region == null)
+                                    continue;
+                                ObjectId assemblyId =
+                                    ReadObjectId(
+                                        region,
+                                        "AssemblyId");
+                                if (!assemblyId.IsNull)
+                                    assemblyIds.Add(
+                                        assemblyId);
+                            }
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                warnings++;
+            }
+
+            int upgraded = 0;
+            foreach (ObjectId assemblyId in assemblyIds)
+            {
+                upgraded +=
+                    UpgradeBasicSidewalksInAssembly(
+                        document,
+                        civilDocument,
+                        assemblyId,
+                        options.BasicSidewalkSlopePercent,
+                        ref warnings);
+            }
+            return upgraded;
+        }
+
+        private static int UpgradeBasicSidewalksInAssembly(
+            Document document,
+            CivilDocument civilDocument,
+            ObjectId assemblyId,
+            double slopePercent,
+            ref int warnings)
+        {
+            if (document == null ||
+                civilDocument == null ||
+                assemblyId.IsNull)
+                return 0;
+
+            var targets =
+                new List<BasicSidewalkSnapshot>();
+            try
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    CivilAssembly assembly =
+                        transaction.GetObject(
+                            assemblyId,
+                            OpenMode.ForRead,
+                            false) as CivilAssembly;
+                    if (assembly == null)
+                        return 0;
+
+                    foreach (AssemblyGroup group in
+                        assembly.Groups)
+                    {
+                        if (group == null)
+                            continue;
+                        ObjectIdCollection ids =
+                            group.GetSubassemblyIds();
+                        foreach (ObjectId id in ids)
+                        {
+                            CivilSubassembly subassembly = null;
+                            try
+                            {
+                                subassembly =
+                                    transaction.GetObject(
+                                        id,
+                                        OpenMode.ForRead,
+                                        false) as CivilSubassembly;
+                            }
+                            catch { }
+                            if (subassembly == null ||
+                                !IsBasicSidewalk(
+                                    subassembly))
+                                continue;
+
+                            targets.Add(
+                                new BasicSidewalkSnapshot
+                                {
+                                    ObjectId = id,
+                                    Name =
+                                        string.IsNullOrWhiteSpace(
+                                            subassembly.Name)
+                                            ? "BasicSidewalk"
+                                            : subassembly.Name,
+                                    LayerId =
+                                        subassembly.LayerId,
+                                    StyleId =
+                                        subassembly.StyleId,
+                                    Side =
+                                        ReadProperty(
+                                            subassembly,
+                                            "Side"),
+                                    Parameters =
+                                        ReadSubassemblyDoubleParameters(
+                                            subassembly)
+                                });
+                        }
+                    }
+                }
+            }
+            catch
+            {
+                warnings++;
+                return 0;
+            }
+
+            int upgraded = 0;
+            foreach (BasicSidewalkSnapshot source in targets)
+            {
+                ObjectId replacementId =
+                    ObjectId.Null;
+                try
+                {
+                    string importName =
+                        source.Name +
+                        "-CE-SLOPED-" +
+                        source.ObjectId.Handle.ToString();
+                    replacementId =
+                        civilDocument
+                            .SubassemblyCollection
+                            .ImportStockSubassembly(
+                                importName,
+                                "Subassembly.SidewalkSlopesAndBase",
+                                Point3d.Origin);
+                    if (replacementId.IsNull)
+                    {
+                        warnings++;
+                        continue;
+                    }
+
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
+                    {
+                        CivilSubassembly replacement =
+                            transaction.GetObject(
+                                replacementId,
+                                OpenMode.ForWrite,
+                                false) as CivilSubassembly;
+                        if (replacement == null)
+                            throw new InvalidOperationException(
+                                "Civil 3D did not return the imported sloped sidewalk.");
+
+                        if (!source.LayerId.IsNull)
+                            replacement.LayerId =
+                                source.LayerId;
+                        if (!source.StyleId.IsNull)
+                            replacement.StyleId =
+                                source.StyleId;
+                        SetCompatibleProperty(
+                            replacement,
+                            "Side",
+                            source.Side);
+
+                        ApplySidewalkParameter(
+                            replacement,
+                            new[]
+                            {
+                                "SIDEWALKWIDTH",
+                                "WIDTH"
+                            },
+                            ReadSidewalkSourceValue(
+                                source.Parameters,
+                                new[]
+                                {
+                                    "WIDTH"
+                                }));
+                        ApplySidewalkParameter(
+                            replacement,
+                            new[]
+                            {
+                                "SIDEWALKDEPTH",
+                                "DEPTH"
+                            },
+                            ReadSidewalkSourceValue(
+                                source.Parameters,
+                                new[]
+                                {
+                                    "DEPTH"
+                                }));
+                        ApplySidewalkParameter(
+                            replacement,
+                            new[]
+                            {
+                                "INSIDEBOULEVARDWIDTH",
+                                "INSIDEBUFFERWIDTH",
+                                "BUFFERWIDTH1"
+                            },
+                            ReadSidewalkSourceValue(
+                                source.Parameters,
+                                new[]
+                                {
+                                    "BUFFERWIDTH1",
+                                    "INSIDEBUFFERWIDTH"
+                                }));
+                        ApplySidewalkParameter(
+                            replacement,
+                            new[]
+                            {
+                                "OUTSIDEBOULEVARDWIDTH",
+                                "OUTSIDEBUFFERWIDTH",
+                                "BUFFERWIDTH2"
+                            },
+                            ReadSidewalkSourceValue(
+                                source.Parameters,
+                                new[]
+                                {
+                                    "BUFFERWIDTH2",
+                                    "OUTSIDEBUFFERWIDTH"
+                                }));
+                        ApplySidewalkSlopeParameter(
+                            replacement,
+                            slopePercent);
+                        transaction.Commit();
+                    }
+
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
+                    {
+                        CivilAssembly assembly =
+                            transaction.GetObject(
+                                assemblyId,
+                                OpenMode.ForWrite,
+                                false) as CivilAssembly;
+                        CivilSubassembly replacement =
+                            transaction.GetObject(
+                                replacementId,
+                                OpenMode.ForWrite,
+                                false) as CivilSubassembly;
+                        if (assembly == null ||
+                            replacement == null)
+                            throw new InvalidOperationException(
+                                "The assembly or sloped sidewalk became unavailable.");
+
+                        // Replace first and keep the detached stock BasicSidewalk
+                        // object intact. Civil 3D can retain references to the
+                        // original object while rebuilding assembly groups; erasing
+                        // it here can make an otherwise valid replacement roll back.
+                        assembly.ReplaceSubassembly(
+                            replacementId,
+                            source.ObjectId);
+
+                        try
+                        {
+                            replacement.Name =
+                                source.Name;
+                        }
+                        catch { }
+
+                        transaction.Commit();
+                    }
+                    upgraded++;
+                }
+                catch
+                {
+                    warnings++;
+                    if (!replacementId.IsNull)
+                    {
+                        try
+                        {
+                            using (Transaction cleanup =
+                                document.Database.TransactionManager.StartTransaction())
+                            {
+                                DBObject replacement =
+                                    cleanup.GetObject(
+                                        replacementId,
+                                        OpenMode.ForWrite,
+                                        false);
+                                if (replacement != null &&
+                                    !replacement.IsErased)
+                                    replacement.Erase();
+                                cleanup.Commit();
+                            }
+                        }
+                        catch { }
+                    }
+                }
+            }
+
+            return upgraded;
+        }
+
+        private static bool IsBasicSidewalk(
+            CivilSubassembly subassembly)
+        {
+            if (subassembly == null)
+                return false;
+            string identity =
+                (
+                    (subassembly.Name ?? string.Empty) +
+                    " " +
+                    Convert.ToString(
+                        ReadProperty(
+                            subassembly,
+                            "Description"),
+                        CultureInfo.CurrentCulture) +
+                    " " +
+                    Convert.ToString(
+                        ReadProperty(
+                            subassembly,
+                            "ResourceModule"),
+                        CultureInfo.CurrentCulture) +
+                    " " +
+                    Convert.ToString(
+                        ReadProperty(
+                            subassembly,
+                            "ClassName"),
+                        CultureInfo.CurrentCulture))
+                .Replace(
+                    " ",
+                    string.Empty)
+                .ToUpperInvariant();
+
+            return identity.Contains(
+                       "BASICSIDEWALK") &&
+                   !identity.Contains(
+                       "SIDEWALKSLOPESANDBASE");
+        }
+
+        private static IDictionary<string, double> ReadSubassemblyDoubleParameters(
+            CivilSubassembly subassembly)
+        {
+            var values =
+                new Dictionary<string, double>(
+                    StringComparer.OrdinalIgnoreCase);
+            if (subassembly == null)
+                return values;
+
+            object collection =
+                ReadProperty(
+                    subassembly,
+                    "ParamsDouble");
+            foreach (object item in
+                CivilStyleDiscovery.Enumerate(
+                    collection))
+            {
+                if (item == null)
+                    continue;
+                string name =
+                    Convert.ToString(
+                        ReadProperty(
+                            item,
+                            "Name"),
+                        CultureInfo.CurrentCulture);
+                if (string.IsNullOrWhiteSpace(name))
+                {
+                    name =
+                        Convert.ToString(
+                            ReadProperty(
+                                item,
+                                "DisplayName"),
+                            CultureInfo.CurrentCulture);
+                }
+                if (string.IsNullOrWhiteSpace(name))
+                    continue;
+
+                try
+                {
+                    double value =
+                        Convert.ToDouble(
+                            ReadProperty(
+                                item,
+                                "Value"),
+                            CultureInfo.InvariantCulture);
+                    values[
+                        NormalizeParameterName(
+                            name)] = value;
+                }
+                catch { }
+            }
+            return values;
+        }
+
+        private static double? ReadSidewalkSourceValue(
+            IDictionary<string, double> values,
+            IEnumerable<string> names)
+        {
+            if (values == null ||
+                names == null)
+                return null;
+            foreach (string requested in names)
+            {
+                string key =
+                    NormalizeParameterName(
+                        requested);
+                double value;
+                if (values.TryGetValue(
+                        key,
+                        out value))
+                    return value;
+            }
+            return null;
+        }
+
+        private static void ApplySidewalkParameter(
+            CivilSubassembly subassembly,
+            IEnumerable<string> names,
+            double? value)
+        {
+            if (subassembly == null ||
+                names == null ||
+                !value.HasValue)
+                return;
+
+            TrySetSubassemblyDoubleParameter(
+                subassembly,
+                names,
+                value.Value,
+                false);
+        }
+
+        private static void ApplySidewalkSlopeParameter(
+            CivilSubassembly subassembly,
+            double slopePercent)
+        {
+            if (subassembly == null ||
+                double.IsNaN(slopePercent) ||
+                double.IsInfinity(slopePercent))
+                return;
+
+            TrySetSubassemblyDoubleParameter(
+                subassembly,
+                new[]
+                {
+                    "SIDEWALKSLOPE",
+                    "CROSSSLOPE",
+                    "SLOPE"
+                },
+                slopePercent,
+                true);
+        }
+
+        private static bool TrySetSubassemblyDoubleParameter(
+            CivilSubassembly subassembly,
+            IEnumerable<string> names,
+            double requestedValue,
+            bool percentValue)
+        {
+            object collection =
+                ReadProperty(
+                    subassembly,
+                    "ParamsDouble");
+            if (collection == null)
+                return false;
+
+            var requestedNames =
+                new HashSet<string>(
+                    (names ?? Enumerable.Empty<string>())
+                        .Select(
+                            NormalizeParameterName),
+                    StringComparer.OrdinalIgnoreCase);
+            foreach (object item in
+                CivilStyleDiscovery.Enumerate(
+                    collection))
+            {
+                if (item == null)
+                    continue;
+                string name =
+                    Convert.ToString(
+                        ReadProperty(
+                            item,
+                            "Name"),
+                        CultureInfo.CurrentCulture);
+                if (string.IsNullOrWhiteSpace(name))
+                    name =
+                        Convert.ToString(
+                            ReadProperty(
+                                item,
+                                "DisplayName"),
+                            CultureInfo.CurrentCulture);
+                string normalized =
+                    NormalizeParameterName(
+                        name);
+                bool match =
+                    requestedNames.Contains(
+                        normalized) ||
+                    requestedNames.Any(candidate =>
+                        normalized.Contains(
+                            candidate) ||
+                        candidate.Contains(
+                            normalized));
+                if (!match)
+                    continue;
+
+                double value =
+                    requestedValue;
+                if (percentValue)
+                {
+                    try
+                    {
+                        double current =
+                            Convert.ToDouble(
+                                ReadProperty(
+                                    item,
+                                    "Value"),
+                                CultureInfo.InvariantCulture);
+                        // Stock Civil 3D subassemblies differ: some expose
+                        // percent parameters as 2.0, others as 0.02. Preserve
+                        // the representation used by the imported component.
+                        if (Math.Abs(current) <= 1.0)
+                            value =
+                                requestedValue / 100.0;
+                    }
+                    catch
+                    {
+                        value =
+                            requestedValue / 100.0;
+                    }
+                }
+
+                try
+                {
+                    PropertyInfo property =
+                        item.GetType()
+                            .GetProperty(
+                                "Value",
+                                BindingFlags.Public |
+                                BindingFlags.Instance);
+                    if (property != null &&
+                        property.CanWrite)
+                    {
+                        object converted =
+                            Convert.ChangeType(
+                                value,
+                                property.PropertyType,
+                                CultureInfo.InvariantCulture);
+                        property.SetValue(
+                            item,
+                            converted,
+                            null);
+                        return true;
+                    }
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
+        private static string NormalizeParameterName(
+            string value)
+        {
+            return new string(
+                (value ?? string.Empty)
+                    .Where(
+                        char.IsLetterOrDigit)
+                    .Select(
+                        char.ToUpperInvariant)
+                    .ToArray());
+        }
+
+        private static void SetCompatibleProperty(
+            object target,
+            string propertyName,
+            object value)
+        {
+            if (target == null ||
+                value == null ||
+                string.IsNullOrWhiteSpace(propertyName))
+                return;
+            try
+            {
+                PropertyInfo property =
+                    target.GetType()
+                        .GetProperty(
+                            propertyName,
+                            BindingFlags.Public |
+                            BindingFlags.Instance);
+                if (property != null &&
+                    property.CanWrite &&
+                    property.PropertyType.IsInstanceOfType(
+                        value))
+                {
+                    property.SetValue(
+                        target,
+                        value,
+                        null);
+                }
+            }
+            catch { }
+        }
+
+        private sealed class BasicSidewalkSnapshot
+        {
+            internal ObjectId ObjectId { get; set; }
+            internal string Name { get; set; }
+            internal ObjectId LayerId { get; set; }
+            internal ObjectId StyleId { get; set; }
+            internal object Side { get; set; }
+            internal IDictionary<string, double> Parameters { get; set; }
+        }
+
         private static ObjectId ResolveOptionalStyle(Database database, CivilDocument civilDocument, RoadProductionSettings road, ProjectStyleSelection project, string category, Transaction transaction, out string actual)
         {
             actual = string.Empty;
@@ -2062,6 +3357,171 @@ namespace CETools.Civil3D
             ObjectId id = layers.Add(layer);
             transaction.AddNewlyCreatedDBObject(layer, true);
             return id;
+        }
+
+        private static IList<ObjectId> ReadCompleteCorridorSelection(
+            Database database,
+            out ObjectId surfaceId)
+        {
+            surfaceId = ObjectId.Null;
+            var corridors = new List<ObjectId>();
+            if (database == null) return corridors;
+
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    DBDictionary named =
+                        transaction.GetObject(
+                            database.NamedObjectsDictionaryId,
+                            OpenMode.ForRead,
+                            false) as DBDictionary;
+                    if (named == null ||
+                        !named.Contains(CompleteSelectionKey))
+                        return corridors;
+
+                    Xrecord record =
+                        transaction.GetObject(
+                            named.GetAt(CompleteSelectionKey),
+                            OpenMode.ForRead,
+                            false) as Xrecord;
+                    TypedValue[] values =
+                        record == null || record.Data == null
+                            ? null
+                            : record.Data.AsArray();
+                    if (values == null ||
+                        values.Length == 0)
+                        return corridors;
+
+                    string surfaceHandle =
+                        Convert.ToString(
+                            values[0].Value,
+                            CultureInfo.InvariantCulture);
+                    surfaceId =
+                        ResolveStoredHandle(
+                            database,
+                            surfaceHandle);
+
+                    for (int index = 1;
+                         index < values.Length;
+                         index++)
+                    {
+                        ObjectId id =
+                            ResolveStoredHandle(
+                                database,
+                                Convert.ToString(
+                                    values[index].Value,
+                                    CultureInfo.InvariantCulture));
+                        if (!id.IsNull &&
+                            !corridors.Contains(id))
+                            corridors.Add(id);
+                    }
+                }
+            }
+            catch { }
+
+            return corridors;
+        }
+
+        private static void WriteCompleteCorridorSelection(
+            Database database,
+            IEnumerable<ObjectId> corridorIds,
+            ObjectId surfaceId)
+        {
+            if (database == null) return;
+            try
+            {
+                var values = new List<TypedValue>
+                {
+                    new TypedValue(
+                        (int)DxfCode.Text,
+                        surfaceId.IsNull
+                            ? string.Empty
+                            : surfaceId.Handle.ToString())
+                };
+                foreach (ObjectId id in
+                    (corridorIds ?? Enumerable.Empty<ObjectId>())
+                        .Where(value =>
+                            !value.IsNull &&
+                            !value.IsErased)
+                        .Distinct())
+                {
+                    values.Add(
+                        new TypedValue(
+                            (int)DxfCode.Text,
+                            id.Handle.ToString()));
+                }
+
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    DBDictionary named =
+                        transaction.GetObject(
+                            database.NamedObjectsDictionaryId,
+                            OpenMode.ForWrite,
+                            false) as DBDictionary;
+                    if (named == null) return;
+
+                    Xrecord record;
+                    if (named.Contains(CompleteSelectionKey))
+                    {
+                        record =
+                            transaction.GetObject(
+                                named.GetAt(CompleteSelectionKey),
+                                OpenMode.ForWrite,
+                                false) as Xrecord;
+                    }
+                    else
+                    {
+                        record = new Xrecord();
+                        named.SetAt(
+                            CompleteSelectionKey,
+                            record);
+                        transaction.AddNewlyCreatedDBObject(
+                            record,
+                            true);
+                    }
+
+                    if (record != null)
+                        record.Data =
+                            new ResultBuffer(
+                                values.ToArray());
+                    transaction.Commit();
+                }
+            }
+            catch { }
+        }
+
+        private static ObjectId ResolveStoredHandle(
+            Database database,
+            string value)
+        {
+            if (database == null ||
+                string.IsNullOrWhiteSpace(value))
+                return ObjectId.Null;
+            try
+            {
+                long number;
+                if (!long.TryParse(
+                        value.Trim(),
+                        NumberStyles.HexNumber,
+                        CultureInfo.InvariantCulture,
+                        out number))
+                    return ObjectId.Null;
+                ObjectId id =
+                    database.GetObjectId(
+                        false,
+                        new Handle(number),
+                        0);
+                return id.IsNull || id.IsErased
+                    ? ObjectId.Null
+                    : id;
+            }
+            catch
+            {
+                return ObjectId.Null;
+            }
         }
 
         private static string SafeName(string value, string fallback) { return string.IsNullOrWhiteSpace(value) ? fallback : value.Trim(); }
@@ -2248,6 +3708,9 @@ namespace CETools.Civil3D
         internal IList<ObjectId> CorridorIds { get; set; }
         internal string CorridorLayerName { get; set; }
         internal string ProfileStyleName { get; set; }
+        internal string CodeSetStyleName { get; set; }
+        internal bool ApplyBasicSidewalkSlope { get; set; }
+        internal double BasicSidewalkSlopePercent { get; set; }
         internal string LeftCutSlopeStyle { get; set; }
         internal string LeftFillSlopeStyle { get; set; }
         internal string RightCutSlopeStyle { get; set; }
@@ -2293,6 +3756,9 @@ namespace CETools.Civil3D
         internal int VisibilitySettings { get; set; }
         internal int AutomaticRebuildSettings { get; set; }
         internal int SlopePatterns { get; set; }
+        internal int CodeSetAssignments { get; set; }
+        internal int SidewalkUpgrades { get; set; }
+        internal double TotalRoadLength { get; set; }
         internal int Rebuilt { get; set; }
         internal int ProfileViewBindings { get; set; }
         internal int Warnings { get; set; }
@@ -2310,7 +3776,24 @@ namespace CETools.Civil3D
     internal sealed class CivilChoiceWindow : System.Windows.Window
     {
         private readonly System.Windows.Controls.ListBox _list;
-        internal CivilChoiceWindow(string title, string message, IEnumerable<CivilChoice> choices)
+
+        internal CivilChoiceWindow(
+            string title,
+            string message,
+            IEnumerable<CivilChoice> choices)
+            : this(
+                title,
+                message,
+                choices,
+                ObjectId.Null)
+        {
+        }
+
+        internal CivilChoiceWindow(
+            string title,
+            string message,
+            IEnumerable<CivilChoice> choices,
+            ObjectId initiallySelected)
         {
             Title = title;
             Width = 620;
@@ -2329,8 +3812,35 @@ namespace CETools.Civil3D
             var heading = new System.Windows.Controls.TextBlock { Text = message, TextWrapping = System.Windows.TextWrapping.Wrap, Margin = new System.Windows.Thickness(0, 0, 0, 10) };
             System.Windows.Controls.DockPanel.SetDock(heading, System.Windows.Controls.Dock.Top);
             root.Children.Add(heading);
-            _list = new System.Windows.Controls.ListBox { ItemsSource = choices == null ? new List<CivilChoice>() : choices.ToList(), DisplayMemberPath = "Name" };
-            if (_list.Items.Count > 0) _list.SelectedIndex = 0;
+            _list = new System.Windows.Controls.ListBox
+            {
+                ItemsSource = choices == null
+                    ? new List<CivilChoice>()
+                    : choices.ToList(),
+                DisplayMemberPath = "Name"
+            };
+            if (_list.Items.Count > 0)
+            {
+                int initialIndex = 0;
+                if (!initiallySelected.IsNull)
+                {
+                    for (int index = 0;
+                         index < _list.Items.Count;
+                         index++)
+                    {
+                        CivilChoice choice =
+                            _list.Items[index] as CivilChoice;
+                        if (choice != null &&
+                            choice.Id == initiallySelected)
+                        {
+                            initialIndex = index;
+                            break;
+                        }
+                    }
+                }
+                _list.SelectedIndex = initialIndex;
+                _list.ScrollIntoView(_list.SelectedItem);
+            }
             _list.MouseDoubleClick += delegate
             {
                 Selected = _list.SelectedItem as CivilChoice;

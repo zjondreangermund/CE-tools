@@ -27,7 +27,7 @@ namespace CETools.Civil3D
             if (!August12SurfaceSelectionPopup.TrySelectOne(
                     document,
                     "CE Tools - Road BOQ Existing Ground",
-                    "Choose the existing-ground/base surface. CE Tools compares it with each road corridor CE-BOTTOM (Datum) surface for cut/fill to datum.",
+                    "Choose the existing-ground/base surface. CE Tools compares it with each road-numbered BOTTOM-RD-* corridor surface (Datum/Subgrade) for cut/fill to datum.",
                     "Existing ground / base surface",
                     out baseSurfaceId))
                 return;
@@ -63,6 +63,17 @@ namespace CETools.Civil3D
                         if (!IsRoadCorridor(corridor)) continue;
                         corridorCount++;
 
+                        double roadLength =
+                            ReadCorridorRoadLength(
+                                corridor) /
+                            unitsPerMetre;
+                        totals.TotalRoadLength +=
+                            roadLength;
+                        AddValue(
+                            totals.RoadLengths,
+                            corridor.Name,
+                            roadLength);
+
                         AddDatumCutFill(
                             corridor,
                             baseSurfaceId,
@@ -90,19 +101,40 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var rows = new List<IList<string>>
+            var rows = new List<IList<string>>();
+
+            foreach (KeyValuePair<string, double> road in
+                totals.RoadLengths
+                    .OrderBy(
+                        item => item.Key,
+                        StringComparer.CurrentCultureIgnoreCase))
             {
+                rows.Add(
+                    Row(
+                        "Road length - " + road.Key,
+                        "m",
+                        road.Value,
+                        "Corridor baseline station range"));
+            }
+            rows.Add(
+                Row(
+                    "Total road length",
+                    "m",
+                    totals.TotalRoadLength,
+                    "Sum of CE road corridor baseline lengths"));
+
+            rows.Add(
                 Row(
                     "Earthworks - Cut to corridor datum",
                     "m3",
                     totals.CutVolume,
-                    "Existing ground vs CE-BOTTOM"),
+                    "Existing ground vs BOTTOM-RD-* corridor surface"));
+            rows.Add(
                 Row(
                     "Earthworks - Fill to corridor datum",
                     "m3",
                     totals.FillVolume,
-                    "Existing ground vs CE-BOTTOM")
-            };
+                    "Existing ground vs BOTTOM-RD-* corridor surface"));
 
             foreach (KeyValuePair<string, double> layer in
                 totals.LayerVolumes.OrderBy(
@@ -139,8 +171,9 @@ namespace CETools.Civil3D
 
             string note = string.Format(
                 CultureInfo.CurrentCulture,
-                "Road corridors={0}. Re-run CE_ROADBOQCONSTRUCTION after corridor/surface edits to recalculate from the live model. {1}",
+                "Road corridors={0}; total road length={1:N3} m. Re-run CE_ROADBOQCONSTRUCTION after corridor/surface edits to recalculate from the live model. {2}",
                 corridorCount,
+                totals.TotalRoadLength,
                 warnings.Count == 0
                     ? "No quantity warnings."
                     : "Warnings: " + string.Join(" | ", warnings.Take(6)));
@@ -174,10 +207,36 @@ namespace CETools.Civil3D
             QuantityAccumulator totals,
             ICollection<string> warnings)
         {
-            CorridorSurface datum = FindCorridorSurface(corridor, "CE-BOTTOM");
-            if (datum == null || datum.SurfaceId.IsNull)
+            CorridorSurface datum =
+                FindBottomCorridorSurface(
+                    corridor);
+            if (datum == null)
             {
-                warnings.Add(corridor.Name + ": CE-BOTTOM corridor surface is missing or is not built.");
+                warnings.Add(
+                    corridor.Name +
+                    ": road-numbered BOTTOM corridor surface is missing.");
+                return;
+            }
+
+            try
+            {
+                if (!datum.IsBuild)
+                    datum.IsBuild = true;
+                corridor.Rebuild();
+            }
+            catch (System.Exception exception)
+            {
+                warnings.Add(
+                    corridor.Name +
+                    ": BOTTOM corridor surface could not be rebuilt - " +
+                    exception.Message);
+            }
+
+            if (datum.SurfaceId.IsNull)
+            {
+                warnings.Add(
+                    corridor.Name +
+                    ": BOTTOM corridor surface exists but has no built SurfaceId.");
                 return;
             }
 
@@ -221,16 +280,112 @@ namespace CETools.Civil3D
             }
         }
 
-        private static CorridorSurface FindCorridorSurface(Corridor corridor, string name)
+        private static CorridorSurface FindBottomCorridorSurface(
+            Corridor corridor)
         {
-            if (corridor == null) return null;
-            foreach (CorridorSurface surface in corridor.CorridorSurfaces)
+            if (corridor == null)
+                return null;
+
+            string suffix =
+                RoadSurfaceSuffix(
+                    corridor.Name);
+            CorridorSurface preferred =
+                null;
+            CorridorSurface fallback =
+                null;
+
+            foreach (CorridorSurface surface in
+                corridor.CorridorSurfaces)
             {
-                if (surface != null &&
-                    string.Equals(surface.Name, name, StringComparison.OrdinalIgnoreCase))
+                if (surface == null)
+                    continue;
+                string name =
+                    surface.Name ?? string.Empty;
+                string description =
+                    surface.Description ?? string.Empty;
+
+                if (!string.IsNullOrWhiteSpace(suffix) &&
+                    string.Equals(
+                        name,
+                        "BOTTOM-" + suffix,
+                        StringComparison.OrdinalIgnoreCase))
                     return surface;
+
+                if (name.StartsWith(
+                        "BOTTOM-RD-",
+                        StringComparison.OrdinalIgnoreCase))
+                    preferred = preferred ?? surface;
+                else if (string.Equals(
+                             name,
+                             "CE-BOTTOM",
+                             StringComparison.OrdinalIgnoreCase) ||
+                         name.IndexOf(
+                             "BOTTOM",
+                             StringComparison.OrdinalIgnoreCase) >= 0 ||
+                         description.IndexOf(
+                             "BOTTOM corridor surface",
+                             StringComparison.OrdinalIgnoreCase) >= 0)
+                    fallback = fallback ?? surface;
             }
-            return null;
+
+            return preferred ?? fallback;
+        }
+
+        private static string RoadSurfaceSuffix(
+            string value)
+        {
+            if (string.IsNullOrWhiteSpace(value))
+                return string.Empty;
+            int index =
+                value.IndexOf(
+                    "RD-",
+                    StringComparison.OrdinalIgnoreCase);
+            if (index < 0)
+                return string.Empty;
+            int start =
+                index + 3;
+            int end =
+                start;
+            while (end < value.Length &&
+                   char.IsDigit(value[end]))
+                end++;
+            if (end <= start)
+                return string.Empty;
+
+            int number;
+            return int.TryParse(
+                       value.Substring(
+                           start,
+                           end - start),
+                       NumberStyles.Integer,
+                       CultureInfo.InvariantCulture,
+                       out number)
+                ? "RD-" +
+                  number.ToString(
+                      "00",
+                      CultureInfo.InvariantCulture)
+                : string.Empty;
+        }
+
+        private static double ReadCorridorRoadLength(
+            Corridor corridor)
+        {
+            if (corridor == null)
+                return 0.0;
+            double total = 0.0;
+            foreach (Baseline baseline in corridor.Baselines)
+            {
+                if (baseline == null)
+                    continue;
+                double length =
+                    Math.Abs(
+                        baseline.EndStation -
+                        baseline.StartStation);
+                if (!double.IsNaN(length) &&
+                    !double.IsInfinity(length))
+                    total += length;
+            }
+            return total;
         }
 
         private static void AddCorridorSectionQuantities(
@@ -523,7 +678,10 @@ namespace CETools.Civil3D
             internal QuantityAccumulator()
             {
                 LayerVolumes = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                RoadLengths = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
             }
+            internal double TotalRoadLength { get; set; }
+            internal IDictionary<string, double> RoadLengths { get; private set; }
             internal double CutVolume { get; set; }
             internal double FillVolume { get; set; }
             internal double KerbLength { get; set; }
