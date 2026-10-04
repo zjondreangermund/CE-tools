@@ -252,25 +252,9 @@ namespace CETools.Civil3D
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             List<ObjectId> ids = ResolveLayerCurves(document, JunctionLayer, model.Text("Scope"));
             if (ids.Count == 0) return;
-            ObjectId[] ordered;
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-            {
-                List<CurveBox> boxes = ReadCurveBoxes(ids, transaction);
-                List<List<CurveBox>> groups = ClusterCurveBoxes(boxes, Math.Max(0.1, model.Double("Grouping", 30.0)));
-                ordered = groups
-                    .OrderByDescending(group => group.Average(item => item.Center.Y))
-                    .ThenBy(group => group.Average(item => item.Center.X))
-                    .SelectMany(group =>
-                    {
-                        Point2d centre = new Point2d(group.Average(item => item.Center.X), group.Average(item => item.Center.Y));
-                        return group.OrderBy(item => NormalizeAngle(Math.Atan2(item.Center.Y - centre.Y, item.Center.X - centre.X)));
-                    })
-                    .Select(item => item.Id)
-                    .ToArray();
-            }
-            document.Editor.SetImpliedSelection(ordered);
-            document.Editor.WriteMessage("\nCE_JUNCTIONSETTINGOUT4: ordered junction curves={0}; each grouped junction is completed before the next.", ordered.Length);
-            document.SendStringToExecute("CE_VERTEXSETTINGOUT ", true, false, true);
+            document.Editor.SetImpliedSelection(new ObjectId[0]);
+            new VertexSettingOutCommands().CreateForJunctions(ids, Math.Max(0.1, model.Double("Grouping", 30.0)));
+
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROUTEANNOTATIONSTYLE", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -488,13 +472,26 @@ namespace CETools.Civil3D
             {
                 foreach (ObjectId id in ids)
                 {
-                    Curve curve;
-                    try { curve = transaction.GetObject(id, OpenMode.ForRead, false) as Curve; }
+                    Entity entity;
+                    try { entity = transaction.GetObject(id, OpenMode.ForRead, false) as Entity; }
                     catch { continue; }
-                    if (curve != null && string.Equals(curve.Layer, layer, StringComparison.OrdinalIgnoreCase)) result.Add(id);
+                    if (entity != null && VertexSettingOutGeometry.IsSupported(entity) &&
+                        (string.Equals(scope, "Selected", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(entity.Layer, layer, StringComparison.OrdinalIgnoreCase) ||
+                         IsLinkedJunction(entity, transaction))) result.Add(id);
                 }
             }
             return result;
+        }
+
+        private static bool IsLinkedJunction(Entity entity, Transaction transaction)
+        {
+            if (entity.ExtensionDictionary.IsNull) return false;
+            var dictionary = transaction.GetObject(entity.ExtensionDictionary, OpenMode.ForRead) as DBDictionary;
+            if (dictionary == null || !dictionary.Contains("CE_ROAD_LAYOUT")) return false;
+            var record = transaction.GetObject(dictionary.GetAt("CE_ROAD_LAYOUT"), OpenMode.ForRead) as Xrecord;
+            var values = record == null || record.Data == null ? null : record.Data.AsArray();
+            return values != null && values.Length > 0 && Convert.ToString(values[0].Value).StartsWith("JUNCTION", StringComparison.OrdinalIgnoreCase);
         }
 
         private static Curve ChooseOutsideOffset(Polyline source, double distance, IList<Polyline> centres)
