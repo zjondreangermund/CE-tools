@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.IO;
 using System.Reflection;
+using System.Text.RegularExpressions;
 using System.Windows;
 using System.Windows.Controls;
 using Autodesk.AutoCAD.ApplicationServices;
@@ -28,8 +29,32 @@ namespace CETools.Civil3D
     public sealed class SewerExcavationCommentCommands
     {
         private const string LinkRecordName = "CE_SEWER_EXCAVATION_LINKS";
-        private const string LinkSchema = "3";
+        private const string LinkSchema = "4";
         private const int ColumnCount = 21;
+
+        private static readonly Regex BranchDescriptionPattern =
+            new Regex(
+                @"BRANCH\s*-\s*(?<branch>\d+)",
+                RegexOptions.IgnoreCase |
+                RegexOptions.CultureInvariant);
+
+        private static readonly Regex PipeBranchPattern =
+            new Regex(
+                @"^P(?<branch>\d+)\.",
+                RegexOptions.IgnoreCase |
+                RegexOptions.CultureInvariant);
+
+        private static readonly Regex StructureBranchPattern =
+            new Regex(
+                @"^MH(?<branch>\d+)\.",
+                RegexOptions.IgnoreCase |
+                RegexOptions.CultureInvariant);
+
+        [CommandMethod("CE_TOOLS", "CE_BOQSEWER", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void SewerBoq()
+        {
+            Build();
+        }
 
         [CommandMethod("CE_TOOLS", "CE_SEWEREXCAVATION", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void Build()
@@ -850,7 +875,11 @@ namespace CETools.Civil3D
                 Math.Pow(diameter / 2.0, 2.0) *
                 length;
 
-            double blanketZone =
+            // Blanket fill is the material from the bottom of bedding up to
+            // the specified blanket level above the pipe crown. The physical
+            // pipe occupies volume inside this zone, so deduct the pipe volume
+            // here and nowhere else.
+            double grossBlanketZone =
                 length *
                 width *
                 (diameter +
@@ -858,8 +887,12 @@ namespace CETools.Civil3D
             double blanketFill =
                 Math.Max(
                     0.0,
-                    blanketZone - pipeVolume);
+                    grossBlanketZone -
+                    pipeVolume);
 
+            // Fill above blanket starts at the blanket level and continues to
+            // natural ground. The pipe is below this zone, so its volume must
+            // never be deducted from this quantity.
             double fillAboveBlanket =
                 length *
                 width *
@@ -873,14 +906,20 @@ namespace CETools.Civil3D
                     0.0,
                     totalExcavation - pipeVolume);
 
+            string pipeName =
+                ReadText(
+                    value,
+                    "Name",
+                    value.GetType().Name);
+
             row = new PipeExcavationRow
             {
                 Handle = objectId.Handle.ToString(),
                 ObjectType = "Pipe",
-                Name = ReadText(
+                Name = pipeName,
+                BranchName = ResolveBranchName(
                     value,
-                    "Name",
-                    value.GetType().Name),
+                    pipeName),
                 Layer = entity.Layer,
                 Length = length,
                 Diameter = diameter,
@@ -1036,14 +1075,20 @@ namespace CETools.Civil3D
                 width *
                 depthToBottom;
 
+            string structureName =
+                ReadText(
+                    value,
+                    "Name",
+                    value.GetType().Name);
+
             row = new PipeExcavationRow
             {
                 Handle = objectId.Handle.ToString(),
                 ObjectType = "Structure",
-                Name = ReadText(
+                Name = structureName,
+                BranchName = ResolveBranchName(
                     value,
-                    "Name",
-                    value.GetType().Name),
+                    structureName),
                 Layer = entity.Layer,
                 Length = 0.0,
                 Diameter = structureSize,
@@ -1402,8 +1447,8 @@ namespace CETools.Civil3D
                 "DEPTH START TO BEDDING m", "DEPTH END TO BEDDING m",
                 "AVG DEPTH TO BEDDING m",
                 "EXC TO PIPE BOTTOM m³", "TOTAL EXC TO BEDDING m³",
-                "BEDDING m³", "PIPE VOL m³", "BLANKET FILL m³",
-                "FILL ABOVE BLANKET m³", "NET EXC MATERIAL m³",
+                "BEDDING m³", "PIPE VOL m³", "BLANKET FILL NET OF PIPE m³",
+                "FILL ABOVE BLANKET TO NG m³", "NET EXC MATERIAL m³",
                 "DEPTH SOURCE", "TOTAL EXC m³"
             };
 
@@ -1634,8 +1679,8 @@ namespace CETools.Civil3D
                 "Depth Start to Bedding m", "Depth End to Bedding m",
                 "Avg Depth to Bedding m",
                 "Exc to Pipe Bottom m³", "Total Exc to Bedding m³",
-                "Bedding m³", "Pipe Vol m³", "Blanket Fill m³",
-                "Fill above Blanket m³", "Net Excavated Material m³",
+                "Bedding m³", "Pipe Vol m³", "Blanket Fill net of Pipe m³",
+                "Fill above Blanket to NG m³", "Net Excavated Material m³",
                 "Depth Source", "Total Excavation m³"
             };
 
@@ -1795,7 +1840,7 @@ namespace CETools.Civil3D
                 },
                 new List<string>
                 {
-                    "Blanket fill (m³)",
+                    "Blanket fill, net of pipe volume (m³)",
                     number(blanket, 110), number(blanket, 160),
                     number(blanket, 200), number(blanket, 250),
                     pipes.Sum(row => row.BlanketFill).ToString("0.###", CultureInfo.InvariantCulture)
@@ -1809,7 +1854,7 @@ namespace CETools.Civil3D
                 },
                 new List<string>
                 {
-                    "Pipe volume deducted (m³)",
+                    "Pipe volume deducted from blanket fill (m³)",
                     number(pipeVolume, 110), number(pipeVolume, 160),
                     number(pipeVolume, 200), number(pipeVolume, 250),
                     pipes.Sum(row => row.PipeVolume).ToString("0.###", CultureInfo.InvariantCulture)
@@ -1906,8 +1951,8 @@ namespace CETools.Civil3D
                         "EXC TO PIPE BOTTOM m³",
                         "TOTAL EXC TO BEDDING m³",
                         "BEDDING m³", "PIPE VOL m³",
-                        "BLANKET FILL m³",
-                        "FILL ABOVE BLANKET m³",
+                        "BLANKET FILL NET OF PIPE m³",
+                        "FILL ABOVE BLANKET TO NG m³",
                         "NET EXC MATERIAL m³",
                         "DEPTH SOURCE", "TOTAL EXC m³"
                     }
@@ -2057,6 +2102,89 @@ namespace CETools.Civil3D
             catch { return false; }
         }
 
+        private static string ResolveBranchName(
+            object value,
+            string objectName)
+        {
+            string description =
+                ReadText(
+                    value,
+                    "Description",
+                    string.Empty);
+            Match match =
+                BranchDescriptionPattern.Match(
+                    description ?? string.Empty);
+            if (!match.Success)
+            {
+                match =
+                    PipeBranchPattern.Match(
+                        objectName ?? string.Empty);
+            }
+            if (!match.Success)
+            {
+                match =
+                    StructureBranchPattern.Match(
+                        objectName ?? string.Empty);
+            }
+
+            if (!match.Success)
+                return "UNASSIGNED";
+
+            int branch;
+            if (!int.TryParse(
+                    match.Groups["branch"].Value,
+                    NumberStyles.Integer,
+                    CultureInfo.InvariantCulture,
+                    out branch))
+                return "UNASSIGNED";
+
+            return "BRANCH-" +
+                   branch.ToString(
+                       CultureInfo.InvariantCulture);
+        }
+
+        private static int BranchSortNumber(
+            string branchName)
+        {
+            Match match =
+                BranchDescriptionPattern.Match(
+                    branchName ?? string.Empty);
+            int branch;
+            return match.Success &&
+                   int.TryParse(
+                       match.Groups["branch"].Value,
+                       NumberStyles.Integer,
+                       CultureInfo.InvariantCulture,
+                       out branch)
+                ? branch
+                : int.MaxValue;
+        }
+
+        private static IEnumerable<PipeExcavationRow> OrderRowsByBranch(
+            IEnumerable<PipeExcavationRow> rows)
+        {
+            return (rows ??
+                    Enumerable.Empty<PipeExcavationRow>())
+                .OrderBy(row =>
+                    BranchSortNumber(
+                        row.BranchName))
+                .ThenBy(row =>
+                    row.BranchName ??
+                    string.Empty,
+                    StringComparer.OrdinalIgnoreCase)
+                .ThenBy(row =>
+                    string.Equals(
+                        row.ObjectType,
+                        "Structure",
+                        StringComparison.OrdinalIgnoreCase)
+                        ? 0
+                        : 1)
+                .ThenBy(row =>
+                    row.Name ??
+                    string.Empty,
+                    StringComparer.OrdinalIgnoreCase);
+        }
+
         private static string ReadText(object value, string propertyName, string fallback)
         {
             try
@@ -2143,6 +2271,7 @@ namespace CETools.Civil3D
             public string Handle { get; set; }
             public string ObjectType { get; set; }
             public string Name { get; set; }
+            public string BranchName { get; set; }
             public string Layer { get; set; }
             public double Length { get; set; }
             public double Diameter { get; set; }
