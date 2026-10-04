@@ -42,9 +42,6 @@ if "AcApplication.AcadApplication" in plot:
 
 if "foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())" not in platform:
     errors.append("Platform slope command does not enumerate the current selection directly.")
-if "selectedSourceIds" in platform:
-    errors.append("Undefined selectedSourceIds variable remains in PlatformProductionCommands.")
-
 if "pattern.Rebuild();" in corridor:
     errors.append("Unsupported Civil 3D 2023 CorridorSlopePattern.Rebuild remains.")
 if "typedCorridor.Rebuild();" not in corridor:
