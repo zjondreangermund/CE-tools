@@ -79,6 +79,9 @@ jobs:
       - name: Validate October 3 junction platform grading toe
         run: python3 scripts/Validate-October03JunctionPlatformGradingToe.py
 
+      - name: Validate October 4 road corridor completion
+        run: python3 scripts/Validate-October04RoadCorridorCompletion.py
+
       - name: Validate dynamic corridor annotation completion
         run: python3 scripts/Validate-September15CorridorAnnotationCompletion.py
 
