@@ -128,7 +128,8 @@ namespace CETools.Civil3D
                     "Earthworks - Cut to corridor datum",
                     "m3",
                     totals.CutVolume,
-                    "Existing ground vs BOTTOM-RD-* corridor surface"),
+                    "Existing ground vs BOTTOM-RD-* corridor surface"));
+            rows.Add(
                 Row(
                     "Earthworks - Fill to corridor datum",
                     "m3",
