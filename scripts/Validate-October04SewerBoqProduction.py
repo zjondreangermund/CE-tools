@@ -18,7 +18,7 @@ for marker in [
     'ReadAllSupportedSewerParts(document.Database)',
     'grossBlanketZone -\n                    pipeVolume',
     'averageCover -\n                    settings.BlanketAbovePipe',
-    '"Pipe volume deducted from blanket fill (m³)"',
+    '"Pipe volume deducted (m³)"',
     '"Blanket fill, net of pipe volume (m³)"',
     'public string BranchName { get; set; }',
     'ResolveBranchName(',
