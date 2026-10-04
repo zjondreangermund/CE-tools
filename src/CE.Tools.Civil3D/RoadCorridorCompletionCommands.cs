@@ -2117,6 +2117,25 @@ namespace CETools.Civil3D
                 if (TrySetBoolean(pattern, true, "Visible", "IsVisible", "Enabled")) changed++;
                 Invoke(pattern, "Rebuild");
             }
+
+            // Re-running CE_ROADCORRIDORCOMPLETE previously only refreshed
+            // slope patterns that already existed. If the collection was empty,
+            // nothing was displayed. Build the missing native patterns from
+            // same-side Hinge/EPS and Daylight_Cut/Daylight_Fill corridor
+            // feature lines, then leave them visible.
+            Corridor typedCorridor = corridor as Corridor;
+            if (typedCorridor != null)
+            {
+                changed += CreateMissingSlopePatterns(
+                    typedCorridor,
+                    styleIds);
+                try
+                {
+                    typedCorridor.Rebuild();
+                    typedCorridor.RecordGraphicsModified(true);
+                }
+                catch { }
+            }
             return changed;
         }
 
