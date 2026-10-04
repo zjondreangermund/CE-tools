@@ -294,6 +294,7 @@ namespace CETools.Civil3D
         private static List<RoadLabel> ReadRoadLabels(BlockTableRecord space, Transaction transaction)
         {
             var result = new List<RoadLabel>();
+            var linkedRoads = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach (ObjectId id in space)
             {
                 Entity entity;
@@ -326,12 +327,39 @@ namespace CETools.Civil3D
                 if (dbText != null) { text = dbText.TextString; position = dbText.Position; }
                 else if (mText != null) { text = mText.Text; position = mText.Location; }
                 else continue;
-                if (!string.Equals(entity.Layer, RoadNameLayer, StringComparison.OrdinalIgnoreCase) &&
+                string roadHandle;
+                bool linked = TryRoadLabelAnchor(entity, transaction, out roadHandle, ref position);
+                if (linked && !linkedRoads.Add(roadHandle)) continue;
+                if (!linked && !string.Equals(entity.Layer, RoadNameLayer, StringComparison.OrdinalIgnoreCase) &&
                     (text ?? string.Empty).IndexOf("ROAD", StringComparison.OrdinalIgnoreCase) < 0) continue;
                 string name = (text ?? string.Empty).Replace("\\P", " ").Trim();
                 if (!string.IsNullOrWhiteSpace(name)) result.Add(new RoadLabel(name, position, id.Handle.ToString()));
             }
             return result;
+        }
+
+        private static bool TryRoadLabelAnchor(Entity label, Transaction transaction, out string handle, ref Point3d position)
+        {
+            handle = string.Empty;
+            if (label.ExtensionDictionary.IsNull) return false;
+            var dictionary = transaction.GetObject(label.ExtensionDictionary, OpenMode.ForRead) as DBDictionary;
+            if (dictionary == null || !dictionary.Contains("CE_ROAD_LAYOUT")) return false;
+            var record = transaction.GetObject(dictionary.GetAt("CE_ROAD_LAYOUT"), OpenMode.ForRead) as Xrecord;
+            var values = record == null || record.Data == null ? null : record.Data.AsArray();
+            if (values == null || values.Length < 7 || Convert.ToString(values[0].Value) != "ROAD_NAME") return false;
+            handle = Convert.ToString(values[1].Value);
+            long number;
+            if (!long.TryParse(handle, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out number)) return false;
+            try
+            {
+                var road = transaction.GetObject(label.Database.GetObjectId(false, new Handle(number), 0), OpenMode.ForRead, false) as Curve;
+                if (road == null || road.IsErased) return false;
+                // Multiple section labels and collision offsets must not steer
+                // alignment naming towards a different road or depend on a layer.
+                position = road.GetPointAtDist(road.GetDistanceAtParameter(road.EndParam) * 0.5);
+                return true;
+            }
+            catch { return false; }
         }
 
         private static string ReadName(object target)

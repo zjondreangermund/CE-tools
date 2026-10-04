@@ -16,6 +16,10 @@ namespace CETools.Civil3D
         public string Name { get; set; }
         public IList<VertexSettingRecord> Records { get; set; }
         public IList<VertexRadialDimension> Dimensions { get; set; }
+        internal int RoadNumber { get; set; }
+        internal string JunctionGroup { get; set; }
+        internal string RoadHandle { get; set; }
+        internal Point3d JunctionCenter { get; set; }
     }
 
     internal sealed class VertexSettingRecord
@@ -95,6 +99,7 @@ namespace CETools.Civil3D
         public static bool IsSupported(Entity entity)
         {
             return entity is Polyline ||
+                   entity is Arc || entity is Line ||
                    entity is Polyline2d ||
                    entity is Polyline3d ||
                    entity is CivilFeatureLine;
@@ -109,6 +114,19 @@ namespace CETools.Civil3D
             var points = new List<Point3d>();
             var bulges = new List<double>();
             bool closed;
+
+            Arc arc = entity as Arc;
+            if (arc != null)
+            {
+                // A standalone return arc is the same engineering geometry as a
+                // two-vertex bulged polyline. Respect a reversed plan normal.
+                double sign = arc.Normal.Z < 0 ? -1.0 : 1.0;
+                return BuildFromVertices(entity, new[] { arc.StartPoint, arc.EndPoint },
+                    new[] { sign * Math.Tan(arc.TotalAngle / 4.0) }, false);
+            }
+            Line line = entity as Line;
+            if (line != null)
+                return BuildFromVertices(entity, new[] { line.StartPoint, line.EndPoint }, new[] { 0.0 }, false);
 
             Polyline lightweight = entity as Polyline;
             if (lightweight != null)

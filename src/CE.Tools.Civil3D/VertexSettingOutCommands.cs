@@ -24,7 +24,7 @@ namespace CETools.Civil3D
     /// requested additional points, every arc receives a radius dimension, and the
     /// linked table can be refreshed and exported after source geometry changes.
     /// </summary>
-    public sealed class VertexSettingOutCommands
+    public sealed partial class VertexSettingOutCommands
     {
         private const string AppName = "CE_VERTEX_SETTINGOUT";
         private const string SchemaVersion = "2";
@@ -52,6 +52,16 @@ namespace CETools.Civil3D
             CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void Create()
         {
+            CreateInternal(null, false, 30.0);
+        }
+
+        internal void CreateForJunctions(IList<ObjectId> sourceIds, double groupingDistance)
+        {
+            CreateInternal(sourceIds, true, groupingDistance);
+        }
+
+        private void CreateInternal(IList<ObjectId> junctionIds, bool junctions, double groupingDistance)
+        {
             Document document = ActiveDocument();
             if (document == null) return;
             CivilDocument civilDocument = CivilApplication.ActiveDocument;
@@ -61,39 +71,24 @@ namespace CETools.Civil3D
                 return;
             }
 
-            PromptSelectionResult selection = GetSelection(
-                document.Editor,
-                "\nSelect multiple polylines and/or Civil 3D feature lines: ");
-            if (selection.Status != PromptStatus.OK) return;
-
             var sourceIds = new List<ObjectId>();
             int rejected = 0;
+            IEnumerable<ObjectId> selectedIds = junctionIds;
+            if (selectedIds == null)
+            {
+                PromptSelectionResult selection = GetSelection(document.Editor,
+                    "\nSelect multiple polylines, feature lines, arcs and/or lines: ");
+                if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+                selectedIds = selection.Value.GetObjectIds();
+            }
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                foreach (SelectedObject selected in selection.Value)
+                foreach (ObjectId id in selectedIds)
                 {
-                    if (selected == null || selected.ObjectId.IsNull)
-                    {
-                        rejected++;
-                        continue;
-                    }
-                    Entity entity;
-                    try
-                    {
-                        entity = transaction.GetObject(
-                            selected.ObjectId,
-                            OpenMode.ForRead,
-                            false) as Entity;
-                    }
-                    catch
-                    {
-                        rejected++;
-                        continue;
-                    }
-                    if (VertexSettingOutGeometry.IsSupported(entity))
-                        sourceIds.Add(selected.ObjectId);
-                    else
-                        rejected++;
+                    if (id.IsNull || id.IsErased) { rejected++; continue; }
+                    Entity entity = transaction.GetObject(id, OpenMode.ForRead, false) as Entity;
+                    if (VertexSettingOutGeometry.IsSupported(entity)) sourceIds.Add(id);
+                    else rejected++;
                 }
             }
             sourceIds = sourceIds.Distinct().ToList();
@@ -109,7 +104,7 @@ namespace CETools.Civil3D
             ngSurfaceChoices.AddRange(surfaceChoices);
 
             var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Vertex Setting-Out Settings",
+                junctions ? "CE Tools - Junction Setting-Out Settings" : "CE Tools - Vertex Setting-Out Settings",
                 "All vertices are included. Arcs longer than 10 m receive a midpoint; every arc receives a centre point and radius dimension. Tangents longer than 20 m receive a midpoint, and tangents longer than 40 m receive three equally spaced points.");
             settings.AddChoice(
                 "Output", "01 Output", "Point output", "COGO",
@@ -136,22 +131,27 @@ namespace CETools.Civil3D
                 "Optional design/comparison surface. When selected, Design Level is sampled independently and Difference = Design - NG.",
                 new[] { "<Use setting-out point elevation>" }.Concat(surfaceChoices).Distinct(StringComparer.OrdinalIgnoreCase));
             settings.AddText(
-                "Prefix", "02 Numbering", "Point name prefix", "P",
+                "Prefix", "02 Numbering", "Point name prefix", junctions ? "J" : "P",
                 "Names are generated as P1, P2, P3 and are resequenced when linked geometry changes.");
             settings.AddPositiveInteger(
                 "Start", "02 Numbering", "Starting number", 1,
                 "First generated point number/name.");
             settings.AddChoice(
-                "NumberingMode", "02 Numbering", "Numbering layout", "Single sequence",
-                "Use one sequence such as P1, P2... or number each selected road/source as J1.1, J1.2... then J2.1, J2.2....",
+                "NumberingMode", "02 Numbering", "Numbering layout", junctions ? "Road grouped sequence" : "Single sequence",
+                "Use one sequence, or use the owning road number: all Road 2 outputs are J2.1, J2.2... across its returns.",
                 new[] { "Single sequence", "Road grouped sequence" });
             settings.AddPositiveInteger(
                 "RoadStart", "02 Numbering", "Starting road number", 1,
-                "Road grouped sequence starts with this road number, for example J1.1.");
+                "Used only when road identity is set to Use specified road number.");
+            settings.AddChoice("RoadIdentity", "02 Numbering", "Road identity", "Linked or nearest named road",
+                "Resolve the actual ROAD/RD number. Ambiguous junctions prompt for their owning road; no road numbers are assigned by selection order.",
+                new[] { "Linked or nearest named road", "Pick owning road", "Use specified road number" });
             settings.AddChoice(
-                "SequenceMode", "02 Numbering", "Sequence direction", "Auto by road orientation",
+                "SequenceMode", "02 Numbering", "Sequence direction", junctions ? "Clockwise per junction from top left" : "Auto by road orientation",
                 "Horizontal sources sequence left to right; vertical sources sequence top to bottom. You can force either direction or preserve source geometry order.",
-                new[] { "Auto by road orientation", "Left to right", "Top to bottom", "Source geometry order" });
+                new[] { "Clockwise per junction from top left", "Auto by road orientation", "Left to right", "Top to bottom", "Source geometry order" });
+            settings.AddPositiveDouble("JunctionGrouping", "02 Numbering", "Junction grouping distance", groupingDistance,
+                "For unlinked returns only. Linked junction groups retain their own identity.");
             settings.AddChoice(
                 "StartMode", "02 Numbering", "Sequence start point", "Automatic start",
                 "Pick any generated/reference point to rotate numbering so that point becomes the start of the sequence.",
@@ -159,6 +159,10 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "Offset", "03 Annotation", "MText/MLeader offset", 3.0,
                 "Drawing-unit offset from each setting-out point to its annotation.");
+            settings.AddText("PointLayer", "03 Annotation", "COGO point layer", "CE-ROAD-JUNCTION-POINTS", "Existing or new layer for generated COGO points.");
+            settings.AddText("LeaderLayer", "03 Annotation", "Leader / text layer", "CE-ROAD-JUNCTION-LEADERS", "Existing or new layer for MLeader/MText output.");
+            settings.AddChoice("ArrowType", "03 Annotation", "Leader arrowhead", "Closed filled", "Override the leader style arrow or retain it.", new[] { "Closed filled", "Use current leader style" });
+            settings.AddPositiveDouble("ArrowSize", "03 Annotation", "Arrow size (paper mm)", 2.5, "Converted using the current annotation scale and retained on refresh.");
             settings.AddChoice(
                 "CoordinateOrder", "04 Coordinate Display", "Coordinate order", "X then Y",
                 "Swap only the displayed X/Y letters/headings. Numeric coordinate values and true drawing coordinates remain unchanged.",
@@ -175,6 +179,9 @@ namespace CETools.Civil3D
                 "TableMode", "05 Linked Table", "Linked table action", "Create new linked table",
                 "Create a new table or add the selected sources to an existing CE vertex setting-out table and continue its linked sequence.",
                 new[] { "Create new linked table", "Continue existing linked table" });
+            settings.AddChoice("ExistingOutput", "05 Linked Table", "Existing setting-out output", "Keep existing",
+                "Replace removes CE-generated points, leaders, radius dimensions and table rows linked to the selected sources only. Other sources and manually created objects are retained.",
+                new[] { "Keep existing", "Replace selected sources" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             string outputType = settings.Text("Output");
@@ -196,6 +203,13 @@ namespace CETools.Civil3D
             string sequenceMode = settings.Text("SequenceMode");
             string startMode = settings.Text("StartMode");
             string tableMode = settings.Text("TableMode");
+            bool replaceExisting = settings.Text("ExistingOutput") == "Replace selected sources";
+            groupingDistance = settings.Double("JunctionGrouping", groupingDistance);
+            if (replaceExisting && tableMode == "Continue existing linked table")
+            {
+                document.Editor.WriteMessage("\nChoose Create new linked table to replace output, or Keep existing to continue a table. Nothing was changed.");
+                return;
+            }
             ObjectId elevationSourceId;
             if (!PromptElevationSource(
                     document,
@@ -253,6 +267,19 @@ namespace CETools.Civil3D
                 return;
             }
 
+            bool clockwiseJunctions = sequenceMode == "Clockwise per junction from top left";
+            if (numberingMode == "Road grouped sequence" &&
+                !JunctionSettingOutSequence.Assign(document, sources, junctions || clockwiseJunctions,
+                    groupingDistance, settings.Text("RoadIdentity"), roadStartNumber)) return;
+            if (clockwiseJunctions)
+            {
+                // Group identity is independent of whether point names are road-grouped.
+                if (numberingMode != "Road grouped sequence")
+                    using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                        JunctionSettingOutSequence.ReadMetadata(document.Database, transaction, sources);
+                JunctionSettingOutSequence.Groups(sources, groupingDistance);
+            }
+
             string startRecordKey = string.Empty;
             if (string.Equals(startMode, "Pick start point", StringComparison.OrdinalIgnoreCase))
             {
@@ -289,6 +316,8 @@ namespace CETools.Civil3D
                 tablePoint = insertion.Value;
             }
 
+            Dictionary<int, int> roadSeeds = existingLink != null ? existingLink.RoadSeeds :
+                ReadRoadStarts(document.Database, prefix, replaceExisting ? sources.Select(item => item.Handle) : null);
             List<VertexSettingRecord> records = FlattenAndName(
                 sources,
                 prefix,
@@ -296,7 +325,7 @@ namespace CETools.Civil3D
                 numberingMode,
                 roadStartNumber,
                 sequenceMode,
-                startRecordKey);
+                startRecordKey, roadSeeds);
             int radialDimensions = sources.Sum(item => item.Dimensions.Count);
             var review = new List<KeyValuePair<string, string>>
             {
@@ -351,17 +380,30 @@ namespace CETools.Civil3D
                 DesignSurfaceHandle = designSurfaceId.IsNull
                     ? string.Empty
                     : designSurfaceId.Handle.ToString(),
-                SourceHandles = linkedHandles
+                SourceHandles = linkedHandles,
+                PointLayer = settings.Text("PointLayer"),
+                LeaderLayer = settings.Text("LeaderLayer"),
+                ArrowType = settings.Text("ArrowType"),
+                ArrowSize = settings.Double("ArrowSize", 2.5),
+                GroupingDistance = groupingDistance,
+                ReplaceExisting = replaceExisting,
+                RoadSeeds = roadSeeds,
+                RoadNumbers = existingLink == null ? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) : existingLink.RoadNumbers
             };
+            foreach (VertexSettingSource source in sources) link.RoadNumbers[source.Handle] = source.RoadNumber;
 
             try
             {
                 if (continueExisting)
                 {
-                    UpdateTableLink(document.Database, existingTableId, link);
                     int continuedPoints;
                     int continuedDimensions;
-                    RefreshTable(document, existingTableId, out continuedPoints, out continuedDimensions);
+                    using (Transaction continuation = document.Database.TransactionManager.StartTransaction())
+                    {
+                        UpdateTableLink(document.Database, existingTableId, link);
+                        RefreshTable(document, existingTableId, out continuedPoints, out continuedDimensions);
+                        continuation.Commit();
+                    }
                     document.Editor.SetImpliedSelection(new[] { existingTableId });
                     RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true);
                     document.Editor.Regen();
@@ -511,6 +553,7 @@ namespace CETools.Civil3D
                 double textHeight = PaperAnnotationScale.ModelTextHeight(
                     document.Database,
                     paperTextHeight);
+                if (link.ReplaceExisting) ReplaceSelectedGroups(document.Database, civilDocument, transaction, modelSpace, link, textHeight);
 
                 foreach (VertexSettingRecord record in records)
                     CreateOutput(document.Database, civilDocument, transaction, modelSpace, link, record, textHeight);
@@ -578,6 +621,7 @@ namespace CETools.Civil3D
                     ResolveHandle(document.Database, link.DesignSurfaceHandle));
                 if (sources.Count == 0 || sources.All(item => item.Records.Count == 0))
                     throw new InvalidOperationException("The linked sources produced no current setting-out geometry.");
+                RestoreRoadNumbers(document.Database, transaction, sources, link);
                 List<VertexSettingRecord> records = FlattenAndName(
                     sources,
                     link.Prefix,
@@ -585,7 +629,7 @@ namespace CETools.Civil3D
                     link.NumberingMode,
                     link.RoadStartNumber,
                     link.SequenceMode,
-                    link.StartRecordKey);
+                    link.StartRecordKey, link.RoadSeeds);
 
                 EnsureRegApp(document.Database, transaction);
                 BlockTableRecord modelSpace = GetModelSpace(document.Database, transaction, OpenMode.ForWrite);
@@ -648,7 +692,8 @@ namespace CETools.Civil3D
             string numberingMode,
             int roadStartNumber,
             string sequenceMode,
-            string startRecordKey)
+            string startRecordKey,
+            IDictionary<int, int> roadSeeds = null)
         {
             var result = new List<VertexSettingRecord>();
             List<VertexSettingSource> orderedSources = OrderSources(
@@ -660,24 +705,24 @@ namespace CETools.Civil3D
                 "Road grouped sequence",
                 StringComparison.OrdinalIgnoreCase);
             int sequence = startNumber;
-            int road = roadStartNumber;
+            var roadSequence = new CETools.Core.RoadPointSequence(roadSeeds);
             foreach (VertexSettingSource source in orderedSources)
             {
                 List<VertexSettingRecord> orderedRecords = OrderRecords(
                     source,
                     sequenceMode,
                     startRecordKey);
-                int roadPoint = 1;
+                int road = source.RoadNumber;
+                if (roadGrouped && road <= 0)
+                    throw new InvalidOperationException("A source has no owning road number. Re-run setting-out and assign its road.");
                 foreach (VertexSettingRecord record in orderedRecords)
                 {
                     record.PointName = roadGrouped
-                        ? prefix + road.ToString(CultureInfo.InvariantCulture) + "." + roadPoint.ToString(CultureInfo.InvariantCulture)
+                        ? roadSequence.Next(prefix, road)
                         : prefix + sequence.ToString(CultureInfo.InvariantCulture);
-                    roadPoint++;
                     sequence++;
                     result.Add(record);
                 }
-                road++;
             }
             return result;
         }
@@ -689,7 +734,15 @@ namespace CETools.Civil3D
         {
             var values = (sources ?? Enumerable.Empty<VertexSettingSource>()).ToList();
             IEnumerable<VertexSettingSource> ordered;
-            if (string.Equals(sequenceMode, "Left to right", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(sequenceMode, "Clockwise per junction from top left", StringComparison.OrdinalIgnoreCase))
+                ordered = values.GroupBy(item => item.JunctionCenter)
+                    .OrderByDescending(g => g.Key.Y).ThenBy(g => g.Key.X)
+                    .SelectMany(g => g.OrderBy(item => CETools.Core.RoadAnnotationPlan.ClockwiseFromTopLeft(
+                        JunctionSettingOutSequence.Centre(item).X - g.Key.X, JunctionSettingOutSequence.Centre(item).Y - g.Key.Y))
+                        .ThenBy(item => item.Handle, StringComparer.OrdinalIgnoreCase));
+            else if (string.Equals(sequenceMode, "Source geometry order", StringComparison.OrdinalIgnoreCase))
+                ordered = values;
+            else if (string.Equals(sequenceMode, "Left to right", StringComparison.OrdinalIgnoreCase))
                 ordered = values.OrderBy(item => SourceCentre(item).X).ThenByDescending(item => SourceCentre(item).Y);
             else if (string.Equals(sequenceMode, "Top to bottom", StringComparison.OrdinalIgnoreCase))
                 ordered = values.OrderByDescending(item => SourceCentre(item).Y).ThenBy(item => SourceCentre(item).X);
@@ -728,7 +781,10 @@ namespace CETools.Civil3D
                 double height = onGeometry.Count == 0 ? 0.0 : onGeometry.Max(record => record.Point.Y) - onGeometry.Min(record => record.Point.Y);
                 mode = width >= height ? "Left to right" : "Top to bottom";
             }
-            if (string.Equals(mode, "Left to right", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(mode, "Clockwise per junction from top left", StringComparison.OrdinalIgnoreCase))
+                onGeometry = onGeometry.OrderBy(record => CETools.Core.RoadAnnotationPlan.ClockwiseFromTopLeft(
+                    record.Point.X - source.JunctionCenter.X, record.Point.Y - source.JunctionCenter.Y)).ToList();
+            else if (string.Equals(mode, "Left to right", StringComparison.OrdinalIgnoreCase))
                 onGeometry = onGeometry.OrderBy(record => record.Point.X).ThenByDescending(record => record.Point.Y).ToList();
             else if (string.Equals(mode, "Top to bottom", StringComparison.OrdinalIgnoreCase))
                 onGeometry = onGeometry.OrderByDescending(record => record.Point.Y).ThenBy(record => record.Point.X).ToList();
@@ -806,6 +862,7 @@ namespace CETools.Civil3D
                     true);
                 CivilCogoPoint point = transaction.GetObject(id, OpenMode.ForWrite, false) as CivilCogoPoint;
                 if (point == null) throw new InvalidOperationException("Civil 3D did not return the created COGO point.");
+                point.LayerId = RoadAnnotationPlacement.Layer(database, transaction, link.PointLayer, "CE-ROAD-JUNCTION-POINTS");
                 point.RawDescription = record.PointName;
                 try { point.PointName = record.PointName; } catch { }
                 WriteOutputLink(
@@ -820,7 +877,10 @@ namespace CETools.Civil3D
                 leader.MLeaderStyle = database.MLeaderstyle;
                 // ObjectId.Null is AutoCAD's native closed-filled arrow. Do not
                 // inherit DIMBLK because a project DIMSTYLE may use architectural ticks.
-                leader.ArrowSymbolId = ObjectId.Null;
+                if (!string.Equals(link.ArrowType, "Use current leader style", StringComparison.OrdinalIgnoreCase))
+                    leader.ArrowSymbolId = ObjectId.Null;
+                leader.ArrowSize = PaperAnnotationScale.ModelDistance(database, link.ArrowSize);
+                leader.LayerId = RoadAnnotationPlacement.Layer(database, transaction, link.LeaderLayer, "CE-ROAD-JUNCTION-LEADERS");
                 leader.ContentType = ContentType.MTextContent;
                 var text = new MText();
                 text.SetDatabaseDefaults(database);
@@ -842,6 +902,7 @@ namespace CETools.Civil3D
 
             var mtext = new MText();
             mtext.SetDatabaseDefaults(database);
+            mtext.LayerId = RoadAnnotationPlacement.Layer(database, transaction, link.LeaderLayer, "CE-ROAD-JUNCTION-LEADERS");
             mtext.Location = record.Point;
             mtext.Attachment = AnchoredAttachment(record, link.LabelOffset);
             mtext.TextHeight = textHeight;
@@ -869,6 +930,7 @@ namespace CETools.Civil3D
             CivilCogoPoint cogo = value as CivilCogoPoint;
             if (cogo != null && string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))
             {
+                cogo.LayerId = RoadAnnotationPlacement.Layer(cogo.Database, transaction, link.PointLayer, "CE-ROAD-JUNCTION-POINTS");
                 cogo.Easting = record.Point.X;
                 cogo.Northing = record.Point.Y;
                 cogo.Elevation = record.Point.Z;
@@ -883,6 +945,7 @@ namespace CETools.Civil3D
             if (mtext != null && string.Equals(link.OutputType, "MText", StringComparison.OrdinalIgnoreCase))
             {
                 CaptureCurrentAnnotationOffset(transaction, id, record);
+                mtext.LayerId = RoadAnnotationPlacement.Layer(mtext.Database, transaction, link.LeaderLayer, "CE-ROAD-JUNCTION-LEADERS");
                 mtext.Location = record.Point;
                 mtext.Attachment = AnchoredAttachment(record, link.LabelOffset);
                 mtext.TextHeight = textHeight;
@@ -1567,6 +1630,17 @@ namespace CETools.Civil3D
             values.Add(new TypedValue(
                 (int)DxfCode.ExtendedDataAsciiString,
                 "STARTKEY=" + (link.StartRecordKey ?? string.Empty)));
+            foreach (string option in new[] {
+                "POINTLAYER=" + link.PointLayer, "LEADERLAYER=" + link.LeaderLayer,
+                "ARROWTYPE=" + link.ArrowType, "ARROWSIZE=" + link.ArrowSize.ToString("R", CultureInfo.InvariantCulture),
+                "GROUPDIST=" + link.GroupingDistance.ToString("R", CultureInfo.InvariantCulture) })
+                values.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString, option));
+            foreach (var seed in link.RoadSeeds)
+                values.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString,
+                    "ROADSEED=" + seed.Key.ToString(CultureInfo.InvariantCulture) + ":" + seed.Value.ToString(CultureInfo.InvariantCulture)));
+            foreach (var assignment in link.RoadNumbers.Where(pair => pair.Value > 0))
+                values.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString,
+                    "ROADMAP=" + assignment.Key + ":" + assignment.Value.ToString(CultureInfo.InvariantCulture)));
             foreach (string handle in link.SourceHandles)
                 values.Add(new TypedValue(
                     (int)DxfCode.ExtendedDataAsciiString,
@@ -1635,6 +1709,32 @@ namespace CETools.Civil3D
                     link.SequenceMode = value.Substring(4);
                 else if (value.StartsWith("STARTKEY=", StringComparison.OrdinalIgnoreCase))
                     link.StartRecordKey = value.Substring(9);
+                else if (value.StartsWith("POINTLAYER=", StringComparison.OrdinalIgnoreCase)) link.PointLayer = value.Substring(11);
+                else if (value.StartsWith("LEADERLAYER=", StringComparison.OrdinalIgnoreCase)) link.LeaderLayer = value.Substring(12);
+                else if (value.StartsWith("ARROWTYPE=", StringComparison.OrdinalIgnoreCase)) link.ArrowType = value.Substring(10);
+                else if (value.StartsWith("ARROWSIZE=", StringComparison.OrdinalIgnoreCase))
+                {
+                    double size;
+                    if (double.TryParse(value.Substring(10), NumberStyles.Float, CultureInfo.InvariantCulture, out size) && size > 0) link.ArrowSize = size;
+                }
+                else if (value.StartsWith("GROUPDIST=", StringComparison.OrdinalIgnoreCase))
+                {
+                    double distance;
+                    if (double.TryParse(value.Substring(10), NumberStyles.Float, CultureInfo.InvariantCulture, out distance) && distance > 0) link.GroupingDistance = distance;
+                }
+                else if (value.StartsWith("ROADSEED=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string[] parts = value.Substring(9).Split(':');
+                    int road, seed;
+                    if (parts.Length == 2 && int.TryParse(parts[0], out road) && int.TryParse(parts[1], out seed) && road > 0 && seed > 0)
+                        link.RoadSeeds[road] = seed;
+                }
+                else if (value.StartsWith("ROADMAP=", StringComparison.OrdinalIgnoreCase))
+                {
+                    string[] parts = value.Substring(8).Split(':');
+                    int number;
+                    if (parts.Length == 2 && int.TryParse(parts[1], out number) && number > 0) link.RoadNumbers[parts[0]] = number;
+                }
                 else if (value.StartsWith("SRC=", StringComparison.OrdinalIgnoreCase))
                     link.SourceHandles.Add(value.Substring(4));
                 else
@@ -1873,6 +1973,14 @@ namespace CETools.Civil3D
             public string SequenceMode { get; set; }
             public string StartRecordKey { get; set; }
             public IList<string> SourceHandles { get; set; }
+            public string PointLayer { get; set; } = "CE-ROAD-JUNCTION-POINTS";
+            public string LeaderLayer { get; set; } = "CE-ROAD-JUNCTION-LEADERS";
+            public string ArrowType { get; set; } = "Closed filled";
+            public double ArrowSize { get; set; } = 2.5;
+            public double GroupingDistance { get; set; } = 30.0;
+            public bool ReplaceExisting { get; set; }
+            public Dictionary<int, int> RoadSeeds { get; set; } = new Dictionary<int, int>();
+            public Dictionary<string, int> RoadNumbers { get; set; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         }
     }
 }

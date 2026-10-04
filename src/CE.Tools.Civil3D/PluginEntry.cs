@@ -221,6 +221,7 @@ namespace CETools.Civil3D
                         Cmd("Copy Assembly Between Drawings (Safe)", "CE_ASSEMBLYCOPYSAFE ", "Clone an assembly between open drawings without clipboard copy/paste."),
                         Cmd("Create Road Corridors", "CE_ROADCORRIDORS ", "Create one source-preserving corridor for each CE road alignment/profile pair."),
                         Cmd("Complete Road Corridors", "CE_ROADCORRIDORCOMPLETE ", "Apply supported regions, frequencies, targets, surfaces, boundaries, visibility and automatic rebuild settings."),
+                        Cmd("Merge CE Road / Final Surfaces", "CE_ROADSURFACEMERGE ", "Create CE Top All, CE Bottom All or CE Final Surface from selected road and grading surfaces."),
                         Cmd("Road Production Information", "CE_ROADPRODUCTIONINFO ", "Review road alignments, profiles, corridors and styles."),
                         Cmd("Road BOQ", "CE_BOQROAD ", "Create the road bill of quantities."),
                         Cmd("Road Design Report", "CE_REPORTROAD ", "Generate the road design report."))));
@@ -544,6 +545,7 @@ namespace CETools.Civil3D
                         Cmd("Platform Slopes / Levels", "CE_PLATFORMSLOPE ", "Apply constant high-low slope, fixed slope or flatten to highest elevation."),
                         Cmd("Multiple Stepped Offsets", "CE_PLATFORMSTEPOFFSETS ", "Create linked stepped offsets for multiple platform feature lines."),
                         Cmd("Drape Steps to Surface", "CE_PLATFORMDRAPE ", "Drape linked steps to a selected surface and dynamically drive platform elevations."),
+                        Cmd("Merge CE Road / Final Surfaces", "CE_ROADSURFACEMERGE ", "Create CE Top All, CE Bottom All or CE Final Surface from selected natural ground and road/grading surfaces."),
                         Cmd("Platform Site / Surface / Infill", "CE_PLATFORMSURFACE ", "Assign platforms to a site, build a separate surface and create grading infill where supported."),
                         Cmd("Platform Setting-Out", "CE_PLATFORMSETTINGOUT ", "Open vertex and grid setting-out workflows."),
                         Cmd("Platform Names", "CE_PLATFORMNAMES ", "Place PLATFORM-n labels with final platform elevations."),

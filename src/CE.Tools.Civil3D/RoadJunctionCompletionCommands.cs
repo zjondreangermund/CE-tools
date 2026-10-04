@@ -414,12 +414,7 @@ namespace CETools.Civil3D
 
         private static double ClockwiseKey(Point3d point, Point3d centre)
         {
-            double angle = Math.Atan2(point.Y - centre.Y, point.X - centre.X);
-            double start = Math.PI * 0.75;
-            double clockwise = start - angle;
-            while (clockwise < 0.0) clockwise += Math.PI * 2.0;
-            while (clockwise >= Math.PI * 2.0) clockwise -= Math.PI * 2.0;
-            return clockwise;
+            return CETools.Core.RoadAnnotationPlan.ClockwiseFromTopLeft(point.X - centre.X, point.Y - centre.Y);
         }
 
         private static ObjectId CreateLabel(Database database, Transaction transaction, BlockTableRecord space, ObjectId layerId, Point3d anchor, string text, double paperHeight, ObjectId sourceId, Point3d groupCentre)

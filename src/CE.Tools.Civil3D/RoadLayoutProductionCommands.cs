@@ -23,7 +23,7 @@ namespace CETools.Civil3D
     /// and dimensions retain parent handles so they can be refreshed after the
     /// source road centreline changes.
     /// </summary>
-    public sealed class RoadLayoutProductionCommands
+    public sealed partial class RoadLayoutProductionCommands
     {
         private const string RecordKey = "CE_ROAD_LAYOUT";
         private const string CenterLayer = "CE-ROAD-CENTERLINE";
@@ -426,126 +426,13 @@ namespace CETools.Civil3D
         [CommandMethod("CE_TOOLS", "CE_ROADNAMES", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void RoadNames()
         {
-            Document document = ActiveDocument();
-            if (document == null) return;
-            var model = new ProductionSettingsDialogModel(
-                "CE Tools - Road Names",
-                "Add sequential linked road names to all or selected CE road centrelines, using the same branch-style idea as utility naming.");
-            model.AddChoice("Scope", "01 Selection", "Roads", "All", "Name every road centreline or only selected centrelines.", new[] { "All", "Selected" });
-            model.AddText("Prefix", "02 Naming", "Road name prefix", "ROAD", "Names are created as ROAD-1, ROAD-2 and so on.");
-            model.AddPositiveInteger("Start", "02 Naming", "Starting number", 1, "First road number.");
-            model.AddDouble("Offset", "03 Annotation", "Label offset", 2.0, "Drawing-unit perpendicular offset from the centreline.");
-            model.AddDouble("TextHeight", "03 Annotation", "Paper text height", 2.5, "Annotative paper height.");
-            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
-            List<ObjectId> roads = ResolveRoadScope(document, "CENTER", model.Text("Scope"), "\nSelect road centrelines to name: ");
-            if (roads.Count == 0) return;
-            string prefix = string.IsNullOrWhiteSpace(model.Text("Prefix")) ? "ROAD" : model.Text("Prefix").Trim();
-            int start = model.Integer("Start", 1);
-            double offset = model.Double("Offset", 2.0);
-            double textHeight = PaperAnnotationScale.ModelTextHeight(document.Database, Math.Max(0.5, model.Double("TextHeight", 2.5)));
-
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-            {
-                BlockTableRecord space = GetModelSpace(document.Database, transaction, OpenMode.ForWrite);
-                ObjectId layerId = GetOrCreateLayer(document.Database, transaction, LabelLayer);
-                // Number horizontal roads first, from top to bottom, then
-                // vertical roads from left to right. This is the requested plan
-                // reading order when all road-centre polylines are selected.
-                var ordered = roads.Select(id => transaction.GetObject(id, OpenMode.ForRead, false) as Polyline)
-                    .Where(poly => poly != null)
-                    .OrderBy(poly => RoadOrderGroup(poly))
-                    .ThenBy(poly => RoadOrderPrimary(poly))
-                    .ThenBy(poly => MidPoint(poly).Y)
-                    .ThenBy(poly => MidPoint(poly).X)
-                    .ToList();
-                int index = 0;
-                foreach (Polyline road in ordered)
-                {
-                    EraseChildren(space, transaction, "ROAD_NAME", road.Handle.ToString());
-                    Point3d anchor = MidPoint(road);
-                    Vector2d tangent = TangentAt(road, anchor);
-                    Vector2d normal = new Vector2d(-tangent.Y, tangent.X);
-                    Point3d location = anchor + new Vector3d(normal.X * offset, normal.Y * offset, 0.0);
-                    var text = new MText();
-                    text.SetDatabaseDefaults(document.Database);
-                    text.LayerId = layerId;
-                    text.Location = location;
-                    text.Attachment = AttachmentPoint.MiddleCenter;
-                    text.TextHeight = textHeight;
-                    text.Rotation = Math.Atan2(tangent.Y, tangent.X);
-                    text.Contents = prefix + "-" + (start + index).ToString(CultureInfo.InvariantCulture);
-                    PaperAnnotationScale.SetAnnotative(text);
-                    space.AppendEntity(text);
-                    transaction.AddNewlyCreatedDBObject(text, true);
-                    WriteLink(text, transaction, new RoadLink
-                    {
-                        Kind = "ROAD_NAME",
-                        ParentHandle = road.Handle.ToString(),
-                        SourceHandles = road.Handle.ToString(),
-                        Offset = offset,
-                        Width = 0.0,
-                        Group = string.Empty,
-                        Name = text.Contents
-                    });
-                    index++;
-                }
-                transaction.Commit();
-            }
-            document.Editor.Regen();
+            PlaceRoadNames();
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADDIMENSIONS", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void RoadDimensions()
         {
-            Document document = ActiveDocument();
-            if (document == null) return;
-            var model = new ProductionSettingsDialogModel(
-                "CE Tools - Road Width Dimensions",
-                "Dimension linked lane widths from centreline to road edge and/or the full edge-to-edge road width.");
-            model.AddChoice("Scope", "01 Selection", "Roads", "All", "Dimension all or selected road centrelines.", new[] { "All", "Selected" });
-            model.AddChoice("Mode", "02 Dimensions", "Dimension type", "Lane and full road widths", "Choose lane widths, complete road width, or both.", new[] { "Lane widths", "Full road width", "Lane and full road widths" });
-            model.AddPositiveDouble("Offset", "02 Dimensions", "Dimension-line offset", 1.0, "Extra distance outside the measured road geometry for the dimension line.");
-            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
-            List<ObjectId> roads = ResolveRoadScope(document, "CENTER", model.Text("Scope"), "\nSelect road centrelines to dimension: ");
-            if (roads.Count == 0) return;
-            bool lane = !string.Equals(model.Text("Mode"), "Full road width", StringComparison.OrdinalIgnoreCase);
-            bool full = !string.Equals(model.Text("Mode"), "Lane widths", StringComparison.OrdinalIgnoreCase);
-            double dimOffset = model.Double("Offset", 1.0);
-            int count = 0;
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-            {
-                BlockTableRecord space = GetModelSpace(document.Database, transaction, OpenMode.ForWrite);
-                ObjectId layerId = GetOrCreateLayer(document.Database, transaction, DimensionLayer);
-                foreach (ObjectId id in roads)
-                {
-                    Polyline road = transaction.GetObject(id, OpenMode.ForRead, false) as Polyline;
-                    if (road == null) continue;
-                    string handle = road.Handle.ToString();
-                    EraseChildren(space, transaction, "ROAD_DIM", handle);
-                    List<Curve> edges = ReadChildren(space, transaction, "EDGE", handle).Take(2).ToList();
-                    if (edges.Count < 2) continue;
-                    Point3d centre = MidPoint(road);
-                    Point3d first = edges[0].GetClosestPointTo(centre, false);
-                    Point3d second = edges[1].GetClosestPointTo(centre, false);
-                    Vector2d tangent = TangentAt(road, centre);
-                    Vector2d normal = new Vector2d(-tangent.Y, tangent.X);
-                    if (lane)
-                    {
-                        count += CreateAlignedDimension(document.Database, transaction, space, layerId, centre, first,
-                            Mid(centre, first) + new Vector3d(normal.X * dimOffset, normal.Y * dimOffset, 0.0), handle);
-                        count += CreateAlignedDimension(document.Database, transaction, space, layerId, centre, second,
-                            Mid(centre, second) - new Vector3d(normal.X * dimOffset, normal.Y * dimOffset, 0.0), handle);
-                    }
-                    if (full)
-                    {
-                        Point3d linePoint = Mid(first, second) + new Vector3d(tangent.X * dimOffset, tangent.Y * dimOffset, 0.0);
-                        count += CreateAlignedDimension(document.Database, transaction, space, layerId, first, second, linePoint, handle);
-                    }
-                }
-                transaction.Commit();
-            }
-            document.Editor.Regen();
-            document.Editor.WriteMessage("\nCE_ROADDIMENSIONS complete. Dimensions created={0}.", count);
+            PlaceRoadDimensions();
         }
 
         [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONSETTINGOUT", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -566,38 +453,7 @@ namespace CETools.Civil3D
 
         internal static int RefreshAll(Document document)
         {
-            if (document == null) return 0;
-            int refreshed = 0;
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-            {
-                BlockTableRecord space = GetModelSpace(document.Database, transaction, OpenMode.ForWrite);
-                List<ObjectId> ids = space.Cast<ObjectId>().ToList();
-                foreach (ObjectId id in ids)
-                {
-                    Entity entity;
-                    try { entity = transaction.GetObject(id, OpenMode.ForWrite, false) as Entity; }
-                    catch { continue; }
-                    if (entity == null || entity.IsErased) continue;
-                    RoadLink link;
-                    if (!TryReadLink(entity, transaction, out link) || string.IsNullOrWhiteSpace(link.ParentHandle)) continue;
-                    ObjectId parentId = ResolveHandle(document.Database, link.ParentHandle);
-                    Curve parent = parentId.IsNull ? null : transaction.GetObject(parentId, OpenMode.ForRead, false) as Curve;
-                    if (parent == null) continue;
-                    if (string.Equals(link.Kind, "ROAD_NAME", StringComparison.OrdinalIgnoreCase))
-                    {
-                        MText text = entity as MText;
-                        if (text == null) continue;
-                        Point3d anchor = MidPoint(parent);
-                        Vector2d tangent = TangentAt(parent, anchor);
-                        Vector2d normal = new Vector2d(-tangent.Y, tangent.X);
-                        text.Location = anchor + new Vector3d(normal.X * link.Offset, normal.Y * link.Offset, 0.0);
-                        text.Rotation = Math.Atan2(tangent.Y, tangent.X);
-                        refreshed++;
-                    }
-                }
-                transaction.Commit();
-            }
-            return refreshed;
+            return RefreshAnnotations(document);
         }
 
         private static void CreateOffsets(string sourceKind, string outputLayer, string outputKind, string title, string label, double defaultDistance)

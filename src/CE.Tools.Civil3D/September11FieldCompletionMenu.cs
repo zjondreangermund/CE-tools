@@ -77,6 +77,15 @@ namespace CETools.Civil3D
                         "Place one readable road name at the midpoint of every road alignment or multiple selected road alignments/corridors, offset above the centreline with configurable layer, paper height, colour and mask.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
+                        "Road Names - Layers / Junction Midpoints", "CE_ROADNAMES",
+                        "Add above, below or centered road names on a chosen layer between every T/cross junction, with overlap avoidance.", "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Road Width Dimensions - Junction Midpoints", "CE_ROADDIMENSIONS",
+                        "Add lane/full widths on a chosen layer at each section midpoint, with separate dimension lines and overlap avoidance.", "01 Roads"),
+                    new DisciplineWorkflowAction(
+                        "Junction Setting-Out - Road Number / Clockwise", "CE_JUNCTIONSETTINGOUT4",
+                        "Assign the actual road number, complete each junction clockwise from top left, and optionally replace its existing CE output.", "01 Roads"),
+                    new DisciplineWorkflowAction(
                         "Import Road Band Set to Multiple Profile Views",
                         "CE_ROADBANDLABELS",
                         "Open the Civil 3D Profile View Properties / Bands-style batch window, choose Import band set and Show Labels, then apply it to every selected profile view. Optionally open the native Bands tab for the first view after commit.",

@@ -227,3 +227,7 @@ jobs:
 
       - name: Run geometry tests
         run: dotnet run --project tests/CE.Tools.Core.Tests/CE.Tools.Core.Tests.csproj -c Release
+
+      - name: Preserve road setting-out controls after historical staging repairs
+        shell: pwsh
+        run: ./scripts/Test-RoadAnnotationSettingOutStaging.ps1
