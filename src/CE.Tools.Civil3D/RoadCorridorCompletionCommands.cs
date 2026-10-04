@@ -2307,8 +2307,9 @@ namespace CETools.Civil3D
                         "Visible",
                         "IsVisible",
                         "Enabled");
-                    try { pattern.Rebuild(); }
-                    catch { }
+                    // Civil 3D 2023 CorridorSlopePattern has no public
+                    // Rebuild method. The owning corridor is rebuilt once after
+                    // all pattern edits, which refreshes every slope pattern.
                     created++;
                 }
                 catch { }
