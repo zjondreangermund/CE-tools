@@ -90,6 +90,13 @@ namespace CETools.Civil3D
                             corridor,
                             unitsPerMetre);
                     }
+
+                    totals.JunctionBellmouthLength =
+                        ReadJunctionBellmouthLength(
+                            document.Database,
+                            transaction,
+                            unitsPerMetre);
+
                     transaction.Commit();
                 }
             }
@@ -153,6 +160,11 @@ namespace CETools.Civil3D
                 "m",
                 totals.KerbLength,
                 "Corridor feature lines carrying kerb/curb codes"));
+            rows.Add(Row(
+                "Junction bellmouths",
+                "m",
+                totals.JunctionBellmouthLength,
+                "Unique CE road-junction / bellmouth return curves"));
             rows.Add(Row(
                 "Road surface",
                 "m2",
@@ -601,6 +613,351 @@ namespace CETools.Civil3D
             return total / unitsPerMetre;
         }
 
+        private static double ReadJunctionBellmouthLength(
+            Database database,
+            Transaction transaction,
+            double unitsPerMetre)
+        {
+            if (database == null ||
+                transaction == null)
+                return 0.0;
+
+            BlockTableRecord modelSpace = null;
+            try
+            {
+                modelSpace =
+                    transaction.GetObject(
+                        SymbolUtilityServices.GetBlockModelSpaceId(database),
+                        OpenMode.ForRead,
+                        false) as BlockTableRecord;
+            }
+            catch { }
+            if (modelSpace == null)
+                return 0.0;
+
+            double total = 0.0;
+            var seen =
+                new HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+
+            foreach (ObjectId id in modelSpace)
+            {
+                Entity entity = null;
+                try
+                {
+                    entity =
+                        transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false) as Entity;
+                }
+                catch { }
+
+                if (!IsJunctionBellmouthCurve(entity))
+                    continue;
+
+                Point3d start;
+                Point3d end;
+                double length;
+                if (!TryReadEntityCurveLength(
+                        entity,
+                        out start,
+                        out end,
+                        out length) ||
+                    length <= 1e-9)
+                    continue;
+
+                string key =
+                    BellmouthGeometryKey(
+                        start,
+                        end,
+                        length);
+                if (!seen.Add(key))
+                    continue;
+
+                total += length;
+            }
+
+            return total /
+                   Math.Max(
+                       unitsPerMetre,
+                       1e-9);
+        }
+
+        private static bool IsJunctionBellmouthCurve(
+            Entity entity)
+        {
+            if (entity == null)
+                return false;
+
+            string layer =
+                entity.Layer ?? string.Empty;
+            string name =
+                ReadEntityName(entity);
+            string identity =
+                (layer + " " +
+                 name + " " +
+                 entity.GetType().Name)
+                    .ToUpperInvariant();
+
+            if (identity.Contains("CUT") ||
+                identity.Contains("FILL") ||
+                identity.Contains("SLOPE") ||
+                identity.Contains("TOE") ||
+                identity.Contains("DAYLIGHT") ||
+                identity.Contains("GRADE"))
+                return false;
+
+            bool junctionIdentity =
+                identity.Contains("BELLMOUTH") ||
+                identity.Contains("ROAD-JUNCTION") ||
+                identity.Contains("ROAD JUNCTION") ||
+                string.Equals(
+                    layer,
+                    "CE-ROAD-JUNCTION",
+                    StringComparison.OrdinalIgnoreCase);
+            if (!junctionIdentity)
+                return false;
+
+            // T-junction closure lines share the junction layer but are not
+            // bellmouth returns.
+            if (entity is Line ||
+                entity is Xline ||
+                entity is Ray)
+                return false;
+
+            Arc arc = entity as Arc;
+            if (arc != null)
+                return true;
+
+            Polyline polyline =
+                entity as Polyline;
+            if (polyline != null)
+            {
+                if (polyline.Closed)
+                    return false;
+                for (int index = 0;
+                     index < polyline.NumberOfVertices - 1;
+                     index++)
+                {
+                    try
+                    {
+                        if (Math.Abs(
+                                polyline.GetBulgeAt(index)) >
+                            1e-9)
+                            return true;
+                    }
+                    catch { }
+                }
+
+                return identity.Contains(
+                    "BELLMOUTH");
+            }
+
+            FeatureLine featureLine =
+                entity as FeatureLine;
+            if (featureLine != null)
+            {
+                try
+                {
+                    return !featureLine.Closed;
+                }
+                catch
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private static string ReadEntityName(
+            Entity entity)
+        {
+            if (entity == null)
+                return string.Empty;
+            try
+            {
+                System.Reflection.PropertyInfo property =
+                    entity.GetType()
+                        .GetProperty(
+                            "Name",
+                            System.Reflection.BindingFlags.Public |
+                            System.Reflection.BindingFlags.Instance);
+                if (property == null ||
+                    !property.CanRead)
+                    return string.Empty;
+                return Convert.ToString(
+                           property.GetValue(
+                               entity,
+                               null),
+                           CultureInfo.CurrentCulture) ??
+                       string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static bool TryReadEntityCurveLength(
+            Entity entity,
+            out Point3d start,
+            out Point3d end,
+            out double length)
+        {
+            start = Point3d.Origin;
+            end = Point3d.Origin;
+            length = 0.0;
+            if (entity == null)
+                return false;
+
+            Curve curve =
+                entity as Curve;
+            if (curve != null)
+            {
+                try
+                {
+                    start = curve.StartPoint;
+                    end = curve.EndPoint;
+                    length =
+                        Math.Abs(
+                            curve.GetDistanceAtParameter(
+                                curve.EndParam) -
+                            curve.GetDistanceAtParameter(
+                                curve.StartParam));
+                    if (length > 1e-9)
+                        return true;
+                }
+                catch
+                {
+                    try
+                    {
+                        start = curve.StartPoint;
+                        end = curve.EndPoint;
+                        length =
+                            start.DistanceTo(end);
+                        return length > 1e-9;
+                    }
+                    catch { }
+                }
+            }
+
+            FeatureLine featureLine =
+                entity as FeatureLine;
+            if (featureLine != null)
+            {
+                try
+                {
+                    Point3dCollection points =
+                        featureLine.GetPoints(
+                            FeatureLinePointType.AllPoints);
+                    if (points == null ||
+                        points.Count < 2)
+                        return false;
+
+                    start = points[0];
+                    end =
+                        points[
+                            points.Count - 1];
+
+                    try
+                    {
+                        System.Reflection.PropertyInfo property =
+                            featureLine.GetType()
+                                .GetProperty(
+                                    "Length2D",
+                                    System.Reflection.BindingFlags.Public |
+                                    System.Reflection.BindingFlags.Instance);
+                        if (property != null &&
+                            property.CanRead)
+                        {
+                            length =
+                                Convert.ToDouble(
+                                    property.GetValue(
+                                        featureLine,
+                                        null),
+                                    CultureInfo.InvariantCulture);
+                        }
+                    }
+                    catch { }
+
+                    if (length <= 1e-9)
+                    {
+                        for (int index = 1;
+                             index < points.Count;
+                             index++)
+                        {
+                            length +=
+                                points[index - 1]
+                                    .DistanceTo(
+                                        points[index]);
+                        }
+                    }
+
+                    return length > 1e-9;
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
+        private static string BellmouthGeometryKey(
+            Point3d first,
+            Point3d second,
+            double length)
+        {
+            string a =
+                PointKey(first);
+            string b =
+                PointKey(second);
+            if (string.Compare(
+                    a,
+                    b,
+                    StringComparison.OrdinalIgnoreCase) > 0)
+            {
+                string swap = a;
+                a = b;
+                b = swap;
+            }
+
+            return a + "|" +
+                   b + "|" +
+                   Math.Round(
+                       length,
+                       3)
+                       .ToString(
+                           "0.000",
+                           CultureInfo.InvariantCulture);
+        }
+
+        private static string PointKey(
+            Point3d point)
+        {
+            return
+                Math.Round(
+                    point.X,
+                    3)
+                    .ToString(
+                        "0.000",
+                        CultureInfo.InvariantCulture) +
+                "," +
+                Math.Round(
+                    point.Y,
+                    3)
+                    .ToString(
+                        "0.000",
+                        CultureInfo.InvariantCulture) +
+                "," +
+                Math.Round(
+                    point.Z,
+                    3)
+                    .ToString(
+                        "0.000",
+                        CultureInfo.InvariantCulture);
+        }
+
         private static string JoinCodes(CorridorCodeCollection codes)
         {
             if (codes == null) return string.Empty;
@@ -685,6 +1042,7 @@ namespace CETools.Civil3D
             internal double CutVolume { get; set; }
             internal double FillVolume { get; set; }
             internal double KerbLength { get; set; }
+            internal double JunctionBellmouthLength { get; set; }
             internal double RoadSurfaceArea { get; set; }
             internal double SidewalkArea { get; set; }
             internal double SideSlopeArea { get; set; }

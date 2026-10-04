@@ -207,6 +207,8 @@ namespace CETools.Civil3D
             model.AddChoice("BranchLabelSide", "Layers and Annotation", "Branch-label offset side", settings.BranchLabelSide, "Place every branch name above, below, or alternate sides while keeping it clear of the alignment.", new[] { "Alternating", "Above", "Below" });
             model.AddPositiveDouble("BranchLabelAboveOffset", "Layers and Annotation", "Above offset distance (paper mm)", settings.BranchLabelAboveOffset, "Move labels placed above the pipe this perpendicular paper distance from the pipe centreline.");
             model.AddPositiveDouble("BranchLabelBelowOffset", "Layers and Annotation", "Below offset distance (paper mm)", settings.BranchLabelBelowOffset, "Move labels placed below the pipe this perpendicular paper distance from the pipe centreline.");
+            model.AddPositiveDouble("BranchLabelLongSectionLength", "Layers and Annotation", "Long straight section threshold (m)", settings.BranchLabelLongSectionLength, "Every straight branch run gets one centred BRANCH name. Runs longer than this also receive repeated names at pipe centres.");
+            model.AddChoice("BranchLabelLongSectionFrequency", "Layers and Annotation", "Long-section repeat frequency", settings.BranchLabelLongSectionFrequency, "For long straight runs, add extra BRANCH names at every pipe centre or every second pipe centre.", new[] { "Every pipe", "Every second pipe" });
             model.AddPositiveInteger("ProfileColumns", "Profile View Layout", "Profile views per row", settings.ProfileColumns, "Number of generated views before wrapping to the next row.");
             model.AddPositiveDouble("ProfileHorizontalSpacing", "Profile View Layout", "Horizontal spacing", settings.ProfileHorizontalSpacing, "Drawing-unit spacing between profile-view columns.");
             model.AddPositiveDouble("ProfileVerticalSpacing", "Profile View Layout", "Vertical spacing", settings.ProfileVerticalSpacing, "Drawing-unit spacing between profile-view rows.");
@@ -226,6 +228,8 @@ namespace CETools.Civil3D
             settings.BranchLabelSide = model.Text("BranchLabelSide");
             settings.BranchLabelAboveOffset = model.Double("BranchLabelAboveOffset", settings.BranchLabelAboveOffset);
             settings.BranchLabelBelowOffset = model.Double("BranchLabelBelowOffset", settings.BranchLabelBelowOffset);
+            settings.BranchLabelLongSectionLength = model.Double("BranchLabelLongSectionLength", settings.BranchLabelLongSectionLength);
+            settings.BranchLabelLongSectionFrequency = model.Text("BranchLabelLongSectionFrequency");
             settings.ProfileColumns = model.Integer("ProfileColumns", settings.ProfileColumns);
             settings.ProfileHorizontalSpacing = model.Double("ProfileHorizontalSpacing", settings.ProfileHorizontalSpacing);
             settings.ProfileVerticalSpacing = model.Double("ProfileVerticalSpacing", settings.ProfileVerticalSpacing);
@@ -2186,6 +2190,8 @@ namespace CETools.Civil3D
         public string BranchLabelSide { get; set; } = "Alternating";
         public double BranchLabelAboveOffset { get; set; } = 10.0;
         public double BranchLabelBelowOffset { get; set; } = 10.0;
+        public double BranchLabelLongSectionLength { get; set; } = 50.0;
+        public string BranchLabelLongSectionFrequency { get; set; } = "Every pipe";
         public string ProfileLayoutMode { get; set; } = "Vertical - Branch 1 at top";
         public int ProfileColumns { get; set; } = 1;
         public double ProfileHorizontalSpacing { get; set; } = 250.0;
@@ -2257,6 +2263,8 @@ namespace CETools.Civil3D
                     Value("BranchLabelSide", BranchLabelSide),
                     Value("BranchLabelAboveOffset", BranchLabelAboveOffset.ToString("R", CultureInfo.InvariantCulture)),
                     Value("BranchLabelBelowOffset", BranchLabelBelowOffset.ToString("R", CultureInfo.InvariantCulture)),
+                    Value("BranchLabelLongSectionLength", BranchLabelLongSectionLength.ToString("R", CultureInfo.InvariantCulture)),
+                    Value("BranchLabelLongSectionFrequency", BranchLabelLongSectionFrequency),
                     Value("ProfileColumns", ProfileColumns.ToString(CultureInfo.InvariantCulture)),
                     Value("ProfileHorizontalSpacing", ProfileHorizontalSpacing.ToString("R", CultureInfo.InvariantCulture)),
                     Value("ProfileVerticalSpacing", ProfileVerticalSpacing.ToString("R", CultureInfo.InvariantCulture)));
@@ -2293,6 +2301,19 @@ namespace CETools.Civil3D
                 double offset;
                 if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out offset) && offset > 0.0)
                     settings.BranchLabelBelowOffset = offset;
+            }
+            else if (key == "BranchLabelLongSectionLength")
+            {
+                double spacing;
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && spacing > 0.0)
+                    settings.BranchLabelLongSectionLength = spacing;
+            }
+            else if (key == "BranchLabelLongSectionFrequency")
+            {
+                settings.BranchLabelLongSectionFrequency =
+                    string.Equals(value, "Every second pipe", StringComparison.OrdinalIgnoreCase)
+                        ? "Every second pipe"
+                        : "Every pipe";
             }
             else if (key == "LabelHeight")
             {

@@ -82,6 +82,9 @@ jobs:
       - name: Validate October 4 road corridor completion
         run: python3 scripts/Validate-October04RoadCorridorCompletion.py
 
+      - name: Validate October 4 table export bellmouth and sewer labels
+        run: python3 scripts/Validate-October04TableExportBellmouthSewerLabels.py
+
       - name: Validate dynamic corridor annotation completion
         run: python3 scripts/Validate-September15CorridorAnnotationCompletion.py
 

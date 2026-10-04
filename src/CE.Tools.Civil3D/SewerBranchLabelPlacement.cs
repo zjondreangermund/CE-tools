@@ -39,70 +39,389 @@ namespace CETools.Civil3D
         internal static IReadOnlyList<Placement> BuildPlacements(
             IReadOnlyList<Point3d> points)
         {
-            var result = new List<Placement>();
-            if (points == null || points.Count < 2)
-            {
-                return result;
-            }
+            return BuildPlacements(
+                points,
+                RepeatSpacing,
+                "Every pipe");
+        }
 
-            var segmentLengths = new double[points.Count - 1];
+        internal static IReadOnlyList<Placement> BuildPlacements(
+            IReadOnlyList<Point3d> points,
+            double longStraightSectionLength,
+            string longSectionFrequency)
+        {
+            var result = new List<Placement>();
+            if (points == null ||
+                points.Count < 2)
+                return result;
+
+            var segmentLengths =
+                new double[points.Count - 1];
+            var segmentAngles =
+                new double[points.Count - 1];
+            var cumulative =
+                new double[points.Count];
+
             double totalLength = 0.0;
-            for (int index = 0; index < points.Count - 1; index++)
+            for (int index = 0;
+                 index < points.Count - 1;
+                 index++)
             {
-                double length = points[index].DistanceTo(points[index + 1]);
-                segmentLengths[index] = length;
+                double length =
+                    points[index]
+                        .DistanceTo(
+                            points[index + 1]);
+                segmentLengths[index] =
+                    length;
+                segmentAngles[index] =
+                    length <= GeometryTolerance
+                        ? double.NaN
+                        : Math.Atan2(
+                            points[index + 1].Y -
+                                points[index].Y,
+                            points[index + 1].X -
+                                points[index].X);
                 totalLength += length;
+                cumulative[index + 1] =
+                    totalLength;
             }
 
             if (totalLength <= GeometryTolerance)
-            {
                 return result;
-            }
 
-            int labelCount = Math.Max(1, Math.Min(
-                MaximumLabelsPerBranch,
-                (int)Math.Ceiling(totalLength / RepeatSpacing)));
+            double longThreshold =
+                Math.Max(
+                    GeometryTolerance,
+                    longStraightSectionLength <=
+                        GeometryTolerance
+                        ? RepeatSpacing
+                        : longStraightSectionLength);
+            bool everySecondPipe =
+                string.Equals(
+                    longSectionFrequency,
+                    "Every second pipe",
+                    StringComparison.OrdinalIgnoreCase);
 
-            // Put labels at real pipe/tangent midpoints. Equal-distance points
-            // along the complete branch can fall on a bend or immediately next
-            // to a junction, which makes the name appear off-centre.
-            var candidates = new List<PlacementCandidate>();
-            double travelled = 0.0;
-            for (int index = 0; index < segmentLengths.Length; index++)
-            {
-                double length = segmentLengths[index];
-                if (length > GeometryTolerance)
-                {
-                    candidates.Add(new PlacementCandidate(
-                        length,
-                        travelled + (length * 0.5)));
-                }
-                travelled += length;
-            }
-            foreach (PlacementCandidate candidate in candidates
-                .OrderByDescending(item => item.Length)
-                .Take(Math.Min(labelCount, candidates.Count))
-                .OrderBy(item => item.Distance))
-            {
-                result.Add(PlacementAtDistance(
-                    points,
+            List<StraightRun> runs =
+                BuildStraightRuns(
                     segmentLengths,
-                    candidate.Distance));
+                    segmentAngles,
+                    cumulative);
+
+            foreach (StraightRun run in runs)
+            {
+                if (result.Count >=
+                    MaximumLabelsPerBranch)
+                    break;
+
+                // Every straight branch section receives one name at the
+                // geometric centre of the complete straight run, not merely
+                // at the midpoint of whichever pipe happens to be longest.
+                double runCentreDistance =
+                    run.StartDistance +
+                    (run.Length * 0.5);
+                AddUniquePlacement(
+                    result,
+                    PlacementAtDistance(
+                        points,
+                        segmentLengths,
+                        runCentreDistance));
+
+                if (run.Length <=
+                    longThreshold)
+                    continue;
+
+                // Long straight runs receive extra names over pipe centres.
+                // The user can choose every pipe or every second pipe to reduce
+                // annotation density while the centre-of-run label remains.
+                int stride =
+                    everySecondPipe
+                        ? 2
+                        : 1;
+                int ordinal = 0;
+                for (int segmentIndex =
+                         run.StartSegment;
+                     segmentIndex <=
+                         run.EndSegment;
+                     segmentIndex++)
+                {
+                    if (segmentLengths[
+                            segmentIndex] <=
+                        GeometryTolerance)
+                        continue;
+
+                    if ((ordinal % stride) == 0)
+                    {
+                        double pipeCentreDistance =
+                            cumulative[
+                                segmentIndex] +
+                            (segmentLengths[
+                                segmentIndex] *
+                             0.5);
+                        AddUniquePlacement(
+                            result,
+                            PlacementAtDistance(
+                                points,
+                                segmentLengths,
+                                pipeCentreDistance));
+                        if (result.Count >=
+                            MaximumLabelsPerBranch)
+                            break;
+                    }
+                    ordinal++;
+                }
             }
 
-            return result;
+            return result
+                .OrderBy(
+                    item =>
+                        DistanceAlongPlan(
+                            points,
+                            item.Point))
+                .Take(
+                    MaximumLabelsPerBranch)
+                .ToList();
         }
 
-        private sealed class PlacementCandidate
+        private static List<StraightRun> BuildStraightRuns(
+            IReadOnlyList<double> lengths,
+            IReadOnlyList<double> angles,
+            IReadOnlyList<double> cumulative)
         {
-            internal PlacementCandidate(double length, double distance)
+            var runs =
+                new List<StraightRun>();
+            if (lengths == null ||
+                angles == null ||
+                cumulative == null)
+                return runs;
+
+            int index = 0;
+            while (index < lengths.Count)
             {
-                Length = length;
-                Distance = distance;
+                while (index < lengths.Count &&
+                       lengths[index] <=
+                           GeometryTolerance)
+                    index++;
+                if (index >= lengths.Count)
+                    break;
+
+                int start = index;
+                int end = index;
+                double referenceAngle =
+                    angles[index];
+
+                while (end + 1 <
+                       lengths.Count)
+                {
+                    int next =
+                        end + 1;
+                    if (lengths[next] <=
+                        GeometryTolerance)
+                    {
+                        end = next;
+                        continue;
+                    }
+
+                    if (!SameStraightDirection(
+                            referenceAngle,
+                            angles[next]))
+                        break;
+
+                    // Keep the run direction stable while absorbing very small
+                    // survey/Civil 3D coordinate noise along a nominally
+                    // straight branch.
+                    referenceAngle =
+                        MeanDirection(
+                            referenceAngle,
+                            angles[next]);
+                    end = next;
+                }
+
+                double startDistance =
+                    cumulative[start];
+                double endDistance =
+                    cumulative[
+                        Math.Min(
+                            end + 1,
+                            cumulative.Count - 1)];
+                double length =
+                    Math.Max(
+                        0.0,
+                        endDistance -
+                        startDistance);
+
+                if (length >
+                    GeometryTolerance)
+                {
+                    runs.Add(
+                        new StraightRun(
+                            start,
+                            end,
+                            startDistance,
+                            length));
+                }
+
+                index =
+                    end + 1;
             }
 
+            return runs;
+        }
+
+        private static bool SameStraightDirection(
+            double first,
+            double second)
+        {
+            if (double.IsNaN(first) ||
+                double.IsNaN(second))
+                return false;
+
+            double delta =
+                second - first;
+            while (delta > Math.PI)
+                delta -=
+                    Math.PI * 2.0;
+            while (delta < -Math.PI)
+                delta +=
+                    Math.PI * 2.0;
+
+            const double straightToleranceRadians =
+                Math.PI / 90.0; // 2 degrees.
+            return Math.Abs(delta) <=
+                   straightToleranceRadians;
+        }
+
+        private static double MeanDirection(
+            double first,
+            double second)
+        {
+            double x =
+                Math.Cos(first) +
+                Math.Cos(second);
+            double y =
+                Math.Sin(first) +
+                Math.Sin(second);
+            return Math.Abs(x) <=
+                       GeometryTolerance &&
+                   Math.Abs(y) <=
+                       GeometryTolerance
+                ? first
+                : Math.Atan2(y, x);
+        }
+
+        private static void AddUniquePlacement(
+            ICollection<Placement> placements,
+            Placement candidate)
+        {
+            if (placements == null ||
+                candidate == null)
+                return;
+
+            const double duplicateTolerance =
+                0.01;
+            if (placements.Any(item =>
+                    item != null &&
+                    item.Point.DistanceTo(
+                        candidate.Point) <=
+                    duplicateTolerance))
+                return;
+
+            placements.Add(candidate);
+        }
+
+        private static double DistanceAlongPlan(
+            IReadOnlyList<Point3d> points,
+            Point3d target)
+        {
+            if (points == null ||
+                points.Count < 2)
+                return 0.0;
+
+            double travelled = 0.0;
+            double bestDistance =
+                double.MaxValue;
+            double bestAlong = 0.0;
+
+            for (int index = 0;
+                 index < points.Count - 1;
+                 index++)
+            {
+                Point3d a =
+                    points[index];
+                Point3d b =
+                    points[index + 1];
+                Vector2d vector =
+                    new Vector2d(
+                        b.X - a.X,
+                        b.Y - a.Y);
+                double length =
+                    vector.Length;
+                if (length <=
+                    GeometryTolerance)
+                    continue;
+
+                Vector2d unit =
+                    vector.GetNormal();
+                Vector2d toTarget =
+                    new Vector2d(
+                        target.X - a.X,
+                        target.Y - a.Y);
+                double local =
+                    Math.Max(
+                        0.0,
+                        Math.Min(
+                            length,
+                            toTarget.DotProduct(
+                                unit)));
+                Point2d projected =
+                    new Point2d(
+                        a.X +
+                            unit.X * local,
+                        a.Y +
+                            unit.Y * local);
+                double distance =
+                    projected.GetDistanceTo(
+                        new Point2d(
+                            target.X,
+                            target.Y));
+                if (distance <
+                    bestDistance)
+                {
+                    bestDistance =
+                        distance;
+                    bestAlong =
+                        travelled +
+                        local;
+                }
+                travelled +=
+                    length;
+            }
+
+            return bestAlong;
+        }
+
+        private sealed class StraightRun
+        {
+            internal StraightRun(
+                int startSegment,
+                int endSegment,
+                double startDistance,
+                double length)
+            {
+                StartSegment =
+                    startSegment;
+                EndSegment =
+                    endSegment;
+                StartDistance =
+                    startDistance;
+                Length =
+                    length;
+            }
+
+            internal int StartSegment { get; private set; }
+            internal int EndSegment { get; private set; }
+            internal double StartDistance { get; private set; }
             internal double Length { get; private set; }
-            internal double Distance { get; private set; }
         }
 
         internal static Point3d OffsetPoint(
