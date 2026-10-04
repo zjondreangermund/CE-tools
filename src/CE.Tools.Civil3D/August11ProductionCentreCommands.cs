@@ -93,7 +93,7 @@ namespace CETools.Civil3D
                 Action("CREATE - Project Metadata Refresh", "CE_PROJECTMETADATAREFRESH", "Synchronize project metadata into linked project outputs.", "03 CREATE"),
                 Action("COMPLETE - Drawing Register", "CE_DRAWINGREGISTEREDIT", "Review drawing numbers, titles, revisions and issue information.", "05 COMPLETE"),
                 Action("DELIVER - Drawing / Client Books", "CE_BOOKTOOLS", "Create drawing books, client books and indexes.", "06 DELIVER"),
-                Action("▶ RUN COMPLETE PROJECT PRODUCTION", "CE_PROJECTCOORDINATION", "Start the guided project-production path.", "99 RUN COMPLETE")
+                Action("▶ RUN COMPLETE PROJECT PRODUCTION", "CE_PROJECTWORKFLOW", "Open one ordered, non-duplicated project workflow from setup through delivery.", "00 COMPLETE WORKFLOW")
             });
         }
 
@@ -110,7 +110,7 @@ namespace CETools.Civil3D
                 Action("COMPLETE - Vertex Setting-Out", "CE_VERTEXSETTINGOUT", "Generate linked COGO/MText/MLeader setting-out from multiple design strings.", "05 COMPLETE"),
                 Action("Grid Setting-Out", "CE_GRIDSETTINGOUT", "Generate linked grid/perimeter setting-out points.", "05 COMPLETE"),
                 Action("DELIVER - Survey Comparison / Export", "CE_SURVEYCOMPARETOOLS", "Review corrections and export survey data.", "06 DELIVER"),
-                Action("▶ RUN COMPLETE SURVEY PRODUCTION", "CE_SURVEYLOCATION", "Start at survey location / coordinate system.", "99 RUN COMPLETE")
+                Action("▶ RUN COMPLETE SURVEY PRODUCTION", "CE_SURVEYWORKFLOW", "Open one ordered, non-duplicated survey workflow from coordinate system through delivery.", "00 COMPLETE WORKFLOW")
             });
         }
 
@@ -131,7 +131,8 @@ namespace CETools.Civil3D
                 Action("Platform Names / Register", "CE_PLATFORMTABLE", "Linked platform names, elevations and register.", "05 COMPLETE"),
                 Action("DELIVER - Cut / Fill", "CE_PLATFORMCUTFILL", "Linked NG versus design quantities.", "06 DELIVER"),
                 Action("Drawings / Sections", "CE_PLATFORMDRAWINGS", "Create platform layouts and section source lines.", "06 DELIVER"),
-                Action("▶ RUN COMPLETE PLATFORM PRODUCTION", "CE_PLATFORMTOOLS", "Open the complete linked platform workflow.", "99 RUN COMPLETE")
+                Action("Merge road / grading outputs", "CE_ROADSURFACEMERGE", "Create CE Top All, CE Bottom All or CE Final Surface without changing numbered source surfaces.", "05 COMPLETE"),
+                Action("▶ RUN COMPLETE PLATFORM PRODUCTION", "CE_PLATFORMWORKFLOW", "Open one ordered, non-duplicated platform workflow from boundaries through drawings.", "00 COMPLETE WORKFLOW")
             });
         }
 
@@ -148,7 +149,7 @@ namespace CETools.Civil3D
         public void StormwaterProduction()
         {
             August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Stormwater");
-            RunCentre("STORMWATER PRODUCTION", "Route → network → branches → hydraulic/design checks → profiles → setting-out/BOQ → drawings.", UtilityActions("Stormwater", "CE_SWSETTINGS", "CE_SWSEQ", "CE_SWALIGN", "CE_SWPROFILE", "CE_BOQSTORM", "CE_REPORTSTORM", "CE_SWTOOLS"));
+            RunCentre("STORMWATER PRODUCTION", "Route → network → branches → hydraulic/design checks → profiles → setting-out/BOQ → drawings.", UtilityActions("Stormwater", "CE_SWSETTINGS", "CE_SWSEQ", "CE_SWALIGN", "CE_SWPROFILE", "CE_BOQSTORM", "CE_REPORTSTORM", "CE_STORMWATERWORKFLOW"));
         }
 
         [CommandMethod("CE_TOOLS", "CE_SEWERPRODUCTIONCENTRE", CommandFlags.Modal)]
@@ -174,7 +175,7 @@ namespace CETools.Civil3D
                 Action("Setting-Out", "CE_VERTEXSETTINGOUT", "Linked setting-out for design geometry.", "05 COMPLETE"),
                 Action("BOQ", "CE_BOQSEWER", "Create linked sewer quantities.", "05 COMPLETE"),
                 Action("DELIVER - Sewer Report", "CE_REPORTSEWER", "Generate sewer design report/drawing handoff.", "06 DELIVER"),
-                Action("▶ RUN COMPLETE SEWER PRODUCTION", "CE_SEWTOOLS", "Open the ordered sewer production workflow.", "99 RUN COMPLETE")
+                Action("▶ RUN COMPLETE SEWER PRODUCTION", "CE_SEWERWORKFLOW", "Open one ordered, non-duplicated sewer workflow from route/parts through delivery.", "00 COMPLETE WORKFLOW")
             });
         }
 
@@ -182,7 +183,7 @@ namespace CETools.Civil3D
         public void WaterProduction()
         {
             August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Water");
-            RunCentre("WATER PRODUCTION", "Route → pressure network → sequence/design → profiles/assets → quantities → delivery.", UtilityActions("Water", "CE_WATERSETTINGS", "CE_WATERSEQ", "CE_WATERALIGN", "CE_WATERPROFILE", "CE_BOQWATER", "CE_REPORTWATER", "CE_WATERTOOLS"));
+            RunCentre("WATER PRODUCTION", "Route → pressure network → sequence/design → profiles/assets → quantities → delivery.", UtilityActions("Water", "CE_WATERSETTINGS", "CE_WATERSEQ", "CE_WATERALIGN", "CE_WATERPROFILE", "CE_BOQWATER", "CE_REPORTWATER", "CE_WATERWORKFLOW"));
         }
 
         [CommandMethod("CE_TOOLS", "CE_BULKWATERPRODUCTIONCENTRE", CommandFlags.Modal)]
@@ -198,7 +199,7 @@ namespace CETools.Civil3D
                 Action("COMPLETE - Setting-Out", "CE_VERTEXSETTINGOUT", "Generate linked setting-out.", "05 COMPLETE"),
                 Action("BOQ", "CE_BOQBULKWATER", "Create linked bulk-water quantities.", "05 COMPLETE"),
                 Action("DELIVER - Bulk Water Report", "CE_REPORTBULKWATER", "Generate bulk-water design report.", "06 DELIVER"),
-                Action("▶ RUN COMPLETE BULK WATER PRODUCTION", "CE_NETWORKMULTI", "Open multi-network production and continuation tools.", "99 RUN COMPLETE")
+                Action("▶ RUN COMPLETE BULK WATER PRODUCTION", "CE_BULKWATERWORKFLOW", "Open one ordered, non-duplicated Bulk Water workflow from route/network through delivery.", "00 COMPLETE WORKFLOW")
             });
         }
 
@@ -216,7 +217,7 @@ namespace CETools.Civil3D
                 Action("COMPLETE - Skew / Width Validation", "CE_PKSKVALIDATE", "Check perpendicular bay width and skew.", "05 COMPLETE"),
                 Action("Setting-Out", "CE_GRIDSETTINGOUT", "Grid/perimeter setting-out where applicable.", "05 COMPLETE"),
                 Action("DELIVER - Parking Quantities", "CE_STANDARDQTYTOOLS", "Create parking/layerwork quantity outputs.", "06 DELIVER"),
-                Action("▶ RUN COMPLETE PARKING PRODUCTION", "CE_PKTOOLS", "Open parking tools and continue through the production stages.", "99 RUN COMPLETE")
+                Action("▶ RUN COMPLETE PARKING PRODUCTION", "CE_PARKINGWORKFLOW", "Open one ordered, non-duplicated Parking workflow from boundary through quantities.", "00 COMPLETE WORKFLOW")
             });
         }
 
@@ -234,7 +235,7 @@ namespace CETools.Civil3D
                 Action("Affected Property / Flood Results", "CE_FLOODRESULTTOOLS", "Review imported specialist flood results and affected properties.", "04 DESIGN"),
                 Action("COMPLETE - Culvert Review", "CE_CULVERTREVIEW", "Review candidate crossings/culvert requirements.", "05 COMPLETE"),
                 Action("DELIVER - Flood Report", "CE_REPORTFULL", "Generate project/discipline report output.", "06 DELIVER"),
-                Action("▶ RUN COMPLETE FLOOD PRODUCTION", "CE_CATCHMENTQUICK", "Start the guided flood production path.", "99 RUN COMPLETE")
+                Action("▶ RUN COMPLETE FLOOD PRODUCTION", "CE_FLOODWORKFLOW", "Open one ordered, non-duplicated Flood workflow from terrain through delivery.", "00 COMPLETE WORKFLOW")
             });
         }
 

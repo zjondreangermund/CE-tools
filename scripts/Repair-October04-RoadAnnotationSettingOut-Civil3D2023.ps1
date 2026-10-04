@@ -1,8 +1,10 @@
 [CmdletBinding()]
 param([Parameter(Mandatory=$true)][string]$RepoRoot)
 $ErrorActionPreference = 'Stop'
-$path = Join-Path $RepoRoot 'src/CE.Tools.Civil3D/VertexSettingOutCommands.cs'
-$text = [IO.File]::ReadAllText($path) -replace "`r?`n", "`n"
+$root = (Resolve-Path -LiteralPath (($RepoRoot -as [string]).Trim().Trim('"'))).ProviderPath
+$filePath = [IO.Path]::Combine($root, 'src', 'CE.Tools.Civil3D', 'VertexSettingOutCommands.cs')
+if (-not [IO.File]::Exists($filePath)) { throw "Road setting-out source is missing: $filePath" }
+$text = [IO.File]::ReadAllText([string]$filePath) -replace "`r?`n", "`n"
 
 # Keep the historical refresh/deletion-suppression logic. Restore only the new
 # owning-road map and layer overrides after older staged repairs replace methods.
@@ -38,5 +40,5 @@ $text = $text.Substring(0, $start) + $body + $text.Substring($end)
 foreach ($required in @('ROADMAP=', 'POINTLAYER=', 'LEADERLAYER=', 'ARROWSIZE=', 'CreateForJunctions(', 'ReplaceSelectedGroups(')) {
     if (-not $text.Contains($required)) { throw "Road/junction setting-out feature lost during staging: $required" }
 }
-[IO.File]::WriteAllText($path, ($text -replace "`r?`n", "`r`n"), (New-Object Text.UTF8Encoding($false)))
+[IO.File]::WriteAllText([string]$filePath, ($text -replace "`r?`n", "`r`n"), (New-Object Text.UTF8Encoding($false)))
 Write-Host 'Road/junction owning-road sequence and layer refresh settings preserved.'

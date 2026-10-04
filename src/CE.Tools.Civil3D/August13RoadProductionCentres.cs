@@ -65,6 +65,7 @@ namespace CETools.Civil3D
     A("CE-Split Road Profile Views","CE_ROADPROFILEVIEWSPLIT","Create 750 m station-section profile views or a specified section length.","02 Profiles"),
     A("CE-Road Assemblies","CE_ASSEMBLYTOOLS","Create/select road assemblies.","03 Corridors"),
     A("CE-Road Corridors","CE_ROADCORRIDORFULL","Create/complete road corridors and final CE-TOP/CE-BOTTOM outputs.","03 Corridors"),
+    A("CE-Road Surface Outputs","CE_ROADSURFACEMERGE","Merge all road TOP surfaces to CE Top All, all road BOTTOM surfaces to CE Bottom All, or selected natural ground plus road TOP/grading surfaces to CE Final Surface.","03 Corridors"),
     A("CE-Corridor Feature Lines","CE_CORRIDORFEATURELINES","Create individual feature lines from selected corridor centreline/edge/kerb/sidewalk/shoulder/toe codes or all corridor feature lines.","03 Corridors"),
     A("CE-Split Corridors","CE_CORSPLIT","Split corridor regions at specified stations.","03 Corridors"),
     A("CE-Rebuild Corridors","CE_CORREBUILD","Rebuild corridor model data.","03 Corridors"),
