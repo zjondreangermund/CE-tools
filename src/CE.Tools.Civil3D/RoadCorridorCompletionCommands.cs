@@ -1790,6 +1790,37 @@ namespace CETools.Civil3D
             }
             if (surface == null) { result.Warnings++; return null; }
 
+            // A CorridorSurface can exist in the collection while its build
+            // switch is off.  That is the state that previously produced
+            // BOTTOM-RD-* names in the corridor settings but no usable Civil 3D
+            // surface/SurfaceId for BOQ earthworks.
+            bool bottom =
+                name.IndexOf(
+                    "BOTTOM",
+                    StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf(
+                    "DATUM",
+                    StringComparison.OrdinalIgnoreCase) >= 0;
+            if (TrySetBoolean(
+                    surface,
+                    true,
+                    "IsBuild",
+                    "Build",
+                    "Enabled"))
+                result.Surfaces++;
+            TrySetEnum(
+                surface,
+                bottom
+                    ? new[] { "BottomLinks", "Bottom" }
+                    : new[] { "TopLinks", "Top" },
+                "OverhangCorrection");
+            TrySetString(
+                surface,
+                bottom
+                    ? "CE road BOTTOM corridor surface | Datum/Subgrade links | Build enabled"
+                    : "CE road TOP corridor surface | Top/Pave links | Build enabled",
+                "Description");
+
             foreach (string code in codes ?? Enumerable.Empty<string>())
             {
                 // Civil 3D 2023 drawings expose both one- and two-argument
