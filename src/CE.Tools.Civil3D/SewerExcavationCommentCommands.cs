@@ -50,12 +50,6 @@ namespace CETools.Civil3D
                 RegexOptions.IgnoreCase |
                 RegexOptions.CultureInvariant);
 
-        [CommandMethod("CE_TOOLS", "CE_BOQSEWER", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
-        public void SewerBoq()
-        {
-            Build();
-        }
-
         [CommandMethod("CE_TOOLS", "CE_SEWEREXCAVATION", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void Build()
         {
@@ -150,6 +144,108 @@ namespace CETools.Civil3D
                     "\nCE_SEWEREXCAVATION failed. No linked table was committed. {0}",
                     exception.Message);
             }
+        }
+
+        internal static void ExportBoq(
+            Document document)
+        {
+            if (document == null) return;
+
+            List<ObjectId> sourceIds;
+            var scope = new PromptKeywordOptions(
+                "\nSewer BOQ scope [AllNetworkParts/Select] <AllNetworkParts>: ")
+            {
+                AllowNone = true
+            };
+            scope.Keywords.Add("AllNetworkParts");
+            scope.Keywords.Add("Select");
+            PromptResult scopeResult =
+                document.Editor.GetKeywords(scope);
+            if (scopeResult.Status == PromptStatus.Cancel)
+                return;
+
+            bool selectManually =
+                scopeResult.Status == PromptStatus.OK &&
+                string.Equals(
+                    scopeResult.StringResult,
+                    "Select",
+                    StringComparison.OrdinalIgnoreCase);
+
+            if (selectManually)
+            {
+                PromptSelectionResult selection =
+                    GetSelection(
+                        document.Editor,
+                        "\nSelect multiple sewer pipes / structures for the BOQ: ");
+                if (selection.Status != PromptStatus.OK ||
+                    selection.Value == null ||
+                    selection.Value.Count == 0)
+                    return;
+
+                sourceIds =
+                    selection.Value.GetObjectIds()
+                        .ToList();
+            }
+            else
+            {
+                sourceIds =
+                    ReadAllSupportedSewerParts(
+                        document.Database);
+                if (sourceIds.Count == 0)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_BOQSEWER: no Civil 3D sewer pipes/structures were found in model space.");
+                    return;
+                }
+            }
+
+            SewerExcavationSettings defaults =
+                SewerExcavationPreferenceStore.LoadSettings();
+            var settingsWindow =
+                new SewerExcavationSettingsWindow(
+                    defaults);
+            AcApplication.ShowModalWindow(
+                settingsWindow);
+            if (!settingsWindow.Accepted)
+                return;
+
+            SewerExcavationSettings settings =
+                settingsWindow.Settings;
+            SewerExcavationPreferenceStore.SaveSettings(
+                settings);
+
+            ExtractionResult extraction =
+                Extract(
+                    document.Database,
+                    sourceIds,
+                    settings);
+            if (extraction.Rows.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_BOQSEWER stopped. No supported sewer pipes/structures produced quantities. Rejected={0}.",
+                    extraction.Rejections.Count);
+                return;
+            }
+
+            document.Editor.WriteMessage(
+                "\nCE_BOQSEWER ready. Branches={0}; pipes={1}; structures={2}; rejected={3}; blanket fill is NET of pipe volume; fill above blanket is not reduced by pipe volume.",
+                extraction.Rows
+                    .Select(row => row.BranchName)
+                    .Where(name =>
+                        !string.IsNullOrWhiteSpace(name))
+                    .Distinct(
+                        StringComparer.OrdinalIgnoreCase)
+                    .Count(),
+                extraction.Rows.Count(row =>
+                    row.ObjectType == "Pipe"),
+                extraction.Rows.Count(row =>
+                    row.ObjectType == "Structure"),
+                extraction.Rejections.Count);
+
+            ExportReviewedQuantities(
+                document,
+                extraction,
+                settings);
         }
 
         [CommandMethod("CE_TOOLS", "CE_SEWEREXCAVATIONREFRESH", CommandFlags.Modal | CommandFlags.Redraw)]
