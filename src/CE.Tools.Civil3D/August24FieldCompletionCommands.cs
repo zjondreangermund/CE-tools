@@ -100,6 +100,7 @@ namespace CETools.Civil3D
                     A("CE-Sequence Network + Production Options", "CE_SEWSEQNETWORKPRODUCTION", "Complete-network sequencing with labels/alignments/profiles as separate production options.", "03 Sequence / production"),
                     A("CE-Sequence Selected Main + Production Options", "CE_SEWSEQMAINPRODUCTION", "Select the main route first, then choose labels/alignments/profiles separately.", "03 Sequence / production"),
                     A("CE-Create Sewer Alignments", "CE_SEWALIGN", "Create branch alignments after sequencing; kept separate from the rename transaction.", "04 Alignments / profiles"),
+                    A("CE-Sewer Branch Names - Centre Above Pipes", "CE_SEWBRANCHNAMES", "Add or refresh green Branch-x names centred on each straight branch section, rotated with the sewer run and offset above the pipes. All branches or multiple selected sewer parts are supported.", "04 Alignments / profiles"),
                     A("CE-Create Sewer Profiles", "CE_SEWPROFILE", "Create surface-linked sewer profiles after alignment review.", "04 Alignments / profiles")
                 });
         }
