@@ -15,6 +15,8 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilProfile = Autodesk.Civil.DatabaseServices.Profile;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
+using CivilAssembly = Autodesk.Civil.DatabaseServices.Assembly;
+using CivilSubassembly = Autodesk.Civil.DatabaseServices.Subassembly;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.RoadCorridorCompletionCommands))]
 
@@ -27,6 +29,8 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class RoadCorridorCompletionCommands
     {
+        private const string CompleteSelectionKey =
+            "CE_ROADCORRIDORCOMPLETE_LAST_SELECTION";
         [CommandMethod("CE_TOOLS", "CE_ROADPROFILEFULL", CommandFlags.Modal | CommandFlags.Redraw)]
         public void CreateFullProfiles()
         {
@@ -189,14 +193,25 @@ namespace CETools.Civil3D
             if (civilDocument == null) return;
 
             IList<CivilChoice> selectedCorridors = null;
-            List<CivilChoice> corridorChoices = FieldCompletionBatchUi.ReadCorridorChoices(document, civilDocument);
+            ObjectId rememberedSurfaceId;
+            IList<ObjectId> rememberedCorridorIds =
+                ReadCompleteCorridorSelection(
+                    document.Database,
+                    out rememberedSurfaceId);
+            List<CivilChoice> corridorChoices =
+                FieldCompletionBatchUi.ReadCorridorChoices(
+                    document,
+                    civilDocument);
             if (corridorChoices.Count > 0)
             {
                 selectedCorridors = FieldCompletionBatchUi.PickMultiple(
                     "CE Tools - Corridor Selection",
-                    "Select the corridors to complete. Only the selected corridors are processed.",
-                    corridorChoices);
-                if (selectedCorridors == null || selectedCorridors.Count == 0) return;
+                    "Select the corridors to complete. The previous successful selection is checked by default.",
+                    corridorChoices,
+                    rememberedCorridorIds);
+                if (selectedCorridors == null ||
+                    selectedCorridors.Count == 0)
+                    return;
             }
 
             List<CivilChoice> surfaces = ReadSurfaces(document, civilDocument);
@@ -207,10 +222,20 @@ namespace CETools.Civil3D
             }
             var surfacePicker = new CivilChoiceWindow(
                 "CE Tools - Corridor Target Surface",
-                "Select the existing-ground or target surface used for width/elevation surface targets.",
-                surfaces);
+                "Select the existing-ground or target surface used for width/elevation surface targets. The previous choice is selected by default.",
+                surfaces,
+                rememberedSurfaceId);
             AcApplication.ShowModalWindow(surfacePicker);
-            if (!surfacePicker.Accepted || surfacePicker.Selected == null) return;
+            if (!surfacePicker.Accepted ||
+                surfacePicker.Selected == null)
+                return;
+
+            WriteCompleteCorridorSelection(
+                document.Database,
+                selectedCorridors == null
+                    ? Enumerable.Empty<ObjectId>()
+                    : selectedCorridors.Select(item => item.Id),
+                surfacePicker.Selected.Id);
 
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Complete Road Corridors",
