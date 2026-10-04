@@ -72,6 +72,11 @@ namespace CETools.Civil3D
                         "Choose one existing Civil 3D alignment label set style, then apply it to every selected editable alignment in one operation.",
                         "01 Roads"),
                     new DisciplineWorkflowAction(
+                        "Road Names - Centre Above Roads",
+                        "CE_ROADNAMEANNOTATE",
+                        "Place one readable road name at the midpoint of every road alignment or multiple selected road alignments/corridors, offset above the centreline with configurable layer, paper height, colour and mask.",
+                        "01 Roads"),
+                    new DisciplineWorkflowAction(
                         "Import Road Band Set to Multiple Profile Views",
                         "CE_ROADBANDLABELS",
                         "Open the Civil 3D Profile View Properties / Bands-style batch window, choose Import band set and Show Labels, then apply it to every selected profile view. Optionally open the native Bands tab for the first view after commit.",
