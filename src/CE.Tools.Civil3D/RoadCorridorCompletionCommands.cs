@@ -251,10 +251,32 @@ namespace CETools.Civil3D
                 document.Database, civilDocument, "Profile Style", "<Use drawing default>");
             IList<string> slopeStyles = FieldCompletionBatchUi.ReadStyleChoices(
                 document.Database, civilDocument, "Slope Pattern Style", "<Use current>");
+            IList<string> codeSetStyles = FieldCompletionBatchUi.ReadStyleChoices(
+                document.Database, civilDocument, "Code Set Style", "<Use project / current>");
             model.AddChoice("ProfileStyle", "00 Selection / Output", "Design profile style",
                 profileStyles[0],
                 "Apply the selected Civil 3D profile style to non-ground road profiles used by the selected corridors.",
                 profileStyles);
+            model.AddChoice(
+                "CodeSetStyle",
+                "00 Selection / Output",
+                "Code set style",
+                codeSetStyles[0],
+                "Apply one Civil 3D code set style to the selected corridors, their regions and referenced assemblies. Use project/current keeps the configured project style.",
+                codeSetStyles);
+            model.AddChoice(
+                "BasicSidewalkSlopeMode",
+                "00 Assembly / Sidewalk",
+                "BasicSidewalk cross slope",
+                "Apply sloped sidewalk",
+                "BasicSidewalk is a stock horizontal-only subassembly. When enabled, CE Tools replaces it in the referenced road assembly with Autodesk SidewalkSlopesAndBase while preserving side, width, depth and buffer widths, then applies the requested sidewalk slope.",
+                new[] { "Apply sloped sidewalk", "Keep current" });
+            model.AddDouble(
+                "BasicSidewalkSlope",
+                "00 Assembly / Sidewalk",
+                "Sidewalk slope (%)",
+                2.0,
+                "Cross slope for upgraded BasicSidewalk components. Positive values use the stock sidewalk side/direction behavior.");
             List<string> assemblyNames = ReadAssemblyNames(document, civilDocument);
             model.AddChoice("Assembly", "00 Baseline and Region", "Assembly for missing corridor regions",
                 assemblyNames.Count == 0 ? string.Empty : assemblyNames[0],
@@ -287,6 +309,12 @@ namespace CETools.Civil3D
                     : selectedCorridors.Select(item => item.Id).ToList(),
                 CorridorLayerName = model.Text("CorridorLayer"),
                 ProfileStyleName = model.Text("ProfileStyle"),
+                CodeSetStyleName = model.Text("CodeSetStyle"),
+                ApplyBasicSidewalkSlope = string.Equals(
+                    model.Text("BasicSidewalkSlopeMode"),
+                    "Apply sloped sidewalk",
+                    StringComparison.OrdinalIgnoreCase),
+                BasicSidewalkSlopePercent = model.Double("BasicSidewalkSlope", 2.0),
                 LeftCutSlopeStyle = model.Text("LeftCutSlopeStyle"),
                 LeftFillSlopeStyle = model.Text("LeftFillSlopeStyle"),
                 RightCutSlopeStyle = model.Text("RightCutSlopeStyle"),
@@ -2438,6 +2466,9 @@ namespace CETools.Civil3D
         internal IList<ObjectId> CorridorIds { get; set; }
         internal string CorridorLayerName { get; set; }
         internal string ProfileStyleName { get; set; }
+        internal string CodeSetStyleName { get; set; }
+        internal bool ApplyBasicSidewalkSlope { get; set; }
+        internal double BasicSidewalkSlopePercent { get; set; }
         internal string LeftCutSlopeStyle { get; set; }
         internal string LeftFillSlopeStyle { get; set; }
         internal string RightCutSlopeStyle { get; set; }
