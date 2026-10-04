@@ -190,6 +190,9 @@ namespace CETools.Civil3D
                 database.TransactionManager.StartTransaction())
             {
                 int sequence = 1;
+                var usedSheetNames =
+                    new HashSet<string>(
+                        StringComparer.OrdinalIgnoreCase);
                 foreach (ObjectId id in
                     ids.Distinct())
                 {
@@ -262,9 +265,11 @@ namespace CETools.Civil3D
                             ? values[0][0]
                             : string.Empty;
                     string name =
-                        BuildSheetName(
-                            title,
-                            sequence++);
+                        UniqueSheetName(
+                            BuildSheetName(
+                                title,
+                                sequence++),
+                            usedSheetNames);
                     result.Add(
                         new TableSheet(
                             name,
@@ -663,6 +668,43 @@ namespace CETools.Civil3D
                     sequence.ToString(
                         CultureInfo.InvariantCulture);
             return name;
+        }
+
+        private static string UniqueSheetName(
+            string requested,
+            ISet<string> used)
+        {
+            string root =
+                string.IsNullOrWhiteSpace(requested)
+                    ? "Table"
+                    : requested;
+            if (used == null)
+                return root;
+
+            string candidate = root;
+            int suffix = 2;
+            while (used.Contains(candidate))
+            {
+                string suffixText =
+                    " (" +
+                    suffix.ToString(
+                        CultureInfo.InvariantCulture) +
+                    ")";
+                int maxRoot =
+                    Math.Max(
+                        1,
+                        31 - suffixText.Length);
+                candidate =
+                    (root.Length > maxRoot
+                        ? root.Substring(
+                            0,
+                            maxRoot)
+                        : root) +
+                    suffixText;
+                suffix++;
+            }
+            used.Add(candidate);
+            return candidate;
         }
 
         private static string ResolveDrawingFolder(
