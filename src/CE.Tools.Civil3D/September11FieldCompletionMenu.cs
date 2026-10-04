@@ -480,6 +480,11 @@ namespace CETools.Civil3D
                         "Repair already-created sewer branch alignments in place. The command resolves the P#.1 start, explicitly protects one-pipe/short branches from starting at a shared downstream junction, reverses incorrect directions, clears station equations and verifies 0+000.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
+                        "Sewer Branch Names - Centre Above Pipes",
+                        "CE_SEWBRANCHNAMES",
+                        "Add or refresh the green Branch-x plan names. Each straight branch run is labelled at its centre and follows the pipe direction; long sections can repeat at every pipe or every second pipe.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
                         "Link Sewer Parts to Surface / Gravity Slopes",
                         "CE_SEWLINKSURFACE",
                         "Choose AllNetworkParts or manually select sewer parts. Gravity mode keeps P#.1 at the starting minimum and later pipes at the normal minimum slope. Deep-run raising now triggers from the actual manhole rim-to-sump depth shown as D= in profile views, then lifts the connected branch toward the requested pipe-crown cover target as far as continuity, minimum cover and slope rules allow. Natural-ground and Civil 3D rule-set modes remain separate.",
