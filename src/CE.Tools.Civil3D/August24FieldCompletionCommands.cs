@@ -134,6 +134,7 @@ namespace CETools.Civil3D
                 "Road hatch, construction and elevation-link field utilities.",
                 new List<DisciplineWorkflowAction>
                 {
+                    A("CE-Road Names - Centre Above Roads", "CE_ROADNAMEANNOTATE", "Label all road alignments or multiple selected road alignments/corridors. Each road name is centred at the alignment midpoint, rotated readably and offset above the centreline.", "01 Presentation"),
                     A("CE-Hatch Road Left / Right / Both", "CE_ROADHATCHSIDES", "Create controlled road-side hatch strips from multiple polylines or alignments.", "01 Presentation"),
                     A("CE-Offset / Construction Offset", "CE_SURVEYCONSTRUCTIONOFFSET", "Normal/construction offsets with zero-fillet joins.", "02 Construction"),
                     A("CE-Centre Construction Lines", "CE_SURVEYMIDCONSTRUCTION", "Create centre construction lines within a specified maximum separation.", "02 Construction"),
