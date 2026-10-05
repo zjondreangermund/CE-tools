@@ -85,6 +85,9 @@ jobs:
       - name: Validate October 5 remaining image comments
         run: python3 scripts/Validate-October05RemainingImageComments.py
 
+      - name: Validate October 5 profile BOQ and junction follow-up
+        run: python3 scripts/Validate-October05ProfileBoqJunctionFollowup.py
+
       - name: Validate October 4 road corridor completion
         run: python3 scripts/Validate-October04RoadCorridorCompletion.py
 

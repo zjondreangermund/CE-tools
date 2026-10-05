@@ -38,7 +38,7 @@ namespace CETools.Civil3D
 
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Road Construction BOQ",
-                "Quantities are read from the current Civil 3D corridor model. Layerwork is integrated from calculated corridor shapes; road/sidewalk/side-slope areas are integrated from coded links; kerb length is read from coded corridor feature lines.");
+                "Quantities are read from the current Civil 3D corridor model. Layerwork is integrated from calculated corridor shapes; road/shoulder/sidewalk/side-slope areas are integrated from coded links; kerb length is read from coded corridor feature lines.");
             model.AddDouble(
                 "UnitsPerMetre",
                 "01 Units",
@@ -232,6 +232,14 @@ namespace CETools.Civil3D
                 "m2",
                 totals.RoadSurfaceArea,
                 "Road/top/pave/lane coded corridor links"));
+            if (totals.ShoulderArea > 1e-9)
+            {
+                rows.Add(Row(
+                    "Road shoulders",
+                    "m2",
+                    totals.ShoulderArea,
+                    "Shoulder/shld/verge/hard-strip coded corridor links"));
+            }
             rows.Add(Row(
                 "Sidewalks",
                 "m2",
@@ -515,6 +523,9 @@ namespace CETools.Civil3D
                         totals.RoadSurfaceArea +=
                             0.5 * (first.RoadSurfaceWidth + second.RoadSurfaceWidth) *
                             delta / areaDivisor;
+                        totals.ShoulderArea +=
+                            0.5 * (first.ShoulderWidth + second.ShoulderWidth) *
+                            delta / areaDivisor;
                         totals.SidewalkArea +=
                             0.5 * (first.SidewalkWidth + second.SidewalkWidth) *
                             delta / areaDivisor;
@@ -550,7 +561,9 @@ namespace CETools.Civil3D
                     double width = LinkCrossSectionLength(link);
                     if (width <= 1e-9) continue;
                     LinkQuantityClass quantityClass = ClassifyLink(link.CorridorCodes);
-                    if (quantityClass == LinkQuantityClass.Sidewalk)
+                    if (quantityClass == LinkQuantityClass.Shoulder)
+                        snapshot.ShoulderWidth += width;
+                    else if (quantityClass == LinkQuantityClass.Sidewalk)
                         snapshot.SidewalkWidth += width;
                     else if (quantityClass == LinkQuantityClass.SideSlope)
                         snapshot.SideSlopeWidth += width;
@@ -612,6 +625,8 @@ namespace CETools.Civil3D
         private static LinkQuantityClass ClassifyLink(CorridorCodeCollection codes)
         {
             string text = JoinCodes(codes);
+            if (ContainsAny(text, "SHOULDER", "SHLD", "VERGE", "HARDSTRIP", "HARD STRIP"))
+                return LinkQuantityClass.Shoulder;
             if (ContainsAny(text, "SIDEWALK", "WALK", "FOOTWAY"))
                 return LinkQuantityClass.Sidewalk;
             if (ContainsAny(text, "DAYLIGHT", "SLOPE", "BATTER"))
@@ -1094,6 +1109,7 @@ namespace CETools.Civil3D
             internal double Station { get; private set; }
             internal IDictionary<string, double> ShapeAreas { get; private set; }
             internal double RoadSurfaceWidth { get; set; }
+            internal double ShoulderWidth { get; set; }
             internal double SidewalkWidth { get; set; }
             internal double SideSlopeWidth { get; set; }
         }
@@ -1112,6 +1128,7 @@ namespace CETools.Civil3D
             internal double KerbLength { get; set; }
             internal double JunctionBellmouthLength { get; set; }
             internal double RoadSurfaceArea { get; set; }
+            internal double ShoulderArea { get; set; }
             internal double SidewalkArea { get; set; }
             internal double SideSlopeArea { get; set; }
             internal IDictionary<string, double> LayerVolumes { get; private set; }
@@ -1121,6 +1138,7 @@ namespace CETools.Civil3D
         {
             None,
             RoadSurface,
+            Shoulder,
             Sidewalk,
             SideSlope
         }

@@ -108,21 +108,58 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            List<ProfileViewItem> views = PromptScope(document, ReadProfileViews(document));
+
+            // Existing scope prompt already supports All or multiple selected
+            // profile views. The saved margin settings below control the vertical
+            // fit needed for Civil 3D high/low and geometry labels to remain clear.
+            List<ProfileViewItem> views = PromptScope(
+                document,
+                ReadProfileViews(document));
             if (views.Count == 0) return;
-            var review = new List<KeyValuePair<string, string>>
-            {
-                Pair("Profile views", views.Count.ToString(CultureInfo.InvariantCulture)),
-                Pair("Station range", "Automatic where supported"),
-                Pair("Elevation range", "Automatic where supported"),
-                Pair("Rebuild/update", "Yes")
-            };
-            if (!PopupTablePresenter.ShowReview(
-                    "CE Tools - Fit Profile Views",
-                    "Automatic range properties and update/rebuild methods vary by Civil 3D release. Every unavailable operation will be reported.",
-                    review,
-                    "Fit Views"))
+
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Fit Profile Views and Label Clearance",
+                "Fit all or multiple selected profile views, centre the displayed profile data, and reserve grid-row clearance so top/bottom labels do not touch or clip against the frame.");
+            settings.AddPositiveDouble(
+                "RowHeight",
+                "01 Vertical fit",
+                "Profile-view row height",
+                1.0,
+                "Elevation represented by one horizontal profile-view row. Use the drawing's normal grid-row interval.");
+            settings.AddPositiveInteger(
+                "BottomRows",
+                "01 Vertical fit",
+                "Rows below lowest profile",
+                1,
+                "Clear rows between the lowest displayed profile and the bottom frame.");
+            settings.AddPositiveInteger(
+                "ProfileToTopLabelRows",
+                "01 Vertical fit",
+                "Rows from highest profile to top labels",
+                1,
+                "Clear rows reserved between the highest displayed profile and its top labels.");
+            settings.AddPositiveInteger(
+                "TopLabelToFrameRows",
+                "01 Vertical fit",
+                "Rows from top labels to top frame",
+                1,
+                "Clear rows reserved above the top text before the profile-view frame.");
+            if (!DisciplineWorkflowDialogs.EditSettings(settings))
                 return;
+
+            double rowHeight = Math.Max(
+                0.001,
+                settings.Double("RowHeight", 1.0));
+            int bottomRows = Math.Max(
+                1,
+                settings.Integer("BottomRows", 1));
+            int profileToTopRows = Math.Max(
+                1,
+                settings.Integer("ProfileToTopLabelRows", 1));
+            int topLabelToFrameRows = Math.Max(
+                1,
+                settings.Integer("TopLabelToFrameRows", 1));
+
             ProfileViewBatchResult result = ApplyBatch(
                 document,
                 views,
@@ -130,8 +167,18 @@ namespace CETools.Civil3D
                 null,
                 true,
                 true);
+            result.ViewsLabelMarginFit += FitProfileViewElevationRanges(
+                document,
+                views,
+                rowHeight,
+                bottomRows,
+                profileToTopRows,
+                topLabelToFrameRows);
             document.Editor.Regen();
-            ShowResult(document, result, "CE Tools - Profile View Fit Result");
+            ShowResult(
+                document,
+                result,
+                "CE Tools - Profile View Fit Result");
         }
 
         [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWARRANGE", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
@@ -521,6 +568,337 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
             return result;
+        }
+
+        private static int FitProfileViewElevationRanges(
+            Document document,
+            IList<ProfileViewItem> views,
+            double rowHeight,
+            int bottomRows,
+            int profileToTopRows,
+            int topLabelToFrameRows)
+        {
+            if (document == null || views == null || views.Count == 0)
+                return 0;
+
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (civilDocument == null)
+                return 0;
+
+            int fitted = 0;
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ProfileViewItem item in views)
+                {
+                    DBObject rawView = null;
+                    try
+                    {
+                        rawView = transaction.GetObject(
+                            item.ObjectId,
+                            OpenMode.ForWrite,
+                            false);
+                    }
+                    catch { }
+                    if (rawView == null) continue;
+
+                    ObjectId alignmentId = FindAlignmentForProfileView(
+                        civilDocument,
+                        transaction,
+                        item.ObjectId);
+                    if (alignmentId.IsNull) continue;
+
+                    CivilAlignment alignment = transaction.GetObject(
+                        alignmentId,
+                        OpenMode.ForRead,
+                        false) as CivilAlignment;
+                    if (alignment == null) continue;
+
+                    double? startValue = ReadDoubleProperty(
+                        rawView,
+                        "StationStart");
+                    double? endValue = ReadDoubleProperty(
+                        rawView,
+                        "StationEnd");
+                    double stationStart = startValue ??
+                        (ReadDoubleProperty(
+                            alignment,
+                            "StartingStation") ?? 0.0);
+                    double stationEnd = endValue ??
+                        (ReadDoubleProperty(
+                            alignment,
+                            "EndingStation") ?? stationStart);
+                    if (stationEnd < stationStart)
+                    {
+                        double swap = stationStart;
+                        stationStart = stationEnd;
+                        stationEnd = swap;
+                    }
+                    if (stationEnd - stationStart <= 1e-9)
+                        continue;
+
+                    double minimum = double.PositiveInfinity;
+                    double maximum = double.NegativeInfinity;
+                    foreach (ObjectId profileId in alignment.GetProfileIds())
+                    {
+                        CivilProfile profile = null;
+                        try
+                        {
+                            profile = transaction.GetObject(
+                                profileId,
+                                OpenMode.ForRead,
+                                false) as CivilProfile;
+                        }
+                        catch { }
+                        if (profile == null ||
+                            (profile.Name ?? string.Empty).StartsWith(
+                                "CE_BAND_SRC_",
+                                StringComparison.OrdinalIgnoreCase))
+                            continue;
+
+                        double profileStart =
+                            ReadDoubleProperty(
+                                profile,
+                                "StartingStation") ?? stationStart;
+                        double profileEnd =
+                            ReadDoubleProperty(
+                                profile,
+                                "EndingStation") ?? stationEnd;
+                        double first = Math.Max(
+                            stationStart,
+                            Math.Min(profileStart, profileEnd));
+                        double last = Math.Min(
+                            stationEnd,
+                            Math.Max(profileStart, profileEnd));
+                        if (last < first) continue;
+
+                        int samples = Math.Min(
+                            400,
+                            Math.Max(
+                                20,
+                                (int)Math.Ceiling(
+                                    (last - first) / 5.0)));
+                        for (int index = 0; index <= samples; index++)
+                        {
+                            double station = samples <= 0
+                                ? first
+                                : first +
+                                  (last - first) *
+                                  index / samples;
+                            try
+                            {
+                                double elevation =
+                                    profile.ElevationAt(station);
+                                if (double.IsNaN(elevation) ||
+                                    double.IsInfinity(elevation))
+                                    continue;
+                                minimum = Math.Min(minimum, elevation);
+                                maximum = Math.Max(maximum, elevation);
+                            }
+                            catch { }
+                        }
+
+                        try
+                        {
+                            foreach (ProfilePVI pvi in profile.PVIs)
+                            {
+                                if (pvi == null ||
+                                    pvi.Station < first - 1e-6 ||
+                                    pvi.Station > last + 1e-6)
+                                    continue;
+                                minimum = Math.Min(
+                                    minimum,
+                                    pvi.Elevation);
+                                maximum = Math.Max(
+                                    maximum,
+                                    pvi.Elevation);
+                            }
+                        }
+                        catch { }
+                    }
+
+                    if (double.IsInfinity(minimum) ||
+                        double.IsInfinity(maximum) ||
+                        double.IsNaN(minimum) ||
+                        double.IsNaN(maximum))
+                        continue;
+
+                    // Snap the data envelope to whole grid rows. Reserve one row
+                    // below the lowest profile, one row from the highest profile
+                    // to top labels, and one row from top text to the top frame by
+                    // default. This is the requested drawing presentation.
+                    double frameMinimum =
+                        Math.Floor(minimum / rowHeight) *
+                        rowHeight -
+                        bottomRows * rowHeight;
+                    double frameMaximum =
+                        Math.Ceiling(maximum / rowHeight) *
+                        rowHeight +
+                        (profileToTopRows +
+                         topLabelToFrameRows) *
+                        rowHeight;
+                    if (frameMaximum <= frameMinimum + rowHeight)
+                        frameMaximum =
+                            frameMinimum +
+                            rowHeight * 2.0;
+
+                    bool modeSet =
+                        TrySetEnumByNames(
+                            rawView,
+                            "ElevationRangeMode",
+                            new[]
+                            {
+                                "UserSpecified",
+                                "User",
+                                "Manual",
+                                "Specified"
+                            }) ||
+                        TrySetBooleanProperty(
+                            rawView,
+                            "AutomaticElevationRange",
+                            false);
+                    bool minSet =
+                        TrySetDoubleProperty(
+                            rawView,
+                            "ElevationMin",
+                            frameMinimum) ||
+                        TrySetDoubleProperty(
+                            rawView,
+                            "ElevationMinimum",
+                            frameMinimum);
+                    bool maxSet =
+                        TrySetDoubleProperty(
+                            rawView,
+                            "ElevationMax",
+                            frameMaximum) ||
+                        TrySetDoubleProperty(
+                            rawView,
+                            "ElevationMaximum",
+                            frameMaximum);
+
+                    if (minSet && maxSet)
+                    {
+                        // Keep station fitting automatic so the profile is centred
+                        // left/right while the vertical range uses the explicit
+                        // label-clearance envelope above.
+                        TrySetAutomaticEnum(
+                            rawView,
+                            "StationRangeMode");
+                        TrySetBooleanProperty(
+                            rawView,
+                            "AutomaticStationRange",
+                            true);
+                        TryInvokeNoArguments(rawView, "Update");
+                        TryInvokeNoArguments(rawView, "Rebuild");
+                        fitted++;
+                    }
+                    else if (modeSet)
+                    {
+                        // Do not report a fit unless both elevation limits were
+                        // accepted by the host Civil 3D build.
+                    }
+                }
+
+                transaction.Commit();
+            }
+            return fitted;
+        }
+
+        private static ObjectId FindAlignmentForProfileView(
+            CivilDocument civilDocument,
+            Transaction transaction,
+            ObjectId profileViewId)
+        {
+            if (civilDocument == null ||
+                transaction == null ||
+                profileViewId.IsNull)
+                return ObjectId.Null;
+
+            foreach (ObjectId alignmentId in
+                civilDocument.GetAlignmentIds())
+            {
+                DBObject alignment = null;
+                try
+                {
+                    alignment = transaction.GetObject(
+                        alignmentId,
+                        OpenMode.ForRead,
+                        false);
+                }
+                catch { }
+                if (alignment == null) continue;
+
+                if (ReadObjectIds(
+                        alignment,
+                        "GetProfileViewIds")
+                    .Any(id => id == profileViewId))
+                    return alignmentId;
+            }
+            return ObjectId.Null;
+        }
+
+        private static bool TrySetDoubleProperty(
+            object value,
+            string name,
+            double setting)
+        {
+            PropertyInfo property =
+                FindWritableProperty(value, name);
+            if (property == null) return false;
+            try
+            {
+                object converted =
+                    Convert.ChangeType(
+                        setting,
+                        property.PropertyType,
+                        CultureInfo.InvariantCulture);
+                property.SetValue(value, converted, null);
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static bool TrySetEnumByNames(
+            object value,
+            string propertyName,
+            IEnumerable<string> names)
+        {
+            PropertyInfo property =
+                FindWritableProperty(
+                    value,
+                    propertyName);
+            if (property == null ||
+                !property.PropertyType.IsEnum)
+                return false;
+
+            foreach (string requested in
+                names ?? Enumerable.Empty<string>())
+            {
+                string actual = Enum.GetNames(
+                    property.PropertyType)
+                    .FirstOrDefault(name =>
+                        string.Equals(
+                            name,
+                            requested,
+                            StringComparison.OrdinalIgnoreCase));
+                if (string.IsNullOrWhiteSpace(actual))
+                    continue;
+                try
+                {
+                    property.SetValue(
+                        value,
+                        Enum.Parse(
+                            property.PropertyType,
+                            actual),
+                        null);
+                    return true;
+                }
+                catch { }
+            }
+            return false;
         }
 
         private static bool TryApplyBandSet(
@@ -1025,6 +1403,7 @@ namespace CETools.Civil3D
                 Pair("Profile-view styles applied", result.ProfileStylesApplied.ToString(CultureInfo.InvariantCulture)),
                 Pair("Band sets applied", result.BandSetsApplied.ToString(CultureInfo.InvariantCulture)),
                 Pair("Views set to automatic fit", result.ViewsAutoFit.ToString(CultureInfo.InvariantCulture)),
+                Pair("Views fitted with label-row clearance", result.ViewsLabelMarginFit.ToString(CultureInfo.InvariantCulture)),
                 Pair("Views rebuilt/updated", result.ViewsRebuilt.ToString(CultureInfo.InvariantCulture)),
                 Pair("Unsupported API operations", result.Unsupported.ToString(CultureInfo.InvariantCulture)),
                 Pair("Failed views", result.Failed.ToString(CultureInfo.InvariantCulture))
@@ -1120,6 +1499,7 @@ namespace CETools.Civil3D
         public int ProfileStylesApplied { get; set; }
         public int BandSetsApplied { get; set; }
         public int ViewsAutoFit { get; set; }
+        public int ViewsLabelMarginFit { get; set; }
         public int ViewsRebuilt { get; set; }
         public int Unsupported { get; set; }
         public int Failed { get; set; }

@@ -244,6 +244,11 @@ namespace CETools.Civil3D
                         "Rebind road band rows to their ground/edge/centre/design profiles, enable labels, and keep existing utility network links intact.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
+                        "Left / Right Road Edge Levels",
+                        "CE_ROADEDGELEVELS",
+                        "Create left and right road-edge level profiles from matching TOP-RD surfaces at a specified half-width, then refresh the road band rows.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
                         "Road TOP/BOTTOM Surface Profiles",
                         "CE_ROADTOPBOTTOMPROFILE",
                         "Add road TOP and BOTTOM surface profiles to selected profile views using valid Civil 3D 2023 profile styles and label sets.",
