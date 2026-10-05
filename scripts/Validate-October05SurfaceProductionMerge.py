@@ -67,9 +67,9 @@ for marker in [
     '"CE_ROADTOPSURFACEALL"',
     '"CE_ROADBOTTOMSURFACEALL"',
     '"CE_ROADSURFACEMERGE"',
-    '"CE Top All"',
-    '"CE Bottom All"',
-    '"CE Final Surface"',
+    "CE Top All",
+    "CE Bottom All",
+    "CE Final Surface",
 ]:
     if marker not in surface_menu:
         errors.append("Surface Utilities production action missing: " + marker)
