@@ -256,12 +256,12 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction(
                         "Drape Junction Feature Lines to Road TOP Surfaces",
                         "CE_ROADJUNCTIONFEATURELINESTOP",
-                        "Drape multiple selected junction feature lines to every matching road TOP surface and paste their valid elevated vertices into those surfaces.",
+                        "Sample matching road TOP surfaces and update only the selected junction feature-line elevations/grades. TOP surfaces remain unchanged; no surface vertices or breaklines are added.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Junction Endpoints to All TOP Surfaces",
                         "CE_JUNCTIONENDPOINTSTOTOPSURFACES",
-                        "Paste generated junction closure endpoints into every covering road TOP surface.",
+                        "Update tagged junction feature-line vertices from covering road TOP surfaces. TOP surfaces are read-only references; no breaklines or surface vertices are created.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
                         "Batch T/Cross Junction Bellmouths and T-Limits",
