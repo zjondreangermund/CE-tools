@@ -413,6 +413,14 @@ namespace CETools.Civil3D
             };
             foreach (VertexSettingSource source in sources) link.RoadNumbers[source.Handle] = source.RoadNumber;
 
+            if (link.EraseAllJunctionOutput)
+            {
+                int erased = EraseAllJunctionSettingOutGroups(document);
+                document.Editor.WriteMessage(
+                    "\nCE junction setting-out rerun cleanup complete. CE-generated points/leaders/dimensions/tables erased={0}.",
+                    erased);
+            }
+
             try
             {
                 if (continueExisting)
@@ -574,11 +582,6 @@ namespace CETools.Civil3D
                 double textHeight = PaperAnnotationScale.ModelTextHeight(
                     document.Database,
                     paperTextHeight);
-                if (link.EraseAllJunctionOutput)
-                    EraseAllJunctionSettingOutGroups(
-                        document.Database,
-                        transaction,
-                        modelSpace);
                 if (link.ReplaceExisting)
                     ReplaceSelectedGroups(document.Database, civilDocument, transaction, modelSpace, link, textHeight);
 
