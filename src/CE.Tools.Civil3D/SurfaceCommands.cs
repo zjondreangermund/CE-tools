@@ -39,7 +39,10 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Surface report", "CE_SFREPORT", "Report selected surface properties and statistics.", "01 Review"),
                     new DisciplineWorkflowAction("Surface elevation", "CE_SFELEV", "Choose a surface from a popup and query its elevation at a picked point.", "01 Review"),
                     new DisciplineWorkflowAction("Elevation label", "CE_SFLABEL", "Choose a surface from a popup and place a surface elevation annotation.", "02 Annotation"),
-                    new DisciplineWorkflowAction("Compare surfaces", "CE_SFCOMPARE", "Choose base and comparison surfaces from popup dropdowns and create a point cut/fill comparison.", "03 Comparison")
+                    new DisciplineWorkflowAction("Compare surfaces", "CE_SFCOMPARE", "Choose base and comparison surfaces from popup dropdowns and create a point cut/fill comparison.", "03 Comparison"),
+                    new DisciplineWorkflowAction("Merge all road TOP surfaces - CE Top All", "CE_ROADTOPSURFACEALL", "Paste every TOP-RD-* road surface into the named Civil 3D surface CE Top All.", "04 Production Surfaces"),
+                    new DisciplineWorkflowAction("Merge all road BOTTOM surfaces - CE Bottom All", "CE_ROADBOTTOMSURFACEALL", "Paste every BOTTOM-RD-* road surface into the named Civil 3D surface CE Bottom All.", "04 Production Surfaces"),
+                    new DisciplineWorkflowAction("Natural ground + road/grading - CE Final Surface", "CE_ROADSURFACEMERGE", "Choose CE Final Surface, select natural ground, then paste all or selected road TOP/grading surfaces over it.", "04 Production Surfaces")
                 });
         }
 
