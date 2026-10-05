@@ -629,16 +629,31 @@ namespace CETools.Civil3D
             IEnumerable<CorridorFeatureLine> candidates,
             double hingeOffset)
         {
-            if (candidates == null) return null;
-            List<CorridorFeatureLine> values = candidates
+            if (candidates == null ||
+                Math.Abs(hingeOffset) < 0.001)
+                return null;
+
+            // A cut/fill daylight must be outside the EPS/hinge on the same
+            // road side. Reject duplicate/inboard daylight codes so slope
+            // patterns cannot collapse into the short spikes/triangles seen
+            // in plan.
+            return candidates
                 .Where(item => item != null)
-                .Where(item => Math.Abs(hingeOffset) < 0.001 ||
-                    Math.Abs(AverageOffset(item)) < 0.001 ||
-                    Math.Sign(AverageOffset(item)) == Math.Sign(hingeOffset))
-                .ToList();
-            if (values.Count == 0) return null;
-            return values
-                .OrderBy(item => Math.Abs(AverageOffset(item) - hingeOffset))
+                .Select(item => new
+                {
+                    Line = item,
+                    Offset = AverageOffset(item)
+                })
+                .Where(item =>
+                    Math.Abs(item.Offset) >= 0.001 &&
+                    Math.Sign(item.Offset) ==
+                        Math.Sign(hingeOffset) &&
+                    Math.Abs(item.Offset) >
+                        Math.Abs(hingeOffset) + 0.05)
+                .OrderBy(item =>
+                    Math.Abs(item.Offset) -
+                    Math.Abs(hingeOffset))
+                .Select(item => item.Line)
                 .FirstOrDefault();
         }
 
