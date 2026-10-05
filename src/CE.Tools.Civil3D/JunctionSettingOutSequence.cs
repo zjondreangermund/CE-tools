@@ -53,6 +53,51 @@ namespace CETools.Civil3D
                     if (Convert.ToString(layout[0].Value).StartsWith("JUNCTION", StringComparison.OrdinalIgnoreCase))
                         source.JunctionGroup = Convert.ToString(layout[5].Value);
                 }
+
+                // Newer batch junctions store their exact owning/main road handle
+                // and junction group directly on the generated return. This avoids
+                // assigning ROAD/RD numbers from selection order or from a nearby
+                // crossing road when setting-out is re-run.
+                ResultBuffer batchBuffer = null;
+                try
+                {
+                    batchBuffer = entity == null
+                        ? null
+                        : entity.GetXDataForApplication("CE_ROAD_JUNCTION");
+                }
+                catch { }
+                if (batchBuffer != null)
+                {
+                    try
+                    {
+                        foreach (TypedValue value in batchBuffer.AsArray())
+                        {
+                            if (value.TypeCode !=
+                                (int)DxfCode.ExtendedDataAsciiString)
+                                continue;
+                            string text =
+                                Convert.ToString(
+                                    value.Value,
+                                    CultureInfo.InvariantCulture) ??
+                                string.Empty;
+                            if (text.StartsWith(
+                                    "MAIN=",
+                                    StringComparison.OrdinalIgnoreCase))
+                                source.RoadHandle =
+                                    text.Substring(5);
+                            else if (text.StartsWith(
+                                    "GROUP=",
+                                    StringComparison.OrdinalIgnoreCase))
+                                source.JunctionGroup =
+                                    text.Substring(6);
+                        }
+                    }
+                    finally
+                    {
+                        batchBuffer.Dispose();
+                    }
+                }
+
                 source.RoadNumber = Number(entity, tr);
                 if (source.RoadNumber == 0 && !string.IsNullOrEmpty(source.RoadHandle))
                     source.RoadNumber = Number(OpenHandle(db, tr, source.RoadHandle), tr);
