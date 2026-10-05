@@ -66,11 +66,21 @@ for relative, markers in checks.items():
             print(f"FAIL {relative}: missing {marker}")
             failed = True
 
-# Preserve the non-destructive safety boundaries.
+# Preserve the non-destructive source-geometry boundary. The current command
+# may erase only CE-generated outputs when the user explicitly selects the
+# re-run cleanup option; source road curves/alignments remain read-only.
 junction = (root / "src/CE.Tools.Civil3D/September16FieldCommentCompletionCommands.cs").read_text(encoding="utf-8")
-for forbidden in ("Erase(", "OpenMode.ForWrite) as Curve"):
+for forbidden in ("OpenMode.ForWrite) as Curve", "OpenMode.ForWrite, false) as CivilAlignment"):
     if forbidden in junction:
         print(f"FAIL batch junction source must remain read-only: {forbidden}")
+        failed = True
+for marker in (
+    "EraseExistingBatchJunctionOutputs(",
+    "GetXDataForApplication(",
+    '"Erase existing before re-run"',
+):
+    if marker not in junction:
+        print(f"FAIL generated-output-only junction cleanup missing: {marker}")
         failed = True
 
 if failed:
