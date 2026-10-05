@@ -208,6 +208,7 @@ namespace CETools.Civil3D
             int failedPairs = 0;
             int surfaceVertices = 0;
             int unresolvedVertices = 0;
+            int erasedExisting = 0;
 
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
@@ -268,7 +269,6 @@ namespace CETools.Civil3D
                     return;
                 }
 
-                int erasedExisting = 0;
                 if (string.Equals(
                         model.Text("ExistingJunctions"),
                         "Erase existing before re-run",
