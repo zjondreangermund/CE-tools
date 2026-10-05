@@ -49,10 +49,23 @@ namespace CETools.Civil3D
             foreach (var source in OrderSources(sources, link.SequenceMode, link.StartRecordKey))
             {
                 int road;
-                if (link.RoadNumbers.TryGetValue(source.Handle, out road)) source.RoadNumber = road;
+                if (source.RoadNumber > 0)
+                {
+                    // Fresh source metadata is authoritative. This self-heals old
+                    // tables whose persisted ROADMAP was created from selection
+                    // order before exact junction road ownership was available.
+                    link.RoadNumbers[source.Handle] = source.RoadNumber;
+                }
+                else if (link.RoadNumbers.TryGetValue(source.Handle, out road))
+                {
+                    source.RoadNumber = road;
+                }
                 // Existing pre-upgrade tables have no road map. Preserve their old
                 // sequence until the user explicitly re-runs with road assignment.
-                else if (source.RoadNumber <= 0 && link.RoadNumbers.Count == 0) source.RoadNumber = legacy;
+                else if (link.RoadNumbers.Count == 0)
+                {
+                    source.RoadNumber = legacy;
+                }
                 legacy++;
             }
             if (link.SequenceMode == "Clockwise per junction from top left")
