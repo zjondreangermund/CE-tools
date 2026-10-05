@@ -2126,6 +2126,8 @@ namespace CETools.Civil3D
             Corridor typedCorridor = corridor as Corridor;
             if (typedCorridor != null)
             {
+                changed += RepairExistingDaylightSlopePatterns(
+                    typedCorridor);
                 changed += CreateMissingSlopePatterns(
                     typedCorridor,
                     styleIds);
@@ -2137,6 +2139,164 @@ namespace CETools.Civil3D
                 catch { }
             }
             return changed;
+        }
+
+        private static int RepairExistingDaylightSlopePatterns(
+            Corridor corridor)
+        {
+            if (corridor == null ||
+                corridor.SlopePatterns == null)
+                return 0;
+
+            CorridorSlopePatternCollection patterns =
+                corridor.SlopePatterns;
+            int changed = 0;
+
+            foreach (CorridorSlopePattern pattern in
+                patterns.Cast<CorridorSlopePattern>()
+                    .Where(item => item != null)
+                    .ToList())
+            {
+                CorridorFeatureLine first = null;
+                CorridorFeatureLine second = null;
+                try
+                {
+                    first = pattern.FeatureLine1;
+                    second = pattern.FeatureLine2;
+                }
+                catch { }
+                if (first == null || second == null)
+                    continue;
+
+                CorridorFeatureLine outer = null;
+                CorridorFeatureLine hinge = null;
+                if (IsDaylightSlopeFeature(first))
+                {
+                    outer = first;
+                    hinge = second;
+                }
+                else if (IsDaylightSlopeFeature(second))
+                {
+                    outer = second;
+                    hinge = first;
+                }
+                else
+                {
+                    continue;
+                }
+
+                double outerOffset =
+                    AverageSlopeOffset(outer);
+                double hingeOffset =
+                    AverageSlopeOffset(hinge);
+                bool valid =
+                    Math.Abs(outerOffset) >= 0.001 &&
+                    (Math.Abs(hingeOffset) < 0.001 ||
+                     Math.Sign(outerOffset) ==
+                        Math.Sign(hingeOffset)) &&
+                    Math.Abs(outerOffset) >
+                        Math.Abs(hingeOffset) + 0.05;
+
+                if (!valid)
+                {
+                    // Only touch managed hinge/EPS-to-daylight patterns. Remove
+                    // the bad pair when supported; otherwise hide it so the
+                    // incorrect short spikes no longer display/plot.
+                    if (Invoke(patterns, "Remove", pattern))
+                    {
+                        changed++;
+                        continue;
+                    }
+                    if (TrySetBoolean(
+                            pattern,
+                            false,
+                            "Visible",
+                            "IsVisible",
+                            "Enabled"))
+                        changed++;
+                    continue;
+                }
+
+                double start;
+                double end;
+                if (TrySharedSlopeStationRangeWithoutBaseline(
+                        hinge,
+                        outer,
+                        out start,
+                        out end))
+                {
+                    try
+                    {
+                        if (Math.Abs(
+                                pattern.StartStation -
+                                start) > 0.001)
+                        {
+                            pattern.StartStation = start;
+                            changed++;
+                        }
+                        if (Math.Abs(
+                                pattern.EndStation -
+                                end) > 0.001)
+                        {
+                            pattern.EndStation = end;
+                            changed++;
+                        }
+                    }
+                    catch { }
+                }
+            }
+            return changed;
+        }
+
+        private static bool IsDaylightSlopeFeature(
+            CorridorFeatureLine line)
+        {
+            if (line == null)
+                return false;
+            return IsSlopeFeatureCode(
+                       line.CodeName,
+                       "DAYLIGHT_CUT") ||
+                   IsSlopeFeatureCode(
+                       line.CodeName,
+                       "DAYLIGHT_FILL");
+        }
+
+        private static bool TrySharedSlopeStationRangeWithoutBaseline(
+            CorridorFeatureLine first,
+            CorridorFeatureLine second,
+            out double start,
+            out double end)
+        {
+            start = double.NegativeInfinity;
+            end = double.PositiveInfinity;
+            foreach (CorridorFeatureLine line in
+                new[] { first, second })
+            {
+                var stations = new List<double>();
+                try
+                {
+                    foreach (FeatureLinePoint point in
+                        line.FeatureLinePoints)
+                    {
+                        if (point != null)
+                            stations.Add(point.Station);
+                    }
+                }
+                catch { }
+
+                if (stations.Count < 2)
+                    return false;
+                start = Math.Max(
+                    start,
+                    stations.Min());
+                end = Math.Min(
+                    end,
+                    stations.Max());
+            }
+
+            return !double.IsInfinity(start) &&
+                   !double.IsInfinity(end) &&
+                   end > start + 0.000001;
         }
 
         private static int CreateMissingSlopePatterns(
@@ -2251,7 +2411,8 @@ namespace CETools.Civil3D
                 CorridorFeatureLine hinge =
                     FindSameSideSlopeHinge(
                         hingeList,
-                        outerOffset);
+                        outer,
+                        baseline);
                 if (hinge == null ||
                     HasNativeSlopePattern(
                         patterns,
@@ -2352,30 +2513,52 @@ namespace CETools.Civil3D
 
         private static CorridorFeatureLine FindSameSideSlopeHinge(
             IEnumerable<CorridorFeatureLine> candidates,
-            double outerOffset)
+            CorridorFeatureLine outer,
+            Baseline baseline)
         {
-            if (candidates == null)
+            if (candidates == null ||
+                outer == null ||
+                baseline == null)
                 return null;
 
-            List<CorridorFeatureLine> sameSide =
-                candidates
-                    .Where(item => item != null)
-                    .Where(item =>
-                    {
-                        double offset =
-                            AverageSlopeOffset(item);
-                        return Math.Abs(outerOffset) < 0.001 ||
-                               Math.Abs(offset) < 0.001 ||
-                               Math.Sign(offset) ==
-                                   Math.Sign(outerOffset);
-                    })
-                    .OrderBy(item =>
-                        Math.Abs(
-                            AverageSlopeOffset(item) -
-                            outerOffset))
-                    .ToList();
+            double outerOffset =
+                AverageSlopeOffset(outer);
+            if (Math.Abs(outerOffset) < 0.001)
+                return null;
 
-            return sameSide.FirstOrDefault();
+            // A valid daylight must sit OUTSIDE its hinge/EPS on the same side.
+            // The old nearest-offset rule could select another outer/duplicate
+            // feature line and produce the short triangular/spike patterns seen
+            // in plan instead of real cut/fill daylight slopes.
+            return candidates
+                .Where(item => item != null)
+                .Select(item => new
+                {
+                    Line = item,
+                    Offset = AverageSlopeOffset(item)
+                })
+                .Where(item =>
+                    (Math.Abs(item.Offset) < 0.001 ||
+                     Math.Sign(item.Offset) ==
+                        Math.Sign(outerOffset)) &&
+                    Math.Abs(item.Offset) + 0.05 <
+                        Math.Abs(outerOffset))
+                .Where(item =>
+                {
+                    double start;
+                    double end;
+                    return TrySharedSlopeStationRange(
+                        item.Line,
+                        outer,
+                        baseline,
+                        out start,
+                        out end);
+                })
+                .OrderBy(item =>
+                    Math.Abs(outerOffset) -
+                    Math.Abs(item.Offset))
+                .Select(item => item.Line)
+                .FirstOrDefault();
         }
 
         private static bool TrySharedSlopeStationRange(
