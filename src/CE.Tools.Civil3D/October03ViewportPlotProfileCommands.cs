@@ -1254,7 +1254,7 @@ namespace CETools.Civil3D
                     Directory.GetFiles(
                         folder,
                         "*.pdf",
-                        SearchOption.TopDirectoryOnly))
+                        SearchOption.AllDirectories))
                 {
                     state.Baseline[file] =
                         File.GetLastWriteTimeUtc(file);
@@ -1279,7 +1279,9 @@ namespace CETools.Civil3D
                 return;
 
             state.Waiting = false;
-            string folder = state.Folder;
+            string folder = PlotToFileFolder();
+            if (string.IsNullOrWhiteSpace(folder))
+                folder = state.Folder;
             DateTime started = state.StartedUtc;
             Dictionary<string, DateTime> baseline =
                 state.Baseline.ToDictionary(
@@ -1334,7 +1336,7 @@ namespace CETools.Civil3D
                         .GetFiles(
                             folder,
                             "*.pdf",
-                            SearchOption.TopDirectoryOnly)
+                            SearchOption.AllDirectories)
                         .Select(file => new
                         {
                             File = file,
@@ -1350,6 +1352,11 @@ namespace CETools.Civil3D
                                 baseline.TryGetValue(
                                     item.File,
                                     out before);
+                            // Ignore unrelated old PDFs when the user browsed to a
+                            // folder outside the DWG folder, and accept a newly
+                            // created or overwritten PDF from this plot only.
+                            if (item.Time < startedUtc.AddSeconds(-2))
+                                return false;
                             return !existed ||
                                 item.Time >
                                     before.AddMilliseconds(50);
@@ -1379,6 +1386,21 @@ namespace CETools.Civil3D
                     .ToUpperInvariant();
             return command == "PLOT" ||
                 command == "PRINT";
+        }
+
+        private static string PlotToFileFolder()
+        {
+            try
+            {
+                string value = Convert.ToString(
+                    AcApplication.GetSystemVariable("PLOTTOFILEPATH"),
+                    CultureInfo.CurrentCulture);
+                if (!string.IsNullOrWhiteSpace(value) &&
+                    Directory.Exists(value))
+                    return value;
+            }
+            catch { }
+            return string.Empty;
         }
 
         private static string DrawingFolder(
