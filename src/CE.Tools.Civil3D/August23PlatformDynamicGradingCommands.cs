@@ -2501,55 +2501,12 @@ namespace CETools.Civil3D
                     .OrderBy(item =>
                         item.GetParameters().Length))
             {
-                ParameterInfo[] parameters =
-                    method.GetParameters();
-                var args =
-                    new object[parameters.Length];
-                bool valid = true;
-                int objectIdSeen = 0;
-
-                for (int index = 0;
-                     index < parameters.Length;
-                     index++)
-                {
-                    Type type =
-                        parameters[index].ParameterType;
-                    string parameterName =
-                        (parameters[index].Name ?? string.Empty)
-                            .ToLowerInvariant();
-
-                    if (type == typeof(ObjectId))
-                    {
-                        // The grading-group ObjectId is the controlling parent.
-                        // Any optional style/object ids are left null instead of
-                        // incorrectly receiving the group id.
-                        args[index] =
-                            objectIdSeen == 0 ||
-                            parameterName.Contains("group")
-                                ? groupId
-                                : ObjectId.Null;
-                        objectIdSeen++;
-                    }
-                    else if (type == typeof(Point3d))
-                        args[index] = seed;
-                    else if (type == typeof(string))
-                        args[index] =
-                            "CE Platform Grade Infill";
-                    else if (type == typeof(bool))
-                        args[index] = true;
-                    else if (type == typeof(double))
-                        args[index] = 0.0;
-                    else if (parameters[index].HasDefaultValue)
-                        args[index] =
-                            parameters[index].DefaultValue;
-                    else
-                    {
-                        valid = false;
-                        break;
-                    }
-                }
-
-                if (!valid)
+                object[] args;
+                if (!TryBuildInfillArguments(
+                        method.GetParameters(),
+                        groupId,
+                        seed,
+                        out args))
                     continue;
 
                 try
@@ -2558,17 +2515,16 @@ namespace CETools.Civil3D
                         method.Invoke(
                             null,
                             args);
-                    if (value is ObjectId)
-                        infillId =
-                            (ObjectId)value;
-                    else if (value is DBObject)
-                        infillId =
-                            ((DBObject)value).ObjectId;
+                    if (TryReadCreatedObjectId(
+                            value,
+                            out infillId))
+                        return true;
 
-                    // Some Civil 3D builds expose CreateInfill as void. A
-                    // successful invocation still means the native infill was
-                    // created even when no ObjectId is returned.
-                    return true;
+                    // Some Civil 3D 2023 builds expose CreateInfill as void.
+                    // A successful invocation is still a successful infill.
+                    if (method.ReturnType == typeof(void) ||
+                        value == null)
+                        return true;
                 }
                 catch (System.Exception exception)
                 {
@@ -2579,10 +2535,228 @@ namespace CETools.Civil3D
                 }
             }
 
+            // Compatibility fallback: a few host builds expose infill creation
+            // on the grading-group object instead of the Grading static class.
+            Document document =
+                AcApplication.DocumentManager.MdiActiveDocument;
+            if (document != null &&
+                document.Database != null &&
+                !groupId.IsNull)
+            {
+                try
+                {
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
+                    {
+                        DBObject group =
+                            transaction.GetObject(
+                                groupId,
+                                OpenMode.ForWrite,
+                                false);
+                        if (group != null)
+                        {
+                            foreach (MethodInfo method in
+                                group.GetType()
+                                    .GetMethods(
+                                        BindingFlags.Public |
+                                        BindingFlags.Instance)
+                                    .Where(item =>
+                                        item.Name.IndexOf(
+                                            "CreateInfill",
+                                            StringComparison.OrdinalIgnoreCase) >= 0)
+                                    .OrderBy(item =>
+                                        item.GetParameters().Length))
+                            {
+                                object[] args;
+                                if (!TryBuildInfillArguments(
+                                        method.GetParameters(),
+                                        groupId,
+                                        seed,
+                                        out args,
+                                        true))
+                                    continue;
+                                try
+                                {
+                                    object value =
+                                        method.Invoke(
+                                            group,
+                                            args);
+                                    if (TryReadCreatedObjectId(
+                                            value,
+                                            out infillId))
+                                        return true;
+                                    if (method.ReturnType == typeof(void) ||
+                                        value == null)
+                                        return true;
+                                }
+                                catch (System.Exception exception)
+                                {
+                                    lastError =
+                                        exception.InnerException == null
+                                            ? exception.Message
+                                            : exception.InnerException.Message;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (System.Exception exception)
+                {
+                    lastError = exception.Message;
+                }
+            }
+
             error =
                 string.IsNullOrWhiteSpace(lastError)
-                    ? "No compatible Civil 3D Grading.CreateInfill overload succeeded."
+                    ? "No compatible Civil 3D Grading.CreateInfill overload succeeded. The closed feature line and grading group must be in the same Site."
                     : lastError;
+            return false;
+        }
+
+        private static bool TryBuildInfillArguments(
+            ParameterInfo[] parameters,
+            ObjectId groupId,
+            Point3d seed,
+            out object[] args,
+            bool instanceGroupMethod = false)
+        {
+            args =
+                new object[parameters.Length];
+            int objectIdSeen = 0;
+
+            for (int index = 0;
+                 index < parameters.Length;
+                 index++)
+            {
+                ParameterInfo parameter =
+                    parameters[index];
+                Type type =
+                    parameter.ParameterType;
+                string name =
+                    (parameter.Name ?? string.Empty)
+                        .ToLowerInvariant();
+
+                if (type == typeof(ObjectId))
+                {
+                    // Instance grading-group methods normally do not need the
+                    // parent group id unless the API explicitly asks for it.
+                    args[index] =
+                        !instanceGroupMethod &&
+                        (objectIdSeen == 0 ||
+                         name.Contains("group"))
+                            ? groupId
+                            : ObjectId.Null;
+                    objectIdSeen++;
+                }
+                else if (type == typeof(Point3d))
+                {
+                    args[index] = seed;
+                }
+                else if (type == typeof(Point2d))
+                {
+                    args[index] =
+                        new Point2d(
+                            seed.X,
+                            seed.Y);
+                }
+                else if (type == typeof(ObjectIdCollection))
+                {
+                    args[index] =
+                        new ObjectIdCollection(
+                            new[] { groupId });
+                }
+                else if (type == typeof(string))
+                {
+                    args[index] =
+                        "CE Junction Infill";
+                }
+                else if (type == typeof(bool))
+                {
+                    args[index] = true;
+                }
+                else if (type == typeof(double))
+                {
+                    args[index] = 0.0;
+                }
+                else if (type == typeof(int))
+                {
+                    args[index] = 0;
+                }
+                else if (type == typeof(short))
+                {
+                    args[index] = (short)0;
+                }
+                else if (type.IsEnum)
+                {
+                    Array values =
+                        Enum.GetValues(type);
+                    if (values.Length == 0)
+                        return false;
+                    args[index] =
+                        values.GetValue(0);
+                }
+                else if (parameter.HasDefaultValue)
+                {
+                    args[index] =
+                        parameter.DefaultValue;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static bool TryReadCreatedObjectId(
+            object value,
+            out ObjectId id)
+        {
+            id = ObjectId.Null;
+            if (value is ObjectId)
+            {
+                id = (ObjectId)value;
+                return true;
+            }
+
+            DBObject dbObject =
+                value as DBObject;
+            if (dbObject != null)
+            {
+                id = dbObject.ObjectId;
+                return true;
+            }
+
+            ObjectIdCollection ids =
+                value as ObjectIdCollection;
+            if (ids != null &&
+                ids.Count > 0)
+            {
+                id = ids[0];
+                return true;
+            }
+
+            IEnumerable enumerable =
+                value as IEnumerable;
+            if (enumerable != null &&
+                !(value is string))
+            {
+                foreach (object item in enumerable)
+                {
+                    if (item is ObjectId)
+                    {
+                        id = (ObjectId)item;
+                        return true;
+                    }
+                    DBObject candidate =
+                        item as DBObject;
+                    if (candidate != null)
+                    {
+                        id = candidate.ObjectId;
+                        return true;
+                    }
+                }
+            }
             return false;
         }
 
@@ -3368,6 +3542,98 @@ namespace CETools.Civil3D
             return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
         }
 
+        private static void WriteNativeInfillLink(
+            Database database,
+            ObjectId sourceId,
+            NativeInfillLink link)
+        {
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                CivilFeatureLine source =
+                    OpenFeatureLine(
+                        transaction,
+                        sourceId,
+                        OpenMode.ForWrite);
+                if (source == null)
+                    throw new InvalidOperationException(
+                        "The junction infill source feature line is unavailable.");
+
+                Xrecord record =
+                    Record(
+                        source,
+                        transaction,
+                        JunctionInfillKey);
+                record.Data = new ResultBuffer(
+                    new TypedValue(
+                        (int)DxfCode.Text,
+                        link.GroupHandle ?? string.Empty),
+                    new TypedValue(
+                        (int)DxfCode.Text,
+                        link.InfillHandle ?? string.Empty),
+                    new TypedValue(
+                        (int)DxfCode.Text,
+                        link.SiteName ?? string.Empty),
+                    new TypedValue(
+                        (int)DxfCode.Int16,
+                        link.Created ? 1 : 0));
+                transaction.Commit();
+            }
+        }
+
+        private static NativeInfillLink ReadNativeInfillLink(
+            Database database,
+            ObjectId sourceId)
+        {
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine source =
+                        OpenFeatureLine(
+                            transaction,
+                            sourceId,
+                            OpenMode.ForRead);
+                    if (source == null)
+                        return null;
+
+                    TypedValue[] values =
+                        ReadRecord(
+                            source,
+                            transaction,
+                            JunctionInfillKey);
+                    if (values == null ||
+                        values.Length < 4)
+                        return null;
+
+                    return new NativeInfillLink
+                    {
+                        GroupHandle =
+                            Convert.ToString(
+                                values[0].Value,
+                                CultureInfo.InvariantCulture),
+                        InfillHandle =
+                            Convert.ToString(
+                                values[1].Value,
+                                CultureInfo.InvariantCulture),
+                        SiteName =
+                            Convert.ToString(
+                                values[2].Value,
+                                CultureInfo.InvariantCulture),
+                        Created =
+                            Convert.ToInt16(
+                                values[3].Value,
+                                CultureInfo.InvariantCulture) != 0
+                    };
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         private static void WriteGradeLink(Database database, ObjectId sourceId, GradeLink link)
         {
             using (Transaction transaction = database.TransactionManager.StartTransaction())
@@ -3943,6 +4209,21 @@ namespace CETools.Civil3D
                     ToeColorIndex = NormalizeAciColor(ToeColorIndex)
                 };
             }
+        }
+
+        private sealed class NativeInfillLink
+        {
+            internal string GroupHandle { get; set; }
+            internal string InfillHandle { get; set; }
+            internal string SiteName { get; set; }
+            internal bool Created { get; set; }
+        }
+
+        private sealed class NativeInfillResult
+        {
+            internal bool Created { get; set; }
+            internal bool Existing { get; set; }
+            internal string Message { get; set; }
         }
 
         private sealed class SourceSnapshot
