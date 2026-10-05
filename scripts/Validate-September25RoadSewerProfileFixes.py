@@ -16,14 +16,12 @@ checks = {
         "RefreshSurfaceProfile(existingProfile)",
         "RefreshSurfaceProfile(SafeOpen<DBObject>(transaction, newProfileId, OpenMode.ForWrite))",
     ],
-    "junction feature-line elevation and intermediate points": [
+    "junction feature-line elevation-only surface reference": [
         '[CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONFEATURELINESTOP", CommandFlags.Modal | CommandFlags.UsePickSet',
-        'model.AddChoice("PointMode"',
-        "AddLineVerticesToSurface(",
-        "TryAssignFeatureLineElevations(line, topSurfaces, out unresolvedPoints)",
+        "TryAssignFeatureLineElevations(",
+        "TOP surfaces unchanged",
+        "No TOP surface was changed",
         "TryFindSurfaceElevation(surfaces, point.X, point.Y, out elevation)",
-        "new Vector2d(-distance, 0.0)",
-        "tin.AddVertices(new Point3dCollection(new[] { point }));",
     ],
     "junction endpoint recovery": [
         'model.AddChoice("Roads", "01 Surfaces", "Roads", "ALL"',
