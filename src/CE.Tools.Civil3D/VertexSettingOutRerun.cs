@@ -73,6 +73,33 @@ namespace CETools.Civil3D
         }
 
         private static int EraseAllJunctionSettingOutGroups(
+            Autodesk.AutoCAD.ApplicationServices.Document document)
+        {
+            if (document == null ||
+                document.Database == null)
+                return 0;
+
+            using (Autodesk.AutoCAD.ApplicationServices.DocumentLock documentLock =
+                document.LockDocument())
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord space =
+                    GetModelSpace(
+                        document.Database,
+                        transaction,
+                        OpenMode.ForWrite);
+                int erased =
+                    EraseAllJunctionSettingOutGroups(
+                        document.Database,
+                        transaction,
+                        space);
+                transaction.Commit();
+                return erased;
+            }
+        }
+
+        private static int EraseAllJunctionSettingOutGroups(
             Database db,
             Transaction tr,
             BlockTableRecord space)
