@@ -84,6 +84,8 @@ namespace CETools.Civil3D
         public string CodeSetStyle { get; set; } = string.Empty;
         public string AssemblyStyle { get; set; } = string.Empty;
         public string ProfileLayer { get; set; } = "CE-ROAD-PROFILE";
+        public double EdgeLevelHalfWidth { get; set; } = 3.7;
+        public double EdgeLevelSampleInterval { get; set; } = 5.0;
 
         public string Value(string category)
         {
@@ -156,7 +158,9 @@ namespace CETools.Civil3D
                     Pair("CorridorStyle", CorridorStyle),
                     Pair("CodeSetStyle", CodeSetStyle),
                     Pair("AssemblyStyle", AssemblyStyle),
-                    Pair("ProfileLayer", ProfileLayer));
+                    Pair("ProfileLayer", ProfileLayer),
+                    Pair("EdgeLevelHalfWidth", EdgeLevelHalfWidth.ToString("R", CultureInfo.InvariantCulture)),
+                    Pair("EdgeLevelSampleInterval", EdgeLevelSampleInterval.ToString("R", CultureInfo.InvariantCulture)));
                 transaction.Commit();
             }
         }
@@ -195,6 +199,18 @@ namespace CETools.Civil3D
             else if (key == "CodeSetStyle") settings.CodeSetStyle = value;
             else if (key == "AssemblyStyle") settings.AssemblyStyle = value;
             else if (key == "ProfileLayer") settings.ProfileLayer = value;
+            else if (key == "EdgeLevelHalfWidth")
+            {
+                double width;
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out width) && width > 0.0)
+                    settings.EdgeLevelHalfWidth = width;
+            }
+            else if (key == "EdgeLevelSampleInterval")
+            {
+                double interval;
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out interval) && interval > 0.0)
+                    settings.EdgeLevelSampleInterval = interval;
+            }
         }
     }
 }
