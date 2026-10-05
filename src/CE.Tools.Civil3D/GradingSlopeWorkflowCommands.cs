@@ -47,6 +47,11 @@ namespace CETools.Civil3D
                         "Create/assign the platform site, surface and native grading infill where supported.",
                         "01 GRADING"),
                     new DisciplineWorkflowAction(
+                        "Junction Closed Feature-Line Infill",
+                        "CE_JUNCTIONINFILL",
+                        "Create native infill for all recognised closed junction feature lines or multiple selected closed junction feature lines.",
+                        "01 GRADING"),
+                    new DisciplineWorkflowAction(
                         "Dynamic Feature-Line Slope Arrows",
                         "CE_FEATURELINESLOPEARROWS",
                         "Create linked leader arrows and slope percentages along multiple Civil 3D feature lines.",

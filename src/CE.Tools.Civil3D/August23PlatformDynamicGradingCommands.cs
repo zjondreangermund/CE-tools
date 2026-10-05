@@ -31,6 +31,7 @@ namespace CETools.Civil3D
     internal sealed class August23PlatformDynamicGradingCommands
     {
         private const string GradeLinkKey = "CE_PLATFORM_GRADE_LINK";
+        private const string JunctionInfillKey = "CE_JUNCTION_INFILL_LINK";
         private const string DirectDrapeKey = "CE_PLATFORM_DIRECT_DRAPE";
         private const string PlatformSiteName = "CE-PLATFORM-SITE";
         private const double Tolerance = 0.000001;
@@ -162,8 +163,20 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Junction / Feature-Line Grade to Surface",
-                "Grade selected junction bellmouth or platform feature lines to a Civil 3D surface. " +
-                "Cut/fill is resolved from the target surface at each source sample, long rays terminate exactly on the toe/daylight line, and the saved settings refresh with linked grading.");
+                "Grade all or multiple selected sidewalk/shoulder bellmouth edge feature lines to a Civil 3D surface. " +
+                "Cut/fill is resolved from the target surface at each source sample, and closed junction boundaries can be infilled separately.");
+            settings.AddChoice(
+                "SourceScope", "00 Selection", "Grade source scope", "Multiple selected shoulder/sidewalk bellmouth edge lines",
+                "Choose all matching shoulder/sidewalk bellmouth edge feature lines, multiple selected matching edge lines, or any multiple selected feature lines.",
+                new[]
+                {
+                    "Multiple selected shoulder/sidewalk bellmouth edge lines",
+                    "All shoulder/sidewalk bellmouth edge lines",
+                    "Multiple selected feature lines"
+                });
+            settings.AddText(
+                "EdgeLayers", "00 Selection", "Shoulder / sidewalk edge layer(s)", "sidewalks,shoulders",
+                "Comma-separated layer names used by the All or matching-edge selection scopes. Name/layer keywords SIDEWALK, SHOULDER, SHLD and VERGE are also recognised.");
             settings.AddChoice(
                 "Surface", "01 Target", "Target surface", surfaces[0].Name,
                 "Natural ground / controlling surface that the bellmouth grading must daylight to.",
@@ -204,8 +217,17 @@ namespace CETools.Civil3D
                 "Horizontal search increment before the final surface intersection is bisected.");
             settings.AddChoice(
                 "Infill", "07 Grading group", "Create native grading group / infill where possible", "Yes",
-                "For closed feature lines CE Tools creates/resolves a Site, grading group and native infill. Open bellmouth strings still receive linked Grade-to-Surface daylight geometry.",
+                "Create native infill for closed junction feature lines. Open sidewalk/shoulder bellmouth edge strings still receive linked Grade-to-Surface daylight geometry.",
                 new[] { "Yes", "No" });
+            settings.AddChoice(
+                "InfillScope", "07 Grading group", "Closed junction infill scope", "Multiple selected closed junction feature lines",
+                "Choose closed lines from the grading selection, select multiple closed junction feature lines separately after grading, or infill all recognised closed junction feature lines.",
+                new[]
+                {
+                    "Multiple selected closed junction feature lines",
+                    "All closed junction feature lines",
+                    "Closed lines in grading selection"
+                });
             settings.AddChoice(
                 "Site", "07 Grading group", "Grading / toe Site", "<Auto: source site / CE-PLATFORM-SITE>",
                 "Reuse the source feature line Site. If it is siteless and native infill is requested, CE-PLATFORM-SITE is created. Choose an existing Site or type a new Site name to move the source/toe grading there.",
@@ -254,10 +276,16 @@ namespace CETools.Civil3D
                 ? 100.0 / Math.Max(0.001, Math.Abs(settings.Double("FillGrade", 50.0)))
                 : Math.Max(0.001, settings.Double("FillSlope", 2.0));
 
-            PromptSelectionResult selection = SelectFeatureLines(
-                document.Editor,
-                "\nSelect junction bellmouth / feature lines to grade to the selected surface: ");
-            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+            List<ObjectId> gradeSourceIds = ResolveGradeSourceIds(
+                document,
+                settings.Text("SourceScope"),
+                settings.Text("EdgeLayers"));
+            if (gradeSourceIds.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_JUNCTIONGRADETOSURFACE cancelled. No matching editable feature lines were found.");
+                return;
+            }
 
             var requested = new GradeLink
             {
@@ -287,7 +315,7 @@ namespace CETools.Civil3D
             int slopeLines = 0;
             int cutSlopeLines = 0;
             int fillSlopeLines = 0;
-            foreach (ObjectId sourceId in selection.Value.GetObjectIds().Distinct())
+            foreach (ObjectId sourceId in gradeSourceIds.Distinct())
             {
                 GradeBuildResult result = BuildOrRefreshGrade(document, sourceId, requested, true);
                 if (result.Success)
@@ -306,16 +334,125 @@ namespace CETools.Civil3D
                 }
             }
 
+            int separateInfillsCreated = 0;
+            int separateInfillsExisting = 0;
+            int separateInfillsSkipped = 0;
+            if (requested.NativeInfill &&
+                !string.Equals(
+                    settings.Text("InfillScope"),
+                    "Closed lines in grading selection",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                List<ObjectId> infillIds = ResolveClosedJunctionInfillIds(
+                    document,
+                    settings.Text("InfillScope"));
+                foreach (ObjectId infillSourceId in infillIds.Distinct())
+                {
+                    NativeInfillResult infillResult =
+                        CreateOrRefreshNativeInfill(
+                            document,
+                            infillSourceId,
+                            requested.SiteName);
+                    if (infillResult.Created) separateInfillsCreated++;
+                    else if (infillResult.Existing) separateInfillsExisting++;
+                    else
+                    {
+                        separateInfillsSkipped++;
+                        if (!string.IsNullOrWhiteSpace(infillResult.Message))
+                            document.Editor.WriteMessage(
+                                "\nJunction infill skipped safely. " +
+                                infillResult.Message);
+                    }
+                }
+            }
+
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
             document.Editor.WriteMessage(
-                "\nCE_PLATFORMGRADETOSURFACE complete. Selected junction/source feature lines graded={0}; slope lines={1} (cut={2}, fill={3}); grading groups ready={4}; native infills ready={5}; skipped={6}.",
+                "\nCE_PLATFORMGRADETOSURFACE complete. Graded edge/source feature lines={0}; slope lines={1} (cut={2}, fill={3}); grading groups ready={4}; inline native infills ready={5}; separate closed-junction infills created={6}; existing={7}; infill skipped={8}; grade skipped={9}.",
                 completed,
                 slopeLines,
                 cutSlopeLines,
                 fillSlopeLines,
                 groups,
                 infills,
+                separateInfillsCreated,
+                separateInfillsExisting,
+                separateInfillsSkipped,
+                skipped);
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_JUNCTIONINFILL", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void JunctionClosedFeatureLineInfill()
+        {
+            PlatformDynamicRefreshManager.EnsureInitialized();
+            Document document =
+                AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+
+            List<string> siteNames = ReadSiteNames(document);
+            string[] siteChoices =
+                new[] { "<Auto: source site / CE-PLATFORM-SITE>" }
+                    .Concat(siteNames)
+                    .ToArray();
+
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Junction Closed Feature-Line Infill",
+                "Create native Civil 3D infill for all recognised closed junction feature lines or multiple selected closed feature lines. CE Tools keeps the feature line and grading group in the same Site before creating the infill.");
+            settings.AddChoice(
+                "Scope", "01 Selection", "Closed junction feature lines", "Multiple selected closed junction feature lines",
+                "Select multiple closed junction feature lines, or process all recognised closed junction feature lines in model space.",
+                new[]
+                {
+                    "Multiple selected closed junction feature lines",
+                    "All closed junction feature lines"
+                });
+            settings.AddChoice(
+                "Site", "02 Grading group", "Grading / infill Site", "<Auto: source site / CE-PLATFORM-SITE>",
+                "Reuse each source feature line Site. If siteless, CE-PLATFORM-SITE is created. You may also choose an existing Site.",
+                siteChoices);
+            if (!DisciplineWorkflowDialogs.EditSettings(settings))
+                return;
+
+            List<ObjectId> sourceIds =
+                ResolveClosedJunctionInfillIds(
+                    document,
+                    settings.Text("Scope"));
+            if (sourceIds.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_JUNCTIONINFILL cancelled. No editable closed junction feature lines were found.");
+                return;
+            }
+
+            int created = 0;
+            int existing = 0;
+            int skipped = 0;
+            foreach (ObjectId sourceId in sourceIds.Distinct())
+            {
+                NativeInfillResult result =
+                    CreateOrRefreshNativeInfill(
+                        document,
+                        sourceId,
+                        settings.Text("Site"));
+                if (result.Created) created++;
+                else if (result.Existing) existing++;
+                else
+                {
+                    skipped++;
+                    if (!string.IsNullOrWhiteSpace(result.Message))
+                        document.Editor.WriteMessage(
+                            "\nJunction infill skipped safely. " +
+                            result.Message);
+                }
+            }
+
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_JUNCTIONINFILL complete. Closed junction feature lines={0}; infills created={1}; already ready={2}; skipped={3}.",
+                sourceIds.Count,
+                created,
+                existing,
                 skipped);
         }
 
@@ -2364,55 +2501,12 @@ namespace CETools.Civil3D
                     .OrderBy(item =>
                         item.GetParameters().Length))
             {
-                ParameterInfo[] parameters =
-                    method.GetParameters();
-                var args =
-                    new object[parameters.Length];
-                bool valid = true;
-                int objectIdSeen = 0;
-
-                for (int index = 0;
-                     index < parameters.Length;
-                     index++)
-                {
-                    Type type =
-                        parameters[index].ParameterType;
-                    string parameterName =
-                        (parameters[index].Name ?? string.Empty)
-                            .ToLowerInvariant();
-
-                    if (type == typeof(ObjectId))
-                    {
-                        // The grading-group ObjectId is the controlling parent.
-                        // Any optional style/object ids are left null instead of
-                        // incorrectly receiving the group id.
-                        args[index] =
-                            objectIdSeen == 0 ||
-                            parameterName.Contains("group")
-                                ? groupId
-                                : ObjectId.Null;
-                        objectIdSeen++;
-                    }
-                    else if (type == typeof(Point3d))
-                        args[index] = seed;
-                    else if (type == typeof(string))
-                        args[index] =
-                            "CE Platform Grade Infill";
-                    else if (type == typeof(bool))
-                        args[index] = true;
-                    else if (type == typeof(double))
-                        args[index] = 0.0;
-                    else if (parameters[index].HasDefaultValue)
-                        args[index] =
-                            parameters[index].DefaultValue;
-                    else
-                    {
-                        valid = false;
-                        break;
-                    }
-                }
-
-                if (!valid)
+                object[] args;
+                if (!TryBuildInfillArguments(
+                        method.GetParameters(),
+                        groupId,
+                        seed,
+                        out args))
                     continue;
 
                 try
@@ -2421,17 +2515,16 @@ namespace CETools.Civil3D
                         method.Invoke(
                             null,
                             args);
-                    if (value is ObjectId)
-                        infillId =
-                            (ObjectId)value;
-                    else if (value is DBObject)
-                        infillId =
-                            ((DBObject)value).ObjectId;
+                    if (TryReadCreatedObjectId(
+                            value,
+                            out infillId))
+                        return true;
 
-                    // Some Civil 3D builds expose CreateInfill as void. A
-                    // successful invocation still means the native infill was
-                    // created even when no ObjectId is returned.
-                    return true;
+                    // Some Civil 3D 2023 builds expose CreateInfill as void.
+                    // A successful invocation is still a successful infill.
+                    if (method.ReturnType == typeof(void) ||
+                        value == null)
+                        return true;
                 }
                 catch (System.Exception exception)
                 {
@@ -2442,10 +2535,228 @@ namespace CETools.Civil3D
                 }
             }
 
+            // Compatibility fallback: a few host builds expose infill creation
+            // on the grading-group object instead of the Grading static class.
+            Document document =
+                AcApplication.DocumentManager.MdiActiveDocument;
+            if (document != null &&
+                document.Database != null &&
+                !groupId.IsNull)
+            {
+                try
+                {
+                    using (Transaction transaction =
+                        document.Database.TransactionManager.StartTransaction())
+                    {
+                        DBObject group =
+                            transaction.GetObject(
+                                groupId,
+                                OpenMode.ForWrite,
+                                false);
+                        if (group != null)
+                        {
+                            foreach (MethodInfo method in
+                                group.GetType()
+                                    .GetMethods(
+                                        BindingFlags.Public |
+                                        BindingFlags.Instance)
+                                    .Where(item =>
+                                        item.Name.IndexOf(
+                                            "CreateInfill",
+                                            StringComparison.OrdinalIgnoreCase) >= 0)
+                                    .OrderBy(item =>
+                                        item.GetParameters().Length))
+                            {
+                                object[] args;
+                                if (!TryBuildInfillArguments(
+                                        method.GetParameters(),
+                                        groupId,
+                                        seed,
+                                        out args,
+                                        true))
+                                    continue;
+                                try
+                                {
+                                    object value =
+                                        method.Invoke(
+                                            group,
+                                            args);
+                                    if (TryReadCreatedObjectId(
+                                            value,
+                                            out infillId))
+                                        return true;
+                                    if (method.ReturnType == typeof(void) ||
+                                        value == null)
+                                        return true;
+                                }
+                                catch (System.Exception exception)
+                                {
+                                    lastError =
+                                        exception.InnerException == null
+                                            ? exception.Message
+                                            : exception.InnerException.Message;
+                                }
+                            }
+                        }
+                    }
+                }
+                catch (System.Exception exception)
+                {
+                    lastError = exception.Message;
+                }
+            }
+
             error =
                 string.IsNullOrWhiteSpace(lastError)
-                    ? "No compatible Civil 3D Grading.CreateInfill overload succeeded."
+                    ? "No compatible Civil 3D Grading.CreateInfill overload succeeded. The closed feature line and grading group must be in the same Site."
                     : lastError;
+            return false;
+        }
+
+        private static bool TryBuildInfillArguments(
+            ParameterInfo[] parameters,
+            ObjectId groupId,
+            Point3d seed,
+            out object[] args,
+            bool instanceGroupMethod = false)
+        {
+            args =
+                new object[parameters.Length];
+            int objectIdSeen = 0;
+
+            for (int index = 0;
+                 index < parameters.Length;
+                 index++)
+            {
+                ParameterInfo parameter =
+                    parameters[index];
+                Type type =
+                    parameter.ParameterType;
+                string name =
+                    (parameter.Name ?? string.Empty)
+                        .ToLowerInvariant();
+
+                if (type == typeof(ObjectId))
+                {
+                    // Instance grading-group methods normally do not need the
+                    // parent group id unless the API explicitly asks for it.
+                    args[index] =
+                        !instanceGroupMethod &&
+                        (objectIdSeen == 0 ||
+                         name.Contains("group"))
+                            ? groupId
+                            : ObjectId.Null;
+                    objectIdSeen++;
+                }
+                else if (type == typeof(Point3d))
+                {
+                    args[index] = seed;
+                }
+                else if (type == typeof(Point2d))
+                {
+                    args[index] =
+                        new Point2d(
+                            seed.X,
+                            seed.Y);
+                }
+                else if (type == typeof(ObjectIdCollection))
+                {
+                    args[index] =
+                        new ObjectIdCollection(
+                            new[] { groupId });
+                }
+                else if (type == typeof(string))
+                {
+                    args[index] =
+                        "CE Junction Infill";
+                }
+                else if (type == typeof(bool))
+                {
+                    args[index] = true;
+                }
+                else if (type == typeof(double))
+                {
+                    args[index] = 0.0;
+                }
+                else if (type == typeof(int))
+                {
+                    args[index] = 0;
+                }
+                else if (type == typeof(short))
+                {
+                    args[index] = (short)0;
+                }
+                else if (type.IsEnum)
+                {
+                    Array values =
+                        Enum.GetValues(type);
+                    if (values.Length == 0)
+                        return false;
+                    args[index] =
+                        values.GetValue(0);
+                }
+                else if (parameter.HasDefaultValue)
+                {
+                    args[index] =
+                        parameter.DefaultValue;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+            return true;
+        }
+
+        private static bool TryReadCreatedObjectId(
+            object value,
+            out ObjectId id)
+        {
+            id = ObjectId.Null;
+            if (value is ObjectId)
+            {
+                id = (ObjectId)value;
+                return true;
+            }
+
+            DBObject dbObject =
+                value as DBObject;
+            if (dbObject != null)
+            {
+                id = dbObject.ObjectId;
+                return true;
+            }
+
+            ObjectIdCollection ids =
+                value as ObjectIdCollection;
+            if (ids != null &&
+                ids.Count > 0)
+            {
+                id = ids[0];
+                return true;
+            }
+
+            IEnumerable enumerable =
+                value as IEnumerable;
+            if (enumerable != null &&
+                !(value is string))
+            {
+                foreach (object item in enumerable)
+                {
+                    if (item is ObjectId)
+                    {
+                        id = (ObjectId)item;
+                        return true;
+                    }
+                    DBObject candidate =
+                        item as DBObject;
+                    if (candidate != null)
+                    {
+                        id = candidate.ObjectId;
+                        return true;
+                    }
+                }
+            }
             return false;
         }
 
@@ -2733,6 +3044,461 @@ namespace CETools.Civil3D
             return result.OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
 
+        private static List<ObjectId> ResolveGradeSourceIds(
+            Document document,
+            string scope,
+            string edgeLayerText)
+        {
+            var result = new List<ObjectId>();
+            if (document == null)
+                return result;
+
+            bool allMatching = string.Equals(
+                scope,
+                "All shoulder/sidewalk bellmouth edge lines",
+                StringComparison.OrdinalIgnoreCase);
+            bool matchingOnly = allMatching ||
+                string.Equals(
+                    scope,
+                    "Multiple selected shoulder/sidewalk bellmouth edge lines",
+                    StringComparison.OrdinalIgnoreCase);
+            HashSet<string> edgeLayers =
+                ParseLayerNames(edgeLayerText);
+
+            ObjectId[] candidateIds;
+            if (allMatching)
+            {
+                candidateIds = ReadModelSpaceIds(
+                    document.Database);
+            }
+            else
+            {
+                PromptSelectionResult selection =
+                    SelectFeatureLines(
+                        document.Editor,
+                        matchingOnly
+                            ? "\nSelect multiple shoulder/sidewalk bellmouth edge feature lines: "
+                            : "\nSelect multiple junction / feature lines to grade: ");
+                if (selection.Status != PromptStatus.OK ||
+                    selection.Value == null)
+                    return result;
+                candidateIds =
+                    selection.Value.GetObjectIds();
+            }
+
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in
+                    candidateIds.Distinct())
+                {
+                    CivilFeatureLine line =
+                        OpenFeatureLine(
+                            transaction,
+                            id,
+                            OpenMode.ForRead);
+                    if (!Editable(line, transaction))
+                        continue;
+                    if (matchingOnly &&
+                        !MatchesShoulderSidewalkBellmouthEdge(
+                            line,
+                            transaction,
+                            edgeLayers))
+                        continue;
+                    result.Add(id);
+                }
+            }
+            return result;
+        }
+
+        private static List<ObjectId> ResolveClosedJunctionInfillIds(
+            Document document,
+            string scope)
+        {
+            var result = new List<ObjectId>();
+            if (document == null)
+                return result;
+
+            bool all = string.Equals(
+                scope,
+                "All closed junction feature lines",
+                StringComparison.OrdinalIgnoreCase);
+            ObjectId[] candidateIds;
+            if (all)
+            {
+                candidateIds =
+                    ReadModelSpaceIds(
+                        document.Database);
+            }
+            else
+            {
+                PromptSelectionResult selection =
+                    SelectFeatureLines(
+                        document.Editor,
+                        "\nSelect multiple CLOSED junction feature lines for native infill: ");
+                if (selection.Status != PromptStatus.OK ||
+                    selection.Value == null)
+                    return result;
+                candidateIds =
+                    selection.Value.GetObjectIds();
+            }
+
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in
+                    candidateIds.Distinct())
+                {
+                    CivilFeatureLine line =
+                        OpenFeatureLine(
+                            transaction,
+                            id,
+                            OpenMode.ForRead);
+                    if (!Editable(line, transaction) ||
+                        !line.Closed)
+                        continue;
+
+                    // For an explicit multiple selection, the user's selection is
+                    // authoritative. "All" is deliberately restricted to CE/junction
+                    // style identities so unrelated closed site feature lines are not
+                    // accidentally infilled.
+                    if (all &&
+                        !IsRecognisedClosedJunctionLine(
+                            line,
+                            transaction))
+                        continue;
+                    result.Add(id);
+                }
+            }
+            return result;
+        }
+
+        private static ObjectId[] ReadModelSpaceIds(
+            Database database)
+        {
+            if (database == null)
+                return new ObjectId[0];
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    BlockTableRecord model =
+                        transaction.GetObject(
+                            SymbolUtilityServices.GetBlockModelSpaceId(
+                                database),
+                            OpenMode.ForRead,
+                            false) as BlockTableRecord;
+                    return model == null
+                        ? new ObjectId[0]
+                        : model.Cast<ObjectId>().ToArray();
+                }
+            }
+            catch
+            {
+                return new ObjectId[0];
+            }
+        }
+
+        private static HashSet<string> ParseLayerNames(
+            string value)
+        {
+            return new HashSet<string>(
+                (value ?? string.Empty)
+                    .Split(
+                        new[] { ',', ';', '|' },
+                        StringSplitOptions.RemoveEmptyEntries)
+                    .Select(item => item.Trim())
+                    .Where(item => !string.IsNullOrWhiteSpace(item)),
+                StringComparer.OrdinalIgnoreCase);
+        }
+
+        private static bool MatchesShoulderSidewalkBellmouthEdge(
+            CivilFeatureLine line,
+            Transaction transaction,
+            ISet<string> edgeLayers)
+        {
+            if (line == null ||
+                transaction == null)
+                return false;
+
+            string layerName =
+                ReadLayerName(
+                    line,
+                    transaction);
+            if (edgeLayers != null &&
+                edgeLayers.Contains(layerName))
+                return true;
+
+            string identity =
+                ((line.Name ?? string.Empty) + " " +
+                 layerName)
+                    .ToUpperInvariant();
+            return identity.Contains("SIDEWALK") ||
+                   identity.Contains("SHOULDER") ||
+                   identity.Contains("SHLD") ||
+                   identity.Contains("VERGE") ||
+                   identity.Contains("FOOTWAY") ||
+                   identity.Contains("WALKWAY");
+        }
+
+        private static bool IsRecognisedClosedJunctionLine(
+            CivilFeatureLine line,
+            Transaction transaction)
+        {
+            if (line == null ||
+                transaction == null ||
+                !line.Closed)
+                return false;
+
+            if (ReadRecord(
+                    line,
+                    transaction,
+                    JunctionInfillKey) != null ||
+                ReadRecord(
+                    line,
+                    transaction,
+                    GradeLinkKey) != null)
+                return true;
+
+            string layerName =
+                ReadLayerName(
+                    line,
+                    transaction);
+            string identity =
+                ((line.Name ?? string.Empty) + " " +
+                 layerName)
+                    .ToUpperInvariant();
+            if (identity.Contains("JUNCTION") ||
+                identity.Contains("BELLMOUTH") ||
+                identity.Contains("SIDEWALK") ||
+                identity.Contains("SHOULDER") ||
+                identity.Contains("SHLD") ||
+                identity.Contains("VERGE"))
+                return true;
+
+            try
+            {
+                using (ResultBuffer xdata =
+                    line.GetXDataForApplication(
+                        "CE_ROAD_JUNCTION"))
+                {
+                    return xdata != null;
+                }
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        private static string ReadLayerName(
+            Entity entity,
+            Transaction transaction)
+        {
+            if (entity == null ||
+                transaction == null ||
+                entity.LayerId.IsNull)
+                return string.Empty;
+            try
+            {
+                LayerTableRecord layer =
+                    transaction.GetObject(
+                        entity.LayerId,
+                        OpenMode.ForRead,
+                        false) as LayerTableRecord;
+                return layer == null
+                    ? string.Empty
+                    : layer.Name ?? string.Empty;
+            }
+            catch
+            {
+                return string.Empty;
+            }
+        }
+
+        private static NativeInfillResult CreateOrRefreshNativeInfill(
+            Document document,
+            ObjectId sourceId,
+            string requestedSite)
+        {
+            var result = new NativeInfillResult();
+            if (document == null ||
+                sourceId.IsNull)
+            {
+                result.Message =
+                    "The closed junction feature line is unavailable.";
+                return result;
+            }
+
+            SourceSnapshot source;
+            string error;
+            if (!TryReadSource(
+                    document.Database,
+                    sourceId,
+                    out source,
+                    out error))
+            {
+                result.Message = error;
+                return result;
+            }
+            if (!source.Closed)
+            {
+                result.Message =
+                    "Native infill requires a closed feature line.";
+                return result;
+            }
+
+            try
+            {
+                EnsureSourceHasSite(
+                    document,
+                    sourceId,
+                    requestedSite,
+                    true);
+            }
+            catch (System.Exception exception)
+            {
+                result.Message =
+                    "The closed feature line could not be placed in the grading Site. " +
+                    exception.Message;
+                return result;
+            }
+
+            if (!TryReadSource(
+                    document.Database,
+                    sourceId,
+                    out source,
+                    out error))
+            {
+                result.Message = error;
+                return result;
+            }
+            if (source.SiteId.IsNull)
+            {
+                result.Message =
+                    "The closed feature line has no Civil 3D Site after Site assignment.";
+                return result;
+            }
+
+            NativeInfillLink nativeLink =
+                ReadNativeInfillLink(
+                    document.Database,
+                    sourceId) ??
+                new NativeInfillLink();
+            GradeLink gradeLink =
+                ReadGradeLink(
+                    document.Database,
+                    sourceId);
+
+            string groupHandle =
+                !string.IsNullOrWhiteSpace(
+                    nativeLink.GroupHandle)
+                    ? nativeLink.GroupHandle
+                    : gradeLink == null
+                        ? string.Empty
+                        : gradeLink.GroupHandle;
+            ObjectId groupId =
+                ResolveHandle(
+                    document.Database,
+                    groupHandle);
+            if (groupId.IsNull)
+            {
+                string groupError;
+                groupId =
+                    TryCreateGradingGroup(
+                        document.Database,
+                        source.SiteId,
+                        "CE-JUNCTION-INFILL-" +
+                            sourceId.Handle.ToString(),
+                        out groupError);
+                if (groupId.IsNull)
+                {
+                    result.Message =
+                        "Civil 3D could not create the grading group. " +
+                        groupError;
+                    return result;
+                }
+            }
+
+            string infillHandle =
+                !string.IsNullOrWhiteSpace(
+                    nativeLink.InfillHandle)
+                    ? nativeLink.InfillHandle
+                    : gradeLink == null
+                        ? string.Empty
+                        : gradeLink.InfillHandle;
+            ObjectId existingInfill =
+                ResolveHandle(
+                    document.Database,
+                    infillHandle);
+            if (!existingInfill.IsNull ||
+                nativeLink.Created)
+            {
+                nativeLink.GroupHandle =
+                    groupId.Handle.ToString();
+                nativeLink.InfillHandle =
+                    existingInfill.IsNull
+                        ? nativeLink.InfillHandle
+                        : existingInfill.Handle.ToString();
+                nativeLink.SiteName =
+                    requestedSite;
+                nativeLink.Created = true;
+                WriteNativeInfillLink(
+                    document.Database,
+                    sourceId,
+                    nativeLink);
+                result.Existing = true;
+                return result;
+            }
+
+            ObjectId infillId;
+            string infillError;
+            if (!TryCreateInfill(
+                    groupId,
+                    InteriorSeed(source.Points),
+                    out infillId,
+                    out infillError))
+            {
+                result.Message =
+                    "Civil 3D could not create the native infill. " +
+                    infillError;
+                return result;
+            }
+
+            nativeLink.GroupHandle =
+                groupId.Handle.ToString();
+            nativeLink.InfillHandle =
+                infillId.IsNull
+                    ? string.Empty
+                    : infillId.Handle.ToString();
+            nativeLink.SiteName =
+                requestedSite;
+            nativeLink.Created = true;
+            WriteNativeInfillLink(
+                document.Database,
+                sourceId,
+                nativeLink);
+
+            if (gradeLink != null)
+            {
+                gradeLink.GroupHandle =
+                    nativeLink.GroupHandle;
+                gradeLink.InfillHandle =
+                    nativeLink.InfillHandle;
+                gradeLink.NativeInfill = true;
+                gradeLink.SiteName =
+                    requestedSite;
+                WriteGradeLink(
+                    document.Database,
+                    sourceId,
+                    gradeLink);
+            }
+
+            result.Created = true;
+            return result;
+        }
+
         private static PromptSelectionResult SelectFeatureLines(Editor editor, string message)
         {
             PromptSelectionResult implied = editor.SelectImplied();
@@ -2774,6 +3540,98 @@ namespace CETools.Civil3D
                 Intermediate = Convert.ToInt16(values[1].Value, CultureInfo.InvariantCulture) != 0
             };
             return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
+        }
+
+        private static void WriteNativeInfillLink(
+            Database database,
+            ObjectId sourceId,
+            NativeInfillLink link)
+        {
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                CivilFeatureLine source =
+                    OpenFeatureLine(
+                        transaction,
+                        sourceId,
+                        OpenMode.ForWrite);
+                if (source == null)
+                    throw new InvalidOperationException(
+                        "The junction infill source feature line is unavailable.");
+
+                Xrecord record =
+                    Record(
+                        source,
+                        transaction,
+                        JunctionInfillKey);
+                record.Data = new ResultBuffer(
+                    new TypedValue(
+                        (int)DxfCode.Text,
+                        link.GroupHandle ?? string.Empty),
+                    new TypedValue(
+                        (int)DxfCode.Text,
+                        link.InfillHandle ?? string.Empty),
+                    new TypedValue(
+                        (int)DxfCode.Text,
+                        link.SiteName ?? string.Empty),
+                    new TypedValue(
+                        (int)DxfCode.Int16,
+                        link.Created ? 1 : 0));
+                transaction.Commit();
+            }
+        }
+
+        private static NativeInfillLink ReadNativeInfillLink(
+            Database database,
+            ObjectId sourceId)
+        {
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine source =
+                        OpenFeatureLine(
+                            transaction,
+                            sourceId,
+                            OpenMode.ForRead);
+                    if (source == null)
+                        return null;
+
+                    TypedValue[] values =
+                        ReadRecord(
+                            source,
+                            transaction,
+                            JunctionInfillKey);
+                    if (values == null ||
+                        values.Length < 4)
+                        return null;
+
+                    return new NativeInfillLink
+                    {
+                        GroupHandle =
+                            Convert.ToString(
+                                values[0].Value,
+                                CultureInfo.InvariantCulture),
+                        InfillHandle =
+                            Convert.ToString(
+                                values[1].Value,
+                                CultureInfo.InvariantCulture),
+                        SiteName =
+                            Convert.ToString(
+                                values[2].Value,
+                                CultureInfo.InvariantCulture),
+                        Created =
+                            Convert.ToInt16(
+                                values[3].Value,
+                                CultureInfo.InvariantCulture) != 0
+                    };
+                }
+            }
+            catch
+            {
+                return null;
+            }
         }
 
         private static void WriteGradeLink(Database database, ObjectId sourceId, GradeLink link)
@@ -3351,6 +4209,21 @@ namespace CETools.Civil3D
                     ToeColorIndex = NormalizeAciColor(ToeColorIndex)
                 };
             }
+        }
+
+        private sealed class NativeInfillLink
+        {
+            internal string GroupHandle { get; set; }
+            internal string InfillHandle { get; set; }
+            internal string SiteName { get; set; }
+            internal bool Created { get; set; }
+        }
+
+        private sealed class NativeInfillResult
+        {
+            internal bool Created { get; set; }
+            internal bool Existing { get; set; }
+            internal string Message { get; set; }
         }
 
         private sealed class SourceSnapshot
