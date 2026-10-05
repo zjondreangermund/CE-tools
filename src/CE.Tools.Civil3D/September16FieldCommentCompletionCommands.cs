@@ -299,7 +299,7 @@ namespace CETools.Civil3D
                         document.Database,
                         transaction,
                         space,
-                        layerId,
+                        limitLayerId,
                         candidate,
                         definitions,
                         featureLines || (!candidate.IsCross && closureFeatureLine),
@@ -325,7 +325,7 @@ namespace CETools.Civil3D
             document.Editor.WriteMessage(
                 "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction edge-centre-edge limits={2}; cross-junction limit lines={3}; failed curve pairs={4}; bellmouth layer={5}; limit layer={6}. Bellmouth returns remain open. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
                 junctions, created, tClosures, crossLimitLines, failedPairs, bellmouthLayerName, limitLayerName);
-            document.Editor.WriteMessage("\nCross-road connectors include midpoint vertices; surface vertices added={0}; unresolved elevations={1}.",
+            document.Editor.WriteMessage("\nCross-road connectors include midpoint vertices; feature-line points adjusted from TOP surfaces={0}; unresolved elevations={1}. TOP surfaces were not changed.",
                 surfaceVertices, unresolvedVertices);
         }
 
@@ -757,7 +757,7 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nT-junction edge-centre-edge limit feature lines complete. Created={0}; unpaired/skipped={1}; surface vertices added={2}; unresolved elevations={3}. Existing bellmouth returns were not closed or modified.",
+                "\nT-junction edge-centre-edge limit feature lines complete. Created={0}; unpaired/skipped={1}; feature-line points adjusted={2}; unresolved elevations={3}. Existing bellmouth returns and TOP surfaces were not modified.",
                 created,
                 skipped,
                 surfaceVertices,
