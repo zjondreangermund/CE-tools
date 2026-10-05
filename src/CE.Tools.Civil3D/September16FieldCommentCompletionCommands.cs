@@ -13,6 +13,7 @@ using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Application;
 using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
+using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.September16FieldCommentCompletionCommands))]
 
@@ -83,10 +84,16 @@ namespace CETools.Civil3D
             List<string> siteNames = ReadSiteNames();
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Batch T/Cross Junction Bellmouths",
-                "Detect every unique crossing between selected road-centre curves, create all T/cross bellmouth returns in one transaction and leave the source geometry unchanged.");
+                "Detect every unique crossing from all road alignments, multiple selected alignments, or selected road-centre curves. Previous modified values are retained as the next defaults.");
             model.AddChoice("Operation", "01 Selection", "Operation", "Create junctions",
                 "Create bellmouths from selected road centre lines, or add separate edge-centre-edge T-junction limit feature lines between existing bellmouth returns. Existing bellmouth feature lines are never closed into loops.",
                 new[] { "Create junctions", "Add T-junction edge-centre-edge feature lines" });
+            model.AddChoice("RoadSourceScope", "01 Selection", "Road source", "Selected road alignments",
+                "Create junctions from every road alignment, multiple selected Civil 3D alignments, or the legacy selected line/polyline/feature-line workflow.",
+                new[] { "All road alignments", "Selected road alignments", "Selected road-centre curves" });
+            model.AddChoice("ExistingJunctions", "01 Selection", "Existing generated junctions", "Keep existing",
+                "When re-running junction creation, optionally erase existing CE batch bellmouths, junction labels and limit lines before creating the new set. The source alignments/road geometry are never erased.",
+                new[] { "Keep existing", "Erase existing before re-run" });
             model.AddPositiveDouble("Radius", "01 Geometry", "Bellmouth radius", 10.0,
                 "Radius used for every generated return.");
             model.AddPositiveDouble("MainHalfWidth", "01 Geometry", "Main-road half-width", 3.7,
@@ -113,8 +120,10 @@ namespace CETools.Civil3D
                 "Used only by Add T-junction edge-centre-edge feature lines. Selected bellmouth returns are paired by their closest endpoints; pairs farther apart than this are skipped.");
             // Legacy regression marker retained while separating the output:
             // model.AddText("Layer", "04 Output", "Output layer", JunctionLayer,
-            model.AddText("BellmouthLayer", "04 Output", "Bellmouth layer", JunctionLayer,
-                "Layer for generated bellmouth returns and their junction labels.");
+            // Keep the historical key "Layer" so a user's previously modified
+            // output-layer value remains the default after the layer split.
+            model.AddText("Layer", "04 Output", "Bellmouth layer", JunctionLayer,
+                "Layer for generated bellmouth returns and their junction labels. Previous Output layer values are retained here.");
             model.AddText("LimitLayer", "04 Output", "Limit-line layer", JunctionLimitLayer,
                 "Separate layer for T-junction edge-centre-edge limits and cross-junction limit lines.");
             model.AddChoice("ExistingBellmouthScope", "04 Output", "Existing bellmouth scope", "Selected junction bellmouths",
@@ -131,7 +140,7 @@ namespace CETools.Civil3D
             model.AddDouble("WeedAngle", "04 Output", "Feature-line weed angle (deg)", 0.0,
                 "Optional deflection-angle weed setting. 0 disables angle weeding.");
             model.AddChoice("TopSurfaceVertices", "05 Road TOP surfaces", "Assign junction vertices to road TOP surfaces", "Yes",
-                "Select multiple road TOP surfaces after selecting the roads. Cross-road connectors include a protected midpoint so the road crown is retained.",
+                "Sample selected TOP surfaces and update only the junction feature-line vertex elevations/grades. No surface vertices, breaklines or TOP-surface rebuilds are created.",
                 new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
@@ -153,19 +162,17 @@ namespace CETools.Civil3D
                 return;
             }
 
-            PromptSelectionResult selected = document.Editor.SelectImplied();
-            if (selected.Status != PromptStatus.OK || selected.Value == null || selected.Value.Count < 2)
+            string roadSourceScope = model.Text("RoadSourceScope");
+            List<ObjectId> sourceObjectIds = ResolveRoadSourceIds(
+                document,
+                CivilApplication.ActiveDocument,
+                roadSourceScope);
+            if (sourceObjectIds.Count < 2)
             {
-                var options = new PromptSelectionOptions
-                {
-                    MessageForAdding = "\nSelect all road-centre lines, polylines or feature lines: ",
-                    AllowDuplicates = false,
-                    RejectObjectsFromNonCurrentSpace = true
-                };
-                selected = document.Editor.GetSelection(options);
+                document.Editor.WriteMessage(
+                    "\nCE_ROADJUNCTIONBATCH stopped. Select at least two Civil 3D road alignments or usable road-centre curves.");
+                return;
             }
-            document.Editor.SetImpliedSelection(new ObjectId[0]);
-            if (selected.Status != PromptStatus.OK || selected.Value == null || selected.Value.Count < 2) return;
 
             double radius = model.Double("Radius", 10.0);
             double mainHalfWidth = model.Double("MainHalfWidth", 3.7);
@@ -184,7 +191,7 @@ namespace CETools.Civil3D
             double weedDistance = Math.Max(0.0, model.Double("WeedDistance", 0.0));
             double weedAngle = Math.Max(0.0, model.Double("WeedAngle", 0.0));
             string bellmouthLayerName =
-                CleanLayerName(model.Text("BellmouthLayer"));
+                CleanLayerName(model.Text("Layer"));
             string limitLayerName =
                 CleanLayerName(model.Text("LimitLayer"));
             IList<CivilChoice> topSurfaceChoices = new List<CivilChoice>();
@@ -201,23 +208,75 @@ namespace CETools.Civil3D
             int failedPairs = 0;
             int surfaceVertices = 0;
             int unresolvedVertices = 0;
+            int erasedExisting = 0;
 
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 List<Autodesk.Civil.DatabaseServices.Surface> topSurfaces =
                     JunctionSurfaceVertices.OpenSurfaces(transaction, topSurfaceChoices);
                 var curves = new List<Curve>();
-                foreach (ObjectId id in selected.Value.GetObjectIds().Distinct())
+                var transientAlignmentCurves = new List<Curve>();
+                bool alignmentSources = !string.Equals(
+                    roadSourceScope,
+                    "Selected road-centre curves",
+                    StringComparison.OrdinalIgnoreCase);
+                foreach (ObjectId id in sourceObjectIds.Distinct())
                 {
-                    Curve curve = null;
-                    try { curve = transaction.GetObject(id, OpenMode.ForRead, false) as Curve; }
-                    catch { }
-                    if (curve != null) curves.Add(curve);
+                    if (alignmentSources)
+                    {
+                        CivilAlignment alignment = null;
+                        try
+                        {
+                            alignment = transaction.GetObject(
+                                id,
+                                OpenMode.ForRead,
+                                false) as CivilAlignment;
+                        }
+                        catch { }
+                        if (alignment == null ||
+                            !IsRoadJunctionAlignment(alignment))
+                            continue;
+
+                        Curve sampled = BuildAlignmentPlanCurve(
+                            alignment,
+                            0.50);
+                        if (sampled == null)
+                            continue;
+                        curves.Add(sampled);
+                        transientAlignmentCurves.Add(sampled);
+                    }
+                    else
+                    {
+                        Curve curve = null;
+                        try
+                        {
+                            curve = transaction.GetObject(
+                                id,
+                                OpenMode.ForRead,
+                                false) as Curve;
+                        }
+                        catch { }
+                        if (curve != null)
+                            curves.Add(curve);
+                    }
                 }
                 if (curves.Count < 2)
                 {
-                    document.Editor.WriteMessage("\nCE_ROADJUNCTIONBATCH stopped. Select at least two usable road-centre curves.");
+                    foreach (Curve transient in transientAlignmentCurves)
+                        transient.Dispose();
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADJUNCTIONBATCH stopped. Fewer than two usable road centre sources were resolved.");
                     return;
+                }
+
+                if (string.Equals(
+                        model.Text("ExistingJunctions"),
+                        "Erase existing before re-run",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    erasedExisting = EraseExistingBatchJunctionOutputs(
+                        document.Database,
+                        transaction);
                 }
 
                 ObjectId bellmouthLayerId = EnsureLayer(
@@ -315,18 +374,264 @@ namespace CETools.Civil3D
                     if (returnNumber > 0) junctions++;
                 }
 
+                foreach (Curve transient in transientAlignmentCurves)
+                    transient.Dispose();
+
                 // TOP surfaces are reference-only. JunctionSurfaceVertices.Apply
-                // updates feature-line elevations/grades and must not rebuild or
-                // mutate the selected road surfaces.
+                // updates feature-line elevations/grades and must not rebuild,
+                // add vertices or add breaklines to the selected road surfaces.
                 transaction.Commit();
             }
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction edge-centre-edge limits={2}; cross-junction limit lines={3}; failed curve pairs={4}; bellmouth layer={5}; limit layer={6}. Bellmouth returns remain open. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
-                junctions, created, tClosures, crossLimitLines, failedPairs, bellmouthLayerName, limitLayerName);
+                "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction edge-centre-edge limits={2}; cross-junction limit lines={3}; failed curve pairs={4}; erased previous outputs={5}; bellmouth layer={6}; limit layer={7}. Bellmouth returns remain open. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
+                junctions, created, tClosures, crossLimitLines, failedPairs, erasedExisting, bellmouthLayerName, limitLayerName);
             document.Editor.WriteMessage("\nCross-road connectors include midpoint vertices; feature-line points adjusted from TOP surfaces={0}; unresolved elevations={1}. TOP surfaces were not changed.",
                 surfaceVertices, unresolvedVertices);
+        }
+
+        private static List<ObjectId> ResolveRoadSourceIds(
+            Document document,
+            CivilDocument civilDocument,
+            string scope)
+        {
+            var result = new List<ObjectId>();
+            if (document == null || civilDocument == null)
+                return result;
+
+            if (string.Equals(
+                    scope,
+                    "All road alignments",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in
+                        civilDocument.GetAlignmentIds())
+                    {
+                        CivilAlignment alignment = null;
+                        try
+                        {
+                            alignment = transaction.GetObject(
+                                id,
+                                OpenMode.ForRead,
+                                false) as CivilAlignment;
+                        }
+                        catch { }
+                        if (IsRoadJunctionAlignment(alignment))
+                            result.Add(id);
+                    }
+                }
+                return result;
+            }
+
+            PromptSelectionResult selected =
+                document.Editor.SelectImplied();
+            if (selected.Status != PromptStatus.OK ||
+                selected.Value == null ||
+                selected.Value.Count < 2)
+            {
+                string message = string.Equals(
+                        scope,
+                        "Selected road alignments",
+                        StringComparison.OrdinalIgnoreCase)
+                    ? "\nSelect multiple Civil 3D road alignments: "
+                    : "\nSelect multiple road-centre lines, polylines or feature lines: ";
+                selected = document.Editor.GetSelection(
+                    new PromptSelectionOptions
+                    {
+                        MessageForAdding = message,
+                        AllowDuplicates = false,
+                        RejectObjectsFromNonCurrentSpace = true
+                    });
+            }
+            document.Editor.SetImpliedSelection(
+                new ObjectId[0]);
+            if (selected.Status != PromptStatus.OK ||
+                selected.Value == null)
+                return result;
+
+            ObjectId[] selectedIds =
+                selected.Value.GetObjectIds();
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in selectedIds.Distinct())
+                {
+                    DBObject value = null;
+                    try
+                    {
+                        value = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false);
+                    }
+                    catch { }
+                    if (string.Equals(
+                            scope,
+                            "Selected road alignments",
+                            StringComparison.OrdinalIgnoreCase))
+                    {
+                        CivilAlignment alignment =
+                            value as CivilAlignment;
+                        if (IsRoadJunctionAlignment(alignment))
+                            result.Add(id);
+                    }
+                    else if (value is Curve)
+                    {
+                        result.Add(id);
+                    }
+                }
+            }
+            return result;
+        }
+
+        private static bool IsRoadJunctionAlignment(
+            CivilAlignment alignment)
+        {
+            if (alignment == null ||
+                alignment.AlignmentType !=
+                    AlignmentType.Centerline)
+                return false;
+
+            string identity =
+                ((alignment.Name ?? string.Empty) + " " +
+                 (alignment.Description ?? string.Empty))
+                    .ToUpperInvariant();
+            if (identity.Contains("SEWER") ||
+                identity.Contains("STORM") ||
+                identity.Contains("WATER") ||
+                identity.Contains("PIPE") ||
+                identity.Contains("DRAIN") ||
+                identity.Contains("FIBRE") ||
+                identity.Contains("CABLE"))
+                return false;
+            return true;
+        }
+
+        private static Curve BuildAlignmentPlanCurve(
+            CivilAlignment alignment,
+            double maximumChord)
+        {
+            if (alignment == null)
+                return null;
+
+            double start = alignment.StartingStation;
+            double end = alignment.EndingStation;
+            if (end < start)
+            {
+                double swap = start;
+                start = end;
+                end = swap;
+            }
+            if (end - start <= Tol)
+                return null;
+
+            double interval = Math.Max(
+                0.10,
+                maximumChord);
+            int segmentCount = Math.Max(
+                2,
+                (int)Math.Ceiling(
+                    (end - start) / interval));
+            // Avoid pathological memory use on exceptionally long alignments
+            // while keeping sub-metre junction detection for normal roads.
+            segmentCount = Math.Min(
+                segmentCount,
+                50000);
+
+            var polyline = new Polyline(
+                segmentCount + 1);
+            int added = 0;
+            for (int index = 0;
+                 index <= segmentCount;
+                 index++)
+            {
+                double station =
+                    start +
+                    (end - start) *
+                    index / segmentCount;
+                double x = 0.0;
+                double y = 0.0;
+                try
+                {
+                    alignment.PointLocation(
+                        station,
+                        0.0,
+                        ref x,
+                        ref y);
+                    polyline.AddVertexAt(
+                        added++,
+                        new Point2d(x, y),
+                        0.0,
+                        0.0,
+                        0.0);
+                }
+                catch { }
+            }
+
+            if (added < 2)
+            {
+                polyline.Dispose();
+                return null;
+            }
+            return polyline;
+        }
+
+        private static int EraseExistingBatchJunctionOutputs(
+            Database database,
+            Transaction transaction)
+        {
+            if (database == null || transaction == null)
+                return 0;
+
+            BlockTableRecord model = transaction.GetObject(
+                SymbolUtilityServices.GetBlockModelSpaceId(
+                    database),
+                OpenMode.ForRead,
+                false) as BlockTableRecord;
+            if (model == null)
+                return 0;
+
+            int erased = 0;
+            foreach (ObjectId id in
+                model.Cast<ObjectId>().ToList())
+            {
+                Entity entity = null;
+                try
+                {
+                    entity = transaction.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as Entity;
+                }
+                catch { }
+                if (entity == null)
+                    continue;
+
+                ResultBuffer data = null;
+                try
+                {
+                    data =
+                        entity.GetXDataForApplication(
+                            AppName);
+                }
+                catch { }
+                if (data == null)
+                    continue;
+                data.Dispose();
+
+                try
+                {
+                    entity.UpgradeOpen();
+                    entity.Erase();
+                    erased++;
+                }
+                catch { }
+            }
+            return erased;
         }
 
         private static bool TryBuildCandidate(Curve first, Curve second, Point3d point, double endpointTolerance, out JunctionCandidate candidate)

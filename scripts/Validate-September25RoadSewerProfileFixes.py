@@ -23,11 +23,14 @@ checks = {
         "No TOP surface was changed",
         "TryFindSurfaceElevation(surfaces, point.X, point.Y, out elevation)",
     ],
-    "junction endpoint recovery": [
-        'model.AddChoice("Roads", "01 Surfaces", "Roads", "ALL"',
-        "CivilFeatureLine featureLine = entity as CivilFeatureLine;",
-        "featurePoints[featurePoints.Count - 1]",
-        "if (!IsFinite(point.Z) || Math.Abs(point.Z) <= 0.001)",
+    "junction endpoint read-only TOP reference": [
+        'model.AddChoice(',
+        '"Roads",',
+        "IsTaggedJunctionFeatureLine(line)",
+        "JunctionSurfaceVertices.Apply(",
+        "OpenMode.ForRead",
+        "TOP surfaces unchanged",
+        "no vertices or breaklines were added",
     ],
     "multiple stepped feature lines": [
         'CommandMethod("CE_TOOLS", "CE_FLRELCREATE", CommandFlags.Modal | CommandFlags.UsePickSet',

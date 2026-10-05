@@ -20,6 +20,8 @@ namespace CETools.Civil3D
         {
             public readonly HashSet<string> ChangedHandles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             public bool Busy;
+            public bool UndoRedoActive;
+            public DateTime SuppressUntilUtc = DateTime.MinValue;
         }
 
         private static bool _initialized;
@@ -63,14 +65,20 @@ namespace CETools.Civil3D
             if (document == null || document.Database == null || States.ContainsKey(document)) return;
             States.Add(document, new State());
             try { document.Database.ObjectModified += OnObjectModified; } catch { }
+            try { document.CommandWillStart += OnCommandWillStart; } catch { }
             try { document.CommandEnded += OnCommandEnded; } catch { }
+            try { document.CommandCancelled += OnCommandEnded; } catch { }
+            try { document.CommandFailed += OnCommandEnded; } catch { }
         }
 
         private static void Detach(Document document)
         {
             if (document == null || !States.ContainsKey(document)) return;
             try { document.Database.ObjectModified -= OnObjectModified; } catch { }
+            try { document.CommandWillStart -= OnCommandWillStart; } catch { }
             try { document.CommandEnded -= OnCommandEnded; } catch { }
+            try { document.CommandCancelled -= OnCommandEnded; } catch { }
+            try { document.CommandFailed -= OnCommandEnded; } catch { }
             States.Remove(document);
         }
 
@@ -82,7 +90,10 @@ namespace CETools.Civil3D
             try { handle = featureLine.Handle.ToString(); } catch { return; }
             foreach (KeyValuePair<Document, State> pair in States)
             {
-                if (!pair.Value.Busy && ReferenceEquals(pair.Key.Database, sender))
+                if (!pair.Value.Busy &&
+                    !pair.Value.UndoRedoActive &&
+                    DateTime.UtcNow >= pair.Value.SuppressUntilUtc &&
+                    ReferenceEquals(pair.Key.Database, sender))
                 {
                     pair.Value.ChangedHandles.Add(handle);
                     break;
@@ -90,16 +101,71 @@ namespace CETools.Civil3D
             }
         }
 
+        private static void OnCommandWillStart(
+            object sender,
+            CommandEventArgs args)
+        {
+            Document document = sender as Document;
+            State state;
+            if (document == null ||
+                args == null ||
+                !States.TryGetValue(document, out state))
+                return;
+
+            string command =
+                NormalizeCommand(args.GlobalCommandName);
+            if (!IsUndoRedo(command))
+                return;
+
+            // Undo/Redo changes feature lines too. Never treat those changes as
+            // fresh road edits or run an automatic dependent transaction after
+            // Undo, because any such write clears AutoCAD's Redo stack.
+            state.UndoRedoActive = true;
+            state.ChangedHandles.Clear();
+        }
+
         private static void OnCommandEnded(object sender, CommandEventArgs args)
         {
             Document document = sender as Document;
             State state;
-            if (document == null || !States.TryGetValue(document, out state) || state.Busy || state.ChangedHandles.Count == 0) return;
-            var changed = new HashSet<string>(state.ChangedHandles, StringComparer.OrdinalIgnoreCase);
+            if (document == null ||
+                args == null ||
+                !States.TryGetValue(document, out state))
+                return;
+
+            string command =
+                NormalizeCommand(args.GlobalCommandName);
+            if (IsUndoRedo(command))
+            {
+                state.ChangedHandles.Clear();
+                state.UndoRedoActive = false;
+                // Civil 3D can raise a few DBObject events after CommandEnded.
+                // Ignore that tail so REDO remains available.
+                state.SuppressUntilUtc =
+                    DateTime.UtcNow.AddSeconds(1.25);
+                return;
+            }
+
+            if (state.Busy ||
+                state.UndoRedoActive ||
+                DateTime.UtcNow < state.SuppressUntilUtc ||
+                state.ChangedHandles.Count == 0)
+                return;
+
+            var changed = new HashSet<string>(
+                state.ChangedHandles,
+                StringComparer.OrdinalIgnoreCase);
             state.ChangedHandles.Clear();
             state.Busy = true;
+            bool undoDisabled = false;
             try
             {
+                // This is automatic linked-output maintenance after the user's
+                // command. Keep it out of AutoCAD's undo history so it cannot
+                // create a second undo group or destroy a later Redo.
+                document.Database.DisableUndoRecording(true);
+                undoDisabled = true;
+
                 int refreshed = RefreshAffected(document, changed);
 
                 // Road/bellmouth Grade-to-Surface links are deliberately refreshed
@@ -119,7 +185,50 @@ namespace CETools.Civil3D
             {
                 foreach (string handle in changed) state.ChangedHandles.Add(handle);
             }
-            finally { state.Busy = false; }
+            finally
+            {
+                if (undoDisabled)
+                {
+                    try
+                    {
+                        document.Database.DisableUndoRecording(false);
+                    }
+                    catch { }
+                }
+                state.Busy = false;
+            }
+        }
+
+        private static string NormalizeCommand(string value)
+        {
+            return (value ?? string.Empty)
+                .Trim()
+                .TrimStart('.', '_')
+                .ToUpperInvariant();
+        }
+
+        private static bool IsUndoRedo(string command)
+        {
+            if (string.IsNullOrWhiteSpace(command))
+                return false;
+            return string.Equals(
+                       command,
+                       "UNDO",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(
+                       command,
+                       "REDO",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(
+                       command,
+                       "MREDO",
+                       StringComparison.OrdinalIgnoreCase) ||
+                   command.IndexOf(
+                       "UNDO",
+                       StringComparison.OrdinalIgnoreCase) >= 0 ||
+                   command.IndexOf(
+                       "REDO",
+                       StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         internal static int RefreshAffected(Document document, ISet<string> changedHandles)
