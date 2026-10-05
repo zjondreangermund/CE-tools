@@ -2,14 +2,17 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using FeatureLinePointType = Autodesk.Civil.FeatureLinePointType;
+using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.August13RoadConstructionBoqCommands))]
 
@@ -42,8 +45,25 @@ namespace CETools.Civil3D
                 "Drawing units per metre",
                 1.0,
                 "Use 1 for metre-based Civil 3D drawings, or the appropriate drawing-unit conversion where required.");
+            model.AddChoice("RoadLengthSource", "02 Road lengths", "Road length model source",
+                "Corridor baseline station ranges",
+                "Full alignments include the entire road beyond corridor regions. Each alignment is counted once; other quantities still come from corridors.",
+                new[] { "Corridor baseline station ranges", "Full road alignments", "Selected road alignments" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             double unitsPerMetre = Math.Max(model.Double("UnitsPerMetre", 1.0), 1e-9);
+            bool alignmentLengths = !string.Equals(model.Text("RoadLengthSource"),
+                "Corridor baseline station ranges", StringComparison.OrdinalIgnoreCase);
+            HashSet<ObjectId> selectedAlignments = null;
+            if (string.Equals(model.Text("RoadLengthSource"), "Selected road alignments", StringComparison.OrdinalIgnoreCase))
+            {
+                PromptSelectionResult selected = document.Editor.GetSelection(new PromptSelectionOptions
+                {
+                    MessageForAdding = "\nSelect road alignments for full-length BOQ quantities: ",
+                    AllowDuplicates = false
+                });
+                if (selected.Status != PromptStatus.OK || selected.Value == null) return;
+                selectedAlignments = new HashSet<ObjectId>(selected.Value.GetObjectIds());
+            }
 
             var totals = new QuantityAccumulator();
             var warnings = new List<string>();
@@ -55,6 +75,7 @@ namespace CETools.Civil3D
                 using (Transaction transaction =
                     document.Database.TransactionManager.StartTransaction())
                 {
+                    var roadAlignmentIds = new HashSet<ObjectId>();
                     foreach (ObjectId corridorId in civilDocument.CorridorCollection)
                     {
                         Corridor corridor = transaction.GetObject(
@@ -64,16 +85,27 @@ namespace CETools.Civil3D
                         if (!IsRoadCorridor(corridor)) continue;
                         corridorCount++;
 
-                        double roadLength =
-                            ReadCorridorRoadLength(
-                                corridor) /
-                            unitsPerMetre;
-                        totals.TotalRoadLength +=
-                            roadLength;
-                        AddValue(
-                            totals.RoadLengths,
-                            corridor.Name,
-                            roadLength);
+                        if (alignmentLengths)
+                        {
+                            foreach (Baseline baseline in corridor.Baselines)
+                            {
+                                try
+                                {
+                                    if (baseline != null && !baseline.AlignmentId.IsNull)
+                                        roadAlignmentIds.Add(baseline.AlignmentId);
+                                }
+                                catch (System.Exception)
+                                {
+                                    warnings.Add(corridor.Name + ": a feature-line baseline has no road alignment for the length quantity.");
+                                }
+                            }
+                        }
+                        else
+                        {
+                            double roadLength = ReadCorridorRoadLength(corridor) / unitsPerMetre;
+                            totals.TotalRoadLength += roadLength;
+                            AddValue(totals.RoadLengths, corridor.Name, roadLength);
+                        }
 
                         AddDatumCutFill(
                             corridor,
@@ -90,6 +122,35 @@ namespace CETools.Civil3D
                         totals.KerbLength += ReadKerbFeatureLineLength(
                             corridor,
                             unitsPerMetre);
+                    }
+
+                    if (alignmentLengths)
+                    {
+                        foreach (ObjectId alignmentId in civilDocument.GetAlignmentIds())
+                        {
+                            CivilAlignment alignment = transaction.GetObject(alignmentId, OpenMode.ForRead, false) as CivilAlignment;
+                            if (alignment == null) continue;
+                            bool include = selectedAlignments != null
+                                ? selectedAlignments.Contains(alignmentId)
+                                : alignment.AlignmentType == AlignmentType.Centerline &&
+                                  (roadAlignmentIds.Contains(alignmentId) || IsRoadAlignment(alignment));
+                            if (!include) continue;
+                            // Geometric length is independent of station equations and
+                            // corridor extents. Object IDs deduplicate shared baselines.
+                            double length = alignment.Length / unitsPerMetre;
+                            if (double.IsNaN(length) || double.IsInfinity(length) || length <= 0.0)
+                            {
+                                warnings.Add(alignment.Name + ": no valid full alignment length.");
+                                continue;
+                            }
+                            AddValue(totals.RoadLengths, alignment.Name, length);
+                            totals.TotalRoadLength += length;
+                        }
+                        if (totals.RoadLengths.Count == 0)
+                        {
+                            document.Editor.WriteMessage("\nNo road alignments were found. Use Selected road alignments for roads with custom names.");
+                            return;
+                        }
                     }
 
                     totals.JunctionBellmouthLength =
@@ -122,14 +183,14 @@ namespace CETools.Civil3D
                         "Road length - " + road.Key,
                         "m",
                         road.Value,
-                        "Corridor baseline station range"));
+                        alignmentLengths ? "Full Civil 3D alignment length" : "Corridor baseline station range"));
             }
             rows.Add(
                 Row(
                     "Total road length",
                     "m",
                     totals.TotalRoadLength,
-                    "Sum of CE road corridor baseline lengths"));
+                    alignmentLengths ? "Sum of unique full road alignment lengths" : "Sum of CE road corridor baseline lengths"));
 
             rows.Add(
                 Row(
@@ -184,7 +245,7 @@ namespace CETools.Civil3D
 
             string note = string.Format(
                 CultureInfo.CurrentCulture,
-                "Road corridors={0}; total road length={1:N3} m. Re-run CE_ROADBOQCONSTRUCTION after corridor/surface edits to recalculate from the live model. {2}",
+                "Road corridors={0}; total road length={1:N3} m. Re-run CE_ROADBOQCONSTRUCTION after alignment/corridor/surface edits to recalculate from the live model. {2}",
                 corridorCount,
                 totals.TotalRoadLength,
                 warnings.Count == 0
@@ -210,6 +271,12 @@ namespace CETools.Civil3D
                 corridorCount,
                 rows.Count,
                 warnings.Count);
+        }
+
+        private static bool IsRoadAlignment(CivilAlignment alignment)
+        {
+            return (alignment.Description ?? string.Empty).IndexOf("CE road", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                Regex.IsMatch(alignment.Name ?? string.Empty, @"^(?:RD|ROAD)[\s_-]*\d+(?:\b|_)", RegexOptions.IgnoreCase);
         }
 
         private static void AddDatumCutFill(

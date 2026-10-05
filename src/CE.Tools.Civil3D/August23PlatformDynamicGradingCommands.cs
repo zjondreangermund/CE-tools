@@ -1285,18 +1285,29 @@ namespace CETools.Civil3D
                 }
 
                 int index = 0;
+                var toePoints = daylight.Select(point => new CETools.Core.GradingPoint(point.X, point.Y, point.Z)).ToList();
                 foreach (SlopeRaySample sample in
                     resolvedSamples.Where(item => item.Valid))
                 {
                     ObjectId rayId;
                     string rayError;
+                    Point3d rayStart = sample.Point;
                     Point3d rayEnd;
                     if (sample.HalfLength)
                     {
-                        rayEnd =
-                            Halfway(
-                                sample.Point,
-                                sample.EndPoint);
+                        CETools.Core.GradingPoint shortStart, shortEnd;
+                        if (!CETools.Core.GradingSlopeTicks.TryShortTick(
+                                new CETools.Core.GradingPoint(sample.Point.X, sample.Point.Y, sample.Point.Z),
+                                new CETools.Core.GradingPoint(sample.EndPoint.X, sample.EndPoint.Y, sample.EndPoint.Z),
+                                toePoints, source.Closed, sample.Cut, out shortStart, out shortEnd))
+                        {
+                            error = "A short slope ray could not be intersected with the toe/daylight line.";
+                            foreach (ObjectId created in lineIds) Cleanup(database, created);
+                            lineIds.Clear();
+                            return false;
+                        }
+                        rayStart = new Point3d(shortStart.X, shortStart.Y, shortStart.Z);
+                        rayEnd = new Point3d(shortEnd.X, shortEnd.Y, shortEnd.Z);
                     }
                     else if (!TrySnapToToeVertex(
                                  daylight,
@@ -1318,7 +1329,7 @@ namespace CETools.Civil3D
                     if (!TryCreateCivilSlopeRay(
                             database,
                             source,
-                            sample.Point,
+                            rayStart,
                             rayEnd,
                             sample.Cut ? cutLayerId : fillLayerId,
                             sample.Cut ? "CUT" : "FILL",
@@ -1680,6 +1691,7 @@ namespace CETools.Civil3D
                         NormalizeAciColor(colorIndex);
                     transaction.Commit();
                 }
+                ApplyGradingColour(database, featureLineId, colorIndex);
                 return true;
             }
             catch (System.Exception exception)
@@ -1694,6 +1706,28 @@ namespace CETools.Civil3D
             {
                 if (!temporaryId.IsNull)
                     Cleanup(database, temporaryId);
+            }
+        }
+
+        private static void ApplyGradingColour(Database database, ObjectId id, short colourIndex)
+        {
+            short normalized = NormalizeAciColor(colourIndex);
+            ObjectId styleId;
+            // Civil 3D 2023 needs the copied style committed before assignment.
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                CivilFeatureLine line = OpenFeatureLine(transaction, id, OpenMode.ForWrite);
+                styleId = FeatureLineColourService.Prepare(database, line, normalized, transaction);
+                transaction.Commit();
+            }
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                CivilFeatureLine line = OpenFeatureLine(transaction, id, OpenMode.ForWrite);
+                if (!FeatureLineColourService.Assign(line, styleId, transaction))
+                    throw new InvalidOperationException("Civil 3D did not accept the grading colour style.");
+                line.ColorIndex = normalized;
+                line.RecordGraphicsModified(true);
+                transaction.Commit();
             }
         }
 
@@ -1816,6 +1850,7 @@ namespace CETools.Civil3D
                         throw new InvalidOperationException("The daylight candidate failed finite-point verification.");
                     transaction.Commit();
                 }
+                ApplyGradingColour(document.Database, featureLineId, toeColorIndex);
                 return true;
             }
             catch (System.Exception exception)

@@ -27,6 +27,7 @@ internal static class Program
         var basic = (FeatureLineStyle)transaction.GetObject(basicId, OpenMode.ForWrite, false);
         basic.Plan.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(Autodesk.AutoCAD.Colors.ColorMethod.ByAci, 5);
         basic.Model.Color = basic.Plan.Color;
+        basic.Plan.Layer = basic.Model.Layer = "SOURCE-STYLE-LAYER";
         Check(!basic.GetType().GetProperty("Name").CanRead, "Fixture must reproduce Civil 3D's setter-only style Name.");
         Check(CivilStyleNames.Get(basic) == "Basic", "Inherited style name getter must work.");
 
@@ -45,7 +46,16 @@ internal static class Program
         var styleless = new Civil.FeatureLine { StyleName = "" };
         Check(!FeatureLineColourService.Prepare(database, styleless, 1, transaction).IsNull, "A styleless line still needs a visible colour style.");
         bool badColour = false;
-        try { FeatureLineColourService.Prepare(database, line, 256, transaction); }
+        var byLayerId = FeatureLineColourService.Prepare(database, line, 256, transaction);
+        FeatureLineColourService.Assign(line, byLayerId, transaction);
+        var byLayerStyle = (FeatureLineStyle)transaction.GetObject(byLayerId, OpenMode.ForRead, false);
+        Check(byLayerStyle.Plan.Color.ColorMethod == Autodesk.AutoCAD.Colors.ColorMethod.ByLayer &&
+            byLayerStyle.Model.Color.ColorMethod == Autodesk.AutoCAD.Colors.ColorMethod.ByLayer,
+            "Grading ByLayer must affect both Civil 3D display components.");
+        Check(basic.Plan.Color.ColorIndex == 5, "ByLayer must preserve the shared source style.");
+        Check(byLayerStyle.Plan.Layer == "0" && byLayerStyle.Model.Layer == "0" &&
+            basic.Plan.Layer == "SOURCE-STYLE-LAYER", "ByLayer grading styles must use the feature line's selected layer, preserving the source style.");
+        try { FeatureLineColourService.Prepare(database, line, 257, transaction); }
         catch (ArgumentOutOfRangeException) { badColour = true; }
         Check(badColour, "Reject invalid explicit colour indices.");
 

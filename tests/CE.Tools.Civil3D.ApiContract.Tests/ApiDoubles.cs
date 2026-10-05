@@ -127,6 +127,7 @@ namespace Autodesk.Civil.DatabaseServices.Styles
     }
     public sealed class DisplayStyle
     {
+        public string Layer { get; set; } = "0";
         public Color Color { get; set; } = Color.FromColorIndex(ColorMethod.ByAci, 5);
         public bool Visible { get; set; } = true;
     }
@@ -148,6 +149,9 @@ namespace Autodesk.Civil.DatabaseServices.Styles
             copy.Plan.Color = Plan.Color;
             copy.Model.Color = Model.Color;
             copy.Profile.Color = Profile.Color;
+            copy.Plan.Layer = Plan.Layer;
+            copy.Model.Layer = Model.Layer;
+            copy.Profile.Layer = Profile.Layer;
             return id;
         }
     }

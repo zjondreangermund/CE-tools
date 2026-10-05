@@ -73,10 +73,7 @@ if build_call not in text:
 
 # Long rays must snap to the toe vertices; only the short corridor-style rays may
 # intentionally stop halfway.
-if """if (sample.HalfLength)
-                    {
-                        rayEnd =
-                            Halfway(""" not in text:
+if "if (sample.HalfLength)" not in text or "GradingSlopeTicks.TryShortTick(" not in text:
     errors.append("Corridor-style short-ray handling is missing.")
 if """else if (!TrySnapToToeVertex(
                                  daylight,

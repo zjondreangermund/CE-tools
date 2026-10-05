@@ -1,0 +1,17 @@
+# October 5 screenshot fixes
+
+| Screenshot | Command | Change |
+| --- | --- | --- |
+| `643c89bb-2541-41fa-9fa9-8a64a4b703a0.jpg` | `CE_PROFILEVIEWPORTFIT` | Existing viewport fitting stays the default. **Viewport source → Create profile viewports** creates a stack at a picked top-left paper-space corner, including on layouts with no model viewports. Set width, height and gap in millimetres. **Viewport scale → Specified scale** accepts a 1:N denominator and model/paper units. Long views split at that exact scale; a view too tall is reported rather than silently rescaled. Existing viewports are kept when creating new ones. |
+| `e0c709bb-7a88-4144-b59d-868eac9a8c9a.jpg` | `CE_ROADBOQCONSTRUCTION` | **Road length model source** can use corridor station ranges, full road alignments, or selected alignments. Full-road detection includes road corridor centreline alignments and CE/RD/Road centreline alignments without corridors. Each alignment is counted once using its geometric length, independent of corridor extents and station equations. Offset/curb-return alignments are excluded from automatic detection. Custom named roads can be selected. Other construction quantities continue to use the corridor model. |
+| `c49d9f4a-229f-4f59-ae33-e93d16f6aefa.jpg` | `CE_PLATFORMGRADETOSURFACE`, `CE_JUNCTIONGRADETOSURFACE` | Cut, fill and toe colours now set both the entity colour and a separate Civil feature-line display style. ByLayer styles use component layer 0 to follow the selected entity layer. Shared source styles are preserved. The same colour path is used on refresh. |
+| `41704b52-fe63-4df8-9e2b-f48409c3bf8b.jpg` | `CE_FLAPPEARANCE` | Last-applied colour, site, new-site name and layer are saved across drawings/sessions. Site names resolve in the active drawing rather than persisting drawing-specific ObjectIds. Cancel does not overwrite defaults. |
+| `b0f93e53-b1c1-47a6-bf03-b016b5f8b608.jpg` | Platform/junction grading | Short fill ticks run from the source edge toward the toe. Short cut ticks run from the toe toward the source edge. Both end halfway. The sampling ray intersects the actual toe segments so curved or uneven toes do not leave short cut ticks floating away from the toe. Full-length rays and the toe definition retain their existing geometry. |
+
+## Verification
+
+Core tests cover metre/millimetre/inch viewport conversions, fixed-scale splitting, height rejection, automatic fit, exact-width boundaries and cut/fill tick endpoints on toe chords in both directions. Civil API contract tests cover indexed colours, ByLayer display components and preserving shared source styles. The October 5 source gate verifies command integration.
+
+Native Civil 3D 2023 validation is still required: run each command in the supplied drawing, check profile bands and exact viewport scales, compare BOQ alignment lengths with Alignment Properties, inspect plan/model colours, reopen the appearance dialog after restarting Civil 3D, and change source elevations followed by grading refresh to inspect both cut and fill ticks.
+
+API references: [AutoCAD viewport creation](https://help.autodesk.com/cloudhelp/2017/ENU/AutoCAD-NET/files/GUID-61C22902-F63B-4204-86EC-FA37312D1B6E.htm), [Civil alignment length](https://help.autodesk.com/cloudhelp/2022/ENU/Civil3D-API/files/html/24455a1d-ad50-26f2-5e50-422afca3d212.htm), [Civil display components](https://help.autodesk.com/cloudhelp/2022/ENU/Civil3D-API/files/html/51df568c-d3c8-7e32-2fa6-8e29f6fbd106.htm).

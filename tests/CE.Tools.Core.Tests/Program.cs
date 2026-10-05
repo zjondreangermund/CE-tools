@@ -31,6 +31,8 @@ namespace CETools.Core.Tests
                 PumpReviewChecksNpshMargin();
                 _tests += SewerGravityGradeTests.Run();
                 _tests += RoadAnnotationTests.Run();
+                _tests += ProfileViewportTests.Run();
+                _tests += GradingSlopeTickTests.Run();
 
                 Console.WriteLine($"CE Tools core tests passed: {_tests}");
                 return 0;

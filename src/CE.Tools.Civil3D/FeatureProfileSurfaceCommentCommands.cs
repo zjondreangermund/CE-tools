@@ -1395,10 +1395,17 @@ namespace CETools.Civil3D
         private readonly ComboBox _site;
         private readonly TextBox _newSite;
         private readonly TextBox _layer;
+        private readonly ProductionSettingsDialogModel _defaults;
 
         public FeatureLineAppearanceWindow(IEnumerable<CivilObjectChoice> sites)
         {
             Title = "CE Tools - Feature Line Colour, Layer and Site";
+            _defaults = new ProductionSettingsDialogModel(Title, string.Empty);
+            _defaults.AddText("Colour", "", "", "7", "");
+            _defaults.AddText("Site", "", "", "<Siteless>", "");
+            _defaults.AddText("NewSite", "", "", "", "");
+            _defaults.AddText("Layer", "", "", "", "");
+            CeGlobalProductionSettingsStore.Load(_defaults);
             Width = 560;
             Height = 400;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
@@ -1421,7 +1428,8 @@ namespace CETools.Civil3D
                 IsTextSearchEnabled = true,
                 ToolTip = "Choose an AutoCAD indexed colour (ACI 1–255)."
             };
-            _colour.SelectedItem = colourChoices.FirstOrDefault(choice => choice.Index == 7);
+            _colour.SelectedItem = colourChoices.FirstOrDefault(choice => choice.Index == _defaults.Integer("Colour", 7))
+                ?? colourChoices.First(choice => choice.Index == 7);
             Grid.SetRow(_colour, 0);
             Grid.SetColumn(_colour, 1);
             grid.Children.Add(_colour);
@@ -1433,19 +1441,25 @@ namespace CETools.Civil3D
                 Margin = new Thickness(8),
                 MinWidth = 280
             };
-            if (_site.Items.Count > 0) _site.SelectedIndex = 0;
+            string savedSite = _defaults.Text("Site");
+            _site.SelectedItem = _site.Items.Cast<CivilObjectChoice>().FirstOrDefault(choice =>
+                string.Equals(choice.Name, savedSite, StringComparison.OrdinalIgnoreCase));
+            if (_site.SelectedItem == null && _site.Items.Count > 0) _site.SelectedIndex = 0;
             Grid.SetRow(_site, 1);
             Grid.SetColumn(_site, 1);
             grid.Children.Add(_site);
 
             AddLabel(grid, "New site name (optional)", 2);
-            _newSite = new TextBox { Margin = new Thickness(8), MinWidth = 280 };
+            _newSite = new TextBox { Margin = new Thickness(8), MinWidth = 280,
+                Text = _site.Items.Cast<CivilObjectChoice>().Any(choice =>
+                    string.Equals(choice.Name, _defaults.Text("NewSite"), StringComparison.OrdinalIgnoreCase))
+                    ? string.Empty : _defaults.Text("NewSite") };
             Grid.SetRow(_newSite, 2);
             Grid.SetColumn(_newSite, 1);
             grid.Children.Add(_newSite);
 
             AddLabel(grid, "Selected line layer (optional)", 3);
-            _layer = new TextBox { Margin = new Thickness(8), MinWidth = 280 };
+            _layer = new TextBox { Margin = new Thickness(8), MinWidth = 280, Text = _defaults.Text("Layer") };
             Grid.SetRow(_layer, 3);
             Grid.SetColumn(_layer, 1);
             grid.Children.Add(_layer);
@@ -1495,6 +1509,12 @@ namespace CETools.Civil3D
                 LayerName = (_layer.Text ?? string.Empty).Trim();
                 CivilObjectChoice choice = _site.SelectedItem as CivilObjectChoice;
                 SelectedSiteId = choice == null ? ObjectId.Null : choice.ObjectId;
+                _defaults.Fields.First(field => field.Key == "Colour").Value = ColourIndex.ToString(CultureInfo.InvariantCulture);
+                _defaults.Fields.First(field => field.Key == "Site").Value = string.IsNullOrWhiteSpace(NewSiteName)
+                    ? (choice == null ? "<Siteless>" : choice.Name) : NewSiteName;
+                _defaults.Fields.First(field => field.Key == "NewSite").Value = NewSiteName;
+                _defaults.Fields.First(field => field.Key == "Layer").Value = LayerName;
+                CeGlobalProductionSettingsStore.Save(_defaults);
                 Accepted = true;
                 Close();
             };
