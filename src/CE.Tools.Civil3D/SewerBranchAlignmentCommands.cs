@@ -444,8 +444,8 @@ namespace CETools.Civil3D
                 "Side",
                 "02 Presentation",
                 "Branch-name side",
-                "Above",
-                "Above matches the requested plan presentation. Below and alternating remain available where drawing congestion requires them.",
+                productionSettings.BranchLabelSide,
+                "Above/below is measured from the existing plan PipeLabel text when available; structure labels are never used as branch-name anchors.",
                 new[]
                 {
                     "Above",
@@ -492,13 +492,13 @@ namespace CETools.Civil3D
                 "02 Presentation",
                 "Above offset (paper mm)",
                 productionSettings.BranchLabelAboveOffset,
-                "Perpendicular paper distance from the sewer centreline when the name is placed above.");
+                "Perpendicular paper distance above the existing plan PipeLabel text; falls back to the sewer centreline only when no PipeLabel can be resolved.");
             model.AddPositiveDouble(
                 "BelowOffset",
                 "02 Presentation",
                 "Below offset (paper mm)",
                 productionSettings.BranchLabelBelowOffset,
-                "Perpendicular paper distance from the sewer centreline when the name is placed below.");
+                "Perpendicular paper distance below the existing plan PipeLabel text; falls back to the sewer centreline only when no PipeLabel can be resolved.");
             model.AddPositiveDouble(
                 "LongThreshold",
                 "03 Long branches",
