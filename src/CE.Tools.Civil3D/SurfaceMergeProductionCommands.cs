@@ -51,8 +51,14 @@ namespace CETools.Civil3D
                 "02 Final surface sources",
                 "Road / grading sources",
                 "All road TOP and grading surfaces",
-                "Used only for CE Final Surface. Select the smaller source set when the drawing contains unrelated grading surfaces.",
-                new[] { "All road TOP and grading surfaces", "Select road TOP / grading surfaces" });
+                "Used only for CE Final Surface. Merge every road TOP and grading surface, road TOP only, grading only, or choose multiple road TOP/grading surfaces manually.",
+                new[]
+                {
+                    "All road TOP and grading surfaces",
+                    "All road TOP surfaces only",
+                    "All grading surfaces only",
+                    "Select road TOP / grading surfaces"
+                });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             string output = model.Text("Output");
@@ -96,6 +102,8 @@ namespace CETools.Civil3D
 
             List<SurfaceChoice> sources = ReadSurfaces(document, civil)
                 .Where(item => IsRoadSurface(item.Name, top))
+                .OrderBy(item => RoadNumber(item.Name))
+                .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
             if (sources.Count == 0)
             {
@@ -117,7 +125,7 @@ namespace CETools.Civil3D
                 }
                 document.Editor.Regen();
                 document.Editor.WriteMessage(
-                    "\nCE_ROADSURFACEMERGE complete. Output={0}; source {1} surfaces merged={2}.",
+                    "\nCE_ROADSURFACEMERGE complete. Output={0}; source {1} surfaces pasted={2}. The result is available under Civil 3D Surfaces as '{0}'.",
                     outputName,
                     top ? "TOP" : "BOTTOM",
                     sources.Count);
@@ -148,6 +156,9 @@ namespace CETools.Civil3D
                 .Where(item => item.Id != naturalGround &&
                                !IsNamedOutput(item.Name) &&
                                IsRoadTopOrGrading(item.Name))
+                .OrderBy(item => IsRoadSurface(item.Name, true) ? 0 : 1)
+                .ThenBy(item => RoadNumber(item.Name))
+                .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
                 .ToList();
             if (available.Count == 0)
             {
@@ -156,13 +167,46 @@ namespace CETools.Civil3D
                 return;
             }
 
-            List<SurfaceChoice> sources = available;
-            if (string.Equals(sourceMode, "Select road TOP / grading surfaces", StringComparison.OrdinalIgnoreCase))
+            List<SurfaceChoice> sources;
+            if (string.Equals(
+                    sourceMode,
+                    "All road TOP surfaces only",
+                    StringComparison.OrdinalIgnoreCase))
             {
-                sources = PromptSurfaceSelection(document, "\nSelect road TOP / grading surfaces to merge into CE Final Surface: ");
-                sources = sources
-                    .Where(item => item.Id != naturalGround && !IsNamedOutput(item.Name) && IsRoadTopOrGrading(item.Name))
+                sources = available
+                    .Where(item => IsRoadSurface(item.Name, true))
                     .ToList();
+            }
+            else if (string.Equals(
+                         sourceMode,
+                         "All grading surfaces only",
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                sources = available
+                    .Where(item => IsGradingSurface(item.Name))
+                    .ToList();
+            }
+            else if (string.Equals(
+                         sourceMode,
+                         "Select road TOP / grading surfaces",
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                sources = PromptSurfaceSelection(
+                    document,
+                    "\nSelect road TOP / grading surfaces to merge into CE Final Surface: ");
+                sources = sources
+                    .Where(item =>
+                        item.Id != naturalGround &&
+                        !IsNamedOutput(item.Name) &&
+                        IsRoadTopOrGrading(item.Name))
+                    .OrderBy(item => IsRoadSurface(item.Name, true) ? 0 : 1)
+                    .ThenBy(item => RoadNumber(item.Name))
+                    .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
+                    .ToList();
+            }
+            else
+            {
+                sources = available;
             }
             if (sources.Count == 0)
             {
@@ -185,9 +229,10 @@ namespace CETools.Civil3D
                 }
                 document.Editor.Regen();
                 document.Editor.WriteMessage(
-                    "\nCE_ROADSURFACEMERGE complete. Output={0}; natural ground={1}; road TOP/grading sources merged={2}.",
+                    "\nCE_ROADSURFACEMERGE complete. Output={0}; natural ground={1}; source mode={2}; road TOP/grading surfaces pasted={3}. The result is available under Civil 3D Surfaces as '{0}'.",
                     FinalOutput,
                     ng == null ? naturalGround.Handle.ToString() : ng.Name,
+                    sourceMode,
                     sources.Count);
             }
             catch (System.Exception exception)
@@ -234,42 +279,75 @@ namespace CETools.Civil3D
             }
         }
 
-        private static bool TryMergeTinSurface(TinSurface target, DBObject source, ObjectId sourceId)
+        private static bool TryMergeTinSurface(
+            TinSurface target,
+            DBObject source,
+            ObjectId sourceId)
         {
-            foreach (MethodInfo method in target.GetType().GetMethods(BindingFlags.Public | BindingFlags.Instance))
+            if (target == null ||
+                source == null ||
+                sourceId.IsNull)
+                return false;
+
+            // Civil 3D 2023 exposes TinSurface.PasteSurface(ObjectId). This is
+            // the correct production merge because it records a paste-surface
+            // definition operation and preserves the source TIN/boundaries
+            // instead of merely copying vertices.
+            try
             {
-                if (!string.Equals(method.Name, "MergeTinSurface", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(method.Name, "MergeSurface", StringComparison.OrdinalIgnoreCase) &&
-                    !string.Equals(method.Name, "Merge", StringComparison.OrdinalIgnoreCase)) continue;
-                ParameterInfo[] parameters = method.GetParameters();
-                if (parameters.Length != 1) continue;
+                target.PasteSurface(sourceId);
+                return true;
+            }
+            catch (Autodesk.AutoCAD.Runtime.Exception)
+            {
+                // Fall through to reflection only for host/API compatibility.
+            }
+            catch (System.Exception)
+            {
+                // Fall through to reflection only for host/API compatibility.
+            }
+
+            foreach (MethodInfo method in
+                target.GetType().GetMethods(
+                    BindingFlags.Public |
+                    BindingFlags.Instance))
+            {
+                if (!string.Equals(
+                        method.Name,
+                        "PasteSurface",
+                        StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                ParameterInfo[] parameters =
+                    method.GetParameters();
+                if (parameters.Length != 1)
+                    continue;
+
                 object argument;
-                if (parameters[0].ParameterType == typeof(ObjectId)) argument = sourceId;
-                else if (parameters[0].ParameterType.IsInstanceOfType(source)) argument = source;
-                else continue;
+                if (parameters[0].ParameterType ==
+                    typeof(ObjectId))
+                    argument = sourceId;
+                else if (parameters[0].ParameterType
+                    .IsInstanceOfType(source))
+                    argument = source;
+                else
+                    continue;
+
                 try
                 {
-                    method.Invoke(target, new[] { argument });
+                    method.Invoke(
+                        target,
+                        new[] { argument });
                     return true;
                 }
                 catch (TargetInvocationException exception)
                 {
-                    if (exception.InnerException != null &&
-                        exception.InnerException.Message.IndexOf("not supported", StringComparison.OrdinalIgnoreCase) < 0)
+                    if (exception.InnerException != null)
                         throw exception.InnerException;
                 }
             }
 
-            // A small API fallback keeps the output useful on versions where the
-            // merge method is internal: copy source TIN vertices into the output.
-            TinSurface sourceTin = source as TinSurface;
-            if (sourceTin == null) return false;
-            var points = new Point3dCollection();
-            foreach (TinSurfaceVertex vertex in sourceTin.Vertices)
-                if (vertex != null && vertex.IsValid) points.Add(vertex.Location);
-            if (points.Count == 0) return false;
-            target.AddVertices(points);
-            return true;
+            return false;
         }
 
         private static void EraseNamedOutput(Document document, CivilDocument civil, string name)
@@ -331,14 +409,43 @@ namespace CETools.Civil3D
             return value.StartsWith(top ? "TOP-RD-" : "BOTTOM-RD-", StringComparison.OrdinalIgnoreCase);
         }
 
+        private static bool IsGradingSurface(string name)
+        {
+            string upper =
+                (name ?? string.Empty)
+                    .Trim()
+                    .ToUpperInvariant();
+            if (string.IsNullOrWhiteSpace(upper) ||
+                IsNamedOutput(upper) ||
+                upper.StartsWith(
+                    "TOP-RD-",
+                    StringComparison.OrdinalIgnoreCase))
+                return false;
+
+            return upper.Contains("GRAD") ||
+                   upper.Contains("PLATFORM") ||
+                   upper.Contains("PAD") ||
+                   upper.Contains("DESIGN") ||
+                   upper.Contains("FINISH") ||
+                   upper.Contains("FGL");
+        }
+
+        private static int RoadNumber(string name)
+        {
+            int value =
+                CETools.Core.RoadAnnotationPlan.RoadNumber(
+                    name);
+            return value > 0
+                ? value
+                : int.MaxValue;
+        }
+
         private static bool IsRoadTopOrGrading(string name)
         {
             string value = (name ?? string.Empty).Trim();
             if (string.IsNullOrWhiteSpace(value) || IsNamedOutput(value)) return false;
             if (value.StartsWith("TOP-RD-", StringComparison.OrdinalIgnoreCase)) return true;
-            string upper = value.ToUpperInvariant();
-            return upper.Contains("GRAD") || upper.Contains("PLATFORM") || upper.Contains("PAD") ||
-                   upper.Contains("DESIGN") || upper.Contains("FINISH") || upper.Contains("FGL");
+            return IsGradingSurface(value);
         }
 
         private static bool IsNamedOutput(string name)
