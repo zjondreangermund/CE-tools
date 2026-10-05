@@ -755,82 +755,139 @@ namespace CETools.Civil3D
             if (document == null || civilDocument == null) return;
 
             string[] roadChoices = new[] { "ALL" }
-                .Concat(ReadRoadChoiceNames(document.Database, civilDocument))
+                .Concat(ReadRoadChoiceNames(
+                    document.Database,
+                    civilDocument))
                 .ToArray();
             var model = new ProductionSettingsDialogModel(
-                "CE Tools - Junction Endpoints to Road TOP Surfaces",
-                "Paste both endpoints of each tagged junction control into every selected road TOP surface that covers the point.");
-            model.AddChoice("Roads", "01 Surfaces", "Roads", "ALL",
+                "CE Tools - Junction Vertices from Road TOP Surfaces",
+                "Update existing tagged junction feature-line vertex elevations/grades from matching road TOP surfaces. TOP surfaces are read-only references: no vertices, breaklines or surface rebuilds are created.");
+            model.AddChoice(
+                "Roads",
+                "01 Surfaces",
+                "Roads",
+                "ALL",
                 "Choose a road from the dropdown, or type comma-separated road names. ALL uses every TOP-RD surface.",
                 roadChoices);
-            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
-            HashSet<string> requestedRoads = ParseRoadFilter(model.Text("Roads"));
+            if (!DisciplineWorkflowDialogs.EditSettings(model))
+                return;
+            HashSet<string> requestedRoads =
+                ParseRoadFilter(model.Text("Roads"));
 
             int surfaceCount = 0;
-            int pointsAdded = 0;
-            int failed = 0;
-            int uncovered = 0;
+            int featureLinesUpdated = 0;
+            int pointsEvaluated = 0;
+            int unresolved = 0;
             var rows = new List<IList<string>>();
 
-            using (DocumentLock documentLock = document.LockDocument())
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            using (DocumentLock documentLock =
+                document.LockDocument())
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
             {
-                List<Point3d> endpoints = ReadJunctionEndpoints(document.Database, transaction);
-                foreach (ObjectId surfaceId in civilDocument.GetSurfaceIds())
+                var topSurfaces = new List<CivilSurface>();
+                foreach (ObjectId surfaceId in
+                    civilDocument.GetSurfaceIds())
                 {
-                    CivilSurface surface = SafeOpen<CivilSurface>(transaction, surfaceId, OpenMode.ForWrite);
+                    CivilSurface surface =
+                        SafeOpen<CivilSurface>(
+                            transaction,
+                            surfaceId,
+                            OpenMode.ForRead);
                     if (surface == null ||
-                        !surface.Name.StartsWith("TOP-RD-", StringComparison.OrdinalIgnoreCase) ||
-                        !RoadFilterMatches(surface.Name, requestedRoads)) continue;
+                        !surface.Name.StartsWith(
+                            "TOP-RD-",
+                            StringComparison.OrdinalIgnoreCase) ||
+                        !RoadFilterMatches(
+                            surface.Name,
+                            requestedRoads))
+                        continue;
+                    topSurfaces.Add(surface);
                     surfaceCount++;
-                    int local = 0;
-                    int localFailed = 0;
-                    int localUncovered = 0;
-                    foreach (Point3d point in endpoints)
+                }
+
+                BlockTable table = transaction.GetObject(
+                    document.Database.BlockTableId,
+                    OpenMode.ForRead,
+                    false) as BlockTable;
+                BlockTableRecord modelSpace =
+                    table == null
+                        ? null
+                        : transaction.GetObject(
+                            table[BlockTableRecord.ModelSpace],
+                            OpenMode.ForRead,
+                            false) as BlockTableRecord;
+                if (modelSpace == null)
+                    return;
+
+                foreach (ObjectId id in modelSpace)
+                {
+                    CivilFeatureLine line = null;
+                    try
                     {
-                        double z;
-                        if (!TryFindSurfaceElevation(surface, point.X, point.Y, out z))
-                        {
-                            // If a tagged feature line already carries a valid
-                            // endpoint elevation, retain it rather than injecting
-                            // a zero-level vertex when the endpoint sits just
-                            // outside the surface's TIN boundary.
-                            if (!IsFinite(point.Z) || Math.Abs(point.Z) <= 0.001)
-                            {
-                                localUncovered++;
-                                continue;
-                            }
-                            z = point.Z;
-                        }
-                        if (TryAddSurfaceVertex(surface, new Point3d(point.X, point.Y, z))) local++;
-                        else localFailed++;
+                        line = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false) as CivilFeatureLine;
                     }
-                    TryInvoke(surface, "Rebuild");
-                    Entity entity = surface as Entity;
-                    if (entity != null) entity.RecordGraphicsModified(true);
-                    pointsAdded += local;
-                    failed += localFailed;
-                    uncovered += localUncovered;
+                    catch { }
+                    if (line == null ||
+                        line.IsReferenceObject ||
+                        !IsTaggedJunctionFeatureLine(line))
+                        continue;
+
+                    try { line.UpgradeOpen(); }
+                    catch { continue; }
+
+                    int localUnresolved;
+                    int localPoints =
+                        JunctionSurfaceVertices.Apply(
+                            line,
+                            topSurfaces,
+                            out localUnresolved);
+                    unresolved += localUnresolved;
+                    if (localPoints <= 0 &&
+                        localUnresolved <= 0)
+                        continue;
+
+                    pointsEvaluated += localPoints;
+                    if (localUnresolved == 0)
+                        featureLinesUpdated++;
+                    line.RecordGraphicsModified(true);
                     rows.Add(new List<string>
                     {
-                        surface.Name,
-                        endpoints.Count.ToString(CultureInfo.InvariantCulture),
-                        local.ToString(CultureInfo.InvariantCulture),
-                        localFailed.ToString(CultureInfo.InvariantCulture),
-                        localUncovered.ToString(CultureInfo.InvariantCulture)
+                        line.Handle.ToString(),
+                        line.Name ?? string.Empty,
+                        localPoints.ToString(
+                            CultureInfo.InvariantCulture),
+                        localUnresolved.ToString(
+                            CultureInfo.InvariantCulture)
                     });
                 }
+
                 transaction.Commit();
             }
 
             document.Editor.Regen();
             GridReportPresenter.ShowReportAndOfferTable(
                 document,
-                "CE Tools - Junction End Points to Road TOP Surfaces",
-                string.Format(CultureInfo.CurrentCulture, "Selected TOP road surfaces={0}; endpoint insertions={1}; API failures={2}; endpoints outside coverage={3}.", surfaceCount, pointsAdded, failed, uncovered),
-                new[] { "TOP SURFACE", "JUNCTION ENDPOINTS", "ADDED", "FAILED", "UNCOVERED" },
+                "CE Tools - Junction Vertices from Road TOP Surfaces",
+                string.Format(
+                    CultureInfo.CurrentCulture,
+                    "Reference TOP surfaces={0}; junction feature lines updated={1}; existing points evaluated={2}; unresolved elevations={3}. TOP surfaces unchanged; no vertices or breaklines were added.",
+                    surfaceCount,
+                    featureLinesUpdated,
+                    pointsEvaluated,
+                    unresolved),
+                new[]
+                {
+                    "FEATURE LINE",
+                    "NAME",
+                    "POINTS",
+                    "UNRESOLVED"
+                },
                 rows,
-                "CE JUNCTION ENDPOINT SURFACE REGISTER");
+                "CE JUNCTION TOP REFERENCE REGISTER");
         }
 
         [CommandMethod("CE_TOOLS", "CE_PIPESLOPETOOUTLET", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
@@ -1631,6 +1688,53 @@ namespace CETools.Civil3D
             return true;
         }
 
+        private static bool IsTaggedJunctionFeatureLine(
+            CivilFeatureLine line)
+        {
+            if (line == null) return false;
+            ResultBuffer data = null;
+            try
+            {
+                data =
+                    line.GetXDataForApplication(
+                        JunctionApp);
+            }
+            catch { }
+            if (data == null) return false;
+
+            try
+            {
+                string marker = data.AsArray()
+                    .Where(item =>
+                        item.TypeCode ==
+                        (int)DxfCode.ExtendedDataAsciiString)
+                    .Select(item =>
+                        Convert.ToString(
+                            item.Value,
+                            CultureInfo.InvariantCulture) ??
+                        string.Empty)
+                    .FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(marker))
+                    return false;
+                return string.Equals(
+                           marker,
+                           "BATCH-FEATURELINE",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(
+                           marker,
+                           "T-LIMIT",
+                           StringComparison.OrdinalIgnoreCase) ||
+                       string.Equals(
+                           marker,
+                           "X-LIMIT",
+                           StringComparison.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                data.Dispose();
+            }
+        }
+
         private static List<TJunctionLimit> ReadTJunctionLimits(Database database, Transaction transaction)
         {
             var result = new List<TJunctionLimit>();
@@ -1641,8 +1745,11 @@ namespace CETools.Civil3D
 
             foreach (ObjectId id in model)
             {
-                Curve curve = SafeOpen<Curve>(transaction, id, OpenMode.ForRead);
-                if (curve == null || !string.Equals(curve.Layer, JunctionLayer, StringComparison.OrdinalIgnoreCase)) continue;
+                Curve curve = SafeOpen<Curve>(
+                    transaction,
+                    id,
+                    OpenMode.ForRead);
+                if (curve == null) continue;
                 ResultBuffer data = null;
                 try { data = curve.GetXDataForApplication(JunctionApp); }
                 catch { }
