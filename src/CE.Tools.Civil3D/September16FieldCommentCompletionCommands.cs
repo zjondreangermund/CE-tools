@@ -221,7 +221,39 @@ namespace CETools.Civil3D
                     roadSourceScope,
                     "Selected road-centre curves",
                     StringComparison.OrdinalIgnoreCase);
-                foreach (ObjectId id in sourceObjectIds.Distinct())
+                List<ObjectId> orderedSourceIds =
+                    sourceObjectIds
+                        .Distinct()
+                        .Select(id =>
+                        {
+                            Entity entity = null;
+                            try
+                            {
+                                entity = transaction.GetObject(
+                                    id,
+                                    OpenMode.ForRead,
+                                    false) as Entity;
+                            }
+                            catch { }
+                            int roadNumber =
+                                JunctionSettingOutSequence.Number(
+                                    entity,
+                                    transaction);
+                            return new
+                            {
+                                Id = id,
+                                RoadNumber = roadNumber > 0
+                                    ? roadNumber
+                                    : int.MaxValue,
+                                Handle = id.Handle.ToString()
+                            };
+                        })
+                        .OrderBy(item => item.RoadNumber)
+                        .ThenBy(item => item.Handle, StringComparer.OrdinalIgnoreCase)
+                        .Select(item => item.Id)
+                        .ToList();
+
+                foreach (ObjectId id in orderedSourceIds)
                 {
                     if (alignmentSources)
                     {
