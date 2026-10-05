@@ -36,7 +36,10 @@ namespace CETools.Civil3D
 
         internal static List<CivilSurface> OpenSurfaces(Transaction transaction, IEnumerable<CivilChoice> choices)
         {
-            return choices.Select(item => transaction.GetObject(item.Id, OpenMode.ForWrite, false) as CivilSurface)
+            // These surfaces are elevation references only. The feature-line
+            // correction workflow must never add vertices/breaklines or rebuild a
+            // selected TOP surface.
+            return choices.Select(item => transaction.GetObject(item.Id, OpenMode.ForRead, false) as CivilSurface)
                 .Where(surface => surface != null).ToList();
         }
 
@@ -59,14 +62,19 @@ namespace CETools.Civil3D
 
         internal static int Apply(CivilFeatureLine line, IList<CivilSurface> surfaces, out int unresolved)
         {
-            September18RoadJunctionCompletionCommands.TryAssignFeatureLineElevations(line, surfaces, out unresolved);
-            // Never write a zero or stale connector elevation into a road TIN
-            // when one of its controls could not be sampled or assigned.
-            if (unresolved > 0) return 0;
-            int added = 0;
-            foreach (CivilSurface surface in surfaces)
-                added += September18RoadJunctionCompletionCommands.AddLineVerticesToSurface(line, surface, false, 5.0);
-            return added;
+            if (line == null || surfaces == null || surfaces.Count == 0)
+            {
+                unresolved = 0;
+                return 0;
+            }
+
+            // Surface-reference mode: update ONLY the selected feature line.
+            // Civil 3D recalculates segment grades/slopes from the corrected
+            // vertex elevations. No surface definition, vertex, breakline or
+            // rebuild is touched by this helper.
+            bool changed = September18RoadJunctionCompletionCommands.TryAssignFeatureLineElevations(
+                line, surfaces, out unresolved);
+            return changed ? line.GetPoints(FeatureLinePointType.AllPoints).Count : 0;
         }
     }
 }
