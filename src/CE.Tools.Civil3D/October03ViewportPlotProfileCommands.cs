@@ -25,10 +25,10 @@ namespace CETools.Civil3D
 {
     /// <summary>
     /// October 3 production utilities for paper-space viewport control and
-    /// branch-aware profile-view layout.  Viewports are never created or erased;
-    /// the commands only fit, lock/unlock and regenerate existing layout viewports.
+    /// branch-aware profile-view layout. Existing viewport fitting remains the
+    /// default; new profile viewports are created only when explicitly selected.
     /// </summary>
-    public sealed class October03ViewportPlotProfileCommands
+    public sealed partial class October03ViewportPlotProfileCommands
     {
         private const double Tol = 0.000001;
 
@@ -116,7 +116,7 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Fit Branch Profile Views Into Viewports",
-                "Fit selected or all Civil 3D profile views into existing paper-space viewports. " +
+                "Fit selected or all Civil 3D profile views into existing paper-space viewports, or create new profile viewports. " +
                 "Profile views are sequenced by numeric Branch order. Long branches can consume consecutive viewports; Smart packing may reserve a larger viewport for a long branch and reuse smaller gaps for later short branches.");
             settings.AddChoice(
                 "ProfileScope",
@@ -132,6 +132,7 @@ namespace CETools.Civil3D
                 defaultLayout,
                 "Existing paper-space layout whose model viewports will be used.",
                 layouts);
+            AddViewportCreationSettings(settings);
             settings.AddChoice(
                 "Packing",
                 "02 Layout",
@@ -190,7 +191,8 @@ namespace CETools.Civil3D
                     settings.Text("VerticalClearance"),
                     out verticalClearance) ||
                 horizontalClearance < 0.0 ||
-                verticalClearance < 0.0)
+                verticalClearance < 0.0 || double.IsNaN(horizontalClearance) || double.IsInfinity(horizontalClearance) ||
+                double.IsNaN(verticalClearance) || double.IsInfinity(verticalClearance))
             {
                 document.Editor.WriteMessage(
                     "\nCE_PROFILEVIEWPORTFIT cancelled. Horizontal and vertical clearance must be zero or greater.");
@@ -220,7 +222,8 @@ namespace CETools.Civil3D
                 ReadLayoutViewports(
                     document.Database,
                     layoutName);
-            if (slots.Count == 0)
+            bool createViewports = string.Equals(settings.Text("ViewportMode"), "Create profile viewports", StringComparison.OrdinalIgnoreCase);
+            if (slots.Count == 0 && !createViewports)
             {
                 document.Editor.WriteMessage(
                     "\nCE_PROFILEVIEWPORTFIT: layout '{0}' has no model viewports.",
@@ -255,15 +258,31 @@ namespace CETools.Civil3D
                 "Yes",
                 StringComparison.OrdinalIgnoreCase);
 
-            FitResult result = FitProfiles(
-                document,
-                profiles,
-                slots,
-                horizontalClearance,
-                verticalClearance,
-                smart,
-                splitLong,
-                lockAfter);
+            FitResult result;
+            try
+            {
+                double fixedScale = ReadFixedViewportScale(settings);
+                using (DocumentLock documentLock = document.LockDocument())
+                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                {
+                    if (createViewports)
+                    {
+                        slots = CreateProfileViewports(document, transaction, layoutName, profiles,
+                            settings, horizontalClearance, verticalClearance, splitLong, fixedScale);
+                        if (slots == null) return;
+                    }
+                    result = FitProfiles(transaction, profiles, slots, horizontalClearance,
+                        verticalClearance, smart, splitLong, lockAfter, fixedScale);
+                    if (createViewports && result.ProfilesNotFitted > 0)
+                        throw new InvalidOperationException("New profile viewports could not all be fitted; viewport creation was rolled back.");
+                    transaction.Commit();
+                }
+            }
+            catch (System.Exception exception)
+            {
+                document.Editor.WriteMessage("\nCE_PROFILEVIEWPORTFIT: " + exception.Message);
+                return;
+            }
 
             if (regenAfter)
             {
@@ -742,7 +761,7 @@ namespace CETools.Civil3D
             {
                 Match match = Regex.Match(
                     text,
-                    @"(?:BRANCH|BR)s*[-_ ]*s*(d+)",
+                    @"(?:BRANCH|BR)\s*[-_ ]*\s*(\d+)",
                     RegexOptions.IgnoreCase |
                     RegexOptions.CultureInvariant);
                 int number;
@@ -756,7 +775,7 @@ namespace CETools.Civil3D
 
                 match = Regex.Match(
                     text,
-                    @"d+",
+                    @"\d+",
                     RegexOptions.CultureInvariant);
                 if (match.Success &&
                     int.TryParse(
@@ -800,14 +819,15 @@ namespace CETools.Civil3D
         }
 
         private static FitResult FitProfiles(
-            Document document,
+            Transaction transaction,
             IList<ProfileSource> profiles,
             IList<ViewportSlot> orderedSlots,
             double horizontalClearance,
             double verticalClearance,
             bool smartPacking,
             bool splitLong,
-            bool lockAfter)
+            bool lockAfter,
+            double fixedScale)
         {
             var result = new FitResult();
             var available = orderedSlots
@@ -820,143 +840,142 @@ namespace CETools.Civil3D
                     })
                 .ToList();
 
-            using (DocumentLock documentLock =
-                document.LockDocument())
-            using (Transaction transaction =
-                document.Database.TransactionManager.StartTransaction())
+            foreach (ProfileSource profile in profiles)
             {
-                foreach (ProfileSource profile in profiles)
+                List<SlotUse> free = available
+                    .Where(item => !item.Used)
+                    .OrderBy(item => item.Order)
+                    .ToList();
+                if (free.Count == 0)
                 {
-                    List<SlotUse> free = available
-                        .Where(item => !item.Used)
-                        .OrderBy(item => item.Order)
-                        .ToList();
-                    if (free.Count == 0)
-                    {
-                        result.ProfilesNotFitted++;
-                        continue;
-                    }
+                    result.ProfilesNotFitted++;
+                    continue;
+                }
 
-                    SlotUse first = free[0];
-                    if (smartPacking)
-                    {
-                        SlotUse fitting = free.FirstOrDefault(item =>
-                            FitsAtVerticalScale(
-                                profile,
-                                item.Slot,
-                                horizontalClearance,
-                                verticalClearance));
-                        if (fitting != null)
-                            first = fitting;
-                    }
-
-                    if (FitsAtVerticalScale(
+                SlotUse first = free[0];
+                if (smartPacking)
+                {
+                    SlotUse fitting = free.FirstOrDefault(item =>
+                        FitsAtVerticalScale(
                             profile,
+                            item.Slot,
+                            horizontalClearance,
+                            verticalClearance, fixedScale));
+                    if (fitting != null)
+                        first = fitting;
+                }
+
+                if (FitsAtVerticalScale(
+                        profile,
+                        first.Slot,
+                        horizontalClearance,
+                        verticalClearance, fixedScale) ||
+                    (!splitLong && fixedScale == 0))
+                {
+                    if (ApplyViewportFit(
+                            transaction,
                             first.Slot,
-                            horizontalClearance,
-                            verticalClearance) ||
-                        !splitLong)
-                    {
-                        if (ApplyViewportFit(
-                                transaction,
-                                first.Slot,
-                                profile.Min.X -
-                                    horizontalClearance,
-                                profile.Max.X +
-                                    horizontalClearance,
-                                profile.Min.Y -
-                                    verticalClearance,
-                                profile.Max.Y +
-                                    verticalClearance,
-                                lockAfter))
-                        {
-                            first.Used = true;
-                            result.ViewportsUsed++;
-                            result.ProfilesFitted++;
-                        }
-                        else
-                        {
-                            result.ProfilesNotFitted++;
-                        }
-                        continue;
-                    }
-
-                    // Split only the visible horizontal model range. Every segment
-                    // keeps the complete profile height and clearance, so vertical
-                    // scale/readability stays consistent while a long branch moves
-                    // through consecutive available paper-space viewports.
-                    double requiredCoreWidth =
-                        Math.Max(
-                            0.0,
-                            profile.Max.X - profile.Min.X);
-                    double availableCoreWidth = free.Sum(slotUse =>
-                        CoreModelWidthAtVerticalScale(
-                            profile,
-                            slotUse.Slot,
-                            horizontalClearance,
-                            verticalClearance));
-                    if (availableCoreWidth + Tol <
-                        requiredCoreWidth)
-                    {
-                        // Never leave a branch half-fitted. If the remaining
-                        // viewports cannot display the complete long profile,
-                        // leave them untouched and report the branch as pending.
-                        result.ProfilesNotFitted++;
-                        continue;
-                    }
-
-                    double x = profile.Min.X;
-                    int usedForProfile = 0;
-                    foreach (SlotUse slotUse in free)
-                    {
-                        if (x >= profile.Max.X - Tol)
-                            break;
-
-                        double coreWidth =
-                            CoreModelWidthAtVerticalScale(
-                                profile,
-                                slotUse.Slot,
+                            profile.Min.X -
                                 horizontalClearance,
-                                verticalClearance);
-                        if (coreWidth <= Tol)
-                            continue;
-
-                        double endX = Math.Min(
-                            profile.Max.X,
-                            x + coreWidth);
-                        if (!ApplyViewportFit(
-                                transaction,
-                                slotUse.Slot,
-                                x - horizontalClearance,
-                                endX + horizontalClearance,
-                                profile.Min.Y -
-                                    verticalClearance,
-                                profile.Max.Y +
-                                    verticalClearance,
-                                lockAfter))
-                            continue;
-
-                        slotUse.Used = true;
-                        result.ViewportsUsed++;
-                        usedForProfile++;
-                        x = endX;
-                    }
-
-                    if (x >= profile.Max.X - Tol &&
-                        usedForProfile > 0)
+                            profile.Max.X +
+                                horizontalClearance,
+                            profile.Min.Y -
+                                verticalClearance,
+                            profile.Max.Y +
+                                verticalClearance,
+                            lockAfter, fixedScale))
                     {
+                        first.Used = true;
+                        result.ViewportsUsed++;
                         result.ProfilesFitted++;
-                        if (usedForProfile > 1)
-                            result.ProfilesSplit++;
                     }
                     else
                     {
                         result.ProfilesNotFitted++;
                     }
+                    continue;
                 }
 
-                transaction.Commit();
+                if (!splitLong)
+                {
+                    result.ProfilesNotFitted++;
+                    continue;
+                }
+
+                // Split only the visible horizontal model range. Every segment
+                // keeps the complete profile height and clearance, so vertical
+                // scale/readability stays consistent while a long branch moves
+                // through consecutive available paper-space viewports.
+                double requiredCoreWidth =
+                    Math.Max(
+                        0.0,
+                        profile.Max.X - profile.Min.X);
+                double availableCoreWidth = free.Sum(slotUse =>
+                    CoreModelWidthAtVerticalScale(
+                        profile,
+                        slotUse.Slot,
+                        horizontalClearance,
+                        verticalClearance, fixedScale));
+                if (availableCoreWidth + Tol <
+                    requiredCoreWidth)
+                {
+                    // Never leave a branch half-fitted. If the remaining
+                    // viewports cannot display the complete long profile,
+                    // leave them untouched and report the branch as pending.
+                    result.ProfilesNotFitted++;
+                    continue;
+                }
+
+                double x = profile.Min.X;
+                int usedForProfile = 0;
+                foreach (SlotUse slotUse in free)
+                {
+                    if (x >= profile.Max.X - Tol)
+                        break;
+
+                    double coreWidth =
+                        CoreModelWidthAtVerticalScale(
+                            profile,
+                            slotUse.Slot,
+                            horizontalClearance,
+                            verticalClearance, fixedScale);
+                    if (coreWidth <= Tol)
+                        continue;
+
+                    double endX = Math.Min(
+                        profile.Max.X,
+                        x + coreWidth);
+                    if (!ApplyViewportFit(
+                            transaction,
+                            slotUse.Slot,
+                            x - horizontalClearance,
+                            endX + horizontalClearance,
+                            profile.Min.Y -
+                                verticalClearance,
+                            profile.Max.Y +
+                                verticalClearance,
+                            lockAfter, fixedScale))
+                        continue;
+
+                    slotUse.Used = true;
+                    result.ViewportsUsed++;
+                    usedForProfile++;
+                    x = endX;
+                }
+
+                if (x >= profile.Max.X - Tol &&
+                    usedForProfile > 0)
+                {
+                    result.ProfilesFitted++;
+                    if (usedForProfile > 1)
+                        result.ProfilesSplit++;
+                }
+                else
+                {
+                    result.ProfilesNotFitted++;
+                }
             }
+
 
             return result;
         }
@@ -965,7 +984,8 @@ namespace CETools.Civil3D
             ProfileSource profile,
             ViewportSlot viewport,
             double horizontalClearance,
-            double verticalClearance)
+            double verticalClearance,
+            double fixedScale)
         {
             double totalWidth =
                 Math.Max(
@@ -979,18 +999,17 @@ namespace CETools.Civil3D
                     profile.Max.Y -
                     profile.Min.Y +
                     2.0 * verticalClearance);
-            double widthCapacity =
-                totalHeight *
-                viewport.Width /
-                Math.Max(viewport.Height, Tol);
-            return totalWidth <= widthCapacity + Tol;
+            double coreCapacity = CETools.Core.ProfileViewportMath.CoreWidth(totalHeight,
+                viewport.Width, viewport.Height, horizontalClearance, fixedScale);
+            return coreCapacity > Tol && totalWidth - 2 * horizontalClearance <= coreCapacity + Tol;
         }
 
         private static double CoreModelWidthAtVerticalScale(
             ProfileSource profile,
             ViewportSlot viewport,
             double horizontalClearance,
-            double verticalClearance)
+            double verticalClearance,
+            double fixedScale)
         {
             double totalHeight =
                 Math.Max(
@@ -998,14 +1017,8 @@ namespace CETools.Civil3D
                     profile.Max.Y -
                     profile.Min.Y +
                     2.0 * verticalClearance);
-            double totalWidthCapacity =
-                totalHeight *
-                viewport.Width /
-                Math.Max(viewport.Height, Tol);
-            return Math.Max(
-                0.0,
-                totalWidthCapacity -
-                2.0 * horizontalClearance);
+            return CETools.Core.ProfileViewportMath.CoreWidth(totalHeight,
+                viewport.Width, viewport.Height, horizontalClearance, fixedScale);
         }
 
         private static bool ApplyViewportFit(
@@ -1015,7 +1028,8 @@ namespace CETools.Civil3D
             double maxX,
             double minY,
             double maxY,
-            bool lockAfter)
+            bool lockAfter,
+            double fixedScale)
         {
             Viewport viewport = null;
             try
@@ -1034,7 +1048,7 @@ namespace CETools.Civil3D
                 Math.Max(Tol, maxX - minX);
             double height =
                 Math.Max(Tol, maxY - minY);
-            double scale =
+            double scale = fixedScale > 0 ? fixedScale :
                 Math.Min(
                     viewport.Width / width,
                     viewport.Height / height);
@@ -1043,6 +1057,9 @@ namespace CETools.Civil3D
                 scale <= Tol)
                 return false;
 
+            if (fixedScale > 0 && (width * fixedScale > viewport.Width + Tol ||
+                height * fixedScale > viewport.Height + Tol)) return false;
+
             double finalModelHeight =
                 viewport.Height / scale;
             double centerX = (minX + maxX) * 0.5;
@@ -1050,6 +1067,7 @@ namespace CETools.Civil3D
 
             try
             {
+                viewport.Locked = false;
                 viewport.On = true;
                 viewport.ViewDirection = Vector3d.ZAxis;
                 viewport.TwistAngle = 0.0;

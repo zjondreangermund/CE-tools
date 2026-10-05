@@ -17,7 +17,7 @@ namespace CETools.Civil3D
             int colourIndex,
             Transaction transaction)
         {
-            if (colourIndex < 1 || colourIndex > 255)
+            if (colourIndex < 1 || colourIndex > 256)
                 throw new ArgumentOutOfRangeException(nameof(colourIndex));
 
             CivilDocument civilDocument = CivilDocument.GetCivilDocument(database);
@@ -57,16 +57,22 @@ namespace CETools.Civil3D
         {
             FeatureLineStyle style = (FeatureLineStyle)transaction.GetObject(
                 styleId, OpenMode.ForWrite, false);
-            Color colour = Color.FromColorIndex(ColorMethod.ByAci, (short)colourIndex);
+            Color colour = Color.FromColorIndex(
+                colourIndex == 256 ? ColorMethod.ByLayer : ColorMethod.ByAci,
+                (short)colourIndex);
             // These are live display components, not detached band collections.
             // The documented Color setter is sufficient; no guessed setters.
             DisplayStyle plan = style.GetFeatureLineDisplayStylePlan();
             plan.Color = colour;
+            if (colourIndex == 256) plan.Layer = "0";
             plan.Visible = true;
             DisplayStyle model = style.GetFeatureLineDisplayStyleModel();
             model.Color = colour;
+            if (colourIndex == 256) model.Layer = "0";
             model.Visible = true;
-            style.GetDisplayStyleProfile(FeatureLineDisplayStyleProfileType.FeatureLine).Color = colour;
+            DisplayStyle profile = style.GetDisplayStyleProfile(FeatureLineDisplayStyleProfileType.FeatureLine);
+            profile.Color = colour;
+            if (colourIndex == 256) profile.Layer = "0";
         }
 
         internal static bool ReadDisplayColour(DBObject style, out int colourIndex)
@@ -77,8 +83,9 @@ namespace CETools.Civil3D
             DisplayStyle plan = typedStyle.GetFeatureLineDisplayStylePlan();
             DisplayStyle model = typedStyle.GetFeatureLineDisplayStyleModel();
             if (!plan.Visible || !model.Visible ||
-                plan.Color.ColorMethod != ColorMethod.ByAci ||
-                model.Color.ColorMethod != ColorMethod.ByAci ||
+                (plan.Color.ColorMethod != ColorMethod.ByAci &&
+                 plan.Color.ColorMethod != ColorMethod.ByLayer) ||
+                model.Color.ColorMethod != plan.Color.ColorMethod ||
                 plan.Color.ColorIndex != model.Color.ColorIndex)
                 return false;
             colourIndex = plan.Color.ColorIndex;
