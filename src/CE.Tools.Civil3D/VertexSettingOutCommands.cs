@@ -180,8 +180,12 @@ namespace CETools.Civil3D
                 "Create a new table or add the selected sources to an existing CE vertex setting-out table and continue its linked sequence.",
                 new[] { "Create new linked table", "Continue existing linked table" });
             settings.AddChoice("ExistingOutput", "05 Linked Table", "Existing setting-out output", "Keep existing",
-                "Replace removes CE-generated points, leaders, radius dimensions and table rows linked to the selected sources only. Other sources and manually created objects are retained.",
-                new[] { "Keep existing", "Replace selected sources" });
+                junctions
+                    ? "Keep existing, replace only the selected source links, or erase every CE junction setting-out point/leader/radius dimension/table before the new run. Manually created objects are never erased."
+                    : "Replace removes CE-generated points, leaders, radius dimensions and table rows linked to the selected sources only. Other sources and manually created objects are retained.",
+                junctions
+                    ? new[] { "Keep existing", "Replace selected sources", "Erase all junction setting-out output and tables" }
+                    : new[] { "Keep existing", "Replace selected sources" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             string outputType = settings.Text("Output");
@@ -204,8 +208,15 @@ namespace CETools.Civil3D
             string startMode = settings.Text("StartMode");
             string tableMode = settings.Text("TableMode");
             bool replaceExisting = settings.Text("ExistingOutput") == "Replace selected sources";
+            bool eraseAllJunctionOutput =
+                junctions &&
+                string.Equals(
+                    settings.Text("ExistingOutput"),
+                    "Erase all junction setting-out output and tables",
+                    StringComparison.OrdinalIgnoreCase);
             groupingDistance = settings.Double("JunctionGrouping", groupingDistance);
-            if (replaceExisting && tableMode == "Continue existing linked table")
+            if ((replaceExisting || eraseAllJunctionOutput) &&
+                tableMode == "Continue existing linked table")
             {
                 document.Editor.WriteMessage("\nChoose Create new linked table to replace output, or Keep existing to continue a table. Nothing was changed.");
                 return;
@@ -316,8 +327,16 @@ namespace CETools.Civil3D
                 tablePoint = insertion.Value;
             }
 
-            Dictionary<int, int> roadSeeds = existingLink != null ? existingLink.RoadSeeds :
-                ReadRoadStarts(document.Database, prefix, replaceExisting ? sources.Select(item => item.Handle) : null);
+            Dictionary<int, int> roadSeeds = eraseAllJunctionOutput
+                ? new Dictionary<int, int>()
+                : existingLink != null
+                    ? existingLink.RoadSeeds
+                    : ReadRoadStarts(
+                        document.Database,
+                        prefix,
+                        replaceExisting
+                            ? sources.Select(item => item.Handle)
+                            : null);
             List<VertexSettingRecord> records = FlattenAndName(
                 sources,
                 prefix,
@@ -336,6 +355,7 @@ namespace CETools.Civil3D
                 new KeyValuePair<string, string>("Sequence direction", sequenceMode),
                 new KeyValuePair<string, string>("Picked start", string.IsNullOrWhiteSpace(startRecordKey) ? "Automatic" : "Yes"),
                 new KeyValuePair<string, string>("Linked table action", tableMode),
+                new KeyValuePair<string, string>("Existing output", settings.Text("ExistingOutput")),
                 new KeyValuePair<string, string>("Generated point rows", records.Count.ToString(CultureInfo.InvariantCulture)),
                 new KeyValuePair<string, string>("Radius dimensions", radialDimensions.ToString(CultureInfo.InvariantCulture)),
                 new KeyValuePair<string, string>("Automatic linked refresh", "Yes"),
@@ -387,10 +407,19 @@ namespace CETools.Civil3D
                 ArrowSize = settings.Double("ArrowSize", 2.5),
                 GroupingDistance = groupingDistance,
                 ReplaceExisting = replaceExisting,
+                EraseAllJunctionOutput = eraseAllJunctionOutput,
                 RoadSeeds = roadSeeds,
                 RoadNumbers = existingLink == null ? new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase) : existingLink.RoadNumbers
             };
             foreach (VertexSettingSource source in sources) link.RoadNumbers[source.Handle] = source.RoadNumber;
+
+            if (link.EraseAllJunctionOutput)
+            {
+                int erased = EraseAllJunctionSettingOutGroups(document);
+                document.Editor.WriteMessage(
+                    "\nCE junction setting-out rerun cleanup complete. CE-generated points/leaders/dimensions/tables erased={0}.",
+                    erased);
+            }
 
             try
             {
@@ -553,7 +582,8 @@ namespace CETools.Civil3D
                 double textHeight = PaperAnnotationScale.ModelTextHeight(
                     document.Database,
                     paperTextHeight);
-                if (link.ReplaceExisting) ReplaceSelectedGroups(document.Database, civilDocument, transaction, modelSpace, link, textHeight);
+                if (link.ReplaceExisting)
+                    ReplaceSelectedGroups(document.Database, civilDocument, transaction, modelSpace, link, textHeight);
 
                 foreach (VertexSettingRecord record in records)
                     CreateOutput(document.Database, civilDocument, transaction, modelSpace, link, record, textHeight);
@@ -1633,7 +1663,8 @@ namespace CETools.Civil3D
             foreach (string option in new[] {
                 "POINTLAYER=" + link.PointLayer, "LEADERLAYER=" + link.LeaderLayer,
                 "ARROWTYPE=" + link.ArrowType, "ARROWSIZE=" + link.ArrowSize.ToString("R", CultureInfo.InvariantCulture),
-                "GROUPDIST=" + link.GroupingDistance.ToString("R", CultureInfo.InvariantCulture) })
+                "GROUPDIST=" + link.GroupingDistance.ToString("R", CultureInfo.InvariantCulture),
+                "ERASEALLJUNCTION=" + (link.EraseAllJunctionOutput ? "1" : "0") })
                 values.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString, option));
             foreach (var seed in link.RoadSeeds)
                 values.Add(new TypedValue((int)DxfCode.ExtendedDataAsciiString,
@@ -1722,6 +1753,8 @@ namespace CETools.Civil3D
                     double distance;
                     if (double.TryParse(value.Substring(10), NumberStyles.Float, CultureInfo.InvariantCulture, out distance) && distance > 0) link.GroupingDistance = distance;
                 }
+                else if (value.StartsWith("ERASEALLJUNCTION=", StringComparison.OrdinalIgnoreCase))
+                    link.EraseAllJunctionOutput = value.EndsWith("1", StringComparison.Ordinal);
                 else if (value.StartsWith("ROADSEED=", StringComparison.OrdinalIgnoreCase))
                 {
                     string[] parts = value.Substring(9).Split(':');
@@ -1979,6 +2012,7 @@ namespace CETools.Civil3D
             public double ArrowSize { get; set; } = 2.5;
             public double GroupingDistance { get; set; } = 30.0;
             public bool ReplaceExisting { get; set; }
+            public bool EraseAllJunctionOutput { get; set; }
             public Dictionary<int, int> RoadSeeds { get; set; } = new Dictionary<int, int>();
             public Dictionary<string, int> RoadNumbers { get; set; } = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
         }

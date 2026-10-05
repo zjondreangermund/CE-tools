@@ -49,14 +49,181 @@ namespace CETools.Civil3D
             foreach (var source in OrderSources(sources, link.SequenceMode, link.StartRecordKey))
             {
                 int road;
-                if (link.RoadNumbers.TryGetValue(source.Handle, out road)) source.RoadNumber = road;
+                if (source.RoadNumber > 0)
+                {
+                    // Fresh source metadata is authoritative. This self-heals old
+                    // tables whose persisted ROADMAP was created from selection
+                    // order before exact junction road ownership was available.
+                    link.RoadNumbers[source.Handle] = source.RoadNumber;
+                }
+                else if (link.RoadNumbers.TryGetValue(source.Handle, out road))
+                {
+                    source.RoadNumber = road;
+                }
                 // Existing pre-upgrade tables have no road map. Preserve their old
                 // sequence until the user explicitly re-runs with road assignment.
-                else if (source.RoadNumber <= 0 && link.RoadNumbers.Count == 0) source.RoadNumber = legacy;
+                else if (link.RoadNumbers.Count == 0)
+                {
+                    source.RoadNumber = legacy;
+                }
                 legacy++;
             }
             if (link.SequenceMode == "Clockwise per junction from top left")
                 JunctionSettingOutSequence.Groups(sources, link.GroupingDistance);
+        }
+
+        private static int EraseAllJunctionSettingOutGroups(
+            Autodesk.AutoCAD.ApplicationServices.Document document)
+        {
+            if (document == null ||
+                document.Database == null)
+                return 0;
+
+            using (Autodesk.AutoCAD.ApplicationServices.DocumentLock documentLock =
+                document.LockDocument())
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord space =
+                    GetModelSpace(
+                        document.Database,
+                        transaction,
+                        OpenMode.ForWrite);
+                int erased =
+                    EraseAllJunctionSettingOutGroups(
+                        document.Database,
+                        transaction,
+                        space);
+                transaction.Commit();
+                return erased;
+            }
+        }
+
+        private static int EraseAllJunctionSettingOutGroups(
+            Database db,
+            Transaction tr,
+            BlockTableRecord space)
+        {
+            if (db == null || tr == null || space == null)
+                return 0;
+
+            var groupIds =
+                new HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+            var tables =
+                new List<Table>();
+
+            foreach (ObjectId id in
+                space.Cast<ObjectId>().ToList())
+            {
+                if (id.IsNull || id.IsErased)
+                    continue;
+
+                Table table = null;
+                try
+                {
+                    table = tr.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as Table;
+                }
+                catch { }
+                if (table == null)
+                    continue;
+
+                ResultBuffer data =
+                    table.GetXDataForApplication(
+                        AppName);
+                if (data == null)
+                    continue;
+
+                VertexSettingLink link = null;
+                try
+                {
+                    link = ReadTableLink(table);
+                }
+                catch { }
+                if (link == null)
+                    continue;
+
+                bool junctionGroup =
+                    string.Equals(
+                        link.NumberingMode,
+                        "Road grouped sequence",
+                        StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(
+                        link.Prefix,
+                        "J",
+                        StringComparison.OrdinalIgnoreCase);
+                if (!junctionGroup ||
+                    string.IsNullOrWhiteSpace(
+                        link.GroupId))
+                    continue;
+
+                groupIds.Add(
+                    link.GroupId);
+                tables.Add(
+                    table);
+            }
+
+            if (groupIds.Count == 0)
+                return 0;
+
+            int erased = 0;
+            foreach (ObjectId id in
+                space.Cast<ObjectId>().ToList())
+            {
+                if (id.IsNull || id.IsErased)
+                    continue;
+
+                Entity entity = null;
+                try
+                {
+                    entity = tr.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as Entity;
+                }
+                catch { }
+                if (entity == null)
+                    continue;
+
+                string type;
+                string group;
+                string key;
+                if (!TryReadEntityLink(
+                        entity,
+                        out type,
+                        out group,
+                        out key) ||
+                    !groupIds.Contains(group))
+                    continue;
+
+                try
+                {
+                    entity.UpgradeOpen();
+                    entity.Erase();
+                    erased++;
+                }
+                catch { }
+            }
+
+            foreach (Table table in tables)
+            {
+                if (table == null ||
+                    table.IsErased)
+                    continue;
+                try
+                {
+                    if (!table.IsWriteEnabled)
+                        table.UpgradeOpen();
+                    table.Erase();
+                    erased++;
+                }
+                catch { }
+            }
+
+            return erased;
         }
 
         private static void ReplaceSelectedGroups(Database db, CivilDocument civil, Transaction tr,
