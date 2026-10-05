@@ -203,6 +203,7 @@ namespace CETools.Civil3D
             model.AddChoice("PipePlanLabelStyle", "Civil 3D Styles", "Pipe plan-label style", settings.PipePlanLabelStyle, "Plan label added automatically to sewer pipes after sequencing.", SewerNetworkLabelCommands.ReadPipeLabelStyleNames(document));
             model.AddChoice("StructurePlanLabelStyle", "Civil 3D Styles", "Structure plan-label style", settings.StructurePlanLabelStyle, "Plan label added automatically to sewer manholes after sequencing.", SewerNetworkLabelCommands.ReadStructureLabelStyleNames(document));
             model.AddText("ProfileLayer", "Layers and Annotation", "Profile output layer", settings.ProfileLayer, "Layer for sewer profiles and profile views.");
+            model.AddText("BranchLabelLayer", "Layers and Annotation", "Branch-name layer", settings.BranchLabelLayer, "Existing layer name or a new CE Tools layer name. New layers are created automatically when branch names are generated.");
             model.AddPaperHeight("LabelHeight", "Layers and Annotation", "Plan branch-label paper height", settings.LabelHeight, "Select a standard annotative paper height or enter another positive value.");
             model.AddChoice("BranchLabelSide", "Layers and Annotation", "Branch-label offset side", settings.BranchLabelSide, "Place every branch name above, below, or alternate sides while keeping it clear of the alignment.", new[] { "Alternating", "Above", "Below" });
             model.AddPositiveDouble("BranchLabelAboveOffset", "Layers and Annotation", "Above offset distance (paper mm)", settings.BranchLabelAboveOffset, "Move labels placed above the pipe this perpendicular paper distance from the pipe centreline.");
@@ -223,6 +224,9 @@ namespace CETools.Civil3D
             settings.PipePlanLabelStyle = model.Text("PipePlanLabelStyle");
             settings.StructurePlanLabelStyle = model.Text("StructurePlanLabelStyle");
             settings.ProfileLayer = model.Text("ProfileLayer");
+            settings.BranchLabelLayer = string.IsNullOrWhiteSpace(model.Text("BranchLabelLayer"))
+                ? settings.BranchLabelLayer
+                : model.Text("BranchLabelLayer").Trim();
             settings.LabelHeight = PaperAnnotationScale.NormalizeConfiguredPaperHeight(
                 model.Double("LabelHeight", settings.LabelHeight));
             settings.BranchLabelSide = model.Text("BranchLabelSide");
@@ -2186,6 +2190,7 @@ namespace CETools.Civil3D
         public string PipePlanLabelStyle { get; set; } = string.Empty;
         public string StructurePlanLabelStyle { get; set; } = string.Empty;
         public string ProfileLayer { get; set; } = "CE-SEWER-PROFILE";
+        public string BranchLabelLayer { get; set; } = "CE-BRANCH-LABELS";
         public double LabelHeight { get; set; } = 5.0;
         public string BranchLabelSide { get; set; } = "Above";
         public double BranchLabelAboveOffset { get; set; } = 10.0;
@@ -2258,6 +2263,7 @@ namespace CETools.Civil3D
                     Value("PipePlanLabelStyle", PipePlanLabelStyle),
                     Value("StructurePlanLabelStyle", StructurePlanLabelStyle),
                     Value("ProfileLayer", ProfileLayer),
+                    Value("BranchLabelLayer", BranchLabelLayer),
                     Value("ProfileLayoutMode", ProfileLayoutMode),
                     Value("LabelHeight", LabelHeight.ToString("R", CultureInfo.InvariantCulture)),
                     Value("BranchLabelSide", BranchLabelSide),
@@ -2288,6 +2294,7 @@ namespace CETools.Civil3D
             else if (key == "PipePlanLabelStyle") settings.PipePlanLabelStyle = value;
             else if (key == "StructurePlanLabelStyle") settings.StructurePlanLabelStyle = value;
             else if (key == "ProfileLayer") settings.ProfileLayer = value;
+            else if (key == "BranchLabelLayer") settings.BranchLabelLayer = string.IsNullOrWhiteSpace(value) ? "CE-BRANCH-LABELS" : value.Trim();
             else if (key == "ProfileLayoutMode") settings.ProfileLayoutMode = value;
             else if (key == "BranchLabelSide") settings.BranchLabelSide = value;
             else if (key == "BranchLabelAboveOffset")
