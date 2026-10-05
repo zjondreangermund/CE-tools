@@ -1366,40 +1366,104 @@ namespace CETools.Civil3D
 
             if (raiseDeepRuns)
             {
-                double deepestSolvedCover = double.NegativeInfinity;
-                double deepestSolvedStructureDepth = double.NegativeInfinity;
-                foreach (SewerGravityGrade grade in plan.Grades)
+                // Branch preparation raises each branch independently. A connected
+                // selected network can still be pulled back down at a junction by
+                // the lowest incoming branch. Resolve that case by lifting all
+                // unconstrained selected headwaters together, then re-solving the
+                // complete directed network. Fixed/unselected incoming pipes remain
+                // hard boundaries and are never moved.
+                for (int liftPass = 0; liftPass < 6; liftPass++)
                 {
-                    GravityPipeStep step = byId[grade.Pipe.Id];
-                    double upstreamCentre =
-                        grade.UpstreamInvert + step.InnerRadius;
-                    double downstreamCentre =
-                        grade.DownstreamInvert + step.InnerRadius;
-                    deepestSolvedCover = Math.Max(
-                        deepestSolvedCover,
-                        Math.Max(
-                            step.UpstreamGround -
-                                (upstreamCentre + step.Radius),
-                            step.DownstreamGround -
-                                (downstreamCentre + step.Radius)));
-                    deepestSolvedStructureDepth = Math.Max(
-                        deepestSolvedStructureDepth,
-                        Math.Max(
-                            step.UpstreamGround -
-                                (grade.UpstreamInvert - sumpDepth),
-                            step.DownstreamGround -
-                                (grade.DownstreamInvert - sumpDepth)));
+                    double deepestSolvedCover;
+                    double deepestSolvedStructureDepth;
+                    double availableRaiseByCover;
+                    ReadDeepRaiseMetrics(
+                        plan,
+                        byId,
+                        sumpDepth,
+                        minimumCover,
+                        out deepestSolvedCover,
+                        out deepestSolvedStructureDepth,
+                        out availableRaiseByCover);
+
+                    if (!Finite(deepestSolvedStructureDepth) ||
+                        deepestSolvedStructureDepth <=
+                            deepRaiseTrigger + 1e-6)
+                        break;
+
+                    double requestedRaise = Math.Max(
+                        0.0,
+                        deepestSolvedCover - deepRaiseTarget);
+                    double raise = Math.Min(
+                        requestedRaise,
+                        Math.Max(0.0, availableRaiseByCover));
+                    if (!Finite(raise) || raise <= 1e-6)
+                        break;
+
+                    HashSet<string> movableHeadwaters =
+                        new HashSet<string>(
+                            plan.Grades
+                                .Where(grade =>
+                                    grade.IncomingCount == 0 &&
+                                    grade.Pipe != null)
+                                .Select(grade => grade.Pipe.Id),
+                            StringComparer.Ordinal);
+
+                    bool shifted = false;
+                    foreach (GravityPipeStep step in steps)
+                    {
+                        string id =
+                            step.Pipe.ObjectId.Handle.ToString();
+                        if (!movableHeadwaters.Contains(id))
+                            continue;
+
+                        step.HeadwaterInvert += raise;
+                        shifted = true;
+                    }
+
+                    if (!shifted)
+                        break;
+
+                    plan = SewerGravityGradeSolver.Solve(
+                        steps.Select(step => new SewerGravityPipe
+                        {
+                            Id = step.Pipe.ObjectId.Handle.ToString(),
+                            UpstreamNode = step.UpstreamStructureId.IsNull
+                                ? "UP-" + step.Pipe.ObjectId.Handle
+                                : step.UpstreamStructureId.Handle.ToString(),
+                            DownstreamNode = step.DownstreamStructureId.IsNull
+                                ? "DOWN-" + step.Pipe.ObjectId.Handle
+                                : step.DownstreamStructureId.Handle.ToString(),
+                            Length = step.Run,
+                            Slope = step.Slope,
+                            HeadwaterInvert = step.HeadwaterInvert
+                        }),
+                        fixedInlets,
+                        blockedNodes);
                 }
-                if (Finite(deepestSolvedStructureDepth) &&
-                    deepestSolvedStructureDepth >
+
+                double finalDeepestCover;
+                double finalDeepestStructureDepth;
+                double finalRaiseRoom;
+                ReadDeepRaiseMetrics(
+                    plan,
+                    byId,
+                    sumpDepth,
+                    minimumCover,
+                    out finalDeepestCover,
+                    out finalDeepestStructureDepth,
+                    out finalRaiseRoom);
+
+                if (Finite(finalDeepestStructureDepth) &&
+                    finalDeepestStructureDepth >
                         deepRaiseTrigger + 1e-6)
                 {
                     AcApplication.DocumentManager.MdiActiveDocument.Editor.WriteMessage(
                         "\nDeep-structure raise remains constrained: deepest manhole depth={0:N3} m; trigger={1:N3} m; crown-cover target={2:N3} m; deepest crown cover={3:N3} m. Fixed incoming invert, minimum slope, minimum cover or another connected branch may control the result.",
-                        deepestSolvedStructureDepth,
+                        finalDeepestStructureDepth,
                         deepRaiseTrigger,
                         deepRaiseTarget,
-                        deepestSolvedCover);
+                        finalDeepestCover);
                 }
             }
 
@@ -1491,6 +1555,83 @@ namespace CETools.Civil3D
                     Math.Abs(SewerPipeConnections.Invert(step.Pipe, !step.Forward) - grade.DownstreamInvert) > 1e-6)
                     throw new InvalidOperationException("Connected pipe levels changed while grading " + step.Pipe.Name);
             }
+        }
+
+        private static void ReadDeepRaiseMetrics(
+            SewerGravityPlan plan,
+            IDictionary<string, GravityPipeStep> byId,
+            double sumpDepth,
+            double minimumCover,
+            out double deepestCover,
+            out double deepestStructureDepth,
+            out double availableRaiseByCover)
+        {
+            deepestCover = double.NegativeInfinity;
+            deepestStructureDepth = double.NegativeInfinity;
+            availableRaiseByCover = double.PositiveInfinity;
+
+            if (plan == null || byId == null)
+                return;
+
+            foreach (SewerGravityGrade grade in plan.Grades)
+            {
+                GravityPipeStep step;
+                if (grade == null ||
+                    grade.Pipe == null ||
+                    !byId.TryGetValue(grade.Pipe.Id, out step) ||
+                    step == null)
+                    continue;
+
+                double upstreamCentre =
+                    grade.UpstreamInvert + step.InnerRadius;
+                double downstreamCentre =
+                    grade.DownstreamInvert + step.InnerRadius;
+                double upstreamCover =
+                    step.UpstreamGround -
+                    (upstreamCentre + step.Radius);
+                double downstreamCover =
+                    step.DownstreamGround -
+                    (downstreamCentre + step.Radius);
+                double upstreamStructureDepth =
+                    step.UpstreamGround -
+                    (grade.UpstreamInvert - sumpDepth);
+                double downstreamStructureDepth =
+                    step.DownstreamGround -
+                    (grade.DownstreamInvert - sumpDepth);
+
+                if (Finite(upstreamCover))
+                {
+                    deepestCover = Math.Max(
+                        deepestCover,
+                        upstreamCover);
+                    availableRaiseByCover = Math.Min(
+                        availableRaiseByCover,
+                        upstreamCover - minimumCover);
+                }
+                if (Finite(downstreamCover))
+                {
+                    deepestCover = Math.Max(
+                        deepestCover,
+                        downstreamCover);
+                    availableRaiseByCover = Math.Min(
+                        availableRaiseByCover,
+                        downstreamCover - minimumCover);
+                }
+                if (Finite(upstreamStructureDepth))
+                    deepestStructureDepth = Math.Max(
+                        deepestStructureDepth,
+                        upstreamStructureDepth);
+                if (Finite(downstreamStructureDepth))
+                    deepestStructureDepth = Math.Max(
+                        deepestStructureDepth,
+                        downstreamStructureDepth);
+            }
+
+            if (!Finite(availableRaiseByCover))
+                availableRaiseByCover = 0.0;
+            else
+                availableRaiseByCover =
+                    Math.Max(0.0, availableRaiseByCover);
         }
 
         private static void ApplyNaturalGroundDepth(
