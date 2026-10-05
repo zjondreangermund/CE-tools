@@ -215,6 +215,7 @@ namespace CETools.Civil3D
                 List<Autodesk.Civil.DatabaseServices.Surface> topSurfaces =
                     JunctionSurfaceVertices.OpenSurfaces(transaction, topSurfaceChoices);
                 var curves = new List<Curve>();
+                var curveSourceIds = new List<ObjectId>();
                 var transientAlignmentCurves = new List<Curve>();
                 bool alignmentSources = !string.Equals(
                     roadSourceScope,
@@ -243,6 +244,7 @@ namespace CETools.Civil3D
                         if (sampled == null)
                             continue;
                         curves.Add(sampled);
+                        curveSourceIds.Add(id);
                         transientAlignmentCurves.Add(sampled);
                     }
                     else
@@ -257,7 +259,10 @@ namespace CETools.Civil3D
                         }
                         catch { }
                         if (curve != null)
+                        {
                             curves.Add(curve);
+                            curveSourceIds.Add(id);
+                        }
                     }
                 }
                 if (curves.Count < 2)
@@ -307,7 +312,14 @@ namespace CETools.Civil3D
                         {
                             if (candidates.Any(item => item.Point.DistanceTo(point) <= clusterTolerance)) continue;
                             JunctionCandidate candidate;
-                            if (TryBuildCandidate(curves[first], curves[second], point, endpointTolerance, out candidate))
+                            if (TryBuildCandidate(
+                                    curves[first],
+                                    curves[second],
+                                    curveSourceIds[first],
+                                    curveSourceIds[second],
+                                    point,
+                                    endpointTolerance,
+                                    out candidate))
                                 candidates.Add(candidate);
                         }
                     }
@@ -323,7 +335,12 @@ namespace CETools.Civil3D
                     int junctionNumber = startNumber + index;
                     List<ReturnDefinition> definitions = (candidate.IsCross
                         ? CrossReturns(candidate, mainHalfWidth, sideHalfWidth, radius)
-                        : TReturns(candidate, mainHalfWidth, sideHalfWidth, radius)).ToList();
+                        : TReturns(candidate, mainHalfWidth, sideHalfWidth, radius))
+                        .OrderBy(item =>
+                            CETools.Core.RoadAnnotationPlan.ClockwiseFromTopLeft(
+                                item.Mid.X - candidate.Point.X,
+                                item.Mid.Y - candidate.Point.Y))
+                        .ToList();
 
                     int returnNumber = 0;
                     foreach (ReturnDefinition definition in definitions)
@@ -340,7 +357,10 @@ namespace CETools.Civil3D
                             featureLines,
                             featureLineSiteId,
                             weedDistance,
-                            weedAngle);
+                            weedAngle,
+                            candidate.MainSourceId,
+                            candidate.SideSourceId,
+                            candidate.JunctionGroup);
                         if (arcId.IsNull) continue;
                         CivilFeatureLine returnLine = transaction.GetObject(arcId, OpenMode.ForWrite, false) as CivilFeatureLine;
                         if (returnLine != null && topSurfaces.Count > 0)
@@ -634,7 +654,14 @@ namespace CETools.Civil3D
             return erased;
         }
 
-        private static bool TryBuildCandidate(Curve first, Curve second, Point3d point, double endpointTolerance, out JunctionCandidate candidate)
+        private static bool TryBuildCandidate(
+            Curve first,
+            Curve second,
+            ObjectId firstSourceId,
+            ObjectId secondSourceId,
+            Point3d point,
+            double endpointTolerance,
+            out JunctionCandidate candidate)
         {
             candidate = new JunctionCandidate();
             Vector3d firstDirection;
@@ -665,7 +692,14 @@ namespace CETools.Civil3D
                 Point = new Point3d(point.X, point.Y, 0.0),
                 Main = Plan(mainDirection).GetNormal(),
                 Side = Plan(sideDirection).GetNormal(),
-                IsCross = cross
+                IsCross = cross,
+                MainSourceId = ReferenceEquals(main, first)
+                    ? firstSourceId
+                    : secondSourceId,
+                SideSourceId = ReferenceEquals(side, first)
+                    ? firstSourceId
+                    : secondSourceId,
+                JunctionGroup = Guid.NewGuid().ToString("N")
             };
             return true;
         }
@@ -739,7 +773,10 @@ namespace CETools.Civil3D
             bool asFeatureLine,
             ObjectId siteId,
             double weedDistance,
-            double weedAngle)
+            double weedAngle,
+            ObjectId mainSourceId,
+            ObjectId sideSourceId,
+            string junctionGroup)
         {
             try
             {
@@ -781,7 +818,13 @@ namespace CETools.Civil3D
                         featureLine.XData = new ResultBuffer(
                             new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
                             new TypedValue((int)DxfCode.ExtendedDataAsciiString, "BATCH-FEATURELINE"),
-                            new TypedValue((int)DxfCode.ExtendedDataReal, radius));
+                            new TypedValue((int)DxfCode.ExtendedDataReal, radius),
+                            new TypedValue((int)DxfCode.ExtendedDataAsciiString,
+                                "MAIN=" + (mainSourceId.IsNull ? string.Empty : mainSourceId.Handle.ToString())),
+                            new TypedValue((int)DxfCode.ExtendedDataAsciiString,
+                                "SIDE=" + (sideSourceId.IsNull ? string.Empty : sideSourceId.Handle.ToString())),
+                            new TypedValue((int)DxfCode.ExtendedDataAsciiString,
+                                "GROUP=" + (junctionGroup ?? string.Empty)));
                     }
                     TryEraseGeneratedSource(polyline);
                     return id;
@@ -810,7 +853,13 @@ namespace CETools.Civil3D
                 output.XData = new ResultBuffer(
                     new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
                     new TypedValue((int)DxfCode.ExtendedDataAsciiString, "BATCH"),
-                    new TypedValue((int)DxfCode.ExtendedDataReal, radius));
+                    new TypedValue((int)DxfCode.ExtendedDataReal, radius),
+                    new TypedValue((int)DxfCode.ExtendedDataAsciiString,
+                        "MAIN=" + (mainSourceId.IsNull ? string.Empty : mainSourceId.Handle.ToString())),
+                    new TypedValue((int)DxfCode.ExtendedDataAsciiString,
+                        "SIDE=" + (sideSourceId.IsNull ? string.Empty : sideSourceId.Handle.ToString())),
+                    new TypedValue((int)DxfCode.ExtendedDataAsciiString,
+                        "GROUP=" + (junctionGroup ?? string.Empty)));
                 return outputId;
             }
             catch { return ObjectId.Null; }
@@ -1415,6 +1464,9 @@ namespace CETools.Civil3D
             internal Vector3d Main;
             internal Vector3d Side;
             internal bool IsCross;
+            internal ObjectId MainSourceId;
+            internal ObjectId SideSourceId;
+            internal string JunctionGroup;
         }
 
         private struct ReturnDefinition
