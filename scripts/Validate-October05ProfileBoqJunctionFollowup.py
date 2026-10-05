@@ -80,7 +80,7 @@ for marker in [
         errors.append("profile label-clearance fit missing: " + marker)
 
 for marker in [
-    '"BellmouthLayer"',
+    'model.AddText("Layer", "04 Output", "Bellmouth layer"',
     '"LimitLayer"',
     '"ExistingBellmouthScope"',
     '"Selected junction bellmouths"',
