@@ -100,6 +100,9 @@ jobs:
       - name: Validate October 5 production surface merges
         run: python3 scripts/Validate-October05SurfaceProductionMerge.py
 
+      - name: Validate October 5 real Civil 3D build errors
+        run: python3 scripts/Validate-October05Civil3DBuildErrors.py
+
       - name: Validate October 4 road corridor completion
         run: python3 scripts/Validate-October04RoadCorridorCompletion.py
 

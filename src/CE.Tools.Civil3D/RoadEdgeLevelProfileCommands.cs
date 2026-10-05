@@ -331,8 +331,14 @@ namespace CETools.Civil3D
                 surface == null)
                 return false;
 
+            var existingProfileIds =
+                new List<ObjectId>();
             foreach (ObjectId existingId in
-                alignment.GetProfileIds().ToList())
+                alignment.GetProfileIds())
+                existingProfileIds.Add(existingId);
+
+            foreach (ObjectId existingId in
+                existingProfileIds)
             {
                 CivilProfile existing = null;
                 try

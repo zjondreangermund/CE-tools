@@ -13,6 +13,9 @@ using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
+using CivilProfile = Autodesk.Civil.DatabaseServices.Profile;
+using ProfilePVI = Autodesk.Civil.DatabaseServices.ProfilePVI;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.ProfileViewBatchCommands))]
 
