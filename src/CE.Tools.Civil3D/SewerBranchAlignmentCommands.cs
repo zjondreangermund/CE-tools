@@ -452,6 +452,35 @@ namespace CETools.Civil3D
                     "Below",
                     "Alternating"
                 });
+            const string createLayerChoice = "<Create new CE Tools layer>";
+            List<string> branchLayerChoices = ReadLayerNames(database);
+            if (!branchLayerChoices.Any(name =>
+                    string.Equals(
+                        name,
+                        productionSettings.BranchLabelLayer,
+                        StringComparison.OrdinalIgnoreCase)))
+                branchLayerChoices.Insert(0, productionSettings.BranchLabelLayer);
+            branchLayerChoices.Insert(0, createLayerChoice);
+            string branchLayerDefault = branchLayerChoices.Any(name =>
+                    string.Equals(
+                        name,
+                        productionSettings.BranchLabelLayer,
+                        StringComparison.OrdinalIgnoreCase))
+                ? productionSettings.BranchLabelLayer
+                : createLayerChoice;
+            model.AddChoice(
+                "BranchLayer",
+                "02 Presentation",
+                "Branch-name layer",
+                branchLayerDefault,
+                "Select an existing drawing layer, or choose Create new CE Tools layer and type the new layer name below.",
+                branchLayerChoices);
+            model.AddText(
+                "NewBranchLayer",
+                "02 Presentation",
+                "New CE Tools layer name",
+                productionSettings.BranchLabelLayer,
+                "Used only when Create new CE Tools layer is selected. The layer is created automatically.");
             model.AddPaperHeight(
                 "Height",
                 "02 Presentation",
@@ -518,6 +547,15 @@ namespace CETools.Civil3D
                     productionSettings.BranchLabelLongSectionLength);
             productionSettings.BranchLabelLongSectionFrequency =
                 model.Text("LongFrequency");
+            string requestedBranchLayer =
+                string.Equals(
+                    model.Text("BranchLayer"),
+                    createLayerChoice,
+                    StringComparison.OrdinalIgnoreCase)
+                    ? model.Text("NewBranchLayer")
+                    : model.Text("BranchLayer");
+            productionSettings.BranchLabelLayer =
+                NormalizeBranchLayerName(requestedBranchLayer);
             productionSettings.Write(database);
 
             List<ObjectId> networkIds;
@@ -611,7 +649,8 @@ namespace CETools.Civil3D
                     ObjectId layerId =
                         GetOrCreateLayer(
                             database,
-                            transaction);
+                            transaction,
+                            productionSettings.BranchLabelLayer);
 
                     BlockTable blockTable =
                         (BlockTable)transaction.GetObject(
@@ -646,6 +685,11 @@ namespace CETools.Civil3D
                                     branchPlan.PlanPoints,
                                     productionSettings.BranchLabelLongSectionLength,
                                     productionSettings.BranchLabelLongSectionFrequency);
+                            Dictionary<ObjectId, Point3d> pipeLabelAnchors =
+                                ReadPipePlanLabelAnchors(
+                                    modelSpace,
+                                    branchPlan.PipeIds,
+                                    transaction);
 
                             bool placeAbove =
                                 string.Equals(
@@ -667,10 +711,14 @@ namespace CETools.Civil3D
                                     database);
                                 label.LayerId =
                                     layerId;
+                                SewerBranchLabelPlacement.Placement anchoredPlacement =
+                                    AnchorToNearestPipePlanLabel(
+                                        placement,
+                                        pipeLabelAnchors.Values);
                                 SewerBranchLabelPlacement.ConfigureLabel(
                                     label,
                                     database,
-                                    placement,
+                                    anchoredPlacement,
                                     branchPlan.BranchName,
                                     productionSettings.LabelHeight,
                                     productionSettings.BranchLabelAboveOffset,
@@ -1496,6 +1544,10 @@ namespace CETools.Civil3D
             {
                 EnsureRegApp(database, transaction);
                 ObjectId layerId = GetOrCreateLayer(database, transaction);
+                ObjectId branchLabelLayerId = GetOrCreateLayer(
+                    database,
+                    transaction,
+                    productionSettings.BranchLabelLayer);
                 string alignmentStyleName;
                 ObjectId alignmentStyleId = CivilStyleCatalogV2.ResolveStyleId(
                     database,
@@ -1603,6 +1655,11 @@ namespace CETools.Civil3D
                                 branch.PlanPoints,
                                 productionSettings.BranchLabelLongSectionLength,
                                 productionSettings.BranchLabelLongSectionFrequency);
+                        Dictionary<ObjectId, Point3d> pipeLabelAnchors =
+                            ReadPipePlanLabelAnchors(
+                                modelSpace,
+                                branch.PipeIds,
+                                transaction);
                         double paperHeight = productionSettings.LabelHeight;
                         bool placeAbove = string.Equals(
                                 productionSettings.BranchLabelSide,
@@ -1618,11 +1675,15 @@ namespace CETools.Civil3D
                         {
                             var label = new MText();
                             label.SetDatabaseDefaults(database);
-                            label.LayerId = layerId;
+                            label.LayerId = branchLabelLayerId;
+                            SewerBranchLabelPlacement.Placement anchoredPlacement =
+                                AnchorToNearestPipePlanLabel(
+                                    placement,
+                                    pipeLabelAnchors.Values);
                             SewerBranchLabelPlacement.ConfigureLabel(
                                 label,
                                 database,
-                                placement,
+                                anchoredPlacement,
                                 branch.BranchName,
                                 paperHeight,
                                 productionSettings.BranchLabelAboveOffset,
@@ -2127,6 +2188,200 @@ namespace CETools.Civil3D
             return networkHandle + "|" + branchName;
         }
 
+        private static string NormalizeBranchLayerName(string value)
+        {
+            string name = (value ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                return "CE-BRANCH-LABELS";
+            return name;
+        }
+
+        private static List<string> ReadLayerNames(Database database)
+        {
+            var names = new List<string>();
+            if (database == null) return names;
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                LayerTable layers = transaction.GetObject(
+                    database.LayerTableId,
+                    OpenMode.ForRead,
+                    false) as LayerTable;
+                if (layers == null) return names;
+                foreach (ObjectId id in layers)
+                {
+                    LayerTableRecord layer = transaction.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as LayerTableRecord;
+                    if (layer != null &&
+                        !string.IsNullOrWhiteSpace(layer.Name))
+                        names.Add(layer.Name);
+                }
+            }
+            return names
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static Dictionary<ObjectId, Point3d> ReadPipePlanLabelAnchors(
+            BlockTableRecord modelSpace,
+            IEnumerable<ObjectId> pipeIds,
+            Transaction transaction)
+        {
+            var result = new Dictionary<ObjectId, Point3d>();
+            if (modelSpace == null || transaction == null) return result;
+            var pipes = new HashSet<ObjectId>(
+                (pipeIds ?? Enumerable.Empty<ObjectId>())
+                    .Where(id => !id.IsNull && !id.IsErased));
+
+            foreach (ObjectId id in modelSpace)
+            {
+                Entity entity = null;
+                try
+                {
+                    entity = transaction.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as Entity;
+                }
+                catch { }
+                if (entity == null) continue;
+
+                string typeName = entity.GetType().Name ?? string.Empty;
+                // Structure labels are deliberately excluded. BRANCH names are
+                // allowed to key off plan PipeLabel text only.
+                if (typeName.IndexOf(
+                        "PipeLabel",
+                        StringComparison.OrdinalIgnoreCase) < 0 ||
+                    typeName.IndexOf(
+                        "Structure",
+                        StringComparison.OrdinalIgnoreCase) >= 0)
+                    continue;
+
+                ObjectId featureId = ReadLabelFeatureId(entity, pipes);
+                if (featureId.IsNull || !pipes.Contains(featureId))
+                    continue;
+
+                Point3d point;
+                if (!TryReadLabelCentre(entity, out point))
+                    continue;
+                result[featureId] = point;
+            }
+
+            return result;
+        }
+
+        private static ObjectId ReadLabelFeatureId(
+            Entity label,
+            ISet<ObjectId> allowedPipeIds)
+        {
+            if (label == null || allowedPipeIds == null)
+                return ObjectId.Null;
+
+            foreach (string propertyName in new[]
+            {
+                "FeatureId",
+                "PipeId",
+                "ParentEntityId",
+                "SourceEntityId",
+                "AnchorId"
+            })
+            {
+                try
+                {
+                    PropertyInfo property = label.GetType().GetProperty(
+                        propertyName,
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (property == null ||
+                        !property.CanRead ||
+                        property.PropertyType != typeof(ObjectId))
+                        continue;
+
+                    ObjectId value =
+                        (ObjectId)property.GetValue(label, null);
+                    if (!value.IsNull && allowedPipeIds.Contains(value))
+                        return value;
+                }
+                catch { }
+            }
+
+            return ObjectId.Null;
+        }
+
+        private static bool TryReadLabelCentre(
+            Entity label,
+            out Point3d point)
+        {
+            point = Point3d.Origin;
+            if (label == null) return false;
+
+            try
+            {
+                Extents3d extents = label.GeometricExtents;
+                point = new Point3d(
+                    (extents.MinPoint.X + extents.MaxPoint.X) * 0.5,
+                    (extents.MinPoint.Y + extents.MaxPoint.Y) * 0.5,
+                    (extents.MinPoint.Z + extents.MaxPoint.Z) * 0.5);
+                return true;
+            }
+            catch { }
+
+            foreach (string propertyName in new[]
+            {
+                "LabelLocation",
+                "Location",
+                "AnchorLocation"
+            })
+            {
+                try
+                {
+                    PropertyInfo property = label.GetType().GetProperty(
+                        propertyName,
+                        BindingFlags.Public | BindingFlags.Instance);
+                    if (property == null ||
+                        !property.CanRead ||
+                        property.PropertyType != typeof(Point3d))
+                        continue;
+                    point = (Point3d)property.GetValue(label, null);
+                    return true;
+                }
+                catch { }
+            }
+
+            return false;
+        }
+
+        private static SewerBranchLabelPlacement.Placement
+            AnchorToNearestPipePlanLabel(
+                SewerBranchLabelPlacement.Placement placement,
+                IEnumerable<Point3d> pipeLabelAnchors)
+        {
+            if (placement == null) return null;
+            Point3d best = placement.Point;
+            double bestDistance = double.PositiveInfinity;
+            bool found = false;
+
+            foreach (Point3d candidate in
+                pipeLabelAnchors ?? Enumerable.Empty<Point3d>())
+            {
+                double dx = candidate.X - placement.Point.X;
+                double dy = candidate.Y - placement.Point.Y;
+                double distance = dx * dx + dy * dy;
+                if (distance >= bestDistance) continue;
+                bestDistance = distance;
+                best = candidate;
+                found = true;
+            }
+
+            return found
+                ? new SewerBranchLabelPlacement.Placement(
+                    best,
+                    placement.Rotation)
+                : placement;
+        }
+
         private static ObjectId GetOrCreateLayer(
             Database database,
             Transaction transaction)
@@ -2156,6 +2411,36 @@ namespace CETools.Civil3D
             {
                 Name = AlignmentLayerName
             };
+            ObjectId layerId = layers.Add(layer);
+            transaction.AddNewlyCreatedDBObject(layer, true);
+            return layerId;
+        }
+
+        private static ObjectId GetOrCreateLayer(
+            Database database,
+            Transaction transaction,
+            string requestedLayerName)
+        {
+            string layerName = NormalizeBranchLayerName(requestedLayerName);
+            LayerTable layers = (LayerTable)transaction.GetObject(
+                database.LayerTableId,
+                OpenMode.ForRead,
+                false);
+            if (layers.Has(layerName))
+            {
+                ObjectId existingId = layers[layerName];
+                LayerTableRecord existing = transaction.GetObject(
+                    existingId,
+                    OpenMode.ForRead,
+                    false) as LayerTableRecord;
+                if (existing != null && existing.IsLocked)
+                    throw new InvalidOperationException(
+                        "Layer '" + layerName + "' is locked.");
+                return existingId;
+            }
+
+            layers.UpgradeOpen();
+            var layer = new LayerTableRecord { Name = layerName };
             ObjectId layerId = layers.Add(layer);
             transaction.AddNewlyCreatedDBObject(layer, true);
             return layerId;
