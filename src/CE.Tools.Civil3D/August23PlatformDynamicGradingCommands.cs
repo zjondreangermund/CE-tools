@@ -31,6 +31,7 @@ namespace CETools.Civil3D
     internal sealed class August23PlatformDynamicGradingCommands
     {
         private const string GradeLinkKey = "CE_PLATFORM_GRADE_LINK";
+        private const string JunctionInfillKey = "CE_JUNCTION_INFILL_LINK";
         private const string DirectDrapeKey = "CE_PLATFORM_DIRECT_DRAPE";
         private const string PlatformSiteName = "CE-PLATFORM-SITE";
         private const double Tolerance = 0.000001;
@@ -162,8 +163,20 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Junction / Feature-Line Grade to Surface",
-                "Grade selected junction bellmouth or platform feature lines to a Civil 3D surface. " +
-                "Cut/fill is resolved from the target surface at each source sample, long rays terminate exactly on the toe/daylight line, and the saved settings refresh with linked grading.");
+                "Grade all or multiple selected sidewalk/shoulder bellmouth edge feature lines to a Civil 3D surface. " +
+                "Cut/fill is resolved from the target surface at each source sample, and closed junction boundaries can be infilled separately.");
+            settings.AddChoice(
+                "SourceScope", "00 Selection", "Grade source scope", "Multiple selected shoulder/sidewalk bellmouth edge lines",
+                "Choose all matching shoulder/sidewalk bellmouth edge feature lines, multiple selected matching edge lines, or any multiple selected feature lines.",
+                new[]
+                {
+                    "Multiple selected shoulder/sidewalk bellmouth edge lines",
+                    "All shoulder/sidewalk bellmouth edge lines",
+                    "Multiple selected feature lines"
+                });
+            settings.AddText(
+                "EdgeLayers", "00 Selection", "Shoulder / sidewalk edge layer(s)", "sidewalks,shoulders",
+                "Comma-separated layer names used by the All or matching-edge selection scopes. Name/layer keywords SIDEWALK, SHOULDER, SHLD and VERGE are also recognised.");
             settings.AddChoice(
                 "Surface", "01 Target", "Target surface", surfaces[0].Name,
                 "Natural ground / controlling surface that the bellmouth grading must daylight to.",
@@ -204,8 +217,17 @@ namespace CETools.Civil3D
                 "Horizontal search increment before the final surface intersection is bisected.");
             settings.AddChoice(
                 "Infill", "07 Grading group", "Create native grading group / infill where possible", "Yes",
-                "For closed feature lines CE Tools creates/resolves a Site, grading group and native infill. Open bellmouth strings still receive linked Grade-to-Surface daylight geometry.",
+                "Create native infill for closed junction feature lines. Open sidewalk/shoulder bellmouth edge strings still receive linked Grade-to-Surface daylight geometry.",
                 new[] { "Yes", "No" });
+            settings.AddChoice(
+                "InfillScope", "07 Grading group", "Closed junction infill scope", "Multiple selected closed junction feature lines",
+                "Choose closed lines from the grading selection, select multiple closed junction feature lines separately after grading, or infill all recognised closed junction feature lines.",
+                new[]
+                {
+                    "Multiple selected closed junction feature lines",
+                    "All closed junction feature lines",
+                    "Closed lines in grading selection"
+                });
             settings.AddChoice(
                 "Site", "07 Grading group", "Grading / toe Site", "<Auto: source site / CE-PLATFORM-SITE>",
                 "Reuse the source feature line Site. If it is siteless and native infill is requested, CE-PLATFORM-SITE is created. Choose an existing Site or type a new Site name to move the source/toe grading there.",
@@ -254,10 +276,16 @@ namespace CETools.Civil3D
                 ? 100.0 / Math.Max(0.001, Math.Abs(settings.Double("FillGrade", 50.0)))
                 : Math.Max(0.001, settings.Double("FillSlope", 2.0));
 
-            PromptSelectionResult selection = SelectFeatureLines(
-                document.Editor,
-                "\nSelect junction bellmouth / feature lines to grade to the selected surface: ");
-            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+            List<ObjectId> gradeSourceIds = ResolveGradeSourceIds(
+                document,
+                settings.Text("SourceScope"),
+                settings.Text("EdgeLayers"));
+            if (gradeSourceIds.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_JUNCTIONGRADETOSURFACE cancelled. No matching editable feature lines were found.");
+                return;
+            }
 
             var requested = new GradeLink
             {
@@ -287,7 +315,7 @@ namespace CETools.Civil3D
             int slopeLines = 0;
             int cutSlopeLines = 0;
             int fillSlopeLines = 0;
-            foreach (ObjectId sourceId in selection.Value.GetObjectIds().Distinct())
+            foreach (ObjectId sourceId in gradeSourceIds.Distinct())
             {
                 GradeBuildResult result = BuildOrRefreshGrade(document, sourceId, requested, true);
                 if (result.Success)
@@ -306,16 +334,125 @@ namespace CETools.Civil3D
                 }
             }
 
+            int separateInfillsCreated = 0;
+            int separateInfillsExisting = 0;
+            int separateInfillsSkipped = 0;
+            if (requested.NativeInfill &&
+                !string.Equals(
+                    settings.Text("InfillScope"),
+                    "Closed lines in grading selection",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                List<ObjectId> infillIds = ResolveClosedJunctionInfillIds(
+                    document,
+                    settings.Text("InfillScope"));
+                foreach (ObjectId infillSourceId in infillIds.Distinct())
+                {
+                    NativeInfillResult infillResult =
+                        CreateOrRefreshNativeInfill(
+                            document,
+                            infillSourceId,
+                            requested.SiteName);
+                    if (infillResult.Created) separateInfillsCreated++;
+                    else if (infillResult.Existing) separateInfillsExisting++;
+                    else
+                    {
+                        separateInfillsSkipped++;
+                        if (!string.IsNullOrWhiteSpace(infillResult.Message))
+                            document.Editor.WriteMessage(
+                                "\nJunction infill skipped safely. " +
+                                infillResult.Message);
+                    }
+                }
+            }
+
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
             document.Editor.WriteMessage(
-                "\nCE_PLATFORMGRADETOSURFACE complete. Selected junction/source feature lines graded={0}; slope lines={1} (cut={2}, fill={3}); grading groups ready={4}; native infills ready={5}; skipped={6}.",
+                "\nCE_PLATFORMGRADETOSURFACE complete. Graded edge/source feature lines={0}; slope lines={1} (cut={2}, fill={3}); grading groups ready={4}; inline native infills ready={5}; separate closed-junction infills created={6}; existing={7}; infill skipped={8}; grade skipped={9}.",
                 completed,
                 slopeLines,
                 cutSlopeLines,
                 fillSlopeLines,
                 groups,
                 infills,
+                separateInfillsCreated,
+                separateInfillsExisting,
+                separateInfillsSkipped,
+                skipped);
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_JUNCTIONINFILL", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void JunctionClosedFeatureLineInfill()
+        {
+            PlatformDynamicRefreshManager.EnsureInitialized();
+            Document document =
+                AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+
+            List<string> siteNames = ReadSiteNames(document);
+            string[] siteChoices =
+                new[] { "<Auto: source site / CE-PLATFORM-SITE>" }
+                    .Concat(siteNames)
+                    .ToArray();
+
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Junction Closed Feature-Line Infill",
+                "Create native Civil 3D infill for all recognised closed junction feature lines or multiple selected closed feature lines. CE Tools keeps the feature line and grading group in the same Site before creating the infill.");
+            settings.AddChoice(
+                "Scope", "01 Selection", "Closed junction feature lines", "Multiple selected closed junction feature lines",
+                "Select multiple closed junction feature lines, or process all recognised closed junction feature lines in model space.",
+                new[]
+                {
+                    "Multiple selected closed junction feature lines",
+                    "All closed junction feature lines"
+                });
+            settings.AddChoice(
+                "Site", "02 Grading group", "Grading / infill Site", "<Auto: source site / CE-PLATFORM-SITE>",
+                "Reuse each source feature line Site. If siteless, CE-PLATFORM-SITE is created. You may also choose an existing Site.",
+                siteChoices);
+            if (!DisciplineWorkflowDialogs.EditSettings(settings))
+                return;
+
+            List<ObjectId> sourceIds =
+                ResolveClosedJunctionInfillIds(
+                    document,
+                    settings.Text("Scope"));
+            if (sourceIds.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_JUNCTIONINFILL cancelled. No editable closed junction feature lines were found.");
+                return;
+            }
+
+            int created = 0;
+            int existing = 0;
+            int skipped = 0;
+            foreach (ObjectId sourceId in sourceIds.Distinct())
+            {
+                NativeInfillResult result =
+                    CreateOrRefreshNativeInfill(
+                        document,
+                        sourceId,
+                        settings.Text("Site"));
+                if (result.Created) created++;
+                else if (result.Existing) existing++;
+                else
+                {
+                    skipped++;
+                    if (!string.IsNullOrWhiteSpace(result.Message))
+                        document.Editor.WriteMessage(
+                            "\nJunction infill skipped safely. " +
+                            result.Message);
+                }
+            }
+
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_JUNCTIONINFILL complete. Closed junction feature lines={0}; infills created={1}; already ready={2}; skipped={3}.",
+                sourceIds.Count,
+                created,
+                existing,
                 skipped);
         }
 
