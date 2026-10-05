@@ -757,7 +757,7 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nT-junction edge-centre-edge limit feature lines complete. Created={0}; unpaired/skipped={1}; feature-line points adjusted={2}; unresolved elevations={3}. Existing bellmouth returns and TOP surfaces were not modified.",
+                "\nT-junction edge-centre-edge limit feature lines complete. Created={0}; unpaired/skipped={1}; feature-line points adjusted={2}; unresolved elevations={3}. Existing bellmouth returns were not closed or modified. TOP surfaces were not modified.",
                 created,
                 skipped,
                 surfaceVertices,
