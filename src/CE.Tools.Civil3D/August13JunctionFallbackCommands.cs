@@ -18,10 +18,10 @@ namespace CETools.Civil3D
     new DisciplineWorkflowAction("3. Bottom of Kerb","CE_FLRELCREATEBATCH","Batch: select multiple source feature lines together and apply one stepped bottom-of-kerb rule to each source. Vertical control can be elevation difference, Grade (%) or Slope (H:V).","02 Kerb and Gutter"),
     new DisciplineWorkflowAction("4. Top of Kerb","CE_FLRELCREATEBATCH","Batch: select multiple source feature lines together and apply one stepped top-of-kerb rule to each source. Vertical control can be elevation difference, Grade (%) or Slope (H:V).","02 Kerb and Gutter"),
     new DisciplineWorkflowAction("5. Sidewalk / Shoulder Edge","CE_FLRELCREATEBATCH","Batch: select multiple source feature lines together and apply one stepped sidewalk/shoulder rule to each source, with selectable offset side and elevation/grade/H:V slope control.","03 Outside"),
-    new DisciplineWorkflowAction("6. Junction Bellmouths - Grade to Surface","CE_JUNCTIONGRADETOSURFACE","Batch-grade all selected junction feature lines to one surface. Specify Cut and Fill slopes/grades and optionally draw persistent cut/fill slope projection lines from every source vertex to its daylight point.","03 Outside"),
+    new DisciplineWorkflowAction("6. Junction Bellmouths - Grade to Surface","CE_JUNCTIONGRADETOSURFACE","Grade all matching or multiple selected sidewalk/shoulder bellmouth edge feature lines to one surface, with saved cut/fill and presentation settings.","03 Outside"),
     new DisciplineWorkflowAction("7. Grading & Slopes","CE_GRADINGSLOPETOOLS","Open the wider grading, cut/fill daylight, constant-grade and slope/crossfall toolbox after the bellmouth grading is complete.","03 Outside"),
     new DisciplineWorkflowAction("8. Join / Close Stepped Strings","CE_FLSTEPJOIN","Join pieces, close gaps and add endpoint vertices.","04 Close and Infill"),
-    new DisciplineWorkflowAction("9. Junction Surface / Infill","CE_SURFTOOLS","Create or review the dedicated junction surface and add closed controls.","04 Close and Infill"),
+    new DisciplineWorkflowAction("9. Junction Closed Feature-Line Infill","CE_JUNCTIONINFILL","Create native infill for all recognised closed junction feature lines or multiple selected closed junction feature lines. CE Tools keeps the source and grading group in the same Site.","04 Close and Infill"),
     new DisciplineWorkflowAction("10. Refresh Linked Model Data","CE_REFRESHALL","Refresh dependent model data after the fallback.","05 Refresh")
    });
   }
