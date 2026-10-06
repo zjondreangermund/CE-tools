@@ -773,6 +773,10 @@ namespace CETools.Civil3D
                                 transaction.AddNewlyCreatedDBObject(
                                     label,
                                     true);
+                                AnnotationScaleSyncManager
+                                    .AddAllAnnotationScaleContexts(
+                                        label,
+                                        database);
                                 labelsCreated++;
                             }
 
