@@ -13,6 +13,12 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilProfile = Autodesk.Civil.DatabaseServices.Profile;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
+using CivilBaseline = Autodesk.Civil.DatabaseServices.Baseline;
+using CivilBaselineRegion = Autodesk.Civil.DatabaseServices.BaselineRegion;
+using CivilAppliedAssembly = Autodesk.Civil.DatabaseServices.AppliedAssembly;
+using CivilCalculatedLink = Autodesk.Civil.DatabaseServices.CalculatedLink;
+using CivilCalculatedPoint = Autodesk.Civil.DatabaseServices.CalculatedPoint;
+using CivilCorridorCodeCollection = Autodesk.Civil.DatabaseServices.CorridorCodeCollection;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.RoadEdgeLevelProfileCommands))]
 
@@ -514,7 +520,7 @@ namespace CETools.Civil3D
                 if (corridor == null)
                     continue;
 
-                foreach (Baseline baseline in
+                foreach (CivilBaseline baseline in
                     corridor.Baselines)
                 {
                     if (baseline == null ||
@@ -522,12 +528,12 @@ namespace CETools.Civil3D
                             alignment.ObjectId)
                         continue;
 
-                    foreach (BaselineRegion region in
+                    foreach (CivilBaselineRegion region in
                         baseline.BaselineRegions)
                     {
                         if (region == null)
                             continue;
-                        foreach (AppliedAssembly assembly in
+                        foreach (CivilAppliedAssembly assembly in
                             region.AppliedAssemblies)
                         {
                             double station;
@@ -539,14 +545,14 @@ namespace CETools.Civil3D
 
                             var offsets =
                                 new List<double>();
-                            foreach (CalculatedLink link in
+                            foreach (CivilCalculatedLink link in
                                 assembly.Links)
                             {
                                 if (link == null ||
                                     !IsRoadLaneLink(
                                         link.CorridorCodes))
                                     continue;
-                                foreach (CalculatedPoint point in
+                                foreach (CivilCalculatedPoint point in
                                     link.CalculatedPoints)
                                 {
                                     if (point == null)
@@ -591,13 +597,13 @@ namespace CETools.Civil3D
         }
 
         private static bool TryAppliedAssemblyStation(
-            AppliedAssembly assembly,
+            CivilAppliedAssembly assembly,
             out double station)
         {
             station = 0.0;
             if (assembly == null)
                 return false;
-            foreach (CalculatedPoint point in
+            foreach (CivilCalculatedPoint point in
                 assembly.Points)
             {
                 if (point == null)
@@ -610,7 +616,7 @@ namespace CETools.Civil3D
         }
 
         private static bool IsRoadLaneLink(
-            CorridorCodeCollection codes)
+            CivilCorridorCodeCollection codes)
         {
             if (codes == null)
                 return false;
