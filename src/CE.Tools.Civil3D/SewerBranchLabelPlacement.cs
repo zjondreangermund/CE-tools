@@ -515,6 +515,9 @@ namespace CETools.Civil3D
             label.ColorIndex = 3;
             label.BackgroundFill = true;
             label.UseBackgroundColor = true;
+            // Match the standard Civil 3D Background Mask presentation used for
+            // road/branch names: a compact 1.1 border offset around the text.
+            try { label.BackgroundScaleFactor = 1.1; } catch { }
         }
 
         internal static double ResolveScaleAwarePaperDistance(
