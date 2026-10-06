@@ -521,9 +521,10 @@ namespace CETools.Civil3D
                 "03 Long branches",
                 "Long-section repeat frequency",
                 productionSettings.BranchLabelLongSectionFrequency,
-                "For long straight runs, repeat the branch name at every pipe centre or every second pipe centre.",
+                "Choose consistent 50 m spacing, every pipe centre, or every second pipe centre for additional names on long straight runs.",
                 new[]
                 {
+                    "Consistent 50 m",
                     "Every pipe",
                     "Every second pipe"
                 });
