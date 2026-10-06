@@ -95,6 +95,7 @@ namespace CETools.Civil3D
         private static void Create(Document document)
         {
             Editor editor = document.Editor;
+            NormalizeRelationsToRoot(document);
             PromptSelectionResult selection = editor.SelectImplied();
             if (selection.Status != PromptStatus.OK || selection.Value == null || selection.Value.Count == 0)
             {
@@ -261,6 +262,21 @@ namespace CETools.Civil3D
                             OpenMode.ForRead);
                         EnsureEditable(source, transaction);
 
+                        ObjectId rootSourceId;
+                        double inheritedHorizontal;
+                        double inheritedVertical;
+                        if (!TryResolveRootRelation(
+                                document.Database,
+                                transaction,
+                                sourceId,
+                                out rootSourceId,
+                                out inheritedHorizontal,
+                                out inheritedVertical))
+                        {
+                            throw new InvalidOperationException(
+                                "The selected stepped feature line has a broken source chain. Repair or detach the invalid link before creating another offset.");
+                        }
+
                         string sourceName =
                             string.IsNullOrWhiteSpace(source.Name)
                                 ? "FeatureLine-" +
@@ -345,9 +361,9 @@ namespace CETools.Civil3D
                                         names);
 
                                     pending.Add(new PendingOffset(
-                                        sourceId,
-                                        horizontal,
-                                        vertical,
+                                        rootSourceId,
+                                        inheritedHorizontal + horizontal,
+                                        inheritedVertical + vertical,
                                         name,
                                         childLayerId,
                                         sideIndex * count + index));
@@ -401,12 +417,13 @@ namespace CETools.Civil3D
 
             editor.Regen();
             editor.WriteMessage(
-                "\nCE_FLREL complete. Multiple selected sources processed={0}; rejected={1}; linked feature lines created={2}; failed source sets={3}; vertical mode={4}; output layer={5}. Each source retains its own linked stepped set.",
+                "\nCE_FLREL complete. Multiple selected sources processed={0}; rejected={1}; linked feature lines created={2}; failed source sets={3}; vertical mode={4}; output layer={5}. Chained offsets are flattened to the original road-edge source so all stepped lines move and regrade with that source.",
                 sourceIds.Count, rejected, created, failed, verticalMode, outputLayerName);
         }
 
         private static void Update(Document document)
         {
+            NormalizeRelationsToRoot(document);
             Editor editor = document.Editor;
             PromptEntityResult selectedResult = PromptFeatureLine(
                 editor,
@@ -464,6 +481,7 @@ namespace CETools.Civil3D
 
         private static void UpdateMultiple(Document document)
         {
+            NormalizeRelationsToRoot(document);
             Editor editor = document.Editor;
             PromptSelectionResult selection = editor.SelectImplied();
             if (selection.Status != PromptStatus.OK ||
@@ -583,6 +601,7 @@ namespace CETools.Civil3D
         public static int RefreshAll(Document document)
         {
             if (document == null) return 0;
+            NormalizeRelationsToRoot(document);
 
             var groups = new Dictionary<string, List<ChildRecord>>(
                 StringComparer.OrdinalIgnoreCase);
@@ -1086,6 +1105,171 @@ namespace CETools.Civil3D
             dictionary.Remove(RecordKey);
             DBObject record = transaction.GetObject(recordId, OpenMode.ForWrite, false);
             record.Erase();
+        }
+
+        private static bool TryResolveRootRelation(
+            Database database,
+            Transaction transaction,
+            ObjectId startId,
+            out ObjectId rootId,
+            out double horizontalOffset,
+            out double verticalOffset)
+        {
+            rootId = startId;
+            horizontalOffset = 0.0;
+            verticalOffset = 0.0;
+            if (database == null ||
+                transaction == null ||
+                startId.IsNull ||
+                startId.IsErased)
+                return false;
+
+            var visited = new HashSet<ObjectId>();
+            ObjectId currentId = startId;
+            for (int depth = 0; depth < 64; depth++)
+            {
+                if (currentId.IsNull ||
+                    currentId.IsErased ||
+                    !visited.Add(currentId))
+                    return false;
+
+                CivilFeatureLine current =
+                    OpenFeatureLine(
+                        transaction,
+                        currentId,
+                        OpenMode.ForRead);
+                if (current == null)
+                    return false;
+
+                Relation relation;
+                if (!TryReadRelation(
+                        current,
+                        transaction,
+                        out relation))
+                {
+                    rootId = currentId;
+                    return true;
+                }
+
+                horizontalOffset +=
+                    relation.HorizontalOffset;
+                verticalOffset +=
+                    relation.VerticalOffset;
+
+                ObjectId parentId =
+                    ResolveHandle(
+                        database,
+                        relation.SourceHandle);
+                if (parentId.IsNull ||
+                    parentId.IsErased)
+                    return false;
+                currentId = parentId;
+            }
+            return false;
+        }
+
+        /// <summary>
+        /// Flattens legacy chained stepped offsets so every gutter/kerb/top-kerb/
+        /// sidewalk child points directly to the original road-edge source with
+        /// cumulative horizontal and vertical offsets. Rebuilding the gutter can
+        /// then never orphan the next three lines by changing the gutter handle.
+        /// </summary>
+        private static int NormalizeRelationsToRoot(
+            Document document)
+        {
+            if (document == null ||
+                document.Database == null)
+                return 0;
+
+            int changed = 0;
+            try
+            {
+                using (DocumentLock documentLock =
+                    document.LockDocument())
+                using (Transaction transaction =
+                    document.Database.TransactionManager.StartTransaction())
+                {
+                    BlockTableRecord modelSpace =
+                        GetModelSpace(
+                            document.Database,
+                            transaction,
+                            OpenMode.ForRead);
+                    if (modelSpace == null)
+                        return 0;
+
+                    foreach (ObjectId id in
+                        modelSpace.Cast<ObjectId>().ToList())
+                    {
+                        CivilFeatureLine child =
+                            OpenFeatureLine(
+                                transaction,
+                                id,
+                                OpenMode.ForRead);
+                        if (child == null)
+                            continue;
+
+                        Relation existing;
+                        if (!TryReadRelation(
+                                child,
+                                transaction,
+                                out existing))
+                            continue;
+
+                        ObjectId rootId;
+                        double cumulativeHorizontal;
+                        double cumulativeVertical;
+                        if (!TryResolveRootRelation(
+                                document.Database,
+                                transaction,
+                                id,
+                                out rootId,
+                                out cumulativeHorizontal,
+                                out cumulativeVertical) ||
+                            rootId.IsNull ||
+                            rootId == id)
+                            continue;
+
+                        string rootHandle =
+                            rootId.Handle.ToString();
+                        bool alreadyFlat =
+                            string.Equals(
+                                existing.SourceHandle,
+                                rootHandle,
+                                StringComparison.OrdinalIgnoreCase) &&
+                            Math.Abs(
+                                existing.HorizontalOffset -
+                                cumulativeHorizontal) <= Tolerance &&
+                            Math.Abs(
+                                existing.VerticalOffset -
+                                cumulativeVertical) <= Tolerance;
+                        if (alreadyFlat)
+                            continue;
+
+                        child.UpgradeOpen();
+                        WriteRelation(
+                            child,
+                            rootHandle,
+                            cumulativeHorizontal,
+                            cumulativeVertical,
+                            existing.Sequence,
+                            transaction);
+                        changed++;
+                    }
+
+                    transaction.Commit();
+                }
+            }
+            catch (System.Exception exception)
+            {
+                try
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE linked stepped-line root normalization skipped safely: {0}",
+                        exception.Message);
+                }
+                catch { }
+            }
+            return changed;
         }
 
         private static ObjectId ResolveHandle(Database database, string text)

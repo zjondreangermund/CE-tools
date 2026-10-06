@@ -13,6 +13,7 @@ using Autodesk.Civil;
 using Autodesk.Civil.ApplicationServices;
 using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
+using TinSurface = Autodesk.Civil.DatabaseServices.TinSurface;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 namespace CETools.Civil3D
@@ -383,12 +384,23 @@ namespace CETools.Civil3D
         }
 
         [CommandMethod("CE_TOOLS", "CE_JUNCTIONINFILL", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        [CommandMethod("CE_TOOLS", "CE_PLATFORMINFILL", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void JunctionClosedFeatureLineInfill()
         {
             PlatformDynamicRefreshManager.EnsureInitialized();
             Document document =
                 AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
+
+            string activeCommand =
+                Convert.ToString(
+                    AcApplication.GetSystemVariable("CMDNAMES"),
+                    CultureInfo.InvariantCulture) ??
+                string.Empty;
+            bool platformMode =
+                activeCommand.IndexOf(
+                    "CE_PLATFORMINFILL",
+                    StringComparison.OrdinalIgnoreCase) >= 0;
 
             List<string> siteNames = ReadSiteNames(document);
             string[] siteChoices =
@@ -397,20 +409,42 @@ namespace CETools.Civil3D
                     .ToArray();
 
             var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Junction Closed Feature-Line Infill",
-                "Create native Civil 3D infill for all recognised closed junction feature lines or multiple selected closed feature lines. CE Tools keeps the feature line and grading group in the same Site before creating the infill.");
+                platformMode
+                    ? "CE Tools - Platform Closed Feature-Line Infill"
+                    : "CE Tools - Junction Closed Feature-Line Infill",
+                "Create infill for all recognised closed " +
+                (platformMode ? "platform" : "junction") +
+                " feature lines or multiple selected closed feature lines. CE Tools keeps the feature line and grading group in the same Site; when Civil 3D 2023 native CreateGradingInfill is not exposed through .NET, a bounded CE TIN infill surface is created.");
             settings.AddChoice(
-                "Scope", "01 Selection", "Closed junction feature lines", "Multiple selected closed junction feature lines",
-                "Select multiple closed junction feature lines, or process all recognised closed junction feature lines in model space.",
-                new[]
-                {
-                    "Multiple selected closed junction feature lines",
-                    "All closed junction feature lines"
-                });
+                "Scope", "01 Selection",
+                platformMode
+                    ? "Closed platform feature lines"
+                    : "Closed junction feature lines",
+                platformMode
+                    ? "Multiple selected closed platform feature lines"
+                    : "Multiple selected closed junction feature lines",
+                "Select multiple closed feature lines, or process all recognised " +
+                (platformMode ? "platform" : "junction") +
+                " closed feature lines in model space.",
+                platformMode
+                    ? new[]
+                    {
+                        "Multiple selected closed platform feature lines",
+                        "All closed platform feature lines"
+                    }
+                    : new[]
+                    {
+                        "Multiple selected closed junction feature lines",
+                        "All closed junction feature lines"
+                    });
             settings.AddChoice(
                 "Site", "02 Grading group", "Grading / infill Site", "<Auto: source site / CE-PLATFORM-SITE>",
                 "Reuse each source feature line Site. If siteless, CE-PLATFORM-SITE is created. You may also choose an existing Site.",
                 siteChoices);
+            settings.AddChoice(
+                "AfterInfill", "03 Daylight grading", "After infill", "Continue to grade/daylight",
+                "After creating the infill, open the matching Grade-to-Surface workflow so the same platform/junction can receive cut/fill daylight, toe and slope lines.",
+                new[] { "Continue to grade/daylight", "Infill only" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings))
                 return;
 
@@ -449,11 +483,26 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_JUNCTIONINFILL complete. Closed junction feature lines={0}; infills created={1}; already ready={2}; skipped={3}.",
+                "\n{0} complete. Closed feature lines={1}; infills created={2}; already ready={3}; skipped={4}.",
+                platformMode ? "CE_PLATFORMINFILL" : "CE_JUNCTIONINFILL",
                 sourceIds.Count,
                 created,
                 existing,
                 skipped);
+
+            if (string.Equals(
+                    settings.Text("AfterInfill"),
+                    "Continue to grade/daylight",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                document.SendStringToExecute(
+                    platformMode
+                        ? "CE_PLATFORMGRADETOSURFACE "
+                        : "CE_JUNCTIONGRADETOSURFACE ",
+                    true,
+                    false,
+                    true);
+            }
         }
 
         [CommandMethod("CE_TOOLS", "CE_FLCLOSEGAP", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -914,11 +963,37 @@ namespace CETools.Civil3D
                                     : infillId.Handle.ToString();
                             result.NativeInfillCreated = true;
                         }
-                        else if (explicitCommand)
+                        else
                         {
-                            document.Editor.WriteMessage(
-                                "\nNative grading group exists, but Civil 3D could not create the infill. " +
-                                infillError);
+                            ObjectId fallbackSurfaceId;
+                            string fallbackError;
+                            if (TryCreateFallbackInfillSurface(
+                                    document.Database,
+                                    sourceId,
+                                    source,
+                                    "CE-PLATFORM-JUNCTION-INFILL",
+                                    out fallbackSurfaceId,
+                                    out fallbackError))
+                            {
+                                link.InfillHandle =
+                                    fallbackSurfaceId.Handle.ToString();
+                                result.NativeInfillCreated = true;
+                                if (explicitCommand)
+                                {
+                                    document.Editor.WriteMessage(
+                                        "\nCivil 3D 2023 exposes CreateGradingInfill as a native command rather than a public Grading.CreateInfill API. CE Tools created a bounded dynamic TIN infill surface instead: {0}.",
+                                        ReadSurfaceName(
+                                            document.Database,
+                                            fallbackSurfaceId));
+                                }
+                            }
+                            else if (explicitCommand)
+                            {
+                                document.Editor.WriteMessage(
+                                    "\nNative grading infill was unavailable ({0}) and the CE bounded TIN infill fallback also failed: {1}",
+                                    infillError,
+                                    fallbackError);
+                            }
                         }
                     }
                 }
@@ -3119,10 +3194,11 @@ namespace CETools.Civil3D
             if (document == null)
                 return result;
 
-            bool all = string.Equals(
-                scope,
-                "All closed junction feature lines",
-                StringComparison.OrdinalIgnoreCase);
+            bool all =
+                (scope ?? string.Empty)
+                    .StartsWith(
+                        "All closed ",
+                        StringComparison.OrdinalIgnoreCase);
             ObjectId[] candidateIds;
             if (all)
             {
@@ -3274,7 +3350,9 @@ namespace CETools.Civil3D
                 identity.Contains("SIDEWALK") ||
                 identity.Contains("SHOULDER") ||
                 identity.Contains("SHLD") ||
-                identity.Contains("VERGE"))
+                identity.Contains("VERGE") ||
+                identity.Contains("PLATFORM") ||
+                identity.Contains("PAD"))
                 return true;
 
             try
@@ -3460,10 +3538,24 @@ namespace CETools.Civil3D
                     out infillId,
                     out infillError))
             {
+                string fallbackError;
+                if (!TryCreateFallbackInfillSurface(
+                        document.Database,
+                        sourceId,
+                        source,
+                        "CE-JUNCTION-INFILL",
+                        out infillId,
+                        out fallbackError))
+                {
+                    result.Message =
+                        "Civil 3D native CreateGradingInfill is not exposed by the public 2023 .NET Grading API. Native attempt: " +
+                        infillError +
+                        " CE bounded TIN infill fallback: " +
+                        fallbackError;
+                    return result;
+                }
                 result.Message =
-                    "Civil 3D could not create the native infill. " +
-                    infillError;
-                return result;
+                    "CE bounded TIN infill surface created because Civil 3D 2023 does not expose native CreateGradingInfill through the public Grading .NET API.";
             }
 
             nativeLink.GroupHandle =
@@ -3540,6 +3632,191 @@ namespace CETools.Civil3D
                 Intermediate = Convert.ToInt16(values[1].Value, CultureInfo.InvariantCulture) != 0
             };
             return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
+        }
+
+        private static bool TryCreateFallbackInfillSurface(
+            Database database,
+            ObjectId sourceId,
+            SourceSnapshot source,
+            string prefix,
+            out ObjectId surfaceId,
+            out string error)
+        {
+            surfaceId = ObjectId.Null;
+            error = string.Empty;
+            if (database == null ||
+                source == null ||
+                source.Points == null ||
+                source.Points.Count < 3)
+            {
+                error =
+                    "The closed source does not contain enough vertices for a TIN infill.";
+                return false;
+            }
+
+            try
+            {
+                string baseName =
+                    SafeName(
+                        prefix,
+                        "CE-INFILL") +
+                    "-" +
+                    sourceId.Handle.ToString();
+                string name =
+                    UniqueSurfaceName(
+                        database,
+                        baseName);
+
+                surfaceId =
+                    TinSurface.Create(
+                        database,
+                        name);
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    TinSurface surface =
+                        transaction.GetObject(
+                            surfaceId,
+                            OpenMode.ForWrite,
+                            false) as TinSurface;
+                    if (surface == null)
+                        throw new InvalidOperationException(
+                            "Civil 3D did not return the new TIN surface.");
+
+                    var uniquePoints =
+                        new List<Point3d>();
+                    foreach (Point3d point in
+                        source.Points)
+                    {
+                        if (!Finite(point))
+                            continue;
+                        if (uniquePoints.Count > 0 &&
+                            uniquePoints[
+                                uniquePoints.Count - 1]
+                                .DistanceTo(point) <=
+                                1e-6)
+                            continue;
+                        uniquePoints.Add(point);
+                    }
+                    if (uniquePoints.Count >= 2 &&
+                        uniquePoints[0].DistanceTo(
+                            uniquePoints[
+                                uniquePoints.Count - 1]) <=
+                            1e-6)
+                        uniquePoints.RemoveAt(
+                            uniquePoints.Count - 1);
+                    if (uniquePoints.Count < 3)
+                        throw new InvalidOperationException(
+                            "The closed source has fewer than three distinct points.");
+
+                    var vertices =
+                        new Point3dCollection(
+                            uniquePoints.ToArray());
+                    surface.AddVertices(
+                        vertices);
+
+                    // A real outer boundary is critical at concave junctions and
+                    // platforms; without it the TIN would bridge the convex hull.
+                    surface.BoundariesDefinition.AddBoundaries(
+                        vertices,
+                        0.05,
+                        SurfaceBoundaryType.Outer,
+                        true);
+                    surface.Rebuild();
+                    transaction.Commit();
+                }
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                error = exception.Message;
+                if (!surfaceId.IsNull)
+                {
+                    try { Cleanup(database, surfaceId); }
+                    catch { }
+                }
+                surfaceId = ObjectId.Null;
+                return false;
+            }
+        }
+
+        private static string UniqueSurfaceName(
+            Database database,
+            string requested)
+        {
+            string baseName =
+                string.IsNullOrWhiteSpace(requested)
+                    ? "CE-INFILL"
+                    : requested.Trim();
+            var names =
+                new HashSet<string>(
+                    StringComparer.OrdinalIgnoreCase);
+            CivilDocument civil =
+                CivilApplication.ActiveDocument;
+            if (civil != null &&
+                database != null)
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in
+                        civil.GetSurfaceIds())
+                    {
+                        CivilSurface surface = null;
+                        try
+                        {
+                            surface = transaction.GetObject(
+                                id,
+                                OpenMode.ForRead,
+                                false) as CivilSurface;
+                        }
+                        catch { }
+                        if (surface != null)
+                            names.Add(
+                                surface.Name ?? string.Empty);
+                    }
+                }
+            }
+            if (!names.Contains(baseName))
+                return baseName;
+            int suffix = 2;
+            while (names.Contains(
+                baseName + "-" +
+                suffix.ToString(
+                    CultureInfo.InvariantCulture)))
+                suffix++;
+            return baseName + "-" +
+                suffix.ToString(
+                    CultureInfo.InvariantCulture);
+        }
+
+        private static string ReadSurfaceName(
+            Database database,
+            ObjectId id)
+        {
+            if (database == null ||
+                id.IsNull ||
+                id.IsErased)
+                return "<infill surface>";
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilSurface surface =
+                        transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false) as CivilSurface;
+                    return surface == null
+                        ? id.Handle.ToString()
+                        : surface.Name;
+                }
+            }
+            catch
+            {
+                return id.Handle.ToString();
+            }
         }
 
         private static void WriteNativeInfillLink(

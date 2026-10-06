@@ -441,6 +441,17 @@ namespace CETools.Civil3D
                     "Selected sewer parts"
                 });
             model.AddChoice(
+                "ExistingNames",
+                "01 Branches",
+                "Existing branch names",
+                "Replace existing branch names",
+                "Replace only CE-generated branch-name labels for the processed branches, or keep existing labels and create names only for branches that do not yet have them.",
+                new[]
+                {
+                    "Replace existing branch names",
+                    "Keep existing branch names"
+                });
+            model.AddChoice(
                 "Side",
                 "02 Presentation",
                 "Branch-name side",
@@ -510,9 +521,10 @@ namespace CETools.Civil3D
                 "03 Long branches",
                 "Long-section repeat frequency",
                 productionSettings.BranchLabelLongSectionFrequency,
-                "For long straight runs, repeat the branch name at every pipe centre or every second pipe centre.",
+                "Choose consistent 50 m spacing, every pipe centre, or every second pipe centre for additional names on long straight runs.",
                 new[]
                 {
+                    "Consistent 50 m",
                     "Every pipe",
                     "Every second pipe"
                 });
@@ -524,6 +536,11 @@ namespace CETools.Civil3D
                 string.Equals(
                     model.Text("Scope"),
                     "Selected sewer parts",
+                    StringComparison.OrdinalIgnoreCase);
+            bool replaceExistingNames =
+                string.Equals(
+                    model.Text("ExistingNames"),
+                    "Replace existing branch names",
                     StringComparison.OrdinalIgnoreCase);
 
             productionSettings.BranchLabelSide =
@@ -675,16 +692,39 @@ namespace CETools.Civil3D
                                     networkHandle,
                                     branchPlan.BranchName);
 
-                            RemoveExistingGeneratedLabels(
-                                modelSpace,
-                                branchKey,
-                                transaction);
-
                             IReadOnlyList<SewerBranchLabelPlacement.Placement> placements =
                                 SewerBranchLabelPlacement.BuildPlacements(
                                     branchPlan.PlanPoints,
                                     productionSettings.BranchLabelLongSectionLength,
                                     productionSettings.BranchLabelLongSectionFrequency);
+
+                            // Never erase a valid model-space branch label before
+                            // proving that replacement geometry can be built. This
+                            // prevents repeat runs from making names disappear when
+                            // one branch is temporarily incomplete.
+                            if (placements.Count == 0)
+                                continue;
+
+                            bool alreadyExists =
+                                HasExistingGeneratedLabel(
+                                    modelSpace,
+                                    branchKey,
+                                    transaction);
+                            if (!replaceExistingNames &&
+                                alreadyExists)
+                            {
+                                branchesLabelled++;
+                                continue;
+                            }
+                            if (replaceExistingNames &&
+                                alreadyExists)
+                            {
+                                RemoveExistingGeneratedLabels(
+                                    modelSpace,
+                                    branchKey,
+                                    transaction);
+                            }
+
                             Dictionary<ObjectId, Point3d> pipeLabelAnchors =
                                 ReadPipePlanLabelAnchors(
                                     modelSpace,
@@ -733,6 +773,10 @@ namespace CETools.Civil3D
                                 transaction.AddNewlyCreatedDBObject(
                                     label,
                                     true);
+                                AnnotationScaleSyncManager
+                                    .AddAllAnnotationScaleContexts(
+                                        label,
+                                        database);
                                 labelsCreated++;
                             }
 
@@ -2066,6 +2110,36 @@ namespace CETools.Civil3D
             }
 
             return text;
+        }
+
+        private static bool HasExistingGeneratedLabel(
+            BlockTableRecord modelSpace,
+            string branchKey,
+            Transaction transaction)
+        {
+            if (modelSpace == null ||
+                transaction == null)
+                return false;
+
+            foreach (ObjectId entityId in modelSpace)
+            {
+                DBObject entity = null;
+                try
+                {
+                    entity = transaction.GetObject(
+                        entityId,
+                        OpenMode.ForRead,
+                        false);
+                }
+                catch { }
+                if (entity != null &&
+                    HasTag(
+                        entity,
+                        branchKey,
+                        "Label"))
+                    return true;
+            }
+            return false;
         }
 
         private static void RemoveExistingGeneratedLabels(

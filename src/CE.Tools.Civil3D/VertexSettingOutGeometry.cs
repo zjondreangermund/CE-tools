@@ -19,6 +19,7 @@ namespace CETools.Civil3D
         internal int RoadNumber { get; set; }
         internal string JunctionGroup { get; set; }
         internal string RoadHandle { get; set; }
+        internal double RoadStation { get; set; } = double.NaN;
         internal Point3d JunctionCenter { get; set; }
     }
 

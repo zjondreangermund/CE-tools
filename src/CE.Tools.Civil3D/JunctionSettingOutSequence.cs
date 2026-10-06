@@ -122,20 +122,58 @@ namespace CETools.Civil3D
                     if (identityMode == "Use specified road number") number = specifiedNumber;
                     else if (identityMode != "Pick owning road")
                     {
-                        var linked = group.Where(s => s.RoadNumber > 0).Select(s => s.RoadNumber).Distinct().ToList();
-                        if (linked.Count == 1) number = linked[0];
-                        else if (linked.Count == 0)
+                        var linked = group
+                            .Where(s => s.RoadNumber > 0)
+                            .Select(s => s.RoadNumber)
+                            .Distinct()
+                            .OrderBy(value => value)
+                            .ToList();
+                        if (linked.Count > 0)
                         {
-                            var ranked = roads.Select(r => new { Number = Number(r, tr), Distance = group.Average(s => Distance(r, Centre(s))) })
-                                .Where(r => r.Distance <= groupingDistance).GroupBy(r => r.Number)
-                                .Select(g => g.OrderBy(r => r.Distance).First()).OrderBy(r => r.Distance).ToList();
-                            // At a shared cross-junction both roads may be equally close.
-                            // Do not silently invent ownership from drawing/selection order.
-                            if (ranked.Count > 0 && (ranked.Count == 1 || ranked[1].Distance - ranked[0].Distance > 0.05)) number = ranked[0].Number;
+                            // Explicit field rule: where two or more named roads
+                            // share a T/cross junction, the LOWER road number owns
+                            // the shared junction setting-out sequence.
+                            number = linked[0];
+                        }
+                        else
+                        {
+                            var ranked = roads
+                                .Select(r => new
+                                {
+                                    Entity = r,
+                                    Number = Number(r, tr),
+                                    Distance = group.Average(s => Distance(r, Centre(s)))
+                                })
+                                .Where(r => r.Number > 0 && r.Distance <= groupingDistance)
+                                .OrderBy(r => r.Number)
+                                .ThenBy(r => r.Distance)
+                                .ToList();
+                            if (ranked.Count > 0)
+                                number = ranked[0].Number;
                         }
                     }
-                    if (number == 0) unresolved.Add(group);
-                    else foreach (var source in group) source.RoadNumber = number;
+                    if (number == 0)
+                    {
+                        unresolved.Add(group);
+                    }
+                    else
+                    {
+                        Entity owningRoad = roads
+                            .Where(r => Number(r, tr) == number)
+                            .OrderBy(r => group.Average(s => Distance(r, Centre(s))))
+                            .FirstOrDefault();
+                        foreach (var source in group)
+                        {
+                            source.RoadNumber = number;
+                            if (owningRoad != null)
+                            {
+                                source.RoadHandle = owningRoad.Handle.ToString();
+                                source.RoadStation = StationAlongRoad(
+                                    owningRoad,
+                                    Centre(source));
+                            }
+                        }
+                    }
                 }
             }
             foreach (var group in unresolved)
@@ -152,7 +190,24 @@ namespace CETools.Civil3D
                     document.Editor.WriteMessage("\nThe selected object has no ROAD/RD number. Name the road or choose 'Use specified road number'. Nothing was changed.");
                     return false;
                 }
-                foreach (var source in group) source.RoadNumber = number;
+                using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+                {
+                    Entity owner = tr.GetObject(
+                        picked.ObjectId,
+                        OpenMode.ForRead,
+                        false) as Entity;
+                    foreach (var source in group)
+                    {
+                        source.RoadNumber = number;
+                        if (owner != null)
+                        {
+                            source.RoadHandle = owner.Handle.ToString();
+                            source.RoadStation = StationAlongRoad(
+                                owner,
+                                Centre(source));
+                        }
+                    }
+                }
             }
             return true;
         }
@@ -191,6 +246,42 @@ namespace CETools.Civil3D
             }
             // A layer may hold several roads. Do not treat its digits as identity.
             return number;
+        }
+
+        internal static double StationAlongRoad(
+            Entity road,
+            Point3d point)
+        {
+            if (road == null)
+                return double.NaN;
+            try
+            {
+                Alignment alignment = road as Alignment;
+                if (alignment != null)
+                {
+                    double station = 0.0;
+                    double offset = 0.0;
+                    alignment.StationOffset(
+                        point.X,
+                        point.Y,
+                        ref station,
+                        ref offset);
+                    return station;
+                }
+
+                Curve curve = road as Curve;
+                if (curve != null)
+                {
+                    Point3d closest =
+                        curve.GetClosestPointTo(
+                            point,
+                            false);
+                    return curve.GetDistAtPoint(
+                        closest);
+                }
+            }
+            catch { }
+            return double.NaN;
         }
 
         private static double Distance(Entity road, Point3d point)

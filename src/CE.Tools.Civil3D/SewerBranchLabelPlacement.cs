@@ -96,6 +96,11 @@ namespace CETools.Civil3D
                         GeometryTolerance
                         ? RepeatSpacing
                         : longStraightSectionLength);
+            bool consistentSpacing =
+                string.Equals(
+                    longSectionFrequency,
+                    "Consistent 50 m",
+                    StringComparison.OrdinalIgnoreCase);
             bool everySecondPipe =
                 string.Equals(
                     longSectionFrequency,
@@ -131,44 +136,71 @@ namespace CETools.Civil3D
                     longThreshold)
                     continue;
 
-                // Long straight runs receive extra names over pipe centres.
-                // The user can choose every pipe or every second pipe to reduce
-                // annotation density while the centre-of-run label remains.
-                int stride =
-                    everySecondPipe
-                        ? 2
-                        : 1;
-                int ordinal = 0;
-                for (int segmentIndex =
-                         run.StartSegment;
-                     segmentIndex <=
-                         run.EndSegment;
-                     segmentIndex++)
+                if (consistentSpacing)
                 {
-                    if (segmentLengths[
-                            segmentIndex] <=
-                        GeometryTolerance)
-                        continue;
-
-                    if ((ordinal % stride) == 0)
+                    // Use a true fixed chainage interval so branch names do not
+                    // bunch up where pipe lengths differ. Start at half an interval
+                    // from the run start, then continue every 50 m.
+                    double first =
+                        run.StartDistance +
+                        (RepeatSpacing * 0.5);
+                    for (double distance = first;
+                         distance <
+                            run.StartDistance +
+                            run.Length -
+                            GeometryTolerance;
+                         distance += RepeatSpacing)
                     {
-                        double pipeCentreDistance =
-                            cumulative[
-                                segmentIndex] +
-                            (segmentLengths[
-                                segmentIndex] *
-                             0.5);
                         AddUniquePlacement(
                             result,
                             PlacementAtDistance(
                                 points,
                                 segmentLengths,
-                                pipeCentreDistance));
+                                distance));
                         if (result.Count >=
                             MaximumLabelsPerBranch)
                             break;
                     }
-                    ordinal++;
+                }
+                else
+                {
+                    // Legacy option: repeat over pipe centres.
+                    int stride =
+                        everySecondPipe
+                            ? 2
+                            : 1;
+                    int ordinal = 0;
+                    for (int segmentIndex =
+                             run.StartSegment;
+                         segmentIndex <=
+                             run.EndSegment;
+                         segmentIndex++)
+                    {
+                        if (segmentLengths[
+                                segmentIndex] <=
+                            GeometryTolerance)
+                            continue;
+
+                        if ((ordinal % stride) == 0)
+                        {
+                            double pipeCentreDistance =
+                                cumulative[
+                                    segmentIndex] +
+                                (segmentLengths[
+                                    segmentIndex] *
+                                 0.5);
+                            AddUniquePlacement(
+                                result,
+                                PlacementAtDistance(
+                                    points,
+                                    segmentLengths,
+                                    pipeCentreDistance));
+                            if (result.Count >=
+                                MaximumLabelsPerBranch)
+                                break;
+                        }
+                        ordinal++;
+                    }
                 }
             }
 
@@ -515,6 +547,9 @@ namespace CETools.Civil3D
             label.ColorIndex = 3;
             label.BackgroundFill = true;
             label.UseBackgroundColor = true;
+            // Match the standard Civil 3D Background Mask presentation used for
+            // road/branch names: a compact 1.1 border offset around the text.
+            try { label.BackgroundScaleFactor = 1.1; } catch { }
         }
 
         internal static double ResolveScaleAwarePaperDistance(

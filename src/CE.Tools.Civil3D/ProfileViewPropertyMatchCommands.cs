@@ -318,6 +318,125 @@ namespace CETools.Civil3D
                 sourceId.Handle, completed, bandRows, groups, failed);
         }
 
+        [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWBANDLABELS",
+            CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void ShowBandLabelsOnMultipleViews()
+        {
+            Document document =
+                AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null)
+                return;
+
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Band Labels on Multiple Profile Views",
+                "Turn Show Labels on for every existing top/bottom band row on all profile views or multiple selected profile views. Existing band styles and data-source assignments are retained.");
+            settings.AddChoice(
+                "Scope",
+                "01 Profile views",
+                "Profile views",
+                "Selected",
+                "Apply to all accessible Civil 3D profile views or multiple selected profile views.",
+                new[] { "Selected", "All" });
+            if (!DisciplineWorkflowDialogs.EditSettings(settings))
+                return;
+
+            List<ObjectId> viewIds =
+                string.Equals(
+                    settings.Text("Scope"),
+                    "All",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? ReadAllProfileViewIds(document)
+                    : PromptProfileViews(
+                        document,
+                        "\nSelect multiple profile views whose band labels must be shown: ",
+                        ObjectId.Null);
+            if (viewIds.Count == 0)
+                return;
+
+            int viewsUpdated = 0;
+            int rowsUpdated = 0;
+            int failed = 0;
+            using (DocumentLock documentLock =
+                document.LockDocument())
+            {
+                foreach (ObjectId viewId in
+                    viewIds.Distinct())
+                {
+                    try
+                    {
+                        using (Transaction transaction =
+                            document.Database.TransactionManager.StartTransaction())
+                        {
+                            CivilProfileView view =
+                                transaction.GetObject(
+                                    viewId,
+                                    OpenMode.ForWrite,
+                                    false) as CivilProfileView;
+                            if (view == null ||
+                                view.IsReferenceObject)
+                                throw new InvalidOperationException(
+                                    "Profile view is not editable.");
+
+                            ProfileViewBandItemCollection top =
+                                view.Bands.GetTopBandItems();
+                            ProfileViewBandItemCollection bottom =
+                                view.Bands.GetBottomBandItems();
+                            try
+                            {
+                                for (int index = 0;
+                                     index < top.Count;
+                                     index++)
+                                {
+                                    top[index].ShowLabels = true;
+                                    rowsUpdated++;
+                                }
+                                for (int index = 0;
+                                     index < bottom.Count;
+                                     index++)
+                                {
+                                    bottom[index].ShowLabels = true;
+                                    rowsUpdated++;
+                                }
+                                if (top.Count > 0)
+                                    view.Bands.SetTopBandItems(top);
+                                if (bottom.Count > 0)
+                                    view.Bands.SetBottomBandItems(bottom);
+                            }
+                            finally
+                            {
+                                top.Dispose();
+                                bottom.Dispose();
+                            }
+
+                            try
+                            {
+                                view.RecordGraphicsModified(true);
+                            }
+                            catch { }
+                            transaction.Commit();
+                            viewsUpdated++;
+                        }
+                    }
+                    catch (System.Exception exception)
+                    {
+                        failed++;
+                        document.Editor.WriteMessage(
+                            "\nCE_PROFILEVIEWBANDLABELS view {0} skipped: {1}",
+                            viewId.Handle,
+                            exception.Message);
+                    }
+                }
+            }
+
+            document.Database.TransactionManager.QueueForGraphicsFlush();
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWBANDLABELS complete. Views updated={0}; band rows with labels enabled={1}; failed={2}.",
+                viewsUpdated,
+                rowsUpdated,
+                failed);
+        }
+
         [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWDATASOURCES",
             CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
         public void ApplyBandDataSourcesToMultipleViews()
@@ -887,6 +1006,41 @@ namespace CETools.Civil3D
                 return true;
             }
             catch { return false; }
+        }
+
+        private static List<ObjectId> ReadAllProfileViewIds(
+            Document document)
+        {
+            var result = new List<ObjectId>();
+            if (document == null)
+                return result;
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord model =
+                    transaction.GetObject(
+                        SymbolUtilityServices.GetBlockModelSpaceId(
+                            document.Database),
+                        OpenMode.ForRead,
+                        false) as BlockTableRecord;
+                if (model == null)
+                    return result;
+                foreach (ObjectId id in model)
+                {
+                    CivilProfileView view = null;
+                    try
+                    {
+                        view = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false) as CivilProfileView;
+                    }
+                    catch { }
+                    if (view != null)
+                        result.Add(id);
+                }
+            }
+            return result;
         }
 
         private static List<ObjectId> ReadImpliedProfileViews(

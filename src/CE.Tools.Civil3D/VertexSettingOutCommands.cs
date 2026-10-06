@@ -726,14 +726,34 @@ namespace CETools.Civil3D
             IDictionary<int, int> roadSeeds = null)
         {
             var result = new List<VertexSettingRecord>();
-            List<VertexSettingSource> orderedSources = OrderSources(
-                sources,
-                sequenceMode,
-                startRecordKey);
             bool roadGrouped = string.Equals(
                 numberingMode,
                 "Road grouped sequence",
                 StringComparison.OrdinalIgnoreCase);
+            List<VertexSettingSource> orderedSources = roadGrouped
+                ? (sources ?? Enumerable.Empty<VertexSettingSource>())
+                    .OrderBy(item =>
+                        item.RoadNumber > 0
+                            ? item.RoadNumber
+                            : int.MaxValue)
+                    .ThenBy(item =>
+                        double.IsNaN(item.RoadStation)
+                            ? double.MaxValue
+                            : item.RoadStation)
+                    .ThenBy(item =>
+                        CETools.Core.RoadAnnotationPlan.ClockwiseFromTopLeft(
+                            JunctionSettingOutSequence.Centre(item).X -
+                                item.JunctionCenter.X,
+                            JunctionSettingOutSequence.Centre(item).Y -
+                                item.JunctionCenter.Y))
+                    .ThenBy(
+                        item => item.Handle,
+                        StringComparer.OrdinalIgnoreCase)
+                    .ToList()
+                : OrderSources(
+                    sources,
+                    sequenceMode,
+                    startRecordKey);
             int sequence = startNumber;
             var roadSequence = new CETools.Core.RoadPointSequence(roadSeeds);
             foreach (VertexSettingSource source in orderedSources)
@@ -925,6 +945,30 @@ namespace CETools.Civil3D
                 ObjectId id = modelSpace.AppendEntity(leader);
                 transaction.AddNewlyCreatedDBObject(leader, true);
                 leader.AddLeaderLine(record.Point);
+                if (!string.Equals(
+                        link.ArrowType,
+                        "Use current leader style",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    // AddLeaderLine can re-apply the current MLEADERSTYLE arrow in
+                    // some Civil 3D builds. Reassert the entity override AFTER the
+                    // leader line exists so architectural ticks cannot leak back in.
+                    try { leader.ArrowSymbolId = ObjectId.Null; } catch { }
+                    try
+                    {
+                        PropertyInfo arrowProperty = leader.GetType().GetProperty(
+                            "ArrowSymbolId",
+                            BindingFlags.Public | BindingFlags.Instance);
+                        if (arrowProperty != null &&
+                            arrowProperty.CanWrite &&
+                            arrowProperty.PropertyType == typeof(ObjectId))
+                            arrowProperty.SetValue(
+                                leader,
+                                ObjectId.Null,
+                                null);
+                    }
+                    catch { }
+                }
                 WriteOutputLink(
                     leader, transaction, link.GroupId, record.Key, record.Point);
                 return id;

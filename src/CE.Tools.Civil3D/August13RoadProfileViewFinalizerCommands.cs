@@ -725,28 +725,59 @@ namespace CETools.Civil3D
                 bool ground = profile.ProfileType == ProfileType.EG ||
                     (profile.ProfileType != ProfileType.FG &&
                      IsGroundProfileIdentity(identity));
+                bool leftRole =
+                    identity.Contains("LEFT") ||
+                    identity.Contains("LHS") ||
+                    identity.Contains(" HL") ||
+                    identity.Contains("HL-") ||
+                    identity.Contains("LEFT-EDGE") ||
+                    identity.Contains("LEFT EDGE");
+                bool rightRole =
+                    identity.Contains("RIGHT") ||
+                    identity.Contains("RHS") ||
+                    identity.Contains(" HR") ||
+                    identity.Contains("HR-") ||
+                    identity.Contains("RIGHT-EDGE") ||
+                    identity.Contains("RIGHT EDGE");
+                bool centreRole =
+                    identity.Contains("CENTRE") ||
+                    identity.Contains("CENTER") ||
+                    identity.Contains("CENTRELINE") ||
+                    identity.Contains("CENTERLINE");
                 bool excluded = ground;
+
                 if (ground && fallbackGroundProfileId.IsNull)
                     fallbackGroundProfileId = profileId;
-                if (!excluded && fallbackDesignProfileId.IsNull)
+
+                // Edge profiles created by CE_ROADEDGELEVELS are native layout
+                // profiles (FG type). Do NOT let that native type make a LEFT/RIGHT
+                // edge profile become the final-design road profile.
+                if (!excluded &&
+                    !leftRole &&
+                    !rightRole &&
+                    fallbackDesignProfileId.IsNull)
                     fallbackDesignProfileId = profileId;
-                if (finalProfileId.IsNull && !ground &&
-                    (profile.ProfileType == ProfileType.FG ||
-                     IsFinalDesignProfileIdentity(identity)))
+
+                if (finalProfileId.IsNull &&
+                    !ground &&
+                    !leftRole &&
+                    !rightRole &&
+                    (IsFinalDesignProfileIdentity(identity) ||
+                     (profile.ProfileType == ProfileType.FG &&
+                      !centreRole)))
                     finalProfileId = profileId;
-                if (!excluded && leftProfileId.IsNull &&
-                    (identity.Contains("LEFT") || identity.Contains("LHS") ||
-                     identity.Contains(" HL") || identity.Contains("HL-") ||
-                     identity.Contains("LEFT-EDGE") || identity.Contains("LEFT EDGE")))
+
+                if (!excluded &&
+                    leftProfileId.IsNull &&
+                    leftRole)
                     leftProfileId = profileId;
-                if (!excluded && rightProfileId.IsNull &&
-                    (identity.Contains("RIGHT") || identity.Contains("RHS") ||
-                     identity.Contains(" HR") || identity.Contains("HR-") ||
-                     identity.Contains("RIGHT-EDGE") || identity.Contains("RIGHT EDGE")))
+                if (!excluded &&
+                    rightProfileId.IsNull &&
+                    rightRole)
                     rightProfileId = profileId;
-                if (!excluded && centreProfileId.IsNull &&
-                    (identity.Contains("CENTRE") || identity.Contains("CENTER") ||
-                     identity.Contains("CENTRELINE") || identity.Contains("CENTERLINE")))
+                if (!excluded &&
+                    centreProfileId.IsNull &&
+                    centreRole)
                     centreProfileId = profileId;
             }
 

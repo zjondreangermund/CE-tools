@@ -1,4 +1,5 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -233,6 +234,97 @@ namespace CETools.Civil3D
                 // Existing contexts and unsupported entity types are harmless.
                 return false;
             }
+        }
+
+        internal static int AddAllAnnotationScaleContexts(
+            Entity entity,
+            Database database)
+        {
+            if (entity == null ||
+                database == null)
+                return 0;
+
+            SetAnnotative(entity);
+            int added = 0;
+            try
+            {
+                object manager = database.GetType()
+                    .GetProperty(
+                        "ObjectContextManager",
+                        BindingFlags.Public | BindingFlags.Instance)
+                    ?.GetValue(database, null);
+                if (manager == null)
+                    return 0;
+
+                MethodInfo getCollection = manager.GetType().GetMethod(
+                    "GetContextCollection",
+                    new[] { typeof(string) });
+                object collection = getCollection?.Invoke(
+                    manager,
+                    new object[] { "ACDB_ANNOTATIONSCALES" });
+                if (collection == null)
+                    return 0;
+
+                IEnumerable enumerable =
+                    collection as IEnumerable;
+                if (enumerable != null)
+                {
+                    foreach (object context in enumerable)
+                    {
+                        if (context != null &&
+                            AddContext(
+                                entity,
+                                context))
+                            added++;
+                    }
+                    return added;
+                }
+
+                // Compatibility path for host wrappers that do not implement
+                // IEnumerable but expose Count and an indexer/Item accessor.
+                PropertyInfo countProperty =
+                    collection.GetType().GetProperty(
+                        "Count",
+                        BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo itemProperty =
+                    collection.GetType().GetProperty(
+                        "Item",
+                        BindingFlags.Public | BindingFlags.Instance);
+                if (countProperty == null ||
+                    itemProperty == null)
+                    return added;
+
+                int count = Convert.ToInt32(
+                    countProperty.GetValue(
+                        collection,
+                        null),
+                    CultureInfo.InvariantCulture);
+                for (int index = 0;
+                     index < count;
+                     index++)
+                {
+                    object context = null;
+                    try
+                    {
+                        context = itemProperty.GetValue(
+                            collection,
+                            new object[] { index });
+                    }
+                    catch { }
+                    if (context != null &&
+                        AddContext(
+                            entity,
+                            context))
+                        added++;
+                }
+            }
+            catch
+            {
+                // The current annotation-scale context is still supplied by the
+                // existing idle synchronizer. Missing host enumeration support
+                // must never block label creation.
+            }
+            return added;
         }
 
         private static object ResolveCurrentAnnotationContext(Database database)
