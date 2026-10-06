@@ -13,6 +13,7 @@ using Autodesk.Civil;
 using Autodesk.Civil.ApplicationServices;
 using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
+using TinSurface = Autodesk.Civil.DatabaseServices.TinSurface;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 namespace CETools.Civil3D
