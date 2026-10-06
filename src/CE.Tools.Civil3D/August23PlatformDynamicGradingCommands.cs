@@ -383,12 +383,23 @@ namespace CETools.Civil3D
         }
 
         [CommandMethod("CE_TOOLS", "CE_JUNCTIONINFILL", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        [CommandMethod("CE_TOOLS", "CE_PLATFORMINFILL", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void JunctionClosedFeatureLineInfill()
         {
             PlatformDynamicRefreshManager.EnsureInitialized();
             Document document =
                 AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
+
+            string activeCommand =
+                Convert.ToString(
+                    AcApplication.GetSystemVariable("CMDNAMES"),
+                    CultureInfo.InvariantCulture) ??
+                string.Empty;
+            bool platformMode =
+                activeCommand.IndexOf(
+                    "CE_PLATFORMINFILL",
+                    StringComparison.OrdinalIgnoreCase) >= 0;
 
             List<string> siteNames = ReadSiteNames(document);
             string[] siteChoices =
@@ -397,20 +408,42 @@ namespace CETools.Civil3D
                     .ToArray();
 
             var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Junction Closed Feature-Line Infill",
-                "Create native Civil 3D infill for all recognised closed junction feature lines or multiple selected closed feature lines. CE Tools keeps the feature line and grading group in the same Site before creating the infill.");
+                platformMode
+                    ? "CE Tools - Platform Closed Feature-Line Infill"
+                    : "CE Tools - Junction Closed Feature-Line Infill",
+                "Create infill for all recognised closed " +
+                (platformMode ? "platform" : "junction") +
+                " feature lines or multiple selected closed feature lines. CE Tools keeps the feature line and grading group in the same Site; when Civil 3D 2023 native CreateGradingInfill is not exposed through .NET, a bounded CE TIN infill surface is created.");
             settings.AddChoice(
-                "Scope", "01 Selection", "Closed junction feature lines", "Multiple selected closed junction feature lines",
-                "Select multiple closed junction feature lines, or process all recognised closed junction feature lines in model space.",
-                new[]
-                {
-                    "Multiple selected closed junction feature lines",
-                    "All closed junction feature lines"
-                });
+                "Scope", "01 Selection",
+                platformMode
+                    ? "Closed platform feature lines"
+                    : "Closed junction feature lines",
+                platformMode
+                    ? "Multiple selected closed platform feature lines"
+                    : "Multiple selected closed junction feature lines",
+                "Select multiple closed feature lines, or process all recognised " +
+                (platformMode ? "platform" : "junction") +
+                " closed feature lines in model space.",
+                platformMode
+                    ? new[]
+                    {
+                        "Multiple selected closed platform feature lines",
+                        "All closed platform feature lines"
+                    }
+                    : new[]
+                    {
+                        "Multiple selected closed junction feature lines",
+                        "All closed junction feature lines"
+                    });
             settings.AddChoice(
                 "Site", "02 Grading group", "Grading / infill Site", "<Auto: source site / CE-PLATFORM-SITE>",
                 "Reuse each source feature line Site. If siteless, CE-PLATFORM-SITE is created. You may also choose an existing Site.",
                 siteChoices);
+            settings.AddChoice(
+                "AfterInfill", "03 Daylight grading", "After infill", "Continue to grade/daylight",
+                "After creating the infill, open the matching Grade-to-Surface workflow so the same platform/junction can receive cut/fill daylight, toe and slope lines.",
+                new[] { "Continue to grade/daylight", "Infill only" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings))
                 return;
 
@@ -449,11 +482,26 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_JUNCTIONINFILL complete. Closed junction feature lines={0}; infills created={1}; already ready={2}; skipped={3}.",
+                "\n{0} complete. Closed feature lines={1}; infills created={2}; already ready={3}; skipped={4}.",
+                platformMode ? "CE_PLATFORMINFILL" : "CE_JUNCTIONINFILL",
                 sourceIds.Count,
                 created,
                 existing,
                 skipped);
+
+            if (string.Equals(
+                    settings.Text("AfterInfill"),
+                    "Continue to grade/daylight",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                document.SendStringToExecute(
+                    platformMode
+                        ? "CE_PLATFORMGRADETOSURFACE "
+                        : "CE_JUNCTIONGRADETOSURFACE ",
+                    true,
+                    false,
+                    true);
+            }
         }
 
         [CommandMethod("CE_TOOLS", "CE_FLCLOSEGAP", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -3145,10 +3193,11 @@ namespace CETools.Civil3D
             if (document == null)
                 return result;
 
-            bool all = string.Equals(
-                scope,
-                "All closed junction feature lines",
-                StringComparison.OrdinalIgnoreCase);
+            bool all =
+                (scope ?? string.Empty)
+                    .StartsWith(
+                        "All closed ",
+                        StringComparison.OrdinalIgnoreCase);
             ObjectId[] candidateIds;
             if (all)
             {
@@ -3300,7 +3349,9 @@ namespace CETools.Civil3D
                 identity.Contains("SIDEWALK") ||
                 identity.Contains("SHOULDER") ||
                 identity.Contains("SHLD") ||
-                identity.Contains("VERGE"))
+                identity.Contains("VERGE") ||
+                identity.Contains("PLATFORM") ||
+                identity.Contains("PAD"))
                 return true;
 
             try
