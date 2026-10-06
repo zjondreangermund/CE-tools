@@ -1,5 +1,7 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -114,7 +116,17 @@ namespace CETools.Civil3D
                 actionButtonText,
                 action != null);
             AcApplication.ShowModalWindow(window);
-            if (window.PlaceTableRequested)
+            if (window.ExportExcelRequested)
+            {
+                ExportExcel(
+                    document,
+                    string.IsNullOrWhiteSpace(tableTitle)
+                        ? title
+                        : tableTitle,
+                    columns,
+                    rows);
+            }
+            else if (window.PlaceTableRequested)
             {
                 PlaceTable(document, tableTitle, columns, rows);
             }
@@ -127,6 +139,84 @@ namespace CETools.Civil3D
             else if (window.ActionRequested && action != null)
             {
                 action();
+            }
+        }
+
+        private static void ExportExcel(
+            Document document,
+            string title,
+            IList<string> columns,
+            IList<IList<string>> rows)
+        {
+            if (document == null ||
+                columns == null ||
+                columns.Count == 0)
+                return;
+
+            string safeTitle =
+                new string(
+                    (string.IsNullOrWhiteSpace(title)
+                        ? "CE-Tools-Report"
+                        : title)
+                    .Select(character =>
+                        Path.GetInvalidFileNameChars()
+                            .Contains(character)
+                            ? '-'
+                            : character)
+                    .ToArray());
+            var options = new PromptSaveFileOptions(
+                "\nSelect Excel workbook output path: ")
+            {
+                Filter = "Excel Workbook (*.xlsx)|*.xlsx",
+                DialogCaption = "Export CE Tools Report to Excel",
+                InitialFileName = safeTitle + ".xlsx"
+            };
+            PromptFileNameResult selected =
+                document.Editor.GetFileNameForSave(
+                    options);
+            if (selected.Status != PromptStatus.OK ||
+                string.IsNullOrWhiteSpace(
+                    selected.StringResult))
+                return;
+
+            string path =
+                selected.StringResult;
+            if (!path.EndsWith(
+                    ".xlsx",
+                    StringComparison.OrdinalIgnoreCase))
+                path += ".xlsx";
+
+            var workbookRows =
+                new List<IList<string>>
+                {
+                    new List<string>(columns)
+                };
+            if (rows != null)
+            {
+                foreach (IList<string> row in rows)
+                    workbookRows.Add(
+                        row == null
+                            ? new List<string>()
+                            : new List<string>(row));
+            }
+
+            try
+            {
+                SimpleXlsxWriter.Write(
+                    path,
+                    string.IsNullOrWhiteSpace(title)
+                        ? "CE Tools Report"
+                        : title,
+                    workbookRows);
+                document.Editor.WriteMessage(
+                    "\nCE Tools report exported to Excel: {0}",
+                    path);
+            }
+            catch (System.Exception exception)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE Tools Excel export failed. {0}",
+                    exception.Message);
             }
         }
 
@@ -419,9 +509,24 @@ namespace CETools.Civil3D
                     buttons.Children.Add(actionButton);
                 }
 
+                var excelButton = CreateButton(
+                    "Export Excel",
+                    115);
+                excelButton.Click += delegate
+                {
+                    ExportExcelRequested = true;
+                    PlaceTableRequested = false;
+                    LocateRequested = false;
+                    ActionRequested = false;
+                    DialogResult = true;
+                    Close();
+                };
+                buttons.Children.Add(excelButton);
+
                 var tableButton = CreateButton("Place Table", 110);
                 tableButton.Click += delegate
                 {
+                    ExportExcelRequested = false;
                     PlaceTableRequested = true;
                     LocateRequested = false;
                     ActionRequested = false;
@@ -434,6 +539,7 @@ namespace CETools.Civil3D
                 closeButton.IsCancel = true;
                 closeButton.Click += delegate
                 {
+                    ExportExcelRequested = false;
                     PlaceTableRequested = false;
                     LocateRequested = false;
                     ActionRequested = false;
@@ -447,6 +553,7 @@ namespace CETools.Civil3D
                 Content = root;
             }
 
+            public bool ExportExcelRequested { get; private set; }
             public bool PlaceTableRequested { get; private set; }
             public bool LocateRequested { get; private set; }
             public bool ActionRequested { get; private set; }
