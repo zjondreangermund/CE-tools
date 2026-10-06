@@ -1071,7 +1071,7 @@ namespace CETools.Civil3D
             station = 0.0;
             if (assembly == null)
                 return false;
-            foreach (CalculatedPoint point in
+            foreach (CivilCalculatedPoint point in
                 assembly.Points)
             {
                 if (point == null)
