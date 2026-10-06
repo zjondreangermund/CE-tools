@@ -16,7 +16,10 @@ namespace CETools.Civil3D
             var breaks = new List<double>();
             foreach (Curve other in allRoads)
             {
-                if (other.ObjectId == road.ObjectId) continue;
+                if (ReferenceEquals(other, road) ||
+                    (!road.ObjectId.IsNull &&
+                     other.ObjectId == road.ObjectId))
+                    continue;
                 var hits = new Point3dCollection();
                 try
                 {
