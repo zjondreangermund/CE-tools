@@ -575,21 +575,49 @@ namespace CETools.Civil3D
             return AcApplication.DocumentManager.MdiActiveDocument;
         }
 
-        private static PromptSelectionResult GetSelection(Editor editor, string message)
+        private static PromptSelectionResult GetSelection(
+            Editor editor,
+            string message)
         {
-            PromptSelectionResult implied = editor.SelectImplied();
-            if (implied.Status == PromptStatus.OK && implied.Value.Count > 0)
+            PromptSelectionResult implied =
+                editor.SelectImplied();
+            if (implied.Status == PromptStatus.OK &&
+                implied.Value != null &&
+                implied.Value.Count > 0)
             {
-                editor.SetImpliedSelection(new ObjectId[0]);
+                editor.SetImpliedSelection(
+                    new ObjectId[0]);
                 return implied;
             }
 
-            return editor.GetSelection(new PromptSelectionOptions
+            var scope = new PromptKeywordOptions(
+                "\nReport scope [All/Select] <Select>: ")
             {
-                MessageForAdding = message,
-                AllowDuplicates = false,
-                RejectObjectsFromNonCurrentSpace = true
-            });
+                AllowNone = true
+            };
+            scope.Keywords.Add("All");
+            scope.Keywords.Add("Select");
+            PromptResult scopeResult =
+                editor.GetKeywords(scope);
+            if (scopeResult.Status == PromptStatus.OK &&
+                string.Equals(
+                    scopeResult.StringResult,
+                    "All",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                // Every report below already filters by its own Civil 3D/entity
+                // type, so selecting all model-space objects gives one consistent
+                // All/Select scope without changing the report calculations.
+                return editor.SelectAll();
+            }
+
+            return editor.GetSelection(
+                new PromptSelectionOptions
+                {
+                    MessageForAdding = message,
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
         }
 
         private static T Open<T>(Transaction transaction, SelectedObject selectedObject)
