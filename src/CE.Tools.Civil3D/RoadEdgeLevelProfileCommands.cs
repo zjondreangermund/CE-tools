@@ -60,6 +60,17 @@ namespace CETools.Civil3D
                     "All road alignments",
                     "Selected road alignments"
                 });
+            model.AddChoice(
+                "WidthSource",
+                "02 Edge levels",
+                "Left/right width source",
+                "Active corridor assembly widths",
+                "Read station-varying left/right lane/road widths from the applied assemblies used by the active corridor, or use one manual equal half-width.",
+                new[]
+                {
+                    "Active corridor assembly widths",
+                    "Manual equal half-width"
+                });
             model.AddPositiveDouble(
                 "HalfWidth",
                 "02 Edge levels",
@@ -82,6 +93,8 @@ namespace CETools.Civil3D
             if (!DisciplineWorkflowDialogs.EditSettings(model))
                 return;
 
+            string widthSource =
+                model.Text("WidthSource");
             double halfWidth =
                 Math.Max(0.001, model.Double(
                     "HalfWidth",
@@ -218,6 +231,29 @@ namespace CETools.Civil3D
                             continue;
                         }
 
+                        List<StationWidth> assemblyWidths =
+                            string.Equals(
+                                widthSource,
+                                "Active corridor assembly widths",
+                                StringComparison.OrdinalIgnoreCase)
+                                ? ReadActiveCorridorWidths(
+                                    civilDocument,
+                                    transaction,
+                                    alignment)
+                                : new List<StationWidth>();
+                        if (string.Equals(
+                                widthSource,
+                                "Active corridor assembly widths",
+                                StringComparison.OrdinalIgnoreCase) &&
+                            assemblyWidths.Count == 0)
+                        {
+                            warnings.Add(
+                                alignment.Name +
+                                ": no usable active-corridor assembly lane widths were found; manual half-width " +
+                                halfWidth.ToString("N3", CultureInfo.InvariantCulture) +
+                                " was used.");
+                        }
+
                         roads++;
                         int leftPoints;
                         int rightPoints;
@@ -226,7 +262,9 @@ namespace CETools.Civil3D
                                 transaction,
                                 alignment,
                                 surface,
-                                -halfWidth,
+                                true,
+                                halfWidth,
+                                assemblyWidths,
                                 interval,
                                 alignment.Name + "-LEFT-EDGE",
                                 layerId,
@@ -249,7 +287,9 @@ namespace CETools.Civil3D
                                 transaction,
                                 alignment,
                                 surface,
+                                false,
                                 halfWidth,
+                                assemblyWidths,
                                 interval,
                                 alignment.Name + "-RIGHT-EDGE",
                                 layerId,
@@ -287,10 +327,11 @@ namespace CETools.Civil3D
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_ROADEDGELEVELS complete. Roads={0}; edge profiles={1}; sampled points={2}; half-width={3:N3}; warnings={4}.",
+                "\nCE_ROADEDGELEVELS complete. Roads={0}; edge profiles={1}; sampled points={2}; width source={3}; manual fallback half-width={4:N3}; warnings={5}.",
                 roads,
                 profiles,
                 sampledPoints,
+                widthSource,
                 halfWidth,
                 warnings.Count);
             foreach (string warning in warnings.Take(8))
@@ -316,7 +357,9 @@ namespace CETools.Civil3D
             Transaction transaction,
             CivilAlignment alignment,
             CivilSurface surface,
-            double offset,
+            bool leftSide,
+            double manualHalfWidth,
+            IList<StationWidth> assemblyWidths,
             double interval,
             string profileName,
             ObjectId layerId,
@@ -395,6 +438,12 @@ namespace CETools.Civil3D
                 double northing = 0.0;
                 try
                 {
+                    double offset =
+                        ResolveEdgeOffset(
+                            station,
+                            leftSide,
+                            manualHalfWidth,
+                            assemblyWidths);
                     alignment.PointLocation(
                         station,
                         offset,
@@ -420,16 +469,240 @@ namespace CETools.Civil3D
                 profile.Description =
                     "CE road edge level from " +
                     surface.Name +
-                    " at offset " +
-                    offset.ToString(
-                        "N3",
-                        CultureInfo.InvariantCulture);
+                    " using " +
+                    ((assemblyWidths != null &&
+                      assemblyWidths.Count > 0)
+                        ? "active corridor assembly widths"
+                        : "manual half-width " +
+                          manualHalfWidth.ToString(
+                              "N3",
+                              CultureInfo.InvariantCulture)) +
+                    " (" +
+                    (leftSide ? "LEFT" : "RIGHT") +
+                    ")";
                 return true;
             }
 
             profile.Erase();
             pointsAdded = 0;
             return false;
+        }
+
+        private static List<StationWidth> ReadActiveCorridorWidths(
+            CivilDocument civilDocument,
+            Transaction transaction,
+            CivilAlignment alignment)
+        {
+            var result = new List<StationWidth>();
+            if (civilDocument == null ||
+                transaction == null ||
+                alignment == null)
+                return result;
+
+            foreach (ObjectId corridorId in
+                civilDocument.CorridorCollection)
+            {
+                Corridor corridor = null;
+                try
+                {
+                    corridor = transaction.GetObject(
+                        corridorId,
+                        OpenMode.ForRead,
+                        false) as Corridor;
+                }
+                catch { }
+                if (corridor == null)
+                    continue;
+
+                foreach (Baseline baseline in
+                    corridor.Baselines)
+                {
+                    if (baseline == null ||
+                        baseline.AlignmentId !=
+                            alignment.ObjectId)
+                        continue;
+
+                    foreach (BaselineRegion region in
+                        baseline.BaselineRegions)
+                    {
+                        if (region == null)
+                            continue;
+                        foreach (AppliedAssembly assembly in
+                            region.AppliedAssemblies)
+                        {
+                            double station;
+                            if (assembly == null ||
+                                !TryAppliedAssemblyStation(
+                                    assembly,
+                                    out station))
+                                continue;
+
+                            var offsets =
+                                new List<double>();
+                            foreach (CalculatedLink link in
+                                assembly.Links)
+                            {
+                                if (link == null ||
+                                    !IsRoadLaneLink(
+                                        link.CorridorCodes))
+                                    continue;
+                                foreach (CalculatedPoint point in
+                                    link.CalculatedPoints)
+                                {
+                                    if (point == null)
+                                        continue;
+                                    offsets.Add(
+                                        point
+                                            .StationOffsetElevationToBaseline
+                                            .Y);
+                                }
+                            }
+
+                            double left = offsets
+                                .Where(value => value < -1e-6)
+                                .DefaultIfEmpty(0.0)
+                                .Min();
+                            double right = offsets
+                                .Where(value => value > 1e-6)
+                                .DefaultIfEmpty(0.0)
+                                .Max();
+                            if (left >= -1e-6 ||
+                                right <= 1e-6)
+                                continue;
+
+                            result.Add(
+                                new StationWidth
+                                {
+                                    Station = station,
+                                    LeftOffset = left,
+                                    RightOffset = right
+                                });
+                        }
+                    }
+                }
+            }
+
+            return result
+                .GroupBy(item =>
+                    Math.Round(item.Station, 4))
+                .Select(group => group.First())
+                .OrderBy(item => item.Station)
+                .ToList();
+        }
+
+        private static bool TryAppliedAssemblyStation(
+            AppliedAssembly assembly,
+            out double station)
+        {
+            station = 0.0;
+            if (assembly == null)
+                return false;
+            foreach (CalculatedPoint point in
+                assembly.Points)
+            {
+                if (point == null)
+                    continue;
+                station =
+                    point.StationOffsetElevationToBaseline.X;
+                return true;
+            }
+            return false;
+        }
+
+        private static bool IsRoadLaneLink(
+            CorridorCodeCollection codes)
+        {
+            if (codes == null)
+                return false;
+            var values = new List<string>();
+            foreach (string code in codes)
+            {
+                if (!string.IsNullOrWhiteSpace(code))
+                    values.Add(code);
+            }
+            string text =
+                string.Join(" ", values)
+                    .ToUpperInvariant();
+            if (text.Contains("SIDEWALK") ||
+                text.Contains("SHOULDER") ||
+                text.Contains("SHLD") ||
+                text.Contains("VERGE") ||
+                text.Contains("DAYLIGHT") ||
+                text.Contains("SLOPE") ||
+                text.Contains("BATTER") ||
+                text.Contains("KERB") ||
+                text.Contains("CURB"))
+                return false;
+            return text.Contains("LANE") ||
+                   text.Contains("PAVE") ||
+                   text.Contains("ROAD") ||
+                   text.Contains("TOP") ||
+                   text.Contains("ETW");
+        }
+
+        private static double ResolveEdgeOffset(
+            double station,
+            bool leftSide,
+            double manualHalfWidth,
+            IList<StationWidth> widths)
+        {
+            if (widths == null ||
+                widths.Count == 0)
+                return leftSide
+                    ? -manualHalfWidth
+                    : manualHalfWidth;
+
+            StationWidth first = widths[0];
+            if (station <= first.Station)
+                return leftSide
+                    ? first.LeftOffset
+                    : first.RightOffset;
+
+            StationWidth last =
+                widths[widths.Count - 1];
+            if (station >= last.Station)
+                return leftSide
+                    ? last.LeftOffset
+                    : last.RightOffset;
+
+            for (int index = 0;
+                 index < widths.Count - 1;
+                 index++)
+            {
+                StationWidth a = widths[index];
+                StationWidth b = widths[index + 1];
+                if (station < a.Station ||
+                    station > b.Station)
+                    continue;
+
+                double span =
+                    b.Station - a.Station;
+                double fraction =
+                    span <= 1e-9
+                        ? 0.0
+                        : (station - a.Station) /
+                          span;
+                double av = leftSide
+                    ? a.LeftOffset
+                    : a.RightOffset;
+                double bv = leftSide
+                    ? b.LeftOffset
+                    : b.RightOffset;
+                return av +
+                    (bv - av) *
+                    fraction;
+            }
+
+            return leftSide
+                ? last.LeftOffset
+                : last.RightOffset;
+        }
+
+        private sealed class StationWidth
+        {
+            internal double Station { get; set; }
+            internal double LeftOffset { get; set; }
+            internal double RightOffset { get; set; }
         }
 
         private static CivilSurface FindMatchingTopSurface(
