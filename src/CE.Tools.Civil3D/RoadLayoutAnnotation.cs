@@ -276,6 +276,10 @@ namespace CETools.Civil3D
                 PaperAnnotationScale.SetAnnotative(text);
                 space.AppendEntity(text);
                 tr.AddNewlyCreatedDBObject(text, true);
+                AnnotationScaleSyncManager
+                    .AddAllAnnotationScaleContexts(
+                        text,
+                        db);
                 WriteAnnotationLink(text, tr, source.Parent, "ROAD_NAME", recipe);
                 count++;
             }
