@@ -67,8 +67,14 @@ namespace CETools.Civil3D
                 if (roads.Count == 0) return;
 
                 List<Curve> network = roads.Select(item => item.Geometry).ToList();
-                // Include other road geometry too, so section midpoints see every
-                // T/cross junction even when only a subset is being named.
+                List<Curve> extraAlignmentNetwork =
+                    BuildOtherRoadAlignmentNetwork(
+                        tr,
+                        roads.Select(item => item.Parent.ObjectId));
+                network.AddRange(extraAlignmentNetwork);
+                // Include preliminary CE centre polylines too, so section
+                // midpoints see every T/cross junction in the drawing even when
+                // only a subset of roads is being named.
                 network.AddRange(AnnotationRoads(space, tr)
                     .Where(curve => !network.Contains(curve)));
 
@@ -127,6 +133,11 @@ namespace CETools.Civil3D
 
                 foreach (RoadAnnotationSource road in roads)
                     road.DisposeTransient();
+                foreach (Curve extra in extraAlignmentNetwork)
+                {
+                    try { extra.Dispose(); }
+                    catch { }
+                }
                 tr.Commit();
             }
             document.Editor.Regen();
@@ -167,6 +178,11 @@ namespace CETools.Civil3D
                 if (roads.Count == 0) return;
 
                 List<Curve> network = roads.Select(item => item.Geometry).ToList();
+                List<Curve> extraAlignmentNetwork =
+                    BuildOtherRoadAlignmentNetwork(
+                        tr,
+                        roads.Select(item => item.Parent.ObjectId));
+                network.AddRange(extraAlignmentNetwork);
                 network.AddRange(AnnotationRoads(space, tr)
                     .Where(curve => !network.Contains(curve)));
                 foreach (RoadAnnotationSource road in roads)
@@ -206,6 +222,11 @@ namespace CETools.Civil3D
 
                 foreach (RoadAnnotationSource road in roads)
                     road.DisposeTransient();
+                foreach (Curve extra in extraAlignmentNetwork)
+                {
+                    try { extra.Dispose(); }
+                    catch { }
+                }
                 tr.Commit();
             }
             document.Editor.Regen();
@@ -441,6 +462,49 @@ namespace CETools.Civil3D
                     Geometry = road,
                     Transient = false
                 });
+            }
+            return result;
+        }
+
+        private static List<Curve> BuildOtherRoadAlignmentNetwork(
+            Transaction transaction,
+            IEnumerable<ObjectId> excludedIds)
+        {
+            var result = new List<Curve>();
+            CivilDocument civil =
+                CivilApplication.ActiveDocument;
+            if (civil == null ||
+                transaction == null)
+                return result;
+
+            var excluded =
+                new HashSet<ObjectId>(
+                    excludedIds ??
+                    Enumerable.Empty<ObjectId>());
+            foreach (ObjectId id in
+                civil.GetAlignmentIds())
+            {
+                if (excluded.Contains(id))
+                    continue;
+
+                CivilAlignment alignment = null;
+                try
+                {
+                    alignment = transaction.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as CivilAlignment;
+                }
+                catch { }
+                if (!IsRoadAnnotationAlignment(alignment))
+                    continue;
+
+                Polyline geometry =
+                    BuildAlignmentAnnotationCurve(
+                        alignment,
+                        2.0);
+                if (geometry != null)
+                    result.Add(geometry);
             }
             return result;
         }
