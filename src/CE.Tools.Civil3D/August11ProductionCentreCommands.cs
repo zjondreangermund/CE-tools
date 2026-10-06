@@ -125,6 +125,7 @@ namespace CETools.Civil3D
                 Action("DESIGN - Grading & Slopes", "CE_GRADINGSLOPETOOLS", "Open grade-to-surface, constant-grade, slope/crossfall annotation and grading review tools.", "04 DESIGN"),
                 Action("Platform Slopes / Levels", "CE_PLATFORMSLOPE", "Constant slope, fixed slope or flatten to highest elevation.", "04 DESIGN"),
                 Action("Grade to Surface - Cut / Fill Slopes", "CE_PLATFORMGRADETOSURFACE", "Create dynamic daylight grading using separate cut and fill H:V slopes.", "04 DESIGN"),
+                Action("Platform Infill + Daylight", "CE_PLATFORMINFILL", "Create infill for all or multiple selected closed platform feature lines, then continue to dynamic cut/fill daylight grading.", "04 DESIGN"),
                 Action("Stepped Offsets", "CE_PLATFORMSTEPOFFSETS", "Create linked stepped offsets for multiple platforms.", "04 DESIGN"),
                 Action("Drape / Platform Surface", "CE_PLATFORMDRAPE", "Drape linked platform controls to selected surface.", "04 DESIGN"),
                 Action("COMPLETE - Setting-Out", "CE_PLATFORMSETTINGOUT", "Vertex/grid setting-out and linked tables.", "05 COMPLETE"),
