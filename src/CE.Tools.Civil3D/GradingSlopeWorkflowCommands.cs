@@ -47,6 +47,11 @@ namespace CETools.Civil3D
                         "Create/assign the platform site, surface and native grading infill where supported.",
                         "01 GRADING"),
                     new DisciplineWorkflowAction(
+                        "Platform Closed Feature-Line Infill + Daylight",
+                        "CE_PLATFORMINFILL",
+                        "Create infill for all or multiple selected closed platform feature lines, then continue directly to cut/fill Grade-to-Surface daylight.",
+                        "01 GRADING"),
+                    new DisciplineWorkflowAction(
                         "Junction Closed Feature-Line Infill",
                         "CE_JUNCTIONINFILL",
                         "Create native infill for all recognised closed junction feature lines or multiple selected closed junction feature lines.",
