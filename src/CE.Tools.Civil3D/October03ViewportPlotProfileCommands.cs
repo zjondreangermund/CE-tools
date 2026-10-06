@@ -267,6 +267,22 @@ namespace CETools.Civil3D
                 {
                     if (createViewports)
                     {
+                        if (string.Equals(
+                                settings.Text("ExistingViewports"),
+                                "Remove existing model viewports",
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            int removed = RemoveExistingModelViewports(
+                                document.Database,
+                                transaction,
+                                layoutName);
+                            document.Editor.WriteMessage(
+                                "\nCE_PROFILEVIEWPORTFIT: existing model viewports removed from layout '{0}' = {1}.",
+                                layoutName,
+                                removed);
+                            slots.Clear();
+                        }
+
                         slots = CreateProfileViewports(document, transaction, layoutName, profiles,
                             settings, horizontalClearance, verticalClearance, splitLong, fixedScale);
                         if (slots == null) return;
@@ -615,6 +631,66 @@ namespace CETools.Civil3D
                 }
             }
             return result;
+        }
+
+        private static int RemoveExistingModelViewports(
+            Database database,
+            Transaction transaction,
+            string layoutName)
+        {
+            if (database == null ||
+                transaction == null ||
+                string.IsNullOrWhiteSpace(layoutName))
+                return 0;
+
+            Layout selected = ReadLayouts(
+                    database,
+                    transaction)
+                .FirstOrDefault(layout =>
+                    layout != null &&
+                    !layout.ModelType &&
+                    string.Equals(
+                        layout.LayoutName,
+                        layoutName,
+                        StringComparison.OrdinalIgnoreCase));
+            if (selected == null)
+                return 0;
+
+            BlockTableRecord paper =
+                transaction.GetObject(
+                    selected.BlockTableRecordId,
+                    OpenMode.ForWrite,
+                    false) as BlockTableRecord;
+            if (paper == null)
+                return 0;
+
+            int removed = 0;
+            foreach (ObjectId id in
+                paper.Cast<ObjectId>().ToList())
+            {
+                Viewport viewport = null;
+                try
+                {
+                    viewport = transaction.GetObject(
+                        id,
+                        OpenMode.ForWrite,
+                        false) as Viewport;
+                }
+                catch { }
+                if (viewport == null ||
+                    viewport.Number <= 1 ||
+                    viewport.IsErased)
+                    continue;
+
+                try
+                {
+                    viewport.Locked = false;
+                    viewport.Erase();
+                    removed++;
+                }
+                catch { }
+            }
+            return removed;
         }
 
         private static List<ViewportSlot> SortViewportSlots(
@@ -1071,9 +1147,13 @@ namespace CETools.Civil3D
                 viewport.On = true;
                 viewport.ViewDirection = Vector3d.ZAxis;
                 viewport.TwistAngle = 0.0;
-                viewport.ViewTarget = Point3d.Origin;
+                // Centre every fitted model range robustly. ViewCenter is DCS
+                // relative to ViewTarget, so target the model centre and use a
+                // zero DCS centre instead of mixing WCS coordinates into ViewCenter.
+                viewport.ViewTarget =
+                    new Point3d(centerX, centerY, 0.0);
                 viewport.ViewCenter =
-                    new Point2d(centerX, centerY);
+                    Point2d.Origin;
                 viewport.ViewHeight = finalModelHeight;
                 viewport.CustomScale = scale;
                 viewport.Locked = lockAfter;
