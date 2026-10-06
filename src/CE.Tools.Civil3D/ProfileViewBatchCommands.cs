@@ -230,6 +230,13 @@ namespace CETools.Civil3D
                 "Grid columns",
                 3,
                 "Number of columns used only for Grid arrangement.");
+            settings.AddChoice(
+                "BasePointMode",
+                "04 Base point",
+                "Arrangement base point",
+                "Pick base point",
+                "Pick the top-left base point for the arranged views, or keep the first sorted profile view at its current top-left position.",
+                new[] { "Pick base point", "Use first view position" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             string layout = settings.Text("Layout");
@@ -241,6 +248,21 @@ namespace CETools.Civil3D
             int gridColumns =
                 Math.Max(1, settings.Integer("GridColumns", 3));
 
+            Point3d? arrangementBasePoint = null;
+            if (string.Equals(
+                    settings.Text("BasePointMode"),
+                    "Pick base point",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                PromptPointResult picked = document.Editor.GetPoint(
+                    "\nPick TOP-LEFT base point for the arranged profile views: ");
+                if (picked.Status != PromptStatus.OK)
+                    return;
+                arrangementBasePoint =
+                    picked.Value.TransformBy(
+                        document.Editor.CurrentUserCoordinateSystem);
+            }
+
             int moved = ArrangeViews(
                 document,
                 views,
@@ -248,15 +270,19 @@ namespace CETools.Civil3D
                 sort,
                 horizontalSpacing,
                 verticalSpacing,
-                gridColumns);
+                gridColumns,
+                arrangementBasePoint);
 
             document.Editor.Regen();
             document.Editor.WriteMessage(
-                "\nCE_PROFILEVIEWARRANGE complete. Views arranged={0}; layout={1}; horizontal gap={2:0.###}; vertical gap={3:0.###}.",
+                "\nCE_PROFILEVIEWARRANGE complete. Views arranged={0}; layout={1}; horizontal gap={2:0.###}; vertical gap={3:0.###}; base point={4}.",
                 moved,
                 layout,
                 horizontalSpacing,
-                verticalSpacing);
+                verticalSpacing,
+                arrangementBasePoint.HasValue
+                    ? arrangementBasePoint.Value.ToString()
+                    : "first view");
         }
 
         [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWBATCHINFO", CommandFlags.Modal | CommandFlags.Redraw)]
@@ -310,7 +336,8 @@ namespace CETools.Civil3D
             string sort,
             double horizontalSpacing,
             double verticalSpacing,
-            int gridColumns)
+            int gridColumns,
+            Point3d? arrangementBasePoint)
         {
             if (document == null ||
                 views == null ||
@@ -382,8 +409,12 @@ namespace CETools.Civil3D
             }
 
             ProfileViewPlacement anchor = items[0];
-            double anchorLeft = anchor.Min.X;
-            double anchorTop = anchor.Max.Y;
+            double anchorLeft = arrangementBasePoint.HasValue
+                ? arrangementBasePoint.Value.X
+                : anchor.Min.X;
+            double anchorTop = arrangementBasePoint.HasValue
+                ? arrangementBasePoint.Value.Y
+                : anchor.Max.Y;
             double maxWidth = items.Max(item =>
                 Math.Max(0.001, item.Max.X - item.Min.X));
             double maxHeight = items.Max(item =>
@@ -1693,6 +1724,7 @@ namespace CETools.Civil3D
             AddButton(root, "Repair Sewer Pipe Network Band Labels", "CE_SEWPIPEBANDGROUPS ");
             AddButton(root, "Import Road Band Set + Show Labels", "CE_ROADBANDLABELS ");
             AddButton(root, "Fit all selected profile views", "CE_PROFILEVIEWFITALL ");
+            AddButton(root, "Show band labels - all / multiple selected views", "CE_PROFILEVIEWBANDLABELS ");
             AddButton(root, "Arrange selected profile views - horizontal / vertical / grid", "CE_PROFILEVIEWARRANGE ");
             AddButton(root, "Profile-view information", "CE_PROFILEVIEWBATCHINFO ");
         }
