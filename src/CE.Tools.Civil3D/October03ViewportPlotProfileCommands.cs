@@ -1153,7 +1153,7 @@ namespace CETools.Civil3D
                 viewport.ViewTarget =
                     new Point3d(centerX, centerY, 0.0);
                 viewport.ViewCenter =
-                    Point2d.Origin;
+                    new Point2d(0.0, 0.0);
                 viewport.ViewHeight = finalModelHeight;
                 viewport.CustomScale = scale;
                 viewport.Locked = lockAfter;
