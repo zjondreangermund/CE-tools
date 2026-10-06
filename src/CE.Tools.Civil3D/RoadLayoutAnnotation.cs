@@ -1014,12 +1014,15 @@ namespace CETools.Civil3D
         {
             if (codes == null)
                 return false;
-            string text = string.Join(
-                " ",
-                codes.Cast<string>()
-                    .Where(value =>
-                        !string.IsNullOrWhiteSpace(value)))
-                .ToUpperInvariant();
+            var codeValues = new List<string>();
+            foreach (string code in codes)
+            {
+                if (!string.IsNullOrWhiteSpace(code))
+                    codeValues.Add(code);
+            }
+            string text =
+                string.Join(" ", codeValues)
+                    .ToUpperInvariant();
             if (text.Contains("SIDEWALK") ||
                 text.Contains("SHOULDER") ||
                 text.Contains("SHLD") ||
