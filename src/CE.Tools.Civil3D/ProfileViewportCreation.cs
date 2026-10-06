@@ -14,8 +14,11 @@ namespace CETools.Civil3D
         private static void AddViewportCreationSettings(ProductionSettingsDialogModel settings)
         {
             settings.AddChoice("ViewportMode", "02 Layout", "Viewport source", "Use existing viewports",
-                "Keep existing viewport fitting, or create a new stack of profile viewports at a picked paper-space position. Existing viewports are kept when creating new ones.",
+                "Use existing paper-space model viewports, or create a new stack of profile viewports.",
                 new[] { "Use existing viewports", "Create profile viewports" });
+            settings.AddChoice("ExistingViewports", "02 Layout", "Existing viewports when creating", "Keep existing viewports",
+                "Used only with Create profile viewports. Keep the current model viewports, or erase the existing model viewports on the selected layout before the new CE profile viewports are created.",
+                new[] { "Keep existing viewports", "Remove existing model viewports" });
             settings.AddChoice("ScaleMode", "02 Scale", "Viewport scale", "Automatic fit",
                 "Automatic retains the current fit behaviour. Specified scale preserves 1:N; views that are too tall or lack enough width are reported as not fitted.",
                 new[] { "Automatic fit", "Specified scale" });
