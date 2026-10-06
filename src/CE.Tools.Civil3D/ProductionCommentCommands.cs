@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
 using Autodesk.AutoCAD.ApplicationServices;
@@ -19,7 +20,7 @@ namespace CETools.Civil3D
         {
             RunChoiceWindow(
                 "CE Tools - Dynamic BOQ and Quantity Centre",
-                "Build, refresh or export linked quantities. Matching rates are preserved by the existing CE_BOQREFRESH workflow.",
+                "Build, refresh or export linked quantities. Ctrl/Shift selects multiple actions; Run All processes the full list one command at a time. Matching rates are preserved by the existing CE_BOQREFRESH workflow.",
                 new List<ProductionChoice>
                 {
                     new ProductionChoice("Build a linked BOQ from selected design objects", "CE_BOQBUILD "),
@@ -44,7 +45,7 @@ namespace CETools.Civil3D
         {
             RunChoiceWindow(
                 "CE Tools - Design Report Centre",
-                "Generate current model reports, optional drawing tables and Excel output by discipline.",
+                "Generate current model reports with All/Select object scope. Ctrl/Shift selects multiple actions; Run All is available. Every grid report now includes Export Excel as well as Place Table.",
                 new List<ProductionChoice>
                 {
                     new ProductionChoice("Full design model report", "CE_REPORTFULL "),
@@ -172,10 +173,22 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
-            var window = new ProductionChoiceWindow(title, subtitle, choices);
+            var window = new ProductionChoiceWindow(
+                title,
+                subtitle,
+                choices);
             AcApplication.ShowModalWindow(window);
-            if (!window.Accepted || window.Selected == null) return;
-            document.SendStringToExecute(window.Selected.Command, true, false, true);
+            if (!window.Accepted ||
+                window.SelectedChoices == null ||
+                window.SelectedChoices.Count == 0)
+                return;
+
+            ProductionCommandQueue.Start(
+                document,
+                window.SelectedChoices
+                    .Select(choice => choice.Command)
+                    .Where(command =>
+                        !string.IsNullOrWhiteSpace(command)));
         }
 
         private static Document ActiveDocument()
@@ -221,26 +234,164 @@ namespace CETools.Civil3D
             var cancel = new Button { Content = "Cancel", Width = 90, Margin = new Thickness(8, 0, 0, 0), IsCancel = true };
             cancel.Click += delegate { Close(); };
             buttons.Children.Add(cancel);
+            var runAll = new Button
+            {
+                Content = "Run All",
+                Width = 95,
+                Margin = new Thickness(8, 0, 0, 0)
+            };
+            runAll.Click += delegate
+            {
+                _choices.SelectAll();
+                CaptureSelectionAndClose();
+            };
+            buttons.Children.Add(runAll);
+
             var run = new Button { Content = "Run Selected", Width = 120, IsDefault = true };
             run.Click += delegate
             {
-                Selected = _choices.SelectedItem as ProductionChoice;
-                if (Selected == null) return;
-                Accepted = true;
-                Close();
+                CaptureSelectionAndClose();
             };
             buttons.Children.Add(run);
 
             var header = new TextBlock { Text = subtitle, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 12) };
             DockPanel.SetDock(header, Dock.Top);
             root.Children.Add(header);
-            _choices = new ListBox { ItemsSource = choices };
-            if (_choices.Items.Count > 0) _choices.SelectedIndex = 0;
-            _choices.MouseDoubleClick += delegate { run.RaiseEvent(new RoutedEventArgs(Button.ClickEvent)); };
+            _choices = new ListBox
+            {
+                ItemsSource = choices,
+                SelectionMode = SelectionMode.Extended
+            };
+            if (_choices.Items.Count > 0)
+                _choices.SelectedIndex = 0;
+            _choices.MouseDoubleClick += delegate
+            {
+                run.RaiseEvent(
+                    new RoutedEventArgs(
+                        Button.ClickEvent));
+            };
             root.Children.Add(_choices);
         }
 
         public bool Accepted { get; private set; }
-        public ProductionChoice Selected { get; private set; }
+        public IList<ProductionChoice> SelectedChoices { get; private set; }
+
+        private void CaptureSelectionAndClose()
+        {
+            SelectedChoices = _choices.SelectedItems
+                .Cast<ProductionChoice>()
+                .ToList();
+            if (SelectedChoices.Count == 0)
+                return;
+            Accepted = true;
+            Close();
+        }
+    }
+
+    /// <summary>
+    /// Runs multiple production-centre choices one at a time. The next command is
+    /// not sent until the expected CE command ends/cancels/fails, so a later
+    /// command cannot be consumed as keyboard input by an earlier report/BOQ
+    /// prompt.
+    /// </summary>
+    internal static class ProductionCommandQueue
+    {
+        private static Document _document;
+        private static Queue<string> _commands;
+        private static string _expected;
+
+        internal static void Start(
+            Document document,
+            IEnumerable<string> commands)
+        {
+            if (document == null)
+                return;
+            Stop();
+            _document = document;
+            _commands = new Queue<string>(
+                (commands ?? Enumerable.Empty<string>())
+                    .Where(command =>
+                        !string.IsNullOrWhiteSpace(command)));
+            if (_commands.Count == 0)
+            {
+                Stop();
+                return;
+            }
+
+            document.CommandEnded += OnCommandFinished;
+            document.CommandCancelled += OnCommandFinished;
+            document.CommandFailed += OnCommandFinished;
+            SendNext();
+        }
+
+        private static void OnCommandFinished(
+            object sender,
+            CommandEventArgs args)
+        {
+            if (_document == null ||
+                args == null)
+                return;
+            string finished =
+                NormalizeCommand(
+                    args.GlobalCommandName);
+            if (!string.Equals(
+                    finished,
+                    _expected,
+                    StringComparison.OrdinalIgnoreCase))
+                return;
+            SendNext();
+        }
+
+        private static void SendNext()
+        {
+            if (_document == null ||
+                _commands == null ||
+                _commands.Count == 0)
+            {
+                Stop();
+                return;
+            }
+
+            string command =
+                _commands.Dequeue();
+            _expected =
+                NormalizeCommand(
+                    command.Split(
+                        new[] { ' ', '\t', '\r', '\n' },
+                        StringSplitOptions.RemoveEmptyEntries)
+                        .FirstOrDefault());
+            _document.SendStringToExecute(
+                command.EndsWith(" ", StringComparison.Ordinal)
+                    ? command
+                    : command + " ",
+                true,
+                false,
+                true);
+        }
+
+        private static string NormalizeCommand(
+            string value)
+        {
+            return (value ?? string.Empty)
+                .Trim()
+                .TrimStart('.', '_')
+                .ToUpperInvariant();
+        }
+
+        private static void Stop()
+        {
+            if (_document != null)
+            {
+                try { _document.CommandEnded -= OnCommandFinished; }
+                catch { }
+                try { _document.CommandCancelled -= OnCommandFinished; }
+                catch { }
+                try { _document.CommandFailed -= OnCommandFinished; }
+                catch { }
+            }
+            _document = null;
+            _commands = null;
+            _expected = string.Empty;
+        }
     }
 }
