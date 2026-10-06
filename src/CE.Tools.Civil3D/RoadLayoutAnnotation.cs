@@ -1070,33 +1070,177 @@ namespace CETools.Civil3D
             int count = 0, skipped = 0;
             using (Transaction tr = document.Database.TransactionManager.StartTransaction())
             {
-                BlockTableRecord space = GetModelSpace(document.Database, tr, OpenMode.ForWrite);
-                var jobs = new Dictionary<string, Tuple<Curve, string, AnnotationRecipe>>();
-                foreach (ObjectId id in space.Cast<ObjectId>().ToList())
+                BlockTableRecord space =
+                    GetModelSpace(
+                        document.Database,
+                        tr,
+                        OpenMode.ForWrite);
+                var jobs =
+                    new Dictionary<string, Tuple<RoadAnnotationSource, string, AnnotationRecipe>>();
+
+                foreach (ObjectId id in
+                    space.Cast<ObjectId>().ToList())
                 {
                     if (id.IsErased) continue;
-                    Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+                    Entity entity = tr.GetObject(
+                        id,
+                        OpenMode.ForRead,
+                        false) as Entity;
                     RoadLink link;
-                    if (entity == null || entity.IsErased || !TryReadLink(entity, tr, out link) ||
-                        (link.Kind != "ROAD_NAME" && link.Kind != "ROAD_DIM")) continue;
-                    ObjectId parent = ResolveHandle(document.Database, link.ParentHandle);
-                    if (parent.IsNull || parent.IsErased) continue;
-                    Curve road = tr.GetObject(parent, OpenMode.ForRead, false) as Curve;
-                    if (road == null) continue;
-                    // Legacy dimensions contain no placement/mode settings; leave them intact.
-                    if (link.Kind == "ROAD_DIM" && !(link.Group ?? "").StartsWith("ANNOT2|", StringComparison.Ordinal)) continue;
-                    jobs[link.Kind + ":" + link.ParentHandle] = Tuple.Create(road, link.Kind, AnnotationRecipe.Decode(link, entity));
+                    if (entity == null ||
+                        entity.IsErased ||
+                        !TryReadLink(entity, tr, out link) ||
+                        (link.Kind != "ROAD_NAME" &&
+                         link.Kind != "ROAD_DIM"))
+                        continue;
+
+                    ObjectId parentId =
+                        ResolveHandle(
+                            document.Database,
+                            link.ParentHandle);
+                    if (parentId.IsNull ||
+                        parentId.IsErased)
+                        continue;
+
+                    Entity parent = null;
+                    try
+                    {
+                        parent = tr.GetObject(
+                            parentId,
+                            OpenMode.ForRead,
+                            false) as Entity;
+                    }
+                    catch { }
+                    if (parent == null)
+                        continue;
+
+                    RoadAnnotationSource source = null;
+                    CivilAlignment alignment =
+                        parent as CivilAlignment;
+                    if (alignment != null)
+                    {
+                        Polyline geometry =
+                            BuildAlignmentAnnotationCurve(
+                                alignment,
+                                2.0);
+                        if (geometry != null)
+                        {
+                            source = new RoadAnnotationSource
+                            {
+                                Parent = alignment,
+                                Alignment = alignment,
+                                Geometry = geometry,
+                                Transient = true
+                            };
+                        }
+                    }
+                    else
+                    {
+                        Curve road =
+                            parent as Curve;
+                        if (road != null)
+                        {
+                            source = new RoadAnnotationSource
+                            {
+                                Parent = parent,
+                                Geometry = road,
+                                Transient = false
+                            };
+                        }
+                    }
+                    if (source == null)
+                        continue;
+
+                    // Legacy dimensions with no annotation recipe remain untouched.
+                    // ANNOT2 and ANNOT3 are both safe/current linked formats.
+                    if (link.Kind == "ROAD_DIM" &&
+                        !(link.Group ?? string.Empty)
+                            .StartsWith(
+                                "ANNOT",
+                                StringComparison.Ordinal))
+                    {
+                        source.DisposeTransient();
+                        continue;
+                    }
+
+                    string key =
+                        link.Kind + ":" +
+                        link.ParentHandle;
+                    Tuple<RoadAnnotationSource, string, AnnotationRecipe> old;
+                    if (jobs.TryGetValue(key, out old))
+                        old.Item1.DisposeTransient();
+                    jobs[key] = Tuple.Create(
+                        source,
+                        link.Kind,
+                        AnnotationRecipe.Decode(
+                            link,
+                            entity));
                 }
-                foreach (var job in jobs.Values) EraseChildren(space, tr, job.Item2, job.Item1.Handle.ToString());
-                var occupancy = new RoadAnnotationPlacement.Occupancy(space, tr);
-                List<Curve> network = AnnotationRoads(space, tr);
-                foreach (var job in jobs.Values.OrderBy(j => j.Item2 == "ROAD_NAME" ? 0 : 1))
+
+                foreach (var job in jobs.Values)
+                {
+                    EraseChildren(
+                        space,
+                        tr,
+                        job.Item2,
+                        job.Item1.Parent.Handle.ToString());
+                }
+
+                var occupancy =
+                    new RoadAnnotationPlacement.Occupancy(
+                        space,
+                        tr);
+                List<Curve> network =
+                    jobs.Values
+                        .Select(job => job.Item1.Geometry)
+                        .Where(geometry => geometry != null)
+                        .ToList();
+                network.AddRange(
+                    AnnotationRoads(
+                        space,
+                        tr)
+                    .Where(curve =>
+                        !network.Contains(curve)));
+
+                foreach (var job in
+                    jobs.Values.OrderBy(
+                        value =>
+                            value.Item2 == "ROAD_NAME"
+                                ? 0
+                                : 1))
+                {
                     count += job.Item2 == "ROAD_NAME"
-                        ? AddRoadNames(document.Database, tr, space, job.Item1, network, job.Item3, occupancy, ref skipped)
-                        : AddRoadDimensions(document.Database, tr, space, job.Item1, network, job.Item3, occupancy, ref skipped);
+                        ? AddRoadNames(
+                            document.Database,
+                            tr,
+                            space,
+                            job.Item1,
+                            network,
+                            job.Item3,
+                            occupancy,
+                            ref skipped)
+                        : AddRoadDimensions(
+                            document.Database,
+                            tr,
+                            space,
+                            job.Item1,
+                            network,
+                            job.Item3,
+                            occupancy,
+                            ref skipped);
+                }
+
+                foreach (var job in jobs.Values)
+                    job.Item1.DisposeTransient();
                 tr.Commit();
             }
-            if (skipped > 0) document.Editor.WriteMessage("\nRoad annotation refresh: crowded/missing-edge locations skipped={0}.", skipped);
+
+            if (skipped > 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nRoad annotation refresh: crowded/missing-width locations skipped={0}.",
+                    skipped);
+            }
             return count;
         }
 
