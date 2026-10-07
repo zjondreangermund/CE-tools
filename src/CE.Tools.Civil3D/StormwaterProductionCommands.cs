@@ -45,15 +45,14 @@ namespace CETools.Civil3D
             if (document == null)
                 return;
             string command = DisciplineWorkflowDialogs.SelectWorkflow(
-                "CE Tools — Stormwater Workflow",
-                "Sequence networks, generate linked alignments and profiles, then review or refresh the model. Configuration is stored in the active DWG.",
+                "CE-STORMWATER PRODUCTION",
+                "Use the same production-centre format as Sewer, but with Stormwater gravity-network parts, pipe/structure styles, labels, profiles and delivery tools.",
                 new List<DisciplineWorkflowAction>
                 {
-                    new DisciplineWorkflowAction("Choose production styles", "CE_SWSETTINGS", "Choose alignment/profile styles, label sets, profile-view style and band set before production starts.", "0 — Production setup"),
-                    new DisciplineWorkflowAction("Sequence network", "CE_SWSEQ", "Create the main and branch order from a stormwater network.", "1 — Network"),
-                    new DisciplineWorkflowAction("Create or refresh alignments", "CE_SWALIGN", "Build linked branch alignments and staggered plan labels.", "2 — Alignments"),
-                    new DisciplineWorkflowAction("Create or refresh profiles", "CE_SWPROFILE", "Select a surface, pick an insertion point and create linked profile views.", "3 — Profiles"),
-                    new DisciplineWorkflowAction("Stormwater information", "CE_SWINFO", "Review stored settings and generated object links.", "5 — Review")
+                    new DisciplineWorkflowAction("CE-Stormwater Settings", "CE_SWSETTINGSPRODUCTIONCENTRE", "Choose Stormwater gravity-network parts/rules plus alignment, profile, profile-view, band and label styles.", "01 Stormwater Production"),
+                    new DisciplineWorkflowAction("CE-Stormwater Network / Layout Production", "CE_SWLAYOUTPRODUCTIONCENTRE", "Create or prepare Stormwater gravity networks, sequence main/branches and verify flow direction.", "01 Stormwater Production"),
+                    new DisciplineWorkflowAction("CE-Stormwater Design Production", "CE_SWDESIGNPRODUCTIONCENTRE", "Review network data, then complete alignments, profiles, Stormwater pipe/structure labels, setting-out, BOQ and report.", "01 Stormwater Production"),
+                    new DisciplineWorkflowAction("CE-Stormwater Supplementary", "CE_STORMWATERFIELDSUPPLEMENTARY", "Open the Stormwater field supplementary tools.", "02 Supplementary")
                 });
             if (!string.IsNullOrWhiteSpace(command))
                 document.SendStringToExecute(command.Trim() + " ", true, false, true);
