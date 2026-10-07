@@ -876,20 +876,8 @@ namespace CETools.Civil3D
                 link.KeepExistingPresentation &&
                 !oldChildId.IsNull &&
                 !oldChildId.IsErased;
-            IList<Point3d> presentationDaylight =
-                daylight;
-
             if (keepExistingToe)
             {
-                List<Point3d> existingToePoints;
-                if (TryReadFeatureLinePoints(
-                        document.Database,
-                        oldChildId,
-                        out existingToePoints) &&
-                    existingToePoints.Count >= 2)
-                    presentationDaylight =
-                        existingToePoints;
-
                 if (explicitCommand)
                     document.Editor.WriteMessage(
                         "\nExisting linked toe/daylight kept for source {0}.",
@@ -966,6 +954,22 @@ namespace CETools.Civil3D
                             "\nExisting linked cut/fill slope lines kept for source {0}.",
                             source.Name);
                 }
+                else if (link.KeepExistingPresentation &&
+                         keepExistingToe)
+                {
+                    // A kept toe belongs to the prior resolved daylight. Do not
+                    // create fresh slope rays from a new surface solve against an
+                    // old toe because they could overshoot/miss it. Existing rays
+                    // stay if present; otherwise the user can choose Replace to
+                    // rebuild toe and rays together from one resolved sample set.
+                    link.SlopeLineHandles =
+                        previousSlopeHandles ??
+                        string.Empty;
+                    if (explicitCommand)
+                        document.Editor.WriteMessage(
+                            "\nExisting toe/daylight was kept for source {0}; missing slope rays were not regenerated because toe and rays must come from the same resolved grading samples. Choose Replace existing generated lines to rebuild both.",
+                            source.Name);
+                }
                 else
                 {
                     link.SlopeLineHandles =
@@ -974,7 +978,7 @@ namespace CETools.Civil3D
                     if (TryCreateSlopeLines(
                             document.Database,
                             source,
-                            presentationDaylight,
+                            daylight,
                             resolvedSamples,
                             link,
                             out newSlopeLines,
@@ -2120,47 +2124,6 @@ namespace CETools.Civil3D
                     return true;
             }
             return false;
-        }
-
-        private static bool TryReadFeatureLinePoints(
-            Database database,
-            ObjectId id,
-            out List<Point3d> points)
-        {
-            points = new List<Point3d>();
-            if (database == null ||
-                id.IsNull ||
-                id.IsErased)
-                return false;
-            try
-            {
-                using (Transaction transaction =
-                    database.TransactionManager.StartTransaction())
-                {
-                    CivilFeatureLine line =
-                        OpenFeatureLine(
-                            transaction,
-                            id,
-                            OpenMode.ForRead);
-                    if (line == null)
-                        return false;
-                    Point3dCollection collection =
-                        line.GetPoints(
-                            FeatureLinePointType.AllPoints);
-                    if (collection == null)
-                        return false;
-                    points =
-                        collection.Cast<Point3d>()
-                            .Where(Finite)
-                            .ToList();
-                    return points.Count >= 2;
-                }
-            }
-            catch
-            {
-                points.Clear();
-                return false;
-            }
         }
 
         private static void CleanupHandleList(
