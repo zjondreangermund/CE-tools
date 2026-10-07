@@ -31,6 +31,7 @@ namespace CETools.Civil3D
         private const string JunctionLimitLayer = "CE-ROAD-JUNCTION-LIMITS";
         private const string AppName = "CE_ROAD_JUNCTION";
         private const double Tol = 1e-6;
+        private static int _featureLineColourIndex = 256;
 
         [CommandMethod("CE_TOOLS", "CE_JUNCTIONFLCLOSEMULTI", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void CloseSelectedJunctionFeatureLines()
@@ -52,6 +53,10 @@ namespace CETools.Civil3D
             model.AddText(
                 "Layer", "01 Output", "Limit-line layer", JunctionLimitLayer,
                 "Dedicated layer for the edge-centre-edge T-junction limit lines.");
+            model.AddChoice(
+                "FeatureLineColor", "01 Output", "Feature-line colour", "ByLayer",
+                "Plan/model/profile display colour for generated Civil 3D feature lines.",
+                FeatureLineColourChoices());
             model.AddPositiveDouble(
                 "PairDistance", "02 Pairing", "Maximum bellmouth pair distance", 20.0,
                 "Selected bellmouth returns are paired by their closest endpoints. Pairs farther apart than this are skipped.");
@@ -60,6 +65,7 @@ namespace CETools.Civil3D
                 "Select the covering road TOP surfaces and write the two edge elevations plus the protected centre vertex.",
                 new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+            _featureLineColourIndex = ParseFeatureLineColour(model.Text("FeatureLineColor"));
 
             AddTJunctionLimitFeatureLines(
                 document,
@@ -126,6 +132,9 @@ namespace CETools.Civil3D
                 "Layer for generated bellmouth returns and their junction labels. Previous Output layer values are retained here.");
             model.AddText("LimitLayer", "04 Output", "Limit-line layer", JunctionLimitLayer,
                 "Separate layer for T-junction edge-centre-edge limits and cross-junction limit lines.");
+            model.AddChoice("FeatureLineColor", "04 Output", "Feature-line colour", "ByLayer",
+                "Select the display colour for generated bellmouth and limit Civil 3D feature lines.",
+                FeatureLineColourChoices());
             model.AddChoice("ExistingBellmouthScope", "04 Output", "Existing bellmouth scope", "Selected junction bellmouths",
                 "Used by Add T-junction edge-centre-edge feature lines. Process every generated junction bellmouth in model space, or only multiple selected bellmouth feature lines.",
                 new[] { "Selected junction bellmouths", "All junction bellmouths" });
@@ -143,6 +152,7 @@ namespace CETools.Civil3D
                 "Sample selected TOP surfaces and update only the junction feature-line vertex elevations/grades. No surface vertices, breaklines or TOP-surface rebuilds are created.",
                 new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+            _featureLineColourIndex = ParseFeatureLineColour(model.Text("FeatureLineColor"));
 
             if (string.Equals(model.Text("Operation"), "Add T-junction edge-centre-edge feature lines",
                     StringComparison.OrdinalIgnoreCase))
@@ -794,6 +804,66 @@ namespace CETools.Civil3D
             };
         }
 
+        private static IEnumerable<string> FeatureLineColourChoices()
+        {
+            return new[]
+            {
+                "ByLayer",
+                "Red (ACI 1)",
+                "Yellow (ACI 2)",
+                "Green (ACI 3)",
+                "Cyan (ACI 4)",
+                "Blue (ACI 5)",
+                "Magenta (ACI 6)",
+                "White (ACI 7)",
+                "Grey (ACI 8)",
+                "Light Grey (ACI 9)"
+            };
+        }
+
+        private static int ParseFeatureLineColour(string value)
+        {
+            if (string.IsNullOrWhiteSpace(value) ||
+                value.StartsWith("ByLayer", StringComparison.OrdinalIgnoreCase))
+                return 256;
+            int start = value.IndexOf("ACI ", StringComparison.OrdinalIgnoreCase);
+            if (start >= 0)
+            {
+                start += 4;
+                int end = value.IndexOf(')', start);
+                string raw = end > start ? value.Substring(start, end - start) : value.Substring(start);
+                int parsed;
+                if (int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out parsed))
+                    return Math.Max(1, Math.Min(255, parsed));
+            }
+            return 256;
+        }
+
+        private static void ApplySelectedFeatureLineColour(
+            CivilFeatureLine featureLine,
+            Transaction transaction)
+        {
+            if (featureLine == null || transaction == null) return;
+            try
+            {
+                ObjectId styleId = FeatureLineColourService.Prepare(
+                    featureLine.Database,
+                    featureLine,
+                    _featureLineColourIndex,
+                    transaction);
+                FeatureLineColourService.Assign(
+                    featureLine,
+                    styleId,
+                    transaction);
+            }
+            catch
+            {
+                featureLine.Color = _featureLineColourIndex == 256
+                    ? Color.FromColorIndex(ColorMethod.ByLayer, 256)
+                    : Color.FromColorIndex(ColorMethod.ByAci, (short)_featureLineColourIndex);
+            }
+        }
+
         private static ObjectId CreateReturn(
             Database database,
             Transaction transaction,
@@ -846,6 +916,7 @@ namespace CETools.Civil3D
                     if (featureLine != null)
                     {
                         featureLine.LayerId = layerId;
+                        ApplySelectedFeatureLineColour(featureLine, transaction);
                         ApplyFeatureLineWeeding(featureLine, weedDistance, weedAngle);
                         featureLine.XData = new ResultBuffer(
                             new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
@@ -1281,7 +1352,7 @@ namespace CETools.Civil3D
                     if (created != null)
                     {
                         created.LayerId = layerId;
-                        created.Color = Color.FromColorIndex(ColorMethod.ByAci, 6);
+                        ApplySelectedFeatureLineColour(created, transaction);
                         // The centre crown and both edge controls are mandatory;
                         // straight-line weeding would remove the midpoint.
                         if (topSurfaces.Count > 0)
