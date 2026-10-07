@@ -234,6 +234,10 @@ namespace CETools.Civil3D
                 "Reuse the source feature line Site. If it is siteless and native infill is requested, CE-PLATFORM-SITE is created. Choose an existing Site or type a new Site name to move the source/toe grading there.",
                 siteChoices);
             settings.AddChoice(
+                "ExistingPresentation", "08 Presentation", "Existing slope / toe lines", "Replace existing generated lines",
+                "Replace linked CE slope/toe output on this run, or keep valid existing linked slope/toe lines and create only missing output.",
+                new[] { "Replace existing generated lines", "Keep existing generated lines" });
+            settings.AddChoice(
                 "ShowSlopeLines", "08 Presentation", "Show cut / fill slope lines", "Yes",
                 "Draw Civil 3D feature-line slope rays normal to the source. Long rays terminate exactly at toe/daylight vertices.",
                 new[] { "Yes", "No" });
@@ -265,6 +269,16 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "SlopeLineInterval", "08 Presentation", "Slope-line interval / frequency (m)", 5.0,
                 "True chainage spacing along the bellmouth/platform geometry.");
+            settings.AddChoice(
+                "ConnectedSurfaces", "09 Surfaces", "Connected feature-line surfaces", "Create separate surface per connected group",
+                "Create one separate Civil 3D TIN surface for every connected group among the selected grading source feature lines. Each surface also includes the linked toe/daylight feature lines created for that group.",
+                new[] { "Create separate surface per connected group", "Do not create connected surfaces" });
+            settings.AddText(
+                "ConnectedSurfacePrefix", "09 Surfaces", "Connected surface name prefix", "CE-JUNCTION-GRADE",
+                "Each connected group is refreshed as <prefix>-<root source handle>.");
+            settings.AddPositiveDouble(
+                "ConnectedTolerance", "09 Surfaces", "Feature-line connection tolerance (m)", 0.050,
+                "Endpoint-to-feature-line point tolerance used to decide which selected source feature lines belong to the same surface group.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
@@ -299,6 +313,10 @@ namespace CETools.Civil3D
                 NativeInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase),
                 SiteName = SafeName(settings.Text("Site"), "<Auto: source site / CE-PLATFORM-SITE>"),
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
+                KeepExistingPresentation = string.Equals(
+                    settings.Text("ExistingPresentation"),
+                    "Keep existing generated lines",
+                    StringComparison.OrdinalIgnoreCase),
                 SlopePatternMode = SafePatternMode(settings.Text("SlopePatternMode")),
                 CutSlopeLayer = SafeName(settings.Text("CutSlopeLayer"), "CE-JUNCTION-CUT-SLOPES"),
                 FillSlopeLayer = SafeName(settings.Text("FillSlopeLayer"), "CE-JUNCTION-FILL-SLOPES"),
@@ -333,6 +351,28 @@ namespace CETools.Civil3D
                     skipped++;
                     document.Editor.WriteMessage("\nGrade-to-surface skipped safely. " + result.Message);
                 }
+            }
+
+            var connectedSurfaceResult = new ConnectedSurfaceBuildResult();
+            if (string.Equals(
+                    settings.Text("ConnectedSurfaces"),
+                    "Create separate surface per connected group",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                connectedSurfaceResult = CreateConnectedGradeSurfaces(
+                    document,
+                    gradeSourceIds,
+                    SafeName(
+                        settings.Text("ConnectedSurfacePrefix"),
+                        "CE-JUNCTION-GRADE"),
+                    Math.Max(
+                        0.001,
+                        settings.Double(
+                            "ConnectedTolerance",
+                            0.050)));
+                foreach (string message in connectedSurfaceResult.Messages)
+                    document.Editor.WriteMessage(
+                        "\n" + message);
             }
 
             int separateInfillsCreated = 0;
@@ -370,13 +410,15 @@ namespace CETools.Civil3D
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
             document.Editor.WriteMessage(
-                "\nCE_PLATFORMGRADETOSURFACE complete. Graded edge/source feature lines={0}; slope lines={1} (cut={2}, fill={3}); grading groups ready={4}; inline native infills ready={5}; separate closed-junction infills created={6}; existing={7}; infill skipped={8}; grade skipped={9}.",
+                "\nCE_PLATFORMGRADETOSURFACE complete. Graded edge/source feature lines={0}; slope lines created={1} (cut={2}, fill={3}); grading groups ready={4}; inline native infills ready={5}; connected-group surfaces created/refreshed={6}; surface groups skipped={7}; separate closed-junction infills created={8}; existing={9}; infill skipped={10}; grade skipped={11}.",
                 completed,
                 slopeLines,
                 cutSlopeLines,
                 fillSlopeLines,
                 groups,
                 infills,
+                connectedSurfaceResult.Created,
+                connectedSurfaceResult.Skipped,
                 separateInfillsCreated,
                 separateInfillsExisting,
                 separateInfillsSkipped,
@@ -4449,6 +4491,9 @@ namespace CETools.Civil3D
             internal bool NativeInfill { get; set; }
             internal string SiteName { get; set; }
             internal bool ShowSlopeLines { get; set; }
+            // Explicit-command-only choice. This is intentionally not persisted:
+            // automatic linked refreshes must continue to refresh output geometry.
+            internal bool KeepExistingPresentation { get; set; }
             internal string SlopePatternMode { get; set; }
             internal string CutSlopeLayer { get; set; }
             internal string FillSlopeLayer { get; set; }
@@ -4475,6 +4520,7 @@ namespace CETools.Civil3D
                     NativeInfill = NativeInfill,
                     SiteName = SiteName,
                     ShowSlopeLines = ShowSlopeLines,
+                    KeepExistingPresentation = KeepExistingPresentation,
                     SlopePatternMode = SafePatternMode(SlopePatternMode),
                     CutSlopeLayer = CutSlopeLayer,
                     FillSlopeLayer = FillSlopeLayer,
