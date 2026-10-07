@@ -42,18 +42,14 @@ namespace CETools.Civil3D
             if (document == null)
                 return;
             string command = DisciplineWorkflowDialogs.SelectWorkflow(
-                "CE Tools — Water Workflow",
-                "Sequence water routes, create linked alignments and profiles, then place spacing-controlled valve and hydrant review markers.",
+                "CE-WATER PRODUCTION",
+                "Use the same production-centre format as Sewer, but with Water pressure-network parts, pressure-pipe/fitting/appurtenance styles, profiles, labels and delivery tools.",
                 new List<DisciplineWorkflowAction>
                 {
-                    new DisciplineWorkflowAction("Choose production styles", "CE_WATERSETTINGS", "Choose alignment/profile styles, label sets, profile-view style and band set before production starts.", "0 — Production setup"),
-                    new DisciplineWorkflowAction("Sequence water routes", "CE_WATERSEQ", "Store main and branch order on selected source routes.", "1 — Routes"),
-                    new DisciplineWorkflowAction("Create or refresh alignments", "CE_WATERALIGN", "Build linked water alignments and route labels.", "2 — Alignments"),
-                    new DisciplineWorkflowAction("Refresh linked alignments", "CE_WATERREFRESH", "Rebuild generated alignments from their live source routes.", "2 — Alignments"),
-                    new DisciplineWorkflowAction("Create water profiles", "CE_WATERPROFILE", "Select a surface, pick an insertion point and create profile views.", "3 — Profiles"),
-                    new DisciplineWorkflowAction("Place asset review markers", "CE_WATERPLACE", "Place valve and hydrant review markers using stored spacing rules.", "4 — Assets"),
-                    new DisciplineWorkflowAction("Refresh asset markers", "CE_WATERPLACEREFRESH", "Rebuild linked review markers after source changes.", "4 — Assets"),
-                    new DisciplineWorkflowAction("Water information", "CE_WATERINFO", "Review generated objects, settings and live links.", "6 — Review")
+                    new DisciplineWorkflowAction("CE-Water Settings", "CE_WATERSETTINGSPRODUCTIONCENTRE", "Choose Water pressure-network parts/rules plus alignment, profile, profile-view, band and pressure-part label styles.", "01 Water Production"),
+                    new DisciplineWorkflowAction("CE-Water Network / Layout Production", "CE_WATERLAYOUTPRODUCTIONCENTRE", "Prepare Water routes/network sources and sequence mains/branches.", "01 Water Production"),
+                    new DisciplineWorkflowAction("CE-Water Design Production", "CE_WATERDESIGNPRODUCTIONCENTRE", "Review pressure-network data, then complete alignments, profiles, pressure-part labels/assets, setting-out, BOQ and report.", "01 Water Production"),
+                    new DisciplineWorkflowAction("CE-Water Supplementary", "CE_WATERFIELDSUPPLEMENTARY", "Open the Water field supplementary tools.", "02 Supplementary")
                 });
             if (!string.IsNullOrWhiteSpace(command))
                 document.SendStringToExecute(command.Trim() + " ", true, false, true);
