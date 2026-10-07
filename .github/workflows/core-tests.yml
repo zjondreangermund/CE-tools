@@ -247,6 +247,9 @@ jobs:
       - name: Validate October 7 grading surfaces and profile-view sewer selection
         run: python3 scripts/Validate-October07GradingSurfacesProfileSewerSelection.py
 
+      - name: Validate October 7 Water Stormwater supplementary and flood fix
+        run: python3 scripts/Validate-October07WaterStormSupplementaryFloodFix.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
