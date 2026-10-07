@@ -202,9 +202,10 @@ namespace CETools.Civil3D
                 "Choose Stormwater Settings, Stormwater Network / Layout Production or Stormwater Design Production.",
                 new List<DisciplineWorkflowAction>
                 {
-                    A("CE-Stormwater Settings", "CE_SWSETTINGSPRODUCTIONCENTRE", "Parts, styles, labels and profile settings.", "01 Stormwater Production"),
-                    A("CE-Stormwater Network / Layout Production", "CE_SWLAYOUTPRODUCTIONCENTRE", "Routes, multiple networks, sequencing and flow direction.", "01 Stormwater Production"),
-                    A("CE-Stormwater Design Production", "CE_SWDESIGNPRODUCTIONCENTRE", "Network data, alignments, profiles, labels, BOQ and report.", "01 Stormwater Production")
+                    A("CE-Stormwater Settings", "CE_SWSETTINGSPRODUCTIONCENTRE", "Stormwater gravity-network parts/rules, pipe/structure styles, labels and profile settings.", "01 Stormwater Production"),
+                    A("CE-Stormwater Network / Layout Production", "CE_SWLAYOUTPRODUCTIONCENTRE", "Routes, gravity-network creation, sequencing and flow direction.", "01 Stormwater Production"),
+                    A("CE-Stormwater Design Production", "CE_SWDESIGNPRODUCTIONCENTRE", "Network data, alignments, profiles, pipe/structure labels, BOQ and report.", "01 Stormwater Production"),
+                    A("CE-Stormwater Supplementary", "CE_STORMWATERFIELDSUPPLEMENTARY", "Open Stormwater field-completion and production supplementary tools.", "02 Supplementary")
                 });
         }
 
@@ -217,7 +218,8 @@ namespace CETools.Civil3D
                 new List<DisciplineWorkflowAction>
                 {
                     A("CE-Import Missing Project Styles", "CE_PROJECTSTYLEIMPORT", "Import source Civil 3D styles when dropdowns are empty.", "01 SETTINGS"),
-                    A("CE-Stormwater Settings", "CE_SWSETTINGS", "Choose alignment/profile/profile-view/band styles and layers.", "01 SETTINGS"),
+                    A("CE-Stormwater Parts / Styles / Rules", "CE_SWSTYLES", "Select Stormwater gravity-network parts, pipe/structure styles, rules and Stormwater-only production styles.", "01 SETTINGS"),
+                    A("CE-Stormwater Settings", "CE_SWSETTINGS", "Choose alignment/profile/profile-view/band styles, layers and Stormwater pipe/structure presentation.", "01 SETTINGS"),
                     A("CE-Discipline Style Presets", "CE_DISCIPLINESTYLEPRESETS", "Save/apply the Stormwater style preset.", "01 SETTINGS")
                 });
         }
@@ -329,9 +331,10 @@ namespace CETools.Civil3D
                 "Choose Water Settings, Water Network / Layout Production or Water Design Production.",
                 new List<DisciplineWorkflowAction>
                 {
-                    A("CE-Water Settings", "CE_WATERSETTINGSPRODUCTIONCENTRE", "Pressure-network, alignment, profile and label settings.", "01 Water Production"),
-                    A("CE-Water Network / Layout Production", "CE_WATERLAYOUTPRODUCTIONCENTRE", "Routes, multiple network sources and sequence.", "01 Water Production"),
-                    A("CE-Water Design Production", "CE_WATERDESIGNPRODUCTIONCENTRE", "Network data, profiles, labels/assets, setting-out and delivery.", "01 Water Production")
+                    A("CE-Water Settings", "CE_WATERSETTINGSPRODUCTIONCENTRE", "Pressure-pipe/fitting/appurtenance parts, rules, alignment/profile and pressure-part label settings.", "01 Water Production"),
+                    A("CE-Water Network / Layout Production", "CE_WATERLAYOUTPRODUCTIONCENTRE", "Routes, pressure-network sources and sequence.", "01 Water Production"),
+                    A("CE-Water Design Production", "CE_WATERDESIGNPRODUCTIONCENTRE", "Pressure-network data, profiles, pressure-part labels/assets, setting-out and delivery.", "01 Water Production"),
+                    A("CE-Water Supplementary", "CE_WATERFIELDSUPPLEMENTARY", "Open Water field-completion and production supplementary tools.", "02 Supplementary")
                 });
         }
 
@@ -344,7 +347,8 @@ namespace CETools.Civil3D
                 new List<DisciplineWorkflowAction>
                 {
                     A("CE-Import Missing Project Styles", "CE_PROJECTSTYLEIMPORT", "Import Civil 3D styles when Water dropdowns are empty.", "01 SETTINGS"),
-                    A("CE-Water Settings", "CE_WATERSETTINGS", "Choose alignment/profile/profile-view/band styles and asset spacing.", "01 SETTINGS"),
+                    A("CE-Water Pressure Parts / Styles / Rules", "CE_WATERSTYLES", "Select Water pressure pipes, fittings, appurtenances, pressure-network styles/rules and Water-only label styles.", "01 SETTINGS"),
+                    A("CE-Water Settings", "CE_WATERSETTINGS", "Choose alignment/profile/profile-view/band styles, pressure-part presentation and asset spacing.", "01 SETTINGS"),
                     A("CE-Discipline Style Presets", "CE_DISCIPLINESTYLEPRESETS", "Save/apply the Water style preset.", "01 SETTINGS")
                 });
         }
@@ -554,6 +558,7 @@ namespace CETools.Civil3D
                 "Complete crossing/culvert review and generate the final flood reporting output.",
                 new List<DisciplineWorkflowAction>
                 {
+                    A("CE-Flood Catchment & Culvert Design", "CE_FLOODCULVERTDESIGN", "Safely sample a TIN surface, locate the crossing low point, delineate the catchment and complete preliminary culvert sizing.", "05 COMPLETE"),
                     A("CE-Culvert Review", "CE_CULVERTREVIEW", "Review candidate crossings and culvert requirements.", "05 COMPLETE"),
                     A("CE-Flood / Project Report", "CE_REPORTFULL", "Generate the final project/discipline report output.", "06 DELIVER")
                 });
