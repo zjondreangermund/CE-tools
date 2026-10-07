@@ -234,6 +234,7 @@ namespace CETools.Civil3D
                 Action("CREATE - Quick Flood / Rational Review", "CE_CATCHMENTQUICK", "Pre/post return-period peak-flow and preliminary culvert screen.", "03 CREATE"),
                 Action("DESIGN - Surface Hydrology", "CE_HYDROLOGYTOOLS", "Flow routes, catchments and terrain storage review.", "04 DESIGN"),
                 Action("Affected Property / Flood Results", "CE_FLOODRESULTTOOLS", "Review imported specialist flood results and affected properties.", "04 DESIGN"),
+                Action("COMPLETE - Flood Catchment & Culvert Design", "CE_FLOODCULVERTDESIGN", "Safely sample the TIN surface and selected crossing before catchment/culvert output.", "05 COMPLETE"),
                 Action("COMPLETE - Culvert Review", "CE_CULVERTREVIEW", "Review candidate crossings/culvert requirements.", "05 COMPLETE"),
                 Action("DELIVER - Flood Report", "CE_REPORTFULL", "Generate project/discipline report output.", "06 DELIVER"),
                 Action("▶ RUN COMPLETE FLOOD PRODUCTION", "CE_FLOODWORKFLOW", "Open one ordered, non-duplicated Flood workflow from terrain through delivery.", "00 COMPLETE WORKFLOW")
