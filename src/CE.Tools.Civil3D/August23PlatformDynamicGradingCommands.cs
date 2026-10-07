@@ -868,84 +868,158 @@ namespace CETools.Civil3D
                 return result;
             }
 
-            ObjectId candidateId;
-            if (!TryCreateFeatureLineCandidate(
-                    document,
-                    source,
-                    daylight,
-                    SafeName(link.ToeLayer, "CE-JUNCTION-TOE"),
-                    link.ToeColorIndex,
-                    out candidateId,
-                    out error))
+            ObjectId oldChildId =
+                ResolveHandle(
+                    document.Database,
+                    link.ChildHandle);
+            bool keepExistingToe =
+                link.KeepExistingPresentation &&
+                !oldChildId.IsNull &&
+                !oldChildId.IsErased;
+            IList<Point3d> presentationDaylight =
+                daylight;
+
+            if (keepExistingToe)
             {
-                result.Message = error;
-                return result;
-            }
-
-            ObjectId oldChildId = ResolveHandle(document.Database, link.ChildHandle);
-            string desiredName = ReadFeatureLineName(document.Database, oldChildId);
-            if (string.IsNullOrWhiteSpace(desiredName))
-                desiredName = UniqueFeatureLineName(document.Database, SafeName(source.Name, "PLATFORM") + "-DAYLIGHT", oldChildId);
-
-            if (!TrySwapCandidate(document.Database, oldChildId, candidateId, desiredName, out error))
-            {
-                Cleanup(document.Database, candidateId);
-                result.Message = error;
-                return result;
-            }
-
-            link.ChildHandle = candidateId.Handle.ToString();
-
-            // Rebuild visible slope projection lines only after the new daylight
-            // geometry has been successfully created and swapped into place.
-            string previousSlopeHandles = link.SlopeLineHandles;
-            link.SlopeLineHandles = string.Empty;
-            if (link.ShowSlopeLines)
-            {
-                List<ObjectId> newSlopeLines;
-                if (TryCreateSlopeLines(
+                List<Point3d> existingToePoints;
+                if (TryReadFeatureLinePoints(
                         document.Database,
-                        source,
-                        daylight,
-                        resolvedSamples,
-                        link,
-                        out newSlopeLines,
-                        out error))
-                {
-                    link.SlopeLineHandles = string.Join(
-                        ";",
-                        newSlopeLines.Select(
-                            id => id.Handle.ToString()));
-                    CleanupHandleList(
-                        document.Database,
-                        previousSlopeHandles);
-                    result.SlopeLinesCreated =
-                        newSlopeLines.Count;
-                    result.CutSlopeLinesCreated =
-                        resolvedSamples.Count(
-                            item =>
-                                item.Valid &&
-                                item.Cut);
-                    result.FillSlopeLinesCreated =
-                        resolvedSamples.Count(
-                            item =>
-                                item.Valid &&
-                                !item.Cut);
-                }
-                else if (explicitCommand)
-                {
+                        oldChildId,
+                        out existingToePoints) &&
+                    existingToePoints.Count >= 2)
+                    presentationDaylight =
+                        existingToePoints;
+
+                if (explicitCommand)
                     document.Editor.WriteMessage(
-                        "\nDaylight was created, but cut/fill slope projection lines were skipped. " +
-                        error);
-                    link.SlopeLineHandles =
-                        previousSlopeHandles ?? string.Empty;
-                }
+                        "\nExisting linked toe/daylight kept for source {0}.",
+                        source.Name);
             }
             else
+            {
+                ObjectId candidateId;
+                if (!TryCreateFeatureLineCandidate(
+                        document,
+                        source,
+                        daylight,
+                        SafeName(
+                            link.ToeLayer,
+                            "CE-JUNCTION-TOE"),
+                        link.ToeColorIndex,
+                        out candidateId,
+                        out error))
+                {
+                    result.Message = error;
+                    return result;
+                }
+
+                string desiredName =
+                    ReadFeatureLineName(
+                        document.Database,
+                        oldChildId);
+                if (string.IsNullOrWhiteSpace(desiredName))
+                    desiredName =
+                        UniqueFeatureLineName(
+                            document.Database,
+                            SafeName(source.Name, "PLATFORM") +
+                                "-DAYLIGHT",
+                            oldChildId);
+
+                if (!TrySwapCandidate(
+                        document.Database,
+                        oldChildId,
+                        candidateId,
+                        desiredName,
+                        out error))
+                {
+                    Cleanup(
+                        document.Database,
+                        candidateId);
+                    result.Message = error;
+                    return result;
+                }
+
+                link.ChildHandle =
+                    candidateId.Handle.ToString();
+            }
+
+            // Rebuild visible slope projection lines only after a valid toe is
+            // available. When the explicit Keep option is chosen, valid linked
+            // slope rays and the toe remain untouched; missing rays may be rebuilt
+            // against the kept toe geometry.
+            string previousSlopeHandles =
+                link.SlopeLineHandles;
+            bool keepExistingSlopeLines =
+                link.KeepExistingPresentation &&
+                HasAnyValidHandle(
+                    document.Database,
+                    previousSlopeHandles);
+
+            if (link.ShowSlopeLines)
+            {
+                if (keepExistingSlopeLines)
+                {
+                    link.SlopeLineHandles =
+                        previousSlopeHandles;
+                    if (explicitCommand)
+                        document.Editor.WriteMessage(
+                            "\nExisting linked cut/fill slope lines kept for source {0}.",
+                            source.Name);
+                }
+                else
+                {
+                    link.SlopeLineHandles =
+                        string.Empty;
+                    List<ObjectId> newSlopeLines;
+                    if (TryCreateSlopeLines(
+                            document.Database,
+                            source,
+                            presentationDaylight,
+                            resolvedSamples,
+                            link,
+                            out newSlopeLines,
+                            out error))
+                    {
+                        link.SlopeLineHandles =
+                            string.Join(
+                                ";",
+                                newSlopeLines.Select(
+                                    id =>
+                                        id.Handle.ToString()));
+                        CleanupHandleList(
+                            document.Database,
+                            previousSlopeHandles);
+                        result.SlopeLinesCreated =
+                            newSlopeLines.Count;
+                        result.CutSlopeLinesCreated =
+                            resolvedSamples.Count(
+                                item =>
+                                    item.Valid &&
+                                    item.Cut);
+                        result.FillSlopeLinesCreated =
+                            resolvedSamples.Count(
+                                item =>
+                                    item.Valid &&
+                                    !item.Cut);
+                    }
+                    else if (explicitCommand)
+                    {
+                        document.Editor.WriteMessage(
+                            "\nToe/daylight is valid, but cut/fill slope projection lines were skipped. " +
+                            error);
+                        link.SlopeLineHandles =
+                            previousSlopeHandles ??
+                            string.Empty;
+                    }
+                }
+            }
+            else if (!link.KeepExistingPresentation)
             {
                 CleanupHandleList(
                     document.Database,
                     previousSlopeHandles);
+                link.SlopeLineHandles =
+                    string.Empty;
             }
 
             ObjectId groupId =
@@ -2023,6 +2097,70 @@ namespace CETools.Civil3D
             ObjectId id = table.Add(layer);
             transaction.AddNewlyCreatedDBObject(layer, true);
             return id;
+        }
+
+        private static bool HasAnyValidHandle(
+            Database database,
+            string handles)
+        {
+            if (database == null ||
+                string.IsNullOrWhiteSpace(handles))
+                return false;
+            foreach (string value in
+                handles.Split(
+                    new[] { ';' },
+                    StringSplitOptions.RemoveEmptyEntries))
+            {
+                ObjectId id =
+                    ResolveHandle(
+                        database,
+                        value.Trim());
+                if (!id.IsNull &&
+                    !id.IsErased)
+                    return true;
+            }
+            return false;
+        }
+
+        private static bool TryReadFeatureLinePoints(
+            Database database,
+            ObjectId id,
+            out List<Point3d> points)
+        {
+            points = new List<Point3d>();
+            if (database == null ||
+                id.IsNull ||
+                id.IsErased)
+                return false;
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilFeatureLine line =
+                        OpenFeatureLine(
+                            transaction,
+                            id,
+                            OpenMode.ForRead);
+                    if (line == null)
+                        return false;
+                    Point3dCollection collection =
+                        line.GetPoints(
+                            FeatureLinePointType.AllPoints);
+                    if (collection == null)
+                        return false;
+                    points =
+                        collection.Cast<Point3d>()
+                            .Where(Finite)
+                            .ToList();
+                    return points.Count >= 2;
+                }
+            }
+            catch
+            {
+                points.Clear();
+                return false;
+            }
         }
 
         private static void CleanupHandleList(
