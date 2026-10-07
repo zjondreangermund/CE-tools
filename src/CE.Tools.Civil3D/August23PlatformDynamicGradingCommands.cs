@@ -234,6 +234,10 @@ namespace CETools.Civil3D
                 "Reuse the source feature line Site. If it is siteless and native infill is requested, CE-PLATFORM-SITE is created. Choose an existing Site or type a new Site name to move the source/toe grading there.",
                 siteChoices);
             settings.AddChoice(
+                "ExistingPresentation", "08 Presentation", "Existing slope / toe lines", "Replace existing generated lines",
+                "Replace linked CE slope/toe output on this run, or keep valid existing linked slope/toe lines and create only missing output.",
+                new[] { "Replace existing generated lines", "Keep existing generated lines" });
+            settings.AddChoice(
                 "ShowSlopeLines", "08 Presentation", "Show cut / fill slope lines", "Yes",
                 "Draw Civil 3D feature-line slope rays normal to the source. Long rays terminate exactly at toe/daylight vertices.",
                 new[] { "Yes", "No" });
@@ -265,6 +269,16 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "SlopeLineInterval", "08 Presentation", "Slope-line interval / frequency (m)", 5.0,
                 "True chainage spacing along the bellmouth/platform geometry.");
+            settings.AddChoice(
+                "ConnectedSurfaces", "09 Surfaces", "Connected feature-line surfaces", "Create separate surface per connected group",
+                "Create one separate Civil 3D TIN surface for every connected group among the selected grading source feature lines. Each surface also includes the linked toe/daylight feature lines created for that group.",
+                new[] { "Create separate surface per connected group", "Do not create connected surfaces" });
+            settings.AddText(
+                "ConnectedSurfacePrefix", "09 Surfaces", "Connected surface name prefix", "CE-JUNCTION-GRADE",
+                "Each connected group is refreshed as <prefix>-<root source handle>.");
+            settings.AddPositiveDouble(
+                "ConnectedTolerance", "09 Surfaces", "Feature-line connection tolerance (m)", 0.050,
+                "Endpoint-to-feature-line point tolerance used to decide which selected source feature lines belong to the same surface group.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
@@ -299,6 +313,10 @@ namespace CETools.Civil3D
                 NativeInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase),
                 SiteName = SafeName(settings.Text("Site"), "<Auto: source site / CE-PLATFORM-SITE>"),
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
+                KeepExistingPresentation = string.Equals(
+                    settings.Text("ExistingPresentation"),
+                    "Keep existing generated lines",
+                    StringComparison.OrdinalIgnoreCase),
                 SlopePatternMode = SafePatternMode(settings.Text("SlopePatternMode")),
                 CutSlopeLayer = SafeName(settings.Text("CutSlopeLayer"), "CE-JUNCTION-CUT-SLOPES"),
                 FillSlopeLayer = SafeName(settings.Text("FillSlopeLayer"), "CE-JUNCTION-FILL-SLOPES"),
@@ -333,6 +351,28 @@ namespace CETools.Civil3D
                     skipped++;
                     document.Editor.WriteMessage("\nGrade-to-surface skipped safely. " + result.Message);
                 }
+            }
+
+            var connectedSurfaceResult = new ConnectedSurfaceBuildResult();
+            if (string.Equals(
+                    settings.Text("ConnectedSurfaces"),
+                    "Create separate surface per connected group",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                connectedSurfaceResult = CreateConnectedGradeSurfaces(
+                    document,
+                    gradeSourceIds,
+                    SafeName(
+                        settings.Text("ConnectedSurfacePrefix"),
+                        "CE-JUNCTION-GRADE"),
+                    Math.Max(
+                        0.001,
+                        settings.Double(
+                            "ConnectedTolerance",
+                            0.050)));
+                foreach (string message in connectedSurfaceResult.Messages)
+                    document.Editor.WriteMessage(
+                        "\n" + message);
             }
 
             int separateInfillsCreated = 0;
@@ -370,13 +410,15 @@ namespace CETools.Civil3D
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
             document.Editor.WriteMessage(
-                "\nCE_PLATFORMGRADETOSURFACE complete. Graded edge/source feature lines={0}; slope lines={1} (cut={2}, fill={3}); grading groups ready={4}; inline native infills ready={5}; separate closed-junction infills created={6}; existing={7}; infill skipped={8}; grade skipped={9}.",
+                "\nCE_PLATFORMGRADETOSURFACE complete. Graded edge/source feature lines={0}; slope lines created={1} (cut={2}, fill={3}); grading groups ready={4}; inline native infills ready={5}; connected-group surfaces created/refreshed={6}; surface groups skipped={7}; separate closed-junction infills created={8}; existing={9}; infill skipped={10}; grade skipped={11}.",
                 completed,
                 slopeLines,
                 cutSlopeLines,
                 fillSlopeLines,
                 groups,
                 infills,
+                connectedSurfaceResult.Created,
+                connectedSurfaceResult.Skipped,
                 separateInfillsCreated,
                 separateInfillsExisting,
                 separateInfillsSkipped,
@@ -826,84 +868,162 @@ namespace CETools.Civil3D
                 return result;
             }
 
-            ObjectId candidateId;
-            if (!TryCreateFeatureLineCandidate(
-                    document,
-                    source,
-                    daylight,
-                    SafeName(link.ToeLayer, "CE-JUNCTION-TOE"),
-                    link.ToeColorIndex,
-                    out candidateId,
-                    out error))
+            ObjectId oldChildId =
+                ResolveHandle(
+                    document.Database,
+                    link.ChildHandle);
+            bool keepExistingToe =
+                link.KeepExistingPresentation &&
+                !oldChildId.IsNull &&
+                !oldChildId.IsErased;
+            if (keepExistingToe)
             {
-                result.Message = error;
-                return result;
-            }
-
-            ObjectId oldChildId = ResolveHandle(document.Database, link.ChildHandle);
-            string desiredName = ReadFeatureLineName(document.Database, oldChildId);
-            if (string.IsNullOrWhiteSpace(desiredName))
-                desiredName = UniqueFeatureLineName(document.Database, SafeName(source.Name, "PLATFORM") + "-DAYLIGHT", oldChildId);
-
-            if (!TrySwapCandidate(document.Database, oldChildId, candidateId, desiredName, out error))
-            {
-                Cleanup(document.Database, candidateId);
-                result.Message = error;
-                return result;
-            }
-
-            link.ChildHandle = candidateId.Handle.ToString();
-
-            // Rebuild visible slope projection lines only after the new daylight
-            // geometry has been successfully created and swapped into place.
-            string previousSlopeHandles = link.SlopeLineHandles;
-            link.SlopeLineHandles = string.Empty;
-            if (link.ShowSlopeLines)
-            {
-                List<ObjectId> newSlopeLines;
-                if (TryCreateSlopeLines(
-                        document.Database,
-                        source,
-                        daylight,
-                        resolvedSamples,
-                        link,
-                        out newSlopeLines,
-                        out error))
-                {
-                    link.SlopeLineHandles = string.Join(
-                        ";",
-                        newSlopeLines.Select(
-                            id => id.Handle.ToString()));
-                    CleanupHandleList(
-                        document.Database,
-                        previousSlopeHandles);
-                    result.SlopeLinesCreated =
-                        newSlopeLines.Count;
-                    result.CutSlopeLinesCreated =
-                        resolvedSamples.Count(
-                            item =>
-                                item.Valid &&
-                                item.Cut);
-                    result.FillSlopeLinesCreated =
-                        resolvedSamples.Count(
-                            item =>
-                                item.Valid &&
-                                !item.Cut);
-                }
-                else if (explicitCommand)
-                {
+                if (explicitCommand)
                     document.Editor.WriteMessage(
-                        "\nDaylight was created, but cut/fill slope projection lines were skipped. " +
-                        error);
-                    link.SlopeLineHandles =
-                        previousSlopeHandles ?? string.Empty;
-                }
+                        "\nExisting linked toe/daylight kept for source {0}.",
+                        source.Name);
             }
             else
+            {
+                ObjectId candidateId;
+                if (!TryCreateFeatureLineCandidate(
+                        document,
+                        source,
+                        daylight,
+                        SafeName(
+                            link.ToeLayer,
+                            "CE-JUNCTION-TOE"),
+                        link.ToeColorIndex,
+                        out candidateId,
+                        out error))
+                {
+                    result.Message = error;
+                    return result;
+                }
+
+                string desiredName =
+                    ReadFeatureLineName(
+                        document.Database,
+                        oldChildId);
+                if (string.IsNullOrWhiteSpace(desiredName))
+                    desiredName =
+                        UniqueFeatureLineName(
+                            document.Database,
+                            SafeName(source.Name, "PLATFORM") +
+                                "-DAYLIGHT",
+                            oldChildId);
+
+                if (!TrySwapCandidate(
+                        document.Database,
+                        oldChildId,
+                        candidateId,
+                        desiredName,
+                        out error))
+                {
+                    Cleanup(
+                        document.Database,
+                        candidateId);
+                    result.Message = error;
+                    return result;
+                }
+
+                link.ChildHandle =
+                    candidateId.Handle.ToString();
+            }
+
+            // Rebuild visible slope projection lines only after a valid toe is
+            // available. When the explicit Keep option is chosen, valid linked
+            // slope rays and the toe remain untouched; missing rays may be rebuilt
+            // against the kept toe geometry.
+            string previousSlopeHandles =
+                link.SlopeLineHandles;
+            bool keepExistingSlopeLines =
+                link.KeepExistingPresentation &&
+                HasAnyValidHandle(
+                    document.Database,
+                    previousSlopeHandles);
+
+            if (link.ShowSlopeLines)
+            {
+                if (keepExistingSlopeLines)
+                {
+                    link.SlopeLineHandles =
+                        previousSlopeHandles;
+                    if (explicitCommand)
+                        document.Editor.WriteMessage(
+                            "\nExisting linked cut/fill slope lines kept for source {0}.",
+                            source.Name);
+                }
+                else if (link.KeepExistingPresentation &&
+                         keepExistingToe)
+                {
+                    // A kept toe belongs to the prior resolved daylight. Do not
+                    // create fresh slope rays from a new surface solve against an
+                    // old toe because they could overshoot/miss it. Existing rays
+                    // stay if present; otherwise the user can choose Replace to
+                    // rebuild toe and rays together from one resolved sample set.
+                    link.SlopeLineHandles =
+                        previousSlopeHandles ??
+                        string.Empty;
+                    if (explicitCommand)
+                        document.Editor.WriteMessage(
+                            "\nExisting toe/daylight was kept for source {0}; missing slope rays were not regenerated because toe and rays must come from the same resolved grading samples. Choose Replace existing generated lines to rebuild both.",
+                            source.Name);
+                }
+                else
+                {
+                    link.SlopeLineHandles =
+                        string.Empty;
+                    List<ObjectId> newSlopeLines;
+                    if (TryCreateSlopeLines(
+                            document.Database,
+                            source,
+                            daylight,
+                            resolvedSamples,
+                            link,
+                            out newSlopeLines,
+                            out error))
+                    {
+                        link.SlopeLineHandles =
+                            string.Join(
+                                ";",
+                                newSlopeLines.Select(
+                                    id =>
+                                        id.Handle.ToString()));
+                        CleanupHandleList(
+                            document.Database,
+                            previousSlopeHandles);
+                        result.SlopeLinesCreated =
+                            newSlopeLines.Count;
+                        result.CutSlopeLinesCreated =
+                            resolvedSamples.Count(
+                                item =>
+                                    item.Valid &&
+                                    item.Cut);
+                        result.FillSlopeLinesCreated =
+                            resolvedSamples.Count(
+                                item =>
+                                    item.Valid &&
+                                    !item.Cut);
+                    }
+                    else if (explicitCommand)
+                    {
+                        document.Editor.WriteMessage(
+                            "\nToe/daylight is valid, but cut/fill slope projection lines were skipped. " +
+                            error);
+                        link.SlopeLineHandles =
+                            previousSlopeHandles ??
+                            string.Empty;
+                    }
+                }
+            }
+            else if (!link.KeepExistingPresentation)
             {
                 CleanupHandleList(
                     document.Database,
                     previousSlopeHandles);
+                link.SlopeLineHandles =
+                    string.Empty;
             }
 
             ObjectId groupId =
@@ -1981,6 +2101,29 @@ namespace CETools.Civil3D
             ObjectId id = table.Add(layer);
             transaction.AddNewlyCreatedDBObject(layer, true);
             return id;
+        }
+
+        private static bool HasAnyValidHandle(
+            Database database,
+            string handles)
+        {
+            if (database == null ||
+                string.IsNullOrWhiteSpace(handles))
+                return false;
+            foreach (string value in
+                handles.Split(
+                    new[] { ';' },
+                    StringSplitOptions.RemoveEmptyEntries))
+            {
+                ObjectId id =
+                    ResolveHandle(
+                        database,
+                        value.Trim());
+                if (!id.IsNull &&
+                    !id.IsErased)
+                    return true;
+            }
+            return false;
         }
 
         private static void CleanupHandleList(
@@ -3634,6 +3777,518 @@ namespace CETools.Civil3D
             return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
         }
 
+        private static ConnectedSurfaceBuildResult CreateConnectedGradeSurfaces(
+            Document document,
+            IEnumerable<ObjectId> sourceIds,
+            string prefix,
+            double tolerance)
+        {
+            var result =
+                new ConnectedSurfaceBuildResult();
+            if (document == null ||
+                document.Database == null)
+                return result;
+
+            var members =
+                new List<ConnectedGradeMember>();
+            foreach (ObjectId sourceId in
+                (sourceIds ?? Enumerable.Empty<ObjectId>())
+                    .Where(id =>
+                        !id.IsNull &&
+                        !id.IsErased)
+                    .Distinct())
+            {
+                SourceSnapshot source;
+                string readError;
+                if (!TryReadSource(
+                        document.Database,
+                        sourceId,
+                        out source,
+                        out readError))
+                {
+                    result.Messages.Add(
+                        "Connected surface skipped source " +
+                        sourceId.Handle.ToString() +
+                        ": " + readError);
+                    continue;
+                }
+
+                var member =
+                    new ConnectedGradeMember
+                    {
+                        SourceId = sourceId,
+                        Points = source.Points
+                    };
+                GradeLink link =
+                    ReadGradeLink(
+                        document.Database,
+                        sourceId);
+                if (link != null)
+                {
+                    ObjectId toeId =
+                        ResolveHandle(
+                            document.Database,
+                            link.ChildHandle);
+                    if (!toeId.IsNull &&
+                        !toeId.IsErased)
+                        member.ToeId =
+                            toeId;
+                }
+                members.Add(member);
+            }
+
+            if (members.Count == 0)
+                return result;
+
+            bool[] visited =
+                new bool[members.Count];
+            for (int start = 0;
+                 start < members.Count;
+                 start++)
+            {
+                if (visited[start])
+                    continue;
+
+                var indices =
+                    new List<int>();
+                var queue =
+                    new Queue<int>();
+                queue.Enqueue(start);
+                visited[start] = true;
+
+                while (queue.Count > 0)
+                {
+                    int current =
+                        queue.Dequeue();
+                    indices.Add(current);
+                    for (int candidate = 0;
+                         candidate < members.Count;
+                         candidate++)
+                    {
+                        if (visited[candidate] ||
+                            candidate == current)
+                            continue;
+                        if (!ConnectedInPlan(
+                                members[current].Points,
+                                members[candidate].Points,
+                                tolerance))
+                            continue;
+                        visited[candidate] = true;
+                        queue.Enqueue(candidate);
+                    }
+                }
+
+                var featureLineIds =
+                    new List<ObjectId>();
+                foreach (int index in indices)
+                {
+                    ConnectedGradeMember member =
+                        members[index];
+                    featureLineIds.Add(
+                        member.SourceId);
+                    if (!member.ToeId.IsNull &&
+                        !member.ToeId.IsErased)
+                        featureLineIds.Add(
+                            member.ToeId);
+                }
+                featureLineIds =
+                    featureLineIds
+                        .Distinct()
+                        .ToList();
+
+                string rootHandle =
+                    indices
+                        .Select(index =>
+                            members[index]
+                                .SourceId
+                                .Handle
+                                .ToString())
+                        .OrderBy(
+                            value => value,
+                            StringComparer.OrdinalIgnoreCase)
+                        .First();
+                string surfaceName =
+                    SafeName(
+                        prefix,
+                        "CE-JUNCTION-GRADE") +
+                    "-" +
+                    rootHandle;
+
+                string error;
+                if (TryCreateOrRefreshConnectedSurface(
+                        document.Database,
+                        featureLineIds,
+                        surfaceName,
+                        out error))
+                {
+                    result.Created++;
+                }
+                else
+                {
+                    result.Skipped++;
+                    result.Messages.Add(
+                        "Connected surface '" +
+                        surfaceName +
+                        "' skipped safely: " +
+                        error);
+                }
+            }
+
+            return result;
+        }
+
+        private static bool ConnectedInPlan(
+            IList<Point3d> first,
+            IList<Point3d> second,
+            double tolerance)
+        {
+            if (first == null ||
+                second == null ||
+                first.Count == 0 ||
+                second.Count == 0)
+                return false;
+
+            var firstEnds =
+                new[]
+                {
+                    first[0],
+                    first[first.Count - 1]
+                };
+            var secondEnds =
+                new[]
+                {
+                    second[0],
+                    second[second.Count - 1]
+                };
+
+            foreach (Point3d endpoint in
+                firstEnds)
+                foreach (Point3d point in
+                    second)
+                    if (PlanDistance(
+                            endpoint,
+                            point) <=
+                        tolerance)
+                        return true;
+
+            foreach (Point3d endpoint in
+                secondEnds)
+                foreach (Point3d point in
+                    first)
+                    if (PlanDistance(
+                            endpoint,
+                            point) <=
+                        tolerance)
+                        return true;
+
+            return false;
+        }
+
+        private static double PlanDistance(
+            Point3d first,
+            Point3d second)
+        {
+            double dx =
+                first.X - second.X;
+            double dy =
+                first.Y - second.Y;
+            return Math.Sqrt(
+                dx * dx +
+                dy * dy);
+        }
+
+        private static bool TryCreateOrRefreshConnectedSurface(
+            Database database,
+            IList<ObjectId> featureLineIds,
+            string surfaceName,
+            out string error)
+        {
+            error = string.Empty;
+            if (database == null ||
+                featureLineIds == null ||
+                featureLineIds.Count == 0)
+            {
+                error =
+                    "No connected feature lines were supplied.";
+                return false;
+            }
+
+            ObjectId newSurfaceId =
+                ObjectId.Null;
+            ObjectId oldSurfaceId =
+                FindSurfaceByName(
+                    database,
+                    surfaceName);
+            try
+            {
+                var allPoints =
+                    new List<Point3d>();
+                using (Transaction read =
+                    database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in
+                        featureLineIds.Distinct())
+                    {
+                        CivilFeatureLine line =
+                            OpenFeatureLine(
+                                read,
+                                id,
+                                OpenMode.ForRead);
+                        if (line == null)
+                            continue;
+                        Point3dCollection points =
+                            line.GetPoints(
+                                FeatureLinePointType.AllPoints);
+                        if (points == null)
+                            continue;
+                        foreach (Point3d point in
+                            points)
+                        {
+                            if (!Finite(point))
+                                continue;
+                            bool duplicate =
+                                allPoints.Any(existing =>
+                                    existing.DistanceTo(
+                                        point) <=
+                                    1e-6);
+                            if (!duplicate)
+                                allPoints.Add(point);
+                        }
+                    }
+                }
+
+                if (allPoints.Count < 3)
+                {
+                    error =
+                        "Fewer than three distinct 3D vertices were available.";
+                    return false;
+                }
+
+                string temporaryName =
+                    UniqueSurfaceName(
+                        database,
+                        surfaceName +
+                        "-BUILD");
+                newSurfaceId =
+                    TinSurface.Create(
+                        database,
+                        temporaryName);
+
+                using (Transaction write =
+                    database.TransactionManager.StartTransaction())
+                {
+                    TinSurface surface =
+                        write.GetObject(
+                            newSurfaceId,
+                            OpenMode.ForWrite,
+                            false) as TinSurface;
+                    if (surface == null)
+                        throw new InvalidOperationException(
+                            "Civil 3D did not return the connected-group TIN surface.");
+
+                    surface.AddVertices(
+                        new Point3dCollection(
+                            allPoints.ToArray()));
+
+                    // Preserve the selected source/toe strings as breaklines when
+                    // the host exposes a compatible AddStandardBreaklines overload.
+                    // Vertices remain a safe fallback on Civil 3D 2023 variants.
+                    TryAddStandardBreaklines(
+                        surface,
+                        featureLineIds);
+
+                    surface.Rebuild();
+                    write.Commit();
+                }
+
+                // Only remove the old named CE surface after the replacement is
+                // fully built. A failed rebuild therefore leaves the previous
+                // production surface intact.
+                if (!oldSurfaceId.IsNull &&
+                    !oldSurfaceId.IsErased)
+                    Cleanup(
+                        database,
+                        oldSurfaceId);
+
+                using (Transaction rename =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilSurface surface =
+                        rename.GetObject(
+                            newSurfaceId,
+                            OpenMode.ForWrite,
+                            false) as CivilSurface;
+                    if (surface == null)
+                        throw new InvalidOperationException(
+                            "The replacement connected-group surface is unavailable.");
+                    surface.Name =
+                        surfaceName;
+                    rename.Commit();
+                }
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                error =
+                    exception.Message;
+                if (!newSurfaceId.IsNull)
+                {
+                    try
+                    {
+                        Cleanup(
+                            database,
+                            newSurfaceId);
+                    }
+                    catch { }
+                }
+                return false;
+            }
+        }
+
+        private static ObjectId FindSurfaceByName(
+            Database database,
+            string name)
+        {
+            CivilDocument civil =
+                CivilApplication.ActiveDocument;
+            if (database == null ||
+                civil == null ||
+                string.IsNullOrWhiteSpace(name))
+                return ObjectId.Null;
+
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in
+                        civil.GetSurfaceIds())
+                    {
+                        CivilSurface surface = null;
+                        try
+                        {
+                            surface =
+                                transaction.GetObject(
+                                    id,
+                                    OpenMode.ForRead,
+                                    false) as CivilSurface;
+                        }
+                        catch { }
+                        if (surface != null &&
+                            string.Equals(
+                                surface.Name,
+                                name,
+                                StringComparison.OrdinalIgnoreCase))
+                            return id;
+                    }
+                }
+            }
+            catch { }
+            return ObjectId.Null;
+        }
+
+        private static bool TryAddStandardBreaklines(
+            TinSurface surface,
+            IEnumerable<ObjectId> featureLineIds)
+        {
+            if (surface == null)
+                return false;
+            var ids =
+                new ObjectIdCollection();
+            foreach (ObjectId id in
+                (featureLineIds ??
+                 Enumerable.Empty<ObjectId>())
+                    .Where(value =>
+                        !value.IsNull &&
+                        !value.IsErased)
+                    .Distinct())
+                ids.Add(id);
+            if (ids.Count == 0)
+                return false;
+
+            try
+            {
+                PropertyInfo property =
+                    surface.GetType().GetProperty(
+                        "BreaklinesDefinition",
+                        BindingFlags.Public |
+                        BindingFlags.Instance);
+                object definition =
+                    property == null
+                        ? null
+                        : property.GetValue(
+                            surface,
+                            null);
+                if (definition == null)
+                    return false;
+
+                foreach (MethodInfo method in
+                    definition.GetType()
+                        .GetMethods(
+                            BindingFlags.Public |
+                            BindingFlags.Instance)
+                        .Where(item =>
+                            string.Equals(
+                                item.Name,
+                                "AddStandardBreaklines",
+                                StringComparison.OrdinalIgnoreCase)))
+                {
+                    ParameterInfo[] parameters =
+                        method.GetParameters();
+                    var arguments =
+                        new object[parameters.Length];
+                    int doubleIndex = 0;
+                    bool compatible = true;
+                    for (int index = 0;
+                         index < parameters.Length;
+                         index++)
+                    {
+                        Type type =
+                            parameters[index]
+                                .ParameterType;
+                        if (type ==
+                            typeof(ObjectIdCollection))
+                            arguments[index] = ids;
+                        else if (type ==
+                                 typeof(double))
+                        {
+                            // mid-ordinate, maximum distance, weed distance and
+                            // weed angle. Zero keeps original feature-line vertices.
+                            arguments[index] =
+                                doubleIndex++ == 0
+                                    ? 0.05
+                                    : 0.0;
+                        }
+                        else if (type ==
+                                 typeof(bool))
+                            arguments[index] = false;
+                        else if (parameters[index]
+                                     .HasDefaultValue)
+                            arguments[index] =
+                                parameters[index]
+                                    .DefaultValue;
+                        else
+                        {
+                            compatible = false;
+                            break;
+                        }
+                    }
+                    if (!compatible)
+                        continue;
+                    try
+                    {
+                        method.Invoke(
+                            definition,
+                            arguments);
+                        return true;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private static bool TryCreateFallbackInfillSurface(
             Database database,
             ObjectId sourceId,
@@ -4449,6 +5104,9 @@ namespace CETools.Civil3D
             internal bool NativeInfill { get; set; }
             internal string SiteName { get; set; }
             internal bool ShowSlopeLines { get; set; }
+            // Explicit-command-only choice. This is intentionally not persisted:
+            // automatic linked refreshes must continue to refresh output geometry.
+            internal bool KeepExistingPresentation { get; set; }
             internal string SlopePatternMode { get; set; }
             internal string CutSlopeLayer { get; set; }
             internal string FillSlopeLayer { get; set; }
@@ -4475,6 +5133,7 @@ namespace CETools.Civil3D
                     NativeInfill = NativeInfill,
                     SiteName = SiteName,
                     ShowSlopeLines = ShowSlopeLines,
+                    KeepExistingPresentation = KeepExistingPresentation,
                     SlopePatternMode = SafePatternMode(SlopePatternMode),
                     CutSlopeLayer = CutSlopeLayer,
                     FillSlopeLayer = FillSlopeLayer,
@@ -4501,6 +5160,21 @@ namespace CETools.Civil3D
             internal bool Created { get; set; }
             internal bool Existing { get; set; }
             internal string Message { get; set; }
+        }
+
+        private sealed class ConnectedGradeMember
+        {
+            internal ObjectId SourceId { get; set; }
+            internal ObjectId ToeId { get; set; }
+            internal List<Point3d> Points { get; set; }
+        }
+
+        private sealed class ConnectedSurfaceBuildResult
+        {
+            internal int Created { get; set; }
+            internal int Skipped { get; set; }
+            internal List<string> Messages { get; } =
+                new List<string>();
         }
 
         private sealed class SourceSnapshot
