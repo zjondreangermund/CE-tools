@@ -61,6 +61,7 @@ namespace CETools.Civil3D
                 "\nSelect culvert centreline source (Alignment / Polyline / Feature Line): ");
             if (crossingPick.Status != PromptStatus.OK) return;
 
+            string stage = "crossing low-point sampling";
             try
             {
                 CrossingLowPoint lowPoint = FindLowestPoint(
@@ -71,13 +72,15 @@ namespace CETools.Civil3D
                     settings.UnitsPerMetre);
                 if (lowPoint == null)
                     throw new InvalidOperationException(
-                        "The selected crossing source is not a supported Alignment, Polyline or Feature Line.");
+                        "No valid TIN-surface elevations could be sampled along the selected Alignment, Polyline or Feature Line.");
 
+                stage = "hydrology boundary preflight";
                 HydrologyCivilInput input = BuildHydrologyInput(
                     document.Database,
                     surfacePick.ObjectId,
                     boundaryPick.ObjectId,
                     settings);
+                stage = "TIN hydrology grid sampling";
                 HydrologySample sample = SurfaceHydrologyCommands.SampleAndAnalyse(
                     document.Database,
                     input);
@@ -86,6 +89,7 @@ namespace CETools.Civil3D
                     throw new InvalidOperationException(
                         "The low point does not fall near an active cell inside the selected hydrology boundary.");
 
+                stage = "catchment delineation";
                 IReadOnlyList<GridCell> catchment = sample.Analysis.DelineateCatchment(outlet);
                 if (catchment == null || catchment.Count == 0)
                     throw new InvalidOperationException("The low point produced an empty catchment.");
@@ -106,6 +110,7 @@ namespace CETools.Civil3D
                     intensities);
                 double designFlow = flows[settings.DesignReturnPeriod];
 
+                stage = "preliminary culvert sizing";
                 CulvertSection section = BuildSection(settings, designFlow);
                 CulvertHydraulicResult designReview = FloodCulvertHydraulics.Review(section, designFlow);
                 var periodResults = new Dictionary<int, CulvertHydraulicResult>();
@@ -130,9 +135,13 @@ namespace CETools.Civil3D
                     periodResults,
                     invertRl);
 
+                stage = "pre-create review";
                 if (!ShowPreCreateReview(result)) return;
+                stage = "drawing output";
                 CreateDrawingOutput(document, result);
+                stage = "display refresh";
                 August21DisplayRefresh.Flush(document);
+                stage = "hydraulic review window";
                 ShowHydraflowReview(result);
                 editor.WriteMessage(
                     "\nCE_FLOODCULVERTDESIGN complete. Area={0:N4} km2; Q{1}={2:N3} m3/s; {3}; adequate={4}.",
@@ -144,8 +153,17 @@ namespace CETools.Civil3D
             }
             catch (System.Exception exception)
             {
+                var acadException =
+                    exception as Autodesk.AutoCAD.Runtime.Exception;
+                string status =
+                    acadException == null
+                        ? string.Empty
+                        : " AutoCAD status=" + acadException.ErrorStatus + ".";
                 editor.WriteMessage(
-                    "\nCE_FLOODCULVERTDESIGN failed. No source surface, boundary or centreline was changed. {0}",
+                    "\nCE_FLOODCULVERTDESIGN stopped safely during {0}. No source surface, boundary or centreline was changed.{1} {2}: {3}",
+                    stage,
+                    status,
+                    exception.GetType().Name,
                     exception.Message);
             }
         }
@@ -323,13 +341,40 @@ namespace CETools.Civil3D
         private static IList<Point2d> ReadBoundary(Polyline boundary, double spacing)
         {
             var points = new List<Point2d>();
-            double length = Math.Max(boundary.Length, spacing);
-            int divisions = Math.Max(boundary.NumberOfVertices, Math.Min(5000, (int)Math.Ceiling(length / Math.Max(spacing, 1e-6))));
+            if (boundary == null || !boundary.Closed)
+                return points;
+
+            double length = boundary.Length;
+            if (length <= Tolerance)
+                return points;
+
+            int divisions = Math.Max(
+                Math.Max(3, boundary.NumberOfVertices),
+                Math.Min(
+                    5000,
+                    (int)Math.Ceiling(
+                        length / Math.Max(spacing, 1e-6))));
             for (int i = 0; i < divisions; i++)
             {
-                Point3d point = boundary.GetPointAtDist(length * i / divisions);
-                if (points.Count == 0 || points[points.Count - 1].GetDistanceTo(new Point2d(point.X, point.Y)) > 1e-8)
-                    points.Add(new Point2d(point.X, point.Y));
+                double distance =
+                    Math.Min(
+                        length,
+                        length * i / divisions);
+                Point3d point;
+                try
+                {
+                    point = boundary.GetPointAtDist(distance);
+                }
+                catch
+                {
+                    continue;
+                }
+                var current =
+                    new Point2d(point.X, point.Y);
+                if (points.Count == 0 ||
+                    points[points.Count - 1]
+                        .GetDistanceTo(current) > 1e-8)
+                    points.Add(current);
             }
             return points;
         }
@@ -372,37 +417,143 @@ namespace CETools.Civil3D
                 CivilFeatureLine feature = source as CivilFeatureLine;
                 if (feature != null)
                 {
-                    Point3dCollection collection = feature.GetPoints(CivilFeatureLinePointType.AllPoints);
-                    var points = collection.Cast<Point3d>().ToList();
-                    return LowestFromPoints(points, unitsPerMetre, "Feature Line", feature.Layer);
+                    Point3dCollection collection =
+                        feature.GetPoints(
+                            CivilFeatureLinePointType.AllPoints);
+                    var points =
+                        collection.Cast<Point3d>().ToList();
+                    return LowestFromSurfacePoints(
+                        surface,
+                        points,
+                        unitsPerMetre,
+                        "Feature Line",
+                        feature.Layer);
                 }
 
                 Polyline polyline = source as Polyline;
                 if (polyline != null)
                 {
-                    var points = new List<Point3d>();
-                    for (int i = 0; i < polyline.NumberOfVertices; i++)
-                        points.Add(polyline.GetPoint3dAt(i));
-                    CrossingLowPoint low = LowestFromPoints(points, unitsPerMetre, "Polyline", polyline.Layer);
-                    if (low != null)
+                    double length =
+                        Math.Max(0.0, polyline.Length);
+                    if (length <= Tolerance)
+                        return null;
+
+                    int count = Math.Max(
+                        2,
+                        Math.Min(
+                            10000,
+                            (int)Math.Ceiling(
+                                length /
+                                Math.Max(sampleStepDrawing, 0.1)) + 1));
+                    CrossingLowPoint best = null;
+                    for (int index = 0;
+                         index < count;
+                         index++)
                     {
-                        try { low.Chainage = polyline.GetDistAtPoint(polyline.GetClosestPointTo(low.Point, false)) / unitsPerMetre; }
-                        catch { }
+                        double distance =
+                            length * index /
+                            (count - 1.0);
+                        Point3d planPoint;
+                        try
+                        {
+                            planPoint =
+                                polyline.GetPointAtDist(
+                                    Math.Min(
+                                        length,
+                                        distance));
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        double z;
+                        try
+                        {
+                            z =
+                                surface.FindElevationAtXY(
+                                    planPoint.X,
+                                    planPoint.Y);
+                        }
+                        catch
+                        {
+                            continue;
+                        }
+
+                        if (best == null ||
+                            z < best.Point.Z)
+                            best =
+                                new CrossingLowPoint(
+                                    new Point3d(
+                                        planPoint.X,
+                                        planPoint.Y,
+                                        z),
+                                    distance /
+                                        Math.Max(
+                                            unitsPerMetre,
+                                            1e-9),
+                                    "Polyline",
+                                    polyline.Layer);
                     }
-                    return low;
+                    return best;
                 }
             }
             return null;
         }
 
-        private static CrossingLowPoint LowestFromPoints(IList<Point3d> points, double unitsPerMetre, string type, string name)
+        private static CrossingLowPoint LowestFromSurfacePoints(
+            CivilTinSurface surface,
+            IList<Point3d> points,
+            double unitsPerMetre,
+            string type,
+            string name)
         {
-            if (points == null || points.Count == 0) return null;
-            int lowIndex = 0;
-            for (int i = 1; i < points.Count; i++) if (points[i].Z < points[lowIndex].Z) lowIndex = i;
+            if (surface == null ||
+                points == null ||
+                points.Count == 0)
+                return null;
+
+            CrossingLowPoint best = null;
             double chainage = 0.0;
-            for (int i = 1; i <= lowIndex; i++) chainage += PlanDistance(points[i - 1], points[i]) / unitsPerMetre;
-            return new CrossingLowPoint(points[lowIndex], chainage, type, name);
+            for (int i = 0;
+                 i < points.Count;
+                 i++)
+            {
+                if (i > 0)
+                    chainage +=
+                        PlanDistance(
+                            points[i - 1],
+                            points[i]) /
+                        Math.Max(
+                            unitsPerMetre,
+                            1e-9);
+
+                double z;
+                try
+                {
+                    z =
+                        surface.FindElevationAtXY(
+                            points[i].X,
+                            points[i].Y);
+                }
+                catch
+                {
+                    continue;
+                }
+
+                if (best == null ||
+                    z < best.Point.Z)
+                    best =
+                        new CrossingLowPoint(
+                            new Point3d(
+                                points[i].X,
+                                points[i].Y,
+                                z),
+                            chainage,
+                            type,
+                            name);
+            }
+            return best;
         }
 
         private static int FindNearestActiveCell(HydrologySample sample, Point3d point)
@@ -418,7 +569,21 @@ namespace CETools.Civil3D
                 bestDistance = distance;
                 best = index;
             }
-            return best;
+            if (best < 0)
+                return -1;
+
+            // Do not silently snap a crossing that is outside the hydrology
+            // boundary to an unrelated active cell. Two cell diagonals allow
+            // normal edge sampling tolerance while still rejecting remote picks.
+            double maximumDistance =
+                Math.Max(
+                    sample.CellSize,
+                    1e-6) *
+                Math.Sqrt(2.0) *
+                2.0;
+            return bestDistance <= maximumDistance
+                ? best
+                : -1;
         }
 
         private static int FindFarthestCatchmentCell(HydrologySample sample, IReadOnlyList<GridCell> catchment, int outlet)
@@ -449,7 +614,17 @@ namespace CETools.Civil3D
                 length += PlanDistance(last, current) / unitsPerMetre;
                 last = current;
             }
-            double slope = length <= Tolerance ? 0.0 : Math.Max(0.0, (first.Z - last.Z) / length);
+            double verticalMetres =
+                (first.Z - last.Z) /
+                Math.Max(
+                    unitsPerMetre,
+                    1e-9);
+            double slope =
+                length <= Tolerance
+                    ? 0.0
+                    : Math.Max(
+                        0.0,
+                        verticalMetres / length);
             return new RouteSummary(length, slope, first, last);
         }
 
