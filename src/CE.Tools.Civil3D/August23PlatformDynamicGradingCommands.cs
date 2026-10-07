@@ -234,9 +234,9 @@ namespace CETools.Civil3D
                 "Reuse the source feature line Site. If it is siteless and native infill is requested, CE-PLATFORM-SITE is created. Choose an existing Site or type a new Site name to move the source/toe grading there.",
                 siteChoices);
             settings.AddChoice(
-                "ExistingPresentation", "08 Presentation", "Existing slope / toe lines", "Replace existing generated lines",
-                "Replace linked CE slope/toe output on this run, or keep valid existing linked slope/toe lines and create only missing output.",
-                new[] { "Replace existing generated lines", "Keep existing generated lines" });
+                "ExistingPresentation", "08 Presentation", "Existing slope / toe lines", "Replace existing slope and toe lines",
+                "Replace the existing CE-generated cut/fill slope rays and toe/daylight line for every processed source, or keep the existing linked slope and toe geometry unchanged.",
+                new[] { "Replace existing slope and toe lines", "Keep existing slope and toe lines" });
             settings.AddChoice(
                 "ShowSlopeLines", "08 Presentation", "Show cut / fill slope lines", "Yes",
                 "Draw Civil 3D feature-line slope rays normal to the source. Long rays terminate exactly at toe/daylight vertices.",
@@ -270,9 +270,9 @@ namespace CETools.Civil3D
                 "SlopeLineInterval", "08 Presentation", "Slope-line interval / frequency (m)", 5.0,
                 "True chainage spacing along the bellmouth/platform geometry.");
             settings.AddChoice(
-                "ConnectedSurfaces", "09 Surfaces", "Connected feature-line surfaces", "Create separate surface per connected group",
-                "Create one separate Civil 3D TIN surface for every connected group among the selected grading source feature lines. Each surface also includes the linked toe/daylight feature lines created for that group.",
-                new[] { "Create separate surface per connected group", "Do not create connected surfaces" });
+                "ConnectedSurfaces", "09 Surfaces", "Connected feature-line surfaces", "Create separate surface for every connected feature-line group",
+                "Create one separate Civil 3D TIN surface for every connected feature-line group among the processed grading sources. Each group surface includes all connected source feature lines plus its linked toe/daylight feature lines; unrelated groups are never merged into one surface.",
+                new[] { "Create separate surface for every connected feature-line group", "Do not create connected surfaces" });
             settings.AddText(
                 "ConnectedSurfacePrefix", "09 Surfaces", "Connected surface name prefix", "CE-JUNCTION-GRADE",
                 "Each connected group is refreshed as <prefix>-<root source handle>.");
@@ -313,10 +313,11 @@ namespace CETools.Civil3D
                 NativeInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase),
                 SiteName = SafeName(settings.Text("Site"), "<Auto: source site / CE-PLATFORM-SITE>"),
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
-                KeepExistingPresentation = string.Equals(
-                    settings.Text("ExistingPresentation"),
-                    "Keep existing generated lines",
-                    StringComparison.OrdinalIgnoreCase),
+                KeepExistingPresentation =
+                    (settings.Text("ExistingPresentation") ?? string.Empty)
+                        .StartsWith(
+                            "Keep existing",
+                            StringComparison.OrdinalIgnoreCase),
                 SlopePatternMode = SafePatternMode(settings.Text("SlopePatternMode")),
                 CutSlopeLayer = SafeName(settings.Text("CutSlopeLayer"), "CE-JUNCTION-CUT-SLOPES"),
                 FillSlopeLayer = SafeName(settings.Text("FillSlopeLayer"), "CE-JUNCTION-FILL-SLOPES"),
@@ -354,10 +355,10 @@ namespace CETools.Civil3D
             }
 
             var connectedSurfaceResult = new ConnectedSurfaceBuildResult();
-            if (string.Equals(
-                    settings.Text("ConnectedSurfaces"),
-                    "Create separate surface per connected group",
-                    StringComparison.OrdinalIgnoreCase))
+            if ((settings.Text("ConnectedSurfaces") ?? string.Empty)
+                    .StartsWith(
+                        "Create separate surface",
+                        StringComparison.OrdinalIgnoreCase))
             {
                 connectedSurfaceResult = CreateConnectedGradeSurfaces(
                     document,
@@ -967,7 +968,7 @@ namespace CETools.Civil3D
                         string.Empty;
                     if (explicitCommand)
                         document.Editor.WriteMessage(
-                            "\nExisting toe/daylight was kept for source {0}; missing slope rays were not regenerated because toe and rays must come from the same resolved grading samples. Choose Replace existing generated lines to rebuild both.",
+                            "\nExisting toe/daylight was kept for source {0}; missing slope rays were not regenerated because toe and rays must come from the same resolved grading samples. Choose Replace existing slope and toe lines to rebuild both.",
                             source.Name);
                 }
                 else
