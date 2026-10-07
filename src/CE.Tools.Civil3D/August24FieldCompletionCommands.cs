@@ -60,6 +60,8 @@ namespace CETools.Civil3D
                     A("CE-Site Grid Presentation", "CE_SITEGRIDPRESENTATION", "Apply colour and annotative paper text to linked Site Grid children.", "02 Annotation"),
                     A("CE-Road Side Hatch", "CE_ROADHATCHSIDES", "Hatch left/right/both sides of multiple road polylines or alignments.", "03 Production"),
                     A("CE-Sewer Field Supplementary", "CE_SEWERFIELDSUPPLEMENTARY", "Open sewer field completion utilities.", "03 Production"),
+                    A("CE-Stormwater Field Supplementary", "CE_STORMWATERFIELDSUPPLEMENTARY", "Open Stormwater gravity-network field completion utilities.", "03 Production"),
+                    A("CE-Water Field Supplementary", "CE_WATERFIELDSUPPLEMENTARY", "Open Water pressure-network field completion utilities.", "03 Production"),
                     A("CE-Platform Field Supplementary", "CE_PLATFORMFIELDSUPPLEMENTARY", "Open platform field completion utilities.", "03 Production")
                 });
         }
@@ -102,6 +104,57 @@ namespace CETools.Civil3D
                     A("CE-Create Sewer Alignments", "CE_SEWALIGN", "Create branch alignments after sequencing; kept separate from the rename transaction.", "04 Alignments / profiles"),
                     A("CE-Sewer Branch Names - Centre Above Pipes", "CE_SEWBRANCHNAMES", "Add or refresh green Branch-x names centred on each straight branch section, rotated with the sewer run and offset above the pipes. All branches or multiple selected sewer parts are supported.", "04 Alignments / profiles"),
                     A("CE-Create Sewer Profiles", "CE_SEWPROFILE", "Create surface-linked sewer profiles after alignment review.", "04 Alignments / profiles")
+                });
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_STORMWATERFIELDSUPPLEMENTARY", CommandFlags.Modal)]
+        public void StormwaterSupplementary()
+        {
+            RunMenu(
+                "CE-STORMWATER FIELD SUPPLEMENTARY",
+                "Stormwater gravity-network preparation, sequencing, levels, alignments, profiles, pipe/structure labels, flood/culvert handoff and delivery tools.",
+                new List<DisciplineWorkflowAction>
+                {
+                    A("CE-Stormwater Production", "CE_SWTOOLS", "Open the Sewer-format Stormwater production centre.", "00 Production"),
+                    A("CE-Stormwater Parts / Styles / Rules", "CE_SWSTYLES", "Choose Stormwater gravity-network parts, pipe/structure styles and rules.", "01 Settings"),
+                    A("CE-Stormwater Settings", "CE_SWSETTINGS", "Choose Stormwater alignment/profile/profile-view/band styles and layers.", "01 Settings"),
+                    A("CE-Multiple Stormwater Networks from Polylines", "CE_NETWORKFROMPOLYLINESBATCH", "Create Stormwater gravity-network sources from multiple selected route objects.", "02 Network"),
+                    A("CE-Sequence Stormwater Network", "CE_SWSEQ", "Build main/branch order for the Stormwater network.", "02 Network"),
+                    A("CE-Network Data / Levels", "CE_NETWORKDATA", "Review Stormwater pipe/structure levels, lengths and slopes.", "03 Design"),
+                    A("CE-Create / Refresh Stormwater Alignments", "CE_SWALIGN", "Create linked Stormwater alignments.", "04 Complete"),
+                    A("CE-Safe Stormwater Alignment Fallback", "CE_SWALIGNSAFE", "Create direct alignments when duplicate/zero-length source geometry prevents the normal route.", "04 Complete"),
+                    A("CE-Stormwater Profiles", "CE_SWPROFILE", "Create linked Stormwater profiles and profile views.", "04 Complete"),
+                    A("CE-Stormwater Pipe / Structure Labels", "CE_SWLABELS", "Apply Stormwater-specific gravity pipe and structure labels.", "04 Complete"),
+                    A("CE-Flood Catchment & Culvert Design", "CE_FLOODCULVERTDESIGN", "Run the safeguarded TIN catchment, low-point and preliminary culvert design workflow.", "05 Flood / Culvert"),
+                    A("CE-Vertex Setting-Out", "CE_VERTEXSETTINGOUT", "Generate linked Stormwater setting-out.", "06 Deliver"),
+                    A("CE-Stormwater Bill of Quantities", "CE_BOQSTORMWATER", "Create Stormwater pipe/culvert/structure quantities.", "06 Deliver"),
+                    A("CE-Stormwater Report", "CE_REPORTSTORMWATER", "Generate the Stormwater design report/drawing handoff.", "06 Deliver")
+                });
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_WATERFIELDSUPPLEMENTARY", CommandFlags.Modal)]
+        public void WaterSupplementary()
+        {
+            RunMenu(
+                "CE-WATER FIELD SUPPLEMENTARY",
+                "Water pressure-network preparation, route sequence, profiles, pressure-pipe/fitting/appurtenance labels, asset review, setting-out and delivery tools.",
+                new List<DisciplineWorkflowAction>
+                {
+                    A("CE-Water Production", "CE_WATERTOOLS", "Open the Sewer-format Water production centre.", "00 Production"),
+                    A("CE-Water Pressure Parts / Styles / Rules", "CE_WATERSTYLES", "Choose Water pressure pipes, fittings, appurtenances, styles and rules.", "01 Settings"),
+                    A("CE-Water Settings", "CE_WATERSETTINGS", "Choose Water alignment/profile/profile-view/band styles and asset spacing.", "01 Settings"),
+                    A("CE-Multiple Water Network Sources", "CE_NETWORKFROMPOLYLINESBATCH", "Create selected Water network sources without duplicate runs.", "02 Network"),
+                    A("CE-Sequence Water Mains / Branches", "CE_WATERSEQ", "Create W-MAIN and branch route order.", "02 Network"),
+                    A("CE-Network Data / Levels", "CE_NETWORKDATA", "Review Water pressure-network objects and levels.", "03 Design"),
+                    A("CE-Water Alignments", "CE_WATERALIGN", "Create/refresh linked Water alignments.", "04 Complete"),
+                    A("CE-Water Profiles", "CE_WATERPROFILE", "Create linked Water profiles with pressure-part projection where supported.", "04 Complete"),
+                    A("CE-Safe Water Profile Fallback", "CE_WATERPROFILESAFE", "Create a direct surface profile/profile view when pressure projection is unavailable.", "04 Complete"),
+                    A("CE-Water Pressure-Part Labels", "CE_WATERLABELS", "Label Water pressure pipes, fittings and appurtenances using Water styles.", "04 Complete"),
+                    A("CE-Water Valve / Hydrant Review Markers", "CE_WATERPLACE", "Place linked valve and hydrant review markers.", "04 Complete"),
+                    A("CE-Refresh Water Asset Markers", "CE_WATERPLACEREFRESH", "Refresh linked valve/hydrant markers after source changes.", "04 Complete"),
+                    A("CE-Vertex Setting-Out", "CE_VERTEXSETTINGOUT", "Generate linked Water setting-out.", "05 Deliver"),
+                    A("CE-Water Bill of Quantities", "CE_BOQWATER", "Create Water pipe/valve/fitting/hydrant quantities.", "05 Deliver"),
+                    A("CE-Water Report", "CE_REPORTWATER", "Generate the Water design report/drawing handoff.", "05 Deliver")
                 });
         }
 
