@@ -3636,9 +3636,54 @@ namespace CETools.Civil3D
                         out groupError);
                 if (groupId.IsNull)
                 {
+                    // Civil 3D 2023 installations can omit the public
+                    // GradingGroup/CreateGradingInfill API even though TIN surfaces
+                    // are available. Do not abandon infill in that case: create the
+                    // bounded CE TIN infill directly from the closed feature line.
+                    ObjectId fallbackId;
+                    string fallbackError;
+                    if (!TryCreateFallbackInfillSurface(
+                            document.Database,
+                            sourceId,
+                            source,
+                            "CE-JUNCTION-INFILL",
+                            out fallbackId,
+                            out fallbackError))
+                    {
+                        result.Message =
+                            "Civil 3D could not create the grading group. " +
+                            groupError +
+                            " CE bounded TIN infill fallback also failed: " +
+                            fallbackError;
+                        return result;
+                    }
+
+                    nativeLink.GroupHandle = string.Empty;
+                    nativeLink.InfillHandle = fallbackId.IsNull
+                        ? string.Empty
+                        : fallbackId.Handle.ToString();
+                    nativeLink.SiteName = requestedSite;
+                    nativeLink.Created = true;
+                    WriteNativeInfillLink(
+                        document.Database,
+                        sourceId,
+                        nativeLink);
+
+                    if (gradeLink != null)
+                    {
+                        gradeLink.GroupHandle = string.Empty;
+                        gradeLink.InfillHandle = nativeLink.InfillHandle;
+                        gradeLink.NativeInfill = true;
+                        gradeLink.SiteName = requestedSite;
+                        WriteGradeLink(
+                            document.Database,
+                            sourceId,
+                            gradeLink);
+                    }
+
+                    result.Created = true;
                     result.Message =
-                        "Civil 3D could not create the grading group. " +
-                        groupError;
+                        "CE bounded TIN infill surface created directly because the Civil 3D GradingGroup API is unavailable.";
                     return result;
                 }
             }
