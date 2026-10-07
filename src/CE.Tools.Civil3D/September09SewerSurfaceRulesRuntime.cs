@@ -18,6 +18,7 @@ using CivilNetwork = Autodesk.Civil.DatabaseServices.Network;
 using CivilPart = Autodesk.Civil.DatabaseServices.Part;
 using CivilPipe = Autodesk.Civil.DatabaseServices.Pipe;
 using CivilStructure = Autodesk.Civil.DatabaseServices.Structure;
+using CivilProfileView = Autodesk.Civil.DatabaseServices.ProfileView;
 using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
 using CivilPolylineOptions = Autodesk.Civil.DatabaseServices.PolylineOptions;
 using ConnectorPositionType = Autodesk.Civil.DatabaseServices.ConnectorPositionType;
@@ -299,12 +300,13 @@ namespace CETools.Civil3D
             Database database = document.Database;
             List<ObjectId> partIds;
             var scope = new PromptKeywordOptions(
-                "\nSewer surface/rules scope [AllNetworkParts/Select] <AllNetworkParts>: ")
+                "\nSewer surface/rules scope [AllNetworkParts/Select/ProfileViews] <AllNetworkParts>: ")
             {
                 AllowNone = true
             };
             scope.Keywords.Add("AllNetworkParts");
             scope.Keywords.Add("Select");
+            scope.Keywords.Add("ProfileViews");
             PromptResult scopeResult = editor.GetKeywords(scope);
             bool selectManually =
                 scopeResult.Status == PromptStatus.OK &&
@@ -312,14 +314,20 @@ namespace CETools.Civil3D
                     scopeResult.StringResult,
                     "Select",
                     StringComparison.OrdinalIgnoreCase);
+            bool selectProfileViews =
+                scopeResult.Status == PromptStatus.OK &&
+                string.Equals(
+                    scopeResult.StringResult,
+                    "ProfileViews",
+                    StringComparison.OrdinalIgnoreCase);
 
             if (selectManually)
             {
                 PromptSelectionResult selection = editor.GetSelection(
                     new PromptSelectionOptions
                     {
-                        MessageForAdding = "\nSelect multiple sewer pipes and structures to link to one surface: ",
-                        MessageForRemoval = "\nRemove network parts: ",
+                        MessageForAdding = "\nSelect sewer pipes/structures directly, or select profile-view frames to include the gravity parts displayed in those views: ",
+                        MessageForRemoval = "\nRemove network parts / profile views: ",
                         AllowDuplicates = false,
                         RejectObjectsFromNonCurrentSpace = true
                     });
@@ -327,9 +335,38 @@ namespace CETools.Civil3D
                     selection.Value == null ||
                     selection.Value.Count == 0)
                     return;
-                partIds = FilterGravityParts(
+                partIds = ExpandGravitySelection(
                     database,
                     selection.Value.GetObjectIds());
+            }
+            else if (selectProfileViews)
+            {
+                PromptSelectionResult viewSelection =
+                    editor.GetSelection(
+                        new PromptSelectionOptions
+                        {
+                            MessageForAdding = "\nSelect one or more Civil 3D profile views. All gravity pipes and structures displayed in the selected views will be linked: ",
+                            MessageForRemoval = "\nRemove profile views: ",
+                            AllowDuplicates = false,
+                            RejectObjectsFromNonCurrentSpace = true
+                        });
+                if (viewSelection.Status != PromptStatus.OK ||
+                    viewSelection.Value == null ||
+                    viewSelection.Value.Count == 0)
+                    return;
+
+                List<ObjectId> profileViewIds =
+                    FilterProfileViewIds(
+                        database,
+                        viewSelection.Value.GetObjectIds());
+                partIds =
+                    ReadGravityPartsDisplayedInProfileViews(
+                        database,
+                        profileViewIds);
+                editor.WriteMessage(
+                    "\nCE_SEWLINKSURFACE: selected profile views={0}; displayed gravity-network parts resolved={1}.",
+                    profileViewIds.Count,
+                    partIds.Count);
             }
             else
             {
@@ -340,7 +377,7 @@ namespace CETools.Civil3D
             }
             if (partIds.Count == 0)
             {
-                editor.WriteMessage("\nCE_SEWLINKSURFACE: select one or more Civil 3D gravity-network pipes/structures.");
+                editor.WriteMessage("\nCE_SEWLINKSURFACE: select one or more Civil 3D gravity-network pipes/structures, or choose ProfileViews and select profile views containing displayed sewer parts.");
                 return;
             }
 
@@ -2438,6 +2475,276 @@ namespace CETools.Civil3D
                 }
             }
             return result;
+        }
+
+        private static List<ObjectId> ExpandGravitySelection(
+            Database database,
+            IEnumerable<ObjectId> ids)
+        {
+            var directParts =
+                new List<ObjectId>();
+            var profileViews =
+                new List<ObjectId>();
+            if (database == null)
+                return directParts;
+
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in
+                    (ids ?? Enumerable.Empty<ObjectId>())
+                        .Where(value =>
+                            !value.IsNull &&
+                            !value.IsErased)
+                        .Distinct())
+                {
+                    DBObject value = null;
+                    try
+                    {
+                        value = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false);
+                    }
+                    catch { }
+                    if (value is CivilPipe ||
+                        value is CivilStructure)
+                        directParts.Add(id);
+                    else if (value is CivilProfileView)
+                        profileViews.Add(id);
+                }
+            }
+
+            if (profileViews.Count > 0)
+                directParts.AddRange(
+                    ReadGravityPartsDisplayedInProfileViews(
+                        database,
+                        profileViews));
+
+            return directParts
+                .Distinct()
+                .ToList();
+        }
+
+        private static List<ObjectId> FilterProfileViewIds(
+            Database database,
+            IEnumerable<ObjectId> ids)
+        {
+            var result =
+                new List<ObjectId>();
+            if (database == null)
+                return result;
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in
+                    (ids ?? Enumerable.Empty<ObjectId>())
+                        .Where(value =>
+                            !value.IsNull &&
+                            !value.IsErased)
+                        .Distinct())
+                {
+                    CivilProfileView view = null;
+                    try
+                    {
+                        view = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false) as CivilProfileView;
+                    }
+                    catch { }
+                    if (view != null)
+                        result.Add(id);
+                }
+            }
+            return result;
+        }
+
+        private static List<ObjectId> ReadGravityPartsDisplayedInProfileViews(
+            Database database,
+            IEnumerable<ObjectId> profileViewIds)
+        {
+            var result =
+                new List<ObjectId>();
+            if (database == null)
+                return result;
+
+            var viewIds =
+                new HashSet<ObjectId>(
+                    (profileViewIds ??
+                     Enumerable.Empty<ObjectId>())
+                        .Where(id =>
+                            !id.IsNull &&
+                            !id.IsErased));
+            if (viewIds.Count == 0)
+                return result;
+
+            var alignmentIds =
+                new HashSet<ObjectId>();
+            using (Transaction readViews =
+                database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId viewId in
+                    viewIds)
+                {
+                    CivilProfileView view = null;
+                    try
+                    {
+                        view = readViews.GetObject(
+                            viewId,
+                            OpenMode.ForRead,
+                            false) as CivilProfileView;
+                    }
+                    catch { }
+                    if (view != null &&
+                        !view.AlignmentId.IsNull)
+                        alignmentIds.Add(
+                            view.AlignmentId);
+                }
+            }
+
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord model =
+                    transaction.GetObject(
+                        SymbolUtilityServices.GetBlockModelSpaceId(
+                            database),
+                        OpenMode.ForRead,
+                        false) as BlockTableRecord;
+                if (model == null)
+                    return result;
+
+                foreach (ObjectId id in model)
+                {
+                    CivilPart part = null;
+                    try
+                    {
+                        part = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false) as CivilPart;
+                    }
+                    catch { }
+                    if (!(part is CivilPipe) &&
+                        !(part is CivilStructure))
+                        continue;
+
+                    if (DisplayedInAnyProfileView(
+                            part,
+                            viewIds))
+                    {
+                        result.Add(id);
+                        continue;
+                    }
+
+                    // Civil 3D 2023 can fail to return
+                    // GetProfileViewsDisplayingMe for a valid displayed part.
+                    // Reference alignment is a safe secondary route for pipes.
+                    CivilPipe pipe =
+                        part as CivilPipe;
+                    if (pipe != null)
+                    {
+                        ObjectId alignmentId =
+                            ObjectId.Null;
+                        try
+                        {
+                            alignmentId =
+                                pipe.RefAlignmentId;
+                        }
+                        catch { }
+                        if (!alignmentId.IsNull &&
+                            alignmentIds.Contains(
+                                alignmentId))
+                        {
+                            result.Add(id);
+                            continue;
+                        }
+                    }
+
+                    // A structure shared by branches can have one ambiguous
+                    // RefAlignmentId. Include it when any connected pipe is
+                    // displayed on one of the selected profile-view alignments.
+                    CivilStructure structure =
+                        part as CivilStructure;
+                    if (structure != null)
+                    {
+                        bool include = false;
+                        foreach (ObjectId pipeId in
+                            SewerPipeConnections.PipeIds(
+                                structure))
+                        {
+                            CivilPipe connected = null;
+                            try
+                            {
+                                connected = transaction.GetObject(
+                                    pipeId,
+                                    OpenMode.ForRead,
+                                    false) as CivilPipe;
+                            }
+                            catch { }
+                            if (connected == null)
+                                continue;
+                            ObjectId alignmentId =
+                                ObjectId.Null;
+                            try
+                            {
+                                alignmentId =
+                                    connected.RefAlignmentId;
+                            }
+                            catch { }
+                            if (!alignmentId.IsNull &&
+                                alignmentIds.Contains(
+                                    alignmentId))
+                            {
+                                include = true;
+                                break;
+                            }
+                        }
+                        if (include)
+                            result.Add(id);
+                    }
+                }
+            }
+            return result
+                .Distinct()
+                .ToList();
+        }
+
+        private static bool DisplayedInAnyProfileView(
+            CivilPart part,
+            ISet<ObjectId> profileViewIds)
+        {
+            if (part == null ||
+                profileViewIds == null ||
+                profileViewIds.Count == 0)
+                return false;
+            try
+            {
+                MethodInfo method =
+                    part.GetType().GetMethod(
+                        "GetProfileViewsDisplayingMe",
+                        Type.EmptyTypes);
+                object value =
+                    method == null
+                        ? null
+                        : method.Invoke(
+                            part,
+                            null);
+                var enumerable =
+                    value as System.Collections.IEnumerable;
+                if (enumerable == null)
+                    return false;
+                foreach (object item in enumerable)
+                {
+                    if (item is ObjectId &&
+                        profileViewIds.Contains(
+                            (ObjectId)item))
+                        return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         private static List<ObjectId> FilterGravityParts(Database database, IEnumerable<ObjectId> ids)
