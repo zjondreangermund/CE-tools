@@ -61,6 +61,14 @@ namespace CETools.Civil3D
                     "CE_SEWERFIELDSUPPLEMENTARY");
                 AddCommandItem(
                     extension,
+                    "Stormwater Supplementary",
+                    "CE_STORMWATERFIELDSUPPLEMENTARY");
+                AddCommandItem(
+                    extension,
+                    "Water Supplementary",
+                    "CE_WATERFIELDSUPPLEMENTARY");
+                AddCommandItem(
+                    extension,
                     "Road Supplementary",
                     "CE_ROADFIELDSUPPLEMENTARY");
                 AddCommandItem(
