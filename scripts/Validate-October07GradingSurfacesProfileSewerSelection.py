@@ -1,4 +1,4 @@
-"""Regression guard for Oct 7 grading presentation/surface groups and sewer profile-view selection."""
+"""Regression guard for Oct 7 grading presentation/surface groups and sewer profile-view selection.\n\nRetest trigger: verifies the PR after the shared toe/slope sample fix.\n"""
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
