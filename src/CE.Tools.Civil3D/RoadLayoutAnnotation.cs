@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Linq;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.Civil;
 using Autodesk.Civil.ApplicationServices;
@@ -516,10 +517,14 @@ namespace CETools.Civil3D
         private static bool IsRoadAnnotationAlignment(
             CivilAlignment alignment)
         {
-            if (alignment == null ||
-                alignment.AlignmentType != AlignmentType.Centerline)
+            if (alignment == null)
                 return false;
 
+            // Do not bind this production filter to the AlignmentType enum.
+            // Civil 3D 2023 exposes alignment.AlignmentType, but the enum type
+            // itself is not consistently available from the referenced API
+            // assemblies used by the field build. CE road identity is already
+            // explicit through the numbered road name / CE road description.
             if (CETools.Core.RoadAnnotationPlan.RoadNumber(
                     alignment.Name) > 0)
                 return true;

@@ -241,6 +241,9 @@ jobs:
       - name: Validate October 7 viewport and stepped junction linkage
         run: python3 scripts/Validate-October07ViewportSteppedLinkage.py
 
+      - name: Validate October 7 RoadLayoutAnnotation build fix
+        run: python3 scripts/Validate-October07RoadLayoutBuildFix.py
+
       - name: Set up .NET
         uses: actions/setup-dotnet@v4
         with:
