@@ -349,6 +349,16 @@ namespace CETools.Civil3D
                         "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
                         "06 Latest Field Completion"),
                     new DisciplineWorkflowAction(
+                        "Recent - CE_STORMWATERFIELDSUPPLEMENTARY",
+                        "CE_STORMWATERFIELDSUPPLEMENTARY",
+                        "Stormwater gravity-network parts/styles, sequence, profiles, labels, flood/culvert handoff and delivery tools.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
+                        "Recent - CE_WATERFIELDSUPPLEMENTARY",
+                        "CE_WATERFIELDSUPPLEMENTARY",
+                        "Water pressure-pipe/fitting/appurtenance parts/styles, profiles, labels, assets and delivery tools.",
+                        "06 Latest Field Completion"),
+                    new DisciplineWorkflowAction(
                         "Recent - CE_PLATFORMFIELDSUPPLEMENTARY",
                         "CE_PLATFORMFIELDSUPPLEMENTARY",
                         "Latest field-completion update from the recent Civil 3D 2023 field-recovery passes.",
