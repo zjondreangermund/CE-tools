@@ -300,13 +300,14 @@ namespace CETools.Civil3D
             Database database = document.Database;
             List<ObjectId> partIds;
             var scope = new PromptKeywordOptions(
-                "\nSewer surface/rules scope [AllNetworkParts/Select/ProfileViews] <AllNetworkParts>: ")
+                "\nSewer surface/rules scope [AllNetworkParts/Select/ProfileViews/ProfileViewParts] <AllNetworkParts>: ")
             {
                 AllowNone = true
             };
             scope.Keywords.Add("AllNetworkParts");
             scope.Keywords.Add("Select");
             scope.Keywords.Add("ProfileViews");
+            scope.Keywords.Add("ProfileViewParts");
             PromptResult scopeResult = editor.GetKeywords(scope);
             bool selectManually =
                 scopeResult.Status == PromptStatus.OK &&
@@ -319,6 +320,12 @@ namespace CETools.Civil3D
                 string.Equals(
                     scopeResult.StringResult,
                     "ProfileViews",
+                    StringComparison.OrdinalIgnoreCase);
+            bool selectProfileViewParts =
+                scopeResult.Status == PromptStatus.OK &&
+                string.Equals(
+                    scopeResult.StringResult,
+                    "ProfileViewParts",
                     StringComparison.OrdinalIgnoreCase);
 
             if (selectManually)
@@ -368,6 +375,15 @@ namespace CETools.Civil3D
                     profileViewIds.Count,
                     partIds.Count);
             }
+            else if (selectProfileViewParts)
+            {
+                partIds =
+                    PickGravityPartsFromProfileViews(
+                        document);
+                editor.WriteMessage(
+                    "\nCE_SEWLINKSURFACE: individually picked gravity-network parts from profile views={0}.",
+                    partIds.Count);
+            }
             else
             {
                 partIds = ReadAllGravityParts(database);
@@ -377,7 +393,7 @@ namespace CETools.Civil3D
             }
             if (partIds.Count == 0)
             {
-                editor.WriteMessage("\nCE_SEWLINKSURFACE: select one or more Civil 3D gravity-network pipes/structures, or choose ProfileViews and select profile views containing displayed sewer parts.");
+                editor.WriteMessage("\nCE_SEWLINKSURFACE: select one or more Civil 3D gravity-network pipes/structures. Use ProfileViews for every displayed part in selected views, or ProfileViewParts to pick individual displayed pipes/structures from any profile view.");
                 return;
             }
 
@@ -2475,6 +2491,102 @@ namespace CETools.Civil3D
                 }
             }
             return result;
+        }
+
+        private static List<ObjectId> PickGravityPartsFromProfileViews(
+            Document document)
+        {
+            var result = new List<ObjectId>();
+            if (document == null ||
+                document.Database == null)
+                return result;
+
+            Editor editor = document.Editor;
+            editor.WriteMessage(
+                "\nPick individual sewer pipes/structures as displayed in any Civil 3D profile view. Press Esc/Enter when finished.");
+
+            while (true)
+            {
+                var options =
+                    new PromptNestedEntityOptions(
+                        "\nPick displayed sewer pipe/structure <finish>: ");
+                PromptNestedEntityResult picked =
+                    editor.GetNestedEntity(
+                        options);
+                if (picked.Status != PromptStatus.OK)
+                    break;
+
+                ObjectId partId =
+                    ResolveGravityPartFromNestedPick(
+                        document.Database,
+                        picked);
+                if (partId.IsNull ||
+                    partId.IsErased)
+                {
+                    editor.WriteMessage(
+                        "\nThat pick did not resolve to a Civil 3D gravity pipe/structure. Pick the pipe or structure graphic inside the profile view.");
+                    continue;
+                }
+
+                if (!result.Contains(partId))
+                {
+                    result.Add(partId);
+                    editor.WriteMessage(
+                        "\nAdded sewer part {0}. Selected total={1}.",
+                        partId.Handle,
+                        result.Count);
+                }
+            }
+
+            return result;
+        }
+
+        private static ObjectId ResolveGravityPartFromNestedPick(
+            Database database,
+            PromptNestedEntityResult picked)
+        {
+            if (database == null ||
+                picked == null)
+                return ObjectId.Null;
+
+            var candidates =
+                new List<ObjectId>();
+            if (!picked.ObjectId.IsNull)
+                candidates.Add(
+                    picked.ObjectId);
+
+            try
+            {
+                ObjectId[] containers =
+                    picked.GetContainers();
+                if (containers != null)
+                    candidates.AddRange(
+                        containers.Where(id =>
+                            !id.IsNull));
+            }
+            catch { }
+
+            using (Transaction transaction =
+                database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in
+                    candidates.Distinct())
+                {
+                    DBObject value = null;
+                    try
+                    {
+                        value = transaction.GetObject(
+                            id,
+                            OpenMode.ForRead,
+                            false);
+                    }
+                    catch { }
+                    if (value is CivilPipe ||
+                        value is CivilStructure)
+                        return id;
+                }
+            }
+            return ObjectId.Null;
         }
 
         private static List<ObjectId> ExpandGravitySelection(
