@@ -150,7 +150,24 @@ namespace CETools.Civil3D
         public void StormwaterProduction()
         {
             August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Stormwater");
-            RunCentre("STORMWATER PRODUCTION", "Route → network → branches → hydraulic/design checks → profiles → setting-out/BOQ → drawings.", UtilityActions("Stormwater", "CE_SWSETTINGS", "CE_SWSEQ", "CE_SWALIGN", "CE_SWPROFILE", "CE_BOQSTORM", "CE_REPORTSTORM", "CE_STORMWATERWORKFLOW"));
+            RunCentre("STORMWATER PRODUCTION", "Roads/Existing Ground → route/network/branches → hydraulic/design checks → profiles/labels/setting-out/BOQ → drawings/report.", new[]
+            {
+                Action("SETTINGS - Stormwater Settings", "CE_SWSETTINGS", "Choose stormwater gravity-network parts, pipe/structure styles, rule sets, alignment/profile/profile-view/band styles and labels.", "01 SETTINGS"),
+                Action("Project Styles - Stormwater", "CE_SWSTYLES", "Civil 3D styles and parts used only by Stormwater production.", "01 SETTINGS"),
+                Action("PREPARE - Utility Route from Road Reserve", "CE_UTILITYFROMROADRESERVE", "Create preliminary stormwater route geometry from road-reserve/source geometry.", "02 PREPARE"),
+                Action("CREATE - Multiple Networks from Polylines", "CE_NETWORKFROMPOLYLINESBATCH", "Create multiple gravity networks from selected source polylines without duplicate source runs.", "03 CREATE"),
+                Action("Sequence Branches / Structures / Pipes", "CE_SWSEQ", "Build the stormwater main/branch sequence and network naming.", "03 CREATE"),
+                Action("DESIGN - Network Data / Levels", "CE_NETWORKDATA", "Review stormwater pipe/structure levels, lengths, slopes and connected flow.", "04 DESIGN"),
+                Action("COMPLETE - Alignments", "CE_SWALIGN", "Create or refresh linked stormwater branch alignments.", "05 COMPLETE"),
+                Action("Safe Alignment Fallback", "CE_SWALIGNSAFE", "Create direct Civil alignments when duplicate or zero-length source geometry prevents the normal route.", "05 COMPLETE"),
+                Action("Profiles", "CE_SWPROFILE", "Create stormwater profiles/profile views with stormwater-specific styles and gravity-network data.", "05 COMPLETE"),
+                Action("Pipe / Structure Labels", "CE_SWLABELS", "Apply stormwater pipe and structure labels without duplicating existing labels.", "05 COMPLETE"),
+                Action("Setting-Out", "CE_VERTEXSETTINGOUT", "Create linked stormwater setting-out and leaders.", "05 COMPLETE"),
+                Action("BOQ", "CE_BOQSTORMWATER", "Create linked stormwater quantities.", "05 COMPLETE"),
+                Action("Stormwater Supplementary", "CE_STORMWATERFIELDSUPPLEMENTARY", "Open stormwater-specific field and supplementary utilities.", "05 COMPLETE"),
+                Action("DELIVER - Stormwater Report", "CE_REPORTSTORMWATER", "Generate the stormwater report/drawing handoff.", "06 DELIVER"),
+                Action("▶ RUN COMPLETE STORMWATER PRODUCTION", "CE_STORMWATERWORKFLOW", "Open one ordered, non-duplicated stormwater workflow from parts/network through delivery.", "00 COMPLETE WORKFLOW")
+            });
         }
 
         [CommandMethod("CE_TOOLS", "CE_SEWERPRODUCTIONCENTRE", CommandFlags.Modal)]
@@ -184,7 +201,25 @@ namespace CETools.Civil3D
         public void WaterProduction()
         {
             August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Water");
-            RunCentre("WATER PRODUCTION", "Route → pressure network → sequence/design → profiles/assets → quantities → delivery.", UtilityActions("Water", "CE_WATERSETTINGS", "CE_WATERSEQ", "CE_WATERALIGN", "CE_WATERPROFILE", "CE_BOQWATER", "CE_REPORTWATER", "CE_WATERWORKFLOW"));
+            RunCentre("WATER PRODUCTION", "Roads/Existing Ground → pressure route/network → mains/branches → profiles/pressure-part labels/assets → setting-out/BOQ → drawings/report.", new[]
+            {
+                Action("SETTINGS - Water Settings", "CE_WATERSETTINGS", "Choose pressure-network parts, pressure-pipe/fitting/appurtenance styles, alignment/profile/profile-view/band styles and labels.", "01 SETTINGS"),
+                Action("Project Styles - Water", "CE_WATERSTYLES", "Civil 3D pressure-network and annotation styles used only by Water production.", "01 SETTINGS"),
+                Action("PREPARE - Utility Route from Road Reserve", "CE_UTILITYFROMROADRESERVE", "Create preliminary water-main route geometry from road-reserve/source geometry.", "02 PREPARE"),
+                Action("CREATE - Multiple Pressure Networks", "CE_NETWORKFROMPOLYLINESBATCH", "Create selected water pressure-network sources without duplicate source runs.", "03 CREATE"),
+                Action("Sequence Mains / Branches", "CE_WATERSEQ", "Build W-MAIN and water branch route order.", "03 CREATE"),
+                Action("DESIGN - Network Data / Levels", "CE_NETWORKDATA", "Review water pressure pipes, fittings, appurtenances and design levels.", "04 DESIGN"),
+                Action("COMPLETE - Alignments", "CE_WATERALIGN", "Create or refresh linked water alignments.", "05 COMPLETE"),
+                Action("Profiles", "CE_WATERPROFILE", "Create water profiles/profile views and pressure-part projection where supported.", "05 COMPLETE"),
+                Action("Safe Profile Fallback", "CE_WATERPROFILESAFE", "Create direct surface profiles/profile views when pressure-part projection is unavailable.", "05 COMPLETE"),
+                Action("Pressure-Part Labels", "CE_WATERLABELS", "Apply water pressure-pipe, fitting and appurtenance labels.", "05 COMPLETE"),
+                Action("Valve / Hydrant Review", "CE_WATERPLACE", "Place linked valve and hydrant review markers/assets.", "05 COMPLETE"),
+                Action("Setting-Out", "CE_VERTEXSETTINGOUT", "Create linked water setting-out and leaders.", "05 COMPLETE"),
+                Action("BOQ", "CE_BOQWATER", "Create linked water quantities.", "05 COMPLETE"),
+                Action("Water Supplementary", "CE_WATERFIELDSUPPLEMENTARY", "Open water-specific field and supplementary utilities.", "05 COMPLETE"),
+                Action("DELIVER - Water Report", "CE_REPORTWATER", "Generate the water report/drawing handoff.", "06 DELIVER"),
+                Action("▶ RUN COMPLETE WATER PRODUCTION", "CE_WATERWORKFLOW", "Open one ordered, non-duplicated water workflow from pressure parts/network through delivery.", "00 COMPLETE WORKFLOW")
+            });
         }
 
         [CommandMethod("CE_TOOLS", "CE_BULKWATERPRODUCTIONCENTRE", CommandFlags.Modal)]
