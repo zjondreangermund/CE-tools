@@ -3814,6 +3814,518 @@ namespace CETools.Civil3D
             return !string.IsNullOrWhiteSpace(link.SurfaceHandle);
         }
 
+        private static ConnectedSurfaceBuildResult CreateConnectedGradeSurfaces(
+            Document document,
+            IEnumerable<ObjectId> sourceIds,
+            string prefix,
+            double tolerance)
+        {
+            var result =
+                new ConnectedSurfaceBuildResult();
+            if (document == null ||
+                document.Database == null)
+                return result;
+
+            var members =
+                new List<ConnectedGradeMember>();
+            foreach (ObjectId sourceId in
+                (sourceIds ?? Enumerable.Empty<ObjectId>())
+                    .Where(id =>
+                        !id.IsNull &&
+                        !id.IsErased)
+                    .Distinct())
+            {
+                SourceSnapshot source;
+                string readError;
+                if (!TryReadSource(
+                        document.Database,
+                        sourceId,
+                        out source,
+                        out readError))
+                {
+                    result.Messages.Add(
+                        "Connected surface skipped source " +
+                        sourceId.Handle.ToString() +
+                        ": " + readError);
+                    continue;
+                }
+
+                var member =
+                    new ConnectedGradeMember
+                    {
+                        SourceId = sourceId,
+                        Points = source.Points
+                    };
+                GradeLink link =
+                    ReadGradeLink(
+                        document.Database,
+                        sourceId);
+                if (link != null)
+                {
+                    ObjectId toeId =
+                        ResolveHandle(
+                            document.Database,
+                            link.ChildHandle);
+                    if (!toeId.IsNull &&
+                        !toeId.IsErased)
+                        member.ToeId =
+                            toeId;
+                }
+                members.Add(member);
+            }
+
+            if (members.Count == 0)
+                return result;
+
+            bool[] visited =
+                new bool[members.Count];
+            for (int start = 0;
+                 start < members.Count;
+                 start++)
+            {
+                if (visited[start])
+                    continue;
+
+                var indices =
+                    new List<int>();
+                var queue =
+                    new Queue<int>();
+                queue.Enqueue(start);
+                visited[start] = true;
+
+                while (queue.Count > 0)
+                {
+                    int current =
+                        queue.Dequeue();
+                    indices.Add(current);
+                    for (int candidate = 0;
+                         candidate < members.Count;
+                         candidate++)
+                    {
+                        if (visited[candidate] ||
+                            candidate == current)
+                            continue;
+                        if (!ConnectedInPlan(
+                                members[current].Points,
+                                members[candidate].Points,
+                                tolerance))
+                            continue;
+                        visited[candidate] = true;
+                        queue.Enqueue(candidate);
+                    }
+                }
+
+                var featureLineIds =
+                    new List<ObjectId>();
+                foreach (int index in indices)
+                {
+                    ConnectedGradeMember member =
+                        members[index];
+                    featureLineIds.Add(
+                        member.SourceId);
+                    if (!member.ToeId.IsNull &&
+                        !member.ToeId.IsErased)
+                        featureLineIds.Add(
+                            member.ToeId);
+                }
+                featureLineIds =
+                    featureLineIds
+                        .Distinct()
+                        .ToList();
+
+                string rootHandle =
+                    indices
+                        .Select(index =>
+                            members[index]
+                                .SourceId
+                                .Handle
+                                .ToString())
+                        .OrderBy(
+                            value => value,
+                            StringComparer.OrdinalIgnoreCase)
+                        .First();
+                string surfaceName =
+                    SafeName(
+                        prefix,
+                        "CE-JUNCTION-GRADE") +
+                    "-" +
+                    rootHandle;
+
+                string error;
+                if (TryCreateOrRefreshConnectedSurface(
+                        document.Database,
+                        featureLineIds,
+                        surfaceName,
+                        out error))
+                {
+                    result.Created++;
+                }
+                else
+                {
+                    result.Skipped++;
+                    result.Messages.Add(
+                        "Connected surface '" +
+                        surfaceName +
+                        "' skipped safely: " +
+                        error);
+                }
+            }
+
+            return result;
+        }
+
+        private static bool ConnectedInPlan(
+            IList<Point3d> first,
+            IList<Point3d> second,
+            double tolerance)
+        {
+            if (first == null ||
+                second == null ||
+                first.Count == 0 ||
+                second.Count == 0)
+                return false;
+
+            var firstEnds =
+                new[]
+                {
+                    first[0],
+                    first[first.Count - 1]
+                };
+            var secondEnds =
+                new[]
+                {
+                    second[0],
+                    second[second.Count - 1]
+                };
+
+            foreach (Point3d endpoint in
+                firstEnds)
+                foreach (Point3d point in
+                    second)
+                    if (PlanDistance(
+                            endpoint,
+                            point) <=
+                        tolerance)
+                        return true;
+
+            foreach (Point3d endpoint in
+                secondEnds)
+                foreach (Point3d point in
+                    first)
+                    if (PlanDistance(
+                            endpoint,
+                            point) <=
+                        tolerance)
+                        return true;
+
+            return false;
+        }
+
+        private static double PlanDistance(
+            Point3d first,
+            Point3d second)
+        {
+            double dx =
+                first.X - second.X;
+            double dy =
+                first.Y - second.Y;
+            return Math.Sqrt(
+                dx * dx +
+                dy * dy);
+        }
+
+        private static bool TryCreateOrRefreshConnectedSurface(
+            Database database,
+            IList<ObjectId> featureLineIds,
+            string surfaceName,
+            out string error)
+        {
+            error = string.Empty;
+            if (database == null ||
+                featureLineIds == null ||
+                featureLineIds.Count == 0)
+            {
+                error =
+                    "No connected feature lines were supplied.";
+                return false;
+            }
+
+            ObjectId newSurfaceId =
+                ObjectId.Null;
+            ObjectId oldSurfaceId =
+                FindSurfaceByName(
+                    database,
+                    surfaceName);
+            try
+            {
+                var allPoints =
+                    new List<Point3d>();
+                using (Transaction read =
+                    database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in
+                        featureLineIds.Distinct())
+                    {
+                        CivilFeatureLine line =
+                            OpenFeatureLine(
+                                read,
+                                id,
+                                OpenMode.ForRead);
+                        if (line == null)
+                            continue;
+                        Point3dCollection points =
+                            line.GetPoints(
+                                FeatureLinePointType.AllPoints);
+                        if (points == null)
+                            continue;
+                        foreach (Point3d point in
+                            points)
+                        {
+                            if (!Finite(point))
+                                continue;
+                            bool duplicate =
+                                allPoints.Any(existing =>
+                                    existing.DistanceTo(
+                                        point) <=
+                                    1e-6);
+                            if (!duplicate)
+                                allPoints.Add(point);
+                        }
+                    }
+                }
+
+                if (allPoints.Count < 3)
+                {
+                    error =
+                        "Fewer than three distinct 3D vertices were available.";
+                    return false;
+                }
+
+                string temporaryName =
+                    UniqueSurfaceName(
+                        database,
+                        surfaceName +
+                        "-BUILD");
+                newSurfaceId =
+                    TinSurface.Create(
+                        database,
+                        temporaryName);
+
+                using (Transaction write =
+                    database.TransactionManager.StartTransaction())
+                {
+                    TinSurface surface =
+                        write.GetObject(
+                            newSurfaceId,
+                            OpenMode.ForWrite,
+                            false) as TinSurface;
+                    if (surface == null)
+                        throw new InvalidOperationException(
+                            "Civil 3D did not return the connected-group TIN surface.");
+
+                    surface.AddVertices(
+                        new Point3dCollection(
+                            allPoints.ToArray()));
+
+                    // Preserve the selected source/toe strings as breaklines when
+                    // the host exposes a compatible AddStandardBreaklines overload.
+                    // Vertices remain a safe fallback on Civil 3D 2023 variants.
+                    TryAddStandardBreaklines(
+                        surface,
+                        featureLineIds);
+
+                    surface.Rebuild();
+                    write.Commit();
+                }
+
+                // Only remove the old named CE surface after the replacement is
+                // fully built. A failed rebuild therefore leaves the previous
+                // production surface intact.
+                if (!oldSurfaceId.IsNull &&
+                    !oldSurfaceId.IsErased)
+                    Cleanup(
+                        database,
+                        oldSurfaceId);
+
+                using (Transaction rename =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilSurface surface =
+                        rename.GetObject(
+                            newSurfaceId,
+                            OpenMode.ForWrite,
+                            false) as CivilSurface;
+                    if (surface == null)
+                        throw new InvalidOperationException(
+                            "The replacement connected-group surface is unavailable.");
+                    surface.Name =
+                        surfaceName;
+                    rename.Commit();
+                }
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                error =
+                    exception.Message;
+                if (!newSurfaceId.IsNull)
+                {
+                    try
+                    {
+                        Cleanup(
+                            database,
+                            newSurfaceId);
+                    }
+                    catch { }
+                }
+                return false;
+            }
+        }
+
+        private static ObjectId FindSurfaceByName(
+            Database database,
+            string name)
+        {
+            CivilDocument civil =
+                CivilApplication.ActiveDocument;
+            if (database == null ||
+                civil == null ||
+                string.IsNullOrWhiteSpace(name))
+                return ObjectId.Null;
+
+            try
+            {
+                using (Transaction transaction =
+                    database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in
+                        civil.GetSurfaceIds())
+                    {
+                        CivilSurface surface = null;
+                        try
+                        {
+                            surface =
+                                transaction.GetObject(
+                                    id,
+                                    OpenMode.ForRead,
+                                    false) as CivilSurface;
+                        }
+                        catch { }
+                        if (surface != null &&
+                            string.Equals(
+                                surface.Name,
+                                name,
+                                StringComparison.OrdinalIgnoreCase))
+                            return id;
+                    }
+                }
+            }
+            catch { }
+            return ObjectId.Null;
+        }
+
+        private static bool TryAddStandardBreaklines(
+            TinSurface surface,
+            IEnumerable<ObjectId> featureLineIds)
+        {
+            if (surface == null)
+                return false;
+            var ids =
+                new ObjectIdCollection();
+            foreach (ObjectId id in
+                (featureLineIds ??
+                 Enumerable.Empty<ObjectId>())
+                    .Where(value =>
+                        !value.IsNull &&
+                        !value.IsErased)
+                    .Distinct())
+                ids.Add(id);
+            if (ids.Count == 0)
+                return false;
+
+            try
+            {
+                PropertyInfo property =
+                    surface.GetType().GetProperty(
+                        "BreaklinesDefinition",
+                        BindingFlags.Public |
+                        BindingFlags.Instance);
+                object definition =
+                    property == null
+                        ? null
+                        : property.GetValue(
+                            surface,
+                            null);
+                if (definition == null)
+                    return false;
+
+                foreach (MethodInfo method in
+                    definition.GetType()
+                        .GetMethods(
+                            BindingFlags.Public |
+                            BindingFlags.Instance)
+                        .Where(item =>
+                            string.Equals(
+                                item.Name,
+                                "AddStandardBreaklines",
+                                StringComparison.OrdinalIgnoreCase)))
+                {
+                    ParameterInfo[] parameters =
+                        method.GetParameters();
+                    var arguments =
+                        new object[parameters.Length];
+                    int doubleIndex = 0;
+                    bool compatible = true;
+                    for (int index = 0;
+                         index < parameters.Length;
+                         index++)
+                    {
+                        Type type =
+                            parameters[index]
+                                .ParameterType;
+                        if (type ==
+                            typeof(ObjectIdCollection))
+                            arguments[index] = ids;
+                        else if (type ==
+                                 typeof(double))
+                        {
+                            // mid-ordinate, maximum distance, weed distance and
+                            // weed angle. Zero keeps original feature-line vertices.
+                            arguments[index] =
+                                doubleIndex++ == 0
+                                    ? 0.05
+                                    : 0.0;
+                        }
+                        else if (type ==
+                                 typeof(bool))
+                            arguments[index] = false;
+                        else if (parameters[index]
+                                     .HasDefaultValue)
+                            arguments[index] =
+                                parameters[index]
+                                    .DefaultValue;
+                        else
+                        {
+                            compatible = false;
+                            break;
+                        }
+                    }
+                    if (!compatible)
+                        continue;
+                    try
+                    {
+                        method.Invoke(
+                            definition,
+                            arguments);
+                        return true;
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            return false;
+        }
+
         private static bool TryCreateFallbackInfillSurface(
             Database database,
             ObjectId sourceId,
@@ -4685,6 +5197,21 @@ namespace CETools.Civil3D
             internal bool Created { get; set; }
             internal bool Existing { get; set; }
             internal string Message { get; set; }
+        }
+
+        private sealed class ConnectedGradeMember
+        {
+            internal ObjectId SourceId { get; set; }
+            internal ObjectId ToeId { get; set; }
+            internal List<Point3d> Points { get; set; }
+        }
+
+        private sealed class ConnectedSurfaceBuildResult
+        {
+            internal int Created { get; set; }
+            internal int Skipped { get; set; }
+            internal List<string> Messages { get; } =
+                new List<string>();
         }
 
         private sealed class SourceSnapshot
