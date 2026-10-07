@@ -646,7 +646,7 @@ namespace CETools.Civil3D
             if (document == null || document.Database == null) return;
             Editor editor = document.Editor;
             PromptSelectionResult selection = SelectLinePolyline(editor,
-                "\nSelect multiple open Lines/Polylines to fillet: ");
+                "\nSelect multiple OPEN Lines/Polylines to fillet at their linked/connected terminal support-line junctions: ");
             if (selection.Status != PromptStatus.OK || selection.Value == null) return;
             ObjectId[] ids = selection.Value.GetObjectIds().Where(id => !id.IsNull && !id.IsErased).Distinct().ToArray();
             if (ids.Length < 2) { editor.WriteMessage("\nCE_MULTIFILLET: select at least two objects."); return; }
@@ -677,8 +677,15 @@ namespace CETools.Civil3D
                 for (int j = i + 1; j < slots.Count; j++)
                     if (slots[i].Id != slots[j].Id)
                     {
-                        double distance = PlanDistance(slots[i].Point, slots[j].Point);
-                        if (distance <= _lastFilletSearch)
+                        // Pair by the actual terminal support-line junction, not only
+                        // by endpoint-to-endpoint distance. This makes already linked
+                        // or slightly gapped line/polyline chains fillet as one route.
+                        double distance;
+                        if (TrySlotJunctionDistance(
+                                slots[i],
+                                slots[j],
+                                _lastFilletSearch,
+                                out distance))
                             candidates.Add(Tuple.Create(distance, slots[i], slots[j]));
                     }
             candidates.Sort((a, b) => a.Item1.CompareTo(b.Item1));
@@ -732,6 +739,39 @@ namespace CETools.Civil3D
                 }
             }
             return result;
+        }
+
+        private static bool TrySlotJunctionDistance(
+            EndSlot first,
+            EndSlot second,
+            double maximumDistance,
+            out double distance)
+        {
+            distance = double.PositiveInfinity;
+            if (first == null || second == null || first.Id == second.Id)
+                return false;
+
+            Point2d junction;
+            if (!TryInfiniteIntersection(
+                    To2d(first.Point),
+                    To2d(first.Inner),
+                    To2d(second.Point),
+                    To2d(second.Inner),
+                    out junction))
+                return false;
+
+            Point3d point = new Point3d(
+                junction.X,
+                junction.Y,
+                (first.Point.Z + second.Point.Z) * 0.5);
+            double firstReach = PlanDistance(first.Point, point);
+            double secondReach = PlanDistance(second.Point, point);
+            distance = Math.Max(firstReach, secondReach);
+
+            // Exact/near-exact connected endpoints remain valid (distance=0).
+            // Slight gaps/overshoots are also valid as long as the junction lies
+            // within the user-selected terminal search distance for both objects.
+            return distance <= Math.Max(Eps, maximumDistance);
         }
 
         private static bool FilletPair(Database database, EndSlot firstSlot, EndSlot secondSlot, double radius, out string failure)
