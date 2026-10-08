@@ -73,8 +73,10 @@ if "IEnumerable values = collection as IEnumerable" in road:
     errors.append("road corridor completion still depends on CorridorCollection being IEnumerable")
 if 'result.Corridors++' not in road:
     errors.append("road corridor completion no longer counts actual corridors")
-if "FindDesignProfile(alignment, transaction) ??" not in road:
-    errors.append("missing design-profile preference when creating corridors")
+if "FindDesignProfile(alignment, transaction);" not in road:
+    errors.append("missing strict design-profile selection when creating corridors")
+if "FindDesignProfile(alignment, transaction) ??" in road:
+    errors.append("corridor creation still falls back from the design profile to EG/NGL")
 
 bands = (ROOT / "src/CE.Tools.Civil3D/ProfileViewBandDataBinder.cs").read_text(encoding="utf-8")
 if 'identity.Contains("CURVE")' in bands:
