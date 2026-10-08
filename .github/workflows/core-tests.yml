@@ -253,6 +253,9 @@ jobs:
       - name: Validate October 7 field follow-up
         run: python3 scripts/Validate-October07FieldFollowupMultiFilletInfillColour.py
 
+      - name: Validate October 8 profile/corridor/network locks
+        run: python3 scripts/Validate-October08ProfileCorridorNetworkLocks.py
+
       - name: Validate October 7 Water Stormwater supplementary and flood fix
         run: python3 scripts/Validate-October07WaterStormSupplementaryFloodFix.py
 
