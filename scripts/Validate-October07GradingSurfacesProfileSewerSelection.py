@@ -10,8 +10,8 @@ sewer = (SRC / "September09SewerSurfaceRulesRuntime.cs").read_text(encoding="utf
 
 for marker in [
     '"ExistingPresentation"',
-    '"Replace existing generated lines"',
-    '"Keep existing generated lines"',
+    '"Replace existing slope and toe lines"',
+    '"Keep existing slope and toe lines"',
     "KeepExistingPresentation",
     "keepExistingToe",
     "keepExistingSlopeLines",
@@ -21,7 +21,7 @@ for marker in [
 
 for marker in [
     '"ConnectedSurfaces"',
-    '"Create separate surface per connected group"',
+    '"Create separate surface for every connected feature-line group"',
     '"ConnectedSurfacePrefix"',
     '"ConnectedTolerance"',
     "CreateConnectedGradeSurfaces(",
@@ -42,7 +42,7 @@ if new_index < 0 or rebuild_index < 0 or cleanup_index < 0 or not (new_index < r
     errors.append("connected-group surface replacement is not create-first / cleanup-after-success")
 
 for marker in [
-    "[AllNetworkParts/Select/ProfileViews]",
+    "[AllNetworkParts/Select/ProfileViews/ProfileViewParts]",
     'scope.Keywords.Add("ProfileViews")',
     "ExpandGravitySelection(",
     "FilterProfileViewIds(",
