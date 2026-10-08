@@ -45,7 +45,7 @@ namespace CETools.Civil3D
             if (document == null)
                 return;
             string command = DisciplineWorkflowDialogs.SelectWorkflow(
-                "CE-STORMWATER PRODUCTION",
+                "CE Tools — Stormwater Workflow",
                 "Use the same production-centre format as Sewer, but with Stormwater gravity-network parts, pipe/structure styles, labels, profiles and delivery tools.",
                 new List<DisciplineWorkflowAction>
                 {
