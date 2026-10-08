@@ -196,6 +196,11 @@ namespace CETools.Civil3D
                         "Select multiple gravity pipes, specify the low point/outlet, and reverse only those pipe end elevations that currently fall away from the outlet.",
                         "02 Sewer"),
                     new DisciplineWorkflowAction(
+                        "Lock / Unlock All Pipes and Structures",
+                        "CE_NETWORKPARTLOCKS",
+                        "Lock or unlock all editable gravity-network pipes and structures in the drawing without changing layer lock states.",
+                        "02 Sewer"),
+                    new DisciplineWorkflowAction(
                         "Synchronise Annotation Scale",
                         "CE_ANNOSCALESYNC",
                         "Automatic monitor now applies each changed drawing annotation scale to annotative dimensions, text, MText and multileaders. Run this command when an immediate manual synchronisation is required.",
