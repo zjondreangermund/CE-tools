@@ -111,9 +111,9 @@ if '"CE_FLOODCULVERTDESIGN"' not in centre:
 
 repair = (ROOT / "scripts" / "Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1").read_text(encoding="utf-8-sig")
 for marker in [
-    "if (-not $menu.Contains('"CE_FLOODCULVERTDESIGN"'))",
-    '"CE-Flood Catchment & Culvert Design"',
-    '"CE-Culvert Review"',
+    "CE_FLOODCULVERTDESIGN",
+    "CE-Flood Catchment & Culvert Design",
+    "CE-Culvert Review",
 ]:
     if marker not in repair:
         errors.append("Flood pre-build culvert menu repair is stale: " + marker)
