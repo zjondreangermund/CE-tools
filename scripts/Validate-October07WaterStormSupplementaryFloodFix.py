@@ -109,6 +109,15 @@ for obsolete in [
 if '"CE_FLOODCULVERTDESIGN"' not in centre:
     errors.append("Flood production centre does not expose CE_FLOODCULVERTDESIGN")
 
+repair = (ROOT / "scripts" / "Repair-August24-FloodProductionCulvertMenu-Civil3D2023.ps1").read_text(encoding="utf-8-sig")
+for marker in [
+    'if (-not $menu.Contains('"CE_FLOODCULVERTDESIGN"'))',
+    '"CE-Flood Catchment & Culvert Design"',
+    '"CE-Culvert Review"',
+]:
+    if marker not in repair:
+        errors.append("Flood pre-build culvert menu repair is stale: " + marker)
+
 if errors:
     print("October 7 Water/Stormwater supplementary + Flood fix validation FAILED", file=sys.stderr)
     for error in errors:
