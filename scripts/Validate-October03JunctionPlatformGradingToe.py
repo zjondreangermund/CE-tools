@@ -62,13 +62,11 @@ for forbidden in [
 # The exact resolved daylight samples must be handed directly to visible
 # projection-line creation. This prevents a second surface solve from producing
 # long lines that overshoot/miss the toe.
-build_call = """TryCreateSlopeLines(
-                        document.Database,
-                        source,
-                        daylight,
-                        resolvedSamples,
-                        link"""
-if build_call not in text:
+# Match semantically instead of depending on indentation. The call must pass
+# the exact resolved daylight sample collection to visible slope-line creation.
+compact = "".join(text.split())
+build_call = "TryCreateSlopeLines(document.Database,source,daylight,resolvedSamples,link"
+if build_call not in compact:
     errors.append("Visible slope lines are not using the same resolved samples as the toe.")
 
 # Long rays must snap to the toe vertices; only the short corridor-style rays may
