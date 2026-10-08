@@ -25,7 +25,7 @@ flood = read("FloodProductionCulvertDesignCommands.cs")
 centre = read("August11ProductionCentreCommands.cs")
 
 for marker in [
-    '"CE-STORMWATER PRODUCTION"',
+    '"CE Tools — Stormwater Workflow"',
     '"CE_SWSETTINGSPRODUCTIONCENTRE"',
     '"CE_SWLAYOUTPRODUCTIONCENTRE"',
     '"CE_SWDESIGNPRODUCTIONCENTRE"',
@@ -35,7 +35,7 @@ for marker in [
         errors.append("Stormwater Sewer-format production marker missing: " + marker)
 
 for marker in [
-    '"CE-WATER PRODUCTION"',
+    '"CE Tools — Water Workflow"',
     '"CE_WATERSETTINGSPRODUCTIONCENTRE"',
     '"CE_WATERLAYOUTPRODUCTIONCENTRE"',
     '"CE_WATERDESIGNPRODUCTIONCENTRE"',
