@@ -22,15 +22,31 @@ $utf8 = New-Object System.Text.UTF8Encoding($false)
 $menu = [System.IO.File]::ReadAllText($menuPath) -replace "`r?`n", "`r`n"
 $command = 'CE_FLOODCULVERTDESIGN'
 if (-not $menu.Contains($command)) {
-    $anchor = '                    A("CE-Quick Flood / Rational Review", "CE_FLOODQUICK", "Pre/post return-period peak-flow and preliminary culvert screen.", "03 CREATE"),'
-    $index = $menu.IndexOf($anchor,[StringComparison]::Ordinal)
+    # Current production structure keeps culvert design in Flood Output / Delivery.
+    # Fall back to the older Quick Flood anchor only for historical source trees.
+    $anchors = @(
+        '                    A("CE-Culvert Review", "CE_CULVERTREVIEW", "Review candidate crossings and culvert requirements.", "05 COMPLETE"),',
+        '                    A("CE-Quick Flood / Rational Review", "CE_FLOODQUICK", "Pre/post return-period peak-flow and preliminary culvert screen.", "03 CREATE"),'
+    )
+    $index = -1
+    foreach ($anchor in $anchors) {
+        $candidate = $menu.IndexOf($anchor,[StringComparison]::Ordinal)
+        if ($candidate -ge 0) {
+            $index = $candidate
+            break
+        }
+    }
     if ($index -lt 0) {
         throw 'August 24 Flood Production insertion anchor missing.'
     }
-    $entry = '                    A("CE-Catchment + Culvert Hydraulic Design", "CE_FLOODCULVERTDESIGN", "Low point, longest watercourse, native catchment, Q2-Q100, culvert sizing, water levels and Hydraflow snapshot review.", "03 CREATE"),' + "`r`n"
+    $entry = '                    A("CE-Flood Catchment & Culvert Design", "CE_FLOODCULVERTDESIGN", "Safely sample a TIN surface, locate the crossing low point, delineate the catchment and complete preliminary culvert sizing.", "05 COMPLETE"),' + "`r`n"
     $menu = $menu.Insert($index,$entry)
 }
-if (-not $menu.Contains('A("CE-Catchment + Culvert Hydraulic Design", "CE_FLOODCULVERTDESIGN"')) {
+
+# Guard the command identity, not a historical display label. The user-facing
+# title has changed as the Flood production centre was reorganized, but the
+# command contract is the stable build requirement.
+if (-not $menu.Contains('"CE_FLOODCULVERTDESIGN"')) {
     throw 'August 24 Flood Production culvert design menu guard missing.'
 }
 [System.IO.File]::WriteAllText($menuPath,$menu,$utf8)
