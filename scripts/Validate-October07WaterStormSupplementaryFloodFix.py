@@ -46,9 +46,9 @@ for marker in [
 
 for marker in [
     '"CE_SWSTYLES"',
-    '"Stormwater gravity-network parts"',
+    'Stormwater gravity-network parts',
     '"CE_WATERSTYLES"',
-    '"pressure pipes, fittings, appurtenances"',
+    'pressure pipes, fittings, appurtenances',
     '"CE_FLOODCULVERTDESIGN"',
 ]:
     if marker not in structured:
