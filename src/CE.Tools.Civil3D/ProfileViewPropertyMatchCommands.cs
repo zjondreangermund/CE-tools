@@ -56,6 +56,11 @@ namespace CETools.Civil3D
                     "\nSelect the ONE profile view to edit in native Profile View Properties: ");
                 if (sourceId.IsNull) return;
 
+                // The source pick becomes PICKFIRST in Civil 3D. Clear it before
+                // asking for targets, otherwise CE Tools can mistake the source
+                // as the target selection and appear to require a second run.
+                document.Editor.SetImpliedSelection(new ObjectId[0]);
+
                 targets = PromptProfileViews(
                     document,
                     "\nSelect all OTHER profile views that must receive the same edits: ",
@@ -224,6 +229,9 @@ namespace CETools.Civil3D
                 document.Editor,
                 "\nSelect SOURCE profile view whose properties/bands must be matched: ");
             if (sourceId.IsNull) return;
+
+            // Do not let the source pick satisfy the next multi-target prompt.
+            document.Editor.SetImpliedSelection(new ObjectId[0]);
 
             List<ObjectId> targetIds = PromptProfileViews(
                 document,
