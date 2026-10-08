@@ -42,7 +42,7 @@ namespace CETools.Civil3D
             if (document == null)
                 return;
             string command = DisciplineWorkflowDialogs.SelectWorkflow(
-                "CE-WATER PRODUCTION",
+                "CE Tools — Water Workflow",
                 "Use the same production-centre format as Sewer, but with Water pressure-network parts, pressure-pipe/fitting/appurtenance styles, profiles, labels and delivery tools.",
                 new List<DisciplineWorkflowAction>
                 {
