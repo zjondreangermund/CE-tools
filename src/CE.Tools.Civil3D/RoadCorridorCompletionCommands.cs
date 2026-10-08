@@ -268,7 +268,7 @@ namespace CETools.Civil3D
                 "BasicSidewalkSlopeMode",
                 "00 Assembly / Sidewalk",
                 "BasicSidewalk cross slope",
-                "Apply sloped sidewalk",
+                "Keep current",
                 "BasicSidewalk is a stock horizontal-only subassembly. When enabled, CE Tools replaces it in the referenced road assembly with Autodesk SidewalkSlopesAndBase while preserving side, width, depth and buffer widths, then applies the requested sidewalk slope.",
                 new[] { "Apply sloped sidewalk", "Keep current" });
             model.AddDouble(
@@ -527,6 +527,44 @@ namespace CETools.Civil3D
                         if (baseline == null) continue;
                         result.Baselines++;
                         corridorLength += ReadBaselineLength(baseline);
+
+                        // Corridor vertical geometry must follow the road design
+                        // profile, never the sampled EG/NGL surface profile.
+                        Baseline typedBaseline = baseline as Baseline;
+                        if (typedBaseline != null)
+                        {
+                            ObjectId alignmentId = AlignmentIdSafe(typedBaseline);
+                            CivilAlignment alignmentForBaseline = null;
+                            try
+                            {
+                                alignmentForBaseline = transaction.GetObject(
+                                    alignmentId,
+                                    OpenMode.ForRead,
+                                    false) as CivilAlignment;
+                            }
+                            catch { }
+
+                            CivilProfile designProfile =
+                                FindDesignProfile(
+                                    alignmentForBaseline,
+                                    transaction);
+                            if (designProfile != null &&
+                                typedBaseline.ProfileId != designProfile.ObjectId)
+                            {
+                                try
+                                {
+                                    typedBaseline.SetAlignmentAndProfile(
+                                        alignmentId,
+                                        designProfile.ObjectId);
+                                    typedBaseline.NeedsProcessing = true;
+                                }
+                                catch
+                                {
+                                    result.Warnings++;
+                                }
+                            }
+                        }
+
                         if (!profileStyleId.IsNull)
                         {
                             ObjectId alignmentId = ReadObjectId(baseline, "AlignmentId");
@@ -891,6 +929,13 @@ namespace CETools.Civil3D
                 .OrderBy(value => value, StringComparer.CurrentCultureIgnoreCase).ToList();
         }
 
+        private static ObjectId AlignmentIdSafe(Baseline baseline)
+        {
+            if (baseline == null) return ObjectId.Null;
+            try { return baseline.AlignmentId; }
+            catch { return ObjectId.Null; }
+        }
+
         private static bool TryCreateMissingBaselineAndRegion(
             object corridor, string corridorName, object baselines, CivilDocument civilDocument,
             Transaction transaction, RoadCorridorCompletionOptions options, ref RoadCorridorCompletionResult result)
@@ -906,16 +951,10 @@ namespace CETools.Civil3D
                 !string.IsNullOrWhiteSpace(corridorName) && corridorName.IndexOf(item.Name, StringComparison.OrdinalIgnoreCase) >= 0);
             if (selected == null && candidates.Count == 1) selected = candidates[0];
             if (selected == null) return false;
-            CivilProfile profile = null;
-            foreach (ObjectId id in selected.GetProfileIds())
-            {
-                CivilProfile current = transaction.GetObject(id, OpenMode.ForRead, false) as CivilProfile;
-                if (current == null) continue;
-                if (profile == null) profile = current;
-                string n = current.Name ?? string.Empty;
-                if (n.EndsWith("-FG", StringComparison.OrdinalIgnoreCase) || n.IndexOf("FINAL", StringComparison.OrdinalIgnoreCase) >= 0)
-                { profile = current; break; }
-            }
+            CivilProfile profile =
+                FindDesignProfile(
+                    selected,
+                    transaction);
             if (profile == null) return false;
             object baseline = InvokeAddBaseline(baselines, selected.ObjectId, profile.ObjectId, selected.Name);
             if (baseline == null) return false;
@@ -1149,8 +1188,7 @@ namespace CETools.Civil3D
                 catch { }
                 if (alignment == null || !IsCeRoadAlignment(alignment)) continue;
 
-                CivilProfile profile = FindDesignProfile(alignment, transaction) ??
-                                       FindNglProfile(alignment, transaction);
+                CivilProfile profile = FindDesignProfile(alignment, transaction);
                 if (profile == null)
                 {
                     result.Warnings++;
@@ -1190,24 +1228,41 @@ namespace CETools.Civil3D
             Transaction transaction)
         {
             if (alignment == null) return null;
-            CivilProfile fallback = null;
+            CivilProfile namedDesign = null;
             foreach (ObjectId id in alignment.GetProfileIds())
             {
                 CivilProfile profile = null;
                 try { profile = transaction.GetObject(id, OpenMode.ForRead, false) as CivilProfile; }
                 catch { }
                 if (profile == null) continue;
+
                 string identity = ((profile.Name ?? string.Empty) + " " +
                     (profile.Description ?? string.Empty)).ToUpperInvariant();
+
+                // Never use existing-ground or generated edge/band source profiles
+                // as a corridor vertical baseline.
                 if (identity.Contains("LEFT EDGE") || identity.Contains("RIGHT EDGE") ||
-                    identity.Contains("LEFT-EDGE") || identity.Contains("RIGHT-EDGE"))
+                    identity.Contains("LEFT-EDGE") || identity.Contains("RIGHT-EDGE") ||
+                    identity.Contains("CE_BAND_SRC_") ||
+                    identity.Contains("-EG") || identity.Contains(" NGL") ||
+                    identity.Contains("EXISTING GROUND"))
                     continue;
-                if (fallback == null) fallback = profile;
-                if (identity.Contains("-FG") || identity.Contains(" FINAL") ||
-                    identity.Contains("FINAL ROAD") || identity.Contains("CE FINAL ROAD"))
-                    return profile;
+
+                try
+                {
+                    if (profile.ProfileType == ProfileType.FG)
+                        return profile;
+                }
+                catch { }
+
+                if (namedDesign == null &&
+                    (identity.Contains("-FG") || identity.Contains(" FINAL") ||
+                     identity.Contains("DESIGN PROFILE") ||
+                     identity.Contains("FINAL ROAD") ||
+                     identity.Contains("CE FINAL ROAD")))
+                    namedDesign = profile;
             }
-            return fallback;
+            return namedDesign;
         }
 
         private static ObjectId AddCorridorByReflection(
