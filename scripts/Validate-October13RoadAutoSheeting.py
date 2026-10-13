@@ -23,6 +23,7 @@ for marker in [
     'BuildPaperPairs',
     'FitPlanViewport',
     'FitProfileViewport',
+    'NormalizeTwist(-angle)',
     'viewport.TwistAngle = twist',
     'viewport.Locked = lockAfter',
     'CE-SHEET:',
