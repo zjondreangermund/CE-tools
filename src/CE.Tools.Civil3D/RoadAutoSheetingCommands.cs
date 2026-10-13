@@ -615,6 +615,146 @@ namespace CETools.Civil3D
             return containing;
         }
 
+        private static IReadOnlyList<RoadSheetSegment> ReadCurveAwarePlanRanges(
+            CivilAlignment alignment,
+            double start,
+            double end,
+            double maximumHeadingChangeDegrees,
+            double minimumSegmentLength)
+        {
+            if (alignment == null || end <= start + Tol)
+                return new[] { new RoadSheetSegment(0, start, end) };
+
+            double length = end - start;
+            double sampleStep = Math.Max(5.0, Math.Min(20.0, length / 40.0));
+            int count = Math.Max(2, (int)Math.Ceiling(length / sampleStep) + 1);
+            var stations = new List<double>();
+            var headings = new List<double>();
+
+            for (int index = 0; index < count; index++)
+            {
+                double station = index == count - 1
+                    ? end
+                    : Math.Min(end, start + index * sampleStep);
+                double heading;
+                if (!TryHeadingAtStation(
+                        alignment,
+                        station,
+                        start,
+                        end,
+                        Math.Max(2.0, Math.Min(10.0, sampleStep * 0.5)),
+                        out heading))
+                    continue;
+                if (stations.Count > 0 &&
+                    station <= stations[stations.Count - 1] + Tol)
+                    continue;
+                stations.Add(station);
+                headings.Add(heading);
+            }
+
+            if (stations.Count < 2)
+                return new[] { new RoadSheetSegment(0, start, end) };
+
+            if (stations[0] > start + Tol)
+            {
+                stations.Insert(0, start);
+                headings.Insert(0, headings[0]);
+            }
+            if (stations[stations.Count - 1] < end - Tol)
+            {
+                stations.Add(end);
+                headings.Add(headings[headings.Count - 1]);
+            }
+
+            try
+            {
+                return RoadSheetingPlanner.SplitPlanByHeading(
+                    stations,
+                    headings,
+                    maximumHeadingChangeDegrees,
+                    minimumSegmentLength,
+                    6);
+            }
+            catch
+            {
+                return new[] { new RoadSheetSegment(0, start, end) };
+            }
+        }
+
+        private static bool TryHeadingAtStation(
+            CivilAlignment alignment,
+            double station,
+            double rangeStart,
+            double rangeEnd,
+            double probe,
+            out double heading)
+        {
+            heading = 0.0;
+            double beforeStation = Math.Max(rangeStart, station - probe);
+            double afterStation = Math.Min(rangeEnd, station + probe);
+            if (afterStation <= beforeStation + Tol)
+                return false;
+
+            Point2d before;
+            Point2d after;
+            if (!TryPointLocation(alignment, beforeStation, out before) ||
+                !TryPointLocation(alignment, afterStation, out after))
+                return false;
+
+            double dx = after.X - before.X;
+            double dy = after.Y - before.Y;
+            if (Math.Sqrt(dx * dx + dy * dy) <= Tol)
+                return false;
+
+            heading = Math.Atan2(dy, dx);
+            return true;
+        }
+
+        private static List<PlanPaperSlot> BuildPlanSlots(
+            PaperPair pair,
+            IReadOnlyList<RoadSheetSegment> ranges,
+            double requestedGap)
+        {
+            if (pair == null)
+                throw new ArgumentNullException(nameof(pair));
+            if (ranges == null || ranges.Count == 0)
+                throw new ArgumentException("At least one plan range is required.", nameof(ranges));
+
+            double gap = ranges.Count > 1
+                ? Math.Max(0.0, requestedGap)
+                : 0.0;
+            double usable = pair.Width - gap * Math.Max(0, ranges.Count - 1);
+            if (usable <= 20.0)
+                throw new InvalidOperationException(
+                    "The plan area is too narrow for the curve-split viewports. Reduce the adjacent viewport gap or the number of curve splits.");
+
+            double totalLength = ranges.Sum(item => Math.Max(Tol, item.Length));
+            var result = new List<PlanPaperSlot>();
+            double left = pair.Left;
+
+            for (int index = 0; index < ranges.Count; index++)
+            {
+                double width = index == ranges.Count - 1
+                    ? pair.Left + pair.Width - left
+                    : usable * Math.Max(Tol, ranges[index].Length) / totalLength;
+                if (width <= 10.0)
+                    throw new InvalidOperationException(
+                        "A curve split produced a plan viewport that is too narrow to use.");
+
+                result.Add(new PlanPaperSlot
+                {
+                    Left = left,
+                    Width = width,
+                    Center = new Point3d(
+                        left + width * 0.5,
+                        pair.PlanCenter.Y,
+                        0.0)
+                });
+                left += width + gap;
+            }
+            return result;
+        }
+
         private static bool FitPlanViewport(
             CivilAlignment alignment,
             Viewport viewport,
@@ -903,14 +1043,16 @@ namespace CETools.Civil3D
         private static void AddChainageTitle(
             BlockTableRecord paper,
             Transaction tr,
-            PaperPair pair,
+            PlanPaperSlot slot,
+            double pairTop,
             string roadName,
             double start,
             double end)
         {
             var text = new MText();
             text.SetDatabaseDefaults();
-            text.Location = new Point3d(pair.Left, pair.Top - 1.0, 0.0);
+            text.Location = new Point3d(slot.Left, pairTop - 1.0, 0.0);
+            text.Width = Math.Max(10.0, slot.Width);
             text.Attachment = AttachmentPoint.TopLeft;
             text.TextHeight = 3.5;
             text.Contents = TitlePrefix + " " + roadName +
@@ -1100,6 +1242,13 @@ namespace CETools.Civil3D
             internal double StartStation;
             internal double EndStation;
             internal List<ObjectId> ProfileViewIds;
+        }
+
+        private sealed class PlanPaperSlot
+        {
+            internal double Left;
+            internal double Width;
+            internal Point3d Center;
         }
 
         private sealed class PaperPair
