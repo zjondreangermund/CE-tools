@@ -17,8 +17,6 @@ for marker in [
     'RoadSheetingPlanner.Create',
     'A0',
     'A1',
-    '2000.0',
-    '1000.0',
     'SegmentsPerSheet',
     'TemplateLayout',
     'TryCloneLayout',
