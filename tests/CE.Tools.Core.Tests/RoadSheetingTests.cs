@@ -31,7 +31,30 @@ namespace CETools.Core.Tests
             Equal("0+000", RoadSheetingPlanner.StationText(0.0));
             Equal("2+000", RoadSheetingPlanner.StationText(2000.0));
             Equal("2+345.5", RoadSheetingPlanner.StationText(2345.5));
-            return 17;
+
+            // Curved 1 km road: direction stays near horizontal through 560 m,
+            // then turns enough to require the remaining chainage beside it.
+            var stations = new double[] { 0, 100, 200, 300, 400, 500, 560, 620, 700, 800, 900, 1000 };
+            var headings = new double[]
+            {
+                0, 0.01, 0.02, 0.03, 0.04, 0.05, 0.06,
+                0.32, 0.36, 0.38, 0.40, 0.41
+            };
+            var curved = RoadSheetingPlanner.SplitPlanByHeading(
+                stations,
+                headings,
+                12.0,
+                100.0,
+                6);
+            Equal(2, curved.Count);
+            Equal(0.0, curved[0].StartStation);
+            Equal(560.0, curved[0].EndStation);
+            Equal(560.0, curved[1].StartStation);
+            Equal(1000.0, curved[1].EndStation);
+
+            // 180-degree reversal represents the same horizontal road axis.
+            Near(0.0, RoadSheetingPlanner.SmallestAxisAngleDifference(0.0, Math.PI));
+            return 24;
         }
 
         private static void Equal(int expected, int actual)
@@ -42,6 +65,11 @@ namespace CETools.Core.Tests
         private static void Equal(double expected, double actual)
         {
             if (Math.Abs(expected - actual) > 1e-9) throw new Exception("Road sheet value mismatch. Expected " + expected + ", got " + actual + ".");
+        }
+
+        private static void Near(double expected, double actual)
+        {
+            if (Math.Abs(expected - actual) > 1e-9) throw new Exception("Road sheet angle mismatch. Expected " + expected + ", got " + actual + ".");
         }
 
         private static void Equal(string expected, string actual)
