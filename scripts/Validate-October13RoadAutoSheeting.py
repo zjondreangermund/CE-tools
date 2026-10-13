@@ -21,6 +21,11 @@ for marker in [
     'TemplateLayout',
     'TryCloneLayout',
     'BuildPaperPairs',
+    'ReadCurveAwarePlanRanges',
+    'BuildPlanSlots',
+    'CurveHeadingTolerance',
+    'MinimumPlanSubrange',
+    'PlanSubViewportGap',
     'FitPlanViewport',
     'FitProfileViewport',
     'NormalizeTwist(-angle)',
@@ -37,6 +42,8 @@ for marker in [
     'segmentsPerSheet',
     'RoadSheetSegment',
     'RoadSheetPlan',
+    'SplitPlanByHeading',
+    'SmallestAxisAngleDifference',
     'StationText',
 ]:
     if marker not in core:
@@ -49,6 +56,8 @@ for marker in [
     'RoadSheetingPlanner.Create(0.0, 8000.0, 2000.0, 2)',
     'Equal(2, a0.Count)',
     'Equal(4, a1.Count)',
+    'Equal(560.0, curved[0].EndStation)',
+    'Equal(560.0, curved[1].StartStation)',
 ]:
     if marker not in tests:
         errors.append("8 km A0/A1 sheeting test missing: " + marker)
