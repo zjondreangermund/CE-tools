@@ -33,6 +33,7 @@ namespace CETools.Core.Tests
                 _tests += RoadAnnotationTests.Run();
                 _tests += ProfileViewportTests.Run();
                 _tests += GradingSlopeTickTests.Run();
+                _tests += RoadSheetingTests.Run();
 
                 Console.WriteLine($"CE Tools core tests passed: {_tests}");
                 return 0;
