@@ -76,7 +76,7 @@ namespace CETools.Civil3D
     A("CE-Road Profile Report","CE_ROADPROFILEREPORT","Report road profile views and station ranges.","06 Reports"),
     A("CE-Road Corridor Report","CE_CORREPORT","Generate corridor report.","06 Reports"),
     A("CE-Road Construction Bill of Quantities","CE_ROADBOQCONSTRUCTION","Create/update live corridor construction quantities.","07 Deliver"),
-    A("CE-Automatic Road Plan / Profile Sheets","CE_ROADAUTOSHEETS","Split long roads by chainage, clone A0/A1 sheet layouts, stack plan/profile viewport pairs and rotate every plan road horizontal.","07 Deliver"),
+    A("CE-Automatic Road Plan / Profile Sheets","CE_ROADAUTOSHEETS","Split long roads by chainage, split curved plan ranges into adjacent independently rotated viewports, clone A0/A1 layouts and stack matching plan/profile sets.","07 Deliver"),
     A("CE-Detail Road Design Report","CE_REPORTROAD","Generate detailed road design report.","07 Deliver"),
     A("CE-Road Drawing Production","CE_DRAWINGBOOKROAD","Create road drawing production output.","07 Deliver")
    });
