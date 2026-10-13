@@ -623,8 +623,16 @@ namespace CETools.Civil3D
                 new Point3d(centerX, centerY, 0.0),
                 width,
                 height,
-                angle,
+                NormalizeTwist(-angle),
                 lockAfter);
+        }
+
+        private static double NormalizeTwist(double radians)
+        {
+            double full = Math.PI * 2.0;
+            double value = radians % full;
+            if (value < 0.0) value += full;
+            return value;
         }
 
         private static bool TryPointLocation(
