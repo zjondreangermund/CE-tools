@@ -118,14 +118,15 @@ namespace CETools.Core
 
             double tolerance = maximumHeadingChangeDegrees * Math.PI / 180.0;
             var result = new List<RoadSheetSegment>();
-            int segmentStartIndex = 0;
+            double currentStart = start;
+            int referenceIndex = 0;
 
             for (int index = 1; index < stations.Count; index++)
             {
                 if (result.Count + 1 >= maximumSegments)
                     break;
 
-                double reference = headingsRadians[segmentStartIndex];
+                double reference = headingsRadians[referenceIndex];
                 double deviation = SmallestAxisAngleDifference(
                     reference,
                     headingsRadians[index]);
@@ -133,9 +134,8 @@ namespace CETools.Core
                 if (deviation <= tolerance)
                     continue;
 
-                int splitIndex = Math.Max(segmentStartIndex + 1, index - 1);
+                int splitIndex = Math.Max(1, index - 1);
                 double splitStation = stations[splitIndex];
-                double currentStart = stations[segmentStartIndex];
 
                 // Do not create tiny plan windows around short curves. When the
                 // first candidate is too close to the start, keep sampling until
@@ -152,10 +152,17 @@ namespace CETools.Core
                     result.Count,
                     currentStart,
                     splitStation));
-                segmentStartIndex = splitIndex;
+
+                // The next viewport begins exactly where the previous one ended,
+                // but its orientation reference comes from the first tangent on
+                // the new side of the bend. This prevents one long curve from
+                // being repeatedly split merely because its new tangent differs
+                // from the old viewport's tangent.
+                currentStart = splitStation;
+                referenceIndex = index;
             }
 
-            double finalStart = stations[segmentStartIndex];
+            double finalStart = currentStart;
             if (result.Count == 0 || end - finalStart > 1e-9)
             {
                 result.Add(new RoadSheetSegment(
