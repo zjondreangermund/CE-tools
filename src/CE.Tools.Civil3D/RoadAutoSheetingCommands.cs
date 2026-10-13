@@ -226,6 +226,10 @@ namespace CETools.Civil3D
             int profileViewports = 0;
             int missingProfiles = 0;
             int warnings = 0;
+            string originalLayoutName =
+                LayoutManager.Current == null
+                    ? string.Empty
+                    : LayoutManager.Current.CurrentLayout;
 
             foreach (RoadInfo road in roads)
             {
@@ -280,11 +284,27 @@ namespace CETools.Civil3D
                         sheetsRefreshed++;
                     }
 
+                    string sheetStage = "ACTIVATE LAYOUT";
                     try
                     {
                         using (DocumentLock documentLock = document.LockDocument())
-                        using (Transaction tr = document.Database.TransactionManager.StartTransaction())
                         {
+                            LayoutManager manager = LayoutManager.Current;
+                            if (manager == null)
+                                throw new InvalidOperationException("LayoutManager is unavailable.");
+
+                            if (!string.Equals(
+                                    manager.CurrentLayout,
+                                    layoutName,
+                                    StringComparison.OrdinalIgnoreCase))
+                                manager.CurrentLayout = layoutName;
+
+                            document.Editor.SwitchToPaperSpace();
+                            AcApplication.UpdateScreen();
+
+                            sheetStage = "OPEN PAPER SPACE";
+                            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+                            {
                             Layout layout = FindLayout(
                                 document.Database,
                                 tr,
@@ -292,6 +312,7 @@ namespace CETools.Civil3D
                             if (layout == null)
                                 throw new InvalidOperationException("Generated layout could not be reopened.");
 
+                            sheetStage = "OPEN PAPER BLOCK";
                             BlockTableRecord paper = tr.GetObject(
                                 layout.BlockTableRecordId,
                                 OpenMode.ForWrite,
@@ -299,8 +320,10 @@ namespace CETools.Civil3D
                             if (paper == null)
                                 throw new InvalidOperationException("Paper-space block could not be opened.");
 
+                            sheetStage = "CLEAR OLD VIEWPORTS";
                             ClearGeneratedPaperObjects(paper, tr);
 
+                            sheetStage = "BUILD PAPER SLOTS";
                             List<PaperPair> pairs = BuildPaperPairs(
                                 paperWidth,
                                 paperHeight,
@@ -311,6 +334,7 @@ namespace CETools.Civil3D
                                 planProfileGap,
                                 sheetPlan.Segments.Count);
 
+                            sheetStage = "OPEN ROAD ALIGNMENT";
                             CivilAlignment alignment = tr.GetObject(
                                 road.AlignmentId,
                                 OpenMode.ForRead,
@@ -352,12 +376,18 @@ namespace CETools.Civil3D
                                 {
                                     RoadSheetSegment planRange = planRanges[planIndex];
                                     PlanPaperSlot planSlot = planSlots[planIndex];
+                                    sheetStage = "CREATE PLAN VIEWPORT " +
+                                        RoadSheetingPlanner.StationText(planRange.StartStation) + "-" +
+                                        RoadSheetingPlanner.StationText(planRange.EndStation);
                                     Viewport plan = CreateViewport(
                                         paper,
                                         tr,
                                         planSlot.Center,
                                         planSlot.Width,
                                         pair.PlanHeight);
+                                    sheetStage = "FIT PLAN VIEWPORT " +
+                                        RoadSheetingPlanner.StationText(planRange.StartStation) + "-" +
+                                        RoadSheetingPlanner.StationText(planRange.EndStation);
                                     if (FitPlanViewport(
                                             alignment,
                                             plan,
@@ -401,12 +431,18 @@ namespace CETools.Civil3D
                                         profileViewId,
                                         OpenMode.ForRead,
                                         false) as CivilProfileView;
+                                    sheetStage = "CREATE PROFILE VIEWPORT " +
+                                        RoadSheetingPlanner.StationText(segment.StartStation) + "-" +
+                                        RoadSheetingPlanner.StationText(segment.EndStation);
                                     Viewport profile = CreateViewport(
                                         paper,
                                         tr,
                                         pair.ProfileCenter,
                                         pair.Width,
                                         pair.ProfileHeight);
+                                    sheetStage = "FIT PROFILE VIEWPORT " +
+                                        RoadSheetingPlanner.StationText(segment.StartStation) + "-" +
+                                        RoadSheetingPlanner.StationText(segment.EndStation);
                                     if (profileView != null &&
                                         FitProfileViewport(
                                             profileView,
@@ -423,18 +459,39 @@ namespace CETools.Civil3D
 
                             }
 
+                            sheetStage = "COMMIT SHEET";
                             tr.Commit();
+                            }
                         }
                     }
                     catch (System.Exception exception)
                     {
                         warnings++;
                         document.Editor.WriteMessage(
-                            "\n{0}: sheet refresh failed. {1}",
+                            "\n{0}: sheet refresh failed at {1}. {2}",
                             layoutName,
+                            sheetStage,
                             exception.Message);
                     }
                 }
+            }
+
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(originalLayoutName) &&
+                    LayoutManager.Current != null &&
+                    !string.Equals(
+                        LayoutManager.Current.CurrentLayout,
+                        originalLayoutName,
+                        StringComparison.OrdinalIgnoreCase))
+                    LayoutManager.Current.CurrentLayout = originalLayoutName;
+            }
+            catch (System.Exception exception)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_ROADAUTOSHEETS: could not restore original layout '{0}'. {1}",
+                    originalLayoutName,
+                    exception.Message);
             }
 
             try
@@ -978,13 +1035,14 @@ namespace CETools.Civil3D
             double height)
         {
             var viewport = new Viewport();
-            viewport.SetDatabaseDefaults();
+            viewport.SetDatabaseDefaults(paper.Database);
             viewport.CenterPoint = center;
             viewport.Width = width;
             viewport.Height = height;
             paper.AppendEntity(viewport);
             tr.AddNewlyCreatedDBObject(viewport, true);
             viewport.On = true;
+            viewport.GridOn = false;
             return viewport;
         }
 
