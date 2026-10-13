@@ -106,6 +106,19 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "PlanClearance", "05 Model fit", "Plan clearance around road (m)", 40.0,
                 "Model-space clearance added around the sampled road segment before fitting the rotated plan viewport.");
+            settings.AddChoice(
+                "CurveSplit", "05 Model fit", "Split plan viewport at disruptive curves", "Yes",
+                "When the road heading changes too much inside one normal chainage block, place the remaining chainage in an adjacent plan viewport and rotate it independently.",
+                new[] { "Yes", "No" });
+            settings.AddPositiveDouble(
+                "CurveHeadingTolerance", "05 Model fit", "Maximum heading change per plan viewport (deg)", 12.0,
+                "Default 12 degrees. A larger direction change starts a new adjacent plan viewport.");
+            settings.AddPositiveDouble(
+                "MinimumPlanSubrange", "05 Model fit", "Minimum plan sub-viewport length (m)", 100.0,
+                "Prevents small curves from creating unusably short plan viewport ranges.");
+            settings.AddPositiveDouble(
+                "PlanSubViewportGap", "04 Paper geometry", "Gap between adjacent plan viewports (mm)", 5.0,
+                "Paper-space gap between curve-split plan viewports.");
             settings.AddPositiveDouble(
                 "ProfileClearance", "05 Model fit", "Profile-view clearance", 5.0,
                 "Model-space clearance around the profile view/range.");
@@ -134,6 +147,10 @@ namespace CETools.Civil3D
             double pairGap = settings.Double("PairGap", 10.0);
             double planProfileGap = settings.Double("PlanProfileGap", 8.0);
             double planClearance = settings.Double("PlanClearance", 40.0);
+            bool curveSplit = string.Equals(settings.Text("CurveSplit"), "Yes", StringComparison.OrdinalIgnoreCase);
+            double curveHeadingTolerance = settings.Double("CurveHeadingTolerance", 12.0);
+            double minimumPlanSubrange = settings.Double("MinimumPlanSubrange", 100.0);
+            double planSubViewportGap = settings.Double("PlanSubViewportGap", 5.0);
             double profileClearance = settings.Double("ProfileClearance", 5.0);
             bool titles = string.Equals(settings.Text("ChainageTitles"), "Yes", StringComparison.OrdinalIgnoreCase);
             bool lockViewports = string.Equals(settings.Text("LockViewports"), "Yes", StringComparison.OrdinalIgnoreCase);
@@ -205,6 +222,7 @@ namespace CETools.Civil3D
             int sheetsCreated = 0;
             int sheetsRefreshed = 0;
             int planViewports = 0;
+            int curveSplitPlanViewports = 0;
             int profileViewports = 0;
             int missingProfiles = 0;
             int warnings = 0;
@@ -307,22 +325,66 @@ namespace CETools.Civil3D
                                 RoadSheetSegment segment = sheetPlan.Segments[index];
                                 PaperPair pair = pairs[index];
 
-                                Viewport plan = CreateViewport(
-                                    paper,
-                                    tr,
-                                    pair.PlanCenter,
-                                    pair.Width,
-                                    pair.PlanHeight);
-                                if (FitPlanViewport(
-                                        alignment,
-                                        plan,
-                                        segment.StartStation,
-                                        segment.EndStation,
-                                        planClearance,
-                                        lockViewports))
-                                    planViewports++;
-                                else
-                                    warnings++;
+                                IReadOnlyList<RoadSheetSegment> planRanges =
+                                    curveSplit
+                                        ? ReadCurveAwarePlanRanges(
+                                            alignment,
+                                            segment.StartStation,
+                                            segment.EndStation,
+                                            curveHeadingTolerance,
+                                            minimumPlanSubrange)
+                                        : new[]
+                                        {
+                                            new RoadSheetSegment(
+                                                0,
+                                                segment.StartStation,
+                                                segment.EndStation)
+                                        };
+
+                                List<PlanPaperSlot> planSlots = BuildPlanSlots(
+                                    pair,
+                                    planRanges,
+                                    planSubViewportGap);
+
+                                for (int planIndex = 0;
+                                     planIndex < planRanges.Count;
+                                     planIndex++)
+                                {
+                                    RoadSheetSegment planRange = planRanges[planIndex];
+                                    PlanPaperSlot planSlot = planSlots[planIndex];
+                                    Viewport plan = CreateViewport(
+                                        paper,
+                                        tr,
+                                        planSlot.Center,
+                                        planSlot.Width,
+                                        pair.PlanHeight);
+                                    if (FitPlanViewport(
+                                            alignment,
+                                            plan,
+                                            planRange.StartStation,
+                                            planRange.EndStation,
+                                            planClearance,
+                                            lockViewports))
+                                    {
+                                        planViewports++;
+                                        if (planRanges.Count > 1)
+                                            curveSplitPlanViewports++;
+                                    }
+                                    else
+                                    {
+                                        warnings++;
+                                    }
+
+                                    if (titles)
+                                        AddChainageTitle(
+                                            paper,
+                                            tr,
+                                            planSlot,
+                                            pair.Top,
+                                            road.Name,
+                                            planRange.StartStation,
+                                            planRange.EndStation);
+                                }
 
                                 ObjectId profileViewId = FindBestProfileView(
                                     road.ProfileViewIds,
@@ -358,14 +420,7 @@ namespace CETools.Civil3D
                                         warnings++;
                                 }
 
-                                if (titles)
-                                    AddChainageTitle(
-                                        paper,
-                                        tr,
-                                        pair,
-                                        road.Name,
-                                        segment.StartStation,
-                                        segment.EndStation);
+
                             }
 
                             tr.Commit();
@@ -394,11 +449,12 @@ namespace CETools.Civil3D
             }
 
             document.Editor.WriteMessage(
-                "\nCE_ROADAUTOSHEETS complete. Roads={0}; layouts created={1}; refreshed={2}; plan viewports={3}; profile viewports={4}; missing profile ranges={5}; warnings={6}; sheet={7}; segment length={8:0.###} m; sets/sheet={9}.",
+                "\nCE_ROADAUTOSHEETS complete. Roads={0}; layouts created={1}; refreshed={2}; plan viewports={3}; curve-split plan viewports={4}; profile viewports={5}; missing profile ranges={6}; warnings={7}; sheet={8}; segment length={9:0.###} m; sets/sheet={10}.",
                 roads.Count,
                 sheetsCreated,
                 sheetsRefreshed,
                 planViewports,
+                curveSplitPlanViewports,
                 profileViewports,
                 missingProfiles,
                 warnings,
