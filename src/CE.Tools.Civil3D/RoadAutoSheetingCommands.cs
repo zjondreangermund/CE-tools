@@ -288,6 +288,72 @@ namespace CETools.Civil3D
                 ? 594.0
                 : 841.0;
 
+            // Resolve impossible fixed paper sizes before cloning any layout. A1 cannot
+            // hold two 70 + 250 mm plan/profile pairs with the configured reserves.
+            if (specifiedViewportSizing)
+            {
+                double usableWidth = paperWidth - 2.0 * margin - rightReserve;
+                double usableHeight = paperHeight - 2.0 * margin - bottomReserve;
+                double pairHeight = 5.0 + planViewportHeight + planProfileGap + profileViewportHeight;
+                if (planViewportWidth > usableWidth + 0.01 ||
+                    profileViewportWidth > usableWidth + 0.01 ||
+                    pairHeight > usableHeight + 0.01)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADAUTOSHEETS: viewport dimensions do not fit {0}. " +
+                        "Available width={1:0.##} mm, height={2:0.##} mm; " +
+                        "requested plan={3:0.##} x {4:0.##} mm, profile={5:0.##} x {6:0.##} mm. " +
+                        "Reduce dimensions/reserves or choose a larger sheet.",
+                        sheetSize, usableWidth, usableHeight,
+                        planViewportWidth, planViewportHeight,
+                        profileViewportWidth, profileViewportHeight);
+                    return;
+                }
+
+                int fittingPairs = (int)Math.Floor(
+                    (usableHeight + pairGap) / (pairHeight + pairGap));
+                if (perSheet > fittingPairs)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADAUTOSHEETS: {0} plan/profile sets cannot fit on {1} " +
+                        "with the specified heights. Using {2} set(s) per sheet instead.",
+                        perSheet, sheetSize, fittingPairs);
+                    perSheet = fittingPairs;
+                }
+
+                // A specified 1:N viewport cannot depict a longer chainage range
+                // than its paper width. Allow the configured clearance on both ends.
+                // This avoids empty fitted viewports at e.g. 1:1000/800 mm/1000 m.
+                double maxLength = double.PositiveInfinity;
+                if (planFixedScale > Tol)
+                    maxLength = Math.Min(maxLength,
+                        planViewportWidth / planFixedScale - 2.0 * planClearance);
+                if (profileFixedScale > Tol)
+                    maxLength = Math.Min(maxLength,
+                        profileViewportWidth / profileFixedScale - 2.0 * profileClearance);
+                if (maxLength <= Tol)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADAUTOSHEETS: viewport width/scale cannot fit even " +
+                        "the configured clearance. Increase width, reduce clearance, " +
+                        "or use a smaller viewport scale.");
+                    return;
+                }
+                if (segmentLength > maxLength)
+                {
+                    // Slight headroom for numerical tolerance and alignment curvature.
+                    double adjustedLength = Math.Floor(maxLength * 0.95 / 10.0) * 10.0;
+                    if (adjustedLength <= Tol)
+                        adjustedLength = maxLength * 0.95;
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADAUTOSHEETS: a {0:0.##} m segment will not fit " +
+                        "the specified paper width and scale. Using {1:0.##} m " +
+                        "segments to preserve the requested 1:N scale.",
+                        segmentLength, adjustedLength);
+                    segmentLength = adjustedLength;
+                }
+            }
+
             int sheetsCreated = 0;
             int sheetsRefreshed = 0;
             int planViewports = 0;
