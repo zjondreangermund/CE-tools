@@ -254,7 +254,8 @@ namespace CETools.Civil3D
             double profileClearance = settings.Double("ProfileClearance", 5.0);
             bool titles = string.Equals(settings.Text("ChainageTitles"), "Yes", StringComparison.OrdinalIgnoreCase);
             bool lockViewports = string.Equals(settings.Text("LockViewports"), "Yes", StringComparison.OrdinalIgnoreCase);
-            bool reuse = string.Equals(settings.Text("ExistingSheets"), "Reuse and refresh", StringComparison.OrdinalIgnoreCase);
+            // Reruns use unique layouts for Civil 3D viewport safety.
+            // The previously generated sheets remain untouched.
 
             List<ObjectId> roadIds = ResolveRoadAlignments(
                 document,
@@ -437,10 +438,20 @@ namespace CETools.Civil3D
                         CultureInfo.InvariantCulture, "CE-SHEET-{0:000}-{1}",
                         sheetIndex + 1, sheetSize);
                     bool existed = LayoutExists(document.Database, layoutName);
-                    if (existed && !reuse)
+                    // Civil 3D can fatal-error when regenerating/erasing the viewports
+                    // of a previously displayed layout during a second command run.
+                    // Preserve the previous layout instead of editing its live viewport
+                    // objects. Always clone a new uniquely named sheet on reruns.
+                    if (existed)
+                    {
+                        string previousName = layoutName;
                         layoutName = UniqueLayoutName(document.Database, layoutName);
+                        document.Editor.WriteMessage(
+                            "\nCE_ROADAUTOSHEETS: existing sheet '{0}' is preserved. " +
+                            "Creating '{1}' to avoid unsafe live-viewport replacement.",
+                            previousName, layoutName);
+                    }
 
-                    if (!existed || !reuse)
                     {
                         string cloneError;
                         if (!TryCloneLayout(
