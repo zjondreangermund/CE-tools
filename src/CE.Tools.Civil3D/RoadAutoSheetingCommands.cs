@@ -468,10 +468,6 @@ namespace CETools.Civil3D
                         }
                         sheetsCreated++;
                     }
-                    else
-                    {
-                        sheetsRefreshed++;
-                    }
 
                     string sheetStage = "ACTIVATE LAYOUT";
                     try
