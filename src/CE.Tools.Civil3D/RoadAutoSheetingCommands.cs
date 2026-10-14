@@ -1066,7 +1066,8 @@ namespace CETools.Civil3D
                 height,
                 NormalizeTwist(-angle),
                 fixedScale,
-                lockAfter);
+                lockAfter,
+                true);
         }
 
         private static double NormalizeTwist(double radians)
@@ -1185,7 +1186,8 @@ namespace CETools.Civil3D
             double modelHeight,
             double twist,
             double fixedScale,
-            bool lockAfter)
+            bool lockAfter,
+            bool autoFitIfFixedScaleExceedsPaper = false)
         {
             if (viewport == null ||
                 modelWidth <= Tol ||
@@ -1206,7 +1208,29 @@ namespace CETools.Civil3D
             if (fixedScale > Tol &&
                 (modelWidth * scale > viewport.Width + 0.01 ||
                  modelHeight * scale > viewport.Height + 0.01))
-                return false;
+            {
+                if (!autoFitIfFixedScaleExceedsPaper)
+                    return false;
+
+                // Keep the complete alignment and its clearances visible instead of
+                // leaving the plan viewport empty. Report the changed scale explicitly.
+                double fittedScale = Math.Min(
+                    viewport.Width / modelWidth,
+                    viewport.Height / modelHeight);
+                Document activeDocument = AcApplication.DocumentManager.MdiActiveDocument;
+                if (activeDocument != null)
+                    activeDocument.Editor.WriteMessage(
+                        "\nCE_ROADAUTOSHEETS: plan at requested 1:{0:0.##} " +
+                        "does not fit {1:0.##} x {2:0.##} mm paper viewport " +
+                        "(required {3:0.##} x {4:0.##} mm). " +
+                        "Using fitted 1:{5:0.##} to show the entire road. " +
+                        "Increase plan height/width or reduce tolerances to preserve fixed scale.",
+                        1000.0 / fixedScale,
+                        viewport.Width, viewport.Height,
+                        modelWidth * fixedScale, modelHeight * fixedScale,
+                        1000.0 / fittedScale);
+                scale = fittedScale;
+            }
 
             try
             {
