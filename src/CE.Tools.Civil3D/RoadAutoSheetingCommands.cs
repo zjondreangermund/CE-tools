@@ -31,6 +31,7 @@ namespace CETools.Civil3D
     {
         private const double Tol = 0.000001;
         private const string TitlePrefix = "CE-SHEET:";
+        private const string NorthArrowLayerName = "CE-NORTH-ARROWS";
 
         [CommandMethod(
             "CE_TOOLS",
@@ -103,6 +104,53 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "PlanProfileGap", "04 Paper geometry", "Plan-to-profile gap (mm)", 8.0,
                 "Vertical paper-space gap between each plan viewport and its matching profile viewport.");
+            settings.AddChoice(
+                "ViewportSizing", "04 Paper geometry", "Viewport paper sizing", "Specified dimensions",
+                "Use fixed paper-space viewport sizes like the approved template, or let CE Tools fill the available sheet area.",
+                new[] { "Specified dimensions", "Automatic from sheet" });
+            settings.AddPositiveDouble(
+                "PlanViewportWidth", "04 Paper geometry", "Plan viewport length / width (mm)", 650.0,
+                "Paper-space width of each complete plan viewport range before any curve split.");
+            settings.AddPositiveDouble(
+                "PlanViewportHeight", "04 Paper geometry", "Plan viewport height (mm)", 70.0,
+                "Paper-space height of each plan viewport.");
+            settings.AddPositiveDouble(
+                "ProfileViewportWidth", "04 Paper geometry", "Profile viewport length / width (mm)", 650.0,
+                "Paper-space width of the matching long-section/profile viewport.");
+            settings.AddPositiveDouble(
+                "ProfileViewportHeight", "04 Paper geometry", "Profile viewport height (mm)", 150.0,
+                "Paper-space height of the matching long-section/profile viewport including bands.");
+            settings.AddChoice(
+                "PlanScaleMode", "05 Model fit", "Plan viewport scale", "Automatic fit",
+                "Automatically fit each plan range or force a specified 1:N viewport scale.",
+                new[] { "Automatic fit", "Specified scale" });
+            settings.AddPositiveDouble(
+                "PlanScaleDenominator", "05 Model fit", "Plan scale denominator (1:N)", 1000.0,
+                "Example: enter 1000 for 1:1000. Used only when Plan viewport scale is Specified scale.");
+            settings.AddChoice(
+                "ProfileScaleMode", "05 Model fit", "Profile viewport scale", "Automatic fit",
+                "Automatically fit the long section or force a specified 1:N viewport scale.",
+                new[] { "Automatic fit", "Specified scale" });
+            settings.AddPositiveDouble(
+                "ProfileScaleDenominator", "05 Model fit", "Profile scale denominator (1:N)", 1000.0,
+                "Example: enter 1000 for 1:1000. Used only when Profile viewport scale is Specified scale.");
+            settings.AddPositiveDouble(
+                "ModelUnitsPerMetre", "05 Model fit", "Model units per metre", 1.0,
+                "Use 1 for metre drawings or 1000 for millimetre drawings.");
+            settings.AddChoice(
+                "AddNorthArrow", "06 Finish", "Add north arrow to every plan viewport", "Yes",
+                "Insert one north-arrow block for every plan viewport and rotate it to the viewport twist.",
+                new[] { "Yes", "No" });
+            settings.AddChoice(
+                "NorthArrowSource", "06 Finish", "North arrow source", "Select block after saving settings",
+                "Use a north-arrow block already defined in the drawing, or select one block reference after saving settings.",
+                BuildNorthArrowChoices(document.Database));
+            settings.AddPositiveDouble(
+                "NorthArrowScale", "06 Finish", "North arrow block scale", 1.0,
+                "Uniform paper-space scale factor for each inserted north-arrow block.");
+            settings.AddPositiveDouble(
+                "NorthArrowOffset", "06 Finish", "North arrow offset left of plan viewport (mm)", 12.0,
+                "Distance from the left edge of each plan viewport to the north-arrow insertion point.");
             settings.AddPositiveDouble(
                 "PlanClearance", "05 Model fit", "Plan clearance around road (m)", 40.0,
                 "Model-space clearance added around the sampled road segment before fitting the rotated plan viewport.");
@@ -146,6 +194,24 @@ namespace CETools.Civil3D
             double bottomReserve = settings.Double("BottomReserve", 20.0);
             double pairGap = settings.Double("PairGap", 10.0);
             double planProfileGap = settings.Double("PlanProfileGap", 8.0);
+            bool specifiedViewportSizing = string.Equals(settings.Text("ViewportSizing"), "Specified dimensions", StringComparison.OrdinalIgnoreCase);
+            double planViewportWidth = settings.Double("PlanViewportWidth", 650.0);
+            double planViewportHeight = settings.Double("PlanViewportHeight", 70.0);
+            double profileViewportWidth = settings.Double("ProfileViewportWidth", 650.0);
+            double profileViewportHeight = settings.Double("ProfileViewportHeight", 150.0);
+            double modelUnitsPerMetre = settings.Double("ModelUnitsPerMetre", 1.0);
+            double planFixedScale = string.Equals(settings.Text("PlanScaleMode"), "Specified scale", StringComparison.OrdinalIgnoreCase)
+                ? 1000.0 / (settings.Double("PlanScaleDenominator", 1000.0) * modelUnitsPerMetre)
+                : 0.0;
+            double profileFixedScale = string.Equals(settings.Text("ProfileScaleMode"), "Specified scale", StringComparison.OrdinalIgnoreCase)
+                ? 1000.0 / (settings.Double("ProfileScaleDenominator", 1000.0) * modelUnitsPerMetre)
+                : 0.0;
+            bool addNorthArrow = string.Equals(settings.Text("AddNorthArrow"), "Yes", StringComparison.OrdinalIgnoreCase);
+            double northArrowScale = settings.Double("NorthArrowScale", 1.0);
+            double northArrowOffset = settings.Double("NorthArrowOffset", 12.0);
+            ObjectId northArrowBlockId = addNorthArrow
+                ? ResolveNorthArrowBlock(document, settings.Text("NorthArrowSource"))
+                : ObjectId.Null;
             double planClearance = settings.Double("PlanClearance", 40.0);
             bool curveSplit = string.Equals(settings.Text("CurveSplit"), "Yes", StringComparison.OrdinalIgnoreCase);
             double curveHeadingTolerance = settings.Double("CurveHeadingTolerance", 12.0);
@@ -332,7 +398,12 @@ namespace CETools.Civil3D
                                 bottomReserve,
                                 pairGap,
                                 planProfileGap,
-                                sheetPlan.Segments.Count);
+                                sheetPlan.Segments.Count,
+                                specifiedViewportSizing,
+                                planViewportWidth,
+                                planViewportHeight,
+                                profileViewportWidth,
+                                profileViewportHeight);
 
                             sheetStage = "OPEN ROAD ALIGNMENT";
                             CivilAlignment alignment = tr.GetObject(
@@ -394,11 +465,22 @@ namespace CETools.Civil3D
                                             planRange.StartStation,
                                             planRange.EndStation,
                                             planClearance,
+                                            planFixedScale,
                                             lockViewports))
                                     {
                                         planViewports++;
                                         if (planRanges.Count > 1)
                                             curveSplitPlanViewports++;
+                                        if (addNorthArrow && !northArrowBlockId.IsNull)
+                                            AddNorthArrow(
+                                                paper,
+                                                tr,
+                                                northArrowBlockId,
+                                                planSlot,
+                                                pair,
+                                                plan.TwistAngle,
+                                                northArrowScale,
+                                                northArrowOffset);
                                     }
                                     else
                                     {
@@ -438,7 +520,7 @@ namespace CETools.Civil3D
                                         paper,
                                         tr,
                                         pair.ProfileCenter,
-                                        pair.Width,
+                                        pair.ProfileWidth,
                                         pair.ProfileHeight);
                                     sheetStage = "FIT PROFILE VIEWPORT " +
                                         RoadSheetingPlanner.StationText(segment.StartStation) + "-" +
@@ -450,6 +532,7 @@ namespace CETools.Civil3D
                                             segment.StartStation,
                                             segment.EndStation,
                                             profileClearance,
+                                            profileFixedScale,
                                             lockViewports))
                                         profileViewports++;
                                     else
@@ -780,19 +863,19 @@ namespace CETools.Civil3D
             double gap = ranges.Count > 1
                 ? Math.Max(0.0, requestedGap)
                 : 0.0;
-            double usable = pair.Width - gap * Math.Max(0, ranges.Count - 1);
+            double usable = pair.PlanWidth - gap * Math.Max(0, ranges.Count - 1);
             if (usable <= 20.0)
                 throw new InvalidOperationException(
                     "The plan area is too narrow for the curve-split viewports. Reduce the adjacent viewport gap or the number of curve splits.");
 
             double totalLength = ranges.Sum(item => Math.Max(Tol, item.Length));
             var result = new List<PlanPaperSlot>();
-            double left = pair.Left;
+            double left = pair.PlanLeft;
 
             for (int index = 0; index < ranges.Count; index++)
             {
                 double width = index == ranges.Count - 1
-                    ? pair.Left + pair.Width - left
+                    ? pair.PlanLeft + pair.PlanWidth - left
                     : usable * Math.Max(Tol, ranges[index].Length) / totalLength;
                 if (width <= 10.0)
                     throw new InvalidOperationException(
@@ -818,6 +901,7 @@ namespace CETools.Civil3D
             double start,
             double end,
             double clearance,
+            double fixedScale,
             bool lockAfter)
         {
             if (alignment == null || viewport == null) return false;
@@ -877,6 +961,7 @@ namespace CETools.Civil3D
                 width,
                 height,
                 NormalizeTwist(-angle),
+                fixedScale,
                 lockAfter);
         }
 
@@ -981,6 +1066,7 @@ namespace CETools.Civil3D
                 Math.Max(Tol, maxX - minX),
                 Math.Max(Tol, maxY - minY),
                 0.0,
+                fixedScale,
                 lockAfter);
         }
 
@@ -990,6 +1076,7 @@ namespace CETools.Civil3D
             double modelWidth,
             double modelHeight,
             double twist,
+            double fixedScale,
             bool lockAfter)
         {
             if (viewport == null ||
@@ -999,12 +1086,18 @@ namespace CETools.Civil3D
                 viewport.Height <= Tol)
                 return false;
 
-            double scale = Math.Min(
-                viewport.Width / modelWidth,
-                viewport.Height / modelHeight);
+            double scale = fixedScale > Tol
+                ? fixedScale
+                : Math.Min(
+                    viewport.Width / modelWidth,
+                    viewport.Height / modelHeight);
             if (scale <= Tol ||
                 double.IsNaN(scale) ||
                 double.IsInfinity(scale))
+                return false;
+            if (fixedScale > Tol &&
+                (modelWidth * scale > viewport.Width + 0.01 ||
+                 modelHeight * scale > viewport.Height + 0.01))
                 return false;
 
             try
@@ -1054,41 +1147,77 @@ namespace CETools.Civil3D
             double bottomReserve,
             double pairGap,
             double planProfileGap,
-            int count)
+            int count,
+            bool specifiedDimensions,
+            double requestedPlanWidth,
+            double requestedPlanHeight,
+            double requestedProfileWidth,
+            double requestedProfileHeight)
         {
             double left = Math.Max(0.0, margin);
             double right = Math.Max(left + 50.0, paperWidth - margin - Math.Max(0.0, rightReserve));
             double bottom = Math.Max(0.0, margin + Math.Max(0.0, bottomReserve));
             double top = Math.Max(bottom + 50.0, paperHeight - margin);
-            double width = right - left;
-            double totalHeight = top - bottom;
+            double availableWidth = right - left;
+            double availableHeight = top - bottom;
             double safePairGap = count > 1 ? Math.Max(0.0, pairGap) : 0.0;
-            double pairHeight = (totalHeight - safePairGap * Math.Max(0, count - 1)) / Math.Max(1, count);
-            if (pairHeight <= 30.0)
-                throw new InvalidOperationException("Paper margins/reserves leave too little height for the requested number of plan/profile sets.");
+
+            double planWidth;
+            double profileWidth;
+            double planHeight;
+            double profileHeight;
+            double pairHeight;
+
+            if (specifiedDimensions)
+            {
+                planWidth = requestedPlanWidth;
+                profileWidth = requestedProfileWidth;
+                planHeight = requestedPlanHeight;
+                profileHeight = requestedProfileHeight;
+                if (planWidth > availableWidth + 0.01 || profileWidth > availableWidth + 0.01)
+                    throw new InvalidOperationException("Specified plan/profile viewport length is wider than the available sheet area.");
+                pairHeight = 5.0 + planHeight + planProfileGap + profileHeight;
+                double required = pairHeight * count + safePairGap * Math.Max(0, count - 1);
+                if (required > availableHeight + 0.01)
+                    throw new InvalidOperationException("Specified plan/profile viewport heights do not fit on this sheet. Reduce heights/gaps or sets per sheet.");
+            }
+            else
+            {
+                planWidth = availableWidth;
+                profileWidth = availableWidth;
+                pairHeight = (availableHeight - safePairGap * Math.Max(0, count - 1)) / Math.Max(1, count);
+                if (pairHeight <= 30.0)
+                    throw new InvalidOperationException("Paper margins/reserves leave too little height for the requested number of plan/profile sets.");
+                double usable = Math.Max(20.0, pairHeight - planProfileGap - 5.0);
+                planHeight = usable * 0.58;
+                profileHeight = usable - planHeight;
+            }
 
             var result = new List<PaperPair>();
             for (int index = 0; index < count; index++)
             {
                 double pairTop = top - index * (pairHeight + safePairGap);
-                double usable = Math.Max(20.0, pairHeight - planProfileGap - 5.0);
-                double planHeight = usable * 0.58;
-                double profileHeight = usable - planHeight;
+                double planLeft = left + (availableWidth - planWidth) * 0.5;
+                double profileLeft = left + (availableWidth - profileWidth) * 0.5;
                 double titleHeight = 5.0;
                 double planTop = pairTop - titleHeight;
                 Point3d planCenter = new Point3d(
-                    (left + right) * 0.5,
+                    planLeft + planWidth * 0.5,
                     planTop - planHeight * 0.5,
                     0.0);
                 Point3d profileCenter = new Point3d(
-                    (left + right) * 0.5,
+                    profileLeft + profileWidth * 0.5,
                     planTop - planHeight - planProfileGap - profileHeight * 0.5,
                     0.0);
                 result.Add(new PaperPair
                 {
                     Left = left,
                     Top = pairTop,
-                    Width = width,
+                    Width = availableWidth,
+                    PlanLeft = planLeft,
+                    PlanWidth = planWidth,
+                    ProfileLeft = profileLeft,
+                    ProfileWidth = profileWidth,
                     PlanHeight = planHeight,
                     ProfileHeight = profileHeight,
                     PlanCenter = planCenter,
@@ -1139,6 +1268,15 @@ namespace CETools.Civil3D
                         try { viewport.Erase(); }
                         catch { }
                     }
+                    continue;
+                }
+
+                BlockReference block = entity as BlockReference;
+                if (block != null &&
+                    string.Equals(block.Layer, NorthArrowLayerName, StringComparison.OrdinalIgnoreCase))
+                {
+                    try { block.Erase(); }
+                    catch { }
                     continue;
                 }
 
@@ -1314,6 +1452,10 @@ namespace CETools.Civil3D
             internal double Left;
             internal double Top;
             internal double Width;
+            internal double PlanLeft;
+            internal double PlanWidth;
+            internal double ProfileLeft;
+            internal double ProfileWidth;
             internal double PlanHeight;
             internal double ProfileHeight;
             internal Point3d PlanCenter;
