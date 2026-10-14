@@ -1083,6 +1083,10 @@ namespace CETools.Civil3D
             double full = Math.PI * 2.0;
             double value = radians % full;
             if (value < 0.0) value += full;
+            // Road orientation is axial, so keep all plan annotation readable
+            // instead of rotating a westbound alignment upside down.
+            if (value > Math.PI * 0.5 && value < Math.PI * 1.5)
+                value = (value + Math.PI) % full;
             return value;
         }
 
@@ -1220,24 +1224,20 @@ namespace CETools.Civil3D
                 if (!autoFitIfFixedScaleExceedsPaper)
                     return false;
 
-                // Keep the complete alignment and its clearances visible instead of
-                // leaving the plan viewport empty. Report the changed scale explicitly.
-                double fittedScale = Math.Min(
-                    viewport.Width / modelWidth,
-                    viewport.Height / modelHeight);
+                // Honour the user's explicit 1:N; do not secretly alter the viewport scale.
+                // If no physically possible paper rectangle fits the chosen dimensions,
+                // centre the requested range and report that its outer clearance clips.
                 Document activeDocument = AcApplication.DocumentManager.MdiActiveDocument;
                 if (activeDocument != null)
                     activeDocument.Editor.WriteMessage(
-                        "\nCE_ROADAUTOSHEETS: plan at requested 1:{0:0.##} " +
-                        "does not fit {1:0.##} x {2:0.##} mm paper viewport " +
-                        "(required {3:0.##} x {4:0.##} mm). " +
-                        "Using fitted 1:{5:0.##} to show the entire road. " +
-                        "Increase plan height/width or reduce tolerances to preserve fixed scale.",
+                        "\nCE_ROADAUTOSHEETS: specified plan scale 1:{0:0.##} retained. " +
+                        "The required road+tolerance envelope is {1:0.##} x {2:0.##} mm, " +
+                        "but the paper viewport is only {3:0.##} x {4:0.##} mm. " +
+                        "Some model content may be clipped. Increase paper dimensions " +
+                        "or reduce tolerances/chainage length.",
                         1000.0 / fixedScale,
-                        viewport.Width, viewport.Height,
                         modelWidth * fixedScale, modelHeight * fixedScale,
-                        1000.0 / fittedScale);
-                scale = fittedScale;
+                        viewport.Width, viewport.Height);
             }
 
             try
