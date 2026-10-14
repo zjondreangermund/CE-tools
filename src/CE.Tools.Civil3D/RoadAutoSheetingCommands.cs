@@ -154,6 +154,22 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "PlanClearance", "05 Model fit", "Plan clearance around road (m)", 40.0,
                 "Model-space clearance added around the sampled road segment before fitting the rotated plan viewport.");
+            settings.AddPositiveDouble("PlanTopTolerance", "05 Model fit", "Plan top tolerance from road centreline (m)", 35.0,
+                "Clearance measured above the rotated road centreline.");
+            settings.AddPositiveDouble("PlanBottomTolerance", "05 Model fit", "Plan bottom tolerance from road centreline (m)", 35.0,
+                "Clearance measured below the rotated road centreline.");
+            settings.AddPositiveDouble("PlanStartTolerance", "05 Model fit", "Plan left / start chainage tolerance (m)", 12.0,
+                "Extra room before the road segment start.");
+            settings.AddPositiveDouble("PlanEndTolerance", "05 Model fit", "Plan right / end chainage tolerance (m)", 12.0,
+                "Extra room after the road segment end.");
+            settings.AddPositiveDouble("ProfileTopTolerance", "05 Model fit", "Profile top tolerance from content (m)", 3.0,
+                "Extra model-space height above the visible profile content.");
+            settings.AddPositiveDouble("ProfileBottomTolerance", "05 Model fit", "Profile bottom tolerance from content (m)", 3.0,
+                "Extra model-space height below the visible profile content and bands.");
+            settings.AddPositiveDouble("ProfileLeftTolerance", "05 Model fit", "Profile left tolerance from content (m)", 3.0,
+                "Extra model-space width to the left of the profile labels and frame.");
+            settings.AddPositiveDouble("ProfileRightTolerance", "05 Model fit", "Profile right tolerance from content (m)", 3.0,
+                "Extra model-space width to the right of the profile labels and frame.");
             settings.AddChoice(
                 "CurveSplit", "05 Model fit", "Split plan viewport at disruptive curves", "Yes",
                 "When the road heading changes too much inside one normal chainage block, place the remaining chainage in an adjacent plan viewport and rotate it independently.",
@@ -216,6 +232,14 @@ namespace CETools.Civil3D
                 document.Editor.WriteMessage(
                     "\nCE_ROADAUTOSHEETS: north arrows were requested but no north-arrow block was selected/resolved. Sheets will continue without north arrows.");
             double planClearance = settings.Double("PlanClearance", 40.0);
+            double planTopTolerance = settings.Double("PlanTopTolerance", 35.0);
+            double planBottomTolerance = settings.Double("PlanBottomTolerance", 35.0);
+            double planStartTolerance = settings.Double("PlanStartTolerance", 12.0);
+            double planEndTolerance = settings.Double("PlanEndTolerance", 12.0);
+            double profileTopTolerance = settings.Double("ProfileTopTolerance", 3.0);
+            double profileBottomTolerance = settings.Double("ProfileBottomTolerance", 3.0);
+            double profileLeftTolerance = settings.Double("ProfileLeftTolerance", 3.0);
+            double profileRightTolerance = settings.Double("ProfileRightTolerance", 3.0);
             bool curveSplit = string.Equals(settings.Text("CurveSplit"), "Yes", StringComparison.OrdinalIgnoreCase);
             double curveHeadingTolerance = settings.Double("CurveHeadingTolerance", 12.0);
             double minimumPlanSubrange = settings.Double("MinimumPlanSubrange", 100.0);
@@ -327,10 +351,10 @@ namespace CETools.Civil3D
                 double maxLength = double.PositiveInfinity;
                 if (planFixedScale > Tol)
                     maxLength = Math.Min(maxLength,
-                        planViewportWidth / planFixedScale - 2.0 * planClearance);
+                        planViewportWidth / planFixedScale - planStartTolerance - planEndTolerance);
                 if (profileFixedScale > Tol)
                     maxLength = Math.Min(maxLength,
-                        profileViewportWidth / profileFixedScale - 2.0 * profileClearance);
+                        profileViewportWidth / profileFixedScale - profileLeftTolerance - profileRightTolerance);
                 if (maxLength <= Tol)
                 {
                     document.Editor.WriteMessage(
@@ -533,7 +557,10 @@ namespace CETools.Civil3D
                                             plan,
                                             planRange.StartStation,
                                             planRange.EndStation,
-                                            planClearance,
+                                            planTopTolerance,
+                                            planBottomTolerance,
+                                            planStartTolerance,
+                                            planEndTolerance,
                                             planFixedScale,
                                             lockViewports))
                                     {
@@ -600,7 +627,10 @@ namespace CETools.Civil3D
                                             profile,
                                             segment.StartStation,
                                             segment.EndStation,
-                                            profileClearance,
+                                            profileTopTolerance,
+                                            profileBottomTolerance,
+                                            profileLeftTolerance,
+                                            profileRightTolerance,
                                             profileFixedScale,
                                             lockViewports))
                                         profileViewports++;
@@ -969,7 +999,10 @@ namespace CETools.Civil3D
             Viewport viewport,
             double start,
             double end,
-            double clearance,
+            double topTolerance,
+            double bottomTolerance,
+            double startTolerance,
+            double endTolerance,
             double fixedScale,
             bool lockAfter)
         {
@@ -1014,10 +1047,12 @@ namespace CETools.Civil3D
                 maxV = Math.Max(maxV, v);
             }
 
-            minU -= clearance;
-            maxU += clearance;
-            minV -= clearance;
-            maxV += clearance;
+            // Along the rotated road: start/end correspond to sheet left/right.
+            minU -= startTolerance;
+            maxU += endTolerance;
+            // Perpendicular to the road: independent centreline top/bottom.
+            minV -= bottomTolerance;
+            maxV += topTolerance;
             double width = Math.Max(Tol, maxU - minU);
             double height = Math.Max(Tol, maxV - minV);
             double centerU = (minU + maxU) * 0.5;
@@ -1084,7 +1119,10 @@ namespace CETools.Civil3D
             Viewport viewport,
             double start,
             double end,
-            double clearance,
+            double topTolerance,
+            double bottomTolerance,
+            double leftTolerance,
+            double rightTolerance,
             double fixedScale,
             bool lockAfter)
         {
@@ -1122,10 +1160,10 @@ namespace CETools.Civil3D
                 maxX = Math.Max(croppedMin, croppedMax);
             }
 
-            minX -= clearance;
-            maxX += clearance;
-            minY -= clearance;
-            maxY += clearance;
+            minX -= leftTolerance;
+            maxX += rightTolerance;
+            minY -= bottomTolerance;
+            maxY += topTolerance;
 
             return ApplyViewport(
                 viewport,
