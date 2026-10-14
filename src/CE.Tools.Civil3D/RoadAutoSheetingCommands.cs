@@ -1195,8 +1195,7 @@ namespace CETools.Civil3D
             // of its Civil 3D style. Paper-space viewport zoom is uniform.
             // An incompatible 1:N can otherwise reveal neighbouring profiles.
             if (fitContent && requestedScale > Tol &&
-                (width * requestedScale > viewport.Width + 0.01 ||
-                 height * requestedScale > viewport.Height + 0.01))
+                Math.Abs(requestedScale - fitScale) > 0.000001)
             {
                 Document active = AcApplication.DocumentManager.MdiActiveDocument;
                 if (active != null)
@@ -1208,8 +1207,11 @@ namespace CETools.Civil3D
                         1000.0 / requestedScale, width * requestedScale,
                         height * requestedScale, viewport.Width, viewport.Height,
                         1000.0 / fitScale);
-                fixedScale = 0.0;
             }
+            // Content-first mode must also zoom IN when the specified scale is
+            // too small, otherwise the frame shows unrelated neighbouring profiles.
+            if (fitContent)
+                fixedScale = 0.0;
 
             return ApplyViewport(
                 viewport,
