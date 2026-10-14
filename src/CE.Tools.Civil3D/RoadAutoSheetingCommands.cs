@@ -1292,6 +1292,153 @@ namespace CETools.Civil3D
             }
         }
 
+        private static IEnumerable<string> BuildNorthArrowChoices(Database database)
+        {
+            var result = new List<string> { "Select block after saving settings" };
+            if (database == null) return result;
+            try
+            {
+                using (Transaction tr = database.TransactionManager.StartTransaction())
+                {
+                    BlockTable table = tr.GetObject(
+                        database.BlockTableId,
+                        OpenMode.ForRead,
+                        false) as BlockTable;
+                    if (table != null)
+                    {
+                        foreach (ObjectId id in table)
+                        {
+                            BlockTableRecord record = tr.GetObject(
+                                id,
+                                OpenMode.ForRead,
+                                false) as BlockTableRecord;
+                            if (record == null ||
+                                record.IsLayout ||
+                                record.IsAnonymous ||
+                                string.IsNullOrWhiteSpace(record.Name))
+                                continue;
+                            string upper = record.Name.ToUpperInvariant();
+                            if (upper.Contains("NORTH") ||
+                                upper.Contains("N-ARROW") ||
+                                upper.Contains("N_ARROW") ||
+                                upper.Contains("NORTHARROW"))
+                                result.Add(record.Name);
+                        }
+                    }
+                }
+            }
+            catch { }
+            return result
+                .Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => string.Equals(name, "Select block after saving settings", StringComparison.OrdinalIgnoreCase) ? 0 : 1)
+                .ThenBy(name => name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static ObjectId ResolveNorthArrowBlock(
+            Document document,
+            string source)
+        {
+            if (document == null) return ObjectId.Null;
+            Database database = document.Database;
+            if (!string.IsNullOrWhiteSpace(source) &&
+                !string.Equals(
+                    source,
+                    "Select block after saving settings",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                using (Transaction tr = database.TransactionManager.StartTransaction())
+                {
+                    BlockTable table = tr.GetObject(
+                        database.BlockTableId,
+                        OpenMode.ForRead,
+                        false) as BlockTable;
+                    if (table != null && table.Has(source))
+                        return table[source];
+                }
+            }
+
+            PromptEntityOptions options = new PromptEntityOptions(
+                "\nSelect one north-arrow block reference to use on all generated plan viewports: ");
+            options.SetRejectMessage("\nSelect a block reference.");
+            options.AddAllowedClass(typeof(BlockReference), true);
+            PromptEntityResult picked = document.Editor.GetEntity(options);
+            if (picked.Status != PromptStatus.OK)
+                return ObjectId.Null;
+
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+            {
+                BlockReference block = tr.GetObject(
+                    picked.ObjectId,
+                    OpenMode.ForRead,
+                    false) as BlockReference;
+                return block == null ? ObjectId.Null : block.BlockTableRecord;
+            }
+        }
+
+        private static void AddNorthArrow(
+            BlockTableRecord paper,
+            Transaction tr,
+            ObjectId blockDefinitionId,
+            PlanPaperSlot slot,
+            PaperPair pair,
+            double viewportTwist,
+            double scale,
+            double offsetLeft)
+        {
+            if (paper == null ||
+                tr == null ||
+                blockDefinitionId.IsNull ||
+                slot == null ||
+                pair == null)
+                return;
+
+            ObjectId layerId = EnsureNorthArrowLayer(
+                paper.Database,
+                tr);
+            Point3d position = new Point3d(
+                slot.Left - Math.Max(0.0, offsetLeft),
+                pair.PlanCenter.Y,
+                0.0);
+
+            var arrow = new BlockReference(
+                position,
+                blockDefinitionId);
+            arrow.SetDatabaseDefaults(paper.Database);
+            arrow.LayerId = layerId;
+            arrow.Rotation = NormalizeTwist(viewportTwist);
+            double safeScale = Math.Max(0.0001, scale);
+            arrow.ScaleFactors = new Scale3d(
+                safeScale,
+                safeScale,
+                safeScale);
+            paper.AppendEntity(arrow);
+            tr.AddNewlyCreatedDBObject(arrow, true);
+        }
+
+        private static ObjectId EnsureNorthArrowLayer(
+            Database database,
+            Transaction tr)
+        {
+            LayerTable layers = tr.GetObject(
+                database.LayerTableId,
+                OpenMode.ForRead,
+                false) as LayerTable;
+            if (layers == null) return ObjectId.Null;
+            if (layers.Has(NorthArrowLayerName))
+                return layers[NorthArrowLayerName];
+
+            layers.UpgradeOpen();
+            var layer = new LayerTableRecord
+            {
+                Name = NorthArrowLayerName,
+                IsPlottable = true
+            };
+            ObjectId id = layers.Add(layer);
+            tr.AddNewlyCreatedDBObject(layer, true);
+            return id;
+        }
+
         private static List<string> ReadPaperLayouts(Database database)
         {
             var result = new List<string>();
