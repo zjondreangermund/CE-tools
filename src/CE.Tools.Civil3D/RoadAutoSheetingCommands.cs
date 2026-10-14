@@ -390,33 +390,45 @@ namespace CETools.Civil3D
                     ? string.Empty
                     : LayoutManager.Current.CurrentLayout;
 
+            // Interleave sections by road: sheet 1 contains first ranges from
+            // RD-01 and RD-02, rather than two ranges from RD-01.
+            var allJobs = new List<RoadSheetJob>();
             foreach (RoadInfo road in roads)
             {
-                IReadOnlyList<RoadSheetPlan> sheetPlans;
+                IReadOnlyList<RoadSheetPlan> planned;
                 try
                 {
-                    sheetPlans = RoadSheetingPlanner.Create(
-                        road.StartStation,
-                        road.EndStation,
-                        segmentLength,
-                        perSheet);
+                    planned = RoadSheetingPlanner.Create(
+                        road.StartStation, road.EndStation, segmentLength, 1);
                 }
                 catch (System.Exception exception)
                 {
                     document.Editor.WriteMessage(
-                        "\n{0}: sheet planning failed. {1}",
-                        road.Name,
-                        exception.Message);
+                        "\n{0}: sheet planning failed. {1}", road.Name, exception.Message);
                     warnings++;
                     continue;
                 }
+                foreach (RoadSheetPlan plannedSheet in planned)
+                    foreach (RoadSheetSegment segment in plannedSheet.Segments)
+                        allJobs.Add(new RoadSheetJob { Road = road, Segment = segment });
+            }
+            var orderedJobs = allJobs
+                .GroupBy(item => item.Road.Name, StringComparer.OrdinalIgnoreCase)
+                .Select(group => group.ToList())
+                .ToList();
+            var sheetQueue = new List<RoadSheetJob>();
+            for (int offset = 0; orderedJobs.Any(group => group.Count > offset); offset++)
+                foreach (List<RoadSheetJob> roadJobs in orderedJobs)
+                    if (roadJobs.Count > offset)
+                        sheetQueue.Add(roadJobs[offset]);
 
-                foreach (RoadSheetPlan sheetPlan in sheetPlans)
-                {
-                    string layoutName = BuildLayoutName(
-                        road.Name,
-                        sheetPlan,
-                        sheetSize);
+            for (int sheetIndex = 0; sheetIndex * perSheet < sheetQueue.Count; sheetIndex++)
+            {
+                List<RoadSheetJob> sheetJobs = sheetQueue
+                    .Skip(sheetIndex * perSheet).Take(perSheet).ToList();
+                    string layoutName = string.Format(
+                        CultureInfo.InvariantCulture, "CE-SHEET-{0:000}-{1}",
+                        sheetIndex + 1, sheetSize);
                     bool existed = LayoutExists(document.Database, layoutName);
                     if (existed && !reuse)
                         layoutName = UniqueLayoutName(document.Database, layoutName);
@@ -491,27 +503,24 @@ namespace CETools.Civil3D
                                 bottomReserve,
                                 pairGap,
                                 planProfileGap,
-                                sheetPlan.Segments.Count,
+                                sheetJobs.Count,
                                 specifiedViewportSizing,
                                 planViewportWidth,
                                 planViewportHeight,
                                 profileViewportWidth,
                                 profileViewportHeight);
 
-                            sheetStage = "OPEN ROAD ALIGNMENT";
-                            CivilAlignment alignment = tr.GetObject(
-                                road.AlignmentId,
-                                OpenMode.ForRead,
-                                false) as CivilAlignment;
-                            if (alignment == null)
-                                throw new InvalidOperationException("Road alignment could not be reopened.");
-
-                            for (int index = 0;
-                                 index < sheetPlan.Segments.Count;
-                                 index++)
+                            for (int index = 0; index < sheetJobs.Count; index++)
                             {
-                                RoadSheetSegment segment = sheetPlan.Segments[index];
+                                RoadSheetJob job = sheetJobs[index];
+                                RoadInfo road = job.Road;
+                                RoadSheetSegment segment = job.Segment;
                                 PaperPair pair = pairs[index];
+                                sheetStage = "OPEN ROAD ALIGNMENT " + road.Name;
+                                CivilAlignment alignment = tr.GetObject(
+                                    road.AlignmentId, OpenMode.ForRead, false) as CivilAlignment;
+                                if (alignment == null)
+                                    throw new InvalidOperationException("Road alignment could not be reopened.");
 
                                 IReadOnlyList<RoadSheetSegment> planRanges =
                                     curveSplit
@@ -655,7 +664,6 @@ namespace CETools.Civil3D
                             sheetStage,
                             exception.Message);
                     }
-                }
             }
 
             try
@@ -1708,6 +1716,12 @@ namespace CETools.Civil3D
                 Math.Round(end),
                 size);
             return value.Length <= 60 ? value : value.Substring(0, 60);
+        }
+
+        private sealed class RoadSheetJob
+        {
+            internal RoadInfo Road;
+            internal RoadSheetSegment Segment;
         }
 
         private sealed class RoadInfo
