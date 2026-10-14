@@ -131,6 +131,10 @@ namespace CETools.Civil3D
                 "ProfileScaleMode", "05 Model fit", "Profile viewport scale", "Automatic fit",
                 "Automatically fit the long section or force a specified 1:N viewport scale.",
                 new[] { "Automatic fit", "Specified scale" });
+            settings.AddChoice("ProfileFitPriority", "05 Model fit",
+                "Profile viewport fit priority", "Fit complete profile content",
+                "Fit the selected long-section including bands and annotations, or retain a forced viewport scale even when it clips.",
+                new[] { "Fit complete profile content", "Retain specified scale" });
             settings.AddPositiveDouble(
                 "ProfileScaleDenominator", "05 Model fit", "Profile scale denominator (1:N)", 1000.0,
                 "Example: enter 1000 for 1:1000. Used only when Profile viewport scale is Specified scale.");
@@ -219,6 +223,9 @@ namespace CETools.Civil3D
             double planFixedScale = string.Equals(settings.Text("PlanScaleMode"), "Specified scale", StringComparison.OrdinalIgnoreCase)
                 ? 1000.0 / (settings.Double("PlanScaleDenominator", 1000.0) * modelUnitsPerMetre)
                 : 0.0;
+            bool profileFitContent = !string.Equals(
+                settings.Text("ProfileFitPriority"), "Retain specified scale",
+                StringComparison.OrdinalIgnoreCase);
             double profileFixedScale = string.Equals(settings.Text("ProfileScaleMode"), "Specified scale", StringComparison.OrdinalIgnoreCase)
                 ? 1000.0 / (settings.Double("ProfileScaleDenominator", 1000.0) * modelUnitsPerMetre)
                 : 0.0;
@@ -641,7 +648,8 @@ namespace CETools.Civil3D
                                             profileLeftTolerance,
                                             profileRightTolerance,
                                             profileFixedScale,
-                                            lockViewports))
+                                            lockViewports,
+                                            profileFitContent))
                                         profileViewports++;
                                     else
                                         warnings++;
@@ -1137,7 +1145,8 @@ namespace CETools.Civil3D
             double leftTolerance,
             double rightTolerance,
             double fixedScale,
-            bool lockAfter)
+            bool lockAfter,
+            bool fitContent)
         {
             if (profileView == null || viewport == null) return false;
             Extents3d extents;
@@ -1178,14 +1187,38 @@ namespace CETools.Civil3D
             minY -= bottomTolerance;
             maxY += topTolerance;
 
+            double width = Math.Max(Tol, maxX - minX);
+            double height = Math.Max(Tol, maxY - minY);
+            double fitScale = Math.Min(viewport.Width / width, viewport.Height / height);
+            double requestedScale = fixedScale;
+            // The profile's internal horizontal and vertical exaggeration is part
+            // of its Civil 3D style. Paper-space viewport zoom is uniform.
+            // An incompatible 1:N can otherwise reveal neighbouring profiles.
+            if (fitContent && requestedScale > Tol &&
+                (width * requestedScale > viewport.Width + 0.01 ||
+                 height * requestedScale > viewport.Height + 0.01))
+            {
+                Document active = AcApplication.DocumentManager.MdiActiveDocument;
+                if (active != null)
+                    active.Editor.WriteMessage(
+                        "\nCE_ROADAUTOSHEETS: profile at 1:{0:0.##} requires " +
+                        "{1:0.##} x {2:0.##} mm; available {3:0.##} x {4:0.##} mm. " +
+                        "Fitting content at 1:{5:0.##}. Set Profile viewport fit priority " +
+                        "to Retain specified scale to prevent automatic adjustment.",
+                        1000.0 / requestedScale, width * requestedScale,
+                        height * requestedScale, viewport.Width, viewport.Height,
+                        1000.0 / fitScale);
+                fixedScale = 0.0;
+            }
+
             return ApplyViewport(
                 viewport,
                 new Point3d(
                     (minX + maxX) * 0.5,
                     (minY + maxY) * 0.5,
                     0.0),
-                Math.Max(Tol, maxX - minX),
-                Math.Max(Tol, maxY - minY),
+                width,
+                height,
                 0.0,
                 fixedScale,
                 lockAfter);
