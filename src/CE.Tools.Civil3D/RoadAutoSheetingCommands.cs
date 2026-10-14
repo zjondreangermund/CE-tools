@@ -212,6 +212,9 @@ namespace CETools.Civil3D
             ObjectId northArrowBlockId = addNorthArrow
                 ? ResolveNorthArrowBlock(document, settings.Text("NorthArrowSource"))
                 : ObjectId.Null;
+            if (addNorthArrow && northArrowBlockId.IsNull)
+                document.Editor.WriteMessage(
+                    "\nCE_ROADAUTOSHEETS: north arrows were requested but no north-arrow block was selected/resolved. Sheets will continue without north arrows.");
             double planClearance = settings.Double("PlanClearance", 40.0);
             bool curveSplit = string.Equals(settings.Text("CurveSplit"), "Yes", StringComparison.OrdinalIgnoreCase);
             double curveHeadingTolerance = settings.Double("CurveHeadingTolerance", 12.0);
@@ -1016,6 +1019,7 @@ namespace CETools.Civil3D
             double start,
             double end,
             double clearance,
+            double fixedScale,
             bool lockAfter)
         {
             if (profileView == null || viewport == null) return false;
