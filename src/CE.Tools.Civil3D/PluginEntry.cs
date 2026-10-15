@@ -77,10 +77,9 @@ namespace CETools.Civil3D
                 RibbonControl currentRibbon = ComponentManager.Ribbon;
                 if (currentRibbon == null) return;
                 bool hasMainTab = currentRibbon.Tabs.Any(tab => tab.Id == "CE_TOOLS_RIBBON_TAB");
-                bool hasProductionTab = currentRibbon.Tabs.Any(tab =>
-                    string.Equals(tab.Title, "CE TOOLS PRODUCTION", StringComparison.OrdinalIgnoreCase) ||
-                    string.Equals(tab.Title, "CE Tools Production", StringComparison.OrdinalIgnoreCase));
-                if (_ribbonCreated && hasMainTab && hasProductionTab) return;
+                // CE_TOOLS_RIBBON_TAB is our stable identity. Avoid repeated
+                // rebuilding on every Idle just because UI tab captions differ.
+                if (_ribbonCreated && hasMainTab) return;
                 RibbonBuilder.EnsureCreated();
                 ProductionWorkflowRibbonBuilder.EnsureCreated();
                 _ribbonCreated = true;
