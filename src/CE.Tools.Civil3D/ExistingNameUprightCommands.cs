@@ -37,22 +37,7 @@ namespace CETools.Civil3D
                 if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
                 Process(dialog.TextType, dialog.SelectedViewports, true);
             }
-            return;
-            // Previous command line prompts retained below for reference only.
-            var type = new PromptKeywordOptions("\nText type [Road/Sewer/Both] <Both>: ");
-            type.Keywords.Add("Road"); type.Keywords.Add("Sewer"); type.Keywords.Add("Both");
-            type.Keywords.Default = "Both"; type.AllowNone = true;
-            PromptResult choice = doc.Editor.GetKeywords(type);
-            if (choice.Status == PromptStatus.Cancel) return;
-            string selectedType = choice.Status == PromptStatus.OK ? choice.StringResult : "Both";
-            var scope = new PromptKeywordOptions("\nText scope [All/Viewport] <All>: ");
-            scope.Keywords.Add("All"); scope.Keywords.Add("Viewport");
-            scope.Keywords.Default = "All"; scope.AllowNone = true;
-            PromptResult selectedScope = doc.Editor.GetKeywords(scope);
-            if (selectedScope.Status == PromptStatus.Cancel) return;
-            bool selectedViewports = selectedScope.Status == PromptStatus.OK &&
-                string.Equals(selectedScope.StringResult, "Viewport", StringComparison.OrdinalIgnoreCase);
-            Process(selectedType, selectedViewports, true);
+
         }
 
         private static bool EligibleLayer(string layer, string textType)
