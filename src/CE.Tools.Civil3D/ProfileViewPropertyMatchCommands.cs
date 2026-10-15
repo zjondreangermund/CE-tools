@@ -202,7 +202,7 @@ namespace CETools.Civil3D
                         SewerLongSectionContext targetContext =
                             SewerLongSectionBandService.ResolveContext(
                                 document.Database, civil, targetId);
-                        targetNetworkId = targetNetworkId;
+                        targetNetworkId = targetContext.NetworkId;
 #endif
 
                         int targetRows;
