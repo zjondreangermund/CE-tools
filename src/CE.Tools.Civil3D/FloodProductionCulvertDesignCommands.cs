@@ -16,7 +16,11 @@ using CETools.Core;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
+#if CE_CIVIL3D_2024
+// Civil 3D 2024: resolve the feature-line point enum from the host API at runtime.
+#else
 using CivilFeatureLinePointType = Autodesk.Civil.DatabaseServices.FeatureLinePointType;
+#endif
 using CivilTinSurface = Autodesk.Civil.DatabaseServices.TinSurface;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.FloodProductionCulvertDesignCommands))]
@@ -417,9 +421,26 @@ namespace CETools.Civil3D
                 CivilFeatureLine feature = source as CivilFeatureLine;
                 if (feature != null)
                 {
+#if CE_CIVIL3D_2024
+                    // Do not bind to FeatureLinePointType's namespace, which differs
+                    // between installed Civil 3D APIs. Keep 2023 on its original path.
+                    var getPoints = feature.GetType().GetMethods()
+                        .FirstOrDefault(method => method.Name == "GetPoints" &&
+                            method.GetParameters().Length == 1 &&
+                            method.GetParameters()[0].ParameterType.IsEnum);
+                    if (getPoints == null)
+                        throw new InvalidOperationException("Civil 3D 2024 FeatureLine.GetPoints API not found.");
+                    Type pointType = getPoints.GetParameters()[0].ParameterType;
+                    object allPoints = Enum.Parse(pointType, "AllPoints", true);
+                    Point3dCollection collection =
+                        getPoints.Invoke(feature, new[] { allPoints }) as Point3dCollection;
+                    if (collection == null)
+                        throw new InvalidOperationException("Civil 3D 2024 FeatureLine.GetPoints did not return points.");
+#else
                     Point3dCollection collection =
                         feature.GetPoints(
                             CivilFeatureLinePointType.AllPoints);
+#endif
                     var points =
                         collection.Cast<Point3d>().ToList();
                     return LowestFromSurfacePoints(
@@ -946,7 +967,7 @@ namespace CETools.Civil3D
     internal sealed class HydraflowFloodReviewWindow : Window
     {
         private readonly FloodDesignResult _result;
-        private readonly Image _image;
+        private readonly System.Windows.Controls.Image _image;
         private readonly TextBlock _imageStatus;
 
         public HydraflowFloodReviewWindow(FloodDesignResult result)
@@ -988,7 +1009,7 @@ namespace CETools.Civil3D
             _imageStatus = new TextBlock { Text = "Hydraflow Express hydraulic profile snapshot", FontWeight = FontWeights.SemiBold, Margin = new Thickness(0, 0, 0, 8) };
             right.Children.Add(_imageStatus);
             var border = new Border { BorderBrush = Brushes.Silver, BorderThickness = new Thickness(1), Background = Brushes.WhiteSmoke, Padding = new Thickness(8) };
-            _image = new Image { Stretch = Stretch.Uniform };
+            _image = new System.Windows.Controls.Image { Stretch = Stretch.Uniform };
             border.Child = _image;
             Grid.SetRow(border, 1);
             right.Children.Add(border);
