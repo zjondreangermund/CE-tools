@@ -81,6 +81,39 @@ namespace CETools.Civil3D
                 TargetIds = targets.ToList()
             };
 
+#if CE_CIVIL3D_2024
+            // Enter means match the selected source NOW. Only open the native
+            // Bands/Properties dialog when the operator explicitly asks to edit.
+            var operation = new PromptKeywordOptions(
+                "\nProfile matching [MatchNow/EditSource] <MatchNow>: ");
+            operation.Keywords.Add("MatchNow");
+            operation.Keywords.Add("EditSource");
+            operation.Keywords.Default = "MatchNow";
+            operation.AllowNone = true;
+            PromptResult operationResult = document.Editor.GetKeywords(operation);
+            if (operationResult.Status == PromptStatus.Cancel) return;
+            bool needsNativeEdit = operationResult.Status == PromptStatus.OK &&
+                string.Equals(operationResult.StringResult, "EditSource", StringComparison.OrdinalIgnoreCase);
+            if (!needsNativeEdit)
+            {
+                try
+                {
+                    _editMatchSession = session;
+                    ApplyEditedProfileViewToSelected();
+                }
+                finally
+                {
+                    _editMatchSession = null;
+                    try
+                    {
+                        document.Editor.SetImpliedSelection(
+                            new[] { sourceId }.Concat(targets).Distinct().ToArray());
+                    }
+                    catch { }
+                }
+                return;
+            }
+#endif
             try
             {
                 document.Editor.WriteMessage(
@@ -174,6 +207,14 @@ namespace CETools.Civil3D
 
                             target.StyleId = source.StyleId;
                             CopyViewRangeProperties(source, target);
+#if CE_CIVIL3D_2024
+                            try
+                            {
+                                target.Bands.MatchIncrementToGridIntervals =
+                                    source.Bands.MatchIncrementToGridIntervals;
+                            }
+                            catch { }
+#endif
                             targetRows = CopyBands(
                                 source,
                                 target,
