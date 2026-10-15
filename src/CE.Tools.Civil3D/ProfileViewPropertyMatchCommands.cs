@@ -82,37 +82,33 @@ namespace CETools.Civil3D
             };
 
 #if CE_CIVIL3D_2024
-            // Enter means match the selected source NOW. Only open the native
-            // Bands/Properties dialog when the operator explicitly asks to edit.
-            var operation = new PromptKeywordOptions(
-                "\nProfile matching [MatchNow/EditSource] <MatchNow>: ");
-            operation.Keywords.Add("MatchNow");
-            operation.Keywords.Add("EditSource");
-            operation.Keywords.Default = "MatchNow";
-            operation.AllowNone = true;
-            PromptResult operationResult = document.Editor.GetKeywords(operation);
-            if (operationResult.Status == PromptStatus.Cancel) return;
-            bool needsNativeEdit = operationResult.Status == PromptStatus.OK &&
-                string.Equals(operationResult.StringResult, "EditSource", StringComparison.OrdinalIgnoreCase);
-            if (!needsNativeEdit)
+            // A finished target selection must immediately execute the match.
+            // The previous extra MatchNow/EditSource keyword prompt could leave
+            // users at a second waiting prompt and appear to do nothing.
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWEDITMATCH: applying source {0} to {1} target profile view(s)...",
+                sourceId.Handle, targets.Count);
+            try
             {
+                _editMatchSession = session;
+                ApplyEditedProfileViewToSelected();
+            }
+            catch (System.Exception exception)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_PROFILEVIEWEDITMATCH failed: {0}", exception.Message);
+            }
+            finally
+            {
+                _editMatchSession = null;
                 try
                 {
-                    _editMatchSession = session;
-                    ApplyEditedProfileViewToSelected();
+                    document.Editor.SetImpliedSelection(
+                        new[] { sourceId }.Concat(targets).Distinct().ToArray());
                 }
-                finally
-                {
-                    _editMatchSession = null;
-                    try
-                    {
-                        document.Editor.SetImpliedSelection(
-                            new[] { sourceId }.Concat(targets).Distinct().ToArray());
-                    }
-                    catch { }
-                }
-                return;
+                catch { }
             }
+            return;
 #endif
             try
             {
@@ -182,11 +178,32 @@ namespace CETools.Civil3D
                 {
                     try
                     {
+                        ObjectId targetNetworkId = ObjectId.Null;
+#if CE_CIVIL3D_2024
+                        // Road profile matching must not require a sewer network.
+                        // A failed sewer lookup previously aborted all copying,
+                        // even when only profile-view style and road bands mattered.
+                        try
+                        {
+                            SewerLongSectionContext optionalContext =
+                                SewerLongSectionBandService.ResolveContext(
+                                    document.Database, civil, targetId);
+                            if (optionalContext != null)
+                                targetNetworkId = optionalContext.NetworkId;
+                        }
+                        catch (System.Exception networkException)
+                        {
+                            document.Editor.WriteMessage(
+                                "\nCE_PROFILEVIEWEDITMATCH target {0}: optional pipe-network " +
+                                "lookup unavailable ({1}); matching non-network bands.",
+                                targetId.Handle, networkException.Message);
+                        }
+#else
                         SewerLongSectionContext targetContext =
                             SewerLongSectionBandService.ResolveContext(
-                                document.Database,
-                                civil,
-                                targetId);
+                                document.Database, civil, targetId);
+                        targetNetworkId = targetNetworkId;
+#endif
 
                         int targetRows;
                         using (Transaction tr =
