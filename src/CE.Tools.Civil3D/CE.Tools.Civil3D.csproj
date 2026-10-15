@@ -14,6 +14,9 @@
     <TargetFramework Condition="'$(AutoCADVersion)' == '2023' or '$(AutoCADVersion)' == '2024'">net48</TargetFramework>
     <TargetFramework Condition="'$(AutoCADVersion)' == '2025' or '$(AutoCADVersion)' == '2026'">net8.0-windows</TargetFramework>
     <TargetFramework Condition="'$(AutoCADVersion)' == '2027'">net10.0-windows</TargetFramework>
+    <!-- Only the Civil 3D 2024 adapter gets compatibility branches.
+         Never alter the 2023 command path or engineering calculations. -->
+    <DefineConstants Condition="'$(AutoCADVersion)' == '2024'">$(DefineConstants);CE_CIVIL3D_2024</DefineConstants>
 
     <AutoCADRoot Condition="'$(AutoCADRoot)' == ''">C:\Program Files\Autodesk\AutoCAD $(AutoCADVersion)</AutoCADRoot>
     <Civil3DRoot Condition="'$(Civil3DRoot)' == '' and Exists('$(AutoCADRoot)\AeccDbMgd.dll')">$(AutoCADRoot)</Civil3DRoot>
