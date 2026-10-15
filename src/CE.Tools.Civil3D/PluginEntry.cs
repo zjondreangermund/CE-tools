@@ -67,6 +67,30 @@ namespace CETools.Civil3D
 
         private static void OnApplicationIdle(object sender, EventArgs e)
         {
+#if CE_CIVIL3D_2024
+            // The 2024 startup ribbon can be replaced when the first DWG opens
+            // or the active workspace changes. Recheck only the tab identities
+            // on Idle and recreate them if AutoCAD has discarded them.
+            // Do not alter the legacy 2023 one-time startup path.
+            try
+            {
+                RibbonControl currentRibbon = ComponentManager.Ribbon;
+                if (currentRibbon == null) return;
+                bool hasMainTab = currentRibbon.Tabs.Any(tab => tab.Id == "CE_TOOLS_RIBBON_TAB");
+                bool hasProductionTab = currentRibbon.Tabs.Any(tab =>
+                    string.Equals(tab.Title, "CE TOOLS PRODUCTION", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(tab.Title, "CE Tools Production", StringComparison.OrdinalIgnoreCase));
+                if (_ribbonCreated && hasMainTab && hasProductionTab) return;
+                RibbonBuilder.EnsureCreated();
+                ProductionWorkflowRibbonBuilder.EnsureCreated();
+                _ribbonCreated = true;
+            }
+            catch
+            {
+                // Opening/closing drawings can temporarily detach the 2024 ribbon.
+                // Retry on the next application Idle without throwing into AutoCAD.
+            }
+#else
             if (_ribbonCreated)
             {
                 AcApplication.Idle -= OnApplicationIdle;
@@ -91,6 +115,7 @@ namespace CETools.Civil3D
             {
                 // Civil 3D can raise Idle before its ribbon is fully initialized.
             }
+#endif
         }
     }
 
