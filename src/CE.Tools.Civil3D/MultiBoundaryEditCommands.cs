@@ -157,8 +157,13 @@ namespace CETools.Civil3D
                                     bool inside;
                                     if (TryRegionConsensus(curve, boundaries, out inside))
                                     {
+                                        #if CE_CIVIL3D_2024
+                                        bool keepUnsplit = keepInside ? inside : !inside;
+                                        if (!keepUnsplit)
+#else
                                         bool keep = keepInside ? inside : !inside;
                                         if (!keep)
+#endif
                                         {
                                             curve.Erase();
                                             deleted++;
