@@ -954,7 +954,11 @@ namespace CETools.Civil3D
                         LayerId = child.LayerId,
                         StyleName = child.StyleName,
                         SiteId = child.SiteId,
+                        #if CE_CIVIL3D_2024
+                        ColorIndex = (short)child.ColorIndex,
+#else
                         ColorIndex = child.ColorIndex,
+#endif
                         Link = relation
                     });
                 }
