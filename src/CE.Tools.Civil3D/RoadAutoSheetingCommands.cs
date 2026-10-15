@@ -1052,9 +1052,29 @@ namespace CETools.Civil3D
                 dx = after.X - before.X;
                 dy = after.Y - before.Y;
             }
+            // The axis must be DIRECTED, not merely horizontal: increasing
+            // chainage runs from paper left to paper right, as on the profile.
+            // In particular a westbound alignment MUST keep its 180-degree
+            // view twist; flipping it to 0 reverses the displayed stations.
             double angle = Math.Atan2(dy, dx);
             double cos = Math.Cos(angle);
             double sin = Math.Sin(angle);
+            double startU = cos * first.X + sin * first.Y;
+            double endU = cos * last.X + sin * last.Y;
+            if (endU <= startU + Tol)
+            {
+                // An overlapping start/end chord has no reliable left/right
+                // ordering. Refuse a reversed plan instead of silently printing it.
+                Document active = AcApplication.DocumentManager.MdiActiveDocument;
+                if (active != null)
+                    active.Editor.WriteMessage(
+                        "\nCE_ROADAUTOSHEETS: cannot orient plan chainage " +
+                        "{0} to {1} left-to-right; sampled endpoints overlap. " +
+                        "Split this curved section into shorter plan ranges.",
+                        RoadSheetingPlanner.StationText(start),
+                        RoadSheetingPlanner.StationText(end));
+                return false;
+            }
 
             double minU = double.MaxValue;
             double maxU = double.MinValue;
@@ -1098,10 +1118,10 @@ namespace CETools.Civil3D
             double full = Math.PI * 2.0;
             double value = radians % full;
             if (value < 0.0) value += full;
-            // Road orientation is axial, so keep all plan annotation readable
-            // instead of rotating a westbound alignment upside down.
-            if (value > Math.PI * 0.5 && value < Math.PI * 1.5)
-                value = (value + Math.PI) % full;
+            // Do NOT reduce the rotation modulo PI. Although that can keep
+            // model-space labels upright, it makes westbound / southbound plan
+            // viewports run from the END chainage on the left. Road-name text
+            // should be oriented separately, not by reversing the entire sheet.
             return value;
         }
 
