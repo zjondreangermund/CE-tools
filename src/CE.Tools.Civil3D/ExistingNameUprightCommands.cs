@@ -32,6 +32,13 @@ namespace CETools.Civil3D
         {
             Document doc = AcApplication.DocumentManager.MdiActiveDocument;
             if (doc == null) return;
+            using (var dialog = new RoadTextRotateDialog())
+            {
+                if (dialog.ShowDialog() != System.Windows.Forms.DialogResult.OK) return;
+                Process(dialog.TextType, dialog.SelectedViewports, true);
+            }
+            return;
+            // Previous command line prompts retained below for reference only.
             var type = new PromptKeywordOptions("\nText type [Road/Sewer/Both] <Both>: ");
             type.Keywords.Add("Road"); type.Keywords.Add("Sewer"); type.Keywords.Add("Both");
             type.Keywords.Default = "Both"; type.AllowNone = true;
@@ -140,6 +147,46 @@ namespace CETools.Civil3D
             }
             doc.Editor.WriteMessage("\nCE text rotation: changed={0}; already upright={1}; skipped={2}.",
                 changed, retained, skipped);
+        }
+
+        private sealed class RoadTextRotateDialog : System.Windows.Forms.Form
+        {
+            private readonly System.Windows.Forms.ComboBox _type;
+            private readonly System.Windows.Forms.CheckBox _viewports;
+            internal string TextType { get { return _type.SelectedItem as string ?? "Both"; } }
+            internal bool SelectedViewports { get { return _viewports.Checked; } }
+            internal RoadTextRotateDialog()
+            {
+                Text = "CE Tools — Road / Sewer Text Rotation";
+                Width = 480; Height = 235;
+                FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
+                StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+                MaximizeBox = false; MinimizeBox = false;
+                var heading = new System.Windows.Forms.Label {
+                    Text = "Rotate existing road names and sewer branch text upright",
+                    Left = 16, Top = 16, Width = 435, Height = 32 };
+                Controls.Add(heading);
+                Controls.Add(new System.Windows.Forms.Label {
+                    Text = "Text type", Left = 16, Top = 59, Width = 125 });
+                _type = new System.Windows.Forms.ComboBox {
+                    Left = 155, Top = 54, Width = 280,
+                    DropDownStyle = System.Windows.Forms.ComboBoxStyle.DropDownList };
+                _type.Items.AddRange(new object[] { "Both", "Road", "Sewer" });
+                _type.SelectedIndex = 0;
+                Controls.Add(_type);
+                _viewports = new System.Windows.Forms.CheckBox {
+                    Text = "Select viewport(s) instead of all matching text",
+                    Left = 16, Top = 102, Width = 430 };
+                Controls.Add(_viewports);
+                var ok = new System.Windows.Forms.Button {
+                    Text = "Apply", Left = 250, Top = 144,
+                    Width = 90, DialogResult = System.Windows.Forms.DialogResult.OK };
+                var cancel = new System.Windows.Forms.Button {
+                    Text = "Cancel", Left = 347, Top = 144,
+                    Width = 90, DialogResult = System.Windows.Forms.DialogResult.Cancel };
+                Controls.Add(ok); Controls.Add(cancel);
+                AcceptButton = ok; CancelButton = cancel;
+            }
         }
 
         private sealed class ViewportBounds
