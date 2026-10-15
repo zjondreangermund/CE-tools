@@ -65,7 +65,11 @@ namespace CETools.Civil3D
             {
                 using (var form = new SurveyLocationForm(info, coordinateCodes))
                 {
+                    #if CE_CIVIL3D_2024
+                    System.Windows.Forms.Form.ShowDialog(form);
+#else
                     AcApplication.ShowModalDialog(form);
+#endif
                     if (form.Action == SurveyDialogAction.Close ||
                         form.Action == SurveyDialogAction.None)
                         return;
@@ -1225,7 +1229,7 @@ namespace CETools.Civil3D
                 {
                     Dock = DockStyle.Fill,
                     AutoSize = true,
-                    FlowDirection = FlowDirection.LeftToRight
+                    FlowDirection = System.Windows.Forms.FlowDirection.LeftToRight
                 };
                 buttons.Controls.Add(ActionButton(
                     "Apply CRS / Recalculate",
