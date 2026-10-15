@@ -244,6 +244,15 @@ namespace CETools.Civil3D
                             catch { }
                             tr.Commit();
                         }
+#if CE_CIVIL3D_2024
+                        string verificationError;
+                        if (!VerifyCopiedProfilePresentation(
+                                document.Database, session.SourceId, targetId,
+                                out verificationError))
+                            throw new InvalidOperationException(
+                                "The copy transaction completed, but verification failed: " +
+                                verificationError);
+#endif
                         copiedRows += targetRows;
                         completed++;
                     }
@@ -761,6 +770,77 @@ namespace CETools.Civil3D
             if (document == null) return;
             document.SendStringToExecute("CE_SEWBANDLABELS ", true, false, true);
         }
+
+#if CE_CIVIL3D_2024
+        // Inspect values re-opened from the database, not in-memory wrappers.
+        // A successful SetTopBandItems call is not proof the target now matches.
+        private static bool VerifyCopiedProfilePresentation(
+            Database database, ObjectId sourceId, ObjectId targetId,
+            out string reason)
+        {
+            reason = string.Empty;
+            try
+            {
+                using (Transaction tr =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilProfileView source = tr.GetObject(
+                        sourceId, OpenMode.ForRead, false) as CivilProfileView;
+                    CivilProfileView target = tr.GetObject(
+                        targetId, OpenMode.ForRead, false) as CivilProfileView;
+                    if (source == null || target == null)
+                    {
+                        reason = "source/target view unavailable on reread";
+                        return false;
+                    }
+                    if (source.StyleId != target.StyleId)
+                    {
+                        reason = "profile-view style differs";
+                        return false;
+                    }
+                    using (ProfileViewBandItemCollection sourceTop =
+                               source.Bands.GetTopBandItems())
+                    using (ProfileViewBandItemCollection targetTop =
+                               target.Bands.GetTopBandItems())
+                    using (ProfileViewBandItemCollection sourceBottom =
+                               source.Bands.GetBottomBandItems())
+                    using (ProfileViewBandItemCollection targetBottom =
+                               target.Bands.GetBottomBandItems())
+                    {
+                        if (sourceTop.Count != targetTop.Count ||
+                            sourceBottom.Count != targetBottom.Count)
+                        {
+                            reason = string.Format(
+                                CultureInfo.InvariantCulture,
+                                "band rows source top/bottom={0}/{1}; target={2}/{3}",
+                                sourceTop.Count, sourceBottom.Count,
+                                targetTop.Count, targetBottom.Count);
+                            return false;
+                        }
+                        for (int i = 0; i < sourceTop.Count; i++)
+                            if (sourceTop[i].BandStyleId != targetTop[i].BandStyleId)
+                            {
+                                reason = "top band style differs at row " + (i + 1);
+                                return false;
+                            }
+                        for (int i = 0; i < sourceBottom.Count; i++)
+                            if (sourceBottom[i].BandStyleId != targetBottom[i].BandStyleId)
+                            {
+                                reason = "bottom band style differs at row " + (i + 1);
+                                return false;
+                            }
+                    }
+                    tr.Commit();
+                }
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                reason = "verification API error: " + exception.Message;
+                return false;
+            }
+        }
+#endif
 
         private static int CopyBands(
             CivilProfileView source,
