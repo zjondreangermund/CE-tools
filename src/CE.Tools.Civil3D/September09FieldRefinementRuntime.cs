@@ -363,8 +363,16 @@ namespace CETools.Civil3D
             for (int j = i + 1; j < sources.Count; j++)
             {
                 foreach (BoundarySegment a in sources[i].Segments)
+                #if CE_CIVIL3D_2024
+                foreach (BoundarySegment candidateB in sources[j].Segments)
+#else
                 foreach (BoundarySegment b in sources[j].Segments)
+#endif
+
                 {
+#if CE_CIVIL3D_2024
+                    BoundarySegment b = candidateB;
+#endif
                     Vector2d da = a.B - a.A;
                     Vector2d db = b.B - b.A;
                     if (da.Length <= Tol || db.Length <= Tol) continue;
