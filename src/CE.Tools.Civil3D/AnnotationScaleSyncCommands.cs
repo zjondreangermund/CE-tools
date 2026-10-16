@@ -55,13 +55,17 @@ namespace CETools.Civil3D
             _initialized = true;
             AcApplication.DocumentManager.DocumentToBeDestroyed +=
                 OnDocumentToBeDestroyed;
+#if !CE_CIVIL3D_2024
             AcApplication.Idle += OnIdle;
+#endif
         }
 
         public static void Terminate()
         {
             if (!_initialized) return;
+#if !CE_CIVIL3D_2024
             AcApplication.Idle -= OnIdle;
+#endif
             AcApplication.DocumentManager.DocumentToBeDestroyed -=
                 OnDocumentToBeDestroyed;
             LastScaleByDatabase.Clear();
