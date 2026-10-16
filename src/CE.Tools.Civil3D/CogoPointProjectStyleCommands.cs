@@ -31,7 +31,8 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-            CogoPointStyleResult result = ApplySelectedStyles(document, true);
+            // Explicit style synchronisation must not run the separate overlap tool.
+            CogoPointStyleResult result = ApplySelectedStyles(document, false);
             document.Editor.Regen();
             document.Editor.WriteMessage(
                 "\nCE_COGOPOINTSYNC complete. Points styled={0}; labels styled={1}; labels repositioned={2}; overlaps moved={3}; skipped={4}.{5}",
@@ -143,7 +144,23 @@ namespace CETools.Civil3D
                             continue;
                         }
 
-                        if (!pointStyleId.IsNull)
+                        // Capture the live label location BEFORE applying styles.
+                        // Civil 3D can reset a manually dragged label as a side
+                        // effect of reassigning its point/label style. The actual
+                        // currently displayed position is authoritative; the old
+                        // CE_COGO_LABEL_OFFSET Xrecord can be stale after a user drag.
+                        Point3d originalAnchor = PointLocation(point);
+                        Point3d originalLabel = Point3d.Origin;
+                        bool hasLabelLocation = false;
+                        try
+                        {
+                            originalLabel = point.LabelLocation;
+                            hasLabelLocation =
+                                IsFiniteLocation(originalLabel);
+                        }
+                        catch { }
+
+                        if (!pointStyleId.IsNull && point.StyleId != pointStyleId)
                         {
                             try
                             {
@@ -155,7 +172,7 @@ namespace CETools.Civil3D
                                 result.Skipped++;
                             }
                         }
-                        if (!labelStyleId.IsNull)
+                        if (!labelStyleId.IsNull && point.LabelStyleId != labelStyleId)
                         {
                             try
                             {
@@ -173,25 +190,31 @@ namespace CETools.Civil3D
                                 ? "P" + point.PointNumber.ToString(CultureInfo.InvariantCulture)
                                 : point.PointName;
                         TrySetLabelVisible(point);
-                        Point3d anchor = PointLocation(point);
-                        Vector3d stored;
-                        if (TryReadOffset(point, transaction, out stored))
+                        // Refresh is NOT a label-placement command. Retain the
+                        // actual label position, including any manual dragging,
+                        // with no clamping and no reapplication of old Xrecords.
+                        // An untouched label at the point is left untouched.
+                        if (hasLabelLocation)
                         {
-                            stored = NormalizeOffset(stored, database);
                             try
                             {
-                                point.LabelLocation = anchor + stored;
-                                result.StoredOffsetsRestored++;
+                                Point3d afterStyles = point.LabelLocation;
+                                if (originalLabel.DistanceTo(originalAnchor) > 1e-8 &&
+                                    afterStyles.DistanceTo(originalLabel) > 1e-8)
+                                {
+                                    point.LabelLocation = originalLabel;
+                                }
+                                // Record the latest live location for future
+                                // geometry updates; user edits supersede snapshots.
+                                WriteOffset(
+                                    point,
+                                    transaction,
+                                    originalLabel - originalAnchor);
                             }
                             catch
                             {
                                 result.Skipped++;
                             }
-                        }
-                        else
-                        {
-                            Vector3d current = ReadCurrentOffset(point, anchor, database);
-                            WriteOffset(point, transaction, current);
                         }
                     }
                     transaction.Commit();
@@ -461,6 +484,13 @@ namespace CETools.Civil3D
                 point.Easting,
                 point.Northing,
                 point.Elevation);
+        }
+
+        private static bool IsFiniteLocation(Point3d point)
+        {
+            return !double.IsNaN(point.X) && !double.IsInfinity(point.X) &&
+                !double.IsNaN(point.Y) && !double.IsInfinity(point.Y) &&
+                !double.IsNaN(point.Z) && !double.IsInfinity(point.Z);
         }
 
         private static Vector3d ReadCurrentOffset(
