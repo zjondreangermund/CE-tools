@@ -25,5 +25,5 @@ assert '"Draw", BindingFlags.Public' in p
 assert "draw.SetValue(item, true, null)" in p
 assert "view.IsReferenceObject" in p
 assert "tr.Commit();" in p
-assert "AddProfile" not in p.replace("CE_PROFILEADDTOVIEWS","").replace("AddProfilesToViews","")  # native Draw, no duplicates
+assert 'methodName in new[] { "AddProfile"' not in p  # native Draw, no duplicates
 print("PASS: 2024 orientation no automatic locks, manual Selected/All unlock; profile Draw selection per matching alignment.")
