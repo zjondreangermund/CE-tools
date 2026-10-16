@@ -35,6 +35,20 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
+#if CE_CIVIL3D_2024
+            // The verified V154 workflow is CE_PROFILEVIEWMATCH:
+            // edit native source Bands first, then select the source and targets,
+            // choose Selected/All, and set the matching options. Do not invoke
+            // a second native EditGraphProperties session while matching targets.
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWEDITMATCH (Civil 3D 2024): using the V154 " +
+                "Profile View Match workflow. First edit the source's native " +
+                "Profile View Properties if needed, then choose source and targets.");
+            MatchProfileViewProperties();
+            return;
+#else
+
+#endif
 
             ObjectId sourceId = ObjectId.Null;
             List<ObjectId> targets = new List<ObjectId>();
