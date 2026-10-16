@@ -1,0 +1,22 @@
+name: Civil 3D 2024 viewport text orientation safety
+on:
+  push:
+    branches: [main, v154-selective-roadtext-integration]
+    paths:
+      - 'src/CE.Tools.Civil3D/ViewportTextUprightCommands.cs'
+      - 'src/CE.Tools.Civil3D/PluginEntry.cs'
+      - 'src/CE.Tools.Civil3D/PaperSpaceTextAnnotationGuard.cs'
+      - 'scripts/Validate-2024-ViewportTextUpright.py'
+      - '.github/workflows/viewport-text-upright-2024.yml'
+  pull_request:
+    paths:
+      - 'src/CE.Tools.Civil3D/ViewportTextUprightCommands.cs'
+      - 'src/CE.Tools.Civil3D/PluginEntry.cs'
+      - 'scripts/Validate-2024-ViewportTextUpright.py'
+jobs:
+  orientation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate viewport rotation safety and 2023 guards
+        run: python3 scripts/Validate-2024-ViewportTextUpright.py
