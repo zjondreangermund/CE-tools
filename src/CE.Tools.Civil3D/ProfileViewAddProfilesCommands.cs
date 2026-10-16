@@ -214,6 +214,184 @@ namespace CETools.Civil3D
             if (added > 0) doc.Editor.Regen();
         }
 
+
+        [CommandMethod("CE_TOOLS", "CE_SURFACEADDTOVIEWS",
+            CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void AddSurfacesToProfileViews()
+        {
+            Document doc = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (doc == null || civil == null) return;
+
+            var scope = new PromptKeywordOptions(
+                "\nAdd surface profiles to profile views [All/Selected] <Selected>: ");
+            scope.Keywords.Add("All");
+            scope.Keywords.Add("Selected");
+            scope.Keywords.Default = "Selected";
+            scope.AllowNone = true;
+            PromptResult answer = doc.Editor.GetKeywords(scope);
+            if (answer.Status == PromptStatus.Cancel || answer.Status == PromptStatus.Error) return;
+            bool all = string.Equals(answer.StringResult, "All", StringComparison.OrdinalIgnoreCase);
+            HashSet<ObjectId> requested = null;
+            if (!all)
+            {
+                PromptSelectionResult selection = doc.Editor.SelectImplied();
+                if (selection.Status != PromptStatus.OK || selection.Value == null ||
+                    selection.Value.Count == 0)
+                    selection = doc.Editor.GetSelection(new PromptSelectionOptions {
+                        MessageForAdding = "\nSelect one or more profile views: ",
+                        AllowDuplicates = false
+                    });
+                doc.Editor.SetImpliedSelection(new ObjectId[0]);
+                if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+                requested = new HashSet<ObjectId>(selection.Value.GetObjectIds());
+            }
+
+            var views = new List<BatchView>();
+            var surfaces = new List<KeyValuePair<ObjectId, string>>();
+            using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                BlockTable bt = tr.GetObject(doc.Database.BlockTableId, OpenMode.ForRead) as BlockTable;
+                BlockTableRecord model = bt == null ? null :
+                    tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
+                if (model == null) return;
+                foreach (ObjectId id in model)
+                {
+                    if (requested != null && !requested.Contains(id)) continue;
+                    CivilProfileView view = tr.GetObject(id, OpenMode.ForRead, false) as CivilProfileView;
+                    if (view == null || view.IsReferenceObject) continue;
+                    ObjectId alignmentId = ReadObjectId(view, "AlignmentId");
+                    if (alignmentId.IsNull) alignmentId = ReadObjectId(view, "ParentAlignmentId");
+                    if (alignmentId.IsNull) continue;
+                    views.Add(new BatchView {
+                        ViewId = id, AlignmentId = alignmentId, Name = view.Name
+                    });
+                }
+                foreach (ObjectId id in civil.GetSurfaceIds())
+                {
+                    Autodesk.Civil.DatabaseServices.Surface surface = tr.GetObject(
+                        id, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Surface;
+                    if (surface != null)
+                        surfaces.Add(new KeyValuePair<ObjectId, string>(id, surface.Name));
+                }
+                tr.Commit();
+            }
+            if (views.Count == 0 || surfaces.Count == 0)
+            {
+                doc.Editor.WriteMessage("\nNo writable profile views or surfaces were found.");
+                return;
+            }
+
+            var selected = new List<ObjectId>();
+            using (var picker = new Form())
+            using (var choices = new CheckedListBox())
+            {
+                picker.Text = "CE Tools - Add Surfaces to Profile Views";
+                picker.Width = 540; picker.Height = 440;
+                picker.StartPosition = FormStartPosition.CenterScreen;
+                choices.Dock = DockStyle.Fill;
+                choices.CheckOnClick = true;
+                foreach (var item in surfaces) choices.Items.Add(item.Value, false);
+                var bottom = new FlowLayoutPanel {
+                    Dock = DockStyle.Bottom, Height = 48,
+                    FlowDirection = System.Windows.Forms.FlowDirection.RightToLeft
+                };
+                var ok = new Button { Text = "Add surfaces", Width = 120, DialogResult = DialogResult.OK };
+                var cancel = new Button { Text = "Cancel", DialogResult = DialogResult.Cancel };
+                bottom.Controls.Add(ok); bottom.Controls.Add(cancel);
+                picker.Controls.Add(choices); picker.Controls.Add(bottom);
+                picker.AcceptButton = ok; picker.CancelButton = cancel;
+                if (picker.ShowDialog() != DialogResult.OK) return;
+                foreach (int i in choices.CheckedIndices) selected.Add(surfaces[i].Key);
+            }
+            if (selected.Count == 0) return;
+
+            int created = 0, shown = 0, already = 0, failed = 0;
+            var problems = new List<string>();
+            using (doc.LockDocument())
+            {
+                // A separate transaction per alignment prevents partial
+                // surface-profile creation when a view cannot be modified.
+                foreach (var alignmentGroup in views.GroupBy(v => v.AlignmentId))
+                {
+                    try
+                    {
+                        using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+                        {
+                            CivilAlignment alignment = tr.GetObject(alignmentGroup.Key,
+                                OpenMode.ForRead, false) as CivilAlignment;
+                            if (alignment == null) { failed++; continue; }
+                            foreach (ObjectId surfaceId in selected)
+                            {
+                                Autodesk.Civil.DatabaseServices.Surface surface =
+                                    tr.GetObject(surfaceId, OpenMode.ForRead, false)
+                                    as Autodesk.Civil.DatabaseServices.Surface;
+                                if (surface == null) continue;
+                                ObjectId profileId = ObjectId.Null;
+                                foreach (ObjectId id in alignment.GetProfileIds())
+                                {
+                                    CivilProfile candidate = tr.GetObject(id, OpenMode.ForRead, false) as CivilProfile;
+                                    if (candidate == null) continue;
+                                    ObjectId candidateSurface = ReadObjectId(candidate, "SurfaceId");
+                                    if (candidateSurface == surfaceId)
+                                    {
+                                        profileId = id; break;
+                                    }
+                                }
+                                if (profileId.IsNull)
+                                {
+                                    // Surface profiles must exist on the parent alignment
+                                    // before they can be displayed in any of its views.
+                                    string name = "CE " + surface.Name + " - " + alignment.Name;
+                                    string baseName = name;
+                                    int suffix = 2;
+                                    var existingNames = new HashSet<string>(
+                                        alignment.GetProfileIds().Cast<ObjectId>()
+                                            .Select(id => (tr.GetObject(id, OpenMode.ForRead, false) as CivilProfile))
+                                            .Where(p => p != null).Select(p => p.Name),
+                                        StringComparer.OrdinalIgnoreCase);
+                                    while (existingNames.Contains(name))
+                                        name = baseName + " " + suffix++;
+                                    // Native Civil 3D surface profile API. Keep the
+                                    // layer/style choices from the current alignment.
+                                    profileId = CivilProfile.CreateFromSurface(
+                                        name, alignmentGroup.Key, surfaceId,
+                                        doc.Database.Clayer,
+                                        civil.Styles.ProfileStyles[0],
+                                        civil.Styles.LabelSetStyles.ProfileLabelSetStyles[0]);
+                                    created++;
+                                }
+                                foreach (BatchView info in alignmentGroup)
+                                {
+                                    CivilProfileView view = tr.GetObject(
+                                        info.ViewId, OpenMode.ForWrite, false) as CivilProfileView;
+                                    if (view == null) continue;
+                                    bool wasDrawn;
+                                    if (TryEnableProfileInView(view, profileId, out wasDrawn))
+                                    {
+                                        if (wasDrawn) already++; else shown++;
+                                    }
+                                    else problems.Add(info.Name + ": profile not in view's native profile list");
+                                }
+                            }
+                            tr.Commit();
+                        }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        failed++;
+                        problems.Add(alignmentGroup.First().AlignmentName + ": " + ex.Message);
+                    }
+                }
+            }
+            doc.Editor.WriteMessage(
+                "\nCE_SURFACEADDTOVIEWS: profiles created={0}, displayed={1}, already displayed={2}, failed alignments={3}.",
+                created, shown, already, failed);
+            foreach (string problem in problems.Take(10))
+                doc.Editor.WriteMessage("\n  " + problem);
+            if (created > 0 || shown > 0) doc.Editor.Regen();
+        }
+
         private static ObjectId ReadObjectId(object owner, string name)
         {
             try
