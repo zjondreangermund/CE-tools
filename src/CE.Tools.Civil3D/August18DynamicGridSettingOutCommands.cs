@@ -76,9 +76,13 @@ namespace CETools.Civil3D
                 "DY", "01 Grid", "Y spacing", 10.0,
                 "Vertical grid spacing in drawing units.");
             settings.AddChoice(
-                "Mode", "01 Grid", "Point layout", "Perimeter",
-                "Perimeter creates boundary/grid-edge setting-out points. Full grid fills the selected boundary extents and clips candidates to the closed polyline.",
-                new[] { "Perimeter", "Full grid" });
+                "Mode", "01 Grid", "Point layout", "Interior grid only",
+                "Only generate points strictly inside the selected closed boundaries. No perimeter, edge or vertex points.",
+                new[] { "Interior grid only" });
+            settings.AddChoice(
+                "PointOutput", "01 Grid", "Point output", "COGO",
+                "Generate Civil 3D COGO points linked to the grid and its table.",
+                new[] { "COGO" });
             settings.AddText(
                 "Prefix", "02 Numbering", "Point prefix", "G",
                 "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
@@ -92,9 +96,7 @@ namespace CETools.Civil3D
 
             var link = new DynamicGridLink
             {
-                Mode = string.Equals(settings.Text("Mode"), "Full grid", StringComparison.OrdinalIgnoreCase)
-                    ? "Full grid"
-                    : "Perimeter",
+                Mode = "Interior grid only",
                 Dx = settings.Double("DX", 10.0),
                 Dy = settings.Double("DY", 10.0),
                 Prefix = string.IsNullOrWhiteSpace(settings.Text("Prefix"))
@@ -591,52 +593,19 @@ namespace CETools.Civil3D
                 List<double> ys = Axis(source.MinY, source.MaxY, link.Dy);
                 if (xs.Count == 0 || ys.Count == 0) continue;
 
-                if (string.Equals(link.Mode, "Perimeter", StringComparison.OrdinalIgnoreCase))
+                // Grid intersections strictly INSIDE the closed shape only.
+                // Neither vertices nor points on any boundary segment are
+                // allowed. Use a stable regular grid anchored to the source
+                // extent; the open-boundary test removes edge candidates.
+                for (int xi = 0; xi < xs.Count; xi++)
                 {
-                    // Always retain real boundary vertices, then add the same
-                    // rectangular grid-edge points the original two-corner tool
-                    // produced. This preserves the familiar Perimeter behaviour
-                    // while allowing multiple selected boundaries.
-                    for (int vertexIndex = 0; vertexIndex < source.Vertices.Count; vertexIndex++)
-                    {
-                        Point3d p = source.Vertices[vertexIndex];
-                        AddRecord(raw, coordinateKeys, source, p.X, p.Y, p.Z,
-                            "S" + source.Index + "_V" + vertexIndex);
-                    }
-                    for (int xi = 0; xi < xs.Count; xi++)
-                    {
-                        AddRecord(raw, coordinateKeys, source, xs[xi], source.MinY, source.Z,
-                            "S" + source.Index + "_B" + xi);
-                        AddRecord(raw, coordinateKeys, source, xs[xi], source.MaxY, source.Z,
-                            "S" + source.Index + "_T" + xi);
-                    }
                     for (int yi = 0; yi < ys.Count; yi++)
                     {
-                        AddRecord(raw, coordinateKeys, source, source.MinX, ys[yi], source.Z,
-                            "S" + source.Index + "_L" + yi);
-                        AddRecord(raw, coordinateKeys, source, source.MaxX, ys[yi], source.Z,
-                            "S" + source.Index + "_R" + yi);
-                    }
-                }
-                else
-                {
-                    for (int xi = 0; xi < xs.Count; xi++)
-                    {
-                        for (int yi = 0; yi < ys.Count; yi++)
-                        {
-                            double x = xs[xi];
-                            double y = ys[yi];
-                            if (!InsideOrOnBoundary(source.Vertices, x, y)) continue;
-                            AddRecord(raw, coordinateKeys, source, x, y, source.Z,
-                                "S" + source.Index + "_X" + xi + "_Y" + yi);
-                        }
-                    }
-                    // Preserve non-grid-aligned boundary vertices for setting-out.
-                    for (int vertexIndex = 0; vertexIndex < source.Vertices.Count; vertexIndex++)
-                    {
-                        Point3d p = source.Vertices[vertexIndex];
-                        AddRecord(raw, coordinateKeys, source, p.X, p.Y, p.Z,
-                            "S" + source.Index + "_V" + vertexIndex);
+                        double x = xs[xi];
+                        double y = ys[yi];
+                        if (!StrictlyInsideBoundary(source.Vertices, x, y)) continue;
+                        AddRecord(raw, coordinateKeys, source, x, y, source.Z,
+                            "S" + source.Index + "_X" + xi + "_Y" + yi);
                     }
                 }
             }
@@ -718,6 +687,23 @@ namespace CETools.Civil3D
                 if (crosses) inside = !inside;
             }
             return inside;
+        }
+
+        private static bool StrictlyInsideBoundary(
+            IList<Point3d> vertices, double x, double y)
+        {
+            if (!InsideOrOnBoundary(vertices, x, y)) return false;
+            var point = new Point2d(x, y);
+            for (int i = 0; i < vertices.Count; i++)
+            {
+                Point3d a = vertices[i];
+                Point3d b = vertices[(i + 1) % vertices.Count];
+                if (DistanceToSegment(point,
+                    new Point2d(a.X, a.Y),
+                    new Point2d(b.X, b.Y)) <= Tolerance * 10.0)
+                    return false;
+            }
+            return true;
         }
 
         private static double DistanceToSegment(
