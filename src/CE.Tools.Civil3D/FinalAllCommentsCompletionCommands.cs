@@ -699,12 +699,8 @@ namespace CETools.Civil3D
 
     public sealed class GridSettingOutCommands
     {
-#if CE_CIVIL3D_2024
         [CommandMethod("CE_TOOLS", "CE_GRIDSETTINGOUT",
             CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
-#else
-        [CommandMethod("CE_TOOLS", "CE_GRIDSETTINGOUT", CommandFlags.Modal | CommandFlags.Redraw)]
-#endif
         public void CreateGrid()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
