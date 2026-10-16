@@ -68,7 +68,7 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Grid Setting-Out",
-                "Create one linked setting-out group from multiple selected closed polylines. Choose Perimeter or Full grid; COGO points and the linked table follow source geometry and annotation-scale changes automatically.");
+                "Create one linked setting-out group from multiple selected closed polylines. The grid follows Vertex Setting-Out settings, while generating ONLY points strictly inside each selected closed boundary.");
             settings.AddPositiveDouble(
                 "DX", "01 Grid", "X spacing", 10.0,
                 "Horizontal grid spacing in drawing units.");
@@ -83,12 +83,41 @@ namespace CETools.Civil3D
                 "PointOutput", "01 Grid", "Point output", "COGO",
                 "Generate Civil 3D COGO points linked to the grid and its table.",
                 new[] { "COGO" });
+            var surfaceNames = new List<string> { "<None>" };
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in civil.GetSurfaceIds())
+                {
+                    Autodesk.Civil.DatabaseServices.Surface surface =
+                        tr.GetObject(id, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Surface;
+                    if (surface != null) surfaceNames.Add(surface.Name);
+                }
+            }
+            settings.AddChoice("ElevationSurface", "01 Grid", "XYZ elevation source", "<None>",
+                "Use source geometry elevations or sample an existing Civil 3D surface.",
+                surfaceNames);
+            settings.AddChoice("NGSurface", "01 Grid", "Existing / NG level surface", "<None>",
+                "Optional existing-ground surface for the NG Level table column.", surfaceNames);
+            settings.AddChoice("DesignSurface", "01 Grid", "Design / comparison level surface", "<None>",
+                "Optional design surface for Design Level and Difference = Design - NG.", surfaceNames);
             settings.AddText(
                 "Prefix", "02 Numbering", "Point prefix", "G",
                 "CE logical names are stored in Raw Description and the linked table so background refresh never triggers Civil 3D duplicate Point Name dialogs.");
             settings.AddPositiveInteger(
                 "Start", "02 Numbering", "Starting number", 1,
                 "First logical grid point number.");
+            settings.AddChoice("SequenceMode", "02 Numbering", "Sequence direction",
+                "Left to right", "Grid numbering order.",
+                new[] { "Left to right", "Top to bottom" });
+            settings.AddText("PointLayer", "03 Annotation", "COGO point layer",
+                "CE-GRID-POINTS", "Existing or new layer for grid COGO points.");
+            settings.AddChoice("CoordinateOrder", "04 Coordinate Display", "Coordinate order",
+                "Y then X", "Display column order only, without changing actual COGO coordinates.",
+                new[] { "Y then X", "X then Y" });
+            settings.AddChoice("XSign", "04 Coordinate Display", "Displayed X sign",
+                "Keep X sign", "Display option only.", new[] { "Keep X sign", "Reverse X sign" });
+            settings.AddChoice("YSign", "04 Coordinate Display", "Displayed Y sign",
+                "Keep Y sign", "Display option only.", new[] { "Keep Y sign", "Reverse Y sign" });
             settings.AddPaperHeight(
                 "PaperHeight", "03 Annotation", "Table paper text height", 2.0,
                 "Absolute paper text height. The model-space table size recalculates from the current annotation scale.");
@@ -105,6 +134,14 @@ namespace CETools.Civil3D
                 StartNumber = settings.Integer("Start", 1),
                 PaperHeight = PaperAnnotationScale.NormalizeConfiguredPaperHeight(
                     settings.Double("PaperHeight", 2.0)),
+                ElevationSurface = settings.Text("ElevationSurface"),
+                NgSurface = settings.Text("NGSurface"),
+                DesignSurface = settings.Text("DesignSurface"),
+                SequenceMode = settings.Text("SequenceMode"),
+                PointLayer = settings.Text("PointLayer"),
+                CoordinateOrder = settings.Text("CoordinateOrder"),
+                XSign = settings.Text("XSign"),
+                YSign = settings.Text("YSign"),
                 SourceHandles = sourceIds.Select(id => id.Handle.ToString()).ToList()
             };
 
@@ -192,6 +229,8 @@ namespace CETools.Civil3D
                     transaction,
                     link.SourceHandles);
                 List<GridRecord> records = BuildRecords(sources, link);
+            ApplySurfaceLevels(document.Database, transaction, civil, records, link);
+                ApplySurfaceLevels(document.Database, transaction, civil, records, link);
                 if (records.Count == 0)
                     throw new InvalidOperationException(
                         "The selected boundaries produced no grid setting-out points. Check the spacing and closed polylines.");
@@ -222,6 +261,7 @@ namespace CETools.Civil3D
                         civil,
                         transaction,
                         record);
+                    ApplyPointLayer(transaction, document.Database, pointId, link.PointLayer);
                     link.PointHandles[record.Key] = pointId.Handle.ToString();
                     WriteChildLink(
                         transaction.GetObject(pointId, OpenMode.ForWrite, false),
@@ -281,6 +321,7 @@ namespace CETools.Civil3D
                             transaction,
                             record);
                     }
+                    ApplyPointLayer(transaction, document.Database, existing, link.PointLayer);
                     WriteChildLink(
                         transaction.GetObject(existing, OpenMode.ForWrite, false),
                         transaction,
@@ -302,6 +343,58 @@ namespace CETools.Civil3D
                 WriteTableLink(table, transaction, link);
                 transaction.Commit();
             }
+        }
+
+        private static void ApplySurfaceLevels(
+            Database database, Transaction tr, CivilDocument civil,
+            IList<GridRecord> records, DynamicGridLink link)
+        {
+            var surfaces = new Dictionary<string, Autodesk.Civil.DatabaseServices.Surface>(
+                StringComparer.OrdinalIgnoreCase);
+            foreach (ObjectId id in civil.GetSurfaceIds())
+            {
+                Autodesk.Civil.DatabaseServices.Surface surface =
+                    tr.GetObject(id, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Surface;
+                if (surface != null) surfaces[surface.Name] = surface;
+            }
+            Autodesk.Civil.DatabaseServices.Surface elevation;
+            Autodesk.Civil.DatabaseServices.Surface ng;
+            Autodesk.Civil.DatabaseServices.Surface design;
+            surfaces.TryGetValue(link.ElevationSurface ?? "", out elevation);
+            surfaces.TryGetValue(link.NgSurface ?? "", out ng);
+            surfaces.TryGetValue(link.DesignSurface ?? "", out design);
+            foreach (GridRecord record in records)
+            {
+                double? z = Sample(elevation, record.Point);
+                if (z.HasValue) record.Point = new Point3d(record.Point.X, record.Point.Y, z.Value);
+                record.NgLevel = Sample(ng, record.Point);
+                record.DesignLevel = Sample(design, record.Point);
+            }
+        }
+
+        private static double? Sample(
+            Autodesk.Civil.DatabaseServices.Surface surface, Point3d point)
+        {
+            if (surface == null) return null;
+            try { return surface.FindElevationAtXY(point.X, point.Y); }
+            catch { return null; }
+        }
+
+        private static void ApplyPointLayer(
+            Transaction tr, Database database, ObjectId id, string layer)
+        {
+            if (id.IsNull || string.IsNullOrWhiteSpace(layer)) return;
+            LayerTable table = tr.GetObject(database.LayerTableId, OpenMode.ForRead) as LayerTable;
+            if (table == null) return;
+            if (!table.Has(layer))
+            {
+                table.UpgradeOpen();
+                var record = new LayerTableRecord { Name = layer };
+                table.Add(record);
+                tr.AddNewlyCreatedDBObject(record, true);
+            }
+            CivilCogoPoint point = tr.GetObject(id, OpenMode.ForWrite, false) as CivilCogoPoint;
+            if (point != null) point.Layer = layer;
         }
 
         private static ObjectId CreateCogo(
@@ -610,6 +703,10 @@ namespace CETools.Civil3D
                 }
             }
 
+            if (string.Equals(link.SequenceMode, "Top to bottom", StringComparison.OrdinalIgnoreCase))
+                raw = raw.OrderByDescending(p => p.Point.Y).ThenBy(p => p.Point.X).ToList();
+            else
+                raw = raw.OrderBy(p => p.Point.X).ThenByDescending(p => p.Point.Y).ToList();
             int sequence = Math.Max(link.StartNumber, 1);
             foreach (GridRecord record in raw)
                 record.Name = (string.IsNullOrWhiteSpace(link.Prefix) ? "G" : link.Prefix) +
@@ -752,9 +849,10 @@ namespace CETools.Civil3D
             table.Cells[0, 0].TextString =
                 "CE GRID SETTING-OUT - " + link.Mode.ToUpperInvariant();
             table.MergeCells(CellRange.Create(table, 0, 0, 0, 10));
+            bool yFirst = !string.Equals(link.CoordinateOrder, "X then Y", StringComparison.OrdinalIgnoreCase);
             string[] headings = {
                 "POINT NAME", "TYPE", "SOURCE", "SEGMENT",
-                "Y", "X", "NG LEVEL", "DESIGN LEVEL",
+                yFirst ? "Y" : "X", yFirst ? "X" : "Y", "NG LEVEL", "DESIGN LEVEL",
                 "DIFFERENCE", "RADIUS", "SEGMENT LENGTH"
             };
             for (int column = 0; column < headings.Length; column++)
@@ -771,11 +869,18 @@ namespace CETools.Civil3D
                 // radius, or NG comparison surface. Leave unavailable
                 // engineering values blank instead of fabricating them.
                 table.Cells[row, 3].TextString = string.Empty;
-                table.Cells[row, 4].TextString = record.Point.Y.ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[row, 5].TextString = record.Point.X.ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[row, 6].TextString = string.Empty;
-                table.Cells[row, 7].TextString = record.Point.Z.ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[row, 8].TextString = string.Empty;
+                double displayX = record.Point.X *
+                    (string.Equals(link.XSign, "Reverse X sign", StringComparison.OrdinalIgnoreCase) ? -1.0 : 1.0);
+                double displayY = record.Point.Y *
+                    (string.Equals(link.YSign, "Reverse Y sign", StringComparison.OrdinalIgnoreCase) ? -1.0 : 1.0);
+                table.Cells[row, 4].TextString = (yFirst ? displayY : displayX).ToString("N3", CultureInfo.CurrentCulture);
+                table.Cells[row, 5].TextString = (yFirst ? displayX : displayY).ToString("N3", CultureInfo.CurrentCulture);
+                table.Cells[row, 6].TextString = record.NgLevel.HasValue
+                    ? record.NgLevel.Value.ToString("N3", CultureInfo.CurrentCulture) : string.Empty;
+                double design = record.DesignLevel ?? record.Point.Z;
+                table.Cells[row, 7].TextString = design.ToString("N3", CultureInfo.CurrentCulture);
+                table.Cells[row, 8].TextString = record.NgLevel.HasValue
+                    ? (design - record.NgLevel.Value).ToString("+0.000;-0.000;0.000", CultureInfo.CurrentCulture) : string.Empty;
                 table.Cells[row, 9].TextString = string.Empty;
                 table.Cells[row, 10].TextString = string.Empty;
             }
@@ -836,7 +941,15 @@ namespace CETools.Civil3D
                 new TypedValue((int)DxfCode.Text, "DY=" + link.Dy.ToString("R", CultureInfo.InvariantCulture)),
                 new TypedValue((int)DxfCode.Text, "Prefix=" + (link.Prefix ?? "G")),
                 new TypedValue((int)DxfCode.Text, "Start=" + link.StartNumber.ToString(CultureInfo.InvariantCulture)),
-                new TypedValue((int)DxfCode.Text, "PaperHeight=" + link.PaperHeight.ToString("R", CultureInfo.InvariantCulture))
+                new TypedValue((int)DxfCode.Text, "PaperHeight=" + link.PaperHeight.ToString("R", CultureInfo.InvariantCulture)),
+                new TypedValue((int)DxfCode.Text, "ElevationSurface=" + link.ElevationSurface),
+                new TypedValue((int)DxfCode.Text, "NGSurface=" + link.NgSurface),
+                new TypedValue((int)DxfCode.Text, "DesignSurface=" + link.DesignSurface),
+                new TypedValue((int)DxfCode.Text, "SequenceMode=" + link.SequenceMode),
+                new TypedValue((int)DxfCode.Text, "PointLayer=" + link.PointLayer),
+                new TypedValue((int)DxfCode.Text, "CoordinateOrder=" + link.CoordinateOrder),
+                new TypedValue((int)DxfCode.Text, "XSign=" + link.XSign),
+                new TypedValue((int)DxfCode.Text, "YSign=" + link.YSign)
             };
             foreach (string source in link.SourceHandles)
                 values.Add(new TypedValue((int)DxfCode.Text, "Source=" + source));
@@ -869,6 +982,22 @@ namespace CETools.Civil3D
                     int.TryParse(text.Substring(6), NumberStyles.Integer, CultureInfo.InvariantCulture, out link.StartNumber);
                 else if (text.StartsWith("PaperHeight=", StringComparison.OrdinalIgnoreCase))
                     double.TryParse(text.Substring(12), NumberStyles.Float, CultureInfo.InvariantCulture, out link.PaperHeight);
+                else if (text.StartsWith("ElevationSurface=", StringComparison.OrdinalIgnoreCase))
+                    link.ElevationSurface = text.Substring("ElevationSurface=".Length);
+                else if (text.StartsWith("NGSurface=", StringComparison.OrdinalIgnoreCase))
+                    link.NgSurface = text.Substring("NGSurface=".Length);
+                else if (text.StartsWith("DesignSurface=", StringComparison.OrdinalIgnoreCase))
+                    link.DesignSurface = text.Substring("DesignSurface=".Length);
+                else if (text.StartsWith("SequenceMode=", StringComparison.OrdinalIgnoreCase))
+                    link.SequenceMode = text.Substring("SequenceMode=".Length);
+                else if (text.StartsWith("PointLayer=", StringComparison.OrdinalIgnoreCase))
+                    link.PointLayer = text.Substring("PointLayer=".Length);
+                else if (text.StartsWith("CoordinateOrder=", StringComparison.OrdinalIgnoreCase))
+                    link.CoordinateOrder = text.Substring("CoordinateOrder=".Length);
+                else if (text.StartsWith("XSign=", StringComparison.OrdinalIgnoreCase))
+                    link.XSign = text.Substring("XSign=".Length);
+                else if (text.StartsWith("YSign=", StringComparison.OrdinalIgnoreCase))
+                    link.YSign = text.Substring("YSign=".Length);
                 else if (text.StartsWith("Source=", StringComparison.OrdinalIgnoreCase))
                     link.SourceHandles.Add(text.Substring(7));
                 else if (text.StartsWith("Point=", StringComparison.OrdinalIgnoreCase))
@@ -1020,6 +1149,14 @@ namespace CETools.Civil3D
             internal string Prefix = "G";
             internal int StartNumber = 1;
             internal double PaperHeight = 2.0;
+            internal string ElevationSurface = "<None>";
+            internal string NgSurface = "<None>";
+            internal string DesignSurface = "<None>";
+            internal string SequenceMode = "Left to right";
+            internal string PointLayer = "CE-GRID-POINTS";
+            internal string CoordinateOrder = "Y then X";
+            internal string XSign = "Keep X sign";
+            internal string YSign = "Keep Y sign";
             internal List<string> SourceHandles = new List<string>();
             internal Dictionary<string, string> PointHandles =
                 new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
@@ -1045,6 +1182,8 @@ namespace CETools.Civil3D
             internal string Source;
             internal string SourceHandle;
             internal Point3d Point;
+            internal double? NgLevel;
+            internal double? DesignLevel;
         }
     }
 }
