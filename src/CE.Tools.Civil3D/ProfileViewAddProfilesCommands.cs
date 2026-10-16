@@ -171,22 +171,25 @@ namespace CETools.Civil3D
                                 as CivilProfileView;
                             if (view == null || view.IsReferenceObject)
                             { failed++; continue; }
-                            HashSet<ObjectId> existing = ExistingProfileIds(view);
                             int changes = 0;
                             foreach (ObjectId profileId in matching)
                             {
-                                if (existing.Contains(profileId))
-                                { already++; continue; }
-                                if (TryAddProfile(view, profileId))
+                                bool wasAlreadyDrawn;
+                                // Autodesk's ProfileView.GraphOverrides is the
+                                // Profiles tab. Existing alignment profiles are
+                                // already represented there; the Draw checkbox
+                                // controls visibility. Avoid duplicating rows.
+                                if (TryEnableProfileInView(
+                                        view, profileId, out wasAlreadyDrawn))
                                 {
-                                    changes++; added++;
-                                    existing.Add(profileId);
+                                    if (wasAlreadyDrawn) already++;
+                                    else { changes++; added++; }
                                 }
                                 else
                                 {
                                     unsupported++;
                                     problems.Add(info.Name +
-                                        ": API rejected profile " +
+                                        ": profile not found in native Profiles tab " +
                                         profileId.Handle.ToString());
                                 }
                             }
@@ -223,79 +226,33 @@ namespace CETools.Civil3D
             catch { return ObjectId.Null; }
         }
 
-        private static HashSet<ObjectId> ExistingProfileIds(CivilProfileView view)
+        private static bool TryEnableProfileInView(
+            CivilProfileView view, ObjectId profileId, out bool alreadyDrawn)
         {
-            var result = new HashSet<ObjectId>();
-            foreach (string method in new[] { "GetProfileIds" })
-            {
-                try
-                {
-                    MethodInfo caller = view.GetType().GetMethod(method,
-                        BindingFlags.Public | BindingFlags.Instance,
-                        null, Type.EmptyTypes, null);
-                    CollectIds(caller == null ? null : caller.Invoke(view, null),
-                        result);
-                }
-                catch { }
-            }
-            foreach (string member in new[] { "ProfileIds", "Profiles",
-                                             "GraphOverrides" })
-            {
-                try
-                {
-                    PropertyInfo prop = view.GetType().GetProperty(member,
-                        BindingFlags.Public | BindingFlags.Instance);
-                    CollectIds(prop == null ? null : prop.GetValue(view, null),
-                        result);
-                }
-                catch { }
-            }
-            return result;
-        }
-
-        private static void CollectIds(object value, ISet<ObjectId> ids)
-        {
-            IEnumerable collection = value as IEnumerable;
-            if (collection == null) return;
+            alreadyDrawn = false;
+            if (view == null || profileId.IsNull) return false;
             try
             {
-                foreach (object row in collection)
+                // Native Civil 3D Profiles tab API: ProfileOverride.Draw.
+                // GraphOverrides lists the alignment's profiles even if not
+                // currently drawn. Do not attempt to add duplicate profiles.
+                IEnumerable overrides = view.GraphOverrides as IEnumerable;
+                if (overrides == null) return false;
+                foreach (object item in overrides)
                 {
-                    if (row is ObjectId) { ids.Add((ObjectId)row); continue; }
-                    DBObject entity = row as DBObject;
-                    if (entity != null && !entity.ObjectId.IsNull)
-                    { ids.Add(entity.ObjectId); continue; }
-                    foreach (string name in new[] { "ProfileId", "ObjectId" })
-                    {
-                        ObjectId id = ReadObjectId(row, name);
-                        if (!id.IsNull) { ids.Add(id); break; }
-                    }
+                    ObjectId id = ReadObjectId(item, "ProfileId");
+                    if (id != profileId) continue;
+                    PropertyInfo draw = item.GetType().GetProperty(
+                        "Draw", BindingFlags.Public | BindingFlags.Instance);
+                    if (draw == null || !draw.CanRead || !draw.CanWrite)
+                        return false;
+                    object value = draw.GetValue(item, null);
+                    alreadyDrawn = value is bool && (bool)value;
+                    if (!alreadyDrawn) draw.SetValue(item, true, null);
+                    return true;
                 }
             }
             catch { }
-        }
-
-        private static bool TryAddProfile(CivilProfileView view, ObjectId profileId)
-        {
-            foreach (string methodName in new[] { "AddProfile", "AddProfileId" })
-            {
-                foreach (MethodInfo method in view.GetType().GetMethods(
-                    BindingFlags.Public | BindingFlags.Instance))
-                {
-                    if (!string.Equals(method.Name, methodName,
-                        StringComparison.Ordinal)) continue;
-                    ParameterInfo[] parameters = method.GetParameters();
-                    if (parameters.Length != 1 ||
-                        parameters[0].ParameterType != typeof(ObjectId))
-                        continue;
-                    try
-                    {
-                        method.Invoke(view, new object[] { profileId });
-                        return true;
-                    }
-                    catch { }
-                }
-            }
             return false;
         }
 
@@ -339,11 +296,11 @@ namespace CETools.Civil3D
                 Height = 590;
                 MinimumSize = new System.Drawing.Size(550, 430);
                 StartPosition = FormStartPosition.CenterScreen;
-                var title = new Label {
+                var title = new System.Windows.Forms.Label {
                     Dock = DockStyle.Top, Height = 68,
                     Text = "Select profiles to display in the " + viewCount +
                         " chosen profile view(s).\r\n" +
-                        "Only profiles belonging to each view's alignment are added.",
+                        "Only profiles belonging to each view's alignment are shown.",
                     Padding = new Padding(12, 10, 12, 2)
                 };
                 Controls.Add(title);
