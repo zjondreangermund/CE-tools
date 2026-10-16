@@ -175,8 +175,19 @@ namespace CETools.Civil3D
 #if CE_CIVIL3D_2024
             // Road views should not search every sewer network just to copy
             // profile styles/bands. On large projects that scan can stall Civil 3D.
-            bool needsNetworkMapping = SourceHasNetworkBands(
-                document.Database, session.SourceId);
+            bool needsNetworkMapping = false;
+            try
+            {
+                needsNetworkMapping = SourceHasNetworkBands(
+                    document.Database, session.SourceId);
+            }
+            catch (System.Exception readException)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_PROFILEVIEWEDITMATCH: source-band inspection failed: {0}. " +
+                    "Proceeding without optional sewer-network lookup.",
+                    readException.Message);
+            }
             document.Editor.WriteMessage(
                 "\nCE_PROFILEVIEWEDITMATCH: selected {0} target(s); sewer-network " +
                 "mapping required={1}.", session.TargetIds.Count,
@@ -186,10 +197,12 @@ namespace CETools.Civil3D
             {
                 foreach (ObjectId targetId in session.TargetIds.Distinct())
                 {
+#if CE_CIVIL3D_2024
+                    string stage = "preparing target";
+#endif
                     try
                     {
 #if CE_CIVIL3D_2024
-                        string stage = "preparing target";
                         document.Editor.WriteMessage(
                             "\nCE_PROFILEVIEWEDITMATCH: target {0}: starting.",
                             targetId.Handle);
@@ -829,14 +842,20 @@ namespace CETools.Civil3D
                 using (ProfileViewBandItemCollection bottom =
                            source.Bands.GetBottomBandItems())
                 {
-                    foreach (ProfileViewBandItem row in top)
+                    for (int i = 0; i < top.Count; i++)
+                    {
+                        ProfileViewBandItem row = top[i];
                         if (row != null && (row.BandType == Autodesk.Civil.BandType.PipeNetwork ||
                                             row.BandType == Autodesk.Civil.BandType.PressureNetwork))
                             return true;
-                    foreach (ProfileViewBandItem row in bottom)
+                    }
+                    for (int i = 0; i < bottom.Count; i++)
+                    {
+                        ProfileViewBandItem row = bottom[i];
                         if (row != null && (row.BandType == Autodesk.Civil.BandType.PipeNetwork ||
                                             row.BandType == Autodesk.Civil.BandType.PressureNetwork))
                             return true;
+                    }
                 }
                 tr.Commit();
                 return false;
