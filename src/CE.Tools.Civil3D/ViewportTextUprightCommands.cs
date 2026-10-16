@@ -266,23 +266,37 @@ namespace CETools.Civil3D
                                 angle = leaderContent.Rotation;
                             }
 
-                            bool firstNeedsFlip = NeedsFlip(angle, containing[0].Twist);
+                            // "Readable" is not enough: sloping callouts stay
+                            // sloping after viewport twists when we only flip 180.
+                            // For a single rotation of the sheet, set the text
+                            // baseline parallel to the layout's horizontal axis.
+                            // Viewport.TwistAngle is the model-space rotation
+                            // required to appear horizontal in the viewport.
+                            double desiredRotation = Normalize(containing[0].Twist);
                             bool inconsistent = containing.Any(
-                                view => NeedsFlip(angle, view.Twist) != firstNeedsFlip);
-                            // Shared annotation cannot be rotated independently per
-                            // viewport without annotative representations/overlays.
+                                view => AngularDistance(
+                                    view.Twist, desiredRotation) > 0.001);
+                            // One nonannotative model object cannot be horizontal
+                            // in multiple differently rotated paper viewports.
                             if (inconsistent) { conflicts++; continue; }
-                            if (!firstNeedsFlip) continue;
+                            if (AngularDistance(angle, desiredRotation) <= 0.001)
+                                continue;
 
                             entity.UpgradeOpen();
-                            if (dbText != null) dbText.Rotation = Normalize(angle + Math.PI);
-                            else if (mText != null) mText.Rotation = Normalize(angle + Math.PI);
+                            if (dbText != null)
+                                dbText.Rotation = desiredRotation;
+                            else if (mText != null)
+                                mText.Rotation = desiredRotation;
                             else
                             {
-                                leaderContent.Rotation = Normalize(angle + Math.PI);
-                                // MLeader.MText returns a value-like nested entity:
-                                // writing it back is required to persist rotation.
+                                // Restore the leader's original text location
+                                // after replacing its embedded MText. The arrow
+                                // and landing geometry must not move.
+                                Point3d oldTextLocation = leader.TextLocation;
+                                leaderContent.Rotation = desiredRotation;
                                 leader.MText = leaderContent;
+                                if (leader.TextLocation.DistanceTo(oldTextLocation) > 1e-8)
+                                    leader.TextLocation = oldTextLocation;
                             }
                             changed++;
                         }
@@ -303,7 +317,7 @@ namespace CETools.Civil3D
                 if (verbose || changed > 0 || native > 0 || conflicts > 0)
                     doc.Editor.WriteMessage(
                         "\nCE viewport annotations: {0} model annotations in plan views; " +
-                        "{1} rotated upright; {2} native layout orientation enabled; " +
+                        "{1} aligned horizontally; {2} native layout orientation requested; " +
                         "{3} shared across conflicting viewport rotations (left untouched).",
                         eligible, changed, native, conflicts);
                 if (verbose || changed > 0 || native > 0)
@@ -312,11 +326,10 @@ namespace CETools.Civil3D
             finally { _busy = false; }
         }
 
-        private static bool NeedsFlip(double objectRotation, double viewportTwist)
+        private static double AngularDistance(double a, double b)
         {
-            // A 180-degree reversal retains the existing slope and readability,
-            // without forcing every road annotation to be perfectly horizontal.
-            return Math.Cos(objectRotation - viewportTwist) < -0.000001;
+            return Math.Abs(Math.Atan2(
+                Math.Sin(a - b), Math.Cos(a - b)));
         }
 
         private static double Normalize(double angle)
