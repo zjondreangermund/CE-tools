@@ -315,6 +315,7 @@ namespace CETools.Civil3D
                 }
             }
 
+#if CE_CIVIL3D_2024
             // Report success/failure BEFORE any forced regeneration; in large
             // Civil 3D projects Regen can be very slow and hide the completion.
             document.Editor.WriteMessage(
@@ -325,9 +326,6 @@ namespace CETools.Civil3D
                 document.Editor.SetImpliedSelection(
                     new[] { session.SourceId }.Concat(session.TargetIds).Distinct().ToArray());
                 document.Database.TransactionManager.QueueForGraphicsFlush();
-#if !CE_CIVIL3D_2024
-                document.Editor.Regen();
-#endif
                 AcApplication.UpdateScreen();
             }
             catch (System.Exception refreshException)
@@ -338,6 +336,22 @@ namespace CETools.Civil3D
                     refreshException.Message);
 #endif
             }
+#else
+            // Preserve the original 2023 refresh and completion order verbatim.
+            try
+            {
+                document.Editor.SetImpliedSelection(
+                    new[] { session.SourceId }.Concat(session.TargetIds).Distinct().ToArray());
+                document.Database.TransactionManager.QueueForGraphicsFlush();
+                document.Editor.Regen();
+                AcApplication.UpdateScreen();
+            }
+            catch { }
+
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWEDITMATCH complete. Edited source={0}; target views updated={1}; native band rows copied={2}; failed={3}.",
+                session.SourceId.Handle, completed, copiedRows, failed);
+#endif
         }
 
         [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWMATCH",
