@@ -403,6 +403,15 @@ namespace CETools.Civil3D
         private static bool IsLinkedRoadName(Entity entity, Transaction transaction)
         {
             if (entity == null) return false;
+            try
+            {
+                // Road name alignment labels can use a user-chosen layer.
+                // Their XData identifies them without relying on the layer.
+                using (ResultBuffer link = entity.GetXDataForApplication(
+                    "CE_ROAD_NAME_ANNOTATION"))
+                    if (link != null) return true;
+            }
+            catch { }
             if (string.Equals(entity.Layer, "CE-ROAD-NAME",
                     StringComparison.OrdinalIgnoreCase) ||
                 string.Equals(entity.Layer, "CE-ROAD-NAMES",
