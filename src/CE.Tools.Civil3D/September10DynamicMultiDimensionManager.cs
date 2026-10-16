@@ -343,7 +343,14 @@ namespace CETools.Civil3D
         private static string Fingerprint(Entity source)
         {
             var text = new StringBuilder();
+#if CE_CIVIL3D_2024
+            // Changing layout annotation scale is not a change to source
+            // geometry. Rebuilding otherwise erases user-adjusted dimensions
+            // and recreates them with a different displayed text height.
+            text.Append(source.GetType().FullName).Append('|');
+#else
             text.Append(source.GetType().FullName).Append('|').Append(ReadCurrentScaleName()).Append('|');
+#endif
             try
             {
                 Line line = source as Line;
