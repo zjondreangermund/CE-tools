@@ -160,24 +160,32 @@ namespace CETools.Civil3D
                         }
                         catch { }
 
-                        if (!pointStyleId.IsNull && point.StyleId != pointStyleId)
+                        if (!pointStyleId.IsNull)
                         {
                             try
                             {
-                                point.StyleId = pointStyleId;
-                                result.PointStylesApplied++;
+                                // No-op when style is already correct: rewriting
+                                // the same style can itself reset native labels.
+                                if (point.StyleId != pointStyleId)
+                                {
+                                    point.StyleId = pointStyleId;
+                                    result.PointStylesApplied++;
+                                }
                             }
                             catch
                             {
                                 result.Skipped++;
                             }
                         }
-                        if (!labelStyleId.IsNull && point.LabelStyleId != labelStyleId)
+                        if (!labelStyleId.IsNull)
                         {
                             try
                             {
-                                point.LabelStyleId = labelStyleId;
-                                result.LabelStylesApplied++;
+                                if (point.LabelStyleId != labelStyleId)
+                                {
+                                    point.LabelStyleId = labelStyleId;
+                                    result.LabelStylesApplied++;
+                                }
                             }
                             catch
                             {
@@ -385,6 +393,12 @@ namespace CETools.Civil3D
             double gap,
             double textHeight)
         {
+            // An existing manually placed label that does not overlap must
+            // never move merely because the overlap command was run.
+            Box2d currentBox = LabelBox(
+                item.LabelLocation, item.Width, item.Height, gap);
+            if (!occupied.Any(existing => existing.Intersects(currentBox)))
+                return item.LabelLocation;
             var candidates = new List<Point3d> { item.LabelLocation };
             double step = Math.Max(textHeight * 2.4, gap * 2.0);
             Vector3d current = item.LabelLocation - item.Anchor;
