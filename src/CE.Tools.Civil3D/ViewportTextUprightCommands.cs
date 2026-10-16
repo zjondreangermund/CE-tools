@@ -20,9 +20,9 @@ namespace CETools.Civil3D
     /// a Civil 3D 2024 plan viewport's rotation/twist changes.
     ///
     /// Native Match Orientation to Layout is used for ALREADY annotative
-    /// DBText/MText. Nonannotative entities can only have ONE world rotation;
-    /// rotate those by 180 degrees only when doing so is readable through ALL
-    /// viewports showing the entity. Conflicts are reported and never forced.
+    /// DBText/MText. Nonannotative entities can have only ONE model rotation;
+    /// align them to the viewport's horizontal axis only when ALL viewports
+    /// showing that entity agree on the rotation. Conflicts are never forced.
     /// The drawing's paper-space title blocks/annotation are never modified.
     /// </summary>
     public sealed class ViewportTextUprightCommands
@@ -189,6 +189,11 @@ namespace CETools.Civil3D
                                 if (vp == null || vp.Number == 1 || !vp.On ||
                                     vp.Width <= 0 || vp.Height <= 0 ||
                                     vp.ViewHeight <= 0) continue;
+                                // Keep unrotated plan sheets untouched; the
+                                // request concerns viewports whose view twist
+                                // makes engineering annotation appear sloping.
+                                if (AngularDistance(vp.TwistAngle, 0.0) <= 0.001)
+                                    continue;
                                 Vector3d direction = vp.ViewDirection;
                                 if (direction.Length < 0.000001 ||
                                     Math.Abs(direction.GetNormal()
