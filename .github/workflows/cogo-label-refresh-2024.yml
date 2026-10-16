@@ -1,0 +1,25 @@
+name: Civil 3D 2024 COGO label position safety
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/CE.Tools.Civil3D/CogoPointProjectStyleCommands.cs'
+      - 'src/CE.Tools.Civil3D/VertexSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
+      - 'scripts/Validate-2024-CogoLabelRefresh.py'
+      - '.github/workflows/cogo-label-refresh-2024.yml'
+  pull_request:
+    paths:
+      - 'src/CE.Tools.Civil3D/CogoPointProjectStyleCommands.cs'
+      - 'src/CE.Tools.Civil3D/VertexSettingOutCommands.cs'
+      - 'src/CE.Tools.Civil3D/UniversalDynamicRefreshCommands.cs'
+      - 'scripts/Validate-2024-CogoLabelRefresh.py'
+
+jobs:
+  preserve-cogo-position:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Confirm manual COGO label positions stay stable on refresh
+        run: python3 scripts/Validate-2024-CogoLabelRefresh.py
