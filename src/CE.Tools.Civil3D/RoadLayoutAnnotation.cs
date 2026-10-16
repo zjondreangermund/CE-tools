@@ -27,6 +27,9 @@ namespace CETools.Civil3D
         {
             Document document = ActiveDocument();
             if (document == null) return;
+#if CE_CIVIL3D_2024
+            var placementTimer = System.Diagnostics.Stopwatch.StartNew();
+#endif
             var model = new ProductionSettingsDialogModel("CE Tools - Road Names",
                 "Name all or selected road centrelines, with readable labels at the road midpoint or in every section between junctions.");
             model.AddChoice("Scope", "01 Selection", "Roads", "All", "Roads to name.", new[] { "All", "Selected" });
@@ -93,7 +96,12 @@ namespace CETools.Civil3D
                     AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(
                         document.Database, tr);
 #endif
+#if CE_CIVIL3D_2024
+                var occupancy = new RoadAnnotationPlacement.Occupancy(
+                    space, tr, null, model.Text("Avoid") != "No");
+#else
                 var occupancy = new RoadAnnotationPlacement.Occupancy(space, tr);
+#endif
                 int index = model.Integer("Start", 1);
                 foreach (RoadAnnotationSource road in roads)
                 {
@@ -153,7 +161,14 @@ namespace CETools.Civil3D
                 tr.Commit();
             }
             document.Editor.Regen();
+#if CE_CIVIL3D_2024
+            placementTimer.Stop();
+            document.Editor.WriteMessage(
+                "\nCE_ROADNAMES complete. Labels created={0}; existing road-name groups kept={1}; crowded locations skipped={2}; elapsed={3:F2}s.",
+                created, existingKept, skipped, placementTimer.Elapsed.TotalSeconds);
+#else
             document.Editor.WriteMessage("\nCE_ROADNAMES complete. Labels created={0}; existing road-name groups kept={1}; crowded locations skipped={2}.", created, existingKept, skipped);
+#endif
         }
 
         private void PlaceRoadDimensions()
@@ -1302,10 +1317,18 @@ namespace CETools.Civil3D
                     AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(
                         document.Database, tr);
 #endif
+#if CE_CIVIL3D_2024
+                bool needsCollisionChecking = jobs.Values.Any(
+                    job => job.Item3.Avoid);
+                var occupancy =
+                    new RoadAnnotationPlacement.Occupancy(
+                        space, tr, null, needsCollisionChecking);
+#else
                 var occupancy =
                     new RoadAnnotationPlacement.Occupancy(
                         space,
                         tr);
+#endif
                 List<Curve> network =
                     jobs.Values
                         .Select(job => job.Item1.Geometry)
