@@ -699,12 +699,50 @@ namespace CETools.Civil3D
 
     public sealed class GridSettingOutCommands
     {
+#if CE_CIVIL3D_2024
+        [CommandMethod("CE_TOOLS", "CE_GRIDSETTINGOUT",
+            CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+#else
         [CommandMethod("CE_TOOLS", "CE_GRIDSETTINGOUT", CommandFlags.Modal | CommandFlags.Redraw)]
+#endif
         public void CreateGrid()
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             CivilDocument civil = CivilApplication.ActiveDocument;
             if (document == null || civil == null) return;
+#if CE_CIVIL3D_2024
+            var scope = new PromptKeywordOptions(
+                "\nGrid boundary [Selected/All/Rectangle] <Selected>: ");
+            scope.Keywords.Add("Selected");
+            scope.Keywords.Add("All");
+            scope.Keywords.Add("Rectangle");
+            scope.Keywords.Default = "Selected";
+            scope.AllowNone = true;
+            PromptResult response = document.Editor.GetKeywords(scope);
+            if (response.Status == PromptStatus.Cancel ||
+                response.Status == PromptStatus.Error) return;
+            string mode = response.Status == PromptStatus.OK
+                ? response.StringResult : "Selected";
+            if (!string.Equals(mode, "Rectangle", StringComparison.OrdinalIgnoreCase))
+            {
+                List<ObjectId> boundaries = SelectClosedGridBoundaries(
+                    document, string.Equals(mode, "All", StringComparison.OrdinalIgnoreCase));
+                if (boundaries.Count == 0)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_GRIDSETTINGOUT: no valid closed polylines or feature lines. " +
+                        "Only closed model-space boundaries can be used.");
+                    return;
+                }
+                document.Editor.WriteMessage(
+                    "\nCE_GRIDSETTINGOUT: {0} closed boundaries accepted. " +
+                    "Existing sources and point numbers remain linked for refresh.",
+                    boundaries.Count);
+                August18DynamicGridSettingOutCommands.CreateFromClosedBoundaries(
+                    document, boundaries);
+                return;
+            }
+#endif
             PromptPointResult first = document.Editor.GetPoint("\nPick first grid corner: ");
             if (first.Status != PromptStatus.OK) return;
             PromptCornerOptions corner = new PromptCornerOptions("\nPick opposite grid corner: ", first.Value);
@@ -751,6 +789,84 @@ namespace CETools.Civil3D
             document.Editor.Regen();
             document.Editor.WriteMessage("\nCE_GRIDSETTINGOUT complete. Unique COGO points={0}.", points.Distinct(new PlanPointComparer()).Count());
         }
+
+#if CE_CIVIL3D_2024
+        private static List<ObjectId> SelectClosedGridBoundaries(
+            Document document, bool all)
+        {
+            var candidates = new List<ObjectId>();
+            if (all)
+            {
+                using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+                {
+                    BlockTable bt = (BlockTable)tr.GetObject(
+                        document.Database.BlockTableId, OpenMode.ForRead);
+                    BlockTableRecord model = (BlockTableRecord)tr.GetObject(
+                        bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+                    foreach (ObjectId id in model) candidates.Add(id);
+                }
+            }
+            else
+            {
+                PromptSelectionResult selection = document.Editor.SelectImplied();
+                if (selection.Status != PromptStatus.OK || selection.Value == null ||
+                    selection.Value.Count == 0)
+                {
+                    selection = document.Editor.GetSelection(
+                        new PromptSelectionOptions
+                        {
+                            MessageForAdding = "\nSelect MULTIPLE closed polylines and/or " +
+                                "Civil 3D feature lines (Window/Crossing): ",
+                            AllowDuplicates = false,
+                            RejectObjectsFromNonCurrentSpace = true
+                        });
+                }
+                if (selection.Status != PromptStatus.OK || selection.Value == null)
+                    return new List<ObjectId>();
+                candidates.AddRange(selection.Value.GetObjectIds());
+            }
+
+            var result = new List<ObjectId>();
+            int skipped = 0;
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in candidates.Distinct())
+                {
+                    try
+                    {
+                        Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+                        if (!IsClosedGridBoundary(entity)) { skipped++; continue; }
+                        result.Add(id);
+                    }
+                    catch { skipped++; }
+                }
+            }
+            if (skipped != 0)
+                document.Editor.WriteMessage(
+                    "\nCE_GRIDSETTINGOUT ignored {0} open/unsupported objects.", skipped);
+            return result.OrderBy(id => id.Handle.ToString(),
+                StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static bool IsClosedGridBoundary(Entity entity)
+        {
+            Polyline poly = entity as Polyline;
+            if (poly != null) return poly.Closed && poly.NumberOfVertices >= 3;
+            Polyline2d poly2 = entity as Polyline2d;
+            if (poly2 != null) return poly2.Closed;
+            Polyline3d poly3 = entity as Polyline3d;
+            if (poly3 != null) return poly3.Closed;
+            Autodesk.Civil.DatabaseServices.FeatureLine feature =
+                entity as Autodesk.Civil.DatabaseServices.FeatureLine;
+            if (feature == null || !feature.Closed) return false;
+            try
+            {
+                return feature.GetPoints(
+                    Autodesk.Civil.FeatureLinePointType.AllPoints).Count >= 3;
+            }
+            catch { return false; }
+        }
+#endif
 
         private sealed class PlanPointComparer : IEqualityComparer<Point3d>
         {
