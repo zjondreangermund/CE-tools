@@ -751,14 +751,26 @@ namespace CETools.Civil3D
             double textHeight = PaperAnnotationScale.ModelTextHeight(
                 database,
                 link.PaperHeight > 0.0 ? link.PaperHeight : 2.0);
-            table.SetSize(records.Count + 2, 6);
-            table.SetRowHeight(Math.Max(textHeight * 1.8, 0.001));
+            table.SetSize(records.Count + 2, 11);
+            table.SetRowHeight(Math.Max(textHeight * 1.9, 0.001));
             table.SetColumnWidth(Math.Max(textHeight * 9.0, 0.001));
+            table.Columns[0].Width = Math.Max(textHeight * 11.0, 0.001);
             table.Columns[1].Width = Math.Max(textHeight * 14.0, 0.001);
+            table.Columns[2].Width = Math.Max(textHeight * 18.0, 0.001);
+            table.Columns[4].Width = Math.Max(textHeight * 17.0, 0.001);
+            table.Columns[5].Width = Math.Max(textHeight * 17.0, 0.001);
+            table.Columns[6].Width = Math.Max(textHeight * 12.0, 0.001);
+            table.Columns[7].Width = Math.Max(textHeight * 13.0, 0.001);
+            table.Columns[8].Width = Math.Max(textHeight * 13.0, 0.001);
+            table.Columns[10].Width = Math.Max(textHeight * 15.0, 0.001);
             table.Cells[0, 0].TextString =
                 "CE GRID SETTING-OUT - " + link.Mode.ToUpperInvariant();
-            table.MergeCells(CellRange.Create(table, 0, 0, 0, 5));
-            string[] headings = { "POINT", "SOURCE", "X", "Y", "Z", "MODE" };
+            table.MergeCells(CellRange.Create(table, 0, 0, 0, 10));
+            string[] headings = {
+                "POINT NAME", "TYPE", "SOURCE", "SEGMENT",
+                "Y", "X", "NG LEVEL", "DESIGN LEVEL",
+                "DIFFERENCE", "RADIUS", "SEGMENT LENGTH"
+            };
             for (int column = 0; column < headings.Length; column++)
                 table.Cells[1, column].TextString = headings[column];
 
@@ -767,11 +779,19 @@ namespace CETools.Civil3D
                 GridRecord record = records[index];
                 int row = index + 2;
                 table.Cells[row, 0].TextString = record.Name;
-                table.Cells[row, 1].TextString = record.Source;
-                table.Cells[row, 2].TextString = record.Point.X.ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[row, 3].TextString = record.Point.Y.ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[row, 4].TextString = record.Point.Z.ToString("N3", CultureInfo.CurrentCulture);
-                table.Cells[row, 5].TextString = link.Mode;
+                table.Cells[row, 1].TextString = "GRID";
+                table.Cells[row, 2].TextString = record.Source;
+                // Grid source records have no geometric segment index,
+                // radius, or NG comparison surface. Leave unavailable
+                // engineering values blank instead of fabricating them.
+                table.Cells[row, 3].TextString = string.Empty;
+                table.Cells[row, 4].TextString = record.Point.Y.ToString("N3", CultureInfo.CurrentCulture);
+                table.Cells[row, 5].TextString = record.Point.X.ToString("N3", CultureInfo.CurrentCulture);
+                table.Cells[row, 6].TextString = string.Empty;
+                table.Cells[row, 7].TextString = record.Point.Z.ToString("N3", CultureInfo.CurrentCulture);
+                table.Cells[row, 8].TextString = string.Empty;
+                table.Cells[row, 9].TextString = string.Empty;
+                table.Cells[row, 10].TextString = string.Empty;
             }
 
             for (int row = 0; row < table.Rows.Count; row++)
