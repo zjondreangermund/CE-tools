@@ -229,7 +229,6 @@ namespace CETools.Civil3D
                     transaction,
                     link.SourceHandles);
                 List<GridRecord> records = BuildRecords(sources, link);
-            ApplySurfaceLevels(document.Database, transaction, civil, records, link);
                 ApplySurfaceLevels(document.Database, transaction, civil, records, link);
                 if (records.Count == 0)
                     throw new InvalidOperationException(
