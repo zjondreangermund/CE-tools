@@ -310,7 +310,7 @@ namespace CETools.Civil3D
 
                 var bottom = new FlowLayoutPanel {
                     Dock = DockStyle.Bottom, Height = 52,
-                    FlowDirection = FlowDirection.RightToLeft,
+                    FlowDirection = System.Windows.Forms.FlowDirection.RightToLeft,
                     Padding = new Padding(8)
                 };
                 var apply = new Button { Text = "Add profiles", Width = 118,
