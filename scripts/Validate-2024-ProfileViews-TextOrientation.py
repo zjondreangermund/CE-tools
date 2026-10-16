@@ -4,6 +4,7 @@ from pathlib import Path
 root=Path(__file__).resolve().parents[1]/"src"/"CE.Tools.Civil3D"
 v=(root/"ViewportTextUprightCommands.cs").read_text(encoding="utf-8-sig")
 p=(root/"ProfileViewAddProfilesCommands.cs").read_text(encoding="utf-8-sig")
+menu=(root/"ProfileViewBatchCommands.cs").read_text(encoding="utf-8-sig")
 assert v.startswith("#if CE_CIVIL3D_2024")
 assert "internal static bool AutoEnabled = false;" in v
 assert '"CE_VPTEXTUNLOCK"' in v
@@ -15,6 +16,8 @@ assert "selected == null" in v  # explicit all with no implicit mutation on open
 assert "entity is DBText || entity is MText" in v
 assert p.startswith("#if CE_CIVIL3D_2024")
 assert '"CE_PROFILEADDTOVIEWS"' in p
+assert 'Add profiles to all / selected profile views' in menu
+assert '"CE_PROFILEADDTOVIEWS "' in menu
 assert '"All", StringComparison.OrdinalIgnoreCase' in p
 assert "SelectImplied()" in p and "GetSelection(" in p
 assert "CheckedListBox" in p and "SetItemChecked" in p
