@@ -104,8 +104,12 @@ namespace CETools.Civil3D
         {
             private readonly List<Extents3d> boxes = new List<Extents3d>();
 
-            internal Occupancy(BlockTableRecord space, Transaction transaction, ISet<ObjectId> exclude = null)
+            internal Occupancy(BlockTableRecord space, Transaction transaction,
+                ISet<ObjectId> exclude = null, bool scanExisting = true)
             {
+#if CE_CIVIL3D_2024
+                if (!scanExisting) return;
+#endif
                 foreach (ObjectId id in space)
                 {
                     if (id.IsErased) continue;
