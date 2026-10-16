@@ -28,4 +28,7 @@ assert "#if CE_CIVIL3D_2024" in engine
 assert "BuildRecords(sources, link)" in engine
 assert "link.SourceHandles" in engine
 assert "CE_GRIDSETTINGOUTREFRESH" in engine
+assert "Vector3d labelOffset = Vector3d.Zero" in engine
+assert "point.LabelLocation = record.Point + labelOffset" in engine
+assert "if (moved)" in engine
 print("PASS: 2024 All/Selected/Rectangle closed polyline and feature-line grid; 2023 rectangle preserved.")
