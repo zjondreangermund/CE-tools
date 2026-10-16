@@ -307,6 +307,17 @@ namespace CETools.Civil3D
                         roadName;
                     label.Annotative =
                         AnnotativeStates.True;
+#if CE_CIVIL3D_2024
+                    try
+                    {
+                        System.Reflection.MethodInfo setter =
+                            label.GetType().GetMethod("SetPaperOrientation",
+                                new[] { typeof(bool) });
+                        if (setter != null)
+                            setter.Invoke(label, new object[] { false });
+                    }
+                    catch { }
+#endif
                     label.TextHeight =
                         PaperAnnotationScale.ModelTextHeight(
                             document.Database,
