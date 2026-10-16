@@ -217,12 +217,17 @@ namespace CETools.Civil3D
                                 {
                                     point.LabelLocation = originalLabel;
                                 }
-                                // Record the latest live location for future
-                                // geometry updates; user edits supersede snapshots.
-                                WriteOffset(
-                                    point,
-                                    transaction,
-                                    originalLabel - originalAnchor);
+                                // Save manual edits only when the offset
+                                // actually changed. Rewriting a COGO Xrecord on
+                                // every refresh would itself enqueue more updates.
+                                Vector3d currentOffset =
+                                    originalLabel - originalAnchor;
+                                Vector3d savedOffset;
+                                if (!TryReadOffset(point, transaction, out savedOffset) ||
+                                    (savedOffset - currentOffset).Length > 1e-8)
+                                {
+                                    WriteOffset(point, transaction, currentOffset);
+                                }
                             }
                             catch
                             {
