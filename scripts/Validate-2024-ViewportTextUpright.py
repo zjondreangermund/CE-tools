@@ -1,41 +1,47 @@
 #!/usr/bin/env python3
-"""Static and angle regression checks for safe 2024 viewport text orientation."""
-from math import cos, radians, pi
+"""Check Civil 3D 2024 rotated-plan annotation alignment and safety guards."""
+from math import atan2, cos, sin, pi, radians
 from pathlib import Path
 
 root = Path(__file__).resolve().parents[1] / "src" / "CE.Tools.Civil3D"
-source = (root / "ViewportTextUprightCommands.cs").read_text(encoding="utf-8-sig")
+code = (root / "ViewportTextUprightCommands.cs").read_text(encoding="utf-8-sig")
 plugin = (root / "PluginEntry.cs").read_text(encoding="utf-8-sig")
-paper = (root / "PaperSpaceTextAnnotationGuard.cs").read_text(encoding="utf-8-sig")
-
-assert source.startswith("#if CE_CIVIL3D_2024")
+assert code.startswith("#if CE_CIVIL3D_2024")
 assert "ViewportTextUprightManager.Initialize();" in plugin
 assert "ViewportTextUprightManager.Terminate();" in plugin
-assert "db.ObjectModified += OnObjectModified" in source
-assert "AcApplication.Idle += OnIdle" in source
-assert 'CE_VPTEXTUPRIGHT' in source and 'CE_VPTEXTAUTO' in source
-assert "IsAlreadyAnnotative(entity)" in source
-assert "TryEnableNativePaperOrientation(entity)" in source
-assert "if (inconsistent) { conflicts++; continue; }" in source
-assert "bt[BlockTableRecord.ModelSpace]" in source
-assert "space.IsLayout" in source
-assert "entity is DBText || entity is MText || entity is MLeader" in source
+assert "db.ObjectModified += OnObjectModified" in code
+assert "AcApplication.Idle += OnIdle" in code
+assert "CE_VPTEXTUPRIGHT" in code and "CE_VPTEXTAUTO" in code
+assert "IsAlreadyAnnotative(entity)" in code
+assert "TryEnableNativePaperOrientation(entity)" in code
+assert "Point3d oldTextLocation = leader.TextLocation;" in code
+assert "leader.TextLocation = oldTextLocation;" in code
+assert "if (inconsistent) { conflicts++; continue; }" in code
+assert "bt[BlockTableRecord.ModelSpace]" in code
+assert "space.IsLayout" in code
+assert "entity is DBText || entity is MText || entity is MLeader" in code
+assert "containing.All(view =>" in code
 assert "PaperSpaceTextAnnotationGuard.Initialize();" in plugin
-assert "TextHeight =" not in source
-assert "CANNOSCALE" not in source
+assert "TextHeight =" not in code
+assert "CANNOSCALE" not in code
 
-def upright(angle, twists):
-    needs = [cos(angle-t) < -1e-6 for t in twists]
-    if len(set(needs)) > 1:
+def angular(a,b):
+    return abs(atan2(sin(a-b),cos(a-b)))
+
+def horizontal(angles, current):
+    if all(angular(t,0.0)<=.001 for t in angles):
+        return current
+    if any(angular(t,angles[0])>.001 for t in angles):
         return None
-    return (angle+pi) % (2*pi) if needs[0] else angle
+    return angles[0] % (2*pi)
 
-for degrees in (0, 20, 40, 89, 91, 120, 170, 190, 220, 260, 300, 340):
-    for old in (0, 10, 32, 90, 180):
-        a, twist = radians(old), radians(degrees)
-        new = upright(a, [twist])
-        assert new is not None
-        assert cos(new-twist) >= -1e-6, (old,degrees)
-
-assert upright(0, [0, pi]) is None, "Shared non-annotative text must not be reversed for the other viewport"
-print("PASS: 2024-only, viewport edit observer, no paper text changes, angle and conflict guards.")
+for twist_deg in (15,30,45,90,120,180,220,270,330):
+    twist = radians(twist_deg)
+    for old_deg in (0, 5, 30, 90, 150, 270):
+        a = horizontal([twist], radians(old_deg))
+        assert angular(a,twist)<1e-8, (twist_deg,old_deg)
+assert horizontal([0],radians(35))==radians(35)
+assert horizontal([0,radians(90)], 0) is None
+assert horizontal([radians(30),radians(90)], 0) is None
+assert angular(radians(-180),radians(180))<1e-8
+print("PASS: 2024 rotated-view text horizontal, unrotated unaffected, shared-view guard intact.")
