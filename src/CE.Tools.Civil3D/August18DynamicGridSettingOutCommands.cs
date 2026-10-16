@@ -46,6 +46,25 @@ namespace CETools.Civil3D
 
             List<ObjectId> sourceIds = SelectBoundaries(document);
             if (sourceIds.Count == 0) return;
+            CreateFromClosedBoundaries(document, sourceIds);
+        }
+
+        // Reuse the same linked grid engine from CE_GRIDSETTINGOUT's All/Selected
+        // workflows; do not add a second grid-generation implementation.
+        internal static void CreateFromClosedBoundaries(
+            Document document, IList<ObjectId> boundaries)
+        {
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (document == null || civil == null) return;
+            List<ObjectId> sourceIds = boundaries == null
+                ? new List<ObjectId>()
+                : FilterClosedPolylines(document.Database, boundaries).Distinct().ToList();
+            if (sourceIds.Count == 0)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_GRIDSETTINGOUT: no closed polyline/feature-line boundaries selected.");
+                return;
+            }
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Grid Setting-Out",
@@ -351,11 +370,17 @@ namespace CETools.Civil3D
                     AllowDuplicates = false,
                     RejectObjectsFromNonCurrentSpace = true
                 };
+#if CE_CIVIL3D_2024
+                // Civil 3D feature lines use a custom runtime class; allow
+                // selection then filter to closed, supported boundary objects.
+                PromptSelectionResult selected = editor.GetSelection(options);
+#else
                 var filter = new SelectionFilter(new[]
                 {
                     new TypedValue((int)DxfCode.Start, "LWPOLYLINE,POLYLINE")
                 });
                 PromptSelectionResult selected = editor.GetSelection(options, filter);
+#endif
                 if (selected.Status != PromptStatus.OK || selected.Value == null)
                     return result;
                 result.AddRange(FilterClosedPolylines(
@@ -366,7 +391,7 @@ namespace CETools.Civil3D
             result = result.Distinct().ToList();
             if (result.Count == 0)
                 editor.WriteMessage(
-                    "\nCE_GRIDSETTINGOUT requires one or more CLOSED polylines.");
+                    "\nCE_GRIDSETTINGOUT requires one or more CLOSED polylines or feature lines.");
             return result;
         }
 
@@ -404,7 +429,14 @@ namespace CETools.Civil3D
             Polyline2d p2 = entity as Polyline2d;
             if (p2 != null) return p2.Closed;
             Polyline3d p3 = entity as Polyline3d;
-            return p3 != null && p3.Closed;
+            if (p3 != null) return p3.Closed;
+#if CE_CIVIL3D_2024
+            Autodesk.Civil.DatabaseServices.FeatureLine feature =
+                entity as Autodesk.Civil.DatabaseServices.FeatureLine;
+            return feature != null && feature.Closed;
+#else
+            return false;
+#endif
         }
 
         private static List<GridSource> ReadSources(
@@ -493,6 +525,17 @@ namespace CETools.Civil3D
                     if (vertex != null) points.Add(vertex.Position);
                 }
             }
+#if CE_CIVIL3D_2024
+            Autodesk.Civil.DatabaseServices.FeatureLine feature =
+                entity as Autodesk.Civil.DatabaseServices.FeatureLine;
+            if (feature != null)
+            {
+                Autodesk.AutoCAD.Geometry.Point3dCollection coordinates =
+                    feature.GetPoints(Autodesk.Civil.FeatureLinePointType.AllPoints);
+                if (coordinates != null)
+                    foreach (Point3d point in coordinates) points.Add(point);
+            }
+#endif
             return RemoveClosingDuplicate(points);
         }
 
