@@ -69,10 +69,40 @@ if (Test-Path $legacyManifest) {
     }
 }
 New-Item -ItemType Directory -Force $plugins | Out-Null
-if (Test-Path $destination) {
-    throw "A 2024-specific bundle already exists at $destination. Back it up and remove it manually before replacing."
+# Never swap a loaded .NET plugin. Ask the user to close Civil 3D first.
+if (Get-Process -Name 'acad' -ErrorAction SilentlyContinue) {
+    throw 'AutoCAD/Civil 3D is running. Close it before updating the 2024 bundle.'
 }
-Copy-Item -LiteralPath $bundle -Destination $destination -Recurse
-Get-ChildItem $destination -File -Recurse | Unblock-File -ErrorAction SilentlyContinue
+# Keep historical backups OUTSIDE ApplicationPlugins so AutoCAD cannot
+# discover and load old copies as additional bundles.
+$backup = $null
+if (Test-Path -LiteralPath $destination) {
+    $backupRoot = Join-Path $env:LOCALAPPDATA 'CE Tools\BundleBackups\2024'
+    New-Item -ItemType Directory -Force -Path $backupRoot | Out-Null
+    $stamp = Get-Date -Format 'yyyyMMdd-HHmmss'
+    $backup = Join-Path $backupRoot ("CE Tools 2024.bundle-$stamp-" + [guid]::NewGuid().ToString('N').Substring(0,8))
+    Move-Item -LiteralPath $destination -Destination $backup -ErrorAction Stop
+    Write-Host "Previous 2024 bundle backed up to: $backup" -ForegroundColor Yellow
+}
+try {
+    Copy-Item -LiteralPath $bundle -Destination $destination -Recurse -ErrorAction Stop
+    if (-not (Test-Path -LiteralPath (Join-Path $destination 'PackageContents.xml')) -or
+        -not (Test-Path -LiteralPath (Join-Path $destination 'Contents\Windows\2024\CE.Tools.Civil3D.dll'))) {
+        throw 'New 2024 bundle is incomplete; restoring the previous bundle.'
+    }
+    Get-ChildItem -LiteralPath $destination -File -Recurse | Unblock-File -ErrorAction SilentlyContinue
+}
+catch {
+    $installError = $_
+    if (Test-Path -LiteralPath $destination) {
+        Remove-Item -LiteralPath $destination -Recurse -Force -ErrorAction Stop
+    }
+    if ($backup -and (Test-Path -LiteralPath $backup)) {
+        Move-Item -LiteralPath $backup -Destination $destination -ErrorAction Stop
+        Write-Warning 'New installation failed; previous 2024 bundle was restored.'
+    }
+    throw $installError
+}
 Write-Host "Civil 3D 2024 bundle installed at: $destination" -ForegroundColor Green
+if ($backup) { Write-Host "Previous bundle backup retained at: $backup" }
 Write-Host 'CE Tools 2023 installation was not touched.'
