@@ -1,0 +1,21 @@
+name: Civil 3D 2024 profile view and text safety
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/CE.Tools.Civil3D/ProfileViewAddProfilesCommands.cs'
+      - 'src/CE.Tools.Civil3D/ViewportTextUprightCommands.cs'
+      - 'scripts/Validate-2024-ProfileViews-TextOrientation.py'
+      - '.github/workflows/profile-view-text-orientation-2024.yml'
+  pull_request:
+    paths:
+      - 'src/CE.Tools.Civil3D/ProfileViewAddProfilesCommands.cs'
+      - 'src/CE.Tools.Civil3D/ViewportTextUprightCommands.cs'
+      - 'scripts/Validate-2024-ProfileViews-TextOrientation.py'
+jobs:
+  safety-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Ensure stable text orientation and alignment-matched profile view display
+        run: python3 scripts/Validate-2024-ProfileViews-TextOrientation.py
