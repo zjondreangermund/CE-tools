@@ -1002,6 +1002,7 @@ namespace CETools.Civil3D
             catch { return false; }
 
             CivilCogoPoint cogo = value as CivilCogoPoint;
+#if CE_CIVIL3D_2024
             if (cogo != null && string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))
             {
                 // Preserve a manually dragged COGO label's offset relative to
@@ -1048,6 +1049,22 @@ namespace CETools.Civil3D
                 }
                 return true;
             }
+
+#else
+            if (cogo != null && string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))
+            {
+                cogo.LayerId = RoadAnnotationPlacement.Layer(cogo.Database, transaction, link.PointLayer, "CE-ROAD-JUNCTION-POINTS");
+                cogo.Easting = record.Point.X;
+                cogo.Northing = record.Point.Y;
+                cogo.Elevation = record.Point.Z;
+                cogo.RawDescription = record.PointName;
+                try { cogo.PointName = record.PointName; } catch { }
+                WriteOutputLink(
+                    cogo, transaction, link.GroupId, record.Key, record.Point);
+                return true;
+            }
+
+#endif
 
             MText mtext = value as MText;
             if (mtext != null && string.Equals(link.OutputType, "MText", StringComparison.OrdinalIgnoreCase))
