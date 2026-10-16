@@ -23,9 +23,9 @@ assert "SelectImplied()" in p and "GetSelection(" in p
 assert "CheckedListBox" in p and "SetItemChecked" in p
 assert "profiles.Where(p =>" in p
 assert "p.AlignmentId == info.AlignmentId" in p
-assert "view.GraphOverrides as IEnumerable" in p
-assert '"Draw", BindingFlags.Public' in p
-assert "draw.SetValue(item, true, null)" in p
+assert "foreach (ProfileOverride profile in view.GraphOverrides)" in p
+assert "alreadyDrawn = profile.Draw;" in p
+assert "profile.Draw = true;" in p
 assert "view.IsReferenceObject" in p
 assert "tr.Commit();" in p
 assert 'methodName in new[] { "AddProfile"' not in p  # native Draw, no duplicates
