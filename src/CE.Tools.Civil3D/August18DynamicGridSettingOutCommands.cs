@@ -350,7 +350,7 @@ namespace CETools.Civil3D
             Point3d originalPosition = new Point3d(
                 point.Easting, point.Northing, point.Elevation);
             bool moved = originalPosition.DistanceTo(record.Point) > Tolerance;
-            Vector3d labelOffset = Vector3d.Zero;
+            Vector3d labelOffset = new Vector3d(0.0, 0.0, 0.0);
             bool hasMovedLabel = false;
             if (moved)
             {
