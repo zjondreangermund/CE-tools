@@ -189,11 +189,6 @@ namespace CETools.Civil3D
                                 if (vp == null || vp.Number == 1 || !vp.On ||
                                     vp.Width <= 0 || vp.Height <= 0 ||
                                     vp.ViewHeight <= 0) continue;
-                                // Keep unrotated plan sheets untouched; the
-                                // request concerns viewports whose view twist
-                                // makes engineering annotation appear sloping.
-                                if (AngularDistance(vp.TwistAngle, 0.0) <= 0.001)
-                                    continue;
                                 Vector3d direction = vp.ViewDirection;
                                 if (direction.Length < 0.000001 ||
                                     Math.Abs(direction.GetNormal()
@@ -239,6 +234,12 @@ namespace CETools.Civil3D
                         List<PlanViewport> containing = views.Where(
                             view => view.Contains(anchor)).ToList();
                         if (containing.Count == 0) continue;
+                        // Don't alter ordinary unrotated drawing annotations,
+                        // but KEEP unrotated viewports in the list when checking
+                        // whether this text is shared across conflicting views.
+                        if (containing.All(view =>
+                            AngularDistance(view.Twist, 0.0) <= 0.001))
+                            continue;
                         eligible++;
 
                         // Annotative TEXT/MTEXT have a built-in way to match each
