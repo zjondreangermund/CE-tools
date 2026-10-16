@@ -36,6 +36,46 @@ namespace CETools.Civil3D
             ViewportTextUprightManager.Refresh(doc, true);
         }
 
+        [CommandMethod("CE_TOOLS", "CE_VPTEXTUNLOCK",
+            CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void UnlockLayoutTextRotation()
+        {
+            Document doc = AcApplication.DocumentManager.MdiActiveDocument;
+            if (doc == null) return;
+            var scope = new PromptKeywordOptions(
+                "\nClear Match orientation to layout for model TEXT/MTEXT " +
+                "[Selected/All] <Selected>: ");
+            scope.Keywords.Add("Selected");
+            scope.Keywords.Add("All");
+            scope.Keywords.Default = "Selected";
+            scope.AllowNone = true;
+            PromptResult option = doc.Editor.GetKeywords(scope);
+            if (option.Status == PromptStatus.Cancel ||
+                option.Status == PromptStatus.Error) return;
+            bool all = string.Equals(option.StringResult, "All",
+                StringComparison.OrdinalIgnoreCase);
+            IList<ObjectId> selected = null;
+            if (!all)
+            {
+                PromptSelectionResult choice = doc.Editor.SelectImplied();
+                if (choice.Status != PromptStatus.OK || choice.Value == null ||
+                    choice.Value.Count == 0)
+                    choice = doc.Editor.GetSelection(
+                        new PromptSelectionOptions
+                        {
+                            MessageForAdding =
+                                "\nSelect TEXT/MTEXT to unlock (window/multiple): ",
+                            AllowDuplicates = false
+                        });
+                doc.Editor.SetImpliedSelection(new ObjectId[0]);
+                if (choice.Status != PromptStatus.OK || choice.Value == null)
+                    return;
+                selected = choice.Value.GetObjectIds();
+            }
+            ViewportTextUprightManager.ClearNativePaperOrientation(
+                doc, selected);
+        }
+
         [CommandMethod("CE_TOOLS", "CE_VPTEXTAUTO", CommandFlags.Modal)]
         public void ConfigureAutoRefresh()
         {
@@ -67,7 +107,10 @@ namespace CETools.Civil3D
 
     internal static class ViewportTextUprightManager
     {
-        internal static bool AutoEnabled = true;
+        // Opt-in only. Automatically changing ordinary model annotations when
+        // switching paper viewports previously locked their rotation and altered
+        // drawings without the user requesting it.
+        internal static bool AutoEnabled = false;
         private static bool _initialized;
         private static bool _busy;
         private static DateTime _lastAttemptUtc;
@@ -258,17 +301,13 @@ namespace CETools.Civil3D
                             continue;
                         eligible++;
 
-                        // Annotative TEXT/MTEXT have a built-in way to match each
-                        // paper viewport independently. Do NOT make non-annotative
-                        // objects annotative automatically: doing so could resize
-                        // existing drawing text.
-                        if ((entity is DBText || entity is MText) &&
-                            IsAlreadyAnnotative(entity))
-                        {
-                            if (TryEnableNativePaperOrientation(entity))
-                                native++;
+                        // NEVER force "Match orientation to layout" onto
+                        // annotative text. This setting locks manual rotation
+                        // and caused existing MText/DBText to change unexpectedly.
+                        // The opt-in upright routine may only rotate
+                        // nonannotative text; annotative objects are preserved.
+                        if (IsAlreadyAnnotative(entity))
                             continue;
-                        }
 
                         double angle;
                         DBText dbText = entity as DBText;
@@ -372,6 +411,58 @@ namespace CETools.Civil3D
                        state.Equals("Yes", StringComparison.OrdinalIgnoreCase);
             }
             catch { return false; }
+        }
+
+        internal static void ClearNativePaperOrientation(
+            Document document, IList<ObjectId> selected)
+        {
+            if (document == null) return;
+            int changed = 0, skipped = 0;
+            using (document.LockDocument())
+            using (Transaction transaction =
+                document.Database.TransactionManager.StartTransaction())
+            {
+                BlockTable table = transaction.GetObject(
+                    document.Database.BlockTableId,
+                    OpenMode.ForRead) as BlockTable;
+                if (table == null) return;
+                BlockTableRecord model = transaction.GetObject(
+                    table[BlockTableRecord.ModelSpace],
+                    OpenMode.ForRead) as BlockTableRecord;
+                if (model == null) return;
+                var candidates = selected == null
+                    ? model.Cast<ObjectId>().ToList()
+                    : selected.Distinct().ToList();
+                foreach (ObjectId id in candidates)
+                {
+                    try
+                    {
+                        DBText text = transaction.GetObject(
+                            id, OpenMode.ForRead, false) as DBText;
+                        Entity entity = text ??
+                            (transaction.GetObject(id, OpenMode.ForRead, false)
+                                as MText);
+                        if (entity == null || entity.OwnerId != model.ObjectId ||
+                            !IsAlreadyAnnotative(entity))
+                        { skipped++; continue; }
+                        LayerTableRecord layer = transaction.GetObject(
+                            entity.LayerId, OpenMode.ForRead, false)
+                            as LayerTableRecord;
+                        if (layer == null || layer.IsLocked)
+                        { skipped++; continue; }
+                        if (TrySetNativePaperOrientation(entity, false))
+                            changed++;
+                    }
+                    catch { skipped++; }
+                }
+                transaction.Commit();
+            }
+            document.Editor.WriteMessage(
+                "\nCE_VPTEXTUNLOCK: Match orientation disabled for {0} " +
+                "annotative model text object(s); skipped/unchanged={1}. " +
+                "Text size, world rotation and position preserved.",
+                changed, skipped);
+            if (changed != 0) document.Editor.Regen();
         }
 
         private static bool TryEnableNativePaperOrientation(Entity entity)
