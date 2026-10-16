@@ -1028,6 +1028,10 @@ namespace CETools.Civil3D
                 cogo.Easting = record.Point.X;
                 cogo.Northing = record.Point.Y;
                 cogo.Elevation = record.Point.Z;
+                cogo.RawDescription = record.PointName;
+                try { cogo.PointName = record.PointName; } catch { }
+                WriteOutputLink(
+                    cogo, transaction, link.GroupId, record.Key, record.Point);
                 if (preserveDraggedLabel)
                 {
                     try
@@ -1042,10 +1046,6 @@ namespace CETools.Civil3D
                         // an inaccessible native label must not be repositioned.
                     }
                 }
-                cogo.RawDescription = record.PointName;
-                try { cogo.PointName = record.PointName; } catch { }
-                WriteOutputLink(
-                    cogo, transaction, link.GroupId, record.Key, record.Point);
                 return true;
             }
 
