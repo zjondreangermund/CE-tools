@@ -1,0 +1,21 @@
+name: Civil 3D 2024 grid boundary selection safety
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/CE.Tools.Civil3D/FinalAllCommentsCompletionCommands.cs'
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'scripts/Validate-2024-GridBoundarySelection.py'
+      - '.github/workflows/grid-boundary-selection-2024.yml'
+  pull_request:
+    paths:
+      - 'src/CE.Tools.Civil3D/FinalAllCommentsCompletionCommands.cs'
+      - 'src/CE.Tools.Civil3D/August18DynamicGridSettingOutCommands.cs'
+      - 'scripts/Validate-2024-GridBoundarySelection.py'
+jobs:
+  grid-boundaries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate closed polyline and feature line scopes
+        run: python3 scripts/Validate-2024-GridBoundarySelection.py
