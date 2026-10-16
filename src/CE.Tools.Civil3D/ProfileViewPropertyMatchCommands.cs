@@ -45,11 +45,7 @@ namespace CETools.Civil3D
                 "Profile View Match workflow. First edit the source's native " +
                 "Profile View Properties if needed, then choose source and targets.");
             MatchProfileViewProperties();
-            return;
 #else
-
-#endif
-
             ObjectId sourceId = ObjectId.Null;
             List<ObjectId> targets = new List<ObjectId>();
 
@@ -163,6 +159,7 @@ namespace CETools.Civil3D
                 }
                 catch { }
             }
+#endif
         }
 
         [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWEDITMATCHAPPLY",
