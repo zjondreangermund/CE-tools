@@ -31,8 +31,12 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-            // Explicit style synchronisation must not run the separate overlap tool.
+#if CE_CIVIL3D_2024
+            // Never change manually placed labels during a normal style sync.
             CogoPointStyleResult result = ApplySelectedStyles(document, false);
+#else
+            CogoPointStyleResult result = ApplySelectedStyles(document, true);
+#endif
             document.Editor.Regen();
             document.Editor.WriteMessage(
                 "\nCE_COGOPOINTSYNC complete. Points styled={0}; labels styled={1}; labels repositioned={2}; overlaps moved={3}; skipped={4}.{5}",
@@ -144,6 +148,7 @@ namespace CETools.Civil3D
                             continue;
                         }
 
+#if CE_CIVIL3D_2024
                         // Capture the live label location BEFORE applying styles.
                         // Civil 3D can reset a manually dragged label as a side
                         // effect of reassigning its point/label style. The actual
@@ -224,6 +229,58 @@ namespace CETools.Civil3D
                                 result.Skipped++;
                             }
                         }
+#else
+                        if (!pointStyleId.IsNull)
+                        {
+                            try
+                            {
+                                point.StyleId = pointStyleId;
+                                result.PointStylesApplied++;
+                            }
+                            catch
+                            {
+                                result.Skipped++;
+                            }
+                        }
+                        if (!labelStyleId.IsNull)
+                        {
+                            try
+                            {
+                                point.LabelStyleId = labelStyleId;
+                                result.LabelStylesApplied++;
+                            }
+                            catch
+                            {
+                                result.Skipped++;
+                            }
+                        }
+
+                        if (string.IsNullOrWhiteSpace(point.RawDescription))
+                            point.RawDescription = string.IsNullOrWhiteSpace(point.PointName)
+                                ? "P" + point.PointNumber.ToString(CultureInfo.InvariantCulture)
+                                : point.PointName;
+                        TrySetLabelVisible(point);
+                        Point3d anchor = PointLocation(point);
+                        Vector3d stored;
+                        if (TryReadOffset(point, transaction, out stored))
+                        {
+                            stored = NormalizeOffset(stored, database);
+                            try
+                            {
+                                point.LabelLocation = anchor + stored;
+                                result.StoredOffsetsRestored++;
+                            }
+                            catch
+                            {
+                                result.Skipped++;
+                            }
+                        }
+                        else
+                        {
+                            Vector3d current = ReadCurrentOffset(point, anchor, database);
+                            WriteOffset(point, transaction, current);
+                        }
+#endif
                     }
                     transaction.Commit();
                 }
@@ -393,12 +450,14 @@ namespace CETools.Civil3D
             double gap,
             double textHeight)
         {
+#if CE_CIVIL3D_2024
             // An existing manually placed label that does not overlap must
             // never move merely because the overlap command was run.
             Box2d currentBox = LabelBox(
                 item.LabelLocation, item.Width, item.Height, gap);
             if (!occupied.Any(existing => existing.Intersects(currentBox)))
                 return item.LabelLocation;
+#endif
             var candidates = new List<Point3d> { item.LabelLocation };
             double step = Math.Max(textHeight * 2.4, gap * 2.0);
             Vector3d current = item.LabelLocation - item.Anchor;
