@@ -35,7 +35,17 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-
+#if CE_CIVIL3D_2024
+            // The verified V154 workflow is CE_PROFILEVIEWMATCH:
+            // edit native source Bands first, then select the source and targets,
+            // choose Selected/All, and set the matching options. Do not invoke
+            // a second native EditGraphProperties session while matching targets.
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWEDITMATCH (Civil 3D 2024): using the V154 " +
+                "Profile View Match workflow. First edit the source's native " +
+                "Profile View Properties if needed, then choose source and targets.");
+            MatchProfileViewProperties();
+#else
             ObjectId sourceId = ObjectId.Null;
             List<ObjectId> targets = new List<ObjectId>();
 
@@ -81,6 +91,35 @@ namespace CETools.Civil3D
                 TargetIds = targets.ToList()
             };
 
+#if CE_CIVIL3D_2024
+            // A finished target selection must immediately execute the match.
+            // The previous extra MatchNow/EditSource keyword prompt could leave
+            // users at a second waiting prompt and appear to do nothing.
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWEDITMATCH: applying source {0} to {1} target profile view(s)...",
+                sourceId.Handle, targets.Count);
+            try
+            {
+                _editMatchSession = session;
+                ApplyEditedProfileViewToSelected();
+            }
+            catch (System.Exception exception)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_PROFILEVIEWEDITMATCH failed: {0}", exception.Message);
+            }
+            finally
+            {
+                _editMatchSession = null;
+                try
+                {
+                    document.Editor.SetImpliedSelection(
+                        new[] { sourceId }.Concat(targets).Distinct().ToArray());
+                }
+                catch { }
+            }
+            return;
+#endif
             try
             {
                 document.Editor.WriteMessage(
@@ -120,6 +159,7 @@ namespace CETools.Civil3D
                 }
                 catch { }
             }
+#endif
         }
 
         [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWEDITMATCHAPPLY",
@@ -143,19 +183,76 @@ namespace CETools.Civil3D
             int completed = 0;
             int copiedRows = 0;
             int failed = 0;
+#if CE_CIVIL3D_2024
+            // Road views should not search every sewer network just to copy
+            // profile styles/bands. On large projects that scan can stall Civil 3D.
+            bool needsNetworkMapping = false;
+            try
+            {
+                needsNetworkMapping = SourceHasNetworkBands(
+                    document.Database, session.SourceId);
+            }
+            catch (System.Exception readException)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_PROFILEVIEWEDITMATCH: source-band inspection failed: {0}. " +
+                    "Proceeding without optional sewer-network lookup.",
+                    readException.Message);
+            }
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWEDITMATCH: selected {0} target(s); sewer-network " +
+                "mapping required={1}.", session.TargetIds.Count,
+                needsNetworkMapping ? "yes" : "no");
+#endif
             using (DocumentLock documentLock = document.LockDocument())
             {
                 foreach (ObjectId targetId in session.TargetIds.Distinct())
                 {
+#if CE_CIVIL3D_2024
+                    string stage = "preparing target";
+#endif
                     try
                     {
+#if CE_CIVIL3D_2024
+                        document.Editor.WriteMessage(
+                            "\nCE_PROFILEVIEWEDITMATCH: target {0}: starting.",
+                            targetId.Handle);
+#endif
+                        ObjectId targetNetworkId = ObjectId.Null;
+#if CE_CIVIL3D_2024
+                        // Road profile matching must not require a sewer network.
+                        // A failed sewer lookup previously aborted all copying,
+                        // even when only profile-view style and road bands mattered.
+                        try
+                        {
+                            if (needsNetworkMapping)
+                            {
+                                stage = "resolving pipe network";
+                                SewerLongSectionContext optionalContext =
+                                    SewerLongSectionBandService.ResolveContext(
+                                        document.Database, civil, targetId);
+                                if (optionalContext != null)
+                                    targetNetworkId = optionalContext.NetworkId;
+                            }
+                        }
+                        catch (System.Exception networkException)
+                        {
+                            document.Editor.WriteMessage(
+                                "\nCE_PROFILEVIEWEDITMATCH target {0}: optional pipe-network " +
+                                "lookup unavailable ({1}); matching non-network bands.",
+                                targetId.Handle, networkException.Message);
+                        }
+#else
                         SewerLongSectionContext targetContext =
                             SewerLongSectionBandService.ResolveContext(
-                                document.Database,
-                                civil,
-                                targetId);
+                                document.Database, civil, targetId);
+                        targetNetworkId = targetContext.NetworkId;
+#endif
 
                         int targetRows;
+#if CE_CIVIL3D_2024
+                        stage = "copying view style, ranges, bands";
+#endif
                         using (Transaction tr =
                             document.Database.TransactionManager.StartTransaction())
                         {
@@ -174,32 +271,84 @@ namespace CETools.Civil3D
 
                             target.StyleId = source.StyleId;
                             CopyViewRangeProperties(source, target);
+#if CE_CIVIL3D_2024
+                            try
+                            {
+                                target.Bands.MatchIncrementToGridIntervals =
+                                    source.Bands.MatchIncrementToGridIntervals;
+                            }
+                            catch { }
+#endif
                             targetRows = CopyBands(
                                 source,
                                 target,
                                 tr,
                                 true,
                                 false,
-                                targetContext.NetworkId);
+                                targetNetworkId);
 
                             try { target.RecordGraphicsModified(true); }
                             catch { }
                             tr.Commit();
                         }
+#if CE_CIVIL3D_2024
+                        stage = "verifying saved band styles";
+                        string verificationError;
+                        if (!VerifyCopiedProfilePresentation(
+                                document.Database, session.SourceId, targetId,
+                                out verificationError))
+                            throw new InvalidOperationException(
+                                "The copy transaction completed, but verification failed: " +
+                                verificationError);
+#endif
                         copiedRows += targetRows;
                         completed++;
+#if CE_CIVIL3D_2024
+                        document.Editor.WriteMessage(
+                            "\nCE_PROFILEVIEWEDITMATCH: target {0} verified, rows={1}.",
+                            targetId.Handle, targetRows);
+#endif
                     }
                     catch (System.Exception exception)
                     {
                         failed++;
+#if CE_CIVIL3D_2024
+                        document.Editor.WriteMessage(
+                            "\nCE_PROFILEVIEWEDITMATCH target {0} FAILED at {1}: {2}",
+                            targetId.Handle, stage, exception);
+#else
                         document.Editor.WriteMessage(
                             "\nCE_PROFILEVIEWEDITMATCHAPPLY target {0} skipped: {1}",
                             targetId.Handle,
                             exception.Message);
+#endif
                     }
                 }
             }
 
+#if CE_CIVIL3D_2024
+            // Report success/failure BEFORE any forced regeneration; in large
+            // Civil 3D projects Regen can be very slow and hide the completion.
+            document.Editor.WriteMessage(
+                "\nCE_PROFILEVIEWEDITMATCH complete. Source={0}; targets updated={1}; native band rows copied={2}; failed={3}.",
+                session.SourceId.Handle, completed, copiedRows, failed);
+            try
+            {
+                document.Editor.SetImpliedSelection(
+                    new[] { session.SourceId }.Concat(session.TargetIds).Distinct().ToArray());
+                document.Database.TransactionManager.QueueForGraphicsFlush();
+                AcApplication.UpdateScreen();
+            }
+            catch (System.Exception refreshException)
+            {
+#if CE_CIVIL3D_2024
+                document.Editor.WriteMessage(
+                    "\nCE_PROFILEVIEWEDITMATCH: display refresh deferred: {0}; run REGEN if needed.",
+                    refreshException.Message);
+#endif
+            }
+#else
+            // Preserve the original 2023 refresh and completion order verbatim.
             try
             {
                 document.Editor.SetImpliedSelection(
@@ -212,10 +361,8 @@ namespace CETools.Civil3D
 
             document.Editor.WriteMessage(
                 "\nCE_PROFILEVIEWEDITMATCH complete. Edited source={0}; target views updated={1}; native band rows copied={2}; failed={3}.",
-                session.SourceId.Handle,
-                completed,
-                copiedRows,
-                failed);
+                session.SourceId.Handle, completed, copiedRows, failed);
+#endif
         }
 
         [CommandMethod("CE_TOOLS", "CE_PROFILEVIEWMATCH",
@@ -703,6 +850,110 @@ namespace CETools.Civil3D
             if (document == null) return;
             document.SendStringToExecute("CE_SEWBANDLABELS ", true, false, true);
         }
+
+#if CE_CIVIL3D_2024
+        // Inspect values re-opened from the database, not in-memory wrappers.
+        // A successful SetTopBandItems call is not proof the target now matches.
+        private static bool SourceHasNetworkBands(
+            Database database, ObjectId sourceId)
+        {
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+            {
+                CivilProfileView source = tr.GetObject(
+                    sourceId, OpenMode.ForRead, false) as CivilProfileView;
+                if (source == null) return false;
+                using (ProfileViewBandItemCollection top =
+                           source.Bands.GetTopBandItems())
+                using (ProfileViewBandItemCollection bottom =
+                           source.Bands.GetBottomBandItems())
+                {
+                    for (int i = 0; i < top.Count; i++)
+                    {
+                        ProfileViewBandItem row = top[i];
+                        if (row != null && (row.BandType == Autodesk.Civil.BandType.PipeNetwork ||
+                                            row.BandType == Autodesk.Civil.BandType.PressureNetwork))
+                            return true;
+                    }
+                    for (int i = 0; i < bottom.Count; i++)
+                    {
+                        ProfileViewBandItem row = bottom[i];
+                        if (row != null && (row.BandType == Autodesk.Civil.BandType.PipeNetwork ||
+                                            row.BandType == Autodesk.Civil.BandType.PressureNetwork))
+                            return true;
+                    }
+                }
+                tr.Commit();
+                return false;
+            }
+        }
+
+        private static bool VerifyCopiedProfilePresentation(
+            Database database, ObjectId sourceId, ObjectId targetId,
+            out string reason)
+        {
+            reason = string.Empty;
+            try
+            {
+                using (Transaction tr =
+                    database.TransactionManager.StartTransaction())
+                {
+                    CivilProfileView source = tr.GetObject(
+                        sourceId, OpenMode.ForRead, false) as CivilProfileView;
+                    CivilProfileView target = tr.GetObject(
+                        targetId, OpenMode.ForRead, false) as CivilProfileView;
+                    if (source == null || target == null)
+                    {
+                        reason = "source/target view unavailable on reread";
+                        return false;
+                    }
+                    if (source.StyleId != target.StyleId)
+                    {
+                        reason = "profile-view style differs";
+                        return false;
+                    }
+                    using (ProfileViewBandItemCollection sourceTop =
+                               source.Bands.GetTopBandItems())
+                    using (ProfileViewBandItemCollection targetTop =
+                               target.Bands.GetTopBandItems())
+                    using (ProfileViewBandItemCollection sourceBottom =
+                               source.Bands.GetBottomBandItems())
+                    using (ProfileViewBandItemCollection targetBottom =
+                               target.Bands.GetBottomBandItems())
+                    {
+                        if (sourceTop.Count != targetTop.Count ||
+                            sourceBottom.Count != targetBottom.Count)
+                        {
+                            reason = string.Format(
+                                CultureInfo.InvariantCulture,
+                                "band rows source top/bottom={0}/{1}; target={2}/{3}",
+                                sourceTop.Count, sourceBottom.Count,
+                                targetTop.Count, targetBottom.Count);
+                            return false;
+                        }
+                        for (int i = 0; i < sourceTop.Count; i++)
+                            if (sourceTop[i].BandStyleId != targetTop[i].BandStyleId)
+                            {
+                                reason = "top band style differs at row " + (i + 1);
+                                return false;
+                            }
+                        for (int i = 0; i < sourceBottom.Count; i++)
+                            if (sourceBottom[i].BandStyleId != targetBottom[i].BandStyleId)
+                            {
+                                reason = "bottom band style differs at row " + (i + 1);
+                                return false;
+                            }
+                    }
+                    tr.Commit();
+                }
+                return true;
+            }
+            catch (System.Exception exception)
+            {
+                reason = "verification API error: " + exception.Message;
+                return false;
+            }
+        }
+#endif
 
         private static int CopyBands(
             CivilProfileView source,
