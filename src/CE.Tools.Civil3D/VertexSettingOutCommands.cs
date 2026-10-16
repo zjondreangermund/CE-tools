@@ -1165,6 +1165,10 @@ namespace CETools.Civil3D
             table.Columns[0].Width = Math.Max(textHeight * 9.0, 0.001);
             table.Columns[1].Width = Math.Max(textHeight * 18.0, 0.001);
             table.Columns[2].Width = Math.Max(textHeight * 14.0, 0.001);
+            // Coordinate values can exceed 100,000 and must not wrap
+            // onto multiple lines (both coordinate columns use the same width).
+            table.Columns[4].Width = Math.Max(textHeight * 18.0, 0.001);
+            table.Columns[5].Width = Math.Max(textHeight * 18.0, 0.001);
             table.Columns[8].Width = Math.Max(textHeight * 11.0, 0.001);
             table.Columns[10].Width = Math.Max(textHeight * 12.0, 0.001);
             table.Cells[0, 0].TextString = "CE VERTEX SETTING-OUT - " + (link.OutputType ?? string.Empty).ToUpperInvariant();
