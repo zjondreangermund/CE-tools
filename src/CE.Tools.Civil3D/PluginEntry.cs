@@ -22,6 +22,7 @@ namespace CETools.Civil3D
             AnnotationScaleSyncManager.Initialize();
 #if CE_CIVIL3D_2024
             PaperSpaceTextAnnotationGuard.Initialize();
+            ViewportTextUprightManager.Initialize();
 #endif
             DynamicRefreshContextMenu.Attach();
             ParkingNumberAutoRefreshManager.Initialize();
@@ -63,6 +64,7 @@ namespace CETools.Civil3D
             WaterSewerCostAutoRefreshManager.Terminate();
             ParkingNumberAutoRefreshManager.Terminate();
 #if CE_CIVIL3D_2024
+            ViewportTextUprightManager.Terminate();
             PaperSpaceTextAnnotationGuard.Terminate();
 #endif
             AnnotationScaleSyncManager.Terminate();
