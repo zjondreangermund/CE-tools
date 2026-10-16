@@ -1010,7 +1010,7 @@ namespace CETools.Civil3D
                 // geometry/vertex refresh may leave the text behind or reset it.
                 Point3d previousAnchor = new Point3d(
                     cogo.Easting, cogo.Northing, cogo.Elevation);
-                Vector3d preservedLabelOffset = Vector3d.Zero;
+                Vector3d preservedLabelOffset = new Vector3d(0.0, 0.0, 0.0);
                 bool preserveDraggedLabel = false;
                 try
                 {
