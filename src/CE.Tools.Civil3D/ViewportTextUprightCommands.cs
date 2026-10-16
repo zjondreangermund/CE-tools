@@ -437,12 +437,10 @@ namespace CETools.Civil3D
                 {
                     try
                     {
-                        DBText text = transaction.GetObject(
-                            id, OpenMode.ForRead, false) as DBText;
-                        Entity entity = text ??
-                            (transaction.GetObject(id, OpenMode.ForRead, false)
-                                as MText);
-                        if (entity == null || entity.OwnerId != model.ObjectId ||
+                        Entity entity = transaction.GetObject(
+                            id, OpenMode.ForRead, false) as Entity;
+                        if (!(entity is DBText || entity is MText) ||
+                            entity.OwnerId != model.ObjectId ||
                             !IsAlreadyAnnotative(entity))
                         { skipped++; continue; }
                         LayerTableRecord layer = transaction.GetObject(
