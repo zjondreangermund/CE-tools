@@ -43,8 +43,10 @@ namespace CETools.Civil3D
             if (doc == null) return;
             var options = new PromptKeywordOptions(
                 "\nUpright TEXT/MTEXT/MLEADER on viewport change [On/Off/Status] <Status>: ");
-            options.Keywords.Add("On");
-            options.Keywords.Add("Off");
+            // Distinguish ON from OFf using AutoCAD's uppercase
+            // keyword shortcut letters. "OF" now selects Off.
+            options.Keywords.Add("ON");
+            options.Keywords.Add("OFf");
             options.Keywords.Add("Status");
             options.Keywords.Default = "Status";
             options.AllowNone = true;
@@ -52,8 +54,10 @@ namespace CETools.Civil3D
             if (answer.Status == PromptStatus.Cancel) return;
             if (answer.Status == PromptStatus.OK)
             {
-                if (answer.StringResult == "On") ViewportTextUprightManager.AutoEnabled = true;
-                if (answer.StringResult == "Off") ViewportTextUprightManager.AutoEnabled = false;
+                if (string.Equals(answer.StringResult, "ON", StringComparison.OrdinalIgnoreCase))
+                    ViewportTextUprightManager.AutoEnabled = true;
+                if (string.Equals(answer.StringResult, "OFf", StringComparison.OrdinalIgnoreCase))
+                    ViewportTextUprightManager.AutoEnabled = false;
             }
             doc.Editor.WriteMessage(
                 "\nCE_VPTEXTAUTO: {0}. Changes apply to Civil 3D 2024 this session.",
@@ -221,6 +225,18 @@ namespace CETools.Civil3D
                         }
                         catch { continue; }
 
+                        // CE road names must follow their alignment, not the
+                        // viewport's horizontal text rule. Also undo the native
+                        // "Match orientation to layout" flag previously set
+                        // on older generated names so rotation stays editable.
+                        if (IsLinkedRoadName(entity, tr))
+                        {
+                            if (IsAlreadyAnnotative(entity) &&
+                                TrySetNativePaperOrientation(entity, false))
+                                native++;
+                            continue;
+                        }
+
                         Point3d anchor;
                         try
                         {
@@ -323,7 +339,7 @@ namespace CETools.Civil3D
                 if (verbose || changed > 0 || native > 0 || conflicts > 0)
                     doc.Editor.WriteMessage(
                         "\nCE viewport annotations: {0} model annotations in plan views; " +
-                        "{1} aligned horizontally; {2} native layout orientation requested; " +
+                        "{1} aligned horizontally; {2} native layout-orientation updates; " +
                         "{3} shared across conflicting viewport rotations (left untouched).",
                         eligible, changed, native, conflicts);
                 if (verbose || changed > 0 || native > 0)
@@ -360,6 +376,11 @@ namespace CETools.Civil3D
 
         private static bool TryEnableNativePaperOrientation(Entity entity)
         {
+            return TrySetNativePaperOrientation(entity, true);
+        }
+
+        private static bool TrySetNativePaperOrientation(Entity entity, bool enabled)
+        {
             try
             {
                 MethodInfo setter = entity.GetType().GetMethod(
@@ -370,10 +391,39 @@ namespace CETools.Civil3D
                     "GetPaperOrientation", BindingFlags.Public | BindingFlags.Instance,
                     null, Type.EmptyTypes, null);
                 if (getter != null &&
-                    object.Equals(getter.Invoke(entity, null), true)) return false;
+                    object.Equals(getter.Invoke(entity, null), enabled))
+                    return false;
                 entity.UpgradeOpen();
-                setter.Invoke(entity, new object[] { true });
+                setter.Invoke(entity, new object[] { enabled });
                 return true;
+            }
+            catch { return false; }
+        }
+
+        private static bool IsLinkedRoadName(Entity entity, Transaction transaction)
+        {
+            if (entity == null) return false;
+            if (string.Equals(entity.Layer, "CE-ROAD-NAME",
+                    StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(entity.Layer, "CE-ROAD-NAMES",
+                    StringComparison.OrdinalIgnoreCase))
+                return true;
+            // Works even when the user picks a custom road-name layer.
+            try
+            {
+                if (entity.ExtensionDictionary.IsNull) return false;
+                DBDictionary dictionary = transaction.GetObject(
+                    entity.ExtensionDictionary, OpenMode.ForRead, false) as DBDictionary;
+                if (dictionary == null || !dictionary.Contains("CE_ROAD_LAYOUT"))
+                    return false;
+                Xrecord record = transaction.GetObject(
+                    dictionary.GetAt("CE_ROAD_LAYOUT"),
+                    OpenMode.ForRead, false) as Xrecord;
+                TypedValue[] values = record == null || record.Data == null
+                    ? null : record.Data.AsArray();
+                return values != null && values.Length > 0 &&
+                    string.Equals(Convert.ToString(values[0].Value),
+                        "ROAD_NAME", StringComparison.OrdinalIgnoreCase);
             }
             catch { return false; }
         }
