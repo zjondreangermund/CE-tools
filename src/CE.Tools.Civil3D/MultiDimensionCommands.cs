@@ -604,7 +604,13 @@ namespace CETools.Civil3D
                 targetId = table[cloneName];
                 target = transaction.GetObject(targetId, OpenMode.ForWrite, false) as DimStyleTableRecord;
                 if (target == null) return ObjectId.Null;
+#if CE_CIVIL3D_2024
+                // Preserve CE dimension style edits (text height, arrow size,
+                // etc.) made after creation. A geometry refresh must not copy
+                // the old original style over the user's corrected dimensions.
+#else
                 if (targetId != sourceId) target.CopyFrom(source);
+#endif
             }
             else
             {
