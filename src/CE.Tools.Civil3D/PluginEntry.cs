@@ -20,6 +20,9 @@ namespace CETools.Civil3D
             DynamicSectionUpdateManager.Initialize();
             DynamicIntersectionUpdateManager.Initialize();
             AnnotationScaleSyncManager.Initialize();
+#if CE_CIVIL3D_2024
+            PaperSpaceTextAnnotationGuard.Initialize();
+#endif
             DynamicRefreshContextMenu.Attach();
             ParkingNumberAutoRefreshManager.Initialize();
             WaterSewerCostAutoRefreshManager.Initialize();
@@ -59,6 +62,9 @@ namespace CETools.Civil3D
             LinkedTableAutoRefreshManager.Terminate();
             WaterSewerCostAutoRefreshManager.Terminate();
             ParkingNumberAutoRefreshManager.Terminate();
+#if CE_CIVIL3D_2024
+            PaperSpaceTextAnnotationGuard.Terminate();
+#endif
             AnnotationScaleSyncManager.Terminate();
             DynamicIntersectionUpdateManager.Terminate();
             DynamicSectionUpdateManager.Terminate();
