@@ -1,0 +1,31 @@
+name: Civil 3D 2024 road names and dimension stability
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/CE.Tools.Civil3D/AnnotationScaleSyncCommands.cs'
+      - 'src/CE.Tools.Civil3D/September10DynamicMultiDimensionManager.cs'
+      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - 'src/CE.Tools.Civil3D/RoadLayoutAnnotation.cs'
+      - 'src/CE.Tools.Civil3D/RoadAnnotationPlacement.cs'
+      - 'src/CE.Tools.Civil3D/ViewportTextUprightCommands.cs'
+      - 'scripts/Validate-2024-RoadName-Dimension-ScaleStability.py'
+      - '.github/workflows/annotation-stability-2024.yml'
+  pull_request:
+    paths:
+      - 'src/CE.Tools.Civil3D/AnnotationScaleSyncCommands.cs'
+      - 'src/CE.Tools.Civil3D/September10DynamicMultiDimensionManager.cs'
+      - 'src/CE.Tools.Civil3D/MultiDimensionCommands.cs'
+      - 'src/CE.Tools.Civil3D/RoadLayoutAnnotation.cs'
+      - 'src/CE.Tools.Civil3D/RoadAnnotationPlacement.cs'
+      - 'src/CE.Tools.Civil3D/ViewportTextUprightCommands.cs'
+      - 'scripts/Validate-2024-RoadName-Dimension-ScaleStability.py'
+
+jobs:
+  road-annotation-stability:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check scales, dimension refresh and road-aligned rotation
+        run: python3 scripts/Validate-2024-RoadName-Dimension-ScaleStability.py
