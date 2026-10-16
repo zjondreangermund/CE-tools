@@ -134,7 +134,11 @@ namespace CETools.Civil3D
                 catch { result.Warnings++; }
                 try { August11SurveyRuntimeCommands.RefreshMultiSurfaceTables(document); }
                 catch { result.Warnings++; }
-                try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, true); }
+                // A general/dynamic refresh must never trigger overlap solving.
+                // This used to move COGO text away from its manually chosen
+                // location each time vertex refresh or REGEN updated a drawing.
+                // CE_COGOOVERLAPFIX remains the explicit opt-in movement command.
+                try { CogoPointProjectStyleCommands.ApplySelectedStyles(document, false); }
                 catch { result.Warnings++; }
                 try { RuntimeAnnotationLinkManager.ClampLinkedAnnotations(document, true); }
                 catch { result.Warnings++; }
