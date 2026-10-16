@@ -1699,7 +1699,11 @@ namespace CETools.Civil3D
         {
             Title = "CE Tools - Profile View Batch Tools";
             Width = 460;
+#if CE_CIVIL3D_2024
+            Height = 555;
+#else
             Height = 485;
+#endif
             ResizeMode = ResizeMode.NoResize;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             var root = new StackPanel { Margin = new Thickness(18) };
@@ -1718,6 +1722,10 @@ namespace CETools.Civil3D
                 Margin = new Thickness(0, 0, 0, 12)
             });
             AddButton(root, "Batch styles, band sets and rebuild", "CE_PROFILEVIEWBATCH ");
+#if CE_CIVIL3D_2024
+            AddButton(root, "Add profiles to all / selected profile views",
+                "CE_PROFILEADDTOVIEWS ");
+#endif
             AddButton(root, "Edit one native Profile View, then apply to selected", "CE_PROFILEVIEWEDITMATCH ");
             AddButton(root, "Match first/source profile view to multiple views", "CE_PROFILEVIEWMATCH ");
             AddButton(root, "Batch-edit band Data Sources", "CE_PROFILEVIEWDATASOURCES ");
