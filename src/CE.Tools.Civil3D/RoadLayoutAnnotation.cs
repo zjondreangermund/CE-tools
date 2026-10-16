@@ -86,6 +86,13 @@ namespace CETools.Civil3D
                     .ThenBy(item => MidPoint(item.Geometry).X)
                     .ToList();
 
+#if CE_CIVIL3D_2024
+                // Snapshot once per command; avoid scanning every layout's
+                // annotation scales again for every single road name.
+                IList<object> usedDrawingScales =
+                    AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(
+                        document.Database, tr);
+#endif
                 var occupancy = new RoadAnnotationPlacement.Occupancy(space, tr);
                 int index = model.Integer("Start", 1);
                 foreach (RoadAnnotationSource road in roads)
@@ -129,7 +136,11 @@ namespace CETools.Civil3D
                         network,
                         recipe,
                         occupancy,
-                        ref skipped);
+                        ref skipped
+#if CE_CIVIL3D_2024
+                        , usedDrawingScales
+#endif
+                        );
                 }
 
                 foreach (RoadAnnotationSource road in roads)
@@ -247,7 +258,11 @@ namespace CETools.Civil3D
         }
 
         private static int AddRoadNames(Database db, Transaction tr, BlockTableRecord space, RoadAnnotationSource source,
-            IList<Curve> network, AnnotationRecipe recipe, RoadAnnotationPlacement.Occupancy occupancy, ref int skipped)
+            IList<Curve> network, AnnotationRecipe recipe, RoadAnnotationPlacement.Occupancy occupancy, ref int skipped
+#if CE_CIVIL3D_2024
+            , IList<object> drawingScales
+#endif
+            )
         {
             Curve road = source.Geometry;
             ObjectId layer = GetOrCreateLayer(db, tr, recipe.Layer);
@@ -277,10 +292,27 @@ namespace CETools.Civil3D
                 PaperAnnotationScale.SetAnnotative(text);
                 space.AppendEntity(text);
                 tr.AddNewlyCreatedDBObject(text, true);
+#if CE_CIVIL3D_2024
+                // Keep name rotation controlled by the road geometry, not by
+                // native layout matching. This also leaves Rotation editable
+                // in the Properties palette.
+                try
+                {
+                    System.Reflection.MethodInfo setPaperOrientation =
+                        text.GetType().GetMethod("SetPaperOrientation",
+                            new[] { typeof(bool) });
+                    if (setPaperOrientation != null)
+                        setPaperOrientation.Invoke(text, new object[] { false });
+                }
+                catch { }
+                AnnotationScaleSyncManager.AddUsedDrawingScaleContexts(
+                    text, drawingScales);
+#else
                 AnnotationScaleSyncManager
                     .AddAllAnnotationScaleContexts(
                         text,
                         db);
+#endif
                 WriteAnnotationLink(text, tr, source.Parent, "ROAD_NAME", recipe);
                 count++;
             }
@@ -1265,6 +1297,11 @@ namespace CETools.Civil3D
                         job.Item1.Parent.Handle.ToString());
                 }
 
+#if CE_CIVIL3D_2024
+                IList<object> usedDrawingScales =
+                    AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(
+                        document.Database, tr);
+#endif
                 var occupancy =
                     new RoadAnnotationPlacement.Occupancy(
                         space,
@@ -1297,7 +1334,11 @@ namespace CETools.Civil3D
                             network,
                             job.Item3,
                             occupancy,
-                            ref skipped)
+                            ref skipped
+#if CE_CIVIL3D_2024
+                            , usedDrawingScales
+#endif
+                            )
                         : AddRoadDimensions(
                             document.Database,
                             tr,
