@@ -344,10 +344,43 @@ namespace CETools.Civil3D
                 return false;
             }
             if (point == null) return false;
+#if CE_CIVIL3D_2024
+            // A linked grid refresh must preserve manually dragged Civil 3D
+            // COGO labels, just like the standard vertex setting-out refresh.
+            Point3d originalPosition = new Point3d(
+                point.Easting, point.Northing, point.Elevation);
+            bool moved = originalPosition.DistanceTo(record.Point) > Tolerance;
+            Vector3d labelOffset = Vector3d.Zero;
+            bool hasMovedLabel = false;
+            if (moved)
+            {
+                try
+                {
+                    labelOffset = point.LabelLocation - originalPosition;
+                    hasMovedLabel = labelOffset.Length > Tolerance;
+                }
+                catch { }
+                if (Math.Abs(point.Easting - record.Point.X) > Tolerance)
+                    point.Easting = record.Point.X;
+                if (Math.Abs(point.Northing - record.Point.Y) > Tolerance)
+                    point.Northing = record.Point.Y;
+                if (Math.Abs(point.Elevation - record.Point.Z) > Tolerance)
+                    point.Elevation = record.Point.Z;
+            }
+            if (!string.Equals(point.RawDescription, record.Name,
+                    StringComparison.Ordinal))
+                point.RawDescription = record.Name;
+            if (hasMovedLabel)
+            {
+                try { point.LabelLocation = record.Point + labelOffset; }
+                catch { }
+            }
+#else
             point.Easting = record.Point.X;
             point.Northing = record.Point.Y;
             point.Elevation = record.Point.Z;
             point.RawDescription = record.Name;
+#endif
             return true;
         }
 
