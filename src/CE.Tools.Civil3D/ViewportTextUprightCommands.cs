@@ -180,16 +180,23 @@ namespace CETools.Civil3D
                             continue;
                         foreach (ObjectId id in space)
                         {
-                            Viewport vp = tr.GetObject(
-                                id, OpenMode.ForRead, false) as Viewport;
-                            if (vp == null || vp.Number == 1 || !vp.On ||
-                                vp.Width <= 0 || vp.Height <= 0 ||
-                                vp.ViewHeight <= 0) continue;
-                            // Restrict to conventional plan/top viewports.
-                            if (Math.Abs(vp.ViewDirection.GetNormal()
-                                    .DotProduct(Vector3d.ZAxis)) < .999)
-                                continue;
-                            views.Add(new PlanViewport(vp));
+                            // A stale/broken paper viewport must not abort the
+                            // whole DWG or cause a repeating idle-event failure.
+                            try
+                            {
+                                Viewport vp = tr.GetObject(
+                                    id, OpenMode.ForRead, false) as Viewport;
+                                if (vp == null || vp.Number == 1 || !vp.On ||
+                                    vp.Width <= 0 || vp.Height <= 0 ||
+                                    vp.ViewHeight <= 0) continue;
+                                Vector3d direction = vp.ViewDirection;
+                                if (direction.Length < 0.000001 ||
+                                    Math.Abs(direction.GetNormal()
+                                        .DotProduct(Vector3d.ZAxis)) < .999)
+                                    continue;
+                                views.Add(new PlanViewport(vp));
+                            }
+                            catch { }
                         }
                     }
 
@@ -197,16 +204,22 @@ namespace CETools.Civil3D
                         bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
                     foreach (ObjectId entityId in model)
                     {
-                        Entity entity = tr.GetObject(entityId, OpenMode.ForRead, false)
-                            as Entity;
-                        if (entity == null ||
-                            !(entity is DBText || entity is MText || entity is MLeader))
-                            continue;
-                        LayerTableRecord layer = tr.GetObject(
-                            entity.LayerId, OpenMode.ForRead, false)
-                            as LayerTableRecord;
-                        if (layer == null || layer.IsLocked || layer.IsFrozen ||
-                            layer.IsOff) continue;
+                        Entity entity;
+                        LayerTableRecord layer;
+                        try
+                        {
+                            entity = tr.GetObject(entityId, OpenMode.ForRead, false)
+                                as Entity;
+                            if (entity == null ||
+                                !(entity is DBText || entity is MText || entity is MLeader))
+                                continue;
+                            layer = tr.GetObject(
+                                entity.LayerId, OpenMode.ForRead, false)
+                                as LayerTableRecord;
+                            if (layer == null || layer.IsLocked ||
+                                layer.IsFrozen || layer.IsOff) continue;
+                        }
+                        catch { continue; }
 
                         Point3d anchor;
                         try
