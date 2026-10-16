@@ -147,6 +147,16 @@ namespace CETools.Civil3D
                     if (block == null ||
                         (!block.IsLayout && !block.IsAnonymous))
                         continue;
+#if CE_CIVIL3D_2024
+                    // Annotative scale sync applies to model-space engineering
+                    // annotations, NEVER paper-space title blocks/text.
+                    // This was forcing layouts' text Annotative=Yes on CANNOSCALE
+                    // changes and making title-sheet descriptions grow.
+                    if (block.IsLayout &&
+                        !string.Equals(block.Name, BlockTableRecord.ModelSpace,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+#endif
 
                     foreach (ObjectId objectId in block)
                     {
