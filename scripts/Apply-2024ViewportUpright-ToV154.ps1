@@ -32,22 +32,23 @@ if ($updated -notmatch 'ViewportTextUprightManager.Initialize\(') {
     if (-not $updated.Contains($initialize)) {
         throw 'Could not find CE Tools startup manager in V154 PluginEntry.cs; no files were changed.'
     }
-    $updated = $updated.Replace($initialize, $initialize + @'
-
+    $init = @'
 #if CE_CIVIL3D_2024
             ViewportTextUprightManager.Initialize();
 #endif
-'@)
+'@
+    $updated = $updated.Replace($initialize, $initialize + [Environment]::NewLine + $init)
 }
 if ($updated -notmatch 'ViewportTextUprightManager.Terminate\(') {
     if (-not $updated.Contains($terminate)) {
         throw 'Could not find CE Tools termination manager in V154 PluginEntry.cs; no files were changed.'
     }
-    $updated = $updated.Replace($terminate, @'
+    $finish = @'
 #if CE_CIVIL3D_2024
             ViewportTextUprightManager.Terminate();
 #endif
-'@ + "\r\n" + $terminate)
+'@
+    $updated = $updated.Replace($terminate, $finish + [Environment]::NewLine + $terminate)
 }
 
 if (Test-Path -LiteralPath $dest) {
