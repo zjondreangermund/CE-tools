@@ -285,6 +285,86 @@ namespace CETools.Civil3D
             }
         }
 
+#if CE_CIVIL3D_2024
+        /// <summary>
+        /// Read only annotation scales actually referenced by this drawing's
+        /// paper-space viewports, plus its current model annotation scale.
+        /// Never enumerate the entire annotation-scale library per road name.
+        /// Caller supplies its existing transaction to avoid costly rescans.
+        /// </summary>
+        internal static IList<object> ReadUsedDrawingScaleContexts(
+            Database database, Transaction transaction)
+        {
+            var result = new List<object>();
+            var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            if (database == null || transaction == null) return result;
+            object current = ResolveCurrentAnnotationContext(database);
+            AddUniqueContext(result, names, current);
+            try
+            {
+                BlockTable table = transaction.GetObject(
+                    database.BlockTableId, OpenMode.ForRead) as BlockTable;
+                if (table == null) return result;
+                foreach (ObjectId recordId in table)
+                {
+                    BlockTableRecord layout = transaction.GetObject(
+                        recordId, OpenMode.ForRead, false) as BlockTableRecord;
+                    if (layout == null || !layout.IsLayout ||
+                        string.Equals(layout.Name, BlockTableRecord.ModelSpace,
+                            StringComparison.OrdinalIgnoreCase))
+                        continue;
+                    foreach (ObjectId id in layout)
+                    {
+                        try
+                        {
+                            Viewport vp = transaction.GetObject(
+                                id, OpenMode.ForRead, false) as Viewport;
+                            if (vp == null || vp.Number == 1 || !vp.On)
+                                continue;
+                            PropertyInfo property = vp.GetType().GetProperty(
+                                "AnnotationScale",
+                                BindingFlags.Public | BindingFlags.Instance);
+                            object context = property == null
+                                ? null : property.GetValue(vp, null);
+                            AddUniqueContext(result, names, context);
+                        }
+                        catch { }
+                    }
+                }
+            }
+            catch { }
+            return result;
+        }
+
+        private static void AddUniqueContext(
+            IList<object> result, ISet<string> names, object context)
+        {
+            if (context == null) return;
+            string name = string.Empty;
+            try
+            {
+                PropertyInfo property = context.GetType().GetProperty(
+                    "Name", BindingFlags.Public | BindingFlags.Instance);
+                name = Convert.ToString(
+                    property == null ? null : property.GetValue(context, null),
+                    CultureInfo.InvariantCulture) ?? string.Empty;
+            }
+            catch { }
+            if (string.IsNullOrWhiteSpace(name)) return;
+            if (names.Add(name)) result.Add(context);
+        }
+
+        internal static int AddUsedDrawingScaleContexts(
+            Entity entity, IEnumerable<object> contexts)
+        {
+            if (entity == null || contexts == null) return 0;
+            int count = 0;
+            foreach (object context in contexts)
+                if (context != null && AddContext(entity, context)) count++;
+            return count;
+        }
+#endif
+
         internal static int AddAllAnnotationScaleContexts(
             Entity entity,
             Database database)
