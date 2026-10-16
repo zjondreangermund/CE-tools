@@ -1004,10 +1004,44 @@ namespace CETools.Civil3D
             CivilCogoPoint cogo = value as CivilCogoPoint;
             if (cogo != null && string.Equals(link.OutputType, "COGO", StringComparison.OrdinalIgnoreCase))
             {
+                // Preserve a manually dragged COGO label's offset relative to
+                // the old point BEFORE changing its coordinates. Otherwise a
+                // geometry/vertex refresh may leave the text behind or reset it.
+                Point3d previousAnchor = new Point3d(
+                    cogo.Easting, cogo.Northing, cogo.Elevation);
+                Vector3d preservedLabelOffset = Vector3d.Zero;
+                bool preserveDraggedLabel = false;
+                try
+                {
+                    Point3d previousLabel = cogo.LabelLocation;
+                    preservedLabelOffset = previousLabel - previousAnchor;
+                    preserveDraggedLabel =
+                        !double.IsNaN(preservedLabelOffset.X) &&
+                        !double.IsInfinity(preservedLabelOffset.X) &&
+                        !double.IsNaN(preservedLabelOffset.Y) &&
+                        !double.IsInfinity(preservedLabelOffset.Y) &&
+                        preservedLabelOffset.Length > 1e-8;
+                }
+                catch { }
+
                 cogo.LayerId = RoadAnnotationPlacement.Layer(cogo.Database, transaction, link.PointLayer, "CE-ROAD-JUNCTION-POINTS");
                 cogo.Easting = record.Point.X;
                 cogo.Northing = record.Point.Y;
                 cogo.Elevation = record.Point.Z;
+                if (preserveDraggedLabel)
+                {
+                    try
+                    {
+                        Point3d desiredLabel = record.Point + preservedLabelOffset;
+                        if (cogo.LabelLocation.DistanceTo(desiredLabel) > 1e-8)
+                            cogo.LabelLocation = desiredLabel;
+                    }
+                    catch
+                    {
+                        // The point and its survey coordinates still refresh;
+                        // an inaccessible native label must not be repositioned.
+                    }
+                }
                 cogo.RawDescription = record.PointName;
                 try { cogo.PointName = record.PointName; } catch { }
                 WriteOutputLink(
