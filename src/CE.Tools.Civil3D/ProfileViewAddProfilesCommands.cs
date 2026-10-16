@@ -236,19 +236,14 @@ namespace CETools.Civil3D
                 // Native Civil 3D Profiles tab API: ProfileOverride.Draw.
                 // GraphOverrides lists the alignment's profiles even if not
                 // currently drawn. Do not attempt to add duplicate profiles.
-                IEnumerable overrides = view.GraphOverrides as IEnumerable;
-                if (overrides == null) return false;
-                foreach (object item in overrides)
+                // The 2024 Civil 3D managed API exposes the Profiles-tab
+                // collection and its Draw flag directly. No unsupported
+                // AddProfile() reflection or collection mutation is required.
+                foreach (ProfileOverride profile in view.GraphOverrides)
                 {
-                    ObjectId id = ReadObjectId(item, "ProfileId");
-                    if (id != profileId) continue;
-                    PropertyInfo draw = item.GetType().GetProperty(
-                        "Draw", BindingFlags.Public | BindingFlags.Instance);
-                    if (draw == null || !draw.CanRead || !draw.CanWrite)
-                        return false;
-                    object value = draw.GetValue(item, null);
-                    alreadyDrawn = value is bool && (bool)value;
-                    if (!alreadyDrawn) draw.SetValue(item, true, null);
+                    if (profile.ProfileId != profileId) continue;
+                    alreadyDrawn = profile.Draw;
+                    if (!alreadyDrawn) profile.Draw = true;
                     return true;
                 }
             }
