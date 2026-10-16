@@ -14,12 +14,41 @@ namespace CETools.Civil3D
             double length = road.GetDistanceAtParameter(road.EndParam);
             if (!sections) return new[] { length * 0.5 };
             var breaks = new List<double>();
+#if CE_CIVIL3D_2024
+            // Road naming can test hundreds of roads against each other.
+            // Broad-phase XY bounding boxes avoid expensive Civil 3D curve
+            // intersections for roads that cannot possibly form a junction.
+            Extents3d roadBounds = new Extents3d();
+            bool hasRoadBounds = false;
+            try
+            {
+                roadBounds = road.GeometricExtents;
+                hasRoadBounds = true;
+            }
+            catch { }
+#endif
             foreach (Curve other in allRoads)
             {
                 if (ReferenceEquals(other, road) ||
                     (!road.ObjectId.IsNull &&
                      other.ObjectId == road.ObjectId))
                     continue;
+#if CE_CIVIL3D_2024
+                if (hasRoadBounds && other != null)
+                {
+                    try
+                    {
+                        Extents3d box = other.GeometricExtents;
+                        const double overlapTolerance = 0.02;
+                        if (roadBounds.MaxPoint.X < box.MinPoint.X - overlapTolerance ||
+                            roadBounds.MinPoint.X > box.MaxPoint.X + overlapTolerance ||
+                            roadBounds.MaxPoint.Y < box.MinPoint.Y - overlapTolerance ||
+                            roadBounds.MinPoint.Y > box.MaxPoint.Y + overlapTolerance)
+                            continue;
+                    }
+                    catch { }
+                }
+#endif
                 var hits = new Point3dCollection();
                 try
                 {
