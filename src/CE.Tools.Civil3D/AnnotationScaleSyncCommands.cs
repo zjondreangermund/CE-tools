@@ -91,6 +91,13 @@ namespace CETools.Civil3D
                 CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(commandNames)) return;
 
+#if CE_CIVIL3D_2024
+            // Passive CANNOSCALE monitoring must NEVER rewrite user dimension
+            // objects or add arbitrary contexts when a layout/viewport changes.
+            // This also avoids continuous regen and CE dimension rebuild loops.
+            LastScaleByDatabase[document.Database] = ReadCurrentScaleName();
+            return;
+#endif
             string currentScale = ReadCurrentScaleName();
             string previousScale;
             if (LastScaleByDatabase.TryGetValue(
@@ -166,10 +173,21 @@ namespace CETools.Civil3D
                             false) as Entity;
                         if (!IsSupportedAnnotation(entity)) continue;
 
+#if CE_CIVIL3D_2024
+                        // An explicit scale sync must not turn existing
+                        // dimensions/text into annotative objects or change
+                        // their apparent paper height. Dimension styles own
+                        // dimension appearance; CE never modifies them here.
+                        if (entity is Dimension || !IsAlreadyAnnotative(entity))
+                            continue;
+                        entity.UpgradeOpen();
+                        if (AddContext(entity, currentContext)) updated++;
+#else
                         entity.UpgradeOpen();
                         bool changed = SetAnnotative(entity);
                         changed = AddContext(entity, currentContext) || changed;
                         if (changed) updated++;
+#endif
                     }
                 }
                 transaction.Commit();
@@ -178,7 +196,9 @@ namespace CETools.Civil3D
             // Segment labels store their configured paper height and offset. Queue
             // the universal dynamic pass whenever an annotation scale is applied so
             // their model-space size/offset is rebuilt for the new CANNOSCALE.
+#if !CE_CIVIL3D_2024
             UniversalDynamicRefreshManager.Queue();
+#endif
             return updated;
         }
 
@@ -199,6 +219,25 @@ namespace CETools.Civil3D
                        "Table",
                        StringComparison.OrdinalIgnoreCase) >= 0;
         }
+
+#if CE_CIVIL3D_2024
+        private static bool IsAlreadyAnnotative(object value)
+        {
+            if (value == null) return false;
+            try
+            {
+                PropertyInfo property = value.GetType().GetProperty(
+                    "Annotative", BindingFlags.Public | BindingFlags.Instance);
+                object current = property == null ? null : property.GetValue(value, null);
+                return current != null &&
+                    (string.Equals(current.ToString(), "True",
+                        StringComparison.OrdinalIgnoreCase) ||
+                     string.Equals(current.ToString(), "Yes",
+                        StringComparison.OrdinalIgnoreCase));
+            }
+            catch { return false; }
+        }
+#endif
 
         private static bool SetAnnotative(object value)
         {
