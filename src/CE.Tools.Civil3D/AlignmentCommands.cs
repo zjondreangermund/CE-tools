@@ -39,6 +39,7 @@ namespace CETools.Civil3D
                 "Inspect Civil 3D alignments, query station/offset and place plan annotations.",
                 new List<DisciplineWorkflowAction>
                 {
+                    new DisciplineWorkflowAction("Sort alignments / zero chainage", "CE_ALIGNMENTSORT", "Popup to sort all or selected road alignments; preview and optionally reset eligible starting stations to zero.", "01 Review"),
                     new DisciplineWorkflowAction("Alignment report", "CE_ALREPORT", "Report geometry, station range, styles and profile counts.", "01 Review"),
                     new DisciplineWorkflowAction("Station and offset", "CE_ALSTOFF", "Query equation-aware station, offset and side at a picked point.", "01 Review"),
                     new DisciplineWorkflowAction("Station/offset label", "CE_ALLABEL", "Place an alignment station-and-offset MLeader.", "02 Annotation")
