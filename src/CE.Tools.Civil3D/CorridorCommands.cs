@@ -46,6 +46,7 @@ namespace CETools.Civil3D
             options.Keywords.Add(ReportKeyword);
             options.Keywords.Add(BaselinesKeyword);
             options.Keywords.Add(RebuildKeyword);
+            options.Keywords.Add("Regions");
 
             PromptResult result = document.Editor.GetKeywords(options);
             if (result.Status == PromptStatus.Cancel)
@@ -57,7 +58,11 @@ namespace CETools.Civil3D
                 ? ReportKeyword
                 : result.StringResult;
 
-            if (string.Equals(mode, BaselinesKeyword, StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(mode, "Regions", StringComparison.OrdinalIgnoreCase))
+            {
+                new CorridorRegionToggleCommands().Menu();
+            }
+            else if (string.Equals(mode, BaselinesKeyword, StringComparison.OrdinalIgnoreCase))
             {
                 ReportBaselines(document);
             }
