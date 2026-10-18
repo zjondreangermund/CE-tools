@@ -90,6 +90,11 @@ namespace CETools.Civil3D
                 roadSettings.EdgeLevelSampleInterval,
                 "Station spacing used to sample the TOP-RD surface. Start/end stations are always included.");
             model.AddChoice(
+                "ExistingEdgeProfiles", "03 Finish", "Existing LEFT/RIGHT-EDGE profiles",
+                "Keep existing",
+                "Preserve existing profiles and their labels unless replacement is explicitly selected.",
+                new[] { "Keep existing", "Replace existing" });
+            model.AddChoice(
                 "RefreshBands",
                 "03 Finish",
                 "Refresh road profile views and band data",
@@ -276,6 +281,7 @@ namespace CETools.Civil3D
                                 layerId,
                                 profileStyleId,
                                 profileLabelSetId,
+                                string.Equals(model.Text("ExistingEdgeProfiles"), "Replace existing", StringComparison.OrdinalIgnoreCase),
                                 out leftPoints))
                         {
                             profiles++;
@@ -301,6 +307,7 @@ namespace CETools.Civil3D
                                 layerId,
                                 profileStyleId,
                                 profileLabelSetId,
+                                string.Equals(model.Text("ExistingEdgeProfiles"), "Replace existing", StringComparison.OrdinalIgnoreCase),
                                 out rightPoints))
                         {
                             profiles++;
@@ -371,6 +378,7 @@ namespace CETools.Civil3D
             ObjectId layerId,
             ObjectId styleId,
             ObjectId labelSetId,
+            bool replaceExisting,
             out int pointsAdded)
         {
             pointsAdded = 0;
@@ -399,11 +407,9 @@ namespace CETools.Civil3D
                 }
                 catch { }
                 if (existing != null &&
-                    string.Equals(
-                        existing.Name,
-                        profileName,
-                        StringComparison.OrdinalIgnoreCase))
+                    string.Equals(existing.Name, profileName, StringComparison.OrdinalIgnoreCase))
                 {
+                    if (!replaceExisting) return false;
                     existing.Erase();
                 }
             }
