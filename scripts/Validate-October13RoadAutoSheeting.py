@@ -12,7 +12,11 @@ tests = (ROOT / "tests" / "CE.Tools.Core.Tests" / "RoadSheetingTests.cs").read_t
 
 for marker in [
     'CE_ROADAUTOSHEETS',
-    'Automatic Road Plan / Profile Sheets',
+    'CE_SEWERSHEETS',
+    '"Sewer" : "Road"',
+    'Plan / Profile Sheets',
+    'All sewer alignments',
+    'Multiple selected sewer alignments',
     'RoadSheetingPlanner.DefaultSegmentLength',
     'RoadSheetingPlanner.Create',
     'A0',
