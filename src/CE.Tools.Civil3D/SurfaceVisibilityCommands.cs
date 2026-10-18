@@ -4,6 +4,7 @@ using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
+using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.SurfaceVisibilityCommands))]
@@ -39,8 +40,8 @@ namespace CETools.Civil3D
             {
                 foreach (ObjectId id in civil.GetSurfaceIds())
                 {
-                    Surface surface = null;
-                    try { surface = tr.GetObject(id, OpenMode.ForWrite, false) as Surface; }
+                    CivilSurface surface = null;
+                    try { surface = tr.GetObject(id, OpenMode.ForWrite, false) as CivilSurface; }
                     catch { skipped++; continue; }
                     if (surface == null || surface.IsReferenceObject) { skipped++; continue; }
                     if (surface.Visible != visible) { surface.Visible = visible; changed++; }
