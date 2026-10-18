@@ -53,7 +53,9 @@ namespace CETools.Civil3D
             if (layouts.Count == 0)
             {
                 document.Editor.WriteMessage(
-                    "\nCE_ROADAUTOSHEETS: create at least one paper-space layout to use as the sheet template.");
+                    sewerMode
+                        ? "\nCE_SEWERSHEETS: create at least one paper-space layout for the sheet template."
+                        : "\nCE_ROADAUTOSHEETS: create at least one paper-space layout to use as the sheet template.");
                 return;
             }
 
@@ -66,16 +68,19 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Automatic " + (sewerMode ? "Sewer" : "Road") + " Plan / Profile Sheets",
-                "Create long-road drawing sheets from a paper-layout template. " +
+                (sewerMode
+                    ? "Create sewer branch plan and/or long-section sheets from a paper-layout template. "
+                    : "Create long-road drawing sheets from a paper-layout template. ") +
                 "A0 defaults to 2000 m per plan/profile segment and A1 to 1000 m. " +
-                "Two plan/profile sets are stacked per sheet. Every plan viewport is automatically rotated so its road segment lies horizontally.");
+                "Specify how many viewport sets fit on each sheet. Plan viewports rotate to follow the selected alignment.");
             settings.AddChoice(
-                "RoadScope", "01 Roads", sewerMode ? "Sewer alignment scope" : "Road scope",
+                "RoadScope", sewerMode ? "01 Sewer" : "01 Roads",
+                sewerMode ? "Sewer alignments" : "Road scope",
                 sewerMode ? "All sewer alignments" : "All road alignments",
                 sewerMode ? "Process sewer branch alignments with linked profile views, or select multiple branches." :
                 "Process every RD-/ROAD alignment or select multiple road alignments after saving settings.",
                 sewerMode
-                    ? new[] { "All sewer alignments", "Selected sewer alignments" }
+                    ? new[] { "All sewer alignments", "Multiple selected sewer alignments" }
                     : new[] { "All road alignments", "Selected road alignments" });
             settings.AddChoice(
                 "SheetSize", "02 Sheets", "Sheet size", "A0",
@@ -282,7 +287,9 @@ namespace CETools.Civil3D
             if (roadIds.Count == 0)
             {
                 document.Editor.WriteMessage(
-                    "\nCE_ROADAUTOSHEETS: no road alignments were selected/found.");
+                    sewerMode
+                        ? "\nCE_SEWERSHEETS: no sewer branch alignments were selected/found."
+                        : "\nCE_ROADAUTOSHEETS: no road alignments were selected/found.");
                 return;
             }
 
@@ -761,7 +768,7 @@ namespace CETools.Civil3D
             var result = new List<ObjectId>();
             if (string.Equals(
                     scope,
-                    sewerMode ? "Selected sewer alignments" : "Selected road alignments",
+                    sewerMode ? "Multiple selected sewer alignments" : "Selected road alignments",
                     StringComparison.OrdinalIgnoreCase))
             {
                 try { document.Editor.SetImpliedSelection(new ObjectId[0]); }
