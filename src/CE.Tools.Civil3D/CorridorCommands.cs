@@ -48,6 +48,7 @@ namespace CETools.Civil3D
             options.Keywords.Add(RebuildKeyword);
             options.Keywords.Add("Regions");
             options.Keywords.Add("Ends");
+            options.Keywords.Add("Ends");
 
             PromptResult result = document.Editor.GetKeywords(options);
             if (result.Status == PromptStatus.Cancel)
