@@ -5,6 +5,7 @@ using System.Linq;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
+using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
@@ -72,12 +73,50 @@ namespace CETools.Civil3D
             scope.AddChoice("Discipline", "01 Scope", "Corridor type", "Road and sewer",
                 "Choose which corridors to process based on their corridor names.",
                 new[] { "Road", "Sewer", "Road and sewer" });
-            scope.AddChoice("Selection", "01 Scope", "Corridors", "Selected corridors",
-                "Select multiple corridors in the drawing or use all matching corridors.",
-                new[] { "Selected corridors", "All matching corridors" });
+            scope.AddChoice("Selection", "01 Scope", "Selection method", "Selected T-junction geometry",
+                "Pick multiple bellmouth arcs/feature lines at T-junctions, select corridors directly, or process all matching corridors.",
+                new[] { "Selected T-junction geometry", "Selected corridors", "All matching corridors" });
+            scope.AddPositiveDouble("JunctionTolerance", "01 Scope", "Junction-to-alignment distance (m)", 18.0,
+                "Maximum plan offset of a selected junction/return midpoint from a road or sewer alignment.");
+            scope.AddChoice("Limits", "02 Extension", "Extend to", "Full alignment start and end",
+                "Use the actual parent alignment station limits. Existing excluded interior junction regions retain their original flags.",
+                new[] { "Full alignment start and end", "Current corridor baseline limits" });
             if (!DisciplineWorkflowDialogs.EditSettings(scope)) return;
             HashSet<ObjectId> wanted = null;
-            if (scope.Text("Selection") == "Selected corridors")
+            List<Point3d> junctionPoints = null;
+            if (!restore && scope.Text("Selection") == "Selected T-junction geometry")
+            {
+                PromptSelectionResult selection = doc.Editor.GetSelection(new PromptSelectionOptions {
+                    MessageForAdding = "\nSelect multiple T-junction return arcs/curves/feature lines: ",
+                    AllowDuplicates = false
+                });
+                if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+                junctionPoints = new List<Point3d>();
+                using (Transaction selectTr = doc.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in selection.Value.GetObjectIds())
+                    {
+                        Curve curve = null;
+                        try { curve = selectTr.GetObject(id, OpenMode.ForRead, false) as Curve; }
+                        catch { }
+                        if (curve == null) continue;
+                        try {
+                            junctionPoints.Add(curve.GetPointAtDist(curve.GetDistAtPoint(curve.EndPoint) * 0.5));
+                        }
+                        catch {
+                            try { junctionPoints.Add(new Point3d(
+                                (curve.StartPoint.X + curve.EndPoint.X) * 0.5,
+                                (curve.StartPoint.Y + curve.EndPoint.Y) * 0.5, 0)); }
+                            catch { }
+                        }
+                    }
+                }
+                if (junctionPoints.Count == 0) {
+                    doc.Editor.WriteMessage("\nNo supported T-junction geometry was selected.");
+                    return;
+                }
+            }
+            if (!restore && scope.Text("Selection") == "Selected corridors")
             {
                 PromptSelectionResult selection = doc.Editor.GetSelection(new PromptSelectionOptions {
                     MessageForAdding = "\nSelect the road/sewer corridors at the T-junctions: ",
@@ -123,6 +162,28 @@ namespace CETools.Civil3D
                     for (int b = 0; b < corridor.Baselines.Count; b++)
                     {
                         Baseline baseLine = corridor.Baselines[b];
+                        Alignment parent = null;
+                        try {
+                            ObjectId alignmentId = baseLine.AlignmentId;
+                            if (!alignmentId.IsNull)
+                                parent = tr.GetObject(alignmentId, OpenMode.ForRead, false) as Alignment;
+                        }
+                        catch { }
+                        if (!restore && junctionPoints != null) {
+                            if (parent == null) { skipped++; continue; }
+                            bool relevant = false;
+                            foreach (Point3d point in junctionPoints) {
+                                double station = 0, offset = 0;
+                                try {
+                                    parent.StationOffset(point.X, point.Y, ref station, ref offset);
+                                    if (Math.Abs(offset) <= scope.Double("JunctionTolerance", 18.0))
+                                        relevant = true;
+                                }
+                                catch { }
+                                if (relevant) break;
+                            }
+                            if (!relevant) continue;
+                        }
                         if (baseLine.BaselineRegions.Count == 0) continue;
                         // Only the two outside regions are changed, leaving
                         // interior T-junction and split region limits untouched.
@@ -138,9 +199,12 @@ namespace CETools.Civil3D
                                 State record = new State {
                                     Handle = handle, Baseline = b, Index = n,
                                     Start = region.StartStation, End = region.EndStation,
-                                    ExtendedStart = n == 0 ? baseLine.StartStation : region.StartStation,
+                                    ExtendedStart = n == 0
+                                        ? (scope.Text("Limits") == "Full alignment start and end" && parent != null
+                                            ? parent.StartingStation : baseLine.StartStation) : region.StartStation,
                                     ExtendedEnd = n == baseLine.BaselineRegions.Count - 1
-                                        ? baseLine.EndStation : region.EndStation
+                                        ? (scope.Text("Limits") == "Full alignment start and end" && parent != null
+                                            ? parent.EndingStation : baseLine.EndStation) : region.EndStation
                                 };
                                 if (record.ExtendedStart > record.Start + 0.001 ||
                                     record.ExtendedEnd < record.End - 0.001) { skipped++; continue; }
@@ -176,7 +240,7 @@ namespace CETools.Civil3D
                     nod.SetAt(Snapshot, record);
                     tr.AddNewlyCreatedDBObject(record, true);
                 }
-                else if (changedIds.Count == original.Count)
+                else if (changedIds.Count == original.Count && original.Count > 0)
                 {
                     nod.UpgradeOpen();
                     ObjectId oldId = nod.GetAt(Snapshot);
