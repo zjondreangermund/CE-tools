@@ -222,7 +222,9 @@ namespace CETools.Civil3D
             }
             else
             {
-                sources = available;
+                // Preserve the established final-surface default: adding BOTTOM
+                // choices must not silently include subsurface elevations.
+                sources = available.Where(item => IsRoadTopOrGrading(item.Name)).ToList();
             }
             if (sources.Count == 0)
             {
