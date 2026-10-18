@@ -128,6 +128,24 @@ namespace CETools.Civil3D
                     result.LinkedEngineRuns++;
                 }
                 catch { result.Warnings++; }
+                // The user's explicit CE_DYNAMICREFRESHALL must walk all
+                // road/bellmouth elevation links, including chains where one
+                // dependent gutter/kerb/sidewalk is the next source.
+                // Avoid a whole-drawing elevation write during idle refresh.
+                if (!suppressUndoRecording)
+                {
+                    try
+                    {
+                        int elevations = August24RoadElevationDynamicManager.RefreshAllLinked(document);
+                        if (elevations > 0) document.Editor.WriteMessage(
+                            "\\nCE dynamic refresh: dependent feature-line elevations updated={0}.", elevations);
+                    }
+                    catch (System.Exception ex)
+                    {
+                        result.Warnings++;
+                        document.Editor.WriteMessage("\\nCE feature-line elevation refresh warning: " + ex.Message);
+                    }
+                }
                 try { result.VertexTables += VertexSettingOutCommands.RefreshAll(document); }
                 catch { result.Warnings++; }
                 try { SurveyCoordinateWorkflowCommands.RefreshAll(document); }
