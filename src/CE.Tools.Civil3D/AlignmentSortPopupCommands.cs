@@ -51,6 +51,14 @@ namespace CETools.Civil3D
             model.AddChoice("Reading", "02 Sequence", "Preferred road orientation", "Left to right / Top to bottom",
                 "Horizontal roads run left to right; vertical roads run top to bottom. Reversal is only reported, not performed on existing geometry.",
                 new[] { "Left to right / Top to bottom" });
+            model.AddChoice("Order", "02 Sequence", "Road numbering order",
+                "Spatial order (mixed orientation)",
+                "When renumbering, choose whether horizontal or vertical roads receive the first numbers.",
+                new[] { "Spatial order (mixed orientation)", "Horizontal roads first", "Vertical roads first" });
+            model.AddChoice("Numbering", "03 Chainage", "Rename and sequence alignment numbers",
+                "Keep existing alignment names",
+                "Renumber all selected road alignments in sequence, using ROAD-01, ROAD-02, etc. This changes Civil 3D alignment names, not geometry; review dependent outputs afterward.",
+                new[] { "Keep existing alignment names", "Renumber sorted roads (ROAD-01 onwards)" });
             model.AddChoice("Reverse", "03 Chainage", "Reverse opposite-direction alignments",
                 "Preview only (no changes)",
                 "Native Civil 3D reversal may reprocess or damage profiles, corridors and station-dependent objects. Backup drawing before use.",
@@ -111,6 +119,13 @@ namespace CETools.Civil3D
                     : items.OrderBy(x => (x.Start.Y + x.End.Y) / 2.0))
                 .ThenBy(x => fromLeft ? (x.Start.X + x.End.X) / 2.0 : -(x.Start.X + x.End.X) / 2.0)
                 .ThenBy(x => x.Name, StringComparer.OrdinalIgnoreCase).ToList();
+            string orientationOrder = model.Text("Order");
+            if (orientationOrder == "Horizontal roads first")
+                items = items.OrderBy(x => IsVertical(x) ? 1 : 0)
+                    .ThenBy(x => items.IndexOf(x)).ToList();
+            else if (orientationOrder == "Vertical roads first")
+                items = items.OrderBy(x => IsVertical(x) ? 0 : 1)
+                    .ThenBy(x => items.IndexOf(x)).ToList();
 
             doc.Editor.WriteMessage("\nCE_ALIGNMENTSORT preview: {0} road alignments (sort: {1}).",
                 items.Count, model.Text("Sort"));
@@ -132,7 +147,9 @@ namespace CETools.Civil3D
                 "Reverse including profile-dependent roads (high risk)", StringComparison.OrdinalIgnoreCase);
             bool resetZero = string.Equals(model.Text("Zero"),
                 "Reset safe alignments to 0+000", StringComparison.OrdinalIgnoreCase);
-            if (!reverseSafe && !reverseWithDependencies && !resetZero)
+            bool renumber = string.Equals(model.Text("Numbering"),
+                "Renumber sorted roads (ROAD-01 onwards)", StringComparison.OrdinalIgnoreCase);
+            if (!reverseSafe && !reverseWithDependencies && !resetZero && !renumber)
             {
                 RoadNameAuditCommands.AuditActive(false);
                 return;
@@ -157,6 +174,56 @@ namespace CETools.Civil3D
                 !string.Equals(answer.StringResult, "Yes", StringComparison.OrdinalIgnoreCase)) return;
 
             int changed = 0, skipped = 0;
+            if (renumber)
+            {
+                // Names are reassigned in two phases to avoid ROAD-1/ROAD-11
+                // ordering conflicts and Civil 3D duplicate-name exceptions.
+                // Skip partial selections so an unselected alignment cannot
+                // already own a destination name.
+                int renamed = 0;
+                try
+                {
+                    using (doc.LockDocument())
+                    using (Transaction naming = doc.Database.TransactionManager.StartTransaction())
+                    {
+                        var allNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                        foreach (ObjectId id in civil.GetAlignmentIds())
+                        {
+                            Alignment candidate = naming.GetObject(id, OpenMode.ForRead, false) as Alignment;
+                            if (candidate != null && !items.Any(x => x.Id == id))
+                                allNames.Add(candidate.Name);
+                        }
+                        for (int index = 0; index < items.Count; index++)
+                        {
+                            string destination = "ROAD-" + (index + 1).ToString("00", System.Globalization.CultureInfo.InvariantCulture);
+                            if (allNames.Contains(destination))
+                                throw new InvalidOperationException("An unselected alignment already uses " + destination);
+                            if (items[index].Reference)
+                                throw new InvalidOperationException("A selected road is a reference and cannot be renamed.");
+                        }
+                        string token = Guid.NewGuid().ToString("N");
+                        for (int index = 0; index < items.Count; index++)
+                        {
+                            Alignment road = naming.GetObject(items[index].Id, OpenMode.ForWrite, false) as Alignment;
+                            if (road == null) throw new InvalidOperationException("Alignment disappeared");
+                            road.Name = "CE-TEMP-" + token + "-" + index;
+                        }
+                        for (int index = 0; index < items.Count; index++)
+                        {
+                            Alignment road = naming.GetObject(items[index].Id, OpenMode.ForWrite, false) as Alignment;
+                            road.Name = "ROAD-" + (index + 1).ToString("00", System.Globalization.CultureInfo.InvariantCulture);
+                            renamed++;
+                        }
+                        naming.Commit();
+                    }
+                    doc.Editor.WriteMessage("\\nCE_ALIGNMENTSORT: renamed {0} road alignments in chosen order.", renamed);
+                }
+                catch (System.Exception ex)
+                {
+                    doc.Editor.WriteMessage("\\nRoad renumbering rolled back: " + ex.Message);
+                    return;
+                }
+            }
             using (doc.LockDocument())
             {
                 foreach (Item item in items)
@@ -208,6 +275,11 @@ namespace CETools.Civil3D
                 changed, skipped);
             if (changed > 0) doc.Editor.Regen();
             RoadNameAuditCommands.AuditActive(false);
+        }
+        private static bool IsVertical(Item item)
+        {
+            return Math.Abs(item.End.Y - item.Start.Y) >
+                Math.Abs(item.End.X - item.Start.X);
         }
     }
 }
