@@ -529,6 +529,12 @@ namespace CETools.Civil3D
                             plan.ProfileId,
                             picker.SelectedChoice.ObjectId);
                         DBObject corridor = transaction.GetObject(corridorId, OpenMode.ForWrite, false);
+                        Autodesk.Civil.DatabaseServices.Corridor typedCorridor = corridor as Autodesk.Civil.DatabaseServices.Corridor;
+                        if (typedCorridor == null || typedCorridor.Baselines.Count == 0 ||
+                            !typedCorridor.Baselines.Cast<Autodesk.Civil.DatabaseServices.Baseline>()
+                                .Any(b => b.BaselineRegions.Count > 0))
+                            throw new InvalidOperationException(
+                                "Corridor " + name + " has no baseline regions. Creation was rolled back; verify an FG profile and valid assembly exist.");
                         WriteTag(corridor, "Corridor", plan.RoadName, plan.SourceHandle);
                         InvokeIfAvailable(corridor, "Rebuild");
                         rows.Add(new List<string>
@@ -1052,8 +1058,13 @@ namespace CETools.Civil3D
             foreach (MethodInfo method in collection.GetType()
                 .GetMethods(BindingFlags.Public | BindingFlags.Instance)
                 .Where(item => item.Name == "Add")
-                .OrderBy(item => item.GetParameters().Length))
+                .OrderByDescending(item => item.GetParameters().Count(p => p.ParameterType == typeof(ObjectId)))
+                .ThenByDescending(item => item.GetParameters().Length))
             {
+                // Exclude corridor-name-only overloads; they create empty
+                // corridor objects that appear in Toolspace without regions.
+                if (method.GetParameters().Count(p => p.ParameterType == typeof(ObjectId)) < 3)
+                    continue;
                 object[] arguments;
                 if (!TryBuildCorridorArguments(
                     method.GetParameters(),
