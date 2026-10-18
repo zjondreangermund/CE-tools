@@ -281,6 +281,48 @@ namespace CETools.Civil3D
             return refreshed;
         }
 
+        /// <summary>
+        /// Explicit dynamic refresh must revisit all linked feature-line
+        /// crossings, not only objects modified since the last AutoCAD command.
+        /// Iterate the dependency graph until no more elevations change so
+        /// chained kerb/gutter/sidewalk/end connections are not dependent on
+        /// drawing enumeration order. Unlinked feature lines are untouched.
+        /// </summary>
+        internal static int RefreshAllLinked(Document document)
+        {
+            if (document == null || document.Database == null) return 0;
+            var handles = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord model = tr.GetObject(
+                    SymbolUtilityServices.GetBlockModelSpaceId(document.Database),
+                    OpenMode.ForRead, false) as BlockTableRecord;
+                if (model == null) return 0;
+                foreach (ObjectId id in model)
+                {
+                    CivilFeatureLine feature = null;
+                    try { feature = tr.GetObject(id, OpenMode.ForRead, false) as CivilFeatureLine; }
+                    catch { }
+                    if (feature == null || feature.IsReferenceObject) continue;
+                    string master;
+                    if (!TryReadMasterHandle(feature, tr, out master)) continue;
+                    if (!string.IsNullOrWhiteSpace(master)) handles.Add(master);
+                }
+            }
+            if (handles.Count == 0) return 0;
+            int total = 0;
+            // RefreshAffected adds changed child handles to the same set.
+            // Multiple passes allow a dependency chain regardless of the
+            // enumeration order of source and dependent feature lines.
+            for (int pass = 0; pass < 8; pass++)
+            {
+                int changed = RefreshAffected(document, handles);
+                total += changed;
+                if (changed == 0) break;
+            }
+            return total;
+        }
+
         private static bool IsOnLockedLayer(Entity entity, Transaction transaction)
         {
             if (entity == null || transaction == null || entity.LayerId.IsNull) return false;
