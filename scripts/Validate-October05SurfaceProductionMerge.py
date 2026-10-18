@@ -34,7 +34,9 @@ for marker in [
     '"All road TOP and grading surfaces"',
     '"All road TOP surfaces only"',
     '"All grading surfaces only"',
-    '"Select road TOP / grading surfaces"',
+    '"Select road TOP / BOTTOM / grading surfaces"',
+    '"All road BOTTOM surfaces only"',
+    '"All road TOP, BOTTOM and grading surfaces"',
     "IsGradingSurface(",
 ]:
     if marker not in merge:
