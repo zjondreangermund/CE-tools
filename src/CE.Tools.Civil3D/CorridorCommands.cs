@@ -47,6 +47,7 @@ namespace CETools.Civil3D
             options.Keywords.Add(BaselinesKeyword);
             options.Keywords.Add(RebuildKeyword);
             options.Keywords.Add("Regions");
+            options.Keywords.Add("Ends");
 
             PromptResult result = document.Editor.GetKeywords(options);
             if (result.Status == PromptStatus.Cancel)
@@ -58,7 +59,19 @@ namespace CETools.Civil3D
                 ? ReportKeyword
                 : result.StringResult;
 
-            if (string.Equals(mode, "Regions", StringComparison.OrdinalIgnoreCase))
+            if (string.Equals(mode, "Ends", StringComparison.OrdinalIgnoreCase))
+            {
+                DisciplineWorkflowDialogs.SelectAndRun(document,
+                    "CE Tools - Reversible Corridor Extensions",
+                    "Temporarily extend outside regions or restore saved stations. For roads and sewers.",
+                    new System.Collections.Generic.List<DisciplineWorkflowAction> {
+                        new DisciplineWorkflowAction("Extend corridor ends",
+                            "CE_CORRIDORENDSEXTEND", "Save original station limits and extend outer regions.", "01 Extend"),
+                        new DisciplineWorkflowAction("Restore corridor ends",
+                            "CE_CORRIDORENDSRESTORE", "Restore original station limits if regions have not changed since extension.", "02 Restore")
+                    });
+            }
+            else if (string.Equals(mode, "Regions", StringComparison.OrdinalIgnoreCase))
             {
                 new CorridorRegionToggleCommands().Menu();
             }
