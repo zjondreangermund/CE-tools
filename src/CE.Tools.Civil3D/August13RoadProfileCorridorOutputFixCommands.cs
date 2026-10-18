@@ -378,8 +378,14 @@ namespace CETools.Civil3D
         {
             if (string.IsNullOrWhiteSpace(value)) return null;
             int index = value.IndexOf("RD-", StringComparison.OrdinalIgnoreCase);
+            int prefixLength = 3;
+            if (index < 0)
+            {
+                index = value.IndexOf("ROAD-", StringComparison.OrdinalIgnoreCase);
+                prefixLength = 5;
+            }
             if (index < 0) return null;
-            int start = index + 3;
+            int start = index + prefixLength;
             int end = start;
             while (end < value.Length && char.IsDigit(value[end])) end++;
             int number;
