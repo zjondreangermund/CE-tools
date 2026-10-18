@@ -54,7 +54,7 @@ namespace CETools.Civil3D
             model.AddChoice("Reverse", "03 Chainage", "Reverse opposite-direction alignments",
                 "Preview only (no changes)",
                 "Native Civil 3D reversal may reprocess or damage profiles, corridors and station-dependent objects. Backup drawing before use.",
-                new[] { "Preview only (no changes)", "Reverse safe alignments without profiles" });
+                new[] { "Preview only (no changes)", "Reverse safe alignments without profiles", "Reverse including profile-dependent roads (high risk)" });
             model.AddChoice("Zero", "03 Chainage", "Starting chainage", "Keep existing",
                 "Set station 0+000 at the CURRENT geometric start. Existing profiles and station equations are excluded for safety.",
                 new[] { "Keep existing", "Reset safe alignments to 0+000" });
@@ -128,9 +128,21 @@ namespace CETools.Civil3D
                 doc.Editor.WriteMessage("\n{0} alignments point opposite the preferred direction; no geometry was reversed.", reverseNeeded);
             bool reverseSafe = string.Equals(model.Text("Reverse"),
                 "Reverse safe alignments without profiles", StringComparison.OrdinalIgnoreCase);
+            bool reverseWithDependencies = string.Equals(model.Text("Reverse"),
+                "Reverse including profile-dependent roads (high risk)", StringComparison.OrdinalIgnoreCase);
             bool resetZero = string.Equals(model.Text("Zero"),
                 "Reset safe alignments to 0+000", StringComparison.OrdinalIgnoreCase);
-            if (!reverseSafe && !resetZero) return;
+            if (!reverseSafe && !reverseWithDependencies && !resetZero) return;
+            if (reverseWithDependencies)
+            {
+                doc.Editor.WriteMessage(
+                    "\\nWARNING: Native alignment reversal reprocesses profiles, corridor dependencies, sections and labels. " +
+                    "It can remove design speeds and station equations. Save a complete backup DWG first.");
+                PromptStringResult typed = doc.Editor.GetString(
+                    new PromptStringOptions("\\nType REVERSE to allow changing roads with dependent profiles: ") { AllowSpaces = false });
+                if (typed.Status != PromptStatus.OK || !string.Equals(typed.StringResult, "REVERSE", StringComparison.Ordinal))
+                    return;
+            }
 
             var confirmation = new PromptKeywordOptions(
                 "\nApply requested alignment direction/chainage changes to eligible roads? [Yes/No] <No>: ");
@@ -147,19 +159,20 @@ namespace CETools.Civil3D
                 {
                     // No invasive alteration on referenced alignments, profiles,
                     // or previously equation-based station systems.
-                    if (item.Reference || item.Profiles != 0) { skipped++; continue; }
+                    if (item.Reference || (item.Profiles != 0 && !reverseWithDependencies)) { skipped++; continue; }
                     try
                     {
                         using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
                         {
                             Alignment a = tr.GetObject(item.Id, OpenMode.ForWrite, false) as Alignment;
-                            if (a == null || a.IsReferenceObject || a.GetProfileIds().Count != 0 ||
+                            if (a == null || a.IsReferenceObject ||
+                                (a.GetProfileIds().Count != 0 && !reverseWithDependencies) ||
                                 a.StationEquations.Count != 0) { skipped++; continue; }
                             bool horizontal = Math.Abs(item.End.X - item.Start.X) >=
                                 Math.Abs(item.End.Y - item.Start.Y);
                             bool wrongDirection = horizontal
                                 ? item.End.X < item.Start.X : item.End.Y > item.Start.Y;
-                            if (reverseSafe && wrongDirection)
+                            if ((reverseSafe || reverseWithDependencies) && wrongDirection)
                             {
                                 // Autodesk warns that Reverse may affect dependents.
                                 // Only reverse an editable alignment with no profiles
@@ -171,7 +184,7 @@ namespace CETools.Civil3D
                             {
                                 // StartingStation is read-only. Move the native
                                 // reference station to the geometric start.
-                                a.ReferencePoint = reverseSafe && wrongDirection ? item.End : item.Start;
+                                a.ReferencePoint = (reverseSafe || reverseWithDependencies) && wrongDirection ? item.End : item.Start;
                                 a.ReferencePointStation = 0.0;
                                 if (Math.Abs(a.StartingStation) > 0.001)
                                     throw new InvalidOperationException("Station reset validation failed");
