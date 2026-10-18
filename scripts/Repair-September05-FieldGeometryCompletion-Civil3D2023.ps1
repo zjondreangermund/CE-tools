@@ -47,7 +47,23 @@ function EnsureBeforeTokenInMethod([string]$text,[string]$methodMarker,[string]$
     $method = $text.Substring($b.Open+1,$b.Close-$b.Open-1)
     if ($method.Contains($presence)) { return $text }
     $relative = $method.IndexOf($token,[StringComparison]::Ordinal)
-    if ($relative -lt 0) { throw ('Insertion token missing in {0}: {1}' -f $methodMarker,$token) }
+    if ($relative -lt 0) {
+        # Some current versions contain additional nested blocks which defeat
+        # the legacy brace scanner. Only use the unique global token when
+        # we can establish it appears exactly once in the source file.
+        $first = $text.IndexOf($token,[StringComparison]::Ordinal)
+        $last = $text.LastIndexOf($token,[StringComparison]::Ordinal)
+        if ($first -lt 0 -or $first -ne $last) {
+            throw ('Insertion token missing or ambiguous in {0}: {1}' -f $methodMarker,$token)
+        }
+        $lineStart = $text.LastIndexOf("`n",$first)
+        if ($lineStart -lt 0) { $lineStart = 0 } else { $lineStart++ }
+        $indentLength = 0
+        while ($lineStart+$indentLength -lt $text.Length -and
+            ($text[$lineStart+$indentLength] -eq ' ' -or $text[$lineStart+$indentLength] -eq "`t")) { $indentLength++ }
+        $indent = $text.Substring($lineStart,$indentLength)
+        return $text.Insert($lineStart,$indent + $statement + "`r`n")
+    }
     $absolute = $b.Open + 1 + $relative
     $lineStart = $text.LastIndexOf("`n",$absolute)
     if ($lineStart -lt 0) { $lineStart = $b.Open + 1 } else { $lineStart++ }
