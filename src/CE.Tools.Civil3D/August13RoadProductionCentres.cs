@@ -17,7 +17,8 @@ namespace CETools.Civil3D
    {
     A("CE-Road Settings","CE_ROADSETTINGSCENTRE","Road-only project and Civil 3D settings.","01 Road Production"),
     A("CE-Road Layout Production","CE_ROADLAYOUTPRODUCTIONCENTRE","Road reserve geometry, junctions, annotation and setting-out.","01 Road Production"),
-    A("CE-Road Design Production","CE_ROADDESIGNPRODUCTIONCENTRE","Alignments, profiles, corridors, junction design, BOQ and drawings.","01 Road Production")
+    A("CE-Road Design Production","CE_ROADDESIGNPRODUCTIONCENTRE","Alignments, profiles, corridors, junction design, BOQ and drawings.","01 Road Production"),
+    A("FINAL ROAD PRODUCTION","CE_FINALROADPRODUCTION","Run the approved road-production sequence from ROAD SEQUENCE.docx.","01 Road Production")
    });
   }
   [CommandMethod("CE_TOOLS","CE_ROADSETTINGSCENTRE",CommandFlags.Modal)]
@@ -80,6 +81,56 @@ namespace CETools.Civil3D
     A("CE-Detail Road Design Report","CE_REPORTROAD","Generate detailed road design report.","07 Deliver"),
     A("CE-Road Drawing Production","CE_DRAWINGBOOKROAD","Create road drawing production output.","07 Deliver")
    });
+  }
+  [CommandMethod("CE_TOOLS","CE_FINALROADPRODUCTION",CommandFlags.Modal)]
+  public void FinalRoadProduction()
+  {
+   Run("FINAL ROAD PRODUCTION",
+       "Approved sequence from ROAD SEQUENCE.docx. Choose each step in order; commands run individually so you can review the drawing between stages.",
+       new List<DisciplineWorkflowAction>
+       {
+        A("01. CE-Road Settings","CE_ROADSETTINGS","Road production sequence step 1.","01 Road Sequence"),
+        A("02. CE-Road Styles","CE_ROADSTYLES","Road production sequence step 2.","02 Road Sequence"),
+        A("03. Road Reserve Centres - Generate + Clean","CE_ROADRESERVECENTRELINES","Road production sequence step 3.","03 Road Sequence"),
+        A("04. Strict Road Centre Cleanup - Start / BC / EC / End","CE_ROADCENTRECLEANSTRICT","Road production sequence step 4.","04 Road Sequence"),
+        A("05. CE-Create Road Alignments","CE_ROADALIGN","Road production sequence step 5.","05 Road Sequence"),
+        A("06. Alignment Label Set - Multiple Alignments","CE_ALIGNLABELSETMULTI","Road production sequence step 6.","06 Road Sequence"),
+        A("07. CE-Sort Road Alignments","CE_ALIGNMENTSORT","Road production sequence step 7.","07 Road Sequence"),
+        A("08. CE-Road Name Sync","CE_ROADNAMESYNC","Road production sequence step 8.","08 Road Sequence"),
+        A("09. Road Name Audit","CE_ROADNAMEAUDIT","Road production sequence step 9.","09 Road Sequence"),
+        A("10. Create CE road assembly","CE_ASSEMBLYCREATE","Road production sequence step 10.","10 Road Sequence"),
+        A("11. CE-NGL and Final Road Profiles","CE_ROADPROFILEFULL","Road production sequence step 11.","11 Road Sequence"),
+        A("12. Assign Profile View Styles to Multiple Views","CE_PROFILEVIEWSTYLEMULTI","Road production sequence step 12.","12 Road Sequence"),
+        A("13. Import Band Set / Repair Road Band Sources","CE_PROFILEVIEWDATASOURCES","Road production sequence step 13.","13 Road Sequence"),
+        A("14. CE-Match Profile View Properties","CE_PROFILEVIEWMATCH","Road production sequence step 14.","14 Road Sequence"),
+        A("15. CE-Fit All Profile Views","CE_PROFILEVIEWFITALL","Road production sequence step 15.","15 Road Sequence"),
+        A("16. Arrange Multiple Profile Views","CE_PROFILEVIEWBARRANGE","Road production sequence step 16.","16 Road Sequence"),
+        A("17. CE-Split Road Profile Views","CE_ROADPROFILEVIEWSPLIT","Road production sequence step 17.","17 Road Sequence"),
+        A("18. CE-Road Corridors","CE_ROADCORRIDORFULL","Road production sequence step 18.","18 Road Sequence"),
+        A("19. Batch T/Cross Bellmouths - Feature-Line Output","CE_ROADJUNCTIONBATCH","Road production sequence step 19.","19 Road Sequence"),
+        A("20. T-Junction Assembly Limits / Remove Short Regions","CE_ROADTJUNCTIONASSEMBLYLIMITS","Road production sequence step 20.","20 Road Sequence"),
+        A("21. Split Multiple Corridors at Junctions","CE_ROADJUNCTIONCONSTRUCTION","Road production sequence step 21.","21 Road Sequence"),
+        A("22. Junction Stepped Offset Workflow","CE_JUNCTIONSTEPPEDOFFSETWORKFLOW","Road production sequence step 22.","22 Road Sequence"),
+        A("23. Connect Endpoints","CE_CONNECTENDPOINTS","Road production sequence step 23.","23 Road Sequence"),
+        A("24. Junction Grading Batch","CE_JUNCTIONGRADINGBATCH","Road production sequence step 24.","24 Road Sequence"),
+        A("25. Left / Right Road Edge Levels","CE_ROADEDGELEVELS","Road production sequence step 25.","25 Road Sequence"),
+        A("26. Add Surfaces to Profile Views","CE_SURFACEADDTOVIEWS","Road production sequence step 26.","26 Road Sequence"),
+        A("27. TOP/BOTTOM Surfaces in Selected Profile Views","CE_ROADTOPBOTTOMPROFILE","Road production sequence step 27.","27 Road Sequence"),
+        A("28. Elevation from Surface - Multiple Feature Lines","CE_PLATFORMDRAPEMULTI","Road production sequence step 28.","28 Road Sequence"),
+        A("29. CE-Complete Road Corridors","CE_ROADCORRIDORCOMPLETE","Road production sequence step 29.","29 Road Sequence"),
+        A("30. Change Multiple Surface Styles","CE_SURFACESTYLEMULTI","Road production sequence step 30.","30 Road Sequence"),
+        A("31. Reverse Multiple Road Alignments + Profiles","CE_ROADALIGNREVERSEMULTI","Road production sequence step 31.","31 Road Sequence"),
+        A("32. Road Names - Layers / Junction Midpoints","CE_ROADNAMES","Road production sequence step 32.","32 Road Sequence"),
+        A("33. Road Width Dimensions - Junction Midpoints","CE_ROADDIMENSIONS","Road production sequence step 33.","33 Road Sequence"),
+        A("34. Junction Setting-Out - Road Number / Clockwise","CE_JUNCTIONSETTINGOUT4","Road production sequence step 34.","34 Road Sequence"),
+        A("35. CE-Road Hatch Sides","CE_ROADHATCHSIDES","Road production sequence step 35.","35 Road Sequence"),
+        A("36. Repair Selected Hatch Overlaps","CE_HATCHFIXOVERLAP","Road production sequence step 36.","36 Road Sequence"),
+        A("37. Repair All Hatch Overlaps","CE_HATCHFIXOVERLAPALL","Road production sequence step 37.","37 Road Sequence"),
+        A("38. CE-All Corridor Regions On","CE_CORRIDORREGIONSALLON","Road production sequence step 38.","38 Road Sequence"),
+        A("39. CE-Restore Corridor Regions","CE_CORRIDORREGIONSRESTORE","Road production sequence step 39.","39 Road Sequence"),
+        A("40. CE-Road Construction BOQ","CE_ROADBOQCONSTRUCTION","Road production sequence step 40.","40 Road Sequence"),
+        A("41. CE-Create Road Sheets","CE_ROADAUTOSHEETS","Road production sequence step 41.","41 Road Sequence")
+       });
   }
   private static void Run(string title,string note,IList<DisciplineWorkflowAction> actions){Document d=AcApplication.DocumentManager.MdiActiveDocument;if(d!=null)DisciplineWorkflowDialogs.SelectAndRun(d,title,note,actions);}
   private static DisciplineWorkflowAction A(string t,string c,string d,string g){return new DisciplineWorkflowAction(t,c,d,g);}
