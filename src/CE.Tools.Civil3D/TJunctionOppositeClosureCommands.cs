@@ -31,6 +31,9 @@ namespace CETools.Civil3D
                 "Existing or new output layer for the opposite-side T-junction closure.");
             settings.AddPositiveDouble("MaxWidth", "01 Closure", "Maximum allowed closure length", 40.0,
                 "Safety check to prevent joining distant or unrelated roads.");
+            settings.AddChoice("RunNames", "02 Finish", "Run Road Names after closing",
+                "No", "Open the existing CE_ROADNAMES settings popup when closure work finishes.",
+                new[] { "No", "Yes" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
             string layer = settings.Text("Layer");
             double maxWidth = settings.Double("MaxWidth", 40.0);
@@ -95,6 +98,8 @@ namespace CETools.Civil3D
             document.Editor.WriteMessage(
                 "\nCE_TJUNCTIONCLOSEOPPOSITE: closures created={0}, existing duplicates avoided={1}.",
                 made, duplicates);
+            if (string.Equals(settings.Text("RunNames"), "Yes", StringComparison.OrdinalIgnoreCase))
+                document.SendStringToExecute("CE_ROADNAMES ", true, false, true);
         }
     }
 }
