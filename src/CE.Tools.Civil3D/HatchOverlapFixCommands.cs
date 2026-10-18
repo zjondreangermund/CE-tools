@@ -278,8 +278,11 @@ namespace CETools.Civil3D
 
         private static string StyleKey(Hatch h)
         {
-            return h.OwnerId.Handle.ToString() + "|" + h.LayerId.Handle.ToString() +
-                "|" + h.Color.ColorIndex.ToString() + "|" + h.Color.ColorMethod.ToString() + "|" + h.Transparency.Alpha.ToString() +
+            // Imported hatches can have unresolved layer/ObjectId handles.
+            // Use the layer name rather than dereferencing LayerId.Handle,
+            // which raises eInvalidKey on some DXF-origin drawings.
+            return h.Layer + "|" + h.Color.ColorIndex.ToString() + "|" +
+                h.Color.ColorMethod.ToString() + "|" + h.Transparency.Alpha.ToString() +
                 "|" + h.PatternName;
         }
 
