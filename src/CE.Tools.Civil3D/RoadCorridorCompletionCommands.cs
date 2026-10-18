@@ -1814,8 +1814,14 @@ namespace CETools.Civil3D
         {
             if (string.IsNullOrWhiteSpace(value)) return null;
             int index = value.IndexOf("RD-", StringComparison.OrdinalIgnoreCase);
+            int prefixLength = 3;
+            if (index < 0)
+            {
+                index = value.IndexOf("ROAD-", StringComparison.OrdinalIgnoreCase);
+                prefixLength = 5;
+            }
             if (index < 0) return null;
-            int digitStart = index + 3;
+            int digitStart = index + prefixLength;
             int digitEnd = digitStart;
             while (digitEnd < value.Length && char.IsDigit(value[digitEnd])) digitEnd++;
             if (digitEnd <= digitStart) return null;
