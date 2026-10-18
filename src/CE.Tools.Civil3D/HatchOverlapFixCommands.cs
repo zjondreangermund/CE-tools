@@ -16,7 +16,7 @@ namespace CETools.Civil3D
     /// Non-overlap repair for compatible SOLID hatch footprints. Every connected
     /// component is processed in its own transaction; failures roll back without
     /// changing the original hatches. Curved polyline loops keep their bulges.
-    /// Islands, edge-defined loops, non-SOLID fills and mixed styles are skipped.
+    /// Islands, curved edge-defined loops, non-SOLID fills and mixed styles are skipped.
     /// </summary>
     public sealed class HatchOverlapFixCommands
     {
@@ -140,12 +140,9 @@ namespace CETools.Civil3D
                         foreach (Hatch h in hatches)
                         {
                             HatchLoop loop = h.GetLoopAt(0);
-                            var poly = new Polyline();
-                            int index = 0;
-                            foreach (BulgeVertex vertex in loop.Polyline)
-                                poly.AddVertexAt(index++, vertex.Vertex, vertex.Bulge, 0, 0);
-                            if (index < 3) { poly.Dispose(); throw new InvalidOperationException("Invalid hatch loop."); }
-                            poly.Closed = true;
+                            Polyline poly = ReadBoundary(loop);
+                            if (poly == null)
+                                throw new InvalidOperationException("Unsupported or unclosed hatch boundary; original left unchanged.");
                             var curves = new DBObjectCollection { poly };
                             try
                             {
@@ -223,7 +220,60 @@ namespace CETools.Civil3D
             HatchLoop loop;
             try { loop = h.GetLoopAt(0); }
             catch { return false; }
-            return loop.IsPolyline && loop.Polyline != null && loop.Polyline.Count >= 3;
+            if (loop.IsPolyline)
+                return loop.Polyline != null && loop.Polyline.Count >= 3;
+            // Imported DXF/Civil 3D hatches frequently store their boundaries as
+            // ordered line edges instead of polyline loops. Accept these only if
+            // they form one closed polygon, with no spline/ellipse/island geometry.
+            return IsClosedLineEdgeLoop(loop);
+        }
+
+        private static bool IsClosedLineEdgeLoop(HatchLoop loop)
+        {
+            if (loop == null || loop.IsPolyline || loop.Curves == null ||
+                loop.Curves.Count < 3) return false;
+            Point2d first = Point2d.Origin;
+            Point2d previous = Point2d.Origin;
+            int count = 0;
+            const double tolerance = 0.001;
+            foreach (Curve2d edge in loop.Curves)
+            {
+                LineSegment2d segment = edge as LineSegment2d;
+                if (segment == null) return false;
+                if (segment.StartPoint.GetDistanceTo(segment.EndPoint) < tolerance)
+                    return false;
+                if (count == 0) first = segment.StartPoint;
+                else if (previous.GetDistanceTo(segment.StartPoint) > tolerance)
+                    return false;
+                previous = segment.EndPoint;
+                count++;
+            }
+            return count >= 3 && previous.GetDistanceTo(first) <= tolerance;
+        }
+
+        private static Polyline ReadBoundary(HatchLoop loop)
+        {
+            if (loop == null) return null;
+            var poly = new Polyline();
+            if (loop.IsPolyline)
+            {
+                int i = 0;
+                foreach (BulgeVertex vertex in loop.Polyline)
+                    poly.AddVertexAt(i++, vertex.Vertex, vertex.Bulge, 0, 0);
+                if (i < 3) { poly.Dispose(); return null; }
+            }
+            else
+            {
+                if (!IsClosedLineEdgeLoop(loop)) { poly.Dispose(); return null; }
+                int i = 0;
+                foreach (Curve2d edge in loop.Curves)
+                {
+                    LineSegment2d line = (LineSegment2d)edge;
+                    poly.AddVertexAt(i++, line.StartPoint, 0.0, 0.0, 0.0);
+                }
+            }
+            poly.Closed = true;
+            return poly;
         }
 
         private static string StyleKey(Hatch h)
