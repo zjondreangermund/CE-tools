@@ -730,30 +730,36 @@ namespace CETools.Civil3D
                 numberingMode,
                 "Road grouped sequence",
                 StringComparison.OrdinalIgnoreCase);
+            var sourceList = (sources ?? Enumerable.Empty<VertexSettingSource>()).ToList();
+            // Road stationing can run in reverse after an alignment was created
+            // right-to-left or bottom-to-top. Number setting-out by actual WCS
+            // plan geometry, independently of alignment station direction.
             List<VertexSettingSource> orderedSources = roadGrouped
-                ? (sources ?? Enumerable.Empty<VertexSettingSource>())
-                    .OrderBy(item =>
-                        item.RoadNumber > 0
-                            ? item.RoadNumber
-                            : int.MaxValue)
-                    .ThenBy(item =>
-                        double.IsNaN(item.RoadStation)
-                            ? double.MaxValue
-                            : item.RoadStation)
-                    .ThenBy(item =>
-                        CETools.Core.RoadAnnotationPlan.ClockwiseFromTopLeft(
-                            JunctionSettingOutSequence.Centre(item).X -
-                                item.JunctionCenter.X,
-                            JunctionSettingOutSequence.Centre(item).Y -
-                                item.JunctionCenter.Y))
-                    .ThenBy(
-                        item => item.Handle,
-                        StringComparer.OrdinalIgnoreCase)
+                ? sourceList
+                    .GroupBy(item => item.RoadNumber)
+                    .OrderBy(group => group.Key > 0 ? group.Key : int.MaxValue)
+                    .SelectMany(group =>
+                    {
+                        List<VertexSettingSource> roadSources = group.ToList();
+                        double spanX = roadSources.Max(item => SourceCentre(item).X) -
+                                       roadSources.Min(item => SourceCentre(item).X);
+                        double spanY = roadSources.Max(item => SourceCentre(item).Y) -
+                                       roadSources.Min(item => SourceCentre(item).Y);
+                        // Explicit sequence modes still override automatic orientation.
+                        bool vertical = string.Equals(sequenceMode, "Top to bottom",
+                            StringComparison.OrdinalIgnoreCase) ||
+                            (!string.Equals(sequenceMode, "Left to right",
+                                StringComparison.OrdinalIgnoreCase) && spanY > spanX);
+                        return vertical
+                            ? roadSources.OrderByDescending(item => SourceCentre(item).Y)
+                                .ThenBy(item => SourceCentre(item).X)
+                                .ThenBy(item => item.Handle, StringComparer.OrdinalIgnoreCase)
+                            : roadSources.OrderBy(item => SourceCentre(item).X)
+                                .ThenByDescending(item => SourceCentre(item).Y)
+                                .ThenBy(item => item.Handle, StringComparer.OrdinalIgnoreCase);
+                    })
                     .ToList()
-                : OrderSources(
-                    sources,
-                    sequenceMode,
-                    startRecordKey);
+                : OrderSources(sourceList, sequenceMode, startRecordKey);
             int sequence = startNumber;
             var roadSequence = new CETools.Core.RoadPointSequence(roadSeeds);
             foreach (VertexSettingSource source in orderedSources)
