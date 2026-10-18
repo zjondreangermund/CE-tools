@@ -383,6 +383,7 @@ namespace CETools.Civil3D
                 updated,
                 removedStale,
                 skipped);
+            RoadNameAuditCommands.AuditActive(false);
         }
 
         private static List<ObjectId> ReadAllRoadAlignmentIds(
