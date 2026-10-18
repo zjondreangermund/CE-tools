@@ -1622,7 +1622,9 @@ namespace CETools.Civil3D
                 blockDefinitionId);
             arrow.SetDatabaseDefaults(paper.Database);
             arrow.LayerId = layerId;
-            arrow.Rotation = NormalizeTwist(viewportTwist);
+            // A paper-space north arrow compensates for the viewport's model twist.
+            // The arrow must rotate in the opposite direction to the viewport.
+            arrow.Rotation = NormalizeTwist(-viewportTwist);
             double safeScale = Math.Max(0.0001, scale);
             arrow.ScaleFactors = new Scale3d(
                 safeScale,
