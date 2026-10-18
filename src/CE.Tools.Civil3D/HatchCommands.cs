@@ -48,6 +48,8 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Create hatch", "CE_HATCHCREATE", "Create a transparent associative hatch from selected boundaries.", "01 Create"),
                     new DisciplineWorkflowAction("Edit hatches", "CE_HATCHEDIT", "Batch edit pattern, scale, angle, colour and transparency.", "02 Maintain"),
                     new DisciplineWorkflowAction("Match hatch", "CE_HATCHMATCH", "Copy visual settings from a source hatch.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Repair overlapping SOLID hatches", "CE_HATCHFIXOVERLAP", "Merge matching selected overlapping solid fills, preserving transparency.", "02 Maintain"),
+                    new DisciplineWorkflowAction("Repair all matching hatches", "CE_HATCHFIXOVERLAPALL", "Review compatible solid hatch overlaps throughout model space.", "02 Maintain"),
                     new DisciplineWorkflowAction("Send hatches behind", "CE_HATCHBACK", "Move selected hatches behind linework.", "03 Draw Order")
                 });
         }
