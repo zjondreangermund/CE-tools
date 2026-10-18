@@ -769,8 +769,12 @@ namespace CETools.Civil3D
                 PromptSelectionResult selection = document.Editor.GetSelection(
                     new PromptSelectionOptions
                     {
-                        MessageForAdding = "\nSelect multiple road alignments: ",
-                        MessageForRemoval = "\nRemove road alignments: ",
+                        MessageForAdding = sewerMode
+                            ? "\nSelect multiple sewer branch alignments: "
+                            : "\nSelect multiple road alignments: ",
+                        MessageForRemoval = sewerMode
+                            ? "\nRemove sewer alignments: "
+                            : "\nRemove road alignments: ",
                         AllowDuplicates = false,
                         RejectObjectsFromNonCurrentSpace = true
                     });
@@ -799,7 +803,8 @@ namespace CETools.Civil3D
                     CivilAlignment alignment = null;
                     try { alignment = tr.GetObject(id, OpenMode.ForRead, false) as CivilAlignment; }
                     catch { }
-                    if (alignment != null && IsRoadAlignment(alignment.Name))
+                    if (alignment != null &&
+                        (sewerMode ? IsSewerAlignment(alignment.Name) : IsRoadAlignment(alignment.Name)))
                         result.Add(id);
                 }
             }
