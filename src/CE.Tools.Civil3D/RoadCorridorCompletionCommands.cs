@@ -251,6 +251,11 @@ namespace CETools.Civil3D
                 document.Database, civilDocument, "Profile Style", "<Use drawing default>");
             IList<string> slopeStyles = FieldCompletionBatchUi.ReadStyleChoices(
                 document.Database, civilDocument, "Slope Pattern Style", "<Use current>");
+            // Choose Basic as the default only when Civil 3D actually exposes
+            // that slope-pattern style; otherwise retain the current style.
+            string slopeDefault = slopeStyles.FirstOrDefault(
+                style => string.Equals(style, "Basic", StringComparison.OrdinalIgnoreCase))
+                ?? slopeStyles[0];
             IList<string> codeSetStyles = FieldCompletionBatchUi.ReadStyleChoices(
                 document.Database, civilDocument, "Code Set Style", "<Use project / current>");
             model.AddChoice("ProfileStyle", "00 Selection / Output", "Design profile style",
@@ -292,13 +297,13 @@ namespace CETools.Civil3D
             model.AddChoice("Visible", "05 Display and Rebuild", "Ensure corridor display is visible", "Enabled", "Turn on the corridor entity and its layer without unlocking the layer.", new[] { "Enabled", "Disabled" });
             model.AddChoice("AutoRebuild", "05 Display and Rebuild", "Automatic rebuild after source edits", "Enabled", "Switch Civil 3D native automatic corridor rebuilding on, off, or leave each corridor unchanged.", new[] { "Enabled", "Disabled", "Keep current" });
             model.AddChoice("Slope", "06 Slope Patterns", "Create/refresh slope patterns", "Enabled", "Enable available corridor slope-pattern collections and rebuild them.", new[] { "Enabled", "Disabled" });
-            model.AddChoice("LeftCutSlopeStyle", "06 Slope Patterns", "Left cut slope style", slopeStyles[0],
+            model.AddChoice("LeftCutSlopeStyle", "06 Slope Patterns", "Left cut slope style", slopeDefault,
                 "Style for the left cut condition. Use current leaves the existing style unchanged.", slopeStyles);
-            model.AddChoice("LeftFillSlopeStyle", "06 Slope Patterns", "Left fill slope style", slopeStyles[0],
+            model.AddChoice("LeftFillSlopeStyle", "06 Slope Patterns", "Left fill slope style", slopeDefault,
                 "Style for the left fill condition. Use current leaves the existing style unchanged.", slopeStyles);
-            model.AddChoice("RightCutSlopeStyle", "06 Slope Patterns", "Right cut slope style", slopeStyles[0],
+            model.AddChoice("RightCutSlopeStyle", "06 Slope Patterns", "Right cut slope style", slopeDefault,
                 "Style for the right cut condition. Use current leaves the existing style unchanged.", slopeStyles);
-            model.AddChoice("RightFillSlopeStyle", "06 Slope Patterns", "Right fill slope style", slopeStyles[0],
+            model.AddChoice("RightFillSlopeStyle", "06 Slope Patterns", "Right fill slope style", slopeDefault,
                 "Style for the right fill condition. Use current leaves the existing style unchanged.", slopeStyles);
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
