@@ -670,7 +670,19 @@ namespace CETools.Civil3D
                         string type;
                         string taggedRoad;
                         string source;
-                        if (!TryReadTag(profile, out type, out taggedRoad, out source) || type != "Profile") continue;
+                        // A corridor's vertical baseline must use the finished
+                        // design profile, never the first tagged EG/NGL profile.
+                        string profileName = Convert.ToString(ReadProperty(profile, "Name"), CultureInfo.CurrentCulture) ?? "";
+                        if (profileName.EndsWith("-EG", StringComparison.OrdinalIgnoreCase) ||
+                            profileName.IndexOf("NGL", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            profileName.IndexOf("EXIST", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            profileName.IndexOf("LEFT-EDGE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            profileName.IndexOf("RIGHT-EDGE", StringComparison.OrdinalIgnoreCase) >= 0)
+                            continue;
+                        bool tagged = TryReadTag(profile, out type, out taggedRoad, out source) && type == "Profile";
+                        bool design = profileName.EndsWith("-FG", StringComparison.OrdinalIgnoreCase) ||
+                            profileName.IndexOf("DESIGN", StringComparison.OrdinalIgnoreCase) >= 0;
+                        if (!design) continue;
                         result.Add(new RoadCorridorPlan
                         {
                             RoadName = road.Name,
