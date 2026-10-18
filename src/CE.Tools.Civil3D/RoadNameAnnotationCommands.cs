@@ -108,8 +108,22 @@ namespace CETools.Civil3D
                 "Use a background mask so the road name remains readable over corridor linework.",
                 new[] { "Yes", "No" });
 
+            model.AddChoice(
+                "NameLocations", "01 Roads", "Name locations",
+                "One name at road midpoint",
+                "For labels between every cross/T-junction and road-end section, use the full CE_ROADNAMES junction midpoint engine.",
+                new[] { "One name at road midpoint", "Midpoints between cross and T-junctions" });
             if (!DisciplineWorkflowDialogs.EditSettings(model))
                 return;
+
+            if (string.Equals(model.Text("NameLocations"),
+                "Midpoints between cross and T-junctions", StringComparison.OrdinalIgnoreCase))
+            {
+                // Hand off to the existing junction-aware road-name engine,
+                // rather than duplicating crossing/intersection detection.
+                document.SendStringToExecute("CE_ROADNAMES ", true, false, true);
+                return;
+            }
 
             settings.Scope =
                 NormalizeScope(
