@@ -27,17 +27,6 @@ namespace CETools.Civil3D
             CommandFlags.Modal | CommandFlags.Redraw)]
         public void Audit() { AuditActive(false); }
 
-        [CommandMethod("CE_TOOLS", "CE_ROADNAMESYNC",
-            CommandFlags.Modal | CommandFlags.Redraw)]
-        public void Synchronize()
-        {
-            Document d = AcApplication.DocumentManager.MdiActiveDocument;
-            if (d == null) return;
-            int renamed = RoadAlignmentNameSync.Sync(d);
-            d.Editor.WriteMessage("\nCE_ROADNAMESYNC: {0} linked objects updated from detected alignment-name changes.", renamed);
-            AuditActive(false);
-        }
-
         internal static void AuditActive(bool quiet)
         {
             Document doc = AcApplication.DocumentManager.MdiActiveDocument;
