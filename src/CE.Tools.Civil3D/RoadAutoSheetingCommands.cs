@@ -37,7 +37,13 @@ namespace CETools.Civil3D
             "CE_TOOLS",
             "CE_ROADAUTOSHEETS",
             CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
-        public void CreateRoadSheets()
+        public void CreateRoadSheets() { CreateSheets(false); }
+
+        [CommandMethod("CE_TOOLS", "CE_SEWERSHEETS",
+            CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void CreateSewerSheets() { CreateSheets(true); }
+
+        private void CreateSheets(bool sewerMode)
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             CivilDocument civil = CivilApplication.ActiveDocument;
@@ -59,14 +65,18 @@ namespace CETools.Civil3D
                 ?? layouts[0];
 
             var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Automatic Road Plan / Profile Sheets",
+                "CE Tools - Automatic " + (sewerMode ? "Sewer" : "Road") + " Plan / Profile Sheets",
                 "Create long-road drawing sheets from a paper-layout template. " +
                 "A0 defaults to 2000 m per plan/profile segment and A1 to 1000 m. " +
                 "Two plan/profile sets are stacked per sheet. Every plan viewport is automatically rotated so its road segment lies horizontally.");
             settings.AddChoice(
-                "RoadScope", "01 Roads", "Road scope", "All road alignments",
+                "RoadScope", "01 Roads", sewerMode ? "Sewer alignment scope" : "Road scope",
+                sewerMode ? "All sewer alignments" : "All road alignments",
+                sewerMode ? "Process sewer branch alignments with linked profile views, or select multiple branches." :
                 "Process every RD-/ROAD alignment or select multiple road alignments after saving settings.",
-                new[] { "All road alignments", "Selected road alignments" });
+                sewerMode
+                    ? new[] { "All sewer alignments", "Selected sewer alignments" }
+                    : new[] { "All road alignments", "Selected road alignments" });
             settings.AddChoice(
                 "SheetSize", "02 Sheets", "Sheet size", "A0",
                 "Landscape sheet size. A0 defaults to 2000 m per segment; A1 defaults to 1000 m.",
@@ -79,7 +89,8 @@ namespace CETools.Civil3D
                 "CustomSegmentLength", "02 Sheets", "Custom segment length (m)", 2000.0,
                 "Used only when Chainage length is Custom.");
             settings.AddChoice(
-                "SheetContent", "02 Sheets", "Viewport sheet content", "Plan and profile views",
+                "SheetContent", "02 Sheets", "Viewport sheet content",
+                sewerMode ? "Profile views only" : "Plan and profile views",
                 "Select profile views only to create long-section sheets without plan viewports, north arrows, or plan titles.",
                 new[] { "Plan and profile views", "Profile views only" });
             settings.AddPositiveInteger(
@@ -266,7 +277,8 @@ namespace CETools.Civil3D
             List<ObjectId> roadIds = ResolveRoadAlignments(
                 document,
                 civil,
-                settings.Text("RoadScope"));
+                settings.Text("RoadScope"),
+                sewerMode);
             if (roadIds.Count == 0)
             {
                 document.Editor.WriteMessage(
@@ -291,7 +303,9 @@ namespace CETools.Civil3D
                     if (profileViews.Count == 0)
                     {
                         document.Editor.WriteMessage(
-                            "\n{0}: skipped. No profile view is linked to this road. Run CE_ROADPROFILEFULL first.",
+                            sewerMode
+                                ? "\n{0}: skipped. No sewer profile view is linked. Run CE_SEWPROFILE first."
+                                : "\n{0}: skipped. No profile view is linked to this road. Run CE_ROADPROFILEFULL first.",
                             alignment.Name);
                         continue;
                     }
@@ -443,7 +457,7 @@ namespace CETools.Civil3D
                 List<RoadSheetJob> sheetJobs = sheetQueue
                     .Skip(sheetIndex * perSheet).Take(perSheet).ToList();
                     string layoutName = string.Format(
-                        CultureInfo.InvariantCulture, "CE-SHEET-{0:000}-{1}",
+                        CultureInfo.InvariantCulture, sewerMode ? "CE-SEWER-SHEET-{0:000}-{1}" : "CE-SHEET-{0:000}-{1}",
                         sheetIndex + 1, sheetSize);
                     bool existed = LayoutExists(document.Database, layoutName);
                     // Civil 3D can fatal-error when regenerating/erasing the viewports
@@ -741,12 +755,13 @@ namespace CETools.Civil3D
         private static List<ObjectId> ResolveRoadAlignments(
             Document document,
             CivilDocument civil,
-            string scope)
+            string scope,
+            bool sewerMode)
         {
             var result = new List<ObjectId>();
             if (string.Equals(
                     scope,
-                    "Selected road alignments",
+                    sewerMode ? "Selected sewer alignments" : "Selected road alignments",
                     StringComparison.OrdinalIgnoreCase))
             {
                 try { document.Editor.SetImpliedSelection(new ObjectId[0]); }
@@ -770,7 +785,7 @@ namespace CETools.Civil3D
                         CivilAlignment alignment = null;
                         try { alignment = tr.GetObject(id, OpenMode.ForRead, false) as CivilAlignment; }
                         catch { }
-                        if (alignment != null && IsRoadAlignment(alignment.Name))
+                        if (alignment != null && (sewerMode ? IsSewerAlignment(alignment.Name) : IsRoadAlignment(alignment.Name)))
                             result.Add(id);
                     }
                 }
@@ -789,6 +804,13 @@ namespace CETools.Civil3D
                 }
             }
             return result;
+        }
+
+        private static bool IsSewerAlignment(string name)
+        {
+            string value = (name ?? string.Empty).Trim().ToUpperInvariant();
+            return value.StartsWith("SEW") || value.StartsWith("BRANCH") ||
+                   value.StartsWith("BR-") || value.Contains(" SEWER ");
         }
 
         private static bool IsRoadAlignment(string name)
