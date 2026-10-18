@@ -56,8 +56,10 @@ namespace CETools.Civil3D
                 {
                     "All road TOP and grading surfaces",
                     "All road TOP surfaces only",
+                    "All road BOTTOM surfaces only",
+                    "All road TOP, BOTTOM and grading surfaces",
                     "All grading surfaces only",
-                    "Select road TOP / grading surfaces"
+                    "Select road TOP / BOTTOM / grading surfaces"
                 });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
@@ -155,7 +157,7 @@ namespace CETools.Civil3D
             List<SurfaceChoice> available = ReadSurfaces(document, civil)
                 .Where(item => item.Id != naturalGround &&
                                !IsNamedOutput(item.Name) &&
-                               IsRoadTopOrGrading(item.Name))
+                               IsRoadTopBottomOrGrading(item.Name))
                 .OrderBy(item => IsRoadSurface(item.Name, true) ? 0 : 1)
                 .ThenBy(item => RoadNumber(item.Name))
                 .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -179,6 +181,20 @@ namespace CETools.Civil3D
             }
             else if (string.Equals(
                          sourceMode,
+                         "All road BOTTOM surfaces only",
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                sources = available.Where(item => IsRoadSurface(item.Name, false)).ToList();
+            }
+            else if (string.Equals(
+                         sourceMode,
+                         "All road TOP, BOTTOM and grading surfaces",
+                         StringComparison.OrdinalIgnoreCase))
+            {
+                sources = available;
+            }
+            else if (string.Equals(
+                         sourceMode,
                          "All grading surfaces only",
                          StringComparison.OrdinalIgnoreCase))
             {
@@ -188,17 +204,17 @@ namespace CETools.Civil3D
             }
             else if (string.Equals(
                          sourceMode,
-                         "Select road TOP / grading surfaces",
+                         "Select road TOP / BOTTOM / grading surfaces",
                          StringComparison.OrdinalIgnoreCase))
             {
                 sources = PromptSurfaceSelection(
                     document,
-                    "\nSelect road TOP / grading surfaces to merge into CE Final Surface: ");
+                    "\nSelect road TOP / BOTTOM / grading surfaces to merge into CE Final Surface: ");
                 sources = sources
                     .Where(item =>
                         item.Id != naturalGround &&
                         !IsNamedOutput(item.Name) &&
-                        IsRoadTopOrGrading(item.Name))
+                        IsRoadTopBottomOrGrading(item.Name))
                     .OrderBy(item => IsRoadSurface(item.Name, true) ? 0 : 1)
                     .ThenBy(item => RoadNumber(item.Name))
                     .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase)
@@ -446,6 +462,12 @@ namespace CETools.Civil3D
             if (string.IsNullOrWhiteSpace(value) || IsNamedOutput(value)) return false;
             if (value.StartsWith("TOP-RD-", StringComparison.OrdinalIgnoreCase)) return true;
             return IsGradingSurface(value);
+        }
+
+        private static bool IsRoadTopBottomOrGrading(string name)
+        {
+            return IsRoadSurface(name, true) || IsRoadSurface(name, false) ||
+                   IsGradingSurface(name);
         }
 
         private static bool IsNamedOutput(string name)
