@@ -38,7 +38,7 @@ for marker in [
     'AddNorthArrow',
     'NorthArrowSource',
     'AddNorthArrow(',
-    'arrow.Rotation = NormalizeTwist(viewportTwist)',
+    'arrow.Rotation = NormalizeTwist(-viewportTwist)',
     'CurveHeadingTolerance',
     'MinimumPlanSubrange',
     'PlanSubViewportGap',
