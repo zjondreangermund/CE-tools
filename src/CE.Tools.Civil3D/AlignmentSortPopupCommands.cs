@@ -51,6 +51,10 @@ namespace CETools.Civil3D
             model.AddChoice("Reading", "02 Sequence", "Preferred road orientation", "Left to right / Top to bottom",
                 "Horizontal roads run left to right; vertical roads run top to bottom. Reversal is only reported, not performed on existing geometry.",
                 new[] { "Left to right / Top to bottom" });
+            model.AddChoice("Reverse", "03 Chainage", "Reverse opposite-direction alignments",
+                "Preview only (no changes)",
+                "Native Civil 3D reversal may reprocess or damage profiles, corridors and station-dependent objects. Backup drawing before use.",
+                new[] { "Preview only (no changes)", "Reverse safe alignments without profiles" });
             model.AddChoice("Zero", "03 Chainage", "Starting chainage", "Keep existing",
                 "Set station 0+000 at the CURRENT geometric start. Existing profiles and station equations are excluded for safety.",
                 new[] { "Keep existing", "Reset safe alignments to 0+000" });
@@ -122,11 +126,14 @@ namespace CETools.Civil3D
             }
             if (reverseNeeded > 0)
                 doc.Editor.WriteMessage("\n{0} alignments point opposite the preferred direction; no geometry was reversed.", reverseNeeded);
-            if (!string.Equals(model.Text("Zero"), "Reset safe alignments to 0+000",
-                    StringComparison.OrdinalIgnoreCase)) return;
+            bool reverseSafe = string.Equals(model.Text("Reverse"),
+                "Reverse safe alignments without profiles", StringComparison.OrdinalIgnoreCase);
+            bool resetZero = string.Equals(model.Text("Zero"),
+                "Reset safe alignments to 0+000", StringComparison.OrdinalIgnoreCase);
+            if (!reverseSafe && !resetZero) return;
 
             var confirmation = new PromptKeywordOptions(
-                "\nReset eligible alignment starting stations to zero? [Yes/No] <No>: ");
+                "\nApply requested alignment direction/chainage changes to eligible roads? [Yes/No] <No>: ");
             confirmation.Keywords.Add("Yes"); confirmation.Keywords.Add("No");
             confirmation.Keywords.Default = "No"; confirmation.AllowNone = true;
             PromptResult answer = doc.Editor.GetKeywords(confirmation);
@@ -148,11 +155,23 @@ namespace CETools.Civil3D
                             Alignment a = tr.GetObject(item.Id, OpenMode.ForWrite, false) as Alignment;
                             if (a == null || a.IsReferenceObject || a.GetProfileIds().Count != 0 ||
                                 a.StationEquations.Count != 0) { skipped++; continue; }
-                            if (Math.Abs(a.StartingStation) > 0.000001)
+                            bool horizontal = Math.Abs(item.End.X - item.Start.X) >=
+                                Math.Abs(item.End.Y - item.Start.Y);
+                            bool wrongDirection = horizontal
+                                ? item.End.X < item.Start.X : item.End.Y > item.Start.Y;
+                            if (reverseSafe && wrongDirection)
+                            {
+                                // Autodesk warns that Reverse may affect dependents.
+                                // Only reverse an editable alignment with no profiles
+                                // and no station equations.
+                                a.Reverse();
+                                changed++;
+                            }
+                            if (resetZero && Math.Abs(a.StartingStation) > 0.000001)
                             {
                                 // StartingStation is read-only. Move the native
                                 // reference station to the geometric start.
-                                a.ReferencePoint = item.Start;
+                                a.ReferencePoint = reverseSafe && wrongDirection ? item.End : item.Start;
                                 a.ReferencePointStation = 0.0;
                                 if (Math.Abs(a.StartingStation) > 0.001)
                                     throw new InvalidOperationException("Station reset validation failed");
