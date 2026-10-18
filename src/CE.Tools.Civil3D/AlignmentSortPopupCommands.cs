@@ -142,7 +142,7 @@ namespace CETools.Civil3D
                 doc.Editor.WriteMessage(
                     "\\nWARNING: Native alignment reversal reprocesses profiles, corridor dependencies, sections and labels. " +
                     "It can remove design speeds and station equations. Save a complete backup DWG first.");
-                PromptStringResult typed = doc.Editor.GetString(
+                PromptResult typed = doc.Editor.GetString(
                     new PromptStringOptions("\\nType REVERSE to allow changing roads with dependent profiles: ") { AllowSpaces = false });
                 if (typed.Status != PromptStatus.OK || !string.Equals(typed.StringResult, "REVERSE", StringComparison.Ordinal))
                     return;
