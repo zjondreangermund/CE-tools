@@ -132,7 +132,11 @@ namespace CETools.Civil3D
                 "Reverse including profile-dependent roads (high risk)", StringComparison.OrdinalIgnoreCase);
             bool resetZero = string.Equals(model.Text("Zero"),
                 "Reset safe alignments to 0+000", StringComparison.OrdinalIgnoreCase);
-            if (!reverseSafe && !reverseWithDependencies && !resetZero) return;
+            if (!reverseSafe && !reverseWithDependencies && !resetZero)
+            {
+                RoadNameAuditCommands.AuditActive(false);
+                return;
+            }
             if (reverseWithDependencies)
             {
                 doc.Editor.WriteMessage(
@@ -203,6 +207,7 @@ namespace CETools.Civil3D
             doc.Editor.WriteMessage("\nCE_ALIGNMENTSORT: zero-station updates={0}; skipped/protected={1}.",
                 changed, skipped);
             if (changed > 0) doc.Editor.Regen();
+            RoadNameAuditCommands.AuditActive(false);
         }
     }
 }
