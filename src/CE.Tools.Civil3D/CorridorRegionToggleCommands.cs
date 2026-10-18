@@ -145,6 +145,8 @@ namespace CETools.Civil3D
                         }
                     }
                 }
+                if (restore && missing == 0)
+                    ClearSnapshot(tr, doc.Database);
                 if (!restore)
                 {
                     if (newSnapshot.Count == 0)
@@ -162,6 +164,17 @@ namespace CETools.Civil3D
                     switched, unchanged, missing);
             }
             doc.Editor.Regen();
+        }
+
+        private static void ClearSnapshot(Transaction tr, Database database)
+        {
+            DBDictionary dictionary = tr.GetObject(database.NamedObjectsDictionaryId,
+                OpenMode.ForWrite) as DBDictionary;
+            if (dictionary == null || !dictionary.Contains(SnapshotKey)) return;
+            ObjectId recordId = dictionary.GetAt(SnapshotKey);
+            dictionary.Remove(SnapshotKey);
+            DBObject record = tr.GetObject(recordId, OpenMode.ForWrite, false);
+            if (record != null) record.Erase();
         }
 
         private static List<RegionState> Load(Transaction tr, Database database)
