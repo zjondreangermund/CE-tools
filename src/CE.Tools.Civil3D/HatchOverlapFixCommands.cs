@@ -162,9 +162,12 @@ namespace CETools.Civil3D
 
                         try
                         {
+                            double totalSourceArea = regions.Sum(region => region.Area);
                             Region merged = regions[0];
                             for (int i = 1; i < regions.Count; i++)
                                 merged.BooleanOperation(BooleanOperationType.BoolUnite, regions[i]);
+                            if (totalSourceArea - merged.Area < Math.Max(0.000001, totalSourceArea * 1e-9))
+                                throw new InvalidOperationException("No actual shared hatch area; no change necessary.");
                             // Create nonassociative hatch from the unioned footprint.
                             // If the native hatch API refuses the region loop, the
                             // transaction rolls back and originals remain intact.
@@ -226,7 +229,7 @@ namespace CETools.Civil3D
         private static string StyleKey(Hatch h)
         {
             return h.OwnerId.Handle.ToString() + "|" + h.LayerId.Handle.ToString() +
-                "|" + h.Color.ToString() + "|" + h.Transparency.ToString() +
+                "|" + h.Color.ColorIndex.ToString() + "|" + h.Color.ColorMethod.ToString() + "|" + h.Transparency.Alpha.ToString() +
                 "|" + h.PatternName;
         }
 
