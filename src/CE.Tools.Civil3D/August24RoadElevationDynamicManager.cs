@@ -264,7 +264,8 @@ namespace CETools.Civil3D
                         {
                             Point3d masterPoint = master.GetClosestPointTo(new Point3d(intersection.X, intersection.Y, 0.0), Vector3d.ZAxis, false);
                             Point3d targetPoint = target.GetClosestPointTo(new Point3d(intersection.X, intersection.Y, 0.0), Vector3d.ZAxis, false);
-                            if (SetCrossingElevation(target, targetPoint, masterPoint.Z))
+                            if (Math.Abs(targetPoint.Z - masterPoint.Z) > 0.001 &&
+                                SetCrossingElevation(target, targetPoint, masterPoint.Z))
                             {
                                 refreshed++;
                                 // A dependent road/bellmouth feature line can
