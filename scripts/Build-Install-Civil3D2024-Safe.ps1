@@ -34,6 +34,21 @@ $bundle = Join-Path $repo 'artifacts\CE Tools 2024.bundle'
 $contents = Join-Path $bundle 'Contents\Windows\2024'
 New-Item -ItemType Directory -Force $contents | Out-Null
 Copy-Item -Path (Join-Path $assemblyDir '*') -Destination $contents -Force
+# Install the approved project style drawings alongside the 2024 adapter.
+# The style importer resolves ../../Resources/ProjectStyles from Windows/2024.
+$styleSource = Join-Path $repo 'bundle\CE Tools.bundle\Contents\Resources\ProjectStyles'
+$styleDestination = Join-Path $bundle 'Contents\Resources\ProjectStyles'
+$styleFiles = @('CE-Project-Styles-01.dwg','CE-Project-Styles-02.dwg','CE-Project-Styles-03.dwg')
+foreach ($name in $styleFiles) {
+    if (-not (Test-Path -LiteralPath (Join-Path $styleSource $name))) {
+        throw "Required project style source missing from repository: $name"
+    }
+}
+New-Item -ItemType Directory -Force -Path $styleDestination | Out-Null
+foreach ($name in $styleFiles) {
+    Copy-Item -LiteralPath (Join-Path $styleSource $name) -Destination (Join-Path $styleDestination $name) -Force
+}
+Write-Host 'Included all 3 approved CE project style DWGs in 2024 bundle.' -ForegroundColor Green
 $manifest = @'
 <?xml version="1.0" encoding="utf-8"?>
 <ApplicationPackage SchemaVersion="1.0" AutodeskProduct="AutoCAD" ProductType="Application"
