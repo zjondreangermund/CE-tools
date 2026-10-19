@@ -74,7 +74,7 @@ namespace CETools.Civil3D
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
                 CivilAlignment alignment = tr.GetObject(aResult.ObjectId, OpenMode.ForRead, false) as CivilAlignment;
-                CivilSurface surface = civil.GetSurfaceIds().Select(id => tr.GetObject(id, OpenMode.ForRead, false) as CivilSurface)
+                CivilSurface surface = civil.GetSurfaceIds().Cast<ObjectId>().Select(id => tr.GetObject(id, OpenMode.ForRead, false) as CivilSurface)
                     .FirstOrDefault(s => s != null && string.Equals(s.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
                 if (alignment == null || surface == null) return;
                 ObjectId layerId = EnsureLayer(tr, doc.Database);
@@ -103,7 +103,7 @@ namespace CETools.Civil3D
                         if (p.GetDistanceTo(q) <= 2 * along + 0.01) continue;
                         Point2d mid = new Point2d((p.X + q.X) / 2, (p.Y + q.Y) / 2);
                         double station, offset;
-                        try { alignment.StationOffset(mid.X, mid.Y, out station, out offset); }
+                        try { alignment.StationOffset(mid.X, mid.Y, ref station, ref offset); }
                         catch { continue; }
                         double distance = Math.Abs(offset);
                         if (distance < bestDistance) { bestDistance = distance; side = i; }
