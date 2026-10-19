@@ -51,6 +51,14 @@ namespace CETools.Civil3D
                 "Symbol starts inside the property from its road-facing boundary.");
             settings.AddPositiveDouble("Length", "02 Set-out", "Connection arm length (m)", 3.0,
                 "Schematic arm length from the inside point toward the sewer main.");
+            settings.AddDouble("Angle", "02 Set-out", "Connection angle from direct approach (degrees)", 0.0,
+                "0 degrees points toward the selected main; positive angles rotate counter-clockwise. Connections are trimmed or extended to intersect the centreline.");
+            settings.AddChoice("Side", "02 Set-out", "Connection pipe side", "Both sides",
+                "Specify which side of the sewer alignment receives house connections.",
+                new[] { "Both sides", "Left side", "Right side" });
+            settings.AddChoice("ErfScope", "01 Selection", "Erven to connect", "Selected erven",
+                "Choose selected closed boundaries or every eligible closed polyline in model space.",
+                new[] { "Selected erven", "All erven" });
             settings.AddPositiveDouble("MaxDistance", "02 Set-out", "Maximum frontage to sewer (m)", 25.0,
                 "Frontage farther than this from the selected sewer alignment is skipped.");
             settings.AddChoice("Existing", "03 Output", "Previous symbols",
@@ -59,30 +67,45 @@ namespace CETools.Civil3D
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
             double along = settings.Double("Along", 1), inside = settings.Double("In", 1);
             double length = settings.Double("Length", 3), maxDistance = settings.Double("MaxDistance", 25);
-            PromptEntityOptions aPrompt = new PromptEntityOptions("\nSelect sewer branch alignment: ");
-            aPrompt.SetRejectMessage("\nSelect a Civil 3D sewer alignment, not another entity type.");
-            aPrompt.AddAllowedClass(typeof(CivilAlignment), true);
-            PromptEntityResult aResult = doc.Editor.GetEntity(aPrompt);
-            if (aResult.Status != PromptStatus.OK) return;
-            PromptSelectionOptions plotsPrompt = new PromptSelectionOptions {
-                MessageForAdding = "\nSelect multiple CLOSED erf boundary polylines: ",
-                AllowDuplicates = false
-            };
-            PromptSelectionResult plots = doc.Editor.GetSelection(plotsPrompt);
-            if (plots.Status != PromptStatus.OK || plots.Value == null) return;
+            PromptSelectionResult selectedAlignments = doc.Editor.GetSelection(new PromptSelectionOptions {
+                MessageForAdding = "\nSelect one or multiple sewer alignments: ", AllowDuplicates = false
+            });
+            if (selectedAlignments.Status != PromptStatus.OK || selectedAlignments.Value == null) return;
+            ObjectId[] selectedErven = null;
+            if (settings.Text("ErfScope") == "Selected erven")
+            {
+                PromptSelectionResult plots = doc.Editor.GetSelection(new PromptSelectionOptions {
+                    MessageForAdding = "\nSelect multiple CLOSED erf boundary polylines: ", AllowDuplicates = false
+                });
+                if (plots.Status != PromptStatus.OK || plots.Value == null) return;
+                selectedErven = plots.Value.GetObjectIds();
+            }
             int created = 0, skipped = 0, replaced = 0;
             using (doc.LockDocument())
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
-                CivilAlignment alignment = tr.GetObject(aResult.ObjectId, OpenMode.ForRead, false) as CivilAlignment;
+                var alignments = new List<CivilAlignment>();
+                foreach (ObjectId alignmentId in selectedAlignments.Value.GetObjectIds().Distinct())
+                {
+                    CivilAlignment candidate = null;
+                    try { candidate = tr.GetObject(alignmentId, OpenMode.ForRead, false) as CivilAlignment; } catch { }
+                    if (candidate != null) alignments.Add(candidate);
+                }
+                if (alignments.Count == 0) { doc.Editor.WriteMessage("\nSelect at least one Civil 3D alignment."); return; }
                 CivilSurface surface = civil.GetSurfaceIds().Cast<ObjectId>().Select(id => tr.GetObject(id, OpenMode.ForRead, false) as CivilSurface)
                     .FirstOrDefault(s => s != null && string.Equals(s.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
-                if (alignment == null || surface == null) return;
+                if (surface == null) return;
                 ObjectId layerId = EnsureLayer(tr, doc.Database);
                 EnsureApp(tr, doc.Database);
                 BlockTableRecord model = tr.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(doc.Database), OpenMode.ForWrite) as BlockTableRecord;
                 if (model == null) return;
-                foreach (ObjectId id in plots.Value.GetObjectIds().Distinct())
+                if (selectedErven == null)
+                    selectedErven = model.Cast<ObjectId>().Where(id => {
+                        try { Polyline poly = tr.GetObject(id, OpenMode.ForRead, false) as Polyline;
+                              return poly != null && poly.Closed && poly.NumberOfVertices >= 3; }
+                        catch { return false; }
+                    }).ToArray();
+                foreach (ObjectId id in selectedErven.Distinct())
                 {
                     Polyline erf = null;
                     try { erf = tr.GetObject(id, OpenMode.ForRead, false) as Polyline; } catch { }
@@ -95,6 +118,7 @@ namespace CETools.Civil3D
                     centroid = new Point2d(centroid.X / erf.NumberOfVertices, centroid.Y / erf.NumberOfVertices);
                     // Find frontage closest to the selected sewer alignment.
                     int side = -1;
+                    CivilAlignment alignment = null;
                     double bestDistance = double.MaxValue;
                     for (int i = 0; i < erf.NumberOfVertices; i++)
                     {
@@ -103,11 +127,17 @@ namespace CETools.Civil3D
                         Point2d p = erf.GetPoint2dAt(i), q = erf.GetPoint2dAt(next);
                         if (p.GetDistanceTo(q) <= 2 * along + 0.01) continue;
                         Point2d mid = new Point2d((p.X + q.X) / 2, (p.Y + q.Y) / 2);
-                        double station = 0.0, offset = 0.0;
-                        try { alignment.StationOffset(mid.X, mid.Y, ref station, ref offset); }
-                        catch { continue; }
-                        double distance = Math.Abs(offset);
-                        if (distance < bestDistance) { bestDistance = distance; side = i; }
+                        foreach (CivilAlignment candidate in alignments)
+                        {
+                            double station = 0.0, offset = 0.0;
+                            try { candidate.StationOffset(mid.X, mid.Y, ref station, ref offset); }
+                            catch { continue; }
+                            string connectionSide = settings.Text("Side");
+                            if (connectionSide == "Left side" && offset <= 0) continue;
+                            if (connectionSide == "Right side" && offset >= 0) continue;
+                            double distance = Math.Abs(offset);
+                            if (distance < bestDistance) { bestDistance = distance; side = i; alignment = candidate; }
+                        }
                     }
                     if (side < 0 || bestDistance > maxDistance) { skipped++; continue; }
                     Point2d left = erf.GetPoint2dAt(side);
@@ -149,7 +179,17 @@ namespace CETools.Civil3D
                         foreach (Entity previous in matches) { previous.UpgradeOpen(); previous.Erase(); replaced++; }
                     }
                     // A schematic angle toward the road with a short end tick.
-                    Point2d end = start - normal * length + tangent * Math.Min(length * 0.35, 1.0);
+                    Point2d toward = ClosestAlignmentPoint(alignment, start);
+                    Vector2d direction = toward - start;
+                    if (direction.Length < 0.001) { skipped++; continue; }
+                    direction = direction.GetNormal();
+                    double degrees = settings.Double("Angle", 0.0);
+                    double radians = degrees * Math.PI / 180.0;
+                    direction = new Vector2d(direction.X * Math.Cos(radians) - direction.Y * Math.Sin(radians),
+                                             direction.X * Math.Sin(radians) + direction.Y * Math.Cos(radians));
+                    Point2d end;
+                    if (!TryIntersectMain(alignment, start, direction, maxDistance + length + inside, out end))
+                    { skipped++; continue; }
                     Point2d tickA = end + tangent * 0.45, tickB = end - tangent * 0.45;
                     foreach (var pair in new[] { Tuple.Create(start, end), Tuple.Create(tickA, tickB) })
                     {
@@ -168,6 +208,56 @@ namespace CETools.Civil3D
             doc.Editor.Regen();
             doc.Editor.WriteMessage("\nCE_SEWERHOUSECONNECTIONS: erven placed={0}; skipped for review={1}; old symbol lines replaced={2}. Check symbols on the ground plan.", created, skipped, replaced);
         }
+        private static Point2d ClosestAlignmentPoint(CivilAlignment alignment, Point2d source)
+        {
+            double station = 0, offset = 0, x = 0, y = 0;
+            alignment.StationOffset(source.X, source.Y, ref station, ref offset);
+            alignment.PointLocation(station, 0, ref x, ref y);
+            return new Point2d(x, y);
+        }
+
+        // Find the first alignment crossing along the chosen angle, regardless
+        // of the user's nominal arm length. It trims overshoots and extends short arms.
+        private static bool TryIntersectMain(CivilAlignment alignment, Point2d start,
+            Vector2d direction, double maximum, out Point2d hit)
+        {
+            hit = start;
+            if (maximum <= 0) return false;
+            const int steps = 256;
+            double previousOffset = 0, prevDist = 0;
+            bool hasPrevious = false;
+            for (int i = 0; i <= steps; i++)
+            {
+                double dist = maximum * i / steps;
+                Point2d point = start + direction * dist;
+                double station = 0, offset = 0;
+                try { alignment.StationOffset(point.X, point.Y, ref station, ref offset); }
+                catch { hasPrevious = false; continue; }
+                if (Math.Abs(offset) <= 1e-5) { hit = point; return true; }
+                if (hasPrevious && previousOffset * offset < 0)
+                {
+                    double lo = prevDist, hi = dist;
+                    double sign = previousOffset;
+                    for (int j = 0; j < 35; j++)
+                    {
+                        double middle = (lo + hi) * 0.5;
+                        Point2d probe = start + direction * middle;
+                        double midStation = 0, midOffset = 0;
+                        try { alignment.StationOffset(probe.X, probe.Y, ref midStation, ref midOffset); }
+                        catch { return false; }
+                        if (sign * midOffset > 0) lo = middle;
+                        else hi = middle;
+                    }
+                    hit = start + direction * ((lo + hi) * 0.5);
+                    return true;
+                }
+                previousOffset = offset;
+                prevDist = dist;
+                hasPrevious = true;
+            }
+            return false;
+        }
+
         private static bool InsidePolygon(Polyline poly, Point2d p)
         {
             bool inside = false;
