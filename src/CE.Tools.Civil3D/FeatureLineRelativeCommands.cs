@@ -12,6 +12,7 @@ using Autodesk.Civil;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using AcCurve = Autodesk.AutoCAD.DatabaseServices.Curve;
 using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
+using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.FeatureLineRelativeCommands))]
 
@@ -174,7 +175,7 @@ namespace CETools.Civil3D
                 "Create this many linked stepped feature lines for EACH selected source.");
             settings.AddChoice("Side", "01 Stepped offsets", "Offset side", "Pick side in drawing",
                 "Choose which side of the selected bellmouth/feature lines receives the offsets. The same choice is applied to every selected source.",
-                new[] { "Pick side in drawing", "Left", "Right", "Inside", "Outside", "Both sides" });
+                new[] { "Pick side in drawing", "Away from selected road alignment", "Left", "Right", "Inside", "Outside", "Both sides" });
             settings.AddText(
                 "Prefix", "02 Naming", "Feature-line name prefix", defaultPrefix,
                 "For multiple sources, CE Tools keeps each source set separate. Default naming uses the source feature-line name; a custom prefix receives a source index.");
@@ -225,6 +226,16 @@ namespace CETools.Civil3D
 
             string side = settings.Text("Side");
             Point3d sidePoint = Point3d.Origin;
+            ObjectId roadAlignmentId = ObjectId.Null;
+            if (string.Equals(side, "Away from selected road alignment", StringComparison.OrdinalIgnoreCase))
+            {
+                var opts = new PromptEntityOptions("\\nSelect road alignment to offset AWAY from: ");
+                opts.SetRejectMessage("\\nSelect a Civil 3D alignment.");
+                opts.AddAllowedClass(typeof(CivilAlignment), true);
+                PromptEntityResult picked = editor.GetEntity(opts);
+                if (picked.Status != PromptStatus.OK) return;
+                roadAlignmentId = picked.ObjectId;
+            }
             if (string.Equals(side, "Pick side in drawing", StringComparison.OrdinalIgnoreCase))
             {
                 PromptPointResult sideResult = editor.GetPoint(
@@ -310,18 +321,26 @@ namespace CETools.Civil3D
                         using (Polyline plan =
                             BuildPlanPolyline(source))
                         {
-                            double sign = string.Equals(
-                                    side,
-                                    "Pick side in drawing",
-                                    StringComparison.OrdinalIgnoreCase)
-                                ? ResolveOffsetSign(
-                                    plan,
-                                    horizontalStep,
-                                    sidePoint)
-                                : ResolveNamedOffsetSign(
-                                    plan,
-                                    horizontalStep,
-                                    side);
+                            double sign;
+                            if (!roadAlignmentId.IsNull)
+                            {
+                                CivilAlignment road = transaction.GetObject(roadAlignmentId, OpenMode.ForRead, false) as CivilAlignment;
+                                if (road == null) throw new InvalidOperationException("Selected road alignment is unavailable.");
+                                Point3d midpoint = plan.GetPointAtDist(plan.Length * 0.5);
+                                double station = 0, offset = 0, x = 0, y = 0;
+                                road.StationOffset(midpoint.X, midpoint.Y, ref station, ref offset);
+                                road.PointLocation(station, 0, ref x, ref y);
+                                Point3d roadPoint = new Point3d(x, y, 0);
+                                double positiveDistance = DistanceToOffset(plan, horizontalStep, roadPoint);
+                                double negativeDistance = DistanceToOffset(plan, -horizontalStep, roadPoint);
+                                if (double.IsInfinity(positiveDistance) && double.IsInfinity(negativeDistance))
+                                    throw new InvalidOperationException("No valid road-away offset could be generated.");
+                                sign = positiveDistance >= negativeDistance ? 1.0 : -1.0;
+                            }
+                            else
+                                sign = string.Equals(side, "Pick side in drawing", StringComparison.OrdinalIgnoreCase)
+                                    ? ResolveOffsetSign(plan, horizontalStep, sidePoint)
+                                    : ResolveNamedOffsetSign(plan, horizontalStep, side);
 
                             int sides = string.Equals(
                                     side,
