@@ -116,10 +116,7 @@ namespace CETools.Civil3D
                 doc.Editor.WriteMessage("\nMultiple pipe networks selected. Use one connected network per surface to avoid invalid TIN bridges. No changes made.");
                 return;
             }
-            PromptKeywordOptions confirm = new PromptKeywordOptions(
-                "\nCreate a NEW excavation-bottom TIN for {0} pipes? [Yes/No] <No>: ");
-            // Set text explicitly; PromptKeywordOptions does not format parameters.
-            confirm = new PromptKeywordOptions("\nCreate new excavation-bottom TIN from " +
+            PromptKeywordOptions confirm = new PromptKeywordOptions("\nCreate new excavation-bottom TIN from " +
                 pipes + " pipe(s), " + vertices.Count + " points? [Yes/No] <No>: ");
             confirm.Keywords.Add("Yes"); confirm.Keywords.Add("No");
             confirm.Keywords.Default = "No"; confirm.AllowNone = true;
