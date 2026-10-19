@@ -164,53 +164,22 @@ namespace CETools.Civil3D
                     if (space == null) return 0;
                     List<RoadLabel> labels = ReadRoadLabels(space, transaction);
                     if (labels.Count == 0) return 0;
-                    var renames = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (ObjectId id in space)
-                    {
-                        Entity entity;
-                        try { entity = transaction.GetObject(id, OpenMode.ForWrite, false) as Entity; }
-                        catch { continue; }
-                        if (entity == null || entity.GetType().Name.IndexOf("Alignment", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                        Point3d centre;
-                        try
-                        {
-                            Extents3d extents = entity.GeometricExtents;
-                            centre = new Point3d((extents.MinPoint.X + extents.MaxPoint.X) * 0.5, (extents.MinPoint.Y + extents.MaxPoint.Y) * 0.5, 0.0);
-                        }
-                        catch { continue; }
-                        RoadLabel nearest = labels.OrderBy(label => PlanDistanceSquared(centre, label.Position)).First();
-                        string oldName = ReadName(entity);
-                        if (string.IsNullOrWhiteSpace(nearest.Name)) continue;
-                        if (!string.Equals(oldName, nearest.Name, StringComparison.OrdinalIgnoreCase) && TryWriteName(entity, nearest.Name))
-                        {
-                            if (!string.IsNullOrWhiteSpace(oldName)) renames[oldName] = nearest.Name;
-                            changed++;
-                        }
-                        if (createLinks) WriteNameLink(entity, transaction, nearest.SourceHandle, nearest.Name);
-                    }
-
-                    if (renames.Count > 0)
+                    // Do not write alignment names from nearby annotation text.
+                    // Such text can be offset into another road's geometry.
+                    // The alignment object is always the road-number authority.
+                    if (createLinks)
                     {
                         foreach (ObjectId id in space)
                         {
-                            Entity entity;
-                            try { entity = transaction.GetObject(id, OpenMode.ForWrite, false) as Entity; }
-                            catch { continue; }
-                            if (entity == null) continue;
-                            string type = entity.GetType().Name;
-                            if (type.IndexOf("Profile", StringComparison.OrdinalIgnoreCase) < 0 &&
-                                type.IndexOf("Corridor", StringComparison.OrdinalIgnoreCase) < 0 &&
-                                type.IndexOf("Section", StringComparison.OrdinalIgnoreCase) < 0 &&
-                                type.IndexOf("Assembly", StringComparison.OrdinalIgnoreCase) < 0) continue;
-                            string current = ReadName(entity);
-                            if (string.IsNullOrWhiteSpace(current)) continue;
-                            foreach (KeyValuePair<string, string> rename in renames)
-                            {
-                                if (current.IndexOf(rename.Key, StringComparison.OrdinalIgnoreCase) < 0) continue;
-                                string next = ReplaceIgnoreCase(current, rename.Key, rename.Value);
-                                if (TryWriteName(entity, next)) changed++;
-                                break;
-                            }
+                            Entity entity = null;
+                            try { entity = transaction.GetObject(id, OpenMode.ForRead, false) as Entity; }
+                            catch { }
+                            if (entity == null || entity.GetType().Name.IndexOf(
+                                "Alignment", StringComparison.OrdinalIgnoreCase) < 0) continue;
+                            string existing = ReadName(entity);
+                            if (string.IsNullOrWhiteSpace(existing)) continue;
+                            // Do not guess source identity from a nearest label.
+                            // Existing explicit CE links are preserved unchanged.
                         }
                     }
                     transaction.Commit();
