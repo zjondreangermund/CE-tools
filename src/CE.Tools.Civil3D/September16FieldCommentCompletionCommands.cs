@@ -29,6 +29,8 @@ namespace CETools.Civil3D
     {
         private const string JunctionLayer = "CE-ROAD-JUNCTION";
         private const string JunctionLimitLayer = "CE-ROAD-JUNCTION-LIMITS";
+        // Stable root tag for front/back T-junction limits (including V208).
+        private const string TLimitTag = "T-LIMIT";
         private const string AppName = "CE_ROAD_JUNCTION";
         private const double Tol = 1e-6;
         private static int _featureLineColourIndex = 256;
@@ -1260,7 +1262,7 @@ namespace CETools.Civil3D
 
                     var endpointPairs = new List<Tuple<Point3d, Point3d, string>>
                     {
-                        Tuple.Create(frontStart, frontEnd, "T-LIMIT-FRONT")
+                        Tuple.Create(frontStart, frontEnd, TLimitTag + "-FRONT")
                     };
                     if (canPlaceBack && adjacentRoadWidth > Tol)
                         endpointPairs.Add(Tuple.Create(backStart, backEnd, "T-LIMIT-BACK"));
