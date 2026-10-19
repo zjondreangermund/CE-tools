@@ -85,7 +85,9 @@ namespace CETools.Civil3D
         {
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document == null) return;
-            int changed = SyncRoadNames(document, true);
+            int changed = RoadAlignmentNameSync.Sync(document);
+            // Legacy nearest-text syncing is intentionally disabled: labels
+            // cannot be trusted to determine alignment identity.
             document.Editor.Regen();
             document.Editor.WriteMessage("\nCE_ROADNAMESYNC complete. Civil road objects renamed/linked={0}.", changed);
         }
