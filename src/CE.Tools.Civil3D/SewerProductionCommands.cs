@@ -61,6 +61,7 @@ namespace CETools.Civil3D
                     new DisciplineWorkflowAction("Repair Pipe Network Band Label Groups", "CE_SEWPIPEBANDGROUPS", "Materialise Pipe Network band rows on multiple sewer profile views and restore their gravity-network Data Source / label groups.", "3 — Profiles"),
                     new DisciplineWorkflowAction("Edit one profile view, apply to selected", "CE_PROFILEVIEWEDITMATCH", "Open one native Profile View Properties window, edit it once, then copy the edited style/range/band settings to all selected profile views with target-specific sources.", "3 — Profiles"),
                     new DisciplineWorkflowAction("Band Data Sources (multiple views)", "CE_PROFILEVIEWDATASOURCES", "Batch-fill blank Profile 1/Profile 2/Pipe Network Data Source fields on selected profile views.", "3 — Profiles"),
+                    new DisciplineWorkflowAction("Sewer excavation-bottom surface", "CE_SEWEREXCAVATIONSURFACE", "Create a separate trench-bottom TIN from sewer pipes and bedding assumptions; inspect triangles before quantities.", "4 — Surfaces and Sheets"),
                     new DisciplineWorkflowAction("Automatic sewer sheets", "CE_SEWERSHEETS", "Create sewer long-section-only or combined plan/profile sheets from a chosen layout template.", "4 — Sheets"),
                     new DisciplineWorkflowAction("Sewer information", "CE_SEWINFO", "Review settings, alignments, profile views and network links.", "5 — Review")
                 });
