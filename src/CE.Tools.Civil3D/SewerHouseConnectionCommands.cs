@@ -40,7 +40,7 @@ namespace CETools.Civil3D
             if (surfaces.Count == 0) { doc.Editor.WriteMessage("\nHouse connections: select a drawing containing an NG/EG surface."); return; }
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Sewer House Connection Symbols",
-                "Draw 2D green sewer house connection marks on the downhill ROAD-FACING boundary of each selected erf. Review unsuitable parcels; no sewer pipes are created.");
+                "Create plan house connections for closed erf polylines. Angle is measured downstream toward increasing sewer-alignment chainage; actual Civil 3D network pipes are not created.");
             settings.AddChoice("Surface", "01 Ground levels", "Existing ground (NG/EG) surface",
                 surfaces.FirstOrDefault(s => s.IndexOf("NG", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     s.IndexOf("EG", StringComparison.OrdinalIgnoreCase) >= 0) ?? surfaces[0],
@@ -52,11 +52,11 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble("Length", "02 Set-out", "Connection arm length (m)", 3.0,
                 "Schematic arm length from the inside point toward the sewer main.");
             settings.AddDouble("Angle", "02 Set-out", "Connection angle from direct approach (degrees)", 0.0,
-                "0 degrees points toward the selected main; positive angles rotate counter-clockwise. Connections are trimmed or extended to intersect the centreline.");
+                "0 degrees points directly across to the main. Positive angles lean downstream, in the direction of increasing alignment stations, on either side of the alignment.");
             settings.AddChoice("Side", "02 Set-out", "Connection pipe side", "Both sides",
                 "Specify which side of the sewer alignment receives house connections.",
                 new[] { "Both sides", "Left side", "Right side" });
-            settings.AddChoice("ErfScope", "01 Selection", "Erven to connect", "Selected erven",
+            settings.AddChoice("ErfScope", "01 Selection", "Erven to connect", "All erven",
                 "Choose selected closed boundaries or every eligible closed polyline in model space.",
                 new[] { "Selected erven", "All erven" });
             settings.AddPositiveDouble("MaxDistance", "02 Set-out", "Maximum frontage to sewer (m)", 25.0,
@@ -145,8 +145,9 @@ namespace CETools.Civil3D
                     double zLeft, zRight;
                     try { zLeft = surface.FindElevationAtXY(left.X, left.Y); zRight = surface.FindElevationAtXY(right.X, right.Y); }
                     catch { skipped++; continue; }
-                    if (double.IsNaN(zLeft) || double.IsNaN(zRight) || Math.Abs(zLeft - zRight) < 0.005) { skipped++; continue; }
-                    Point2d low = zLeft < zRight ? left : right;
+                    if (double.IsNaN(zLeft) || double.IsNaN(zRight)) { skipped++; continue; }
+                    // Nearly level frontages are valid: use the first corner deterministically.
+                    Point2d low = zLeft <= zRight ? left : right;
                     Point2d high = zLeft < zRight ? right : left;
                     Vector2d tangent = (high - low).GetNormal();
                     Point2d onFrontage = low + tangent * along;
@@ -158,6 +159,36 @@ namespace CETools.Civil3D
                     Point2d start = onFrontage + normal * inside;
                     // Abort narrow/irregular lots when the inside position falls outside the erf.
                     if (!InsidePolygon(erf, start)) { skipped++; continue; }
+                    // Calculate and validate the full connection before replacing
+                    // earlier CE-generated symbols. Otherwise an invalid angle could
+                    // delete an existing connection and leave the parcel unconnected.
+                    Point2d toward;
+                    try { toward = ClosestAlignmentPoint(alignment, start); }
+                    catch { skipped++; continue; }
+                    Vector2d direction = toward - start;
+                    if (direction.Length < 0.001) { skipped++; continue; }
+                    direction = direction.GetNormal();
+                    double degrees = settings.Double("Angle", 0.0);
+                    if (double.IsNaN(degrees) || double.IsInfinity(degrees) ||
+                        Math.Abs(degrees) >= 89.0) { skipped++; continue; }
+                    double radians = degrees * Math.PI / 180.0;
+                    Vector2d downstream;
+                    if (!TryIncreasingStationTangent(alignment, toward, out downstream))
+                    { skipped++; continue; }
+                    // Remove any component along the cross-road direction so
+                    // the connection angle is relative to the actual sewer
+                    // alignment, not the drawing's global X/Y orientation.
+                    downstream = downstream - direction * downstream.DotProduct(direction);
+                    if (downstream.Length < 0.001) { skipped++; continue; }
+                    downstream = downstream.GetNormal();
+                    direction = direction * Math.Cos(radians) +
+                                downstream * Math.Sin(radians);
+                    if (direction.Length < 0.001) { skipped++; continue; }
+                    direction = direction.GetNormal();
+                    Point2d end;
+                    if (!TryIntersectMain(alignment, start, direction,
+                            maxDistance + length + inside, out end))
+                    { skipped++; continue; }
                     string key = erf.Handle.ToString();
                     var matches = new List<Entity>();
                     foreach (ObjectId objectId in model)
@@ -178,19 +209,10 @@ namespace CETools.Civil3D
                         if (settings.Text("Existing").StartsWith("Keep", StringComparison.OrdinalIgnoreCase)) { skipped++; continue; }
                         foreach (Entity previous in matches) { previous.UpgradeOpen(); previous.Erase(); replaced++; }
                     }
-                    // A schematic angle toward the road with a short end tick.
-                    Point2d toward = ClosestAlignmentPoint(alignment, start);
-                    Vector2d direction = toward - start;
-                    if (direction.Length < 0.001) { skipped++; continue; }
-                    direction = direction.GetNormal();
-                    double degrees = settings.Double("Angle", 0.0);
-                    double radians = degrees * Math.PI / 180.0;
-                    direction = new Vector2d(direction.X * Math.Cos(radians) - direction.Y * Math.Sin(radians),
-                                             direction.X * Math.Sin(radians) + direction.Y * Math.Cos(radians));
-                    Point2d end;
-                    if (!TryIntersectMain(alignment, start, direction, maxDistance + length + inside, out end))
-                    { skipped++; continue; }
-                    Point2d tickA = end + tangent * 0.45, tickB = end - tangent * 0.45;
+                    // The end tick is square to the actual connection direction.
+                    Vector2d tickDirection = new Vector2d(-direction.Y, direction.X);
+                    Point2d tickA = end + tickDirection * 0.45;
+                    Point2d tickB = end - tickDirection * 0.45;
                     foreach (var pair in new[] { Tuple.Create(start, end), Tuple.Create(tickA, tickB) })
                     {
                         Line line = new Line(new Point3d(pair.Item1.X, pair.Item1.Y, 0),
@@ -214,6 +236,30 @@ namespace CETools.Civil3D
             alignment.StationOffset(source.X, source.Y, ref station, ref offset);
             alignment.PointLocation(station, 0, ref x, ref y);
             return new Point2d(x, y);
+        }
+
+        private static bool TryIncreasingStationTangent(
+            CivilAlignment alignment, Point2d mainPoint, out Vector2d tangent)
+        {
+            tangent = new Vector2d(1.0, 0.0);
+            double station = 0, offset = 0;
+            try
+            {
+                alignment.StationOffset(mainPoint.X, mainPoint.Y, ref station, ref offset);
+                double delta = Math.Min(0.10,
+                    Math.Max((alignment.EndingStation - alignment.StartingStation) * 0.001, 0.001));
+                double s0 = Math.Max(alignment.StartingStation, station - delta);
+                double s1 = Math.Min(alignment.EndingStation, station + delta);
+                if (s1 - s0 < 1e-6) return false;
+                double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+                alignment.PointLocation(s0, 0, ref x0, ref y0);
+                alignment.PointLocation(s1, 0, ref x1, ref y1);
+                tangent = new Vector2d(x1 - x0, y1 - y0);
+                if (tangent.Length < 1e-6) return false;
+                tangent = tangent.GetNormal();
+                return true;
+            }
+            catch { return false; }
         }
 
         // Find the first alignment crossing along the chosen angle, regardless
