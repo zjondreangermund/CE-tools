@@ -584,6 +584,37 @@ namespace CETools.Civil3D
                             TrySetBoolean(baseline, true, "IsEnabled", "Enabled", "IsProcessed"))
                             result.VisibilitySettings++;
                         object regions = ReadProperty(baseline, "BaselineRegions") ?? ReadProperty(baseline, "Regions");
+                        // A corridor may already have its alignment/FG baseline but
+                        // no assembly region. Previous logic only created a region
+                        // when the entire Baselines collection was empty.
+                        if (!CivilStyleDiscovery.Enumerate(regions).Any())
+                        {
+                            ObjectId regionAssembly = FindAssemblyId(
+                                civilDocument, transaction, options.AssemblyName);
+                            if (!regionAssembly.IsNull)
+                            {
+                                double firstStation = 0.0;
+                                double lastStation = 0.0;
+                                CivilAlignment road = null;
+                                try
+                                {
+                                    road = transaction.GetObject(
+                                        AlignmentIdSafe(typedBaseline),
+                                        OpenMode.ForRead, false) as CivilAlignment;
+                                }
+                                catch { }
+                                if (road != null)
+                                {
+                                    firstStation = road.StartingStation;
+                                    lastStation = road.EndingStation;
+                                }
+                                if (lastStation > firstStation + 0.001 &&
+                                    InvokeAddRegion(regions, regionAssembly,
+                                        firstStation, lastStation) == null)
+                                    result.Warnings++;
+                            }
+                            else result.Warnings++;
+                        }
                         foreach (object region in CivilStyleDiscovery.Enumerate(regions))
                         {
                             if (region == null) continue;
