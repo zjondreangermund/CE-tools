@@ -322,6 +322,14 @@ namespace CETools.Civil3D
                     label.Annotative =
                         AnnotativeStates.True;
 #if CE_CIVIL3D_2024
+                    // Apply only active / paper-viewport annotation scales.
+                    // Do not assign every scale registered in the drawing.
+                    AnnotationScaleSyncManager.AddUsedDrawingScaleContexts(
+                        label,
+                        AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(
+                            document.Database, transaction));
+#endif
+#if CE_CIVIL3D_2024
                     try
                     {
                         System.Reflection.MethodInfo setter =
