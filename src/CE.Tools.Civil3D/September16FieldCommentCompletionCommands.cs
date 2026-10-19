@@ -29,6 +29,7 @@ namespace CETools.Civil3D
     {
         private const string JunctionLayer = "CE-ROAD-JUNCTION";
         private const string JunctionLimitLayer = "CE-ROAD-JUNCTION-LIMITS";
+        private const string OppositeLimitLayer = "CE-ROAD-JUNCTION-OPPOSITE";
         // Stable root tag for front/back T-junction limits (including V208).
         private const string TLimitTag = "T-LIMIT";
         private const string AppName = "CE_ROAD_JUNCTION";
@@ -55,6 +56,13 @@ namespace CETools.Civil3D
             model.AddText(
                 "Layer", "01 Output", "Limit-line layer", JunctionLimitLayer,
                 "Dedicated layer for the edge-centre-edge T-junction limit lines.");
+            model.AddText("OppositeLayer", "01 Output",
+                "Opposite-side T-junction line layer", OppositeLimitLayer,
+                "Layer for the BACK/opposite junction line only; FRONT and cross-road lines retain their normal layer.");
+            model.AddChoice("TopSurfaceScope", "03 Road TOP surfaces",
+                "Road TOP surface selection", "All road TOP surfaces",
+                "Choose all editable TOP-RD surfaces automatically or select specific TOP-RD surfaces. BOTTOM/DATUM surfaces are never offered.",
+                new[] { "All road TOP surfaces", "Multiple selected road TOP surfaces" });
             model.AddChoice(
                 "FeatureLineColor", "01 Output", "Feature-line colour", "ByLayer",
                 "Plan/model/profile display colour for generated Civil 3D feature lines.",
@@ -73,6 +81,7 @@ namespace CETools.Civil3D
                 document,
                 model.Text("Site"),
                 CleanLayerName(model.Text("Layer")),
+                CleanLayerName(model.Text("OppositeLayer")),
                 Math.Max(0.10, model.Double("PairDistance", 20.0)),
                 7.4,
                 0.0,
@@ -81,8 +90,9 @@ namespace CETools.Civil3D
                     model.Text("TopSurfaceVertices"),
                     "Yes",
                     StringComparison.OrdinalIgnoreCase),
-                false);
-        }
+                false,
+                model.Text("TopSurfaceScope") == "All road TOP surfaces");
+
 
         [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONBATCH", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void CreateAllJunctionReturns()
@@ -136,7 +146,9 @@ namespace CETools.Civil3D
             model.AddText("Layer", "04 Output", "Bellmouth layer", JunctionLayer,
                 "Layer for generated bellmouth returns and their junction labels. Previous Output layer values are retained here.");
             model.AddText("LimitLayer", "04 Output", "Limit-line layer", JunctionLimitLayer,
-                "Separate layer for T-junction edge-centre-edge limits and cross-junction limit lines.");
+                "Separate layer for front T-junction and cross-junction lines.");
+            model.AddText("OppositeLayer", "04 Output", "Opposite T-junction line layer", OppositeLimitLayer,
+                "Dedicated layer for the T-LIMIT-BACK line on the opposite side of the junction.");
             model.AddChoice("FeatureLineColor", "04 Output", "Feature-line colour", "ByLayer",
                 "Select the display colour for generated bellmouth and limit Civil 3D feature lines.",
                 FeatureLineColourChoices());
@@ -153,6 +165,10 @@ namespace CETools.Civil3D
                 "Optional minimum point spacing for feature-line output. 0 keeps all generated control points.");
             model.AddDouble("WeedAngle", "04 Output", "Feature-line weed angle (deg)", 0.0,
                 "Optional deflection-angle weed setting. 0 disables angle weeding.");
+            model.AddChoice("TopSurfaceScope", "05 Road TOP surfaces",
+                "Road TOP surface selection", "All road TOP surfaces",
+                "Automatically include every TOP-RD surface or choose multiple TOP-RD surfaces manually; exclude BOTTOM/DATUM.",
+                new[] { "All road TOP surfaces", "Multiple selected road TOP surfaces" });
             model.AddChoice("TopSurfaceVertices", "05 Road TOP surfaces", "Assign junction vertices to road TOP surfaces", "Yes",
                 "Sample selected TOP surfaces and update only the junction feature-line vertex elevations/grades. No surface vertices, breaklines or TOP-surface rebuilds are created.",
                 new[] { "Yes", "No" });
@@ -166,6 +182,7 @@ namespace CETools.Civil3D
                     document,
                     model.Text("Site"),
                     CleanLayerName(model.Text("LimitLayer")),
+                    CleanLayerName(model.Text("OppositeLayer")),
                     Math.Max(0.10, model.Double("TLimitPairDistance", 20.0)),
                     Math.Max(0.10, model.Double("AdjacentRoadWidth", 7.4)),
                     Math.Max(0.0, model.Double("WeedDistance", 0.0)),
@@ -174,7 +191,8 @@ namespace CETools.Civil3D
                     string.Equals(
                         model.Text("ExistingBellmouthScope"),
                         "All junction bellmouths",
-                        StringComparison.OrdinalIgnoreCase));
+                        StringComparison.OrdinalIgnoreCase),
+                    model.Text("TopSurfaceScope") == "All road TOP surfaces");
                 return;
             }
 
@@ -210,10 +228,12 @@ namespace CETools.Civil3D
                 CleanLayerName(model.Text("Layer"));
             string limitLayerName =
                 CleanLayerName(model.Text("LimitLayer"));
+            string oppositeLayerName = CleanLayerName(model.Text("OppositeLayer"));
             IList<CivilChoice> topSurfaceChoices = new List<CivilChoice>();
             if ((featureLines || closureFeatureLine) && model.Text("TopSurfaceVertices") == "Yes")
             {
-                topSurfaceChoices = JunctionSurfaceVertices.PickSurfaces(document, CivilApplication.ActiveDocument);
+                topSurfaceChoices = JunctionSurfaceVertices.PickSurfaces(document, CivilApplication.ActiveDocument,
+                    model.Text("TopSurfaceScope") == "All road TOP surfaces");
                 if (topSurfaceChoices == null || topSurfaceChoices.Count == 0) return;
             }
             ObjectId featureLineSiteId = featureLines || closureFeatureLine ? ResolveSite(model.Text("Site")) : ObjectId.Null;
@@ -337,9 +357,9 @@ namespace CETools.Civil3D
                     transaction,
                     bellmouthLayerName);
                 ObjectId limitLayerId = EnsureLayer(
-                    document.Database,
-                    transaction,
-                    limitLayerName);
+                    document.Database, transaction, limitLayerName);
+                ObjectId oppositeLayerId = EnsureLayer(
+                    document.Database, transaction, oppositeLayerName);
                 EnsureRegApp(document.Database, transaction);
                 BlockTableRecord space = transaction.GetObject(
                     document.Database.CurrentSpaceId,
@@ -427,6 +447,7 @@ namespace CETools.Civil3D
                         transaction,
                         space,
                         limitLayerId,
+                        oppositeLayerId,
                         candidate,
                         definitions,
                         featureLines || (!candidate.IsCross && closureFeatureLine),
@@ -980,6 +1001,7 @@ namespace CETools.Civil3D
             Transaction transaction,
             BlockTableRecord space,
             ObjectId layerId,
+            ObjectId oppositeLayerId,
             JunctionCandidate candidate,
             IList<ReturnDefinition> definitions,
             bool featureLines,
@@ -1075,7 +1097,9 @@ namespace CETools.Civil3D
             foreach (Tuple<Point3d, Point3d, string> pair in pairs)
             {
                 ObjectId id = CreateClosureEntity(
-                    database, transaction, space, layerId, pair.Item1, pair.Item2,
+                    database, transaction, space,
+                    pair.Item3 == "T-LIMIT-BACK" ? oppositeLayerId : layerId,
+                    pair.Item1, pair.Item2,
                     pair.Item3, candidate.Point, featureLines, siteId, weedDistance, weedAngle,
                     topSurfaces, ref surfaceVertices, ref unresolvedVertices);
                 if (!id.IsNull) created++;
@@ -1087,12 +1111,14 @@ namespace CETools.Civil3D
             Document document,
             string requestedSite,
             string requestedLayer,
+            string requestedOppositeLayer,
             double maximumPairDistance,
             double adjacentRoadWidth,
             double weedDistance,
             double weedAngle,
             bool assignTopSurfaceVertices,
-            bool allBellmouths)
+            bool allBellmouths,
+            bool allTopSurfaces)
         {
             if (document == null || document.Database == null) return;
 
@@ -1127,8 +1153,7 @@ namespace CETools.Civil3D
             if (assignTopSurfaceVertices)
             {
                 topSurfaceChoices = JunctionSurfaceVertices.PickSurfaces(
-                    document,
-                    CivilApplication.ActiveDocument);
+                    document, CivilApplication.ActiveDocument, allTopSurfaces);
                 if (topSurfaceChoices == null || topSurfaceChoices.Count == 0) return;
             }
 
@@ -1205,9 +1230,9 @@ namespace CETools.Civil3D
                 }
 
                 ObjectId layerId = EnsureLayer(
-                    document.Database,
-                    transaction,
-                    requestedLayer);
+                    document.Database, transaction, requestedLayer);
+                ObjectId oppositeLayerId = EnsureLayer(
+                    document.Database, transaction, requestedOppositeLayer);
                 EnsureRegApp(document.Database, transaction);
                 BlockTableRecord space = transaction.GetObject(
                     document.Database.CurrentSpaceId,
@@ -1294,7 +1319,7 @@ namespace CETools.Civil3D
                             document.Database,
                             transaction,
                             space,
-                            layerId,
+                            endpointPair.Item3 == "T-LIMIT-BACK" ? oppositeLayerId : layerId,
                             endpointPair.Item1,
                             endpointPair.Item2,
                             endpointPair.Item3,
