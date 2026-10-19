@@ -2176,9 +2176,21 @@ namespace CETools.Civil3D
                         key == "LeftFill" ? options.LeftFillSlopeStyle :
                         key == "RightCut" ? options.RightCutSlopeStyle :
                         options.RightFillSlopeStyle;
-                    if (TrySetObjectId(pattern, styleId, "StyleId", "SlopePatternStyleId", "SlopeStyleId") ||
-                        TrySetString(pattern, styleName, "StyleName", "SlopePatternStyleName", "SlopeStyleName"))
-                        changed++;
+                    // Use the native Civil 3D slope-pattern style property first.
+                    // Earlier reflection-only assignment could leave the prior
+                    // hatch style in place even when Basic was selected.
+                    bool assigned = false;
+                    var nativePattern = pattern as CorridorSlopePattern;
+                    if (nativePattern != null)
+                    {
+                        try { nativePattern.StyleId = styleId; assigned = true; }
+                        catch { }
+                    }
+                    if (!assigned)
+                        assigned = TrySetObjectId(pattern, styleId, "StyleId", "SlopePatternStyleId", "SlopeStyleId");
+                    if (!assigned)
+                        assigned = TrySetString(pattern, styleName, "StyleName", "SlopePatternStyleName", "SlopeStyleName");
+                    if (assigned) changed++;
                 }
                 if (TrySetBoolean(pattern, true, "Visible", "IsVisible", "Enabled")) changed++;
                 Invoke(pattern, "Rebuild");
