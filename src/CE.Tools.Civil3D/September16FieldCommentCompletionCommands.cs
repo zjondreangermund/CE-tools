@@ -92,7 +92,7 @@ namespace CETools.Civil3D
                     StringComparison.OrdinalIgnoreCase),
                 false,
                 model.Text("TopSurfaceScope") == "All road TOP surfaces");
-
+        }
 
         [CommandMethod("CE_TOOLS", "CE_ROADJUNCTIONBATCH", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void CreateAllJunctionReturns()
