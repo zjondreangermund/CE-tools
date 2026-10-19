@@ -102,7 +102,7 @@ namespace CETools.Civil3D
                         Point2d p = erf.GetPoint2dAt(i), q = erf.GetPoint2dAt(next);
                         if (p.GetDistanceTo(q) <= 2 * along + 0.01) continue;
                         Point2d mid = new Point2d((p.X + q.X) / 2, (p.Y + q.Y) / 2);
-                        double station, offset;
+                        double station = 0.0, offset = 0.0;
                         try { alignment.StationOffset(mid.X, mid.Y, ref station, ref offset); }
                         catch { continue; }
                         double distance = Math.Abs(offset);
