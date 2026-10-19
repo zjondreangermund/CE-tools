@@ -75,12 +75,13 @@ namespace CETools.Civil3D
                 "Specify how many viewport sets fit on each sheet. Plan viewports rotate to follow the selected alignment.");
             settings.AddChoice(
                 "RoadScope", sewerMode ? "01 Sewer" : "01 Roads",
-                sewerMode ? "Sewer alignments" : "Road scope",
+                sewerMode ? "Sewer alignments / profile views" : "Road scope",
                 sewerMode ? "All sewer alignments" : "All road alignments",
-                sewerMode ? "Process sewer branch alignments with linked profile views, or select multiple branches." :
-                "Process every RD-/ROAD alignment or select multiple road alignments after saving settings.",
                 sewerMode
-                    ? new[] { "All sewer alignments", "Multiple selected sewer alignments" }
+                    ? "Choose all sewer alignments, selected sewer alignments, all linked profile views, or selected profile views."
+                    : "Process every RD-/ROAD alignment or select multiple road alignments after saving settings.",
+                sewerMode
+                    ? new[] { "All profile views", "Multiple selected profile views", "All sewer alignments", "Multiple selected sewer alignments" }
                     : new[] { "All road alignments", "Selected road alignments" });
             settings.AddChoice(
                 "SheetSize", "02 Sheets", "Sheet size", "A0",
@@ -102,6 +103,13 @@ namespace CETools.Civil3D
                 "SegmentsPerSheet", "02 Sheets", "Viewports / sets per sheet", 2,
                 "For profile-only mode this is the maximum number of profile viewports on each sheet. Other mode counts plan/profile sets.");
             settings.AddChoice(
+                "ProfileVerticalOrder", "02 Sheets", "Profile view vertical order", "Keep chainage order",
+                "Choose whether profile viewports follow the source profile views' vertical order in model space or stay in normal chainage order.",
+                new[] { "Keep chainage order", "Match model-space vertical order" });
+            settings.AddText(
+                "ViewportLayer", "04 Paper geometry", "Viewport layer", "CE-VIEWPORT",
+                "Layer assigned to generated plan and profile viewport objects. Existing layers are reused; missing layers are created.");
+            settings.AddChoice(
                 "TemplateLayout", "03 Template", "Paper layout template", templateDefault,
                 "This layout is cloned so its title block/page setup is retained. The template itself is never modified.",
                 layouts);
@@ -118,9 +126,9 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "BottomReserve", "04 Paper geometry", "Bottom reserve (mm)", 20.0,
                 "Extra paper-space height kept clear below generated viewports.");
-            settings.AddPositiveDouble(
-                "PairGap", "04 Paper geometry", "Gap between plan/profile sets (mm)", 10.0,
-                "Vertical paper-space gap between stacked chainage sets.");
+            settings.AddDouble(
+                "PairGap", "04 Paper geometry", "Gap between viewports (mm)", 10.0,
+                "Paper-space gap between stacked profile viewports, or between consecutive plan/profile viewport sets. Set to 0 for no gap.");
             settings.AddPositiveDouble(
                 "PlanProfileGap", "04 Paper geometry", "Plan-to-profile gap (mm)", 8.0,
                 "Vertical paper-space gap between each plan viewport and its matching profile viewport.");
@@ -128,6 +136,10 @@ namespace CETools.Civil3D
                 "ViewportSizing", "04 Paper geometry", "Viewport paper sizing", "Specified dimensions",
                 "Use fixed paper-space viewport sizes like the approved template, or let CE Tools fill the available sheet area.",
                 new[] { "Specified dimensions", "Automatic from sheet" });
+            settings.AddChoice(
+                "AllowViewportOverflow", "04 Paper geometry", "Allow viewport dimensions outside sheet", "No",
+                "Yes keeps the specified viewport dimensions and chainage length even when a viewport extends beyond the paper boundary. No preserves fit checks and scale-based segment adjustment.",
+                new[] { "No", "Yes" });
             settings.AddPositiveDouble(
                 "PlanViewportWidth", "04 Paper geometry", "Plan viewport length / width (mm)", 650.0,
                 "Paper-space width of each complete plan viewport range before any curve split.");
@@ -229,6 +241,11 @@ namespace CETools.Civil3D
                 ? settings.Double("CustomSegmentLength", 2000.0)
                 : RoadSheetingPlanner.DefaultSegmentLength(sheetSize);
             int perSheet = Math.Max(1, settings.Integer("SegmentsPerSheet", 2));
+            bool matchModelSpaceVerticalOrder = string.Equals(
+                settings.Text("ProfileVerticalOrder"), "Match model-space vertical order",
+                StringComparison.OrdinalIgnoreCase);
+            string viewportLayerName = (settings.Text("ViewportLayer") ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(viewportLayerName)) viewportLayerName = "CE-VIEWPORT";
             bool profileOnly = string.Equals(settings.Text("SheetContent"),
                 "Profile views only", StringComparison.OrdinalIgnoreCase);
             double margin = settings.Double("OuterMargin", 15.0);
@@ -237,6 +254,8 @@ namespace CETools.Civil3D
             double pairGap = settings.Double("PairGap", 10.0);
             double planProfileGap = settings.Double("PlanProfileGap", 8.0);
             bool specifiedViewportSizing = string.Equals(settings.Text("ViewportSizing"), "Specified dimensions", StringComparison.OrdinalIgnoreCase);
+            bool allowViewportOverflow = string.Equals(
+                settings.Text("AllowViewportOverflow"), "Yes", StringComparison.OrdinalIgnoreCase);
             double planViewportWidth = settings.Double("PlanViewportWidth", 650.0);
             double planViewportHeight = settings.Double("PlanViewportHeight", 70.0);
             double profileViewportWidth = settings.Double("ProfileViewportWidth", 650.0);
@@ -279,11 +298,27 @@ namespace CETools.Civil3D
             // Reruns use unique layouts for Civil 3D viewport safety.
             // The previously generated sheets remain untouched.
 
+            HashSet<ObjectId> selectedProfileViewIds = null;
             List<ObjectId> roadIds = ResolveRoadAlignments(
                 document,
                 civil,
                 settings.Text("RoadScope"),
                 sewerMode);
+            if (sewerMode && string.Equals(
+                    settings.Text("RoadScope"),
+                    "Multiple selected profile views",
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                List<ObjectId> selectedAlignmentIds;
+                selectedProfileViewIds = ResolveSelectedProfileViews(
+                    document, out selectedAlignmentIds);
+                if (selectedProfileViewIds.Count == 0)
+                {
+                    document.Editor.WriteMessage("\nCE_SEWERSHEETS: no profile views were selected.");
+                    return;
+                }
+                roadIds = selectedAlignmentIds;
+            }
             if (roadIds.Count == 0)
             {
                 document.Editor.WriteMessage(
@@ -307,6 +342,10 @@ namespace CETools.Civil3D
                         document.Database,
                         tr,
                         alignment.ObjectId);
+                    if (selectedProfileViewIds != null)
+                        profileViews = profileViews
+                            .Where(profileViewId => selectedProfileViewIds.Contains(profileViewId))
+                            .ToList();
                     if (profileViews.Count == 0)
                     {
                         document.Editor.WriteMessage(
@@ -356,9 +395,10 @@ namespace CETools.Civil3D
                 double pairHeight = profileOnly
                     ? 5.0 + profileViewportHeight
                     : 5.0 + planViewportHeight + planProfileGap + profileViewportHeight;
-                if ((!profileOnly && planViewportWidth > usableWidth + 0.01) ||
-                    profileViewportWidth > usableWidth + 0.01 ||
-                    pairHeight > usableHeight + 0.01)
+                if (!allowViewportOverflow &&
+                    (((!profileOnly && planViewportWidth > usableWidth + 0.01) ||
+                      profileViewportWidth > usableWidth + 0.01) ||
+                     pairHeight > usableHeight + 0.01))
                 {
                     document.Editor.WriteMessage(
                         "\nCE_ROADAUTOSHEETS: viewport dimensions do not fit {0}. " +
@@ -371,28 +411,22 @@ namespace CETools.Civil3D
                     return;
                 }
 
-                int fittingPairs = (int)Math.Floor(
-                    (usableHeight + pairGap) / (pairHeight + pairGap));
-                if (perSheet > fittingPairs)
-                {
-                    document.Editor.WriteMessage(
-                        "\nCE_ROADAUTOSHEETS: {0} plan/profile sets cannot fit on {1} " +
-                        "with the specified heights. Using {2} set(s) per sheet instead.",
-                        perSheet, sheetSize, fittingPairs);
-                    perSheet = fittingPairs;
-                }
+                // Preserve the user's requested viewport/set count. If the fixed heights
+                // exceed the usable paper height, BuildPaperPairs deliberately continues
+                // stacking the requested slots downward beyond the printable sheet area.
+                // Do not silently reduce four requested slots to three (or fewer).
 
                 // A specified 1:N viewport cannot depict a longer chainage range
                 // than its paper width. Allow the configured clearance on both ends.
                 // This avoids empty fitted viewports at e.g. 1:1000/800 mm/1000 m.
                 double maxLength = double.PositiveInfinity;
-                if (!profileOnly && planFixedScale > Tol)
+                if (!allowViewportOverflow && !profileOnly && planFixedScale > Tol)
                     maxLength = Math.Min(maxLength,
                         planViewportWidth / planFixedScale - planStartTolerance - planEndTolerance);
-                if (profileFixedScale > Tol)
+                if (!allowViewportOverflow && profileFixedScale > Tol)
                     maxLength = Math.Min(maxLength,
                         profileViewportWidth / profileFixedScale - profileLeftTolerance - profileRightTolerance);
-                if (maxLength <= Tol)
+                if (!allowViewportOverflow && maxLength <= Tol)
                 {
                     document.Editor.WriteMessage(
                         "\nCE_ROADAUTOSHEETS: viewport width/scale cannot fit even " +
@@ -400,7 +434,7 @@ namespace CETools.Civil3D
                         "or use a smaller viewport scale.");
                     return;
                 }
-                if (segmentLength > maxLength)
+                if (!allowViewportOverflow && segmentLength > maxLength)
                 {
                     // Slight headroom for numerical tolerance and alignment curvature.
                     double adjustedLength = Math.Floor(maxLength * 0.95 / 10.0) * 10.0;
@@ -432,6 +466,50 @@ namespace CETools.Civil3D
             var allJobs = new List<RoadSheetJob>();
             foreach (RoadInfo road in roads)
             {
+                // Sewer profile views can be split by Civil 3D into separate model-space
+                // objects. In that case, sheet each actual split view's station range;
+                // replanning from the alignment's full start/end range can ask one view
+                // to display stations that belong to a different split view and leave
+                // the generated paper viewport empty.
+                bool useNativeSplitProfileViews = sewerMode && road.ProfileViewIds != null &&
+                    road.ProfileViewIds.Count > 0 &&
+                    (road.ProfileViewIds.Count > 1 || selectedProfileViewIds != null);
+                if (useNativeSplitProfileViews)
+                {
+                    int splitIndex = 0;
+                    using (Transaction profileTr = document.Database.TransactionManager.StartTransaction())
+                    {
+                        foreach (ObjectId profileViewId in road.ProfileViewIds)
+                        {
+                            CivilProfileView splitView = null;
+                            try { splitView = profileTr.GetObject(profileViewId, OpenMode.ForRead, false) as CivilProfileView; }
+                            catch { }
+                            if (splitView == null) continue;
+                            double splitStart;
+                            double splitEnd;
+                            try
+                            {
+                                splitStart = splitView.StationStart;
+                                splitEnd = splitView.StationEnd;
+                            }
+                            catch { continue; }
+                            if (double.IsNaN(splitStart) || double.IsInfinity(splitStart) ||
+                                double.IsNaN(splitEnd) || double.IsInfinity(splitEnd) ||
+                                splitEnd <= splitStart + Tol) continue;
+                            splitIndex++;
+                            allJobs.Add(new RoadSheetJob
+                            {
+                                Road = road,
+                                Segment = new RoadSheetSegment(splitIndex - 1, splitStart, splitEnd),
+                                ProfileViewId = profileViewId
+                            });
+                        }
+                        profileTr.Commit();
+                    }
+                    if (splitIndex > 0) continue;
+                    document.Editor.WriteMessage("\n{0}: split profile view ranges could not be read; using alignment chainage segmentation.", road.Name);
+                }
+
                 IReadOnlyList<RoadSheetPlan> planned;
                 try
                 {
@@ -507,15 +585,12 @@ namespace CETools.Civil3D
                             if (manager == null)
                                 throw new InvalidOperationException("LayoutManager is unavailable.");
 
-                            if (!string.Equals(
-                                    manager.CurrentLayout,
-                                    layoutName,
-                                    StringComparison.OrdinalIgnoreCase))
-                                manager.CurrentLayout = layoutName;
-
+                            // Civil 3D profile viewport fitting requires the target paper
+                            // layout to be current and paper space to be active. Activate
+                            // each generated layout once, then avoid UpdateScreen() inside
+                            // the sheet loop to reduce unnecessary redraw/regeneration work.
+                            manager.CurrentLayout = layoutName;
                             document.Editor.SwitchToPaperSpace();
-                            AcApplication.UpdateScreen();
-
                             sheetStage = "OPEN PAPER SPACE";
                             using (Transaction tr = document.Database.TransactionManager.StartTransaction())
                             {
@@ -537,6 +612,25 @@ namespace CETools.Civil3D
                             sheetStage = "CLEAR OLD VIEWPORTS";
                             ClearGeneratedPaperObjects(paper, tr);
 
+                            if (matchModelSpaceVerticalOrder)
+                            {
+                                // Keep each source profile view's relative model-space vertical
+                                // position when assigning multiple jobs to the sheet's top-down slots.
+                                sheetJobs = sheetJobs
+                                    .Select(job => new
+                                    {
+                                        Job = job,
+                                        ModelY = GetProfileViewModelY(job, tr)
+                                    })
+                                    .OrderByDescending(item => item.ModelY)
+                                    .ThenBy(item => item.Job.Road.Name, StringComparer.OrdinalIgnoreCase)
+                                    .ThenBy(item => item.Job.Segment.StartStation)
+                                    .Select(item => item.Job)
+                                    .ToList();
+                            }
+
+                            ObjectId viewportLayerId = EnsureViewportLayer(
+                                document.Database, tr, viewportLayerName);
                             sheetStage = "BUILD PAPER SLOTS";
                             List<PaperPair> pairs = BuildPaperPairs(
                                 paperWidth,
@@ -552,7 +646,8 @@ namespace CETools.Civil3D
                                 planViewportHeight,
                                 profileViewportWidth,
                                 profileViewportHeight,
-                                profileOnly);
+                                profileOnly,
+                                allowViewportOverflow);
 
                             for (int index = 0; index < sheetJobs.Count; index++)
                             {
@@ -604,6 +699,7 @@ namespace CETools.Civil3D
                                         planSlot.Center,
                                         planSlot.Width,
                                         pair.PlanHeight);
+                                    if (!viewportLayerId.IsNull) plan.LayerId = viewportLayerId;
                                     sheetStage = "FIT PLAN VIEWPORT " +
                                         RoadSheetingPlanner.StationText(planRange.StartStation) + "-" +
                                         RoadSheetingPlanner.StationText(planRange.EndStation);
@@ -651,11 +747,13 @@ namespace CETools.Civil3D
 
                                 }
 
-                                ObjectId profileViewId = FindBestProfileView(
-                                    road.ProfileViewIds,
-                                    tr,
-                                    segment.StartStation,
-                                    segment.EndStation);
+                                ObjectId profileViewId = !job.ProfileViewId.IsNull
+                                    ? job.ProfileViewId
+                                    : FindBestProfileView(
+                                        road.ProfileViewIds,
+                                        tr,
+                                        segment.StartStation,
+                                        segment.EndStation);
                                 if (profileViewId.IsNull)
                                 {
                                     missingProfiles++;
@@ -675,6 +773,7 @@ namespace CETools.Civil3D
                                         pair.ProfileCenter,
                                         pair.ProfileWidth,
                                         pair.ProfileHeight);
+                                    if (!viewportLayerId.IsNull) profile.LayerId = viewportLayerId;
                                     sheetStage = "FIT PROFILE VIEWPORT " +
                                         RoadSheetingPlanner.StationText(segment.StartStation) + "-" +
                                         RoadSheetingPlanner.StationText(segment.EndStation);
@@ -757,6 +856,49 @@ namespace CETools.Civil3D
                 sheetSize,
                 segmentLength,
                 perSheet);
+        }
+
+        private static HashSet<ObjectId> ResolveSelectedProfileViews(
+            Document document,
+            out List<ObjectId> alignmentIds)
+        {
+            var selectedViews = new HashSet<ObjectId>();
+            var alignments = new HashSet<ObjectId>();
+            alignmentIds = new List<ObjectId>();
+            try { document.Editor.SetImpliedSelection(new ObjectId[0]); }
+            catch { }
+
+            PromptSelectionResult selection = document.Editor.GetSelection(
+                new PromptSelectionOptions
+                {
+                    MessageForAdding = "\nSelect multiple sewer profile views: ",
+                    MessageForRemoval = "\nRemove profile views: ",
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
+            if (selection.Status != PromptStatus.OK || selection.Value == null)
+                return selectedViews;
+
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in selection.Value.GetObjectIds())
+                {
+                    CivilProfileView view = null;
+                    try { view = tr.GetObject(id, OpenMode.ForRead, false) as CivilProfileView; }
+                    catch { }
+                    if (view == null) continue;
+
+                    CivilAlignment alignment = null;
+                    try { alignment = tr.GetObject(view.AlignmentId, OpenMode.ForRead, false) as CivilAlignment; }
+                    catch { }
+                    if (alignment == null || !IsSewerAlignment(alignment.Name)) continue;
+
+                    selectedViews.Add(id);
+                    alignments.Add(alignment.ObjectId);
+                }
+            }
+            alignmentIds = alignments.ToList();
+            return selectedViews;
         }
 
         private static List<ObjectId> ResolveRoadAlignments(
@@ -1369,6 +1511,39 @@ namespace CETools.Civil3D
             }
         }
 
+        private static double GetProfileViewModelY(RoadSheetJob job, Transaction tr)
+        {
+            if (job == null || job.Road == null || job.Road.ProfileViewIds == null)
+                return double.NegativeInfinity;
+            ObjectId id = !job.ProfileViewId.IsNull
+                ? job.ProfileViewId
+                : FindBestProfileView(
+                    job.Road.ProfileViewIds, tr, job.Segment.StartStation, job.Segment.EndStation);
+            if (id.IsNull) return double.NegativeInfinity;
+            try
+            {
+                CivilProfileView view = tr.GetObject(id, OpenMode.ForRead, false) as CivilProfileView;
+                return view == null ? double.NegativeInfinity : view.Location.Y;
+            }
+            catch
+            {
+                return double.NegativeInfinity;
+            }
+        }
+
+        private static ObjectId EnsureViewportLayer(Database database, Transaction tr, string layerName)
+        {
+            if (string.IsNullOrWhiteSpace(layerName)) layerName = "CE-VIEWPORT";
+            LayerTable layers = tr.GetObject(database.LayerTableId, OpenMode.ForRead, false) as LayerTable;
+            if (layers == null) return ObjectId.Null;
+            if (layers.Has(layerName)) return layers[layerName];
+            layers.UpgradeOpen();
+            var layer = new LayerTableRecord { Name = layerName, IsPlottable = true };
+            ObjectId id = layers.Add(layer);
+            tr.AddNewlyCreatedDBObject(layer, true);
+            return id;
+        }
+
         private static Viewport CreateViewport(
             BlockTableRecord paper,
             Transaction tr,
@@ -1402,7 +1577,8 @@ namespace CETools.Civil3D
             double requestedPlanHeight,
             double requestedProfileWidth,
             double requestedProfileHeight,
-            bool profileOnly)
+            bool profileOnly,
+            bool allowViewportOverflow)
         {
             double left = Math.Max(0.0, margin);
             double right = Math.Max(left + 50.0, paperWidth - margin - Math.Max(0.0, rightReserve));
@@ -1424,12 +1600,12 @@ namespace CETools.Civil3D
                 profileWidth = requestedProfileWidth;
                 planHeight = requestedPlanHeight;
                 profileHeight = requestedProfileHeight;
-                if ((!profileOnly && planWidth > availableWidth + 0.01) || profileWidth > availableWidth + 0.01)
-                    throw new InvalidOperationException("Specified plan/profile viewport length is wider than the available sheet area.");
+                if (!allowViewportOverflow &&
+                    ((!profileOnly && planWidth > availableWidth + 0.01) || profileWidth > availableWidth + 0.01))
+                    throw new InvalidOperationException("Specified plan/profile viewport length is wider than the available sheet area. Set Allow viewport dimensions outside sheet to Yes to retain the requested dimensions.");
                 pairHeight = profileOnly ? 5.0 + profileHeight : 5.0 + planHeight + planProfileGap + profileHeight;
-                double required = pairHeight * count + safePairGap * Math.Max(0, count - 1);
-                if (required > availableHeight + 0.01)
-                    throw new InvalidOperationException("Specified plan/profile viewport heights do not fit on this sheet. Reduce heights/gaps or sets per sheet.");
+                // Fixed viewport dimensions take priority over fitting inside the sheet.
+                // Keep all requested slots even when the lower slots extend beyond paper.
             }
             else
             {
@@ -1834,6 +2010,7 @@ namespace CETools.Civil3D
         {
             internal RoadInfo Road;
             internal RoadSheetSegment Segment;
+            internal ObjectId ProfileViewId = ObjectId.Null;
         }
 
         private sealed class RoadInfo
