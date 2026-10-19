@@ -47,6 +47,18 @@ namespace CETools.Civil3D
                     alignments++;
                     alignmentById[id] = a;
                 }
+                // Civil 3D treats ROAD-10 and RD-10 as different names, but
+                // both represent road number 10. Report the collision before
+                // anyone runs a synchronization or renumbering command.
+                foreach (var collision in alignmentById.Values
+                    .GroupBy(a => Number(a.Name))
+                    .Where(g => g.Key >= 0 && g.Count() > 1))
+                {
+                    warnings++;
+                    lines.Add("DUPLICATE ROAD NUMBER " + collision.Key.ToString("00") +
+                        ": " + string.Join(", ", collision.Select(a => a.Name)) +
+                        ". Resolve conflicting alignments before renumbering.");
+                }
                 foreach (CivilAlignment a in alignmentById.Values)
                 {
                     var number = Number(a.Name);
