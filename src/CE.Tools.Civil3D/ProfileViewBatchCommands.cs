@@ -112,17 +112,19 @@ namespace CETools.Civil3D
             Document document = ActiveDocument();
             if (document == null) return;
 
-            // Existing scope prompt already supports All or multiple selected
-            // profile views. The saved margin settings below control the vertical
-            // fit needed for Civil 3D high/low and geometry labels to remain clear.
-            List<ProfileViewItem> views = PromptScope(
-                document,
-                ReadProfileViews(document));
-            if (views.Count == 0) return;
-
+            var allViews = ReadProfileViews(document);
+            if (allViews.Count == 0)
+            {
+                document.Editor.WriteMessage("\\nCE_PROFILEVIEWFITALL: no Civil 3D profile views found.");
+                return;
+            }
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Fit Profile Views and Label Clearance",
                 "Fit all or multiple selected profile views, centre the displayed profile data, and reserve grid-row clearance so top/bottom labels do not touch or clip against the frame.");
+            settings.AddChoice("ViewScope", "00 Selection", "Profile views",
+                "All profile views",
+                "Apply to every profile view or choose multiple profile views in the drawing.",
+                new[] { "All profile views", "Multiple selected profile views" });
             settings.AddPositiveDouble(
                 "RowHeight",
                 "01 Vertical fit",
@@ -141,14 +143,20 @@ namespace CETools.Civil3D
                 "Rows from highest profile to top labels",
                 1,
                 "Clear rows reserved between the highest displayed profile and its top labels.");
-            settings.AddPositiveInteger(
+            settings.AddPositiveDouble(
                 "TopLabelToFrameRows",
                 "01 Vertical fit",
                 "Rows from top labels to top frame",
-                1,
+                1.0,
                 "Clear rows reserved above the top text before the profile-view frame.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings))
                 return;
+
+            List<ProfileViewItem> views = string.Equals(settings.Text("ViewScope"),
+                "Multiple selected profile views", StringComparison.OrdinalIgnoreCase)
+                ? PromptSelectProfileViews(document, allViews)
+                : allViews.ToList();
+            if (views.Count == 0) return;
 
             double rowHeight = Math.Max(
                 0.001,
@@ -159,9 +167,9 @@ namespace CETools.Civil3D
             int profileToTopRows = Math.Max(
                 1,
                 settings.Integer("ProfileToTopLabelRows", 1));
-            int topLabelToFrameRows = Math.Max(
-                1,
-                settings.Integer("TopLabelToFrameRows", 1));
+            double topLabelToFrameRows = Math.Max(
+                0.0,
+                settings.Double("TopLabelToFrameRows", 1.0));
 
             ProfileViewBatchResult result = ApplyBatch(
                 document,
@@ -1074,6 +1082,18 @@ namespace CETools.Civil3D
             {
                 return false;
             }
+        }
+
+        private static List<ProfileViewItem> PromptSelectProfileViews(Document document, IList<ProfileViewItem> all)
+        {
+            PromptSelectionResult selection = document.Editor.GetSelection(new PromptSelectionOptions {
+                MessageForAdding = "\\nSelect multiple Civil 3D profile views: ",
+                AllowDuplicates = false, RejectObjectsFromNonCurrentSpace = true
+            });
+            if (selection.Status != PromptStatus.OK || selection.Value == null)
+                return new List<ProfileViewItem>();
+            var selected = new HashSet<ObjectId>(selection.Value.GetObjectIds());
+            return all.Where(view => selected.Contains(view.ObjectId)).ToList();
         }
 
         private static List<ProfileViewItem> PromptScope(
