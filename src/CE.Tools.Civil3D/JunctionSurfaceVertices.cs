@@ -14,24 +14,29 @@ namespace CETools.Civil3D
 {
     internal static class JunctionSurfaceVertices
     {
-        internal static IList<CivilChoice> PickSurfaces(Document document, CivilDocument civil)
+        internal static IList<CivilChoice> PickSurfaces(Document document, CivilDocument civil,
+            bool allTopSurfaces = false)
         {
+            // Never offer BOTTOM/DATUM or unrelated design surfaces for
+            // junction return elevation sampling.
             List<CivilChoice> choices = FieldCompletionBatchUi.ReadSurfaceChoices(document, civil);
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
                 choices = choices.Where(item =>
                     {
                         var surface = transaction.GetObject(item.Id, OpenMode.ForRead, false) as CivilTinSurface;
-                        return surface != null && !surface.IsReferenceObject;
+                        return surface != null && !surface.IsReferenceObject &&
+                            item.Name.StartsWith("TOP-RD-", StringComparison.OrdinalIgnoreCase);
                     })
-                    .OrderByDescending(item => item.Name.StartsWith("TOP-RD-", StringComparison.OrdinalIgnoreCase))
-                    .ThenBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
+                    .OrderBy(item => item.Name, StringComparer.CurrentCultureIgnoreCase).ToList();
             if (choices.Count == 0)
             {
-                document.Editor.WriteMessage("\nNo editable TIN road TOP surfaces were found. Create the road surfaces first.");
+                document.Editor.WriteMessage("\\nNo editable TOP-RD road surfaces were found. Create road TOP surfaces first.");
                 return null;
             }
+            if (allTopSurfaces) return choices;
             return FieldCompletionBatchUi.PickMultiple("CE Tools - Select Road TOP Surfaces",
-                "Select every road TOP surface that must receive the junction vertices. The first selected surface covering a point supplies its elevation; that control elevation is used on all selected surfaces covering the point.", choices);
+                "Select road TOP surfaces only. No BOTTOM/DATUM surfaces are eligible. The first covering surface supplies the junction feature-line elevation; source TIN definitions are not changed.",
+                choices);
         }
 
         internal static List<CivilSurface> OpenSurfaces(Transaction transaction, IEnumerable<CivilChoice> choices)
