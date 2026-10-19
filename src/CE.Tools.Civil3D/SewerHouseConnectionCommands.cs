@@ -60,6 +60,7 @@ namespace CETools.Civil3D
             double along = settings.Double("Along", 1), inside = settings.Double("In", 1);
             double length = settings.Double("Length", 3), maxDistance = settings.Double("MaxDistance", 25);
             PromptEntityOptions aPrompt = new PromptEntityOptions("\nSelect sewer branch alignment: ");
+            aPrompt.SetRejectMessage("\nSelect a Civil 3D sewer alignment, not another entity type.");
             aPrompt.AddAllowedClass(typeof(CivilAlignment), true);
             PromptEntityResult aResult = doc.Editor.GetEntity(aPrompt);
             if (aResult.Status != PromptStatus.OK) return;
