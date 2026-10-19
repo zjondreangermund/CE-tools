@@ -618,7 +618,7 @@ namespace CETools.Civil3D
             double rowHeight,
             int bottomRows,
             int profileToTopRows,
-            int topLabelToFrameRows)
+            double topLabelToFrameRows)
         {
             if (document == null || views == null || views.Count == 0)
                 return 0;
