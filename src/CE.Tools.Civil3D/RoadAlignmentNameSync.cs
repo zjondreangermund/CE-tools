@@ -153,6 +153,10 @@ namespace CETools.Civil3D
                         {
                             renamed += RenameRelated(civil, alignment, previous, current, tr, document.Database);
                         }
+                        // Reconcile only CE annotations linked by this exact
+                        // alignment handle. Never infer a road number from a
+                        // nearby label, enumeration order or a previous label.
+                        renamed += RefreshLinkedRoadLabels(tr, document.Database, id, current);
                         KnownNames[id] = current;
                     }
                     tr.Commit();
@@ -165,6 +169,43 @@ namespace CETools.Civil3D
             }
             finally { _busy = false; }
             return renamed;
+        }
+
+        private static int RefreshLinkedRoadLabels(Transaction tr, Database db,
+            ObjectId alignmentId, string alignmentName)
+        {
+            if (alignmentId.IsNull || string.IsNullOrWhiteSpace(alignmentName)) return 0;
+            int updated = 0;
+            string handle = alignmentId.Handle.ToString();
+            BlockTableRecord space = tr.GetObject(
+                SymbolUtilityServices.GetBlockModelSpaceId(db),
+                OpenMode.ForRead, false) as BlockTableRecord;
+            if (space == null) return 0;
+            foreach (ObjectId id in space)
+            {
+                MText label = null;
+                try { label = tr.GetObject(id, OpenMode.ForRead, false) as MText; }
+                catch { }
+                if (label == null) continue;
+                ResultBuffer data = null;
+                try { data = label.GetXDataForApplication("CE_ROAD_NAME_ANNOTATION"); }
+                catch { }
+                if (data == null) continue;
+                TypedValue[] values = data.AsArray();
+                if (values.Length < 2 ||
+                    !string.Equals(Convert.ToString(values[1].Value), handle,
+                        StringComparison.OrdinalIgnoreCase)) continue;
+                if (string.Equals(label.Contents, alignmentName, StringComparison.Ordinal))
+                    continue;
+                try
+                {
+                    label.UpgradeOpen();
+                    label.Contents = alignmentName;
+                    updated++;
+                }
+                catch { }
+            }
+            return updated;
         }
 
         private static int RenameRelated(CivilDocument civil, Alignment alignment,
