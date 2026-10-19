@@ -72,6 +72,7 @@ namespace CETools.Civil3D
                 model.Text("Site"),
                 CleanLayerName(model.Text("Layer")),
                 Math.Max(0.10, model.Double("PairDistance", 20.0)),
+                7.4,
                 0.0,
                 0.0,
                 string.Equals(
@@ -123,7 +124,9 @@ namespace CETools.Civil3D
                 "Creates one separate line between the two side-road edge tangency points with a protected centre vertex. It does NOT close either bellmouth return into a loop.",
                 new[] { "Feature Line edge-centre-edge", "Polyline edge-centre-edge", "None" });
             model.AddPositiveDouble("TLimitPairDistance", "04 Output", "Existing-bellmouth pairing distance", 20.0,
-                "Used only by Add T-junction edge-centre-edge feature lines. Selected bellmouth returns are paired by their closest endpoints; pairs farther apart than this are skipped.");
+                "Used to identify compatible existing bellmouth returns; it is not the connector length.");
+            model.AddPositiveDouble("AdjacentRoadWidth", "04 Output", "Adjacent road width", 7.4,
+                "Full width of the adjacent side road. Creates the opposite/back T-junction feature line this distance away from the front line, in the direction of the paired bellmouth ends. Applies to selected or all junction bellmouths.");
             // Legacy regression marker retained while separating the output:
             // model.AddText("Layer", "04 Output", "Output layer", JunctionLayer,
             // Keep the historical key "Layer" so a user's previously modified
@@ -162,6 +165,7 @@ namespace CETools.Civil3D
                     model.Text("Site"),
                     CleanLayerName(model.Text("LimitLayer")),
                     Math.Max(0.10, model.Double("TLimitPairDistance", 20.0)),
+                    Math.Max(0.10, model.Double("AdjacentRoadWidth", 7.4)),
                     Math.Max(0.0, model.Double("WeedDistance", 0.0)),
                     Math.Max(0.0, model.Double("WeedAngle", 0.0)),
                     string.Equals(model.Text("TopSurfaceVertices"), "Yes", StringComparison.OrdinalIgnoreCase),
@@ -425,6 +429,7 @@ namespace CETools.Civil3D
                         definitions,
                         featureLines || (!candidate.IsCross && closureFeatureLine),
                         createTLimit,
+                        Math.Max(0.10, model.Double("AdjacentRoadWidth", 7.4)),
                         featureLineSiteId,
                         weedDistance,
                         weedAngle,
@@ -977,6 +982,7 @@ namespace CETools.Civil3D
             IList<ReturnDefinition> definitions,
             bool featureLines,
             bool createTLimit,
+            double adjacentRoadWidth,
             ObjectId siteId,
             double weedDistance,
             double weedAngle,
@@ -1000,21 +1006,66 @@ namespace CETools.Civil3D
             }
             else if (createTLimit)
             {
-                // A T-junction gets one SEPARATE edge-centre-edge limit line.
-                // Do not close either curved bellmouth feature line: closing a
-                // return creates the unwanted chord/loop through the bellmouth.
-                // Start is the side-road edge tangency for each return, so the
-                // two Start points are the correct road-edge controls.
+                // A T-junction needs TWO separate straight limit lines.
+                // FRONT = preserve the established main-road-side tangencies (End-to-End).
+                // BACK = translate the front line by the specified adjacent-road width
+                // toward the side-road mouth. The stored Start points are used only to
+                // determine direction, because their spacing can be inconsistent.
+                // Never close the curved bellmouth returns.
                 List<ReturnDefinition> group = definitions
                     .OrderBy(item => item.MainSign)
                     .ToList();
-                if (group.Count == 2 &&
-                    group[0].Start.DistanceTo(group[1].Start) > Tol)
+                if (group.Count == 2)
                 {
-                    pairs.Add(Tuple.Create(
-                        group[0].Start,
-                        group[1].Start,
-                        "T-LIMIT"));
+                    Point3d frontStart = group[0].End;
+                    Point3d frontEnd = group[1].End;
+                    if (PlanDistance(frontStart, frontEnd) > Tol)
+                    {
+                        // Preserve the accepted V193 front line.
+                        pairs.Add(Tuple.Create(
+                            frontStart,
+                            frontEnd,
+                            "T-LIMIT-FRONT"));
+
+                        // Add the short cross-road connector directly between the
+                        // two stored bellmouth Start endpoints. Do not derive this
+                        // connector from a midpoint or offset vector: the user needs
+                        // the line to terminate exactly on both bellmouth endpoints.
+                        Point3d crossRoadStart = group[0].Start;
+                        Point3d crossRoadEnd = group[1].Start;
+                        if (PlanDistance(crossRoadStart, crossRoadEnd) > Tol)
+                            pairs.Add(Tuple.Create(
+                                crossRoadStart,
+                                crossRoadEnd,
+                                "T-LIMIT-CROSSROAD"));
+
+                        Point3d startMid = new Point3d(
+                            (group[0].Start.X + group[1].Start.X) * 0.5,
+                            (group[0].Start.Y + group[1].Start.Y) * 0.5,
+                            (group[0].Start.Z + group[1].Start.Z) * 0.5);
+                        Point3d frontMid = new Point3d(
+                            (frontStart.X + frontEnd.X) * 0.5,
+                            (frontStart.Y + frontEnd.Y) * 0.5,
+                            (frontStart.Z + frontEnd.Z) * 0.5);
+                        Vector3d away = Plan(frontMid - startMid);
+                        if (away.Length > Tol && adjacentRoadWidth > Tol)
+                        {
+                            Vector3d offset = away.GetNormal() * adjacentRoadWidth;
+                            Point3d backStart = new Point3d(
+                                frontStart.X + offset.X,
+                                frontStart.Y + offset.Y,
+                                frontStart.Z);
+                            Point3d backEnd = new Point3d(
+                                frontEnd.X + offset.X,
+                                frontEnd.Y + offset.Y,
+                                frontEnd.Z);
+                            if (PlanDistance(backStart, backEnd) > Tol)
+                                pairs.Add(Tuple.Create(
+                                    backStart,
+                                    backEnd,
+                                    "T-LIMIT-BACK"));
+                        }
+                    }
                 }
             }
 
@@ -1035,6 +1086,7 @@ namespace CETools.Civil3D
             string requestedSite,
             string requestedLayer,
             double maximumPairDistance,
+            double adjacentRoadWidth,
             double weedDistance,
             double weedAngle,
             bool assignTopSurfaceVertices,
@@ -1111,11 +1163,35 @@ namespace CETools.Civil3D
                     catch { continue; }
                     if (points == null || points.Count < 2) continue;
 
+                    string junctionGroup = string.Empty;
+                    ResultBuffer xdata = null;
+                    try
+                    {
+                        xdata = featureLine.GetXDataForApplication(AppName);
+                        if (xdata != null)
+                        {
+                            foreach (TypedValue value in xdata.AsArray())
+                            {
+                                if (value.TypeCode != (int)DxfCode.ExtendedDataAsciiString)
+                                    continue;
+                                string token = Convert.ToString(value.Value, CultureInfo.InvariantCulture) ?? string.Empty;
+                                if (token.StartsWith("GROUP=", StringComparison.OrdinalIgnoreCase))
+                                {
+                                    junctionGroup = token.Substring("GROUP=".Length).Trim();
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    catch { }
+                    finally { if (xdata != null) xdata.Dispose(); }
+
                     returns.Add(new TLimitReturn
                     {
                         Id = id,
                         First = points[0],
-                        Last = points[points.Count - 1]
+                        Last = points[points.Count - 1],
+                        Group = junctionGroup
                     });
                 }
 
@@ -1140,72 +1216,101 @@ namespace CETools.Civil3D
                 List<Autodesk.Civil.DatabaseServices.Surface> topSurfaces =
                     JunctionSurfaceVertices.OpenSurfaces(transaction, topSurfaceChoices);
 
-                var unused = new HashSet<int>(
-                    Enumerable.Range(0, returns.Count));
-                while (unused.Count >= 2)
+                // Pair returns by their stored junction group. A global nearest-endpoint
+                // search can pair unrelated junctions when several roads are close together.
+                var groupedReturns = returns
+                    .Where(item => !string.IsNullOrWhiteSpace(item.Group))
+                    .GroupBy(item => item.Group, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
+
+                foreach (var group in groupedReturns)
                 {
-                    int bestA = -1;
-                    int bestB = -1;
-                    Point3d bestStart = Point3d.Origin;
-                    Point3d bestEnd = Point3d.Origin;
-                    double bestDistance = double.MaxValue;
-
-                    int[] indices = unused.ToArray();
-                    for (int aIndex = 0; aIndex < indices.Length - 1; aIndex++)
+                    List<TLimitReturn> groupReturns = group.ToList();
+                    if (groupReturns.Count != 2)
                     {
-                        for (int bIndex = aIndex + 1; bIndex < indices.Length; bIndex++)
+                        skipped += groupReturns.Count;
+                        continue;
+                    }
+
+                    // Preserve the accepted front line exactly: Last-to-Last.
+                    // The back line is positioned by the user-entered adjacent-road
+                    // width, translated away from the front line toward the paired
+                    // bellmouth First endpoints. This avoids relying on potentially
+                    // inconsistent stored endpoint spacing for the opposite line.
+                    Point3d frontStart = groupReturns[0].Last;
+                    Point3d frontEnd = groupReturns[1].Last;
+                    Point3d firstMidpoint = new Point3d(
+                        (groupReturns[0].First.X + groupReturns[1].First.X) * 0.5,
+                        (groupReturns[0].First.Y + groupReturns[1].First.Y) * 0.5,
+                        (groupReturns[0].First.Z + groupReturns[1].First.Z) * 0.5);
+                    Point3d frontMidpoint = new Point3d(
+                        (frontStart.X + frontEnd.X) * 0.5,
+                        (frontStart.Y + frontEnd.Y) * 0.5,
+                        (frontStart.Z + frontEnd.Z) * 0.5);
+                    Vector3d awayVector = Plan(frontMidpoint - firstMidpoint);
+                    bool canPlaceBack = awayVector.Length > Tol;
+                    Point3d backStart = frontStart;
+                    Point3d backEnd = frontEnd;
+                    if (canPlaceBack)
+                    {
+                        Vector3d offset = awayVector.GetNormal() * adjacentRoadWidth;
+                        backStart = new Point3d(frontStart.X + offset.X, frontStart.Y + offset.Y, frontStart.Z);
+                        backEnd = new Point3d(frontEnd.X + offset.X, frontEnd.Y + offset.Y, frontEnd.Z);
+                    }
+
+                    var endpointPairs = new List<Tuple<Point3d, Point3d, string>>
+                    {
+                        Tuple.Create(frontStart, frontEnd, "T-LIMIT-FRONT")
+                    };
+                    if (canPlaceBack && adjacentRoadWidth > Tol)
+                        endpointPairs.Add(Tuple.Create(backStart, backEnd, "T-LIMIT-BACK"));
+                    else
+                        skipped++;
+
+                    foreach (var endpointPair in endpointPairs)
+                    {
+                        double endpointDistance = PlanDistance(endpointPair.Item1, endpointPair.Item2);
+
+                        // maximumPairDistance is a bellmouth-pairing tolerance, not
+                        // a maximum permitted connector length. Once two returns share
+                        // the same junction group, both front and back limit lines must
+                        // span between their corresponding endpoints across the road.
+                        // Applying the pairing tolerance here incorrectly suppresses
+                        // the back line whenever its span is wider than the tolerance.
+                        if (endpointDistance <= Tol)
                         {
-                            TLimitReturn first = returns[indices[aIndex]];
-                            TLimitReturn second = returns[indices[bIndex]];
-                            foreach (Point3d firstPoint in new[] { first.First, first.Last })
-                            {
-                                foreach (Point3d secondPoint in new[] { second.First, second.Last })
-                                {
-                                    double distance = PlanDistance(firstPoint, secondPoint);
-                                    if (distance >= bestDistance) continue;
-                                    bestDistance = distance;
-                                    bestA = indices[aIndex];
-                                    bestB = indices[bIndex];
-                                    bestStart = firstPoint;
-                                    bestEnd = secondPoint;
-                                }
-                            }
+                            skipped++;
+                            continue;
                         }
+
+                        Point3d centre = new Point3d(
+                            (endpointPair.Item1.X + endpointPair.Item2.X) * 0.5,
+                            (endpointPair.Item1.Y + endpointPair.Item2.Y) * 0.5,
+                            (endpointPair.Item1.Z + endpointPair.Item2.Z) * 0.5);
+
+                        ObjectId id = CreateClosureEntity(
+                            document.Database,
+                            transaction,
+                            space,
+                            layerId,
+                            endpointPair.Item1,
+                            endpointPair.Item2,
+                            endpointPair.Item3,
+                            centre,
+                            true,
+                            siteId,
+                            weedDistance,
+                            weedAngle,
+                            topSurfaces,
+                            ref surfaceVertices,
+                            ref unresolvedVertices);
+                        if (id.IsNull) skipped++;
+                        else created++;
                     }
-
-                    if (bestA < 0 || bestB < 0 || bestDistance > maximumPairDistance)
-                    {
-                        skipped += unused.Count;
-                        break;
-                    }
-
-                    unused.Remove(bestA);
-                    unused.Remove(bestB);
-
-                    Point3d centre = new Point3d(
-                        (bestStart.X + bestEnd.X) * 0.5,
-                        (bestStart.Y + bestEnd.Y) * 0.5,
-                        (bestStart.Z + bestEnd.Z) * 0.5);
-
-                    ObjectId id = CreateClosureEntity(
-                        document.Database,
-                        transaction,
-                        space,
-                        layerId,
-                        bestStart,
-                        bestEnd,
-                        "T-LIMIT",
-                        centre,
-                        true,
-                        siteId,
-                        weedDistance,
-                        weedAngle,
-                        topSurfaces,
-                        ref surfaceVertices,
-                        ref unresolvedVertices);
-                    if (id.IsNull) skipped++;
-                    else created++;
                 }
+
+                // Returns without a junction group cannot be paired safely.
+                skipped += returns.Count(item => string.IsNullOrWhiteSpace(item.Group));
 
                 // TOP surfaces stay unchanged; only the new limit feature-line
                 // elevations/grades are sampled from them.
@@ -1219,6 +1324,62 @@ namespace CETools.Civil3D
                 skipped,
                 surfaceVertices,
                 unresolvedVertices);
+        }
+
+        private static Point3d[] SelectBackLineEndpoints(
+            TLimitReturn firstReturn,
+            TLimitReturn secondReturn,
+            Point3d frontStart,
+            Point3d frontEnd)
+        {
+            // A front line is the fixed reference. Try all endpoint combinations
+            // except Last-to-Last (already reserved for the front line). The best
+            // back pair is the connector most parallel to the front and distinct
+            // from it. This handles bellmouth feature lines whose vertex directions
+            // are reversed relative to one another.
+            Vector3d frontVector = Plan(frontEnd - frontStart);
+            if (frontVector.Length <= Tol)
+                return new[] { firstReturn.First, secondReturn.First };
+            frontVector = frontVector.GetNormal();
+
+            var candidates = new[]
+            {
+                new { Start = firstReturn.First, End = secondReturn.First, Rank = 0 },
+                new { Start = firstReturn.First, End = secondReturn.Last, Rank = 1 },
+                new { Start = firstReturn.Last, End = secondReturn.First, Rank = 2 }
+            };
+
+            double bestScore = double.NegativeInfinity;
+            Point3d bestStart = firstReturn.First;
+            Point3d bestEnd = secondReturn.First;
+            foreach (var candidate in candidates)
+            {
+                Vector3d connector = Plan(candidate.End - candidate.Start);
+                double length = connector.Length;
+                if (length <= Tol) continue;
+
+                double parallel = Math.Abs(connector.GetNormal().DotProduct(frontVector));
+                // Prefer a parallel connector, then one whose midpoint is offset
+                // from the front line. Rank breaks near-ties in favour of First-First.
+                Point3d midpoint = new Point3d(
+                    (candidate.Start.X + candidate.End.X) * 0.5,
+                    (candidate.Start.Y + candidate.End.Y) * 0.5,
+                    (candidate.Start.Z + candidate.End.Z) * 0.5);
+                Point3d frontMidpoint = new Point3d(
+                    (frontStart.X + frontEnd.X) * 0.5,
+                    (frontStart.Y + frontEnd.Y) * 0.5,
+                    (frontStart.Z + frontEnd.Z) * 0.5);
+                double offset = PlanDistance(midpoint, frontMidpoint);
+                double score = parallel * 1000.0 + Math.Min(offset, 1000000.0) * 0.001 - candidate.Rank * 0.0001;
+                if (score > bestScore)
+                {
+                    bestScore = score;
+                    bestStart = candidate.Start;
+                    bestEnd = candidate.End;
+                }
+            }
+
+            return new[] { bestStart, bestEnd };
         }
 
         private static IEnumerable<ObjectId> ReadAllBellmouthFeatureLineIds(
@@ -1559,6 +1720,7 @@ namespace CETools.Civil3D
             internal ObjectId Id;
             internal Point3d First;
             internal Point3d Last;
+            internal string Group;
         }
 
         private sealed class JunctionCandidate
