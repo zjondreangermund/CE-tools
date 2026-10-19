@@ -1760,7 +1760,12 @@ namespace CETools.Civil3D
                     .Where(item => item.TypeCode == (int)DxfCode.ExtendedDataAsciiString)
                     .Select(item => Convert.ToString(item.Value, CultureInfo.InvariantCulture))
                     .FirstOrDefault();
-                if (!string.Equals(marker, "T-LIMIT", StringComparison.OrdinalIgnoreCase)) continue;
+                // V208 writes separate FRONT, BACK and CROSSROAD lines.
+                // Only FRONT is the assembly cut; the opposite line is an
+                // auxiliary construction guide and must not trim again.
+                if (!string.Equals(marker, "T-LIMIT", StringComparison.OrdinalIgnoreCase) &&
+                    !string.Equals(marker, "T-LIMIT-FRONT", StringComparison.OrdinalIgnoreCase))
+                    continue;
                 List<double> reals = values
                     .Where(item => item.TypeCode == (int)DxfCode.ExtendedDataReal)
                     .Select(item => Convert.ToDouble(item.Value, CultureInfo.InvariantCulture))
