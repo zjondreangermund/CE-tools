@@ -401,9 +401,20 @@ namespace CETools.Civil3D
                 {
                     JunctionCandidate candidate = candidates[index];
                     int junctionNumber = startNumber + index;
-                    List<ReturnDefinition> definitions = (candidate.IsCross
-                        ? CrossReturns(candidate, mainHalfWidth, sideHalfWidth, radius)
-                        : TReturns(candidate, mainHalfWidth, sideHalfWidth, radius))
+                    var returns = new List<ReturnDefinition>();
+                    foreach (int mainSign in new[] { -1, 1 })
+                    foreach (int sideSign in candidate.IsCross ? new[] { -1, 1 } : new[] { 1 })
+                    {
+                        ReturnDefinition tangentReturn;
+                        if (TryBuildTangentReturn(candidate, mainSign, sideSign,
+                                mainHalfWidth, sideHalfWidth, radius, out tangentReturn))
+                            returns.Add(tangentReturn);
+                        else
+                            document.Editor.WriteMessage(
+                                "\\nCE_ROADJUNCTIONBATCH: skipped a return without a valid tangent fillet at J" +
+                                junctionNumber.ToString(CultureInfo.InvariantCulture) + ".");
+                    }
+                    List<ReturnDefinition> definitions = returns
                         .OrderBy(item =>
                             CETools.Core.RoadAnnotationPlan.ClockwiseFromTopLeft(
                                 item.Mid.X - candidate.Point.X,
@@ -760,6 +771,8 @@ namespace CETools.Civil3D
             candidate = new JunctionCandidate
             {
                 Point = new Point3d(point.X, point.Y, 0.0),
+                MainCurve = main,
+                SideCurve = side,
                 Main = Plan(mainDirection).GetNormal(),
                 Side = Plan(sideDirection).GetNormal(),
                 IsCross = cross,
@@ -812,6 +825,7 @@ namespace CETools.Civil3D
 
         private static ReturnDefinition BuildReturn(Point3d intersection, Vector3d main, Vector3d side, int mainSign, int sideSign, double mainHalf, double sideHalf, double radius)
         {
+            // Legacy straight-line seed. Curved roads must be solved from actual offsets.
             Point3d centre = intersection +
                 main * (mainSign * (sideHalf + radius)) +
                 side * (sideSign * (mainHalf + radius));
@@ -823,13 +837,114 @@ namespace CETools.Civil3D
             Point3d middle = centre + middleDirection.GetNormal() * radius;
             return new ReturnDefinition
             {
-                Centre = centre,
-                Start = start,
-                Mid = middle,
-                End = end,
-                MainSign = mainSign,
-                SideSign = sideSign
+                Centre = centre, Start = start, Mid = middle, End = end,
+                MainSign = mainSign, SideSign = sideSign
             };
+        }
+
+        // The fillet centre lies at the intersection of (half width + R) offsets
+        // of the TWO actual road centre curves. This remains valid on circular
+        // bends and skew junctions; the original axis-tangent construction does not.
+        private static bool TryBuildTangentReturn(
+            JunctionCandidate candidate, int mainSign, int sideSign,
+            double mainHalf, double sideHalf, double radius,
+            out ReturnDefinition definition)
+        {
+            definition = new ReturnDefinition();
+            Curve mainCurve = candidate.MainCurve;
+            Curve sideCurve = candidate.SideCurve;
+            if (mainCurve == null || sideCurve == null) return false;
+            Vector3d main = candidate.Main;
+            Vector3d side = candidate.Side;
+            if (Math.Abs(main.CrossProduct(side).Z) < 0.10) return false;
+
+            Point3d seed = candidate.Point +
+                main * (mainSign * (sideHalf + radius)) +
+                side * (sideSign * (mainHalf + radius));
+            DBObjectCollection mainCentreOffsets = null;
+            DBObjectCollection sideCentreOffsets = null;
+            DBObjectCollection mainKerbOffsets = null;
+            DBObjectCollection sideKerbOffsets = null;
+            try
+            {
+                mainCentreOffsets = mainCurve.GetOffsetCurves(
+                    SignedRoadOffset(mainCurve, candidate.Point, side * sideSign, mainHalf + radius));
+                sideCentreOffsets = sideCurve.GetOffsetCurves(
+                    SignedRoadOffset(sideCurve, candidate.Point, main * mainSign, sideHalf + radius));
+                mainKerbOffsets = mainCurve.GetOffsetCurves(
+                    SignedRoadOffset(mainCurve, candidate.Point, side * sideSign, mainHalf));
+                sideKerbOffsets = sideCurve.GetOffsetCurves(
+                    SignedRoadOffset(sideCurve, candidate.Point, main * mainSign, sideHalf));
+
+                // More than one offset element can be returned for complex polylines.
+                // Evaluate all intersections, taking the geometrically closest
+                // candidate to the local straight-tangent seed.
+                double bestScore = double.MaxValue;
+                foreach (Curve mc in mainCentreOffsets.OfType<Curve>())
+                foreach (Curve sc in sideCentreOffsets.OfType<Curve>())
+                {
+                    var crossings = new Point3dCollection();
+                    try { mc.IntersectWith(sc, Intersect.OnBothOperands, crossings, IntPtr.Zero, IntPtr.Zero); }
+                    catch { continue; }
+                    foreach (Point3d crossing in crossings)
+                    {
+                        if (crossing.DistanceTo(seed) > 2.5 * (mainHalf + sideHalf + radius)) continue;
+                        foreach (Curve mk in mainKerbOffsets.OfType<Curve>())
+                        foreach (Curve sk in sideKerbOffsets.OfType<Curve>())
+                        {
+                            Point3d p, q;
+                            try
+                            {
+                                p = mk.GetClosestPointTo(crossing, false);
+                                q = sk.GetClosestPointTo(crossing, false);
+                            }
+                            catch { continue; }
+                            double radiusError = Math.Abs(p.DistanceTo(crossing) - radius) +
+                                                 Math.Abs(q.DistanceTo(crossing) - radius);
+                            if (radiusError > Math.Max(0.05, radius * 0.015)) continue;
+                            Vector3d u = p - crossing;
+                            Vector3d v = q - crossing;
+                            if (u.Length < 1e-7 || v.Length < 1e-7) continue;
+                            Vector3d sum = u.GetNormal() + v.GetNormal();
+                            if (sum.Length < 0.05) continue;
+                            Point3d middle = crossing + sum.GetNormal() * radius;
+                            double score = crossing.DistanceTo(seed) + 100.0 * radiusError;
+                            if (score >= bestScore) continue;
+                            bestScore = score;
+                            definition = new ReturnDefinition
+                            {
+                                Centre = crossing, Start = p, Mid = middle, End = q,
+                                MainSign = mainSign, SideSign = sideSign
+                            };
+                        }
+                    }
+                }
+                return bestScore < double.MaxValue;
+            }
+            catch { return false; }
+            finally
+            {
+                DisposeOffsets(mainCentreOffsets);
+                DisposeOffsets(sideCentreOffsets);
+                DisposeOffsets(mainKerbOffsets);
+                DisposeOffsets(sideKerbOffsets);
+            }
+        }
+
+        private static double SignedRoadOffset(Curve curve, Point3d at,
+            Vector3d toward, double distance)
+        {
+            Vector3d derivative;
+            if (!TryDirection(curve, at, out derivative))
+                throw new InvalidOperationException("Road tangent is undefined at junction.");
+            return derivative.CrossProduct(toward).Z >= 0.0 ? distance : -distance;
+        }
+
+        private static void DisposeOffsets(DBObjectCollection curves)
+        {
+            if (curves == null) return;
+            foreach (DBObject item in curves)
+                if (item != null) item.Dispose();
         }
 
         private static IEnumerable<string> FeatureLineColourChoices()
@@ -1753,6 +1868,8 @@ namespace CETools.Civil3D
         private sealed class JunctionCandidate
         {
             internal Point3d Point;
+            internal Curve MainCurve;
+            internal Curve SideCurve;
             internal Vector3d Main;
             internal Vector3d Side;
             internal bool IsCross;
