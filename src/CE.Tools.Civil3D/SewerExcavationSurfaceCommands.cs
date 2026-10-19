@@ -10,6 +10,7 @@ using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilPipe = Autodesk.Civil.DatabaseServices.Pipe;
+using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.SewerExcavationSurfaceCommands))]
 namespace CETools.Civil3D
@@ -127,7 +128,7 @@ namespace CETools.Civil3D
             {
                 foreach (ObjectId id in civil.GetSurfaceIds())
                 {
-                    Surface existing = tr.GetObject(id, OpenMode.ForRead, false) as Surface;
+                    CivilSurface existing = tr.GetObject(id, OpenMode.ForRead, false) as CivilSurface;
                     if (existing != null && string.Equals(existing.Name,name,StringComparison.OrdinalIgnoreCase))
                     {
                         doc.Editor.WriteMessage("\nSurface already exists. Choose a new name; nothing replaced.");
@@ -137,7 +138,7 @@ namespace CETools.Civil3D
                 ObjectId created = TinSurface.Create(doc.Database,name);
                 TinSurface surface = tr.GetObject(created,OpenMode.ForWrite) as TinSurface;
                 if (surface == null) throw new InvalidOperationException("TIN surface creation failed.");
-                surface.PointsDefinition.AddPoints(vertices);
+                surface.AddVertices(vertices);
                 tr.Commit();
             }
             doc.Editor.Regen();
