@@ -2194,6 +2194,26 @@ namespace CETools.Civil3D
                 if (pattern == null) continue;
                 string identity = FieldCompletionBatchUi.Identity(pattern);
                 string key = FieldCompletionBatchUi.SlopeStyleKey(identity);
+                // Native slope patterns often have no descriptive name. Determine
+                // left/right and cut/fill from their daylight feature line instead.
+                CorridorSlopePattern typedPattern = pattern as CorridorSlopePattern;
+                if (typedPattern != null)
+                {
+                    try
+                    {
+                        CorridorFeatureLine line1 = typedPattern.FeatureLine1;
+                        CorridorFeatureLine line2 = typedPattern.FeatureLine2;
+                        CorridorFeatureLine daylight = IsDaylightSlopeFeature(line1) ? line1 :
+                            IsDaylightSlopeFeature(line2) ? line2 : null;
+                        if (daylight != null)
+                        {
+                            string side = AverageSlopeOffset(daylight) < 0 ? "Left" : "Right";
+                            string condition = IsSlopeFeatureCode(daylight.CodeName, "DAYLIGHT_CUT") ? "Cut" : "Fill";
+                            key = side + condition;
+                        }
+                    }
+                    catch { }
+                }
                 if (string.IsNullOrWhiteSpace(key) &&
                     requested.Where(value => !string.IsNullOrWhiteSpace(value)).Distinct(StringComparer.OrdinalIgnoreCase).Count() == 1)
                     key = "LeftCut";
