@@ -595,18 +595,18 @@ namespace CETools.Civil3D
                             {
                                 double firstStation = 0.0;
                                 double lastStation = 0.0;
-                                CivilAlignment road = null;
+                                CivilAlignment regionRoadAlignment = null;
                                 try
                                 {
-                                    road = transaction.GetObject(
+                                    regionRoadAlignment = transaction.GetObject(
                                         AlignmentIdSafe(typedBaseline),
                                         OpenMode.ForRead, false) as CivilAlignment;
                                 }
                                 catch { }
-                                if (road != null)
+                                if (regionRoadAlignment != null)
                                 {
-                                    firstStation = road.StartingStation;
-                                    lastStation = road.EndingStation;
+                                    firstStation = regionRoadAlignment.StartingStation;
+                                    lastStation = regionRoadAlignment.EndingStation;
                                 }
                                 if (lastStation > firstStation + 0.001 &&
                                     InvokeAddRegion(regions, regionAssembly,
