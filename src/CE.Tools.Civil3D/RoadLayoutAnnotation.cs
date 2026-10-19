@@ -105,7 +105,13 @@ namespace CETools.Civil3D
                 int index = model.Integer("Start", 1);
                 foreach (RoadAnnotationSource road in roads)
                 {
-                    string name = prefix + "-" + (index++).ToString(CultureInfo.InvariantCulture);
+                    // The Civil 3D alignment owns the road identity. Re-running
+                    // ROADNAMES must not independently assign a new number.
+                    string authoritative = road.Alignment == null
+                        ? string.Empty : (road.Alignment.Name ?? string.Empty).Trim();
+                    string name = !string.IsNullOrWhiteSpace(authoritative)
+                        ? authoritative
+                        : prefix + "-" + (index++).ToString(CultureInfo.InvariantCulture);
                     WriteRoadIdentity(road.Parent, tr, name);
 
                     bool hasExisting = HasAnnotationChild(
