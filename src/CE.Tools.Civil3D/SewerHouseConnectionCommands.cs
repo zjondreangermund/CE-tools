@@ -69,6 +69,8 @@ namespace CETools.Civil3D
                 "Length of independent short erf connections; separate from shared T-connection geometry.");
             settings.AddPositiveDouble("NormalShortSetback", "02 Set-out", "Normal short distance inside erf boundary (m)", 1.0,
                 "Start of an independent short connection, measured inwards from the erf boundary.");
+            settings.AddDouble("SharedTAlong", "02 Set-out", "Shared T offset along erf boundary (m)", 0.0,
+                "Move only the short shared T connection along the frontage (positive toward the higher end). The inward setback remains separate.");
             settings.AddPositiveDouble("ShortBranchSetback", "02 Set-out", "Shared T short distance inside erf boundary (m)", 1.0,
                 "Position the short connection's starting point this distance inside the selected erf frontage.");
             settings.AddPositiveDouble("PairDistance", "02 Set-out", "Maximum shared pair spacing (m)", 20.0,
@@ -207,8 +209,9 @@ namespace CETools.Civil3D
                     double sourceStation = 0.0, sourceOffset = 0.0;
                     try { alignment.StationOffset(start.X, start.Y, ref sourceStation, ref sourceOffset); }
                     catch { skipped++; continue; }
-                    Point2d shortStart = onFrontage + normal *
-                        settings.Double("ShortBranchSetback", 1.0);
+                    Point2d shortStart = onFrontage +
+                        tangent * settings.Double("SharedTAlong", 0.0) +
+                        normal * settings.Double("ShortBranchSetback", 1.0);
                     if (!InsidePolygon(erf, shortStart))
                     { skipped++; continue; }
                     proposed.Add(new ConnectionProposal
@@ -216,7 +219,8 @@ namespace CETools.Civil3D
                         Erf = erf.ObjectId, Key = erf.Handle.ToString(),
                         Alignment = alignment.ObjectId, AlignmentHandle = alignment.Handle.ToString(),
                         Start = start, ShortStart = shortStart, End = end,
-                        Outward = -normal, Station = sourceStation, Offset = sourceOffset
+                        Outward = -normal, Direction = direction,
+                        Station = sourceStation, Offset = sourceOffset
                     });
                 }
 
@@ -273,8 +277,11 @@ namespace CETools.Civil3D
                                 longArm.Outward * settings.Double("ShortBranchSetback", 1.0);
                             Point2d normalStart = boundaryPoint -
                                 longArm.Outward * settings.Double("NormalShortSetback", 1.0);
+                            // Follow the user-selected sewer connection angle, measured
+                            // downstream from the main alignment, even for
+                            // independent normal short connections.
                             Point2d normalEnd = normalStart +
-                                longArm.Outward.GetNormal() *
+                                longArm.Direction.GetNormal() *
                                 settings.Double("NormalShortLength", 3.0);
                             if (!ReplaceManagedForGroup(model, tr,
                                 new[] { longArm }, settings.Text("Existing"), ref replaced))
@@ -323,7 +330,7 @@ namespace CETools.Civil3D
             internal ObjectId Erf, Alignment;
             internal string Key, AlignmentHandle;
             internal Point2d Start, ShortStart, End;
-            internal Vector2d Outward;
+            internal Vector2d Outward, Direction;
             internal double Station, Offset;
         }
 
