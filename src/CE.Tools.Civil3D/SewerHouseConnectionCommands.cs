@@ -59,9 +59,11 @@ namespace CETools.Civil3D
             settings.AddChoice("ErfScope", "01 Selection", "Erven to connect", "All erven",
                 "Choose selected closed boundaries or every eligible closed polyline in model space.",
                 new[] { "Selected erven", "All erven" });
-            settings.AddChoice("CrossingMode", "02 Set-out", "Shared road crossings", "One per erf",
+            settings.AddChoice("CrossingMode", "02 Set-out", "Shared road crossings", "Share one crossing for two erven",
                 "Alternatively connect a second nearby erf by a short tee to the first long lateral, allowing two erven to share one crossing.",
                 new[] { "One per erf", "Share one crossing for two erven" });
+            settings.AddPositiveDouble("ShortBranchSetback", "02 Set-out", "Short connection distance from erf boundary (m)", 1.0,
+                "Position the short connection's starting point this distance inside the selected erf frontage.");
             settings.AddPositiveDouble("PairDistance", "02 Set-out", "Maximum shared pair spacing (m)", 20.0,
                 "Maximum plan separation between the two erf connection start points.");
             settings.AddPositiveDouble("MaxDistance", "02 Set-out", "Maximum frontage to sewer (m)", 25.0,
@@ -110,7 +112,7 @@ namespace CETools.Civil3D
                               return poly != null && poly.Closed && poly.NumberOfVertices >= 3; }
                         catch { return false; }
                     }).ToArray();
-                var shared = new List<SharedCrossing>();
+                var proposed = new List<ConnectionProposal>();
                 foreach (ObjectId id in selectedErven.Distinct())
                 {
                     Polyline erf = null;
@@ -195,91 +197,143 @@ namespace CETools.Civil3D
                     if (!TryIntersectMain(alignment, start, direction,
                             maxDistance + length + inside, out end))
                     { skipped++; continue; }
-                    // Pair only same-side erven on the same sewer alignment.
                     double sourceStation = 0.0, sourceOffset = 0.0;
                     try { alignment.StationOffset(start.X, start.Y, ref sourceStation, ref sourceOffset); }
                     catch { skipped++; continue; }
-                    bool shortBranch = false;
-                    SharedCrossing pendingPair = null;
-                    if (settings.Text("CrossingMode") == "Share one crossing for two erven")
+                    Point2d shortStart = onFrontage + normal *
+                        settings.Double("ShortBranchSetback", 1.0);
+                    if (!InsidePolygon(erf, shortStart))
+                    { skipped++; continue; }
+                    proposed.Add(new ConnectionProposal
                     {
-                        double nearest = settings.Double("PairDistance", 20.0);
-                        foreach (SharedCrossing entry in shared)
+                        Erf = erf.ObjectId, Key = erf.Handle.ToString(),
+                        Alignment = alignment.ObjectId, AlignmentHandle = alignment.Handle.ToString(),
+                        Start = start, ShortStart = shortStart, End = end,
+                        Outward = -normal, Station = sourceStation, Offset = sourceOffset
+                    });
+                }
+
+                // Pair only after ALL erven have been examined. The former
+                // one-pass algorithm depended on entity creation/selection order,
+                // leaving pairable erven with individual long road crossings.
+                bool shareMode = settings.Text("CrossingMode") ==
+                    "Share one crossing for two erven";
+                double pairRange = settings.Double("PairDistance", 20.0);
+                var remaining = new List<ConnectionProposal>(proposed
+                    .OrderBy(item => item.AlignmentHandle, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(item => item.Offset < 0 ? -1 : 1)
+                    .ThenBy(item => item.Station)
+                    .ThenBy(item => item.Key, StringComparer.OrdinalIgnoreCase));
+                var drawn = new List<ConnectionProposal>();
+                while (remaining.Count > 0)
+                {
+                    ConnectionProposal longArm = remaining[0];
+                    remaining.RemoveAt(0);
+                    ConnectionProposal shortArm = null;
+                    Point2d tee = Point2d.Origin;
+                    if (shareMode)
+                    {
+                        double best = double.MaxValue;
+                        foreach (ConnectionProposal other in remaining)
                         {
-                            if (entry.Used || entry.AlignmentId != alignment.ObjectId ||
-                                Math.Sign(entry.Offset) != Math.Sign(sourceOffset)) continue;
-                            double distance = entry.Start.GetDistanceTo(start);
-                            if (distance > nearest) continue;
-                            Point2d junction;
-                            // The short second connection follows the erf's frontage normal:
-                            // a straight stem meeting the long crossing at a T,
-                            // rather than another diagonal drawn to its nearest point.
-                            if (!TryIntersectStemWithCrossing(
-                                    start, -normal, entry.Start, entry.End, out junction)) continue;
-                            end = junction;
-                            pendingPair = entry;
-                            nearest = distance;
-                            shortBranch = true;
+                            if (other.Alignment != longArm.Alignment ||
+                                Math.Sign(other.Offset) != Math.Sign(longArm.Offset)) continue;
+                            double separation = longArm.Start.GetDistanceTo(other.Start);
+                            if (separation > pairRange) continue;
+                            Point2d candidate;
+                            if (!TryIntersectStemWithCrossing(other.ShortStart,
+                                other.Outward, longArm.Start, longArm.End, out candidate))
+                                continue;
+                            if (separation >= best) continue;
+                            best = separation;
+                            shortArm = other;
+                            tee = candidate;
                         }
                     }
-                    string key = erf.Handle.ToString();
-                    var matches = new List<Entity>();
-                    foreach (ObjectId objectId in model)
+                    // Do not leave a long crossing unshared in the shared mode.
+                    // Keep any previously generated output intact when no valid
+                    // geometry exists; report the erf so the user can review it.
+                    if (shareMode && shortArm == null)
                     {
-                        Entity existing = tr.GetObject(objectId, OpenMode.ForRead, false) as Entity;
-                        if (existing == null) continue;
-                        ResultBuffer data = existing.GetXDataForApplication(App);
-                        if (data == null) continue;
-                        using (data)
+                        skipped++;
+                        continue;
+                    }
+                    if (shortArm != null) remaining.Remove(shortArm);
+                    var batch = new List<ConnectionProposal> { longArm };
+                    if (shortArm != null) batch.Add(shortArm);
+                    bool keepExisting = settings.Text("Existing")
+                        .StartsWith("Keep", StringComparison.OrdinalIgnoreCase);
+                    var erase = new List<Entity>();
+                    bool duplicate = false;
+                    foreach (ConnectionProposal proposal in batch)
+                    {
+                        foreach (ObjectId existingId in model)
                         {
-                            TypedValue[] arr = data.AsArray();
-                            if (arr.Any(v => v.TypeCode == 1000 && string.Equals(Convert.ToString(v.Value), key, StringComparison.OrdinalIgnoreCase)))
-                                matches.Add(existing);
+                            Entity existing = tr.GetObject(existingId, OpenMode.ForRead, false) as Entity;
+                            if (existing == null) continue;
+                            using (ResultBuffer data = existing.GetXDataForApplication(App))
+                            {
+                                if (data == null) continue;
+                                if (!data.AsArray().Any(v => v.TypeCode == 1000 &&
+                                    string.Equals(Convert.ToString(v.Value), proposal.Key,
+                                    StringComparison.OrdinalIgnoreCase))) continue;
+                                if (keepExisting) duplicate = true;
+                                else erase.Add(existing);
+                            }
                         }
                     }
-                    if (matches.Count > 0)
+                    if (duplicate) { skipped += batch.Count; continue; }
+                    foreach (Entity old in erase.Distinct())
                     {
-                        if (settings.Text("Existing").StartsWith("Keep", StringComparison.OrdinalIgnoreCase)) { skipped++; continue; }
-                        foreach (Entity previous in matches) { previous.UpgradeOpen(); previous.Erase(); replaced++; }
+                        old.UpgradeOpen();
+                        old.Erase();
+                        replaced++;
                     }
-                    // The end tick is square to the actual connection direction.
-                    Vector2d tickDirection = new Vector2d(-direction.Y, direction.X);
-                    Point2d tickA = end + tickDirection * 0.45;
-                    Point2d tickB = end - tickDirection * 0.45;
-                    var newLines = new List<Tuple<Point2d, Point2d>> { Tuple.Create(start, end) };
-                    if (!shortBranch) newLines.Add(Tuple.Create(tickA, tickB));
-                    foreach (var pair in newLines)
+                    AddConnectionLine(model, tr, layerId, longArm,
+                        longArm.Start, longArm.End);
+                    Vector2d axis = longArm.End - longArm.Start;
+                    if (axis.Length > 1e-8)
                     {
-                        Line line = new Line(new Point3d(pair.Item1.X, pair.Item1.Y, 0),
-                            new Point3d(pair.Item2.X, pair.Item2.Y, 0)) { LayerId = layerId };
-                        model.AppendEntity(line);
-                        tr.AddNewlyCreatedDBObject(line, true);
-                        line.XData = new ResultBuffer(
-                            new TypedValue(1001, App), new TypedValue(1000, key),
-                            new TypedValue(1000, alignment.Handle.ToString()));
+                        Vector2d across = new Vector2d(-axis.Y, axis.X).GetNormal();
+                        AddConnectionLine(model, tr, layerId, longArm,
+                            longArm.End + across * 0.45,
+                            longArm.End - across * 0.45);
                     }
-                    if (shortBranch)
+                    created++;
+                    if (shortArm != null)
                     {
-                        pendingPair.Used = true;
+                        AddConnectionLine(model, tr, layerId, shortArm,
+                            shortArm.ShortStart, tee);
+                        created++;
                         sharedBranches++;
                     }
-                    else if (settings.Text("CrossingMode") == "Share one crossing for two erven")
-                        shared.Add(new SharedCrossing { AlignmentId = alignment.ObjectId,
-                            Start = start, End = end, Offset = sourceOffset });
-                    created++;
+                    drawn.AddRange(batch);
                 }
                 tr.Commit();
             }
             doc.Editor.Regen();
             doc.Editor.WriteMessage("\nCE_SEWERHOUSECONNECTIONS: erven placed={0}; skipped={1}; replaced={2}; shared short branches={3}. Review connections on the ground plan.", created, skipped, replaced, sharedBranches);
         }
-        private sealed class SharedCrossing
+        private sealed class ConnectionProposal
         {
-            internal ObjectId AlignmentId;
-            internal Point2d Start;
-            internal Point2d End;
-            internal double Offset;
-            internal bool Used;
+            internal ObjectId Erf, Alignment;
+            internal string Key, AlignmentHandle;
+            internal Point2d Start, ShortStart, End;
+            internal Vector2d Outward;
+            internal double Station, Offset;
+        }
+
+        private static void AddConnectionLine(BlockTableRecord model,
+            Transaction transaction, ObjectId layerId, ConnectionProposal owner,
+            Point2d from, Point2d to)
+        {
+            Line line = new Line(new Point3d(from.X, from.Y, 0),
+                new Point3d(to.X, to.Y, 0)) { LayerId = layerId };
+            model.AppendEntity(line);
+            transaction.AddNewlyCreatedDBObject(line, true);
+            line.XData = new ResultBuffer(new TypedValue(1001, App),
+                new TypedValue(1000, owner.Key),
+                new TypedValue(1000, owner.AlignmentHandle));
         }
 
         private static bool TryIntersectStemWithCrossing(
