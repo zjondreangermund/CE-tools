@@ -249,7 +249,9 @@ namespace CETools.Civil3D
                             if (separation > pairRange) continue;
                             Point2d candidate;
                             if (!TryIntersectStemWithCrossing(other.ShortStart,
-                                other.Outward, longArm.Start, longArm.End, out candidate))
+                                other.Outward, longArm.Start, longArm.End, out candidate) &&
+                                !TryProjectShortStem(other.ShortStart,
+                                    longArm.Start, longArm.End, out candidate))
                                 continue;
                             if (separation >= best) continue;
                             best = separation;
@@ -367,6 +369,23 @@ namespace CETools.Civil3D
             line.XData = new ResultBuffer(new TypedValue(1001, App),
                 new TypedValue(1000, owner.Key),
                 new TypedValue(1000, owner.AlignmentHandle));
+        }
+
+        // When the erf's normal misses the long crossing, the short T branch
+        // must still join a valid point ON that segment rather than disappear.
+        // Prefer perpendicular intersection above; use this nearest-segment
+        // projection only as the fallback for skewed parcel frontages.
+        private static bool TryProjectShortStem(Point2d start,
+            Point2d from, Point2d to, out Point2d junction)
+        {
+            junction = from;
+            Vector2d segment = to - from;
+            double squared = segment.DotProduct(segment);
+            if (squared < 1e-8) return false;
+            double position = (start - from).DotProduct(segment) / squared;
+            if (position <= 0.03 || position >= 0.97) return false;
+            junction = from + segment * position;
+            return junction.GetDistanceTo(start) > 0.10;
         }
 
         private static bool TryIntersectStemWithCrossing(
