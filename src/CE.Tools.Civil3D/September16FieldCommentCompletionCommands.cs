@@ -401,20 +401,9 @@ namespace CETools.Civil3D
                 {
                     JunctionCandidate candidate = candidates[index];
                     int junctionNumber = startNumber + index;
-                    var returns = new List<ReturnDefinition>();
-                    foreach (int mainSign in new[] { -1, 1 })
-                    foreach (int sideSign in candidate.IsCross ? new[] { -1, 1 } : new[] { 1 })
-                    {
-                        ReturnDefinition tangentReturn;
-                        if (TryBuildTangentReturn(candidate, mainSign, sideSign,
-                                mainHalfWidth, sideHalfWidth, radius, out tangentReturn))
-                            returns.Add(tangentReturn);
-                        else
-                            document.Editor.WriteMessage(
-                                "\\nCE_ROADJUNCTIONBATCH: skipped a return without a valid tangent fillet at J" +
-                                junctionNumber.ToString(CultureInfo.InvariantCulture) + ".");
-                    }
-                    List<ReturnDefinition> definitions = returns
+                    List<ReturnDefinition> definitions = (candidate.IsCross
+                        ? CrossReturns(candidate, mainHalfWidth, sideHalfWidth, radius)
+                        : TReturns(candidate, mainHalfWidth, sideHalfWidth, radius))
                         .OrderBy(item =>
                             CETools.Core.RoadAnnotationPlan.ClockwiseFromTopLeft(
                                 item.Mid.X - candidate.Point.X,
