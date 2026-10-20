@@ -62,7 +62,14 @@ namespace CETools.Civil3D
             settings.AddChoice("CrossingMode", "02 Set-out", "Shared road crossings", "Share one crossing for two erven",
                 "Alternatively connect a second nearby erf by a short tee to the first long lateral, allowing two erven to share one crossing.",
                 new[] { "One per erf", "Share one crossing for two erven" });
-            settings.AddPositiveDouble("ShortBranchSetback", "02 Set-out", "Short connection distance from erf boundary (m)", 1.0,
+            settings.AddChoice("UnpairedMode", "02 Set-out", "Normal short connections", "Create normal short connections",
+                "When a valid shared T-connection cannot be formed, draw a normal short erf connection separately instead of hiding it.",
+                new[] { "Create normal short connections", "Skip unpaired erven" });
+            settings.AddPositiveDouble("NormalShortLength", "02 Set-out", "Normal short connection length (m)", 3.0,
+                "Length of independent short erf connections; separate from shared T-connection geometry.");
+            settings.AddPositiveDouble("NormalShortSetback", "02 Set-out", "Normal short distance inside erf boundary (m)", 1.0,
+                "Start of an independent short connection, measured inwards from the erf boundary.");
+            settings.AddPositiveDouble("ShortBranchSetback", "02 Set-out", "Shared T short distance inside erf boundary (m)", 1.0,
                 "Position the short connection's starting point this distance inside the selected erf frontage.");
             settings.AddPositiveDouble("PairDistance", "02 Set-out", "Maximum shared pair spacing (m)", 20.0,
                 "Maximum plan separation between the two erf connection start points.");
@@ -255,40 +262,35 @@ namespace CETools.Civil3D
                     // geometry exists; report the erf so the user can review it.
                     if (shareMode && shortArm == null)
                     {
+                        if (settings.Text("UnpairedMode") == "Create normal short connections")
+                        {
+                            // Never hide a qualifying erf just because the neighbour's
+                            // diagonal main crossing does not intersect its frontage
+                            // normal. Draw a separate normal short connection instead.
+                            Point2d boundaryPoint = longArm.ShortStart +
+                                longArm.Outward * settings.Double("ShortBranchSetback", 1.0);
+                            Point2d normalStart = boundaryPoint -
+                                longArm.Outward * settings.Double("NormalShortSetback", 1.0);
+                            Point2d normalEnd = normalStart +
+                                longArm.Outward.GetNormal() *
+                                settings.Double("NormalShortLength", 3.0);
+                            if (!ReplaceManagedForGroup(model, tr,
+                                new[] { longArm }, settings.Text("Existing"), ref replaced))
+                            { skipped++; continue; }
+                            AddConnectionLine(model, tr, layerId, longArm,
+                                normalStart, normalEnd);
+                            created++;
+                            continue;
+                        }
                         skipped++;
                         continue;
                     }
                     if (shortArm != null) remaining.Remove(shortArm);
                     var batch = new List<ConnectionProposal> { longArm };
                     if (shortArm != null) batch.Add(shortArm);
-                    bool keepExisting = settings.Text("Existing")
-                        .StartsWith("Keep", StringComparison.OrdinalIgnoreCase);
-                    var erase = new List<Entity>();
-                    bool duplicate = false;
-                    foreach (ConnectionProposal proposal in batch)
-                    {
-                        foreach (ObjectId existingId in model)
-                        {
-                            Entity existing = tr.GetObject(existingId, OpenMode.ForRead, false) as Entity;
-                            if (existing == null) continue;
-                            using (ResultBuffer data = existing.GetXDataForApplication(App))
-                            {
-                                if (data == null) continue;
-                                if (!data.AsArray().Any(v => v.TypeCode == 1000 &&
-                                    string.Equals(Convert.ToString(v.Value), proposal.Key,
-                                    StringComparison.OrdinalIgnoreCase))) continue;
-                                if (keepExisting) duplicate = true;
-                                else erase.Add(existing);
-                            }
-                        }
-                    }
-                    if (duplicate) { skipped += batch.Count; continue; }
-                    foreach (Entity old in erase.Distinct())
-                    {
-                        old.UpgradeOpen();
-                        old.Erase();
-                        replaced++;
-                    }
+                    if (!ReplaceManagedForGroup(model, tr, batch,
+                        settings.Text("Existing"), ref replaced))
+                    { skipped += batch.Count; continue; }
                     AddConnectionLine(model, tr, layerId, longArm,
                         longArm.Start, longArm.End);
                     Vector2d axis = longArm.End - longArm.Start;
@@ -321,6 +323,37 @@ namespace CETools.Civil3D
             internal Point2d Start, ShortStart, End;
             internal Vector2d Outward;
             internal double Station, Offset;
+        }
+
+        private static bool ReplaceManagedForGroup(BlockTableRecord model,
+            Transaction transaction, IEnumerable<ConnectionProposal> proposals,
+            string existingMode, ref int replaced)
+        {
+            bool keepExisting = (existingMode ?? "").StartsWith("Keep",
+                StringComparison.OrdinalIgnoreCase);
+            var keys = new HashSet<string>(proposals.Select(x => x.Key),
+                StringComparer.OrdinalIgnoreCase);
+            var oldLines = new List<Entity>();
+            foreach (ObjectId id in model)
+            {
+                Entity entity = transaction.GetObject(id, OpenMode.ForRead, false) as Entity;
+                if (entity == null) continue;
+                using (ResultBuffer data = entity.GetXDataForApplication(App))
+                {
+                    if (data == null) continue;
+                    if (!data.AsArray().Any(v => v.TypeCode == 1000 &&
+                        keys.Contains(Convert.ToString(v.Value) ?? ""))) continue;
+                    if (keepExisting) return false;
+                    oldLines.Add(entity);
+                }
+            }
+            foreach (Entity entity in oldLines)
+            {
+                entity.UpgradeOpen();
+                entity.Erase();
+                replaced++;
+            }
+            return true;
         }
 
         private static void AddConnectionLine(BlockTableRecord model,
