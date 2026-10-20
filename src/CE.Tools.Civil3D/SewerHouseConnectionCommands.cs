@@ -267,7 +267,7 @@ namespace CETools.Civil3D
                             // Never hide a qualifying erf just because the neighbour's
                             // diagonal main crossing does not intersect its frontage
                             // normal. Draw a separate normal short connection instead.
-                            Point2d boundaryPoint = longArm.ShortStart -
+                            Point2d boundaryPoint = longArm.ShortStart +
                                 longArm.Outward * settings.Double("ShortBranchSetback", 1.0);
                             Point2d normalStart = boundaryPoint -
                                 longArm.Outward * settings.Double("NormalShortSetback", 1.0);
