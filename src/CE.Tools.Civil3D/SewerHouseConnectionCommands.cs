@@ -59,6 +59,11 @@ namespace CETools.Civil3D
             settings.AddChoice("ErfScope", "01 Selection", "Erven to connect", "All erven",
                 "Choose selected closed boundaries or every eligible closed polyline in model space.",
                 new[] { "Selected erven", "All erven" });
+            settings.AddChoice("CrossingMode", "02 Set-out", "Shared road crossings", "One per erf",
+                "Alternatively connect a second nearby erf by a short tee to the first long lateral, allowing two erven to share one crossing.",
+                new[] { "One per erf", "Share one crossing for two erven" });
+            settings.AddPositiveDouble("PairDistance", "02 Set-out", "Maximum shared pair spacing (m)", 20.0,
+                "Maximum plan separation between the two erf connection start points.");
             settings.AddPositiveDouble("MaxDistance", "02 Set-out", "Maximum frontage to sewer (m)", 25.0,
                 "Frontage farther than this from the selected sewer alignment is skipped.");
             settings.AddChoice("Existing", "03 Output", "Previous symbols",
@@ -80,7 +85,7 @@ namespace CETools.Civil3D
                 if (plots.Status != PromptStatus.OK || plots.Value == null) return;
                 selectedErven = plots.Value.GetObjectIds();
             }
-            int created = 0, skipped = 0, replaced = 0;
+            int created = 0, skipped = 0, replaced = 0, sharedBranches = 0;
             using (doc.LockDocument())
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
@@ -105,6 +110,7 @@ namespace CETools.Civil3D
                               return poly != null && poly.Closed && poly.NumberOfVertices >= 3; }
                         catch { return false; }
                     }).ToArray();
+                var shared = new List<SharedCrossing>();
                 foreach (ObjectId id in selectedErven.Distinct())
                 {
                     Polyline erf = null;
@@ -189,6 +195,29 @@ namespace CETools.Civil3D
                     if (!TryIntersectMain(alignment, start, direction,
                             maxDistance + length + inside, out end))
                     { skipped++; continue; }
+                    // Pair only same-side erven on the same sewer alignment.
+                    double sourceStation = 0.0, sourceOffset = 0.0;
+                    try { alignment.StationOffset(start.X, start.Y, ref sourceStation, ref sourceOffset); }
+                    catch { skipped++; continue; }
+                    bool shortBranch = false;
+                    SharedCrossing pendingPair = null;
+                    if (settings.Text("CrossingMode") == "Share one crossing for two erven")
+                    {
+                        double nearest = settings.Double("PairDistance", 20.0);
+                        foreach (SharedCrossing entry in shared)
+                        {
+                            if (entry.Used || entry.AlignmentId != alignment.ObjectId ||
+                                Math.Sign(entry.Offset) != Math.Sign(sourceOffset)) continue;
+                            double distance = entry.Start.GetDistanceTo(start);
+                            if (distance > nearest) continue;
+                            Point2d junction;
+                            if (!TryProjectToConnection(start, entry.Start, entry.End, out junction)) continue;
+                            end = junction;
+                            pendingPair = entry;
+                            nearest = distance;
+                            shortBranch = true;
+                        }
+                    }
                     string key = erf.Handle.ToString();
                     var matches = new List<Entity>();
                     foreach (ObjectId objectId in model)
@@ -213,7 +242,9 @@ namespace CETools.Civil3D
                     Vector2d tickDirection = new Vector2d(-direction.Y, direction.X);
                     Point2d tickA = end + tickDirection * 0.45;
                     Point2d tickB = end - tickDirection * 0.45;
-                    foreach (var pair in new[] { Tuple.Create(start, end), Tuple.Create(tickA, tickB) })
+                    var newLines = new List<Tuple<Point2d, Point2d>> { Tuple.Create(start, end) };
+                    if (!shortBranch) newLines.Add(Tuple.Create(tickA, tickB));
+                    foreach (var pair in newLines)
                     {
                         Line line = new Line(new Point3d(pair.Item1.X, pair.Item1.Y, 0),
                             new Point3d(pair.Item2.X, pair.Item2.Y, 0)) { LayerId = layerId };
@@ -223,13 +254,43 @@ namespace CETools.Civil3D
                             new TypedValue(1001, App), new TypedValue(1000, key),
                             new TypedValue(1000, alignment.Handle.ToString()));
                     }
+                    if (shortBranch)
+                    {
+                        pendingPair.Used = true;
+                        sharedBranches++;
+                    }
+                    else if (settings.Text("CrossingMode") == "Share one crossing for two erven")
+                        shared.Add(new SharedCrossing { AlignmentId = alignment.ObjectId,
+                            Start = start, End = end, Offset = sourceOffset });
                     created++;
                 }
                 tr.Commit();
             }
             doc.Editor.Regen();
-            doc.Editor.WriteMessage("\nCE_SEWERHOUSECONNECTIONS: erven placed={0}; skipped for review={1}; old symbol lines replaced={2}. Check symbols on the ground plan.", created, skipped, replaced);
+            doc.Editor.WriteMessage("\nCE_SEWERHOUSECONNECTIONS: erven placed={0}; skipped={1}; replaced={2}; shared short branches={3}. Review connections on the ground plan.", created, skipped, replaced, sharedBranches);
         }
+        private sealed class SharedCrossing
+        {
+            internal ObjectId AlignmentId;
+            internal Point2d Start;
+            internal Point2d End;
+            internal double Offset;
+            internal bool Used;
+        }
+
+        private static bool TryProjectToConnection(Point2d origin, Point2d from,
+            Point2d to, out Point2d junction)
+        {
+            junction = from;
+            Vector2d run = to - from;
+            double squared = run.DotProduct(run);
+            if (squared < 1e-8) return false;
+            double fraction = (origin - from).DotProduct(run) / squared;
+            if (fraction <= 0.08 || fraction >= 0.92) return false;
+            junction = from + run * fraction;
+            return origin.GetDistanceTo(junction) >= 0.1;
+        }
+
         private static Point2d ClosestAlignmentPoint(CivilAlignment alignment, Point2d source)
         {
             double station = 0, offset = 0, x = 0, y = 0;
