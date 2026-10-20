@@ -211,7 +211,11 @@ namespace CETools.Civil3D
                             double distance = entry.Start.GetDistanceTo(start);
                             if (distance > nearest) continue;
                             Point2d junction;
-                            if (!TryProjectToConnection(start, entry.Start, entry.End, out junction)) continue;
+                            // The short second connection follows the erf's frontage normal:
+                            // a straight stem meeting the long crossing at a T,
+                            // rather than another diagonal drawn to its nearest point.
+                            if (!TryIntersectStemWithCrossing(
+                                    start, -normal, entry.Start, entry.End, out junction)) continue;
                             end = junction;
                             pendingPair = entry;
                             nearest = distance;
@@ -278,17 +282,26 @@ namespace CETools.Civil3D
             internal bool Used;
         }
 
-        private static bool TryProjectToConnection(Point2d origin, Point2d from,
-            Point2d to, out Point2d junction)
+        private static bool TryIntersectStemWithCrossing(
+            Point2d start, Vector2d towardRoad,
+            Point2d crossingStart, Point2d crossingEnd, out Point2d junction)
         {
-            junction = from;
-            Vector2d run = to - from;
-            double squared = run.DotProduct(run);
-            if (squared < 1e-8) return false;
-            double fraction = (origin - from).DotProduct(run) / squared;
-            if (fraction <= 0.08 || fraction >= 0.92) return false;
-            junction = from + run * fraction;
-            return origin.GetDistanceTo(junction) >= 0.1;
+            junction = start;
+            if (towardRoad.Length < 1e-8) return false;
+            Vector2d ray = towardRoad.GetNormal();
+            Vector2d crossing = crossingEnd - crossingStart;
+            double determinant = ray.X * crossing.Y - ray.Y * crossing.X;
+            if (Math.Abs(determinant) < 1e-8) return false;
+            Vector2d delta = crossingStart - start;
+            double alongStem = (delta.X * crossing.Y - delta.Y * crossing.X) / determinant;
+            double alongCrossing = (delta.X * ray.Y - delta.Y * ray.X) / determinant;
+            // Preserve a real T-connection, away from either endpoint of the
+            // existing long line. Never extend a short stem backwards into
+            // the erf or beyond the crossing.
+            if (alongStem <= 0.1 || alongCrossing <= 0.08 ||
+                alongCrossing >= 0.92) return false;
+            junction = start + ray * alongStem;
+            return true;
         }
 
         private static Point2d ClosestAlignmentPoint(CivilAlignment alignment, Point2d source)
