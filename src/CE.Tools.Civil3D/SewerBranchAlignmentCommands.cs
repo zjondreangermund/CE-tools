@@ -774,9 +774,10 @@ namespace CETools.Civil3D
                                     label,
                                     true);
                                 AnnotationScaleSyncManager
-                                    .AddAllAnnotationScaleContexts(
+                                    .AddUsedDrawingScaleContexts(
                                         label,
-                                        database);
+                                        AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(
+                                            database, transaction));
                                 labelsCreated++;
                             }
 
