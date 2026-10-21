@@ -110,6 +110,33 @@ for command, declarations in sorted(commands.items()):
     )
     errors.append(f"Duplicate AutoCAD command '{command}': {locations}")
 
+# Endpoint commands must belong to AutoCAD-discoverable classes on direct and
+# staged builds; a helper attribute alone appears in menus but cannot execute.
+for name, owner in {
+    "CE_CONNECTENDPOINTS": "August27DynamicSlopeGridHatchCommands",
+    "CE_CONNECTENDPOINTSPOPUP": "September05FieldGeometryCommandFrontDoor",
+}.items():
+    declarations = commands.get(name, [])
+    if len(declarations) != 1 or declarations[0][0].stem != owner:
+        errors.append(f"{name} must have exactly one registered owner: {owner}")
+    owner_text = (SOURCE_DIR / (owner + ".cs")).read_text(encoding="utf-8")
+    if f"[assembly: CommandClass(typeof(CETools.Civil3D.{owner}))]" not in owner_text:
+        errors.append(f"{name} owner is not registered with AutoCAD")
+    if "September04FieldGeometryCompletionCommands.ConnectEndpoints(" not in owner_text:
+        errors.append(f"{name} does not route to shared endpoint settings")
+
+endpoint_text = (SOURCE_DIR / SEPTEMBER05_HELPER).read_text(encoding="utf-8")
+endpoint_body = endpoint_text.split("internal static void ConnectEndpoints(Document document)", 1)[-1]
+endpoint_body = endpoint_body.split("List<List<Point3d>> clusters;", 1)[0]
+if "DisciplineWorkflowDialogs.EditSettings(settings)" not in endpoint_body or (
+    endpoint_body.index("DisciplineWorkflowDialogs.EditSettings(settings)")
+    > endpoint_body.index("editor.GetSelection(")
+):
+    errors.append("Endpoint settings must open before interactive source selection")
+for token in ("SingleOnly = false", "SinglePickInSpace = false", '"All in current space"'):
+    if token not in endpoint_body:
+        errors.append(f"Endpoint batch-selection guard missing: {token}")
+
 required_commands = {
     "CE_BMVERT",
     "CE_TLENGTH",

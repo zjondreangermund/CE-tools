@@ -95,52 +95,7 @@ namespace CETools.Civil3D
         {
             Document document = Active();
             if (document == null) return;
-            PromptSelectionResult selection = Select(document.Editor,
-                "\nSelect multiple polylines and/or Civil 3D feature lines whose endpoints must be connected: ");
-            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
-            PromptPointResult pick = document.Editor.GetPoint(
-                "\nPick near the side/endpoints to connect: ");
-            if (pick.Status != PromptStatus.OK) return;
-            Point3d reference = pick.Value.TransformBy(document.Editor.CurrentUserCoordinateSystem);
-
-            var points = new List<Point3d>();
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-            {
-                foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
-                {
-                    Entity entity = null;
-                    try { entity = transaction.GetObject(id, OpenMode.ForRead, false) as Entity; } catch { }
-                    Point3d start, end;
-                    if (!TryEndpoints(entity, out start, out end)) continue;
-                    points.Add(PlanDistance(start, reference) <= PlanDistance(end, reference) ? start : end);
-                }
-            }
-            if (points.Count < 2)
-            {
-                document.Editor.WriteMessage("\nCE_CONNECTENDPOINTS requires at least two supported source objects.");
-                return;
-            }
-
-            double xSpan = points.Max(p => p.X) - points.Min(p => p.X);
-            double ySpan = points.Max(p => p.Y) - points.Min(p => p.Y);
-            points = xSpan >= ySpan
-                ? points.OrderBy(p => p.X).ThenBy(p => p.Y).ToList()
-                : points.OrderBy(p => p.Y).ThenBy(p => p.X).ToList();
-
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-            {
-                BlockTableRecord space = transaction.GetObject(document.Database.CurrentSpaceId, OpenMode.ForWrite, false) as BlockTableRecord;
-                var output = new Polyline(points.Count);
-                output.SetDatabaseDefaults(document.Database);
-                output.Elevation = points[0].Z;
-                for (int index = 0; index < points.Count; index++)
-                    output.AddVertexAt(index, new Point2d(points[index].X, points[index].Y), 0.0, 0.0, 0.0);
-                space.AppendEntity(output);
-                transaction.AddNewlyCreatedDBObject(output, true);
-                transaction.Commit();
-            }
-            August21DisplayRefresh.Flush(document);
-            document.Editor.WriteMessage("\nCE_CONNECTENDPOINTS complete. One polyline connected {0} selected endpoints.", points.Count);
+            September04FieldGeometryCompletionCommands.ConnectEndpoints(document);
         }
 
         [CommandMethod("CE_TOOLS", "CE_DYNAMICSLOPESREFRESH", CommandFlags.Modal | CommandFlags.Redraw)]
