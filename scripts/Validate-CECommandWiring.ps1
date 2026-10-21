@@ -40,11 +40,11 @@ Need ([regex]::IsMatch(
 $files = Get-ChildItem -LiteralPath $src -Filter '*.cs' -File
 $owners = @{}
 $refs = @{}
-$declarationPattern = 'CommandMethod\s*\(\s*(?:"[^"]+"\s*,\s*)?"(?<cmd>CE_[A-Z0-9_]+)"'
-$helperPattern = '\b(?:Cmd|Action|RoadAction|WorkflowAction)\s*\(\s*"[^"]*"\s*,\s*"(?<cmd>CE_[A-Z0-9_]+)\b'
-$disciplinePattern = '(?:new\s+)?DisciplineWorkflowAction\s*\(\s*"[^"]*"\s*,\s*"(?<cmd>CE_[A-Z0-9_]+)\b'
+$declarationPattern = 'CommandMethod\s*\(\s*(?:"[^"]+"\s*,\s*)?"(?<cmd>CE_[A-Z0-9_-]+)"'
+$helperPattern = '\b(?:Cmd|Action|RoadAction|WorkflowAction)\s*\(\s*"[^"]*"\s*,\s*"(?<cmd>CE_[A-Z0-9_-]+)\b'
+$disciplinePattern = '(?:new\s+)?DisciplineWorkflowAction\s*\(\s*"[^"]*"\s*,\s*"(?<cmd>CE_[A-Z0-9_-]+)\b'
 $sendPattern = 'SendStringToExecute\s*\(\s*"(?<body>(?:[^"\\]|\\.)*)"'
-$ceTokenPattern = '\bCE_[A-Z0-9_]+\b'
+$ceTokenPattern = '\bCE_[A-Z0-9_-]+\b'
 
 foreach ($file in $files) {
     $text = [System.IO.File]::ReadAllText($file.FullName)
@@ -93,7 +93,14 @@ Need ($styleCentre.Contains('August11DisciplineStylePresetManager.SavePreset(doc
 $survey = Text 'August11SurveyRuntimeCommands.cs'
 Need ($survey.Contains('if (space == null || !space.IsLayout) continue;')) 'multi-surface linked table refresh is not all-layout aware'
 $roadNames = Text 'August11RoadNamingCurveCommands.cs'
-foreach ($token in @('ReadRoadProductionSource(entity)','ReadRoadLayoutParent(entity, transaction)','string.Equals(label.SourceHandle, productionSource, StringComparison.OrdinalIgnoreCase)')) { Need ($roadNames.Contains($token)) ('ROAD-n metadata-first sync missing ' + $token) }
+if ($roadNames.Contains('int changed = RoadAlignmentNameSync.Sync(document);') -and
+    $roadNames.Contains('The alignment object is always the road-number authority.')) {
+    Need (-not $roadNames.Contains('TryWriteName(entity, nearest.Name)')) 'nearest-label road renaming must remain disabled'
+    Need (-not $roadNames.Contains('TryWriteName(entity, matched.Name)')) 'label-driven road renaming must remain disabled'
+}
+else {
+    foreach ($token in @('ReadRoadProductionSource(entity)','ReadRoadLayoutParent(entity, transaction)','string.Equals(label.SourceHandle, productionSource, StringComparison.OrdinalIgnoreCase)')) { Need ($roadNames.Contains($token)) ('ROAD-n metadata-first sync missing ' + $token) }
+}
 $midblock = Text 'August11MidblockSewerProductionCommands.cs'
 Need ($midblock.Contains('double centreSpanX = parcels.Max(item => item.Center.X)')) 'Midblock automatic orientation is not row-spread based'
 Need (-not $midblock.Contains('double totalWidth = parcels.Sum(item => item.Width);')) 'old Midblock orientation heuristic remains'
