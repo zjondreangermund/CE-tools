@@ -884,8 +884,8 @@ namespace CETools.Civil3D
                 "01 Endpoint selection",
                 "Endpoint sides",
                 "All endpoint clusters",
-                "All endpoint clusters creates one connector for every connected group. Pick one side preserves the focused single-side workflow.",
-                new[] { "All endpoint clusters", "Pick one endpoint side" });
+                "Automatically connect every eligible side, pick several sides in one run, or connect one focused side.",
+                new[] { "All endpoint clusters", "Pick multiple endpoint sides", "Pick one endpoint side" });
             settings.AddChoice(
                 "Output",
                 "02 Output",
@@ -927,6 +927,35 @@ namespace CETools.Civil3D
                 clusters = cluster.Count < 2
                     ? new List<List<Point3d>>()
                     : new List<List<Point3d>> { cluster };
+            }
+            else if (string.Equals(settings.Text("Mode"), "Pick multiple endpoint sides", StringComparison.OrdinalIgnoreCase))
+            {
+                clusters = new List<List<Point3d>>();
+                editor.WriteMessage("\\nPick each endpoint side to connect; press Enter to finish.");
+                while (true)
+                {
+                    var sideOptions = new PromptPointOptions(
+                        "\\nPick next endpoint side [Enter to finish]: ");
+                    sideOptions.AllowNone = true;
+                    PromptPointResult sideResult = editor.GetPoint(sideOptions);
+                    if (sideResult.Status == PromptStatus.None) break;
+                    if (sideResult.Status != PromptStatus.OK) return;
+                    Point3d pick = sideResult.Value.TransformBy(editor.CurrentUserCoordinateSystem);
+                    List<Point3d> chosen = ChooseConnectorEndpoints(sources, pick);
+                    List<Point3d> cluster = LargestConnectedCluster(chosen, _lastEndpointDistance);
+                    if (cluster.Count < 2)
+                    {
+                        editor.WriteMessage("\\nNo eligible endpoint cluster near that side.");
+                        continue;
+                    }
+                    // Avoid creating the same side twice when the user clicks
+                    // close to a previously selected endpoint cluster.
+                    bool duplicate = clusters.Any(previous =>
+                        previous.Count == cluster.Count &&
+                        previous.All(point => cluster.Any(other =>
+                            point.DistanceTo(other) <= Eps * 10.0)));
+                    if (!duplicate) clusters.Add(cluster);
+                }
             }
             else
             {
