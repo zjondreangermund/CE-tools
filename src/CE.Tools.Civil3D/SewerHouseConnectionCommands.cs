@@ -223,6 +223,22 @@ namespace CETools.Civil3D
                     Point2d start = onFrontage + normal * inside;
                     // Abort narrow/irregular lots when the inside position falls outside the erf.
                     if (!InsidePolygon(erf, start)) { skipped++; continue; }
+                    if (mode == "Short")
+                    {
+                        // Short runs are independent of the long pipe angle,
+                        // long offset, long reach and shared-pair calculations.
+                        proposed.Add(new ConnectionProposal
+                        {
+                            Erf = erf.ObjectId, Key = erf.Handle.ToString(),
+                            Alignment = alignment.ObjectId,
+                            AlignmentHandle = alignment.Handle.ToString(),
+                            Start = start, End = start,
+                            ShortStart = start, FrontageAnchor = anchor,
+                            FrontageTangent = tangent, Inward = normal,
+                            Outward = -normal, Direction = -normal
+                        });
+                        continue;
+                    }
                     // Calculate and validate the full connection before replacing
                     // earlier CE-generated symbols. Otherwise an invalid angle could
                     // delete an existing connection and leave the parcel unconnected.
