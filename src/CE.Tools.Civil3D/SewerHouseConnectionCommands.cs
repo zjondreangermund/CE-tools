@@ -302,12 +302,6 @@ namespace CETools.Civil3D
                     if (!TryNormalShortGeometry(shortErf, alignments, settings,
                         out normalStart, out shortDirection))
                     { skipped++; continue; }
-                    Point2d shortEnd;
-                    ObjectId shortTarget;
-                    if (!TryIntersectNearestAlignment(alignments, normalStart,
-                        shortDirection, maxDistance + length + inside,
-                        out shortEnd, out shortTarget))
-                    { skipped++; continue; }
                     if (mode == "Short")
                     {
                         Point2d origin = shortErf.FrontageAnchor +
@@ -324,6 +318,12 @@ namespace CETools.Civil3D
                         created++;
                         continue;
                     }
+                    Point2d shortEnd;
+                    ObjectId shortTarget;
+                    if (!TryIntersectNearestAlignment(alignments, normalStart,
+                        shortDirection, maxDistance + length + inside,
+                        out shortEnd, out shortTarget))
+                    { skipped++; continue; }
                     if (!ReplaceManagedForGroup(model, tr,
                         new[] { shortErf }, settings.Text("Existing"), ref replaced, "SHORT"))
                     { skipped++; continue; }
@@ -405,10 +405,10 @@ namespace CETools.Civil3D
                                 out normalEnd, out nearestShortAlignment))
                             { skipped++; continue; }
                             if (!ReplaceManagedForGroup(model, tr,
-                                new[] { longArm }, settings.Text("Existing"), ref replaced))
+                                new[] { longArm }, settings.Text("Existing"), ref replaced, "SHORT"))
                             { skipped++; continue; }
                             AddConnectionLine(model, tr, layerId, longArm,
-                                normalStart, normalEnd);
+                                normalStart, normalEnd, "SHORT");
                             created++;
                             continue;
                         }
@@ -425,9 +425,6 @@ namespace CETools.Civil3D
                     }
                     var batch = new List<ConnectionProposal> { longArm };
                     if (shortArm != null) batch.Add(shortArm);
-                    if (!ReplaceManagedForGroup(model, tr, batch,
-                        settings.Text("Existing"), ref replaced, "LONG"))
-                    { skipped += batch.Count; continue; }
                     Point2d longOrigin = longArm.FrontageAnchor +
                         longArm.FrontageTangent * settings.Double("Along", 1.0);
                     Point2d longStart = longOrigin +
@@ -437,6 +434,9 @@ namespace CETools.Civil3D
                     if (!TryIntersectNearestAlignment(alignments, longStart,
                         longArm.Direction.GetNormal(), maxDistance + length + inside,
                         out longEnd, out longTarget)) { skipped++; continue; }
+                    if (!ReplaceManagedForGroup(model, tr, batch,
+                        settings.Text("Existing"), ref replaced, "LONG"))
+                    { skipped += batch.Count; continue; }
                     AddConnectionLine(model, tr, layerId, longArm,
                         longStart, longEnd, "LONG");
                     // One continuous long pipe only; no crossing tick or
