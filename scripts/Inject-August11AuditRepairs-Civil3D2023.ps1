@@ -76,6 +76,16 @@ else { Write-Host 'Multi-surface table all-layout refresh is already repaired.' 
 # -----------------------------------------------------------------------------
 $roadNames = Need 'August11RoadNamingCurveCommands.cs'
 $text = ReadText $roadNames
+# Newer builds take names from the alignment itself and intentionally removed
+# nearest-label writes. Preserve that implementation; only patch legacy shapes.
+$alignmentAuthoritative = $text.Contains('int changed = RoadAlignmentNameSync.Sync(document);') -and
+    $text.Contains('The alignment object is always the road-number authority.') -and
+    -not $text.Contains('TryWriteName(entity, nearest.Name)') -and
+    -not $text.Contains('TryWriteName(entity, matched.Name)')
+if ($alignmentAuthoritative) {
+    Write-Host 'Preserved alignment-authoritative road naming; legacy label repair is not applicable.' -ForegroundColor DarkGreen
+}
+else {
 $oldMatch = @'
                         RoadLabel nearest = labels.OrderBy(label => PlanDistanceSquared(centre, label.Position)).First();
                         string oldName = ReadName(entity);
@@ -167,6 +177,7 @@ if (-not $text.Contains('private static string ReadRoadProductionSource(DBObject
 }
 WriteText $roadNames $text
 Write-Host 'Repaired ROAD-n synchronization to use CE source handles before spatial fallback.' -ForegroundColor Green
+}
 
 # -----------------------------------------------------------------------------
 # 3. Midblock route automatic direction: decide by parcel-centre/overall row
