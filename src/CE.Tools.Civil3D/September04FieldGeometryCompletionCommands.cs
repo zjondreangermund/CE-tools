@@ -82,23 +82,6 @@ namespace CETools.Civil3D
             MultiFillet(document);
         }
 
-        [CommandMethod("CE_CONNECTENDPOINTS", CommandFlags.Modal | CommandFlags.UsePickSet)]
-        public void ConnectEndpointsCommand()
-        {
-            Document document = Application.DocumentManager.MdiActiveDocument;
-            ConnectEndpoints(document);
-        }
-
-        // An unambiguous command name for diagnosing old loaded DLLs or
-        // duplicate legacy command registrations. Both names use precisely
-        // the same popup-first implementation.
-        [CommandMethod("CE_CONNECTENDPOINTSPOPUP", CommandFlags.Modal | CommandFlags.UsePickSet)]
-        public void ConnectEndpointsPopupCommand()
-        {
-            Document document = Application.DocumentManager.MdiActiveDocument;
-            ConnectEndpoints(document);
-        }
-
         [CommandMethod("CE_GRIDDIFFERENCE", CommandFlags.Modal)]
         public void GridDifferenceCommand()
         {
@@ -860,22 +843,13 @@ namespace CETools.Civil3D
         // CONNECT ENDPOINTS - sources untouched, new green polyline
         // ---------------------------------------------------------------------
 
-        private static void ConnectEndpoints(Document document)
+        internal static void ConnectEndpoints(Document document)
         {
             if (document == null || document.Database == null) return;
             Editor editor = document.Editor;
-            editor.WriteMessage("\\nCE_CONNECTENDPOINTS: opening current popup-first settings (October 2026).");
-            PromptSelectionResult selection = SelectGeneral(editor,
-                "\nSelect Lines, Polylines and/or Civil FeatureLines whose endpoints must be connected: ");
-            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
-            ObjectId[] ids = selection.Value.GetObjectIds().Where(id => !id.IsNull && !id.IsErased).Distinct().ToArray();
-            List<ConnectorSource> sources = ReadConnectorSources(document.Database, ids);
-            if (sources.Count < 2)
-            {
-                editor.WriteMessage("\nCE_CONNECTENDPOINTS: fewer than two supported source objects were selected.");
-                return;
-            }
-
+            // Capture preselection before the modal settings dialog changes focus.
+            PromptSelectionResult implied = editor.SelectImplied();
+            editor.SetImpliedSelection(new ObjectId[0]);
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Connect Multiple Endpoint Sides",
                 "Connect every open endpoint cluster or choose one side. Source Lines, Polylines and FeatureLines remain unchanged.");
@@ -899,20 +873,45 @@ namespace CETools.Civil3D
                 "Output layer",
                 "CE-CONNECTORS-LINES",
                 "Layer for all generated connector geometry.");
+            settings.AddChoice("Scope", "01 Endpoint selection", "Source objects", "Select multiple",
+                "Use window/crossing selection, existing preselection, or all supported objects in the current space.",
+                new[] { "Select multiple", "All in current space" });
+            settings.AddPositiveDouble("Distance", "01 Endpoint selection", "Maximum endpoint gap",
+                _lastEndpointDistance, "Maximum distance between neighbouring endpoints.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
-            PromptDoubleOptions distanceOptions = new PromptDoubleOptions(
-                string.Format(CultureInfo.InvariantCulture, "\nMaximum distance between neighbouring endpoints <{0:0.###}>: ", _lastEndpointDistance));
-            distanceOptions.AllowNegative = false;
-            distanceOptions.AllowZero = false;
-            distanceOptions.DefaultValue = _lastEndpointDistance;
-            distanceOptions.UseDefaultValue = true;
-            PromptDoubleResult distanceResult = editor.GetDouble(distanceOptions);
-            if (distanceResult.Status != PromptStatus.OK) return;
-            _lastEndpointDistance = Math.Max(Eps, distanceResult.Value);
+            _lastEndpointDistance = Math.Max(Eps, settings.Double("Distance", _lastEndpointDistance));
 
-
-
-
+            ObjectId[] ids;
+            if (settings.Text("Scope") == "All in current space")
+            {
+                using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+                {
+                    var space = (BlockTableRecord)tr.GetObject(document.Database.CurrentSpaceId, OpenMode.ForRead);
+                    ids = space.Cast<ObjectId>().ToArray();
+                }
+            }
+            else
+            {
+                PromptSelectionResult selection = implied;
+                if (selection.Status != PromptStatus.OK || selection.Value == null || selection.Value.Count < 2)
+                    selection = editor.GetSelection(new PromptSelectionOptions
+                    {
+                        MessageForAdding = "\nSelect multiple Lines, Polylines or FeatureLines (Window/Crossing; Enter to finish): ",
+                        SingleOnly = false,
+                        SinglePickInSpace = false,
+                        AllowDuplicates = false,
+                        RejectObjectsFromNonCurrentSpace = true
+                    });
+                if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+                ids = selection.Value.GetObjectIds();
+            }
+            ids = ids.Where(id => !id.IsNull && !id.IsErased).Distinct().ToArray();
+            List<ConnectorSource> sources = ReadConnectorSources(document.Database, ids);
+            if (sources.Count < 2)
+            {
+                editor.WriteMessage("\nCE_CONNECTENDPOINTS: select at least two supported open source objects.");
+                return;
+            }
 
             List<List<Point3d>> clusters;
             if (string.Equals(settings.Text("Mode"), "Pick one endpoint side", StringComparison.OrdinalIgnoreCase))

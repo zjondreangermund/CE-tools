@@ -8,12 +8,19 @@ namespace CETools.Civil3D
     /// Registered command front doors for the September 05 field-geometry runtime.
     /// The final Civil 3D 2023 staging pass strips helper-class command attributes,
     /// so CE_CONNECTENDPOINTS remains registered only once by the August 27 command
-    /// class while CE_MULTIFILLET and CE_GRIDDIFFERENCE are exposed here. The staged
+    /// class while the popup alias, CE_MULTIFILLET and CE_GRIDDIFFERENCE are exposed here. The staged
     /// regression runs the complete historical repair chain, including the legacy
     /// August 25 writer pass, before validating this final boundary.
     /// </summary>
     public sealed class September05FieldGeometryCommandFrontDoor
     {
+        [CommandMethod("CE_TOOLS", "CE_CONNECTENDPOINTSPOPUP", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void ConnectEndpointsPopup()
+        {
+            September04FieldGeometryCompletionCommands.ConnectEndpoints(
+                Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument);
+        }
+
         [CommandMethod("CE_TOOLS", "CE_MULTIFILLET", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void MultiFillet()
         {
