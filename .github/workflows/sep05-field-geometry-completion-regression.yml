@@ -17,6 +17,7 @@ on:
       - 'scripts/Validate-CECommandOwnersAggregate.ps1'
       - 'scripts/Validate-CECommandWiring.ps1'
       - 'scripts/Inject-August11FieldCompletion-Civil3D2023.ps1'
+      - 'scripts/Inject-August11AuditRepairs-Civil3D2023.ps1'
       - 'scripts/Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-GlobalInterfaceAndStylePersistence-Civil3D2023.ps1'
       - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
@@ -37,6 +38,7 @@ on:
       - 'scripts/Validate-CECommandOwnersAggregate.ps1'
       - 'scripts/Validate-CECommandWiring.ps1'
       - 'scripts/Inject-August11FieldCompletion-Civil3D2023.ps1'
+      - 'scripts/Inject-August11AuditRepairs-Civil3D2023.ps1'
       - 'scripts/Repair-August11-FieldCompilerCompatibility-Civil3D2023.ps1'
       - 'scripts/Repair-GlobalInterfaceAndStylePersistence-Civil3D2023.ps1'
       - 'scripts/Invoke-August25-CadSupplementaryFieldMultiSelect-Civil3D2023.ps1'
@@ -161,7 +163,7 @@ jobs:
         run: |
           $files = Get-ChildItem (Join-Path $env:STAGE 'src\CE.Tools.Civil3D') -Filter '*.cs' -File
           $all = ($files | ForEach-Object { Get-Content -Raw $_.FullName }) -join "`n"
-          foreach ($command in @('CE_CONNECTENDPOINTS','CE_MULTIFILLET','CE_GRIDDIFFERENCE')) {
+          foreach ($command in @('CE_CONNECTENDPOINTS','CE_CONNECTENDPOINTSPOPUP','CE_MULTIFILLET','CE_GRIDDIFFERENCE')) {
             $pattern = '\[CommandMethod\([^\r\n]*"' + [regex]::Escape($command) + '"'
             $count = ([regex]::Matches($all,$pattern)).Count
             if ($count -ne 1) { throw "$command must have exactly one CommandMethod registration after staging; found $count." }
