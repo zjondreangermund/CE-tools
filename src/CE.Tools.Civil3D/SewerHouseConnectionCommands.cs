@@ -25,7 +25,15 @@ namespace CETools.Civil3D
         private const string OutputLayer = "CE-SEWER-HOUSE-CONNECTIONS";
         private const string App = "CE_SEWER_HOUSE_SYMBOL";
         [CommandMethod("CE_TOOLS", "CE_SEWERHOUSECONNECTIONS", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
-        public void Create()
+        public void Create() { RunConnections("Combined"); }
+
+        [CommandMethod("CE_TOOLS", "CE_SEWERHOUSECONNECTIONS-SHORT", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void CreateShort() { RunConnections("Short"); }
+
+        [CommandMethod("CE_TOOLS", "CE_SEWERHOUSECONNECTIONS-LONG", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void CreateLong() { RunConnections("Long"); }
+
+        private void RunConnections(string mode)
         {
             Document doc = AcApplication.DocumentManager.MdiActiveDocument;
             CivilDocument civil = CivilApplication.ActiveDocument;
@@ -39,12 +47,24 @@ namespace CETools.Civil3D
                 }
             if (surfaces.Count == 0) { doc.Editor.WriteMessage("\nHouse connections: select a drawing containing an NG/EG surface."); return; }
             var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Sewer House Connection Symbols",
+                "CE Tools - " + (mode == "Short" ? "Short" : mode == "Long" ? "Long" : "Combined") + " Sewer House Connections",
                 "Create plan house connections for closed erf polylines. Angle is measured downstream toward increasing sewer-alignment chainage; actual Civil 3D network pipes are not created.");
             settings.AddChoice("Surface", "01 Ground levels", "Existing ground (NG/EG) surface",
                 surfaces.FirstOrDefault(s => s.IndexOf("NG", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     s.IndexOf("EG", StringComparison.OrdinalIgnoreCase) >= 0) ?? surfaces[0],
                 "Ground levels determine which road-facing corner is the low side.", surfaces);
+            settings.AddChoice("LongFrequency", "02 Long connections", "Long connections per erven",
+                "Every second erf", "For long connections, choose whether to place one in every erf or every second erf along increasing alignment station.",
+                new[] { "Every erf", "Every second erf" });
+            settings.AddPositiveDouble("ShortFrontageFirst", "02 Short connections", "Short extension outside frontage (m)", 1.5,
+                "Length outside the erf road-facing boundary, as dimensioned in the example.");
+            settings.AddPositiveDouble("ShortFrontageInside", "02 Short connections", "Short extension inside frontage (m)", 1.5,
+                "Length inside the erf, measured from the same frontage intersection.");
+            settings.AddPositiveDouble("LongFrontageInside", "02 Long connections", "Long start inside frontage (m)", 1.5,
+                "Start of long line inside its selected erf, measured from frontage.");
+            settings.AddText("ConnectionLayer", "03 Output", "Connection output layer",
+                mode == "Short" ? "CE-SEWERHOUSECONNECTIONS-SHORT" : "CE-SEWERHOUSECONNECTIONS-LONG",
+                "Specify an existing or new layer name. Short and long commands save their output separately.");
             settings.AddPositiveDouble("Along", "02 Set-out", "Long connection offset from frontage corner (m)", 1.0,
                 "A consistent offset from the same chainage-side corner of every erf frontage.");
             settings.AddChoice("LongAnchor", "02 Set-out", "Long connection frontage corner",
@@ -121,7 +141,7 @@ namespace CETools.Civil3D
                 CivilSurface surface = civil.GetSurfaceIds().Cast<ObjectId>().Select(id => tr.GetObject(id, OpenMode.ForRead, false) as CivilSurface)
                     .FirstOrDefault(s => s != null && string.Equals(s.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
                 if (surface == null) return;
-                ObjectId layerId = EnsureLayer(tr, doc.Database);
+                ObjectId layerId = EnsureLayer(tr, doc.Database, settings.Text("ConnectionLayer"));
                 EnsureApp(tr, doc.Database);
                 BlockTableRecord model = tr.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(doc.Database), OpenMode.ForWrite) as BlockTableRecord;
                 if (model == null) return;
@@ -202,6 +222,22 @@ namespace CETools.Civil3D
                     Point2d start = onFrontage + normal * inside;
                     // Abort narrow/irregular lots when the inside position falls outside the erf.
                     if (!InsidePolygon(erf, start)) { skipped++; continue; }
+                    if (mode == "Short")
+                    {
+                        // Short runs are independent of the long pipe angle,
+                        // long offset, long reach and shared-pair calculations.
+                        proposed.Add(new ConnectionProposal
+                        {
+                            Erf = erf.ObjectId, Key = erf.Handle.ToString(),
+                            Alignment = alignment.ObjectId,
+                            AlignmentHandle = alignment.Handle.ToString(),
+                            Start = start, End = start,
+                            ShortStart = start, FrontageAnchor = anchor,
+                            FrontageTangent = tangent, Inward = normal,
+                            Outward = -normal, Direction = -normal
+                        });
+                        continue;
+                    }
                     // Calculate and validate the full connection before replacing
                     // earlier CE-generated symbols. Otherwise an invalid angle could
                     // delete an existing connection and leave the parcel unconnected.
@@ -264,7 +300,8 @@ namespace CETools.Civil3D
                 // Pair only after ALL erven have been examined. The former
                 // one-pass algorithm depended on entity creation/selection order,
                 // leaving pairable erven with individual long road crossings.
-                bool shareMode = settings.Text("CrossingMode") ==
+                bool shareMode = mode != "Long" &&
+                    settings.Text("CrossingMode") ==
                     "Share one crossing for two erven";
                 double pairRange = settings.Double("PairDistance", 20.0);
                 // Short laterals must never be paired with one another. In the
@@ -272,6 +309,8 @@ namespace CETools.Civil3D
                 double threshold = settings.Double("LongCrossingThreshold", 8.0);
                 var ordinary = proposed.Where(item =>
                     item.Start.GetDistanceTo(item.End) < threshold).ToList();
+                if (mode == "Short") ordinary = proposed.ToList();
+                if (mode == "Long") ordinary.Clear();
                 foreach (ConnectionProposal shortErf in ordinary)
                 {
                     Point2d normalStart;
@@ -279,6 +318,22 @@ namespace CETools.Civil3D
                     if (!TryNormalShortGeometry(shortErf, alignments, settings,
                         out normalStart, out shortDirection))
                     { skipped++; continue; }
+                    if (mode == "Short")
+                    {
+                        Point2d origin = shortErf.FrontageAnchor +
+                            shortErf.FrontageTangent * settings.Double("NormalShortAlong", 1.0);
+                        // Fixed boundary anchor; angle changes direction without
+                        // moving the marked frontage crossing.
+                        Vector2d axis = shortDirection.GetNormal();
+                        Point2d shortFrom = origin - axis * settings.Double("ShortFrontageInside", 1.5);
+                        Point2d shortTo = origin + axis * settings.Double("ShortFrontageFirst", 1.5);
+                        if (!ReplaceManagedForGroup(model, tr,
+                            new[] { shortErf }, settings.Text("Existing"), ref replaced, "SHORT"))
+                        { skipped++; continue; }
+                        AddConnectionLine(model, tr, layerId, shortErf, shortFrom, shortTo, "SHORT");
+                        created++;
+                        continue;
+                    }
                     Point2d shortEnd;
                     ObjectId shortTarget;
                     if (!TryIntersectNearestAlignment(alignments, normalStart,
@@ -286,13 +341,24 @@ namespace CETools.Civil3D
                         out shortEnd, out shortTarget))
                     { skipped++; continue; }
                     if (!ReplaceManagedForGroup(model, tr,
-                        new[] { shortErf }, settings.Text("Existing"), ref replaced))
+                        new[] { shortErf }, settings.Text("Existing"), ref replaced, "SHORT"))
                     { skipped++; continue; }
-                    AddConnectionLine(model, tr, layerId, shortErf, normalStart, shortEnd);
+                    AddConnectionLine(model, tr, layerId, shortErf, normalStart, shortEnd, "SHORT");
                     created++;
                 }
-                var remaining = new List<ConnectionProposal>(proposed
-                    .Where(item => item.Start.GetDistanceTo(item.End) >= threshold)
+                var longCandidates = proposed
+                    .Where(item => mode == "Long" || item.Start.GetDistanceTo(item.End) >= threshold)
+                    .OrderBy(item => item.AlignmentHandle, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(item => item.Offset < 0 ? -1 : 1)
+                    .ThenBy(item => item.Station)
+                    .ToList();
+                if (mode == "Long" && settings.Text("LongFrequency") == "Every second erf")
+                    longCandidates = longCandidates
+                        .GroupBy(item => item.AlignmentHandle + ":" + Math.Sign(item.Offset))
+                        .SelectMany(group => group.Where((item, index) => index % 2 == 0))
+                        .ToList();
+                var remaining = new List<ConnectionProposal>(longCandidates
+                    .Where(item => mode != "Short")
                     .OrderBy(item => item.AlignmentHandle, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(item => item.Offset < 0 ? -1 : 1)
                     .ThenBy(item => item.Station)
@@ -333,7 +399,7 @@ namespace CETools.Civil3D
                     // Do not leave a long crossing unshared in the shared mode.
                     // Keep any previously generated output intact when no valid
                     // geometry exists; report the erf so the user can review it.
-                    if (shareMode && shortArm == null)
+                    if (shareMode && mode != "Long" && shortArm == null)
                     {
                         // No valid shared T intersection: do not silently draw a
                         // mismatched second crossing using independent short settings.
@@ -355,10 +421,10 @@ namespace CETools.Civil3D
                                 out normalEnd, out nearestShortAlignment))
                             { skipped++; continue; }
                             if (!ReplaceManagedForGroup(model, tr,
-                                new[] { longArm }, settings.Text("Existing"), ref replaced))
+                                new[] { longArm }, settings.Text("Existing"), ref replaced, "SHORT"))
                             { skipped++; continue; }
                             AddConnectionLine(model, tr, layerId, longArm,
-                                normalStart, normalEnd);
+                                normalStart, normalEnd, "SHORT");
                             created++;
                             continue;
                         }
@@ -375,11 +441,20 @@ namespace CETools.Civil3D
                     }
                     var batch = new List<ConnectionProposal> { longArm };
                     if (shortArm != null) batch.Add(shortArm);
+                    Point2d longOrigin = longArm.FrontageAnchor +
+                        longArm.FrontageTangent * settings.Double("Along", 1.0);
+                    Point2d longStart = longOrigin +
+                        longArm.Inward * settings.Double("LongFrontageInside", 1.5);
+                    Point2d longEnd;
+                    ObjectId longTarget;
+                    if (!TryIntersectNearestAlignment(alignments, longStart,
+                        longArm.Direction.GetNormal(), maxDistance + length + inside,
+                        out longEnd, out longTarget)) { skipped++; continue; }
                     if (!ReplaceManagedForGroup(model, tr, batch,
-                        settings.Text("Existing"), ref replaced))
+                        settings.Text("Existing"), ref replaced, "LONG"))
                     { skipped += batch.Count; continue; }
                     AddConnectionLine(model, tr, layerId, longArm,
-                        longArm.Start, longArm.End);
+                        longStart, longEnd, "LONG");
                     // One continuous long pipe only; no crossing tick or
                     // other short marking line is added at its endpoint.
                     created++;
@@ -393,7 +468,7 @@ namespace CETools.Civil3D
                                 longArm.Start, longArm.End) > 0.10)
                         {
                             AddConnectionLine(model, tr, layerId, shortArm,
-                                shortArm.ShortStart, tee);
+                                shortArm.ShortStart, tee, "SHARED");
                             created++;
                             sharedBranches++;
                         }
@@ -416,7 +491,7 @@ namespace CETools.Civil3D
 
         private static bool ReplaceManagedForGroup(BlockTableRecord model,
             Transaction transaction, IEnumerable<ConnectionProposal> proposals,
-            string existingMode, ref int replaced)
+            string existingMode, ref int replaced, string type)
         {
             bool keepExisting = (existingMode ?? "").StartsWith("Keep",
                 StringComparison.OrdinalIgnoreCase);
@@ -430,8 +505,15 @@ namespace CETools.Civil3D
                 using (ResultBuffer data = entity.GetXDataForApplication(App))
                 {
                     if (data == null) continue;
-                    if (!data.AsArray().Any(v => v.TypeCode == 1000 &&
+                    TypedValue[] values = data.AsArray();
+                    if (!values.Any(v => v.TypeCode == 1000 &&
                         keys.Contains(Convert.ToString(v.Value) ?? ""))) continue;
+                    // Never allow short reruns to delete long geometry, or vice versa.
+                    string storedType = values.Where(v => v.TypeCode == 1000)
+                        .Select(v => Convert.ToString(v.Value) ?? "")
+                        .LastOrDefault() ?? "";
+                    if (!string.Equals(storedType, type, StringComparison.OrdinalIgnoreCase) &&
+                        !(type == "LONG" && storedType == "SHARED")) continue;
                     if (keepExisting) return false;
                     oldLines.Add(entity);
                 }
@@ -447,7 +529,7 @@ namespace CETools.Civil3D
 
         private static void AddConnectionLine(BlockTableRecord model,
             Transaction transaction, ObjectId layerId, ConnectionProposal owner,
-            Point2d from, Point2d to)
+            Point2d from, Point2d to, string type)
         {
             Line line = new Line(new Point3d(from.X, from.Y, 0),
                 new Point3d(to.X, to.Y, 0)) { LayerId = layerId };
@@ -455,7 +537,8 @@ namespace CETools.Civil3D
             transaction.AddNewlyCreatedDBObject(line, true);
             line.XData = new ResultBuffer(new TypedValue(1001, App),
                 new TypedValue(1000, owner.Key),
-                new TypedValue(1000, owner.AlignmentHandle));
+                new TypedValue(1000, owner.AlignmentHandle),
+                new TypedValue(1000, type));
         }
 
         // When the erf's normal misses the long crossing, the short T branch
@@ -654,12 +737,13 @@ namespace CETools.Civil3D
             }
             return inside;
         }
-        private static ObjectId EnsureLayer(Transaction tr, Database db)
+        private static ObjectId EnsureLayer(Transaction tr, Database db, string name)
         {
+            if (string.IsNullOrWhiteSpace(name)) name = OutputLayer;
             LayerTable layers = tr.GetObject(db.LayerTableId, OpenMode.ForRead) as LayerTable;
-            if (layers.Has(OutputLayer)) return layers[OutputLayer];
+            if (layers.Has(name)) return layers[name];
             layers.UpgradeOpen();
-            LayerTableRecord layer = new LayerTableRecord { Name = OutputLayer, Color = Color.FromColorIndex(ColorMethod.ByAci, 3) };
+            LayerTableRecord layer = new LayerTableRecord { Name = name, Color = Color.FromColorIndex(ColorMethod.ByAci, 3) };
             ObjectId id = layers.Add(layer); tr.AddNewlyCreatedDBObject(layer, true);
             return id;
         }
