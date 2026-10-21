@@ -77,6 +77,8 @@ namespace CETools.Civil3D
                 "Move only the short shared T connection along the frontage (positive toward the higher end). The inward setback remains separate.");
             settings.AddPositiveDouble("ShortBranchSetback", "02 Set-out", "Shared T short distance inside erf boundary (m)", 1.0,
                 "Position the short connection's starting point this distance inside the selected erf frontage.");
+            settings.AddPositiveDouble("LongCrossingThreshold", "02 Set-out", "Minimum long crossing length for sharing (m)", 8.0,
+                "Only house connections longer than this distance can share a road crossing. Short connections are independent and never enter the pairing pool.");
             settings.AddPositiveDouble("PairDistance", "02 Set-out", "Maximum shared pair spacing (m)", 20.0,
                 "Maximum plan separation between the two erf connection start points.");
             settings.AddPositiveDouble("MaxDistance", "02 Set-out", "Maximum frontage to sewer (m)", 25.0,
@@ -260,7 +262,31 @@ namespace CETools.Civil3D
                 bool shareMode = settings.Text("CrossingMode") ==
                     "Share one crossing for two erven";
                 double pairRange = settings.Double("PairDistance", 20.0);
+                // Short laterals must never be paired with one another. In the
+                // previous implementation every erf entered the shared pool.
+                double threshold = settings.Double("LongCrossingThreshold", 8.0);
+                var ordinary = proposed.Where(item =>
+                    item.Start.GetDistanceTo(item.End) < threshold).ToList();
+                foreach (ConnectionProposal shortErf in ordinary)
+                {
+                    Point2d boundaryPoint = shortErf.ShortStart +
+                        shortErf.Outward * settings.Double("ShortBranchSetback", 1.0);
+                    Point2d normalStart = boundaryPoint -
+                        shortErf.Outward * settings.Double("NormalShortSetback", 1.0);
+                    Point2d shortEnd;
+                    ObjectId shortTarget;
+                    if (!TryIntersectNearestAlignment(alignments, normalStart,
+                        shortErf.Direction.GetNormal(), maxDistance + length + inside,
+                        out shortEnd, out shortTarget))
+                    { skipped++; continue; }
+                    if (!ReplaceManagedForGroup(model, tr,
+                        new[] { shortErf }, settings.Text("Existing"), ref replaced))
+                    { skipped++; continue; }
+                    AddConnectionLine(model, tr, layerId, shortErf, normalStart, shortEnd);
+                    created++;
+                }
                 var remaining = new List<ConnectionProposal>(proposed
+                    .Where(item => item.Start.GetDistanceTo(item.End) >= threshold)
                     .OrderBy(item => item.AlignmentHandle, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(item => item.Offset < 0 ? -1 : 1)
                     .ThenBy(item => item.Station)
@@ -275,10 +301,9 @@ namespace CETools.Civil3D
                     Point2d tee = Point2d.Origin;
                     if (shareMode)
                     {
-                        // Evaluate the two orientations of every neighbouring
-                        // pair. Selecting the first erf as the long arm by handle/
-                        // station alone alternated the layout and duplicated
-                        // front-edge short marks in adjacent blocks.
+                        // The station-sorted first erf always owns the long
+                        // crossing. Never reverse the owner: reversing bypassed
+                        // the requested consistent long-connection offset.
                         double best = double.MaxValue;
                         foreach (ConnectionProposal other in remaining)
                         {
@@ -286,27 +311,15 @@ namespace CETools.Civil3D
                                 Math.Sign(other.Offset) != Math.Sign(seed.Offset)) continue;
                             double separation = seed.Start.GetDistanceTo(other.Start);
                             if (separation > pairRange) continue;
-                            foreach (bool reverse in new[] { false, true })
-                            {
-                                ConnectionProposal crossing = reverse ? other : seed;
-                                ConnectionProposal lateral = reverse ? seed : other;
-                                Point2d candidate;
-                                if (!TryIntersectStemWithCrossing(lateral.ShortStart,
-                                    lateral.Outward, crossing.Start, crossing.End, out candidate) &&
-                                    !TryProjectShortStem(lateral.ShortStart,
-                                        crossing.Start, crossing.End, out candidate))
-                                    continue;
-                                // The same frontage-anchor rule applies to every
-                                // long connection. Prefer the orientation that
-                                // preserves the cleaner, shorter short T stem.
-                                double score = separation +
-                                    lateral.ShortStart.GetDistanceTo(candidate) * 0.05;
-                                if (score >= best) continue;
-                                best = score;
-                                longArm = crossing;
-                                shortArm = lateral;
-                                tee = candidate;
-                            }
+                            Point2d candidate;
+                            if (!TryIntersectStemWithCrossing(other.ShortStart,
+                                other.Outward, seed.Start, seed.End, out candidate) &&
+                                !TryProjectShortStem(other.ShortStart,
+                                    seed.Start, seed.End, out candidate)) continue;
+                            if (separation >= best) continue;
+                            best = separation;
+                            shortArm = other;
+                            tee = candidate;
                         }
                     }
                     // Do not leave a long crossing unshared in the shared mode.
