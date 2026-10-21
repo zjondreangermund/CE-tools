@@ -301,7 +301,8 @@ namespace CETools.Civil3D
                 // Pair only after ALL erven have been examined. The former
                 // one-pass algorithm depended on entity creation/selection order,
                 // leaving pairable erven with individual long road crossings.
-                bool shareMode = settings.Text("CrossingMode") ==
+                bool shareMode = mode != "Long" &&
+                    settings.Text("CrossingMode") ==
                     "Share one crossing for two erven";
                 double pairRange = settings.Double("PairDistance", 20.0);
                 // Short laterals must never be paired with one another. In the
