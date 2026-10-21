@@ -89,6 +89,16 @@ namespace CETools.Civil3D
             ConnectEndpoints(document);
         }
 
+        // An unambiguous command name for diagnosing old loaded DLLs or
+        // duplicate legacy command registrations. Both names use precisely
+        // the same popup-first implementation.
+        [CommandMethod("CE_CONNECTENDPOINTSPOPUP", CommandFlags.Modal | CommandFlags.UsePickSet)]
+        public void ConnectEndpointsPopupCommand()
+        {
+            Document document = Application.DocumentManager.MdiActiveDocument;
+            ConnectEndpoints(document);
+        }
+
         [CommandMethod("CE_GRIDDIFFERENCE", CommandFlags.Modal)]
         public void GridDifferenceCommand()
         {
@@ -854,6 +864,7 @@ namespace CETools.Civil3D
         {
             if (document == null || document.Database == null) return;
             Editor editor = document.Editor;
+            editor.WriteMessage("\\nCE_CONNECTENDPOINTS: opening current popup-first settings (October 2026).");
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Connect Multiple Endpoint Sides",
                 "Connect every open endpoint cluster or choose one side. Source Lines, Polylines and FeatureLines remain unchanged.");
