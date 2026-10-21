@@ -318,10 +318,12 @@ namespace CETools.Civil3D
                             double separation = seed.Start.GetDistanceTo(other.Start);
                             if (separation > pairRange) continue;
                             Point2d candidate;
+                            // Shared stems must use their own fixed frontage setback
+                            // and outward normal. Do not project the endpoint sideways
+                            // onto the long pipe: that is what produced an inconsistent
+                            // diagonal/shifted short stem in adjacent long crossings.
                             if (!TryIntersectStemWithCrossing(other.ShortStart,
-                                other.Outward, seed.Start, seed.End, out candidate) &&
-                                !TryProjectShortStem(other.ShortStart,
-                                    seed.Start, seed.End, out candidate)) continue;
+                                other.Outward, seed.Start, seed.End, out candidate)) continue;
                             if (separation >= best) continue;
                             best = separation;
                             shortArm = other;
@@ -333,6 +335,9 @@ namespace CETools.Civil3D
                     // geometry exists; report the erf so the user can review it.
                     if (shareMode && shortArm == null)
                     {
+                        // No valid shared T intersection: do not silently draw a
+                        // mismatched second crossing using independent short settings.
+                        // The user can explicitly choose normal fallback below.
                         if (settings.Text("UnpairedMode") == "Create normal short connections")
                         {
                             // Never hide a qualifying erf just because the neighbour's
