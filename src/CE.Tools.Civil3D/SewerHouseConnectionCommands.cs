@@ -268,29 +268,45 @@ namespace CETools.Civil3D
                 var drawn = new List<ConnectionProposal>();
                 while (remaining.Count > 0)
                 {
-                    ConnectionProposal longArm = remaining[0];
+                    ConnectionProposal seed = remaining[0];
                     remaining.RemoveAt(0);
+                    ConnectionProposal longArm = seed;
                     ConnectionProposal shortArm = null;
                     Point2d tee = Point2d.Origin;
                     if (shareMode)
                     {
+                        // Evaluate the two orientations of every neighbouring
+                        // pair. Selecting the first erf as the long arm by handle/
+                        // station alone alternated the layout and duplicated
+                        // front-edge short marks in adjacent blocks.
                         double best = double.MaxValue;
                         foreach (ConnectionProposal other in remaining)
                         {
-                            if (other.Alignment != longArm.Alignment ||
-                                Math.Sign(other.Offset) != Math.Sign(longArm.Offset)) continue;
-                            double separation = longArm.Start.GetDistanceTo(other.Start);
+                            if (other.Alignment != seed.Alignment ||
+                                Math.Sign(other.Offset) != Math.Sign(seed.Offset)) continue;
+                            double separation = seed.Start.GetDistanceTo(other.Start);
                             if (separation > pairRange) continue;
-                            Point2d candidate;
-                            if (!TryIntersectStemWithCrossing(other.ShortStart,
-                                other.Outward, longArm.Start, longArm.End, out candidate) &&
-                                !TryProjectShortStem(other.ShortStart,
-                                    longArm.Start, longArm.End, out candidate))
-                                continue;
-                            if (separation >= best) continue;
-                            best = separation;
-                            shortArm = other;
-                            tee = candidate;
+                            foreach (bool reverse in new[] { false, true })
+                            {
+                                ConnectionProposal crossing = reverse ? other : seed;
+                                ConnectionProposal lateral = reverse ? seed : other;
+                                Point2d candidate;
+                                if (!TryIntersectStemWithCrossing(lateral.ShortStart,
+                                    lateral.Outward, crossing.Start, crossing.End, out candidate) &&
+                                    !TryProjectShortStem(lateral.ShortStart,
+                                        crossing.Start, crossing.End, out candidate))
+                                    continue;
+                                // The same frontage-anchor rule applies to every
+                                // long connection. Prefer the orientation that
+                                // preserves the cleaner, shorter short T stem.
+                                double score = separation +
+                                    lateral.ShortStart.GetDistanceTo(candidate) * 0.05;
+                                if (score >= best) continue;
+                                best = score;
+                                longArm = crossing;
+                                shortArm = lateral;
+                                tee = candidate;
+                            }
                         }
                     }
                     // Do not leave a long crossing unshared in the shared mode.
@@ -330,7 +346,14 @@ namespace CETools.Civil3D
                         skipped++;
                         continue;
                     }
-                    if (shortArm != null) remaining.Remove(shortArm);
+                    if (shortArm != null)
+                    {
+                        // If the seed was promoted to a short lateral, it has
+                        // already left remaining; the new long owner must leave
+                        // the queue instead. Exactly one pair is consumed.
+                        remaining.Remove(longArm);
+                        remaining.Remove(shortArm);
+                    }
                     var batch = new List<ConnectionProposal> { longArm };
                     if (shortArm != null) batch.Add(shortArm);
                     if (!ReplaceManagedForGroup(model, tr, batch,
@@ -343,10 +366,18 @@ namespace CETools.Civil3D
                     created++;
                     if (shortArm != null)
                     {
-                        AddConnectionLine(model, tr, layerId, shortArm,
-                            shortArm.ShortStart, tee);
-                        created++;
-                        sharedBranches++;
+                        // No second independent frontage arm when it already
+                        // coincides with the shared crossing; draw exactly one
+                        // finite T stem per partner erf.
+                        if (shortArm.ShortStart.GetDistanceTo(tee) > 0.10 &&
+                            DistanceFromSegment(shortArm.ShortStart,
+                                longArm.Start, longArm.End) > 0.10)
+                        {
+                            AddConnectionLine(model, tr, layerId, shortArm,
+                                shortArm.ShortStart, tee);
+                            created++;
+                            sharedBranches++;
+                        }
                     }
                     drawn.AddRange(batch);
                 }
@@ -412,6 +443,16 @@ namespace CETools.Civil3D
         // must still join a valid point ON that segment rather than disappear.
         // Prefer perpendicular intersection above; use this nearest-segment
         // projection only as the fallback for skewed parcel frontages.
+        private static double DistanceFromSegment(Point2d point, Point2d a, Point2d b)
+        {
+            Vector2d segment = b - a;
+            double squared = segment.DotProduct(segment);
+            if (squared < 1e-12) return point.GetDistanceTo(a);
+            double fraction = Math.Max(0.0, Math.Min(1.0,
+                (point - a).DotProduct(segment) / squared));
+            return point.GetDistanceTo(a + segment * fraction);
+        }
+
         private static bool TryProjectShortStem(Point2d start,
             Point2d from, Point2d to, out Point2d junction)
         {
