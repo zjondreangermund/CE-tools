@@ -268,8 +268,9 @@ namespace CETools.Civil3D
                 var drawn = new List<ConnectionProposal>();
                 while (remaining.Count > 0)
                 {
-                    ConnectionProposal longArm = remaining[0];
+                    ConnectionProposal seed = remaining[0];
                     remaining.RemoveAt(0);
+                    ConnectionProposal longArm = seed;
                     ConnectionProposal shortArm = null;
                     Point2d tee = Point2d.Origin;
                     if (shareMode)
@@ -281,14 +282,14 @@ namespace CETools.Civil3D
                         double best = double.MaxValue;
                         foreach (ConnectionProposal other in remaining)
                         {
-                            if (other.Alignment != longArm.Alignment ||
-                                Math.Sign(other.Offset) != Math.Sign(longArm.Offset)) continue;
-                            double separation = longArm.Start.GetDistanceTo(other.Start);
+                            if (other.Alignment != seed.Alignment ||
+                                Math.Sign(other.Offset) != Math.Sign(seed.Offset)) continue;
+                            double separation = seed.Start.GetDistanceTo(other.Start);
                             if (separation > pairRange) continue;
                             foreach (bool reverse in new[] { false, true })
                             {
-                                ConnectionProposal crossing = reverse ? other : longArm;
-                                ConnectionProposal lateral = reverse ? longArm : other;
+                                ConnectionProposal crossing = reverse ? other : seed;
+                                ConnectionProposal lateral = reverse ? seed : other;
                                 Point2d candidate;
                                 if (!TryIntersectStemWithCrossing(lateral.ShortStart,
                                     lateral.Outward, crossing.Start, crossing.End, out candidate) &&
@@ -302,9 +303,9 @@ namespace CETools.Civil3D
                                     lateral.ShortStart.GetDistanceTo(candidate) * 0.05;
                                 if (score >= best) continue;
                                 best = score;
+                                longArm = crossing;
                                 shortArm = lateral;
                                 tee = candidate;
-                                if (reverse) longArm = crossing;
                             }
                         }
                     }
