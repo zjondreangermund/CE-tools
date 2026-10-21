@@ -865,6 +865,17 @@ namespace CETools.Civil3D
             if (document == null || document.Database == null) return;
             Editor editor = document.Editor;
             editor.WriteMessage("\\nCE_CONNECTENDPOINTS: opening current popup-first settings (October 2026).");
+            PromptSelectionResult selection = SelectGeneral(editor,
+                "\nSelect Lines, Polylines and/or Civil FeatureLines whose endpoints must be connected: ");
+            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+            ObjectId[] ids = selection.Value.GetObjectIds().Where(id => !id.IsNull && !id.IsErased).Distinct().ToArray();
+            List<ConnectorSource> sources = ReadConnectorSources(document.Database, ids);
+            if (sources.Count < 2)
+            {
+                editor.WriteMessage("\nCE_CONNECTENDPOINTS: fewer than two supported source objects were selected.");
+                return;
+            }
+
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Connect Multiple Endpoint Sides",
                 "Connect every open endpoint cluster or choose one side. Source Lines, Polylines and FeatureLines remain unchanged.");
@@ -888,23 +899,18 @@ namespace CETools.Civil3D
                 "Output layer",
                 "CE-CONNECTORS-LINES",
                 "Layer for all generated connector geometry.");
-            settings.AddPositiveDouble("MaxEndpointDistance", "01 Endpoint selection",
-                "Maximum neighbouring endpoint distance (m)", _lastEndpointDistance,
-                "Connect only endpoint clusters whose neighbouring points are within this distance.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
-            _lastEndpointDistance = Math.Max(Eps,
-                settings.Double("MaxEndpointDistance", _lastEndpointDistance));
+            PromptDoubleOptions distanceOptions = new PromptDoubleOptions(
+                string.Format(CultureInfo.InvariantCulture, "\nMaximum distance between neighbouring endpoints <{0:0.###}>: ", _lastEndpointDistance));
+            distanceOptions.AllowNegative = false;
+            distanceOptions.AllowZero = false;
+            distanceOptions.DefaultValue = _lastEndpointDistance;
+            distanceOptions.UseDefaultValue = true;
+            PromptDoubleResult distanceResult = editor.GetDouble(distanceOptions);
+            if (distanceResult.Status != PromptStatus.OK) return;
+            _lastEndpointDistance = Math.Max(Eps, distanceResult.Value);
 
-            PromptSelectionResult selection = SelectGeneral(editor,
-                "\nSelect Lines, Polylines and/or Civil FeatureLines whose endpoints must be connected: ");
-            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
-            ObjectId[] ids = selection.Value.GetObjectIds().Where(id => !id.IsNull && !id.IsErased).Distinct().ToArray();
-            List<ConnectorSource> sources = ReadConnectorSources(document.Database, ids);
-            if (sources.Count < 2)
-            {
-                editor.WriteMessage("\nCE_CONNECTENDPOINTS: fewer than two supported source objects were selected.");
-                return;
-            }
+
 
 
 
