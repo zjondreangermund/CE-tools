@@ -55,8 +55,12 @@ namespace CETools.Civil3D
                 "Symbol starts inside the property from its road-facing boundary.");
             settings.AddPositiveDouble("Length", "02 Set-out", "Connection arm length (m)", 3.0,
                 "Schematic arm length from the inside point toward the sewer main.");
-            settings.AddDouble("Angle", "02 Set-out", "Connection angle from direct approach (degrees)", 0.0,
+            settings.AddDouble("Angle", "02 Long connections", "Long connection angle from direct approach (degrees)", 0.0,
                 "0 degrees points directly across to the main. Positive angles lean downstream, in the direction of increasing alignment stations, on either side of the alignment.");
+            settings.AddDouble("NormalShortAngle", "02 Short connections", "Normal short connection angle from direct approach (degrees)", 0.0,
+                "Only applies to normal short house connections; independent of the long crossing angle.");
+            settings.AddPositiveDouble("NormalShortAlong", "02 Short connections", "Normal short offset from frontage corner (m)", 1.0,
+                "Choose short connection's frontage offset independently from the long crossing.");
             settings.AddChoice("Side", "02 Set-out", "Connection pipe side", "Both sides",
                 "Specify which side of the sewer alignment receives house connections.",
                 new[] { "Both sides", "Left side", "Right side" });
@@ -251,6 +255,7 @@ namespace CETools.Civil3D
                         Erf = erf.ObjectId, Key = erf.Handle.ToString(),
                         Alignment = alignment.ObjectId, AlignmentHandle = alignment.Handle.ToString(),
                         Start = start, ShortStart = shortStart, End = end,
+                        FrontageAnchor = anchor, FrontageTangent = tangent, Inward = normal,
                         Outward = -normal, Direction = direction,
                         Station = sourceStation, Offset = sourceOffset
                     });
@@ -269,14 +274,15 @@ namespace CETools.Civil3D
                     item.Start.GetDistanceTo(item.End) < threshold).ToList();
                 foreach (ConnectionProposal shortErf in ordinary)
                 {
-                    Point2d boundaryPoint = shortErf.ShortStart +
-                        shortErf.Outward * settings.Double("ShortBranchSetback", 1.0);
-                    Point2d normalStart = boundaryPoint -
-                        shortErf.Outward * settings.Double("NormalShortSetback", 1.0);
+                    Point2d normalStart;
+                    Vector2d shortDirection;
+                    if (!TryNormalShortGeometry(shortErf, alignments, settings,
+                        out normalStart, out shortDirection))
+                    { skipped++; continue; }
                     Point2d shortEnd;
                     ObjectId shortTarget;
                     if (!TryIntersectNearestAlignment(alignments, normalStart,
-                        shortErf.Direction.GetNormal(), maxDistance + length + inside,
+                        shortDirection, maxDistance + length + inside,
                         out shortEnd, out shortTarget))
                     { skipped++; continue; }
                     if (!ReplaceManagedForGroup(model, tr,
@@ -332,22 +338,17 @@ namespace CETools.Civil3D
                             // Never hide a qualifying erf just because the neighbour's
                             // diagonal main crossing does not intersect its frontage
                             // normal. Draw a separate normal short connection instead.
-                            Point2d boundaryPoint = longArm.ShortStart +
-                                longArm.Outward * settings.Double("ShortBranchSetback", 1.0);
-                            Point2d normalStart = boundaryPoint -
-                                longArm.Outward * settings.Double("NormalShortSetback", 1.0);
-                            // Follow the user-selected sewer connection angle, measured
-                            // downstream from the main alignment, even for
-                            // independent normal short connections.
+                            Point2d normalStart;
+                            Vector2d shortDirection;
+                            if (!TryNormalShortGeometry(longArm, alignments, settings,
+                                out normalStart, out shortDirection))
+                            { skipped++; continue; }
                             Point2d normalEnd;
                             ObjectId nearestShortAlignment;
                             if (!TryIntersectNearestAlignment(alignments, normalStart,
-                                longArm.Direction.GetNormal(), maxDistance + length + inside,
+                                shortDirection, maxDistance + length + inside,
                                 out normalEnd, out nearestShortAlignment))
-                            {
-                                skipped++;
-                                continue;
-                            }
+                            { skipped++; continue; }
                             if (!ReplaceManagedForGroup(model, tr,
                                 new[] { longArm }, settings.Text("Existing"), ref replaced))
                             { skipped++; continue; }
@@ -403,8 +404,8 @@ namespace CETools.Civil3D
         {
             internal ObjectId Erf, Alignment;
             internal string Key, AlignmentHandle;
-            internal Point2d Start, ShortStart, End;
-            internal Vector2d Outward, Direction;
+            internal Point2d Start, ShortStart, End, FrontageAnchor;
+            internal Vector2d Outward, Direction, FrontageTangent, Inward;
             internal double Station, Offset;
         }
 
@@ -499,6 +500,47 @@ namespace CETools.Civil3D
                 alongCrossing >= 0.92) return false;
             junction = start + ray * alongStem;
             return true;
+        }
+
+        // Normal short connections must not depend on any long-crossing
+        // start, long angle, or shared T offset. Calculate every coordinate
+        // solely from its own configurable frontage offset/setback and angle.
+        private static bool TryNormalShortGeometry(ConnectionProposal item,
+            IEnumerable<CivilAlignment> alignments,
+            ProductionSettingsDialogModel settings,
+            out Point2d start, out Vector2d direction)
+        {
+            start = item.FrontageAnchor +
+                item.FrontageTangent * settings.Double("NormalShortAlong", 1.0) +
+                item.Inward * settings.Double("NormalShortSetback", 1.0);
+            direction = item.Outward;
+            CivilAlignment nearest = null;
+            double closest = double.MaxValue;
+            Point2d foot = start;
+            foreach (CivilAlignment alignment in alignments)
+            {
+                Point2d point;
+                try { point = ClosestAlignmentPoint(alignment, start); }
+                catch { continue; }
+                double distance = start.GetDistanceTo(point);
+                if (distance >= closest) continue;
+                closest = distance;
+                nearest = alignment;
+                foot = point;
+            }
+            if (nearest == null || closest < 1e-6) return false;
+            Vector2d approach = (foot - start).GetNormal();
+            Vector2d downstream;
+            if (!TryIncreasingStationTangent(nearest, foot, out downstream)) return false;
+            downstream -= approach * downstream.DotProduct(approach);
+            if (downstream.Length < 1e-6) return false;
+            downstream = downstream.GetNormal();
+            double degrees = settings.Double("NormalShortAngle", 0.0);
+            if (double.IsNaN(degrees) || double.IsInfinity(degrees) ||
+                Math.Abs(degrees) >= 89.0) return false;
+            double radians = degrees * Math.PI / 180.0;
+            direction = approach * Math.Cos(radians) + downstream * Math.Sin(radians);
+            return direction.Length > 1e-6;
         }
 
         private static bool TryIntersectNearestAlignment(
