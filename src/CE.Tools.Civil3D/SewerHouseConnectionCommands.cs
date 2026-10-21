@@ -45,8 +45,12 @@ namespace CETools.Civil3D
                 surfaces.FirstOrDefault(s => s.IndexOf("NG", StringComparison.OrdinalIgnoreCase) >= 0 ||
                     s.IndexOf("EG", StringComparison.OrdinalIgnoreCase) >= 0) ?? surfaces[0],
                 "Ground levels determine which road-facing corner is the low side.", surfaces);
-            settings.AddPositiveDouble("Along", "02 Set-out", "Offset along side boundary (m)", 1.0,
-                "Distance from the lower side erf corner along the sewer-facing frontage.");
+            settings.AddPositiveDouble("Along", "02 Set-out", "Long connection offset from frontage corner (m)", 1.0,
+                "A consistent offset from the same chainage-side corner of every erf frontage.");
+            settings.AddChoice("LongAnchor", "02 Set-out", "Long connection frontage corner",
+                "Increasing chainage corner",
+                "Use a consistent frontage endpoint on every erf, independent of ground-height variations.",
+                new[] { "Increasing chainage corner", "Decreasing chainage corner", "Lowest ground corner" });
             settings.AddPositiveDouble("In", "02 Set-out", "Distance inside erf (m)", 1.0,
                 "Symbol starts inside the property from its road-facing boundary.");
             settings.AddPositiveDouble("Length", "02 Set-out", "Connection arm length (m)", 3.0,
@@ -165,9 +169,25 @@ namespace CETools.Civil3D
                     if (double.IsNaN(zLeft) || double.IsNaN(zRight)) { skipped++; continue; }
                     // Nearly level frontages are valid: use the first corner deterministically.
                     Point2d low = zLeft <= zRight ? left : right;
-                    Point2d high = zLeft < zRight ? right : left;
-                    Vector2d tangent = (high - low).GetNormal();
-                    Point2d onFrontage = low + tangent * along;
+                    Point2d high = zLeft <= zRight ? right : left;
+                    string anchorMode = settings.Text("LongAnchor");
+                    Point2d anchor = low, opposite = high;
+                    if (anchorMode != "Lowest ground corner")
+                    {
+                        double stationLeft = 0, stationRight = 0, offsetLeft = 0, offsetRight = 0;
+                        try
+                        {
+                            alignment.StationOffset(left.X, left.Y, ref stationLeft, ref offsetLeft);
+                            alignment.StationOffset(right.X, right.Y, ref stationRight, ref offsetRight);
+                        }
+                        catch { skipped++; continue; }
+                        bool leftIsAnchor = anchorMode == "Increasing chainage corner"
+                            ? stationLeft >= stationRight : stationLeft <= stationRight;
+                        anchor = leftIsAnchor ? left : right;
+                        opposite = leftIsAnchor ? right : left;
+                    }
+                    Vector2d tangent = (opposite - anchor).GetNormal();
+                    Point2d onFrontage = anchor + tangent * along;
                     Vector2d inward = centroid - onFrontage;
                     if (inward.Length < 0.01) { skipped++; continue; }
                     // Normal to frontage that points inside the selected erf.
@@ -203,9 +223,19 @@ namespace CETools.Civil3D
                     if (direction.Length < 0.001) { skipped++; continue; }
                     direction = direction.GetNormal();
                     Point2d end;
-                    if (!TryIntersectMain(alignment, start, direction,
-                            maxDistance + length + inside, out end))
+                    ObjectId intersectedAlignment;
+                    if (!TryIntersectNearestAlignment(alignments, start, direction,
+                            maxDistance + length + inside, out end, out intersectedAlignment))
                     { skipped++; continue; }
+                    // Do not connect an erf to the wrong selected branch.
+                    // The closest valid alignment intersection determines the
+                    // main that the long lateral actually joins.
+                    if (intersectedAlignment != alignment.ObjectId)
+                    {
+                        CivilAlignment nearest = alignments.FirstOrDefault(a => a.ObjectId == intersectedAlignment);
+                        if (nearest == null) { skipped++; continue; }
+                        alignment = nearest;
+                    }
                     double sourceStation = 0.0, sourceOffset = 0.0;
                     try { alignment.StationOffset(start.X, start.Y, ref sourceStation, ref sourceOffset); }
                     catch { skipped++; continue; }
@@ -280,9 +310,15 @@ namespace CETools.Civil3D
                             // Follow the user-selected sewer connection angle, measured
                             // downstream from the main alignment, even for
                             // independent normal short connections.
-                            Point2d normalEnd = normalStart +
-                                longArm.Direction.GetNormal() *
-                                settings.Double("NormalShortLength", 3.0);
+                            Point2d normalEnd;
+                            ObjectId nearestShortAlignment;
+                            if (!TryIntersectNearestAlignment(alignments, normalStart,
+                                longArm.Direction.GetNormal(), maxDistance + length + inside,
+                                out normalEnd, out nearestShortAlignment))
+                            {
+                                skipped++;
+                                continue;
+                            }
                             if (!ReplaceManagedForGroup(model, tr,
                                 new[] { longArm }, settings.Text("Existing"), ref replaced))
                             { skipped++; continue; }
@@ -302,14 +338,8 @@ namespace CETools.Civil3D
                     { skipped += batch.Count; continue; }
                     AddConnectionLine(model, tr, layerId, longArm,
                         longArm.Start, longArm.End);
-                    Vector2d axis = longArm.End - longArm.Start;
-                    if (axis.Length > 1e-8)
-                    {
-                        Vector2d across = new Vector2d(-axis.Y, axis.X).GetNormal();
-                        AddConnectionLine(model, tr, layerId, longArm,
-                            longArm.End + across * 0.45,
-                            longArm.End - across * 0.45);
-                    }
+                    // One continuous long pipe only; no crossing tick or
+                    // other short marking line is added at its endpoint.
                     created++;
                     if (shortArm != null)
                     {
@@ -415,6 +445,27 @@ namespace CETools.Civil3D
                 alongCrossing >= 0.92) return false;
             junction = start + ray * alongStem;
             return true;
+        }
+
+        private static bool TryIntersectNearestAlignment(
+            IEnumerable<CivilAlignment> alignments, Point2d start, Vector2d direction,
+            double maximum, out Point2d nearestPoint, out ObjectId nearestId)
+        {
+            nearestPoint = start;
+            nearestId = ObjectId.Null;
+            double nearest = double.MaxValue;
+            foreach (CivilAlignment candidate in alignments)
+            {
+                Point2d candidatePoint;
+                if (!TryIntersectMain(candidate, start, direction, maximum, out candidatePoint))
+                    continue;
+                double distance = start.GetDistanceTo(candidatePoint);
+                if (distance < 0.001 || distance >= nearest) continue;
+                nearest = distance;
+                nearestPoint = candidatePoint;
+                nearestId = candidate.ObjectId;
+            }
+            return !nearestId.IsNull;
         }
 
         private static Point2d ClosestAlignmentPoint(CivilAlignment alignment, Point2d source)
