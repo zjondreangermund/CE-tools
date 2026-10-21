@@ -62,10 +62,9 @@ namespace CETools.Civil3D
                 "Length inside the erf, measured from the same frontage intersection.");
             settings.AddPositiveDouble("LongFrontageInside", "02 Long connections", "Long start inside frontage (m)", 1.5,
                 "Start of long line inside its selected erf, measured from frontage.");
-            settings.AddChoice("ConnectionLayer", "03 Output", "Connection output layer",
+            settings.AddText("ConnectionLayer", "03 Output", "Connection output layer",
                 mode == "Short" ? "CE-SEWERHOUSECONNECTIONS-SHORT" : "CE-SEWERHOUSECONNECTIONS-LONG",
-                "Use separate layers for short and long house connections.",
-                new[] { "CE-SEWERHOUSECONNECTIONS-SHORT", "CE-SEWERHOUSECONNECTIONS-LONG", OutputLayer });
+                "Specify an existing or new layer name. Short and long commands save their output separately.");
             settings.AddPositiveDouble("Along", "02 Set-out", "Long connection offset from frontage corner (m)", 1.0,
                 "A consistent offset from the same chainage-side corner of every erf frontage.");
             settings.AddChoice("LongAnchor", "02 Set-out", "Long connection frontage corner",
