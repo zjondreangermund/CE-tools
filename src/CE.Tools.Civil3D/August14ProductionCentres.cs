@@ -50,6 +50,7 @@ namespace CETools.Civil3D
                     A("CE-Project Coordination", "CE_PROJECTCOORDINATION", "Coordinate project source drawings and location.", "02 PREPARE"),
                     A("CE-Standards", "CE_STANDARDS", "Select/store project standards.", "02 PREPARE"),
                     A("CE-Project Information", "CE_PROJECTINFO", "Review the linked project metadata.", "05 COMPLETE"),
+                    A("Import sheets and model from DWG", "CE_IMPORTSHEETS", "Copy all or selected layouts, viewports and model geometry from a DWG without opening it.", "06 DELIVER"),
                     A("CE-Drawing Register", "CE_DRAWINGREGISTEREDIT", "Review drawing titles/numbers/revisions.", "06 DELIVER")
                 });
         }

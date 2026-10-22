@@ -66,6 +66,7 @@ namespace CETools.Civil3D
                 new List<DisciplineWorkflowAction>
                 {
                     A("CE-Project Information", "CE_PROJECTINFO", "Review/place the linked project information table.", "05 COMPLETE"),
+                    A("Import sheets and model from DWG", "CE_IMPORTSHEETS", "Copy all or selected layouts, viewports and model geometry from a DWG without opening it.", "06 DELIVER"),
                     A("CE-Drawing Register", "CE_DRAWINGREGISTEREDIT", "Review drawing numbers, titles, revisions and issue information.", "06 DELIVER"),
                     A("CE-Drawing / Client Books", "CE_BOOKTOOLS", "Create drawing books, client books and indexes.", "06 DELIVER")
                 });

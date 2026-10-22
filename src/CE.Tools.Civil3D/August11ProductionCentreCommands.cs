@@ -91,6 +91,7 @@ namespace CETools.Civil3D
                 Action("PREPARE - Project Coordination", "CE_PROJECTCOORDINATION", "Coordinate source drawings, location and page setups.", "02 PREPARE"),
                 Action("Standards", "CE_DESIGNSTANDARDS", "Select and record project standards.", "02 PREPARE"),
                 Action("CREATE - Project Metadata Refresh", "CE_PROJECTMETADATAREFRESH", "Synchronize project metadata into linked project outputs.", "03 CREATE"),
+                Action("Import sheets and model from DWG", "CE_IMPORTSHEETS", "Copy all or selected layouts, viewports and model geometry from a DWG without opening it.", "06 DELIVER"),
                 Action("COMPLETE - Drawing Register", "CE_DRAWINGREGISTEREDIT", "Review drawing numbers, titles, revisions and issue information.", "05 COMPLETE"),
                 Action("DELIVER - Drawing / Client Books", "CE_BOOKTOOLS", "Create drawing books, client books and indexes.", "06 DELIVER"),
                 Action("▶ RUN COMPLETE PROJECT PRODUCTION", "CE_PROJECTWORKFLOW", "Open one ordered, non-duplicated project workflow from setup through delivery.", "00 COMPLETE WORKFLOW")
