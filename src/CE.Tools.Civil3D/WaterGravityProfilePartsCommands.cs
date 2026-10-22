@@ -58,13 +58,15 @@ namespace CETools.Civil3D
                 PromptResult answer = document.Editor.GetKeywords(scope);
                 if (answer.Status == PromptStatus.Cancel) return;
                 if (answer.Status == PromptStatus.OK && answer.StringResult == "Selected")
+                {
                     choice = document.Editor.GetSelection(new PromptSelectionOptions
                     {
                         MessageForAdding = "\nSelect Water gravity pipes and structures: ",
                         AllowDuplicates = false,
                         RejectObjectsFromNonCurrentSpace = true
                     });
-                if (choice.Status != PromptStatus.OK || choice.Value == null) return;
+                    if (choice.Status != PromptStatus.OK || choice.Value == null) return;
+                }
             }
             if (choice.Status == PromptStatus.OK && choice.Value != null &&
                 (preselected || choice.Value.Count > 0))
