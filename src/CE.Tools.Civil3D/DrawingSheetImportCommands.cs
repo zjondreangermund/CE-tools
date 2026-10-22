@@ -183,7 +183,7 @@ namespace CETools.Civil3D
                 {
                     BlockTableRecord destinationPaper = (BlockTableRecord)write.GetObject(
                         destination.CurrentSpaceId, OpenMode.ForWrite);
-                    if (!destinationPaper.IsLayout || destinationPaper.IsModelSpace)
+                    if (!destinationPaper.IsLayout || destination.CurrentSpaceId == SymbolUtilityServices.GetBlockModelSpaceId(destination))
                         throw new InvalidOperationException("Target must be a paper-space layout.");
 
                     using (var mapping = new IdMapping())
