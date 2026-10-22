@@ -65,7 +65,7 @@ namespace CETools.Civil3D
                 selected.Value.GetObjectIds());
             if (sourceIds.Count == 0)
             {
-                editor.WriteMessage(
+                ShowMessage(
                     "\nCE_WATERNETWORKMULTI: no supported line/polyline/feature-line sources were selected.");
                 return;
             }
@@ -75,7 +75,7 @@ namespace CETools.Civil3D
                 civilDocument).Where(item => IsWaterName(item.Name)).ToList();
             if (partsLists.Count == 0)
             {
-                editor.WriteMessage(
+                ShowMessage(
                     "\nCE_WATERNETWORKMULTI: this drawing has no Civil 3D gravity-network Parts List. Import/create a water parts list first.");
                 return;
             }
@@ -144,7 +144,7 @@ namespace CETools.Civil3D
             }
             if (sourceIds.Count == 0)
             {
-                editor.WriteMessage(
+                ShowMessage(
                     "\nCE_WATERNETWORKMULTI: all selected sources were already completed for Water. Choose 'Process again' to intentionally recreate them.");
                 return;
             }
@@ -157,6 +157,11 @@ namespace CETools.Civil3D
             if (partsList == null)
                 partsList = partsLists[0];
 
+            bool connect = string.Equals(
+                setup.Text("Connections"),
+                "Connect through structures",
+                StringComparison.OrdinalIgnoreCase);
+
             List<PartChoice> pipeChoices = ReadPartChoices(
                 document.Database,
                 partsList.ObjectId,
@@ -166,12 +171,15 @@ namespace CETools.Civil3D
                 document.Database,
                 partsList.ObjectId,
                 DomainType.Structure,
-                true);
-            if (pipeChoices.Count == 0 || structureChoices.Count == 0)
+                false);
+            if (pipeChoices.Count == 0)
             {
-                editor.WriteMessage(
-                    "\nCE_WATERNETWORKMULTI: parts list '{0}' must contain at least one pipe size and one non-null structure size.",
-                    partsList.Name);
+                ShowMessage("Parts list '{0}' contains no pipe sizes usable by this pipe/structure workflow. Add a water pipe size to this Pipe Network parts list. Pressure Network catalogues are a separate workflow.", partsList.Name);
+                return;
+            }
+            if (connect && structureChoices.Count == 0)
+            {
+                ShowMessage("Parts list '{0}' contains no node/structure sizes. Add a Null Structure or a water node part to its Structures tab, then run again. A manhole is not required. To deliberately create pipes only, choose 'Create parts without connections'.", partsList.Name);
                 return;
             }
 
@@ -185,23 +193,23 @@ namespace CETools.Civil3D
                 PreferredPart(pipeChoices, new[] { "water", "hdpe", "pvc" }),
                 "Pipe family and size used for every generated water pipe.",
                 pipeChoices.Select(item => item.Label).ToArray());
-            parts.AddChoice(
+            if (connect) parts.AddChoice(
                 "StructurePart",
                 "02 Structures",
                 "Structure / water node family / size",
-                PreferredPart(structureChoices, new[] { "water", "valve", "junction" }),
-                "Structure used at source endpoints, vertices and shared branch junctions.",
+                PreferredPart(structureChoices, new[] { "null", "water", "valve", "junction" }),
+                "A Null Structure is allowed as a connection node. The selected water node style controls its display at source vertices only.",
                 structureChoices.Select(item => item.Label).ToArray());
             var pipeStyles = ReadWaterStyles(document.Database, civilDocument.Styles.PipeStyles.Cast<ObjectId>());
             var structureStyles = ReadWaterStyles(document.Database, civilDocument.Styles.StructureStyles.Cast<ObjectId>());
-            if (pipeStyles.Count == 0 || structureStyles.Count == 0)
+            if (pipeStyles.Count == 0 || (connect && structureStyles.Count == 0))
             {
-                editor.WriteMessage("\nImport water pipe and water node/structure styles before creating the network.");
+                ShowMessage("\nImport water pipe and water node/structure styles before creating the network.");
                 return;
             }
             parts.AddChoice("PipeStyle", "01 Pipes", "Water pipe style", pipeStyles[0].Name,
                 "Water style applied to every pipe.", pipeStyles.Select(s => s.Name).ToArray());
-            parts.AddChoice("StructureStyle", "02 Structures", "Water node style", structureStyles[0].Name,
+            if (connect) parts.AddChoice("StructureStyle", "02 Structures", "Water node style", structureStyles[0].Name,
                 "Water style applied only at source vertices.", structureStyles.Select(s => s.Name).ToArray());
             if (!DisciplineWorkflowDialogs.EditSettings(parts)) return;
 
@@ -209,15 +217,15 @@ namespace CETools.Civil3D
             PartChoice structureChoice = FindPart(
                 structureChoices,
                 parts.Text("StructurePart"));
-            if (pipeChoice == null || structureChoice == null)
+            if (pipeChoice == null || (connect && structureChoice == null))
             {
-                editor.WriteMessage(
+                ShowMessage(
                     "\nCE_WATERNETWORKMULTI: the selected pipe/structure part is no longer available.");
                 return;
             }
 
             pipeChoice.StyleId = pipeStyles.First(s => s.Name == parts.Text("PipeStyle")).ObjectId;
-            structureChoice.StyleId = structureStyles.First(s => s.Name == parts.Text("StructureStyle")).ObjectId;
+            if (connect) structureChoice.StyleId = structureStyles.First(s => s.Name == parts.Text("StructureStyle")).ObjectId;
 
             List<SourcePath> paths = ReadSourcePaths(
                 document.Database,
@@ -225,7 +233,7 @@ namespace CETools.Civil3D
             int segmentCount = paths.Sum(path => Math.Max(0, path.Points.Count - 1));
             if (paths.Count == 0 || segmentCount == 0)
             {
-                editor.WriteMessage(
+                ShowMessage(
                     "\nCE_WATERNETWORKMULTI: the selected objects do not contain usable source segments.");
                 return;
             }
@@ -233,10 +241,6 @@ namespace CETools.Civil3D
             bool applyRules = string.Equals(
                 setup.Text("Rules"),
                 "Apply rules",
-                StringComparison.OrdinalIgnoreCase);
-            bool connect = string.Equals(
-                setup.Text("Connections"),
-                "Connect through structures",
                 StringComparison.OrdinalIgnoreCase);
             bool eraseSources = string.Equals(
                 setup.Text("SourceObjects"),
@@ -370,7 +374,7 @@ namespace CETools.Civil3D
             }
             catch (System.Exception exception)
             {
-                editor.WriteMessage(
+                ShowMessage(
                     "\nCE_WATERNETWORKMULTI failed. No partial network edit was committed. {0}",
                     exception.Message);
                 return;
@@ -386,7 +390,7 @@ namespace CETools.Civil3D
             }
 
             editor.Regen();
-            editor.WriteMessage(
+            ShowMessage(
                 "\nCE_WATERNETWORKMULTI complete. Network='{0}'; selected sources={1}; pipes={2}; structures={3}. No single-object CreateNetworkFromObject prompt was used.",
                 networkName,
                 paths.Count,
@@ -398,6 +402,15 @@ namespace CETools.Civil3D
                 try { editor.SetImpliedSelection(new[] { networkId }); }
                 catch { }
             }
+        }
+
+        private static void ShowMessage(string format, params object[] values)
+        {
+            System.Windows.Forms.MessageBox.Show(
+                string.Format(CultureInfo.CurrentCulture, format, values).Trim(),
+                "CE Tools - Water Network from Multiple Polylines",
+                System.Windows.Forms.MessageBoxButtons.OK,
+                System.Windows.Forms.MessageBoxIcon.Information);
         }
 
         private static ObjectId EnsureStructure(
