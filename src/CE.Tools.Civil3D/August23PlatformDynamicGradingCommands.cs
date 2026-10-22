@@ -320,7 +320,7 @@ namespace CETools.Civil3D
                 MaxDistance = Math.Max(0.10, settings.Double("MaxDistance", 50.0)),
                 SearchStep = Math.Max(0.05, settings.Double("SearchStep", 0.5)),
                 Side = SafeSide(settings.Text("Side")),
-                NativeInfill = wantsInfill && !combineJunctions,
+                NativeInfill = wantsInfill,
                 SiteName = SafeName(settings.Text("Site"), "<Auto: source site / CE-PLATFORM-SITE>"),
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
                 KeepExistingPresentation =
@@ -395,7 +395,7 @@ namespace CETools.Civil3D
             int separateInfillsCreated = 0;
             int separateInfillsExisting = 0;
             int separateInfillsSkipped = 0;
-            if (requested.NativeInfill &&
+            if (wantsInfill &&
                 (!createGrading || !string.Equals(
                     settings.Text("InfillScope"),
                     "Closed lines in grading selection",
@@ -4211,31 +4211,36 @@ namespace CETools.Civil3D
         private static bool OrientAwayFromAlignments(Database database, IList<SlopeRaySample> samples)
         {
             CivilDocument civil = CivilApplication.ActiveDocument;
-            if (civil == null) return false;
+            if (civil == null || samples == null || samples.Count == 0) return false;
             using (Transaction tr = database.TransactionManager.StartTransaction())
             {
                 var alignments = civil.GetAlignmentIds().Cast<ObjectId>()
                     .Select(id => tr.GetObject(id, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Alignment)
                     .Where(a => a != null).ToList();
                 if (alignments.Count == 0) return false;
+                int oriented = 0;
                 foreach (SlopeRaySample sample in samples)
                 {
-                    bool plusAllowed = true, minusAllowed = true;
+                    // At intersections no direction necessarily moves away from EVERY
+                    // alignment. Select the side that maximises clearance to the
+                    // closest alignment, rather than rejecting both sides.
+                    double plusNearest = double.PositiveInfinity;
+                    double minusNearest = double.PositiveInfinity;
                     foreach (var alignment in alignments)
                     {
-                        double origin = AlignmentClearance(alignment, sample.Point, new Vector2d(0, 0));
                         double plus = AlignmentClearance(alignment, sample.Point, sample.Direction);
                         double minus = AlignmentClearance(alignment, sample.Point, -sample.Direction);
-                        if (!Finite(origin) || !Finite(plus) || !Finite(minus)) return false;
-                        plusAllowed &= plus > origin + 1e-6;
-                        minusAllowed &= minus > origin + 1e-6;
+                        if (!Finite(plus) || !Finite(minus)) continue;
+                        plusNearest = Math.Min(plusNearest, plus);
+                        minusNearest = Math.Min(minusNearest, minus);
                     }
-                    // Do not silently grade toward a second alignment or guess on a centreline.
-                    if (plusAllowed == minusAllowed) return false;
-                    if (minusAllowed) sample.Direction = -sample.Direction;
+                    if (!Finite(plusNearest) || !Finite(minusNearest)) continue;
+                    if (Math.Abs(plusNearest - minusNearest) <= 1e-5) continue;
+                    if (minusNearest > plusNearest) sample.Direction = -sample.Direction;
+                    oriented++;
                 }
+                return oriented > 0;
             }
-            return true;
         }
 
         private static double AlignmentClearance(Autodesk.Civil.DatabaseServices.Alignment alignment,
