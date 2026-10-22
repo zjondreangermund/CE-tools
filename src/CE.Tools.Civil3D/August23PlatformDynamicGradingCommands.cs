@@ -60,11 +60,6 @@ namespace CETools.Civil3D
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
             if (selectedSurface == null) return;
-            if (settings.Text("Criteria") == "Grade to Surface" && selectedSurface.ObjectId.IsNull)
-            {
-                document.Editor.WriteMessage("\nChoose an existing target surface to create grading.");
-                return;
-            }
             bool intermediate = string.Equals(settings.Text("Intermediate"), "Yes", StringComparison.OrdinalIgnoreCase);
 
             PromptSelectionResult selection = SelectFeatureLines(document.Editor, "\nSelect feature lines to drape dynamically: ");
@@ -283,10 +278,19 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "ConnectedTolerance", "09 Surfaces", "Feature-line connection tolerance (m)", 0.050,
                 "Endpoint-to-feature-line point tolerance used to decide which selected source feature lines belong to the same surface group.");
+            List<SurfaceOption> outputStyles = AddSurfaceStyleChoice(document, settings);
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+            ObjectId outputStyleId = outputStyles.FirstOrDefault(item => item.Name == settings.Text("OutputSurfaceStyle"))?.ObjectId ?? ObjectId.Null;
+
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
             if (selectedSurface == null) return;
+            if (settings.Text("Criteria") == "Grade to Surface" && selectedSurface.ObjectId.IsNull)
+            {
+                document.Editor.WriteMessage("\nChoose an existing target surface to create grading.");
+                return;
+            }
+
 
             double cutRatio = string.Equals(settings.Text("CutFormat"), "Grade (%)", StringComparison.OrdinalIgnoreCase)
                 ? 100.0 / Math.Max(0.001, Math.Abs(settings.Double("CutGrade", 50.0)))
@@ -310,7 +314,7 @@ namespace CETools.Civil3D
             bool wantsInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase);
             var requested = new GradeLink
             {
-                SurfaceHandle = selectedSurface.ObjectId.Handle.ToString(),
+                SurfaceHandle = selectedSurface.ObjectId.IsNull ? string.Empty : selectedSurface.ObjectId.Handle.ToString(),
                 CutRatio = cutRatio,
                 FillRatio = fillRatio,
                 MaxDistance = Math.Max(0.10, settings.Double("MaxDistance", 50.0)),
@@ -347,6 +351,7 @@ namespace CETools.Civil3D
                 GradeBuildResult result = BuildOrRefreshGrade(document, sourceId, requested, true);
                 if (result.Success)
                 {
+                    ApplyInfillSurfaceStyle(document.Database, sourceId, outputStyleId);
                     completed++;
                     slopeLines += result.SlopeLinesCreated;
                     cutSlopeLines += result.CutSlopeLinesCreated;
@@ -381,7 +386,7 @@ namespace CETools.Civil3D
                         settings.Double(
                             "ConnectedTolerance",
                             0.050)),
-                    combineJunctions);
+                    combineJunctions, outputStyleId);
                 foreach (string message in connectedSurfaceResult.Messages)
                     document.Editor.WriteMessage(
                         "\n" + message);
@@ -407,7 +412,7 @@ namespace CETools.Civil3D
                         SourceSnapshot infillSource; string infillError; ObjectId infillSurface;
                         if (TryReadSource(document.Database, infillSourceId, out infillSource, out infillError) &&
                             TryCreateFallbackInfillSurface(document.Database, infillSourceId, infillSource,
-                                "CE-JUNCTION-INFILL", out infillSurface, out infillError)) separateInfillsCreated++;
+                                "CE-JUNCTION-INFILL", out infillSurface, out infillError, outputStyleId)) separateInfillsCreated++;
                         else { separateInfillsSkipped++; document.Editor.WriteMessage("\nInfill skipped: " + infillError); }
                         continue;
                     }
@@ -416,6 +421,7 @@ namespace CETools.Civil3D
                             document,
                             infillSourceId,
                             requested.SiteName);
+                    ApplyInfillSurfaceStyle(document.Database, infillSourceId, outputStyleId);
                     if (infillResult.Created) separateInfillsCreated++;
                     else if (infillResult.Existing) separateInfillsExisting++;
                     else
@@ -429,6 +435,13 @@ namespace CETools.Civil3D
                 }
             }
 
+            System.Windows.Forms.MessageBox.Show(
+                "Graded sources: " + completed + "\nSurfaces created/refreshed: " + connectedSurfaceResult.Created +
+                "\nSeparate infills created: " + separateInfillsCreated + "\nExisting infills: " + separateInfillsExisting +
+                "\nSurface groups skipped: " + connectedSurfaceResult.Skipped +
+                (wantsInfill && completed == 0 && connectedSurfaceResult.Created == 0 && separateInfillsCreated == 0 && separateInfillsExisting == 0
+                    ? "\n\nNo infill was created. Select genuinely closed feature lines. Open strings need linked toe boundaries for grading surfaces; separate open edges are not a closed infill boundary." : string.Empty),
+                "CE Tools - Grading / Infill Results");
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
             document.Editor.WriteMessage(
@@ -509,8 +522,10 @@ namespace CETools.Civil3D
                 "AfterInfill", "03 Daylight grading", "After infill", "Continue to grade/daylight",
                 "After creating the infill, open the matching Grade-to-Surface workflow so the same platform/junction can receive cut/fill daylight, toe and slope lines.",
                 new[] { "Continue to grade/daylight", "Infill only" });
+            List<SurfaceOption> outputStyles = AddSurfaceStyleChoice(document, settings);
             if (!DisciplineWorkflowDialogs.EditSettings(settings))
                 return;
+            ObjectId outputStyleId = outputStyles.FirstOrDefault(item => item.Name == settings.Text("OutputSurfaceStyle"))?.ObjectId ?? ObjectId.Null;
 
             List<ObjectId> sourceIds =
                 ResolveClosedJunctionInfillIds(
@@ -533,6 +548,7 @@ namespace CETools.Civil3D
                         document,
                         sourceId,
                         settings.Text("Site"));
+                ApplyInfillSurfaceStyle(document.Database, sourceId, outputStyleId);
                 if (result.Created) created++;
                 else if (result.Existing) existing++;
                 else
@@ -545,6 +561,9 @@ namespace CETools.Civil3D
                 }
             }
 
+            System.Windows.Forms.MessageBox.Show("Infill created: " + created + "\nExisting infills: " + existing +
+                "\nSkipped: " + skipped + (created + existing == 0 ? "\n\nNo infill was created. Check the selected closed boundaries and reported errors." : string.Empty),
+                "CE Tools - Infill Results");
             document.Editor.Regen();
             document.Editor.WriteMessage(
                 "\n{0} complete. Closed feature lines={1}; infills created={2}; already ready={3}; skipped={4}.",
@@ -2829,10 +2848,16 @@ namespace CETools.Civil3D
                                     if (TryReadCreatedObjectId(
                                             value,
                                             out infillId))
+                                    {
+                                        transaction.Commit();
                                         return true;
+                                    }
                                     if (method.ReturnType == typeof(void) ||
                                         value == null)
+                                    {
+                                        transaction.Commit();
                                         return true;
+                                    }
                                 }
                                 catch (System.Exception exception)
                                 {
@@ -3416,6 +3441,11 @@ namespace CETools.Civil3D
                     result.Add(id);
                 }
             }
+            if (result.Count == 0)
+                System.Windows.Forms.MessageBox.Show(
+                    "No editable CLOSED feature lines were found in the selection (" + candidateIds.Length +
+                    " objects). No infill will be created.\n\nSelect a closed feature line around the area. Separate open edges must first be joined into a valid closed boundary; CE will not bridge gaps automatically.",
+                    "CE Tools - Infill boundary required");
             return result;
         }
 
@@ -3639,6 +3669,17 @@ namespace CETools.Civil3D
                     document.Database,
                     sourceId);
 
+            ObjectId savedInfill = ResolveHandle(document.Database, nativeLink.InfillHandle);
+            if (!savedInfill.IsNull && !savedInfill.IsErased)
+            {
+                using (Transaction check = document.Database.TransactionManager.StartTransaction())
+                    if (check.GetObject(savedInfill, OpenMode.ForRead, false) is CivilSurface)
+                    {
+                        result.Existing = true;
+                        return result;
+                    }
+            }
+
             string groupHandle =
                 !string.IsNullOrWhiteSpace(
                     nativeLink.GroupHandle)
@@ -3853,7 +3894,7 @@ namespace CETools.Civil3D
             Document document,
             IEnumerable<ObjectId> sourceIds,
             string prefix,
-            double tolerance, bool combineAll = false)
+            double tolerance, bool combineAll = false, ObjectId outputStyleId = default(ObjectId))
         {
             var result =
                 new ConnectedSurfaceBuildResult();
@@ -4016,7 +4057,7 @@ namespace CETools.Civil3D
                         document.Database,
                         featureLineIds,
                         surfaceName,
-                        out error, footprints))
+                        out error, footprints, outputStyleId))
                 {
                     result.Created++;
                 }
@@ -4092,6 +4133,54 @@ namespace CETools.Civil3D
             return Math.Sqrt(
                 dx * dx +
                 dy * dy);
+        }
+
+        private static List<SurfaceOption> AddSurfaceStyleChoice(Document document, ProductionSettingsDialogModel settings)
+        {
+            var styles = new List<SurfaceOption> { new SurfaceOption("<Drawing default / keep existing>", ObjectId.Null) };
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (civil != null)
+                using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+                    foreach (ObjectId id in civil.Styles.SurfaceStyles)
+                    {
+                        var style = tr.GetObject(id, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Styles.SurfaceStyle;
+                        if (style != null) styles.Add(new SurfaceOption(style.Name, id));
+                    }
+            settings.AddChoice("OutputSurfaceStyle", "09 Surfaces", "Surface style", styles[0].Name,
+                "Style for generated junction/grading and bounded infill surfaces. The target surface is unchanged.",
+                styles.Select(item => item.Name));
+            return styles;
+        }
+
+        private static void ApplyInfillSurfaceStyle(Database database, ObjectId sourceId, ObjectId styleId)
+        {
+            if (styleId.IsNull) return;
+            GradeLink grade = ReadGradeLink(database, sourceId);
+            NativeInfillLink native = ReadNativeInfillLink(database, sourceId);
+            var handles = new List<string>();
+            if (grade != null) { handles.Add(grade.InfillHandle); handles.Add(grade.GroupHandle); }
+            if (native != null) { handles.Add(native.InfillHandle); handles.Add(native.GroupHandle); }
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+            {
+                foreach (string handle in handles.Where(h => !string.IsNullOrWhiteSpace(h)).Distinct())
+                {
+                    ObjectId id = ResolveHandle(database, handle);
+                    if (id.IsNull || id.IsErased) continue;
+                    DBObject value = tr.GetObject(id, OpenMode.ForRead, false);
+                    CivilSurface surface = value as CivilSurface;
+                    if (surface == null)
+                    {
+                        PropertyInfo property = value.GetType().GetProperty("SurfaceId");
+                        object surfaceId = property == null ? null : property.GetValue(value, null);
+                        if (surfaceId is ObjectId && !((ObjectId)surfaceId).IsNull)
+                            surface = tr.GetObject((ObjectId)surfaceId, OpenMode.ForRead, false) as CivilSurface;
+                    }
+                    if (surface == null || surface.IsReferenceObject) continue;
+                    if (!surface.IsWriteEnabled) surface.UpgradeOpen();
+                    surface.StyleId = styleId;
+                }
+                tr.Commit();
+            }
         }
 
         private static List<Point3d> BoundarySamples(Database database, SourceSnapshot source)
@@ -4192,7 +4281,7 @@ namespace CETools.Civil3D
             Database database,
             IList<ObjectId> featureLineIds,
             string surfaceName,
-            out string error, IList<List<Point3d>> footprints)
+            out string error, IList<List<Point3d>> footprints, ObjectId outputStyleId)
         {
             error = string.Empty;
             if (database == null ||
@@ -4279,6 +4368,9 @@ namespace CETools.Civil3D
                         throw new InvalidOperationException(
                             "Civil 3D did not return the connected-group TIN surface.");
 
+                    if (!outputStyleId.IsNull) surface.StyleId = outputStyleId;
+                    else if (!oldSurfaceId.IsNull && !oldSurfaceId.IsErased)
+                        surface.StyleId = ((CivilSurface)write.GetObject(oldSurfaceId, OpenMode.ForRead)).StyleId;
                     surface.AddVertices(
                         new Point3dCollection(
                             allPoints.ToArray()));
@@ -4490,7 +4582,7 @@ namespace CETools.Civil3D
             SourceSnapshot source,
             string prefix,
             out ObjectId surfaceId,
-            out string error)
+            out string error, ObjectId outputStyleId = default(ObjectId))
         {
             surfaceId = ObjectId.Null;
             error = string.Empty;
@@ -4533,6 +4625,7 @@ namespace CETools.Civil3D
                         throw new InvalidOperationException(
                             "Civil 3D did not return the new TIN surface.");
 
+                    if (!outputStyleId.IsNull) surface.StyleId = outputStyleId;
                     var uniquePoints =
                         new List<Point3d>();
                     foreach (Point3d point in BoundarySamples(database, source))
