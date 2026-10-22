@@ -384,7 +384,7 @@ namespace CETools.Civil3D
                     A("CE-Match Water Profile View Properties", "CE_PROFILEVIEWMATCH", "Match existing profile view styles and bands.", "05 COMPLETE"),
                     A("CE-Safe Water Profile Fallback", "CE_WATERPROFILESAFE", "Create direct surface profile/profile view without pressure projection when needed.", "05 COMPLETE"),
                     A("CE-Water Pressure-Part Labels", "CE_WATERLABELS", "Label pressure pipes, fittings and appurtenances.", "05 COMPLETE"),
-                    A("CE-Gravity Water Pipe / Structure Labels", "CE_SEWLABELS", "Shared gravity-network label workflow; verify selected Water label styles before applying.", "05 COMPLETE"),
+                    A("CE-Gravity Water Pipe / Structure Labels", "CE_WATERGRAVITYLABELS", "Choose Water-only gravity network scope and pipe/structure label styles without changing Sewer settings.", "05 COMPLETE"),
                     A("CE-Water Asset Review Markers", "CE_WATERPLACE", "Place linked valve/hydrant review markers.", "05 COMPLETE"),
                     A("CE-Vertex Setting-Out", "CE_VERTEXSETTINGOUT", "Generate linked Water setting-out.", "05 COMPLETE"),
                     A("CE-Water Bill of Quantities", "CE_BOQWATER", "Create linked Water quantities.", "06 DELIVER"),
