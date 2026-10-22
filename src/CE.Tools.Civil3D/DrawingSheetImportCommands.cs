@@ -55,7 +55,7 @@ namespace CETools.Civil3D
                     }
                     using (var picker = new SheetPicker(path, sheets))
                     {
-                        if (AcApplication.ShowModalDialog(picker) != DialogResult.OK) return;
+                        if (Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(picker) != DialogResult.OK) return;
                         List<Sheet> selected = picker.SelectedSheets;
                         if (selected.Count == 0) return;
                         ImportResult result;
