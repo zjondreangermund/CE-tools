@@ -5,6 +5,8 @@ using System.Linq;
 using System.Windows.Forms;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.Geometry;
+using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Runtime;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
@@ -75,6 +77,195 @@ namespace CETools.Civil3D
             {
                 Show("The sheets could not be imported. No import transaction was committed.\n\n" +
                     error.GetBaseException().Message, MessageBoxIcon.Error);
+            }
+        }
+
+        // Copy only paper-space title-block entities. Viewports and model geometry
+        // are deliberately excluded; this command never changes sheet scaling.
+        [CommandMethod("CE_TOOLS", "CE_IMPORTTITLEBLOCK", CommandFlags.Modal)]
+        public void ImportTitleBlock()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+            try
+            {
+                string path;
+                using (var file = new OpenFileDialog
+                {
+                    Title = "CE Tools - Select drawing containing title block",
+                    Filter = "AutoCAD drawings (*.dwg)|*.dwg",
+                    CheckFileExists = true,
+                    RestoreDirectory = true
+                })
+                {
+                    if (file.ShowDialog() != DialogResult.OK) return;
+                    path = Path.GetFullPath(file.FileName);
+                }
+                if (!string.IsNullOrEmpty(document.Database.Filename) &&
+                    string.Equals(path, Path.GetFullPath(document.Database.Filename), StringComparison.OrdinalIgnoreCase))
+                {
+                    Show("Choose a different source drawing.");
+                    return;
+                }
+
+                using (var source = new Database(false, true))
+                {
+                    source.ReadDwgFile(path, FileOpenMode.OpenForReadAndAllShare, true, string.Empty);
+                    source.CloseInput(true);
+                    List<Sheet> sheets = ReadSheets(source);
+                    if (sheets.Count == 0)
+                    {
+                        Show("No paper-space layouts found in the source drawing.");
+                        return;
+                    }
+                    using (var picker = new TitleBlockPicker(path, sheets))
+                    {
+                        if (Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(picker) != DialogResult.OK)
+                            return;
+                        // Page coordinates are in paper-space drawing units.
+                        // A true paper lower-left origin is (0,0), not entity extents
+                        // (which can be shifted by text, leaders and invisible attributes).
+                        Point3d sourceBase = Point3d.Origin;
+                        Point3d destinationBase = Point3d.Origin;
+                        if (!picker.AutomaticBasepoint)
+                        {
+                            PromptPointResult position = document.Editor.GetPoint(
+                                "\\nSpecify destination insertion/base point on the CURRENT paper-space page: ");
+                            if (position.Status != PromptStatus.OK) return;
+                            destinationBase = position.Value;
+                        }
+
+                        if (document.Database.TileMode)
+                        {
+                            Show("Activate a paper-space layout in the destination drawing first.");
+                            return;
+                        }
+                        int copied;
+                        using (document.LockDocument())
+                            copied = CopyTitleBlock(source, document.Database, picker.SelectedSheet,
+                                destinationBase - sourceBase);
+                        document.Editor.Regen();
+                        Show("Copied " + copied + " title-block paper-space entities from '" +
+                            picker.SelectedSheet.Name + "' into the CURRENT layout.\\n\\n" +
+                            (picker.AutomaticBasepoint
+                                ? "Source and destination page bottom-left basepoints: (0,0)."
+                                : "Source page bottom-left basepoint: (0,0); destination: specified point.") +
+                            "\\nText, block attributes, linetypes and annotation scaling retain their source definitions. " +
+                            "Check fonts and any external references on this workstation.");
+                    }
+                }
+            }
+            catch (System.Exception ex)
+            {
+                Show("Title-block import failed: " + ex.GetBaseException().Message, MessageBoxIcon.Error);
+            }
+        }
+
+        private static int CopyTitleBlock(Database source, Database destination, Sheet sheet, Vector3d displacement)
+        {
+            // Keep the source read transaction separate from the destination write.
+            // Preserve entities' own scales/styles and clone block dependencies.
+            using (Transaction read = source.TransactionManager.StartTransaction())
+            {
+                var layout = (Layout)read.GetObject(sheet.Id, OpenMode.ForRead);
+                var ids = new ObjectIdCollection();
+                var paper = (BlockTableRecord)read.GetObject(layout.BlockTableRecordId, OpenMode.ForRead);
+                foreach (ObjectId id in paper)
+                {
+                    Entity entity = read.GetObject(id, OpenMode.ForRead) as Entity;
+                    // Paper-space viewport #1 and all drawing viewports must stay
+                    // in the original sheet. Their annotation scales are not title blocks.
+                    if (entity != null && !(entity is Viewport) && !entity.IsErased)
+                        ids.Add(id);
+                }
+                if (ids.Count == 0) return 0;
+                using (Transaction write = destination.TransactionManager.StartTransaction())
+                {
+                    BlockTableRecord destinationPaper = (BlockTableRecord)write.GetObject(
+                        destination.CurrentSpaceId, OpenMode.ForWrite);
+                    if (!destinationPaper.IsLayout || destination.CurrentSpaceId == SymbolUtilityServices.GetBlockModelSpaceId(destination))
+                        throw new InvalidOperationException("Target must be a paper-space layout.");
+
+                    using (var mapping = new IdMapping())
+                    {
+                        source.WblockCloneObjects(ids, destinationPaper.ObjectId, mapping,
+                            DuplicateRecordCloning.MangleName, false);
+                        Matrix3d shift = Matrix3d.Displacement(displacement);
+                        int count = 0;
+                        foreach (ObjectId id in ids)
+                        {
+                            IdPair pair = mapping[id];
+                            if (!pair.IsCloned || pair.Value.IsNull || pair.Value.IsErased)
+                                throw new InvalidOperationException("Title-block entity could not be cloned: " + id.Handle);
+                            Entity clone = write.GetObject(pair.Value, OpenMode.ForWrite, false) as Entity;
+                            if (clone == null) continue;
+                            if (displacement.Length > 1e-9) clone.TransformBy(shift);
+                            count++;
+                        }
+                        write.Commit();
+                        return count;
+                    }
+                }
+            }
+        }
+
+        private sealed class TitleBlockPicker : Form
+        {
+            private readonly ComboBox layoutChoice;
+            private readonly CheckBox autoBase;
+            internal Sheet SelectedSheet { get; private set; }
+            internal bool AutomaticBasepoint { get { return autoBase.Checked; } }
+
+            internal TitleBlockPicker(string path, IList<Sheet> sheets)
+            {
+                Text = "CE Tools - Import Title Block";
+                Width = 670;
+                Height = 295;
+                MinimumSize = new System.Drawing.Size(520, 275);
+                StartPosition = FormStartPosition.CenterParent;
+                AutoScaleMode = AutoScaleMode.Dpi;
+
+                var header = new Label
+                {
+                    Dock = DockStyle.Top, Height = 80, Padding = new Padding(12),
+                    Text = "Source DWG: " + Path.GetFileName(path) +
+                        "\\nSelect the paper-space sheet containing the title block. " +
+                        "All non-viewport paper-space entities are copied; model geometry is excluded."
+                };
+                layoutChoice = new ComboBox { Dock = DockStyle.Top, DropDownStyle = ComboBoxStyle.DropDownList };
+                foreach (Sheet item in sheets) layoutChoice.Items.Add(item);
+                layoutChoice.SelectedIndex = 0;
+                var layoutLabel = new Label { Dock = DockStyle.Top, Text = "Source paper-space layout:", Height = 25 };
+                autoBase = new CheckBox
+                {
+                    Dock = DockStyle.Top, Height = 40, Checked = true,
+                    Text = "Auto: align bottom-left paper corner of both layouts (0,0)"
+                };
+                var manualHint = new Label
+                {
+                    Dock = DockStyle.Top, Height = 27,
+                    Text = "Uncheck Auto to pick a custom destination basepoint after closing this dialog."
+                };
+                var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 48 };
+                var confirm = new Button { Text = "Import title block", AutoSize = true };
+                var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
+                confirm.Click += (sender, args) =>
+                {
+                    SelectedSheet = layoutChoice.SelectedItem as Sheet;
+                    if (SelectedSheet == null) return;
+                    DialogResult = DialogResult.OK;
+                    Close();
+                };
+                buttons.Controls.Add(confirm);
+                buttons.Controls.Add(cancel);
+                Controls.Add(manualHint);
+                Controls.Add(autoBase);
+                Controls.Add(layoutChoice);
+                Controls.Add(layoutLabel);
+                Controls.Add(header);
+                Controls.Add(buttons);
+                AcceptButton = confirm;
+                CancelButton = cancel;
             }
         }
 
