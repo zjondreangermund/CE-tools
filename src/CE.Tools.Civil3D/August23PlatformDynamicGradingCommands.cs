@@ -226,7 +226,8 @@ namespace CETools.Civil3D
                 {
                     "Multiple selected closed junction feature lines",
                     "All closed junction feature lines",
-                    "Closed lines in grading selection"
+                    "Closed lines in grading selection",
+                    "Connected open feature lines (select boundaries)"
                 });
             settings.AddChoice(
                 "Site", "07 Grading group", "Grading / toe Site", "<Auto: source site / CE-PLATFORM-SITE>",
@@ -401,7 +402,19 @@ namespace CETools.Civil3D
                 List<ObjectId> infillIds = settings.Text("InfillScope") == "Closed lines in grading selection"
                     ? gradeSourceIds.Where(id => { SourceSnapshot snapshot; string error;
                         return TryReadSource(document.Database, id, out snapshot, out error) && snapshot.Closed; }).ToList()
-                    : ResolveClosedJunctionInfillIds(document, settings.Text("InfillScope"));
+                    : settings.Text("InfillScope") == "Connected open feature lines (select boundaries)"
+                        ? new List<ObjectId>()
+                        : ResolveClosedJunctionInfillIds(document, settings.Text("InfillScope"));
+                if (settings.Text("InfillScope") == "Connected open feature lines (select boundaries)")
+                {
+                    int openCreated, openExisting, openSkipped;
+                    CreateConnectedOpenInfills(document, outputStyleId,
+                        out openCreated, out openExisting, out openSkipped);
+                    separateInfillsCreated += openCreated;
+                    separateInfillsExisting += openExisting;
+                    separateInfillsSkipped += openSkipped;
+                    infillIds.Clear();
+                }
                 closedCandidates = infillIds.Distinct().Count();
                 foreach (ObjectId infillSourceId in infillIds.Distinct())
                 {
@@ -3381,6 +3394,87 @@ namespace CETools.Civil3D
             return result;
         }
 
+        // Selected OPEN Civil feature lines can form a closed region when their
+        // endpoints coincide. Build the boundary from all selected segments
+        // without changing the original lines or manufacturing a closing edge.
+        private static void CreateConnectedOpenInfills(Document document, ObjectId styleId,
+            out int created, out int existing, out int skipped)
+        {
+            created = 0; existing = 0; skipped = 0;
+            PromptSelectionResult selection = SelectFeatureLines(document.Editor,
+                "\\nSelect connected OPEN feature lines around one or more infill regions: ");
+            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+            var segments = new List<SourceSnapshot>();
+            foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
+            {
+                SourceSnapshot snapshot; string problem;
+                if (TryReadSource(document.Database, id, out snapshot, out problem) &&
+                    !snapshot.Closed && snapshot.Points != null && snapshot.Points.Count >= 2)
+                    segments.Add(snapshot);
+                else skipped++;
+            }
+            const double snapTolerance = 0.02;
+            while (segments.Count > 0)
+            {
+                SourceSnapshot first = segments[0];
+                segments.RemoveAt(0);
+                var polygon = new List<Point3d>(BoundarySamples(document.Database, first));
+                bool extended = true;
+                while (extended && segments.Count > 0 &&
+                    PlanDistance(polygon[0], polygon[polygon.Count - 1]) > snapTolerance)
+                {
+                    extended = false;
+                    for (int i = 0; i < segments.Count; ++i)
+                    {
+                        var candidate = BoundarySamples(document.Database, segments[i]);
+                        if (candidate.Count < 2) continue;
+                        if (PlanDistance(polygon[polygon.Count - 1], candidate[0]) <= snapTolerance)
+                            polygon.AddRange(candidate.Skip(1));
+                        else if (PlanDistance(polygon[polygon.Count - 1], candidate[candidate.Count - 1]) <= snapTolerance)
+                        {
+                            candidate.Reverse();
+                            polygon.AddRange(candidate.Skip(1));
+                        }
+                        else if (PlanDistance(polygon[0], candidate[candidate.Count - 1]) <= snapTolerance)
+                            polygon.InsertRange(0, candidate.Take(candidate.Count - 1));
+                        else if (PlanDistance(polygon[0], candidate[0]) <= snapTolerance)
+                        {
+                            candidate.Reverse();
+                            polygon.InsertRange(0, candidate.Take(candidate.Count - 1));
+                        }
+                        else continue;
+                        segments.RemoveAt(i);
+                        extended = true;
+                        break;
+                    }
+                }
+                if (polygon.Count < 4 ||
+                    PlanDistance(polygon[0], polygon[polygon.Count - 1]) > snapTolerance)
+                {
+                    skipped++;
+                    document.Editor.WriteMessage("\\nOpen infill skipped: endpoints do not make a complete loop (start {0}).",
+                        first.ObjectId.Handle);
+                    continue;
+                }
+                polygon.RemoveAt(polygon.Count - 1);
+                string surfaceName = "CE-CONNECTED-INFILL-" + first.ObjectId.Handle.ToString();
+                if (!FindSurfaceByName(document.Database, surfaceName).IsNull)
+                {
+                    existing++;
+                    continue;
+                }
+                ObjectId made; string error;
+                if (TryCreateFallbackInfillSurface(document.Database, first.ObjectId, first,
+                    "CE-CONNECTED-INFILL", out made, out error, styleId, polygon))
+                    created++;
+                else
+                {
+                    skipped++;
+                    document.Editor.WriteMessage("\\nConnected infill failed: " + error);
+                }
+            }
+        }
+
         private static List<ObjectId> ResolveClosedJunctionInfillIds(
             Document document,
             string scope)
@@ -4587,7 +4681,8 @@ namespace CETools.Civil3D
             SourceSnapshot source,
             string prefix,
             out ObjectId surfaceId,
-            out string error, ObjectId outputStyleId = default(ObjectId))
+            out string error, ObjectId outputStyleId = default(ObjectId),
+            IList<Point3d> boundaryOverride = null)
         {
             surfaceId = ObjectId.Null;
             error = string.Empty;
@@ -4633,7 +4728,7 @@ namespace CETools.Civil3D
                     if (!outputStyleId.IsNull) surface.StyleId = outputStyleId;
                     var uniquePoints =
                         new List<Point3d>();
-                    foreach (Point3d point in BoundarySamples(database, source))
+                    foreach (Point3d point in boundaryOverride ?? BoundarySamples(database, source))
                     {
                         if (!Finite(point))
                             continue;
