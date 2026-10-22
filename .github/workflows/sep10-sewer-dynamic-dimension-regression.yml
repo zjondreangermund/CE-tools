@@ -58,6 +58,7 @@ jobs:
             'scripts\Repair-September05-FieldGeometryCompletion-Civil3D2023.ps1',
             'scripts\Repair-September09-FieldEngineering-Civil3D2023.ps1',
             'scripts\Repair-September09-FieldRefinement-Civil3D2023.ps1',
+            'scripts\Normalize-September09-UniversalRefreshHousekeeping-Civil3D2023.ps1',
             'scripts\Repair-September09-SewerSurfaceRulesAlignment-Civil3D2023.ps1',
             'scripts\Repair-September10-SewerAuditSequenceDynamicMultiDimension-Civil3D2023.ps1'
           )

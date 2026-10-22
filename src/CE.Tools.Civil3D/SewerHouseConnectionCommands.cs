@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using CETools.Core;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.Colors;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -32,6 +33,97 @@ namespace CETools.Civil3D
 
         [CommandMethod("CE_TOOLS", "CE_SEWERHOUSECONNECTIONS-LONG", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void CreateLong() { RunConnections("Long"); }
+
+        [CommandMethod("CE_TOOLS", "CE_SEWERHOUSECONNECTIONS-LONGOFFSET", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void OffsetLong() { OffsetConnections("LONG"); }
+
+        [CommandMethod("CE_TOOLS", "CE_SEWERHOUSECONNECTIONS-SHORTOFFSET", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void OffsetShort() { OffsetConnections("SHORT"); }
+
+        private static void OffsetConnections(string type)
+        {
+            Document doc = AcApplication.DocumentManager.MdiActiveDocument;
+            if (doc == null) return;
+            var options = new PromptDoubleOptions("\nNew absolute offset along frontage from the stored erf corner (m): ")
+            { AllowNegative = false, AllowZero = true, DefaultValue = 1, UseDefaultValue = true };
+            PromptDoubleResult distance = doc.Editor.GetDouble(options);
+            if (distance.Status != PromptStatus.OK) return;
+            PromptSelectionResult selection = doc.Editor.GetSelection(new PromptSelectionOptions {
+                MessageForAdding = "\nSelect multiple " + type.ToLowerInvariant() + " CE house connection lines: ",
+                SingleOnly = false, SinglePickInSpace = false, AllowDuplicates = false
+            });
+            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+            int moved = 0, skipped = 0;
+            using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                var model = (BlockTableRecord)tr.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(doc.Database), OpenMode.ForRead);
+                var shared = new List<Line>();
+                foreach (ObjectId id in model)
+                {
+                    Line line = tr.GetObject(id, OpenMode.ForRead, false) as Line;
+                    if (line == null) continue;
+                    using (ResultBuffer data = line.GetXDataForApplication(App))
+                        if (data != null && data.AsArray().Any(v => v.TypeCode == 1000 && Convert.ToString(v.Value) == "SHARED"))
+                            shared.Add(line);
+                }
+                foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
+                {
+                    Line line = tr.GetObject(id, OpenMode.ForRead, false) as Line;
+                    if (line == null || line.IsErased) { skipped++; continue; }
+                    using (ResultBuffer data = line.GetXDataForApplication(App))
+                    {
+                        if (data == null) { skipped++; continue; }
+                        TypedValue[] values = data.AsArray();
+                        string[] tags = values.Where(v => v.TypeCode == 1000).Select(v => Convert.ToString(v.Value)).ToArray();
+                        Point3d[] points = values.Where(v => v.TypeCode == 1010).Select(v => (Point3d)v.Value).ToArray();
+                        int offsetIndex = Array.FindIndex(values, v => v.TypeCode == 1040);
+                        if (tags.LastOrDefault() != type || !tags.Contains("CORNER_V1") || points.Length != 2 || offsetIndex < 0)
+                        { skipped++; continue; }
+                        Point3d corner = points[0];
+                        Vector3d tangent = points[1] - corner;
+                        if (tangent.Length < 1e-8) { skipped++; continue; }
+                        tangent = tangent.GetNormal();
+                        Polyline erf = null;
+                        try {
+                            ObjectId erfId = doc.Database.GetObjectId(false, new Handle(Convert.ToInt64(tags[0], 16)), 0);
+                            erf = tr.GetObject(erfId, OpenMode.ForRead, false) as Polyline;
+                        } catch { }
+                        if (erf == null || !erf.Closed) { skipped++; continue; }
+                        // Recheck the actual corner and frontage in case the erf was edited.
+                        double frontage = 0;
+                        for (int i = 0; i < erf.NumberOfVertices; i++)
+                        {
+                            Point3d c = erf.GetPoint3dAt(i);
+                            if (new Point2d(c.X, c.Y).GetDistanceTo(new Point2d(corner.X, corner.Y)) > 1e-5) continue;
+                            foreach (int j in new[] { (i + 1) % erf.NumberOfVertices, (i + erf.NumberOfVertices - 1) % erf.NumberOfVertices })
+                            {
+                                int edge = j == (i + 1) % erf.NumberOfVertices ? i : j;
+                                if (Math.Abs(erf.GetBulgeAt(edge)) > 1e-8) continue;
+                                Point3d next = erf.GetPoint3dAt(j);
+                                Vector3d v = new Vector3d(next.X - c.X, next.Y - c.Y, 0);
+                                if (v.Length > 1e-8 && v.GetNormal().DotProduct(tangent) > 0.999999) frontage = v.Length;
+                            }
+                        }
+                        if (distance.Value >= frontage) { skipped++; continue; }
+                        if (type == "LONG" && shared.Any(stem =>
+                            line.GetClosestPointTo(stem.EndPoint, false).DistanceTo(stem.EndPoint) < 1e-5))
+                        { skipped++; continue; } // do not detach a shared tee
+                        double oldOffset = Convert.ToDouble(values[offsetIndex].Value);
+                        Vector3d shift = tangent * (distance.Value - oldOffset);
+                        Point3d newStart = line.StartPoint + shift;
+                        if (!InsidePolygon(erf, new Point2d(newStart.X, newStart.Y))) { skipped++; continue; }
+                        line.UpgradeOpen();
+                        line.TransformBy(Matrix3d.Displacement(shift));
+                        values[offsetIndex] = new TypedValue(1040, distance.Value);
+                        line.XData = new ResultBuffer(values);
+                        moved++;
+                    }
+                }
+                tr.Commit();
+            }
+            doc.Editor.Regen();
+            doc.Editor.WriteMessage("\nCorner offset: moved={0}; skipped={1}. Lengths preserved. Older symbols need regeneration; shared tees and invalid erf offsets are left unchanged. Moving a trimmed line may detach it from the sewer.", moved, skipped);
+        }
 
         private void RunConnections(string mode)
         {
@@ -65,21 +157,24 @@ namespace CETools.Civil3D
             settings.AddText("ConnectionLayer", "03 Output", "Connection output layer",
                 mode == "Short" ? "CE-SEWERHOUSECONNECTIONS-SHORT" : "CE-SEWERHOUSECONNECTIONS-LONG",
                 "Specify an existing or new layer name. Short and long commands save their output separately.");
-            settings.AddPositiveDouble("Along", "02 Set-out", "Long connection offset from frontage corner (m)", 1.0,
+            settings.AddChoice("LongLengthMode", "02 Long connections", "Long line length mode",
+                "Fixed length from erf corner", "Fixed mode keeps identical lengths. Trim/extend mode reaches the sewer and therefore permits different lengths.",
+                new[] { "Fixed length from erf corner", "Extend/trim to sewer main" });
+            settings.AddPositiveDouble("LongFixedLength", "02 Long connections", "Long total line length (m)", 15.0,
+                "Exact total plan length including the portion inside the erf; independent of erf size and sewer distance.");
+            settings.AddDouble("Along", "02 Set-out", "Long connection offset from frontage corner (m)", 1.0,
                 "A consistent offset from the same chainage-side corner of every erf frontage.");
             settings.AddChoice("LongAnchor", "02 Set-out", "Long connection frontage corner",
                 "Increasing chainage corner",
                 "Use a consistent frontage endpoint on every erf, independent of ground-height variations.",
                 new[] { "Increasing chainage corner", "Decreasing chainage corner", "Lowest ground corner" });
-            settings.AddPositiveDouble("In", "02 Set-out", "Distance inside erf (m)", 1.0,
-                "Symbol starts inside the property from its road-facing boundary.");
-            settings.AddPositiveDouble("Length", "02 Set-out", "Connection arm length (m)", 3.0,
-                "Schematic arm length from the inside point toward the sewer main.");
-            settings.AddDouble("Angle", "02 Long connections", "Long connection angle from direct approach (degrees)", 0.0,
-                "0 degrees points directly across to the main. Positive angles lean downstream, in the direction of increasing alignment stations, on either side of the alignment.");
-            settings.AddDouble("NormalShortAngle", "02 Short connections", "Normal short connection angle from direct approach (degrees)", 0.0,
+            settings.AddPositiveDouble("Length", "02 Set-out", "Additional sewer search reach (m)", 3.0,
+                "Extra search distance used only in extend/trim mode; does not set the fixed line length.");
+            settings.AddDouble("Angle", "02 Long connections", "Long angle from frontage normal (degrees)", 0.0,
+                "0 degrees is perpendicular to the erf frontage. Positive angles lean toward increasing chainage along that frontage.");
+            settings.AddDouble("NormalShortAngle", "02 Short connections", "Short angle from frontage normal (degrees)", 0.0,
                 "Only applies to normal short house connections; independent of the long crossing angle.");
-            settings.AddPositiveDouble("NormalShortAlong", "02 Short connections", "Normal short offset from frontage corner (m)", 1.0,
+            settings.AddDouble("NormalShortAlong", "02 Short connections", "Normal short offset from frontage corner (m)", 1.0,
                 "Choose short connection's frontage offset independently from the long crossing.");
             settings.AddChoice("Side", "02 Set-out", "Connection pipe side", "Both sides",
                 "Specify which side of the sewer alignment receives house connections.",
@@ -88,21 +183,17 @@ namespace CETools.Civil3D
                 "Choose selected closed boundaries or every eligible closed polyline in model space.",
                 new[] { "Selected erven", "All erven" });
             settings.AddChoice("CrossingMode", "02 Set-out", "Shared road crossings", "Share one crossing for two erven",
-                "Alternatively connect a second nearby erf by a short tee to the first long lateral, allowing two erven to share one crossing.",
+                "In extend/trim mode, optionally join a second erf to the long line. Fixed-length mode uses independent lines to preserve exact dimensions.",
                 new[] { "One per erf", "Share one crossing for two erven" });
             settings.AddChoice("UnpairedMode", "02 Set-out", "Normal short connections", "Create normal short connections",
                 "When a valid shared T-connection cannot be formed, draw a normal short erf connection separately instead of hiding it.",
                 new[] { "Create normal short connections", "Skip unpaired erven" });
-            settings.AddPositiveDouble("NormalShortLength", "02 Set-out", "Normal short connection length (m)", 3.0,
-                "Length of independent short erf connections; separate from shared T-connection geometry.");
-            settings.AddPositiveDouble("NormalShortSetback", "02 Set-out", "Normal short distance inside erf boundary (m)", 1.0,
-                "Start of an independent short connection, measured inwards from the erf boundary.");
             settings.AddDouble("SharedTAlong", "02 Set-out", "Shared T offset along erf boundary (m)", 0.0,
                 "Move only the short shared T connection along the frontage (positive toward the higher end). The inward setback remains separate.");
             settings.AddPositiveDouble("ShortBranchSetback", "02 Set-out", "Shared T short distance inside erf boundary (m)", 1.0,
                 "Position the short connection's starting point this distance inside the selected erf frontage.");
-            settings.AddPositiveDouble("LongCrossingThreshold", "02 Set-out", "Minimum long crossing length for sharing (m)", 8.0,
-                "Only house connections longer than this distance can share a road crossing. Short connections are independent and never enter the pairing pool.");
+            settings.AddPositiveDouble("LongCrossingThreshold", "02 Set-out", "Frontage-to-sewer threshold for long connections (m)", 8.0,
+                "In combined mode, erven at least this far from the sewer use long lines; closer erven use fixed short lines.");
             settings.AddPositiveDouble("PairDistance", "02 Set-out", "Maximum shared pair spacing (m)", 20.0,
                 "Maximum plan separation between the two erf connection start points.");
             settings.AddPositiveDouble("MaxDistance", "02 Set-out", "Maximum frontage to sewer (m)", 25.0,
@@ -111,7 +202,11 @@ namespace CETools.Civil3D
                 "Replace existing CE symbols for selected erven", "Retain unrelated and hand-drawn geometry.",
                 new[] { "Replace existing CE symbols for selected erven", "Keep existing and skip duplicates" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
-            double along = settings.Double("Along", 1), inside = settings.Double("In", 1);
+            double along = settings.Double("Along", 1), inside = settings.Double("LongFrontageInside", 1.5);
+            bool fixedLong = settings.Text("LongLengthMode") == "Fixed length from erf corner";
+            if (along < 0 || settings.Double("NormalShortAlong", 1) < 0 ||
+                (mode != "Short" && fixedLong && settings.Double("LongFixedLength", 15) <= inside))
+            { doc.Editor.WriteMessage("\nOffsets must be non-negative; long total length must exceed its inside portion."); return; }
             double length = settings.Double("Length", 3), maxDistance = settings.Double("MaxDistance", 25);
             PromptSelectionResult selectedAlignments = doc.Editor.GetSelection(new PromptSelectionOptions {
                 MessageForAdding = "\nSelect one or multiple sewer alignments: ", AllowDuplicates = false
@@ -157,12 +252,6 @@ namespace CETools.Civil3D
                     Polyline erf = null;
                     try { erf = tr.GetObject(id, OpenMode.ForRead, false) as Polyline; } catch { }
                     if (erf == null || !erf.Closed || erf.NumberOfVertices < 3) { skipped++; continue; }
-                    var centroid = new Point2d(0, 0);
-                    for (int k = 0; k < erf.NumberOfVertices; k++) {
-                        Point2d v = erf.GetPoint2dAt(k);
-                        centroid = new Point2d(centroid.X + v.X, centroid.Y + v.Y);
-                    }
-                    centroid = new Point2d(centroid.X / erf.NumberOfVertices, centroid.Y / erf.NumberOfVertices);
                     // Find frontage closest to the selected sewer alignment.
                     int side = -1;
                     CivilAlignment alignment = null;
@@ -172,7 +261,7 @@ namespace CETools.Civil3D
                         int next = (i + 1) % erf.NumberOfVertices;
                         if (Math.Abs(erf.GetBulgeAt(i)) > 1e-8) continue; // no chord approximation
                         Point2d p = erf.GetPoint2dAt(i), q = erf.GetPoint2dAt(next);
-                        if (p.GetDistanceTo(q) <= 2 * along + 0.01) continue;
+                        if (p.GetDistanceTo(q) <= 0.01) continue;
                         Point2d mid = new Point2d((p.X + q.X) / 2, (p.Y + q.Y) / 2);
                         foreach (CivilAlignment candidate in alignments)
                         {
@@ -213,15 +302,30 @@ namespace CETools.Civil3D
                         opposite = leftIsAnchor ? right : left;
                     }
                     Vector2d tangent = (opposite - anchor).GetNormal();
-                    Point2d onFrontage = anchor + tangent * along;
-                    Vector2d inward = centroid - onFrontage;
-                    if (inward.Length < 0.01) { skipped++; continue; }
-                    // Normal to frontage that points inside the selected erf.
-                    Vector2d normal = new Vector2d(-tangent.Y, tangent.X);
-                    if (normal.DotProduct(inward) < 0) normal = -normal;
+                    double frontageLength = anchor.GetDistanceTo(opposite);
+                    // Polygon winding determines the inward side; erf size/centroid
+                    // never changes the corner, offset, direction or line length.
+                    double signedArea = 0;
+                    for (int k = 0; k < erf.NumberOfVertices; k++)
+                    {
+                        Point2d a = erf.GetPoint2dAt(k), b = erf.GetPoint2dAt((k + 1) % erf.NumberOfVertices);
+                        signedArea += a.X * b.Y - b.X * a.Y;
+                    }
+                    if (Math.Abs(signedArea) < 1e-8) { skipped++; continue; }
+                    Vector2d edge = (right - left).GetNormal();
+                    Vector2d normal = new Vector2d(-edge.Y, edge.X) * (signedArea > 0 ? 1 : -1);
+                    double stA = 0, stB = 0, offA = 0, offB = 0;
+                    try
+                    {
+                        alignment.StationOffset(anchor.X, anchor.Y, ref stA, ref offA);
+                        alignment.StationOffset(opposite.X, opposite.Y, ref stB, ref offB);
+                    }
+                    catch { skipped++; continue; }
+                    Vector2d frontageDownstream = stB >= stA ? tangent : -tangent;
+                    double usedOffset = mode == "Short" ? settings.Double("NormalShortAlong", 1) : along;
+                    if (usedOffset >= frontageLength) { skipped++; continue; }
+                    Point2d onFrontage = anchor + tangent * usedOffset;
                     Point2d start = onFrontage + normal * inside;
-                    // Abort narrow/irregular lots when the inside position falls outside the erf.
-                    if (!InsidePolygon(erf, start)) { skipped++; continue; }
                     if (mode == "Short")
                     {
                         // Short runs are independent of the long pipe angle,
@@ -234,57 +338,28 @@ namespace CETools.Civil3D
                             Start = start, End = start,
                             ShortStart = start, FrontageAnchor = anchor,
                             FrontageTangent = tangent, Inward = normal,
-                            Outward = -normal, Direction = -normal
+                            Outward = -normal, Direction = -normal,
+                            Downstream = frontageDownstream, FrontageLength = frontageLength
                         });
                         continue;
                     }
-                    // Calculate and validate the full connection before replacing
-                    // earlier CE-generated symbols. Otherwise an invalid angle could
-                    // delete an existing connection and leave the parcel unconnected.
-                    Point2d toward;
-                    try { toward = ClosestAlignmentPoint(alignment, start); }
-                    catch { skipped++; continue; }
-                    Vector2d direction = toward - start;
-                    if (direction.Length < 0.001) { skipped++; continue; }
-                    direction = direction.GetNormal();
-                    double degrees = settings.Double("Angle", 0.0);
-                    if (double.IsNaN(degrees) || double.IsInfinity(degrees) ||
-                        Math.Abs(degrees) >= 89.0) { skipped++; continue; }
-                    double radians = degrees * Math.PI / 180.0;
-                    Vector2d downstream;
-                    if (!TryIncreasingStationTangent(alignment, toward, out downstream))
-                    { skipped++; continue; }
-                    // Remove any component along the cross-road direction so
-                    // the connection angle is relative to the actual sewer
-                    // alignment, not the drawing's global X/Y orientation.
-                    downstream = downstream - direction * downstream.DotProduct(direction);
-                    if (downstream.Length < 0.001) { skipped++; continue; }
-                    downstream = downstream.GetNormal();
-                    direction = direction * Math.Cos(radians) +
-                                downstream * Math.Sin(radians);
-                    if (direction.Length < 0.001) { skipped++; continue; }
-                    direction = direction.GetNormal();
                     Point2d end;
-                    ObjectId intersectedAlignment;
-                    if (!TryIntersectNearestAlignment(alignments, start, direction,
-                            maxDistance + length + inside, out end, out intersectedAlignment))
+                    Vector2d direction;
+                    if (!TryCornerLine(anchor, tangent, normal, frontageDownstream,
+                        frontageLength, along, inside, fixedLong ? settings.Double("LongFixedLength", 15) : inside + 1,
+                        settings.Double("Angle", 0), out start, out end, out direction))
                     { skipped++; continue; }
-                    // Do not connect an erf to the wrong selected branch.
-                    // The closest valid alignment intersection determines the
-                    // main that the long lateral actually joins.
-                    if (intersectedAlignment != alignment.ObjectId)
-                    {
-                        CivilAlignment nearest = alignments.FirstOrDefault(a => a.ObjectId == intersectedAlignment);
-                        if (nearest == null) { skipped++; continue; }
-                        alignment = nearest;
-                    }
+                    if (!InsidePolygon(erf, start)) { skipped++; continue; }
+                    if (!fixedLong && !TryIntersectMain(alignment, start, direction,
+                        maxDistance + length + inside, out end))
+                    { skipped++; continue; }
                     double sourceStation = 0.0, sourceOffset = 0.0;
                     try { alignment.StationOffset(start.X, start.Y, ref sourceStation, ref sourceOffset); }
                     catch { skipped++; continue; }
                     Point2d shortStart = onFrontage +
                         tangent * settings.Double("SharedTAlong", 0.0) +
                         normal * settings.Double("ShortBranchSetback", 1.0);
-                    if (!InsidePolygon(erf, shortStart))
+                    if (!fixedLong && !InsidePolygon(erf, shortStart))
                     { skipped++; continue; }
                     proposed.Add(new ConnectionProposal
                     {
@@ -293,14 +368,15 @@ namespace CETools.Civil3D
                         Start = start, ShortStart = shortStart, End = end,
                         FrontageAnchor = anchor, FrontageTangent = tangent, Inward = normal,
                         Outward = -normal, Direction = direction,
-                        Station = sourceStation, Offset = sourceOffset
+                        Downstream = frontageDownstream, FrontageLength = frontageLength,
+                        Station = sourceStation, Offset = sourceOffset, SewerDistance = bestDistance
                     });
                 }
 
                 // Pair only after ALL erven have been examined. The former
                 // one-pass algorithm depended on entity creation/selection order,
                 // leaving pairable erven with individual long road crossings.
-                bool shareMode = mode != "Long" &&
+                bool shareMode = !fixedLong && mode != "Long" &&
                     settings.Text("CrossingMode") ==
                     "Share one crossing for two erven";
                 double pairRange = settings.Double("PairDistance", 20.0);
@@ -308,46 +384,24 @@ namespace CETools.Civil3D
                 // previous implementation every erf entered the shared pool.
                 double threshold = settings.Double("LongCrossingThreshold", 8.0);
                 var ordinary = proposed.Where(item =>
-                    item.Start.GetDistanceTo(item.End) < threshold).ToList();
+                    item.SewerDistance < threshold).ToList();
                 if (mode == "Short") ordinary = proposed.ToList();
                 if (mode == "Long") ordinary.Clear();
                 foreach (ConnectionProposal shortErf in ordinary)
                 {
-                    Point2d normalStart;
-                    Vector2d shortDirection;
-                    if (!TryNormalShortGeometry(shortErf, alignments, settings,
-                        out normalStart, out shortDirection))
-                    { skipped++; continue; }
-                    if (mode == "Short")
-                    {
-                        Point2d origin = shortErf.FrontageAnchor +
-                            shortErf.FrontageTangent * settings.Double("NormalShortAlong", 1.0);
-                        // Fixed boundary anchor; angle changes direction without
-                        // moving the marked frontage crossing.
-                        Vector2d axis = shortDirection.GetNormal();
-                        Point2d shortFrom = origin - axis * settings.Double("ShortFrontageInside", 1.5);
-                        Point2d shortTo = origin + axis * settings.Double("ShortFrontageFirst", 1.5);
-                        if (!ReplaceManagedForGroup(model, tr,
-                            new[] { shortErf }, settings.Text("Existing"), ref replaced, "SHORT"))
-                        { skipped++; continue; }
-                        AddConnectionLine(model, tr, layerId, shortErf, shortFrom, shortTo, "SHORT");
-                        created++;
-                        continue;
-                    }
-                    Point2d shortEnd;
-                    ObjectId shortTarget;
-                    if (!TryIntersectNearestAlignment(alignments, normalStart,
-                        shortDirection, maxDistance + length + inside,
-                        out shortEnd, out shortTarget))
+                    Point2d shortFrom, shortTo;
+                    Vector2d axis;
+                    if (!TryShortLine(shortErf, settings, out shortFrom, out shortTo, out axis) ||
+                        !InsidePolygon((Polyline)tr.GetObject(shortErf.Erf, OpenMode.ForRead), shortFrom))
                     { skipped++; continue; }
                     if (!ReplaceManagedForGroup(model, tr,
                         new[] { shortErf }, settings.Text("Existing"), ref replaced, "SHORT"))
                     { skipped++; continue; }
-                    AddConnectionLine(model, tr, layerId, shortErf, normalStart, shortEnd, "SHORT");
+                    AddConnectionLine(model, tr, layerId, shortErf, shortFrom, shortTo, "SHORT");
                     created++;
                 }
                 var longCandidates = proposed
-                    .Where(item => mode == "Long" || item.Start.GetDistanceTo(item.End) >= threshold)
+                    .Where(item => mode == "Long" || item.SewerDistance >= threshold)
                     .OrderBy(item => item.AlignmentHandle, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(item => item.Offset < 0 ? -1 : 1)
                     .ThenBy(item => item.Station)
@@ -409,16 +463,10 @@ namespace CETools.Civil3D
                             // Never hide a qualifying erf just because the neighbour's
                             // diagonal main crossing does not intersect its frontage
                             // normal. Draw a separate normal short connection instead.
-                            Point2d normalStart;
+                            Point2d normalStart, normalEnd;
                             Vector2d shortDirection;
-                            if (!TryNormalShortGeometry(longArm, alignments, settings,
-                                out normalStart, out shortDirection))
-                            { skipped++; continue; }
-                            Point2d normalEnd;
-                            ObjectId nearestShortAlignment;
-                            if (!TryIntersectNearestAlignment(alignments, normalStart,
-                                shortDirection, maxDistance + length + inside,
-                                out normalEnd, out nearestShortAlignment))
+                            if (!TryShortLine(longArm, settings, out normalStart, out normalEnd, out shortDirection) ||
+                                !InsidePolygon((Polyline)tr.GetObject(longArm.Erf, OpenMode.ForRead), normalStart))
                             { skipped++; continue; }
                             if (!ReplaceManagedForGroup(model, tr,
                                 new[] { longArm }, settings.Text("Existing"), ref replaced, "SHORT"))
@@ -441,15 +489,8 @@ namespace CETools.Civil3D
                     }
                     var batch = new List<ConnectionProposal> { longArm };
                     if (shortArm != null) batch.Add(shortArm);
-                    Point2d longOrigin = longArm.FrontageAnchor +
-                        longArm.FrontageTangent * settings.Double("Along", 1.0);
-                    Point2d longStart = longOrigin +
-                        longArm.Inward * settings.Double("LongFrontageInside", 1.5);
-                    Point2d longEnd;
-                    ObjectId longTarget;
-                    if (!TryIntersectNearestAlignment(alignments, longStart,
-                        longArm.Direction.GetNormal(), maxDistance + length + inside,
-                        out longEnd, out longTarget)) { skipped++; continue; }
+                    // Draw exactly the geometry validated and used for pairing.
+                    Point2d longStart = longArm.Start, longEnd = longArm.End;
                     if (!ReplaceManagedForGroup(model, tr, batch,
                         settings.Text("Existing"), ref replaced, "LONG"))
                     { skipped += batch.Count; continue; }
@@ -485,8 +526,9 @@ namespace CETools.Civil3D
             internal ObjectId Erf, Alignment;
             internal string Key, AlignmentHandle;
             internal Point2d Start, ShortStart, End, FrontageAnchor;
-            internal Vector2d Outward, Direction, FrontageTangent, Inward;
-            internal double Station, Offset;
+            internal Vector2d Outward, Direction, FrontageTangent, Inward, Downstream;
+            internal double FrontageLength;
+            internal double Station, Offset, SewerDistance;
         }
 
         private static bool ReplaceManagedForGroup(BlockTableRecord model,
@@ -535,10 +577,24 @@ namespace CETools.Civil3D
                 new Point3d(to.X, to.Y, 0)) { LayerId = layerId };
             model.AppendEntity(line);
             transaction.AddNewlyCreatedDBObject(line, true);
-            line.XData = new ResultBuffer(new TypedValue(1001, App),
-                new TypedValue(1000, owner.Key),
-                new TypedValue(1000, owner.AlignmentHandle),
-                new TypedValue(1000, type));
+            var data = new List<TypedValue> { new TypedValue(1001, App),
+                new TypedValue(1000, owner.Key), new TypedValue(1000, owner.AlignmentHandle) };
+            if (type != "SHARED")
+            {
+                // Store the true frontage crossing, not the oblique inside start.
+                Vector2d axis = (to - from).GetNormal();
+                double denominator = axis.DotProduct(owner.Inward);
+                double travel = -(from - owner.FrontageAnchor).DotProduct(owner.Inward) / denominator;
+                Point2d origin = from + axis * travel;
+                double offset = (origin - owner.FrontageAnchor).DotProduct(owner.FrontageTangent);
+                data.Add(new TypedValue(1000, "CORNER_V1"));
+                data.Add(new TypedValue(1010, new Point3d(owner.FrontageAnchor.X, owner.FrontageAnchor.Y, 0)));
+                Point2d directionPoint = owner.FrontageAnchor + owner.FrontageTangent;
+                data.Add(new TypedValue(1010, new Point3d(directionPoint.X, directionPoint.Y, 0)));
+                data.Add(new TypedValue(1040, offset));
+            }
+            data.Add(new TypedValue(1000, type));
+            line.XData = new ResultBuffer(data.ToArray());
         }
 
         // When the erf's normal misses the long crossing, the short T branch
@@ -590,45 +646,29 @@ namespace CETools.Civil3D
             return true;
         }
 
-        // Normal short connections must not depend on any long-crossing
-        // start, long angle, or shared T offset. Calculate every coordinate
-        // solely from its own configurable frontage offset/setback and angle.
-        private static bool TryNormalShortGeometry(ConnectionProposal item,
-            IEnumerable<CivilAlignment> alignments,
-            ProductionSettingsDialogModel settings,
-            out Point2d start, out Vector2d direction)
+        private static bool TryCornerLine(Point2d corner, Vector2d along, Vector2d inward,
+            Vector2d downstream, double frontageLength, double offset, double inside,
+            double total, double angle, out Point2d start, out Point2d end, out Vector2d direction)
         {
-            start = item.FrontageAnchor +
-                item.FrontageTangent * settings.Double("NormalShortAlong", 1.0) +
-                item.Inward * settings.Double("NormalShortSetback", 1.0);
-            direction = item.Outward;
-            CivilAlignment nearest = null;
-            double closest = double.MaxValue;
-            Point2d foot = start;
-            foreach (CivilAlignment alignment in alignments)
-            {
-                Point2d point;
-                try { point = ClosestAlignmentPoint(alignment, start); }
-                catch { continue; }
-                double distance = start.GetDistanceTo(point);
-                if (distance >= closest) continue;
-                closest = distance;
-                nearest = alignment;
-                foot = point;
-            }
-            if (nearest == null || closest < 1e-6) return false;
-            Vector2d approach = (foot - start).GetNormal();
-            Vector2d downstream;
-            if (!TryIncreasingStationTangent(nearest, foot, out downstream)) return false;
-            downstream -= approach * downstream.DotProduct(approach);
-            if (downstream.Length < 1e-6) return false;
-            downstream = downstream.GetNormal();
-            double degrees = settings.Double("NormalShortAngle", 0.0);
-            if (double.IsNaN(degrees) || double.IsInfinity(degrees) ||
-                Math.Abs(degrees) >= 89.0) return false;
-            double radians = degrees * Math.PI / 180.0;
-            direction = approach * Math.Cos(radians) + downstream * Math.Sin(radians);
-            return direction.Length > 1e-6;
+            start = end = corner; direction = -inward;
+            CornerConnectionPlan plan;
+            if (!CornerConnectionPlan.TryCreate(corner.X, corner.Y, along.X, along.Y,
+                inward.X, inward.Y, downstream.DotProduct(along) >= 0 ? 1 : -1,
+                frontageLength, offset, inside, total, angle, out plan)) return false;
+            start = new Point2d(plan.StartX, plan.StartY);
+            end = new Point2d(plan.EndX, plan.EndY);
+            direction = (end - start).GetNormal();
+            return true;
+        }
+
+        private static bool TryShortLine(ConnectionProposal item, ProductionSettingsDialogModel settings,
+            out Point2d start, out Point2d end, out Vector2d direction)
+        {
+            double inside = settings.Double("ShortFrontageInside", 1.5);
+            return TryCornerLine(item.FrontageAnchor, item.FrontageTangent, item.Inward,
+                item.Downstream, item.FrontageLength, settings.Double("NormalShortAlong", 1),
+                inside, inside + settings.Double("ShortFrontageFirst", 1.5),
+                settings.Double("NormalShortAngle", 0), out start, out end, out direction);
         }
 
         private static bool TryIntersectNearestAlignment(
