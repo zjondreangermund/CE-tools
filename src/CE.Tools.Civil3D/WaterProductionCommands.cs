@@ -582,6 +582,60 @@ namespace CETools.Civil3D
             return repaired;
         }
 
+        [CommandMethod("CE_WATERBANDFIX", CommandFlags.Modal | CommandFlags.Redraw)]
+        public void RepairExistingWaterProfileBands()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civilDocument = CivilApplication.ActiveDocument;
+            if (document == null || civilDocument == null) return;
+            int viewsFixed = 0, bandsFixed = 0, skipped = 0;
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                List<AlignmentRecord> records = ReadAlignmentRecords(civilDocument, transaction);
+                foreach (AlignmentRecord record in records)
+                {
+                    try
+                    {
+                        var alignment = transaction.GetObject(record.AlignmentId, OpenMode.ForRead, false)
+                            as CivilAlignment;
+                        if (alignment == null) continue;
+                        ObjectId ground = ObjectId.Null;
+                        foreach (ObjectId id in alignment.GetProfileIds())
+                        {
+                            var profile = transaction.GetObject(id, OpenMode.ForRead, false)
+                                as Autodesk.Civil.DatabaseServices.Profile;
+                            if (profile == null) continue;
+                            if (ground.IsNull || profile.Name.EndsWith(" - EG", StringComparison.OrdinalIgnoreCase))
+                                ground = id;
+                        }
+                        if (ground.IsNull) { skipped++; continue; }
+                        foreach (ObjectId viewId in alignment.GetProfileViewIds())
+                        {
+                            var view = transaction.GetObject(viewId, OpenMode.ForWrite, false)
+                                as Autodesk.Civil.DatabaseServices.ProfileView;
+                            if (view == null || view.IsReferenceObject) continue;
+                            bandsFixed += RepairWaterBandProfiles(view, ground);
+                            viewsFixed++;
+                        }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        skipped++;
+                        document.Editor.WriteMessage("\nWater band repair skipped " +
+                            record.RouteName + ": " + ex.Message);
+                    }
+                }
+                transaction.Commit();
+            }
+            document.Editor.Regen();
+            System.Windows.Forms.MessageBox.Show(
+                "Water profile views updated: " + viewsFixed +
+                "\nProfile band rows updated: " + bandsFixed +
+                "\nRoutes skipped: " + skipped +
+                "\n\nProfile1/Profile2 now reference the matching water EG profile.",
+                "CE Tools - Water Profile Band Repair");
+        }
+
         [CommandMethod("CE_WATERPLACE", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
         public void PlaceAssets()
         {
