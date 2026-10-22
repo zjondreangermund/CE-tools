@@ -534,6 +534,7 @@ namespace CETools.Civil3D
                             profileId,
                             ObjectId.Null,
                             bandNetworkId);
+                        RepairWaterBandProfiles(view, profileId);
                         views++;
                     }
                     transaction.Commit();
@@ -550,6 +551,35 @@ namespace CETools.Civil3D
                     "\nCE_WATERPROFILE cancelled. The installed Civil 3D profile API could not complete the operation: " +
                     exception.Message);
             }
+        }
+
+        // The band-set may arrive with invalid source-template profile references.
+        // Assign both profile slots to the locally generated water EG profile.
+        private static int RepairWaterBandProfiles(DBObject view, ObjectId profileId)
+        {
+            var profileView = view as Autodesk.Civil.DatabaseServices.ProfileView;
+            if (profileView == null || profileId.IsNull) return 0;
+            int repaired = 0;
+            var bands = profileView.Bands;
+            foreach (var items in new[] { bands.GetTopBandItems(), bands.GetBottomBandItems() })
+            {
+                foreach (Autodesk.Civil.DatabaseServices.ProfileViewBandItem item in items)
+                {
+                    if (item.BandType == Autodesk.Civil.BandType.PipeNetwork ||
+                        item.BandType == Autodesk.Civil.BandType.PressureNetwork ||
+                        item.BandType == Autodesk.Civil.BandType.HorizontalGeometry ||
+                        item.BandType == Autodesk.Civil.BandType.SuperelevationData) continue;
+                    try
+                    {
+                        item.Profile1Id = profileId;
+                        item.Profile2Id = profileId;
+                        item.ShowLabels = true;
+                        repaired++;
+                    }
+                    catch (System.Exception) { }
+                }
+            }
+            return repaired;
         }
 
         [CommandMethod("CE_WATERPLACE", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
@@ -770,6 +800,24 @@ namespace CETools.Civil3D
                 selection.Value == null ||
                 selection.Value.Count == 0)
             {
+                var scope = new PromptKeywordOptions("\nWater sources [All/Selected] <Selected>: ");
+                scope.Keywords.Add("All");
+                scope.Keywords.Add("Selected");
+                scope.AllowNone = true;
+                PromptResult scopeResult = editor.GetKeywords(scope);
+                if (scopeResult.Status == PromptStatus.Cancel) return new List<RouteSource>();
+                if (scopeResult.Status == PromptStatus.OK &&
+                    string.Equals(scopeResult.StringResult, "All", StringComparison.OrdinalIgnoreCase))
+                {
+                    var all = new List<ObjectId>();
+                    using (Transaction read = document.Database.TransactionManager.StartTransaction())
+                    {
+                        var model = (BlockTableRecord)read.GetObject(
+                            SymbolUtilityServices.GetBlockModelSpaceId(document.Database), OpenMode.ForRead);
+                        foreach (ObjectId id in model) all.Add(id);
+                    }
+                    return ReadRouteSources(document.Database, all, useStoredRouteNames);
+                }
                 selection = editor.GetSelection(
                     new PromptSelectionOptions
                     {
@@ -782,11 +830,16 @@ namespace CETools.Civil3D
             if (selection.Status != PromptStatus.OK || selection.Value == null)
                 return new List<RouteSource>();
 
+            return ReadRouteSources(document.Database, selection.Value.GetObjectIds(), useStoredRouteNames);
+        }
+
+        private static List<RouteSource> ReadRouteSources(Database database, IEnumerable<ObjectId> sourceIds, bool useStoredRouteNames)
+        {
             var result = new List<RouteSource>();
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
             {
                 int unnamed = 0;
-                foreach (ObjectId id in selection.Value.GetObjectIds())
+                foreach (ObjectId id in sourceIds.Distinct())
                 {
                     DBObject item = transaction.GetObject(id, OpenMode.ForRead, false);
                     List<Point3d> points;
