@@ -17,6 +17,9 @@
     <!-- Only the Civil 3D 2024 adapter gets compatibility branches.
          Never alter the 2023 command path or engineering calculations. -->
     <DefineConstants Condition="'$(AutoCADVersion)' == '2024'">$(DefineConstants);CE_CIVIL3D_2024</DefineConstants>
+    <DefineConstants Condition="'$(AutoCADVersion)' == '2025'">$(DefineConstants);CE_CIVIL3D_2025</DefineConstants>
+    <DefineConstants Condition="'$(AutoCADVersion)' == '2026'">$(DefineConstants);CE_CIVIL3D_2026</DefineConstants>
+    <DefineConstants Condition="'$(AutoCADVersion)' == '2027'">$(DefineConstants);CE_CIVIL3D_2027</DefineConstants>
 
     <AutoCADRoot Condition="'$(AutoCADRoot)' == ''">C:\Program Files\Autodesk\AutoCAD $(AutoCADVersion)</AutoCADRoot>
     <Civil3DRoot Condition="'$(Civil3DRoot)' == '' and Exists('$(AutoCADRoot)\AeccDbMgd.dll')">$(AutoCADRoot)</Civil3DRoot>

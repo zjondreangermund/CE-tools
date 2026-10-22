@@ -16,8 +16,8 @@ using CETools.Core;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilFeatureLine = Autodesk.Civil.DatabaseServices.FeatureLine;
-#if CE_CIVIL3D_2024
-// Civil 3D 2024: resolve the feature-line point enum from the host API at runtime.
+#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
+// Civil 3D 2024+ adapters: resolve the feature-line point enum from the host API at runtime.
 #else
 using CivilFeatureLinePointType = Autodesk.Civil.DatabaseServices.FeatureLinePointType;
 #endif
@@ -421,7 +421,7 @@ namespace CETools.Civil3D
                 CivilFeatureLine feature = source as CivilFeatureLine;
                 if (feature != null)
                 {
-#if CE_CIVIL3D_2024
+#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
                     // Do not bind to FeatureLinePointType's namespace, which differs
                     // between installed Civil 3D APIs. Keep 2023 on its original path.
                     var getPoints = feature.GetType().GetMethods()
@@ -429,13 +429,13 @@ namespace CETools.Civil3D
                             method.GetParameters().Length == 1 &&
                             method.GetParameters()[0].ParameterType.IsEnum);
                     if (getPoints == null)
-                        throw new InvalidOperationException("Civil 3D 2024 FeatureLine.GetPoints API not found.");
+                        throw new InvalidOperationException("Civil 3D host FeatureLine.GetPoints API not found.");
                     Type pointType = getPoints.GetParameters()[0].ParameterType;
                     object allPoints = Enum.Parse(pointType, "AllPoints", true);
                     Point3dCollection collection =
                         getPoints.Invoke(feature, new[] { allPoints }) as Point3dCollection;
                     if (collection == null)
-                        throw new InvalidOperationException("Civil 3D 2024 FeatureLine.GetPoints did not return points.");
+                        throw new InvalidOperationException("Civil 3D host FeatureLine.GetPoints did not return points.");
 #else
                     Point3dCollection collection =
                         feature.GetPoints(
