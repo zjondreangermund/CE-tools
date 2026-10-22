@@ -426,6 +426,23 @@ namespace CETools.Civil3D
                             IdPair pair = mapping[id];
                             if (!pair.IsCloned || pair.Value.IsNull || pair.Value.IsErased)
                                 throw new InvalidOperationException("A source object could not be copied: " + id.Handle);
+
+                            // Layout.CopyFrom does not restore the actual camera for
+                            // every paper-space viewport. Preserve the source view
+                            // parameters after cloning the viewport and model data.
+                            Viewport sourceViewport = read.GetObject(id, OpenMode.ForRead) as Viewport;
+                            if (sourceViewport == null || sourceViewport.Number == 1) continue;
+                            Viewport clonedViewport = write.GetObject(pair.Value, OpenMode.ForWrite) as Viewport;
+                            if (clonedViewport == null) continue;
+                            clonedViewport.ViewCenter = sourceViewport.ViewCenter;
+                            clonedViewport.ViewTarget = sourceViewport.ViewTarget;
+                            clonedViewport.ViewDirection = sourceViewport.ViewDirection;
+                            clonedViewport.ViewHeight = sourceViewport.ViewHeight;
+                            clonedViewport.TwistAngle = sourceViewport.TwistAngle;
+                            clonedViewport.CustomScale = sourceViewport.CustomScale;
+                            clonedViewport.PerspectiveOn = sourceViewport.PerspectiveOn;
+                            clonedViewport.Locked = sourceViewport.Locked;
+                            clonedViewport.On = sourceViewport.On;
                         }
                 }
                 // Layouts, model, viewports and dependent definitions commit together or roll back together.
