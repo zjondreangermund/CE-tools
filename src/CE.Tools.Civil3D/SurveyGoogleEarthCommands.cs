@@ -65,7 +65,7 @@ namespace CETools.Civil3D
             {
                 using (var form = new SurveyLocationForm(info, coordinateCodes))
                 {
-                    #if CE_CIVIL3D_2024
+                    #if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
                     form.ShowDialog();
 #else
                     AcApplication.ShowModalDialog(form);
