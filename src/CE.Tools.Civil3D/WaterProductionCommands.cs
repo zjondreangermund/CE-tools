@@ -142,7 +142,9 @@ namespace CETools.Civil3D
             {
                 string routeName = index == 0
                     ? "W-MAIN"
-                    : "W-B" + index.ToString("00", CultureInfo.InvariantCulture);
+                    : ordered[index].SourceKind == "ClosedPolylineLoop"
+                        ? "W-LOOP" + index.ToString("00", CultureInfo.InvariantCulture)
+                        : "W-B" + index.ToString("00", CultureInfo.InvariantCulture);
                 editor.WriteMessage(
                     "\n  {0}: source={1}; length={2:0.###}; vertices={3}",
                     routeName,
@@ -973,6 +975,8 @@ namespace CETools.Civil3D
             {
                 for (int index = 0; index < polyline.NumberOfVertices; index++)
                     AddDistinct(points, polyline.GetPoint3dAt(index));
+                if (polyline.Closed && points.Count > 2)
+                    points.Add(points[0]);
                 kind = polyline.Closed ? "ClosedPolylineLoop" : "Polyline";
                 return points.Count >= 2;
             }
@@ -1494,13 +1498,15 @@ namespace CETools.Civil3D
             var polyline = new Polyline(points.Count);
             polyline.SetDatabaseDefaults(database);
             polyline.LayerId = layerId;
-            for (int index = 0; index < points.Count; index++)
+            bool closed = points.Count > 3 &&
+                points[0].DistanceTo(points[points.Count - 1]) < 0.001;
+            int vertexCount = closed ? points.Count - 1 : points.Count;
+            for (int index = 0; index < vertexCount; index++)
                 polyline.AddVertexAt(
                     index,
                     new Point2d(points[index].X, points[index].Y),
-                    0.0,
-                    0.0,
-                    0.0);
+                    0.0, 0.0, 0.0);
+            polyline.Closed = closed;
             modelSpace.AppendEntity(polyline);
             transaction.AddNewlyCreatedDBObject(polyline, true);
             return polyline.ObjectId;
