@@ -566,7 +566,7 @@ namespace CETools.Civil3D
                     bool lastEndpointAlreadyAssigned = assignedStructures.Contains(selected.NodeIds[selected.NodeIds.Count - 1]);
                     if (firstEndpointAlreadyAssigned && !lastEndpointAlreadyAssigned)
                     {
-#if CE_CIVIL3D_2024
+#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
                         selected = new CandidatePath(
                             selected.NodeIds.Reverse().ToList(),
                             selected.EdgeIds.Reverse().ToList(),

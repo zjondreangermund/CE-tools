@@ -954,7 +954,7 @@ namespace CETools.Civil3D
                         LayerId = child.LayerId,
                         StyleName = child.StyleName,
                         SiteId = child.SiteId,
-                        #if CE_CIVIL3D_2024
+                        #if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
                         ColorIndex = (short)child.ColorIndex,
 #else
                         ColorIndex = child.ColorIndex,

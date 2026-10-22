@@ -363,14 +363,14 @@ namespace CETools.Civil3D
             for (int j = i + 1; j < sources.Count; j++)
             {
                 foreach (BoundarySegment a in sources[i].Segments)
-                #if CE_CIVIL3D_2024
+                #if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
                 foreach (BoundarySegment candidateB in sources[j].Segments)
 #else
                 foreach (BoundarySegment b in sources[j].Segments)
 #endif
 
                 {
-#if CE_CIVIL3D_2024
+#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
                     BoundarySegment b = candidateB;
 #endif
                     Vector2d da = a.B - a.A;
