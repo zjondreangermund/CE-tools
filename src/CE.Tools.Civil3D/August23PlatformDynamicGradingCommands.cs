@@ -158,7 +158,7 @@ namespace CETools.Civil3D
             List<SurfaceOption> surfaces = ReadSurfaces(document);
             if (surfaces.Count == 0)
             {
-                surfaces.Add(new SurfaceOption { Name = "<No target surface>", ObjectId = ObjectId.Null });
+                surfaces.Add(new SurfaceOption("<No target surface>", ObjectId.Null));
             }
 
             List<string> siteNames = ReadSiteNames(document);
