@@ -98,6 +98,13 @@ namespace CETools.Civil3D
                 preferredPartsList,
                 "Choose the installed gravity-network parts list used for every selected source.",
                 partsLists.Select(item => item.Name).ToArray());
+            // Persist a reference ground surface on the gravity network so water
+            // structures, pipe rules and subsequent profile workflows can find it.
+            var surfaceChoices = ReadTargetSurfaces(document.Database, civilDocument);
+            setup.AddChoice(
+                "TargetSurface", "01 Network", "Target ground surface", "<None>",
+                "Civil 3D reference surface for the new gravity water network; source pipe elevations are preserved.",
+                new[] { "<None>" }.Concat(surfaceChoices.Select(item => item.Name)).ToArray());
             setup.AddChoice(
                 "Rules",
                 "02 Creation",
@@ -156,6 +163,10 @@ namespace CETools.Civil3D
                     StringComparison.OrdinalIgnoreCase));
             if (partsList == null)
                 partsList = partsLists[0];
+
+            ObjectId targetSurfaceId = surfaceChoices
+                .Where(item => item.Name == setup.Text("TargetSurface"))
+                .Select(item => item.Id).FirstOrDefault();
 
             bool connect = string.Equals(
                 setup.Text("Connections"),
@@ -272,6 +283,15 @@ namespace CETools.Civil3D
                             "Civil 3D did not return the newly created gravity network.");
 
                     network.PartsListId = partsList.ObjectId;
+                    if (!targetSurfaceId.IsNull)
+                    {
+                        // ReferenceSurfaceId is available for gravity networks;
+                        // using reflection also tolerates host API variations.
+                        var referenceSurface = network.GetType().GetProperty("ReferenceSurfaceId");
+                        if (referenceSurface == null || !referenceSurface.CanWrite)
+                            throw new InvalidOperationException("This Civil 3D version cannot assign a reference surface to the water gravity network.");
+                        referenceSurface.SetValue(network, targetSurfaceId, null);
+                    }
                     network.Description =
                         "CE Tools water network created from " +
                         paths.Count.ToString(CultureInfo.InvariantCulture) +
@@ -402,6 +422,28 @@ namespace CETools.Civil3D
                 try { editor.SetImpliedSelection(new[] { networkId }); }
                 catch { }
             }
+        }
+
+        private sealed class TargetSurfaceChoice
+        {
+            internal string Name;
+            internal ObjectId Id;
+        }
+
+        private static List<TargetSurfaceChoice> ReadTargetSurfaces(Database database, CivilDocument civil)
+        {
+            var results = new List<TargetSurfaceChoice>();
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in civil.GetSurfaceIds())
+                {
+                    var surface = transaction.GetObject(id, OpenMode.ForRead, false)
+                        as Autodesk.Civil.DatabaseServices.Surface;
+                    if (surface != null)
+                        results.Add(new TargetSurfaceChoice { Name = surface.Name, Id = id });
+                }
+            }
+            return results.OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         private static void ShowMessage(string format, params object[] values)
