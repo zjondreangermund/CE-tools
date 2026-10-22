@@ -141,9 +141,10 @@ namespace CETools.Civil3D
                             return;
                         }
                         int copied;
+                        string imageReport;
                         using (document.LockDocument())
                             copied = CopyTitleBlock(source, document.Database, picker.SelectedSheet,
-                                destinationBase - sourceBase);
+                                destinationBase - sourceBase, path, out imageReport);
                         document.Editor.Regen();
                         Show("Copied " + copied + " title-block paper-space entities from '" +
                             picker.SelectedSheet.Name + "' into the CURRENT layout.\\n\\n" +
@@ -151,7 +152,7 @@ namespace CETools.Civil3D
                                 ? "Source and destination page bottom-left basepoints: (0,0)."
                                 : "Source page bottom-left basepoint: (0,0); destination: specified point.") +
                             "\\nText, block attributes, linetypes and annotation scaling retain their source definitions. " +
-                            "Check fonts and any external references on this workstation.");
+                            "Check fonts and any external references on this workstation." + imageReport);
                     }
                 }
             }
@@ -161,8 +162,10 @@ namespace CETools.Civil3D
             }
         }
 
-        private static int CopyTitleBlock(Database source, Database destination, Sheet sheet, Vector3d displacement)
+        private static int CopyTitleBlock(Database source, Database destination, Sheet sheet, Vector3d displacement,
+            string sourceDwgPath, out string imageReport)
         {
+            imageReport = string.Empty;
             // Keep the source read transaction separate from the destination write.
             // Preserve entities' own scales/styles and clone block dependencies.
             using (Transaction read = source.TransactionManager.StartTransaction())
@@ -202,11 +205,81 @@ namespace CETools.Civil3D
                             if (displacement.Length > 1e-9) clone.TransformBy(shift);
                             count++;
                         }
+                        imageReport = RelinkRasterLogos(source, destination, read, write,
+                            ids, mapping, sourceDwgPath);
                         write.Commit();
                         return count;
                     }
                 }
             }
+        }
+
+        private static string RelinkRasterLogos(Database source, Database destination,
+            Transaction read, Transaction write, ObjectIdCollection originalIds,
+            IdMapping mapping, string sourceDwgPath)
+        {
+            int resolved = 0, missing = 0;
+            var missingNames = new List<string>();
+            var processed = new HashSet<ObjectId>();
+            foreach (ObjectId originalId in originalIds)
+            {
+                RasterImage sourceImage = read.GetObject(originalId, OpenMode.ForRead) as RasterImage;
+                if (sourceImage == null || sourceImage.ImageDefId.IsNull) continue;
+                IdPair pair = mapping[originalId];
+                if (!pair.IsCloned || pair.Value.IsNull) continue;
+                RasterImage targetImage = write.GetObject(pair.Value, OpenMode.ForRead) as RasterImage;
+                if (targetImage == null || targetImage.ImageDefId.IsNull ||
+                    !processed.Add(targetImage.ImageDefId)) continue;
+                RasterImageDef sourceDef = read.GetObject(sourceImage.ImageDefId, OpenMode.ForRead) as RasterImageDef;
+                RasterImageDef targetDef = write.GetObject(targetImage.ImageDefId, OpenMode.ForWrite) as RasterImageDef;
+                if (sourceDef == null || targetDef == null) continue;
+                string originalPath = sourceDef.SourceFileName;
+                string filePath = ResolveLogoPath(originalPath, sourceDwgPath, destination.Filename);
+                if (filePath == null)
+                {
+                    missing++;
+                    missingNames.Add(originalPath ?? "(empty image path)");
+                    continue;
+                }
+                targetDef.SourceFileName = filePath;
+                resolved++;
+                try { targetDef.Load(); }
+                catch (System.Exception) { }
+            }
+            if (resolved == 0 && missing == 0) return string.Empty;
+            return "\n\nRaster logos/images: " + resolved + " paths resolved; " + missing + " missing." +
+                (missing > 0 ? "\nMissing files: " + string.Join("; ", missingNames.Distinct().Take(8)) +
+                "\nPlace missing logo files beside the source DWG or correct their paths." : string.Empty);
+        }
+
+        private static string ResolveLogoPath(string storedPath, string sourceDwgPath,
+            string destinationDwgPath)
+        {
+            if (string.IsNullOrWhiteSpace(storedPath)) return null;
+            string sourceFolder = Path.GetDirectoryName(sourceDwgPath);
+            string destinationFolder = string.IsNullOrWhiteSpace(destinationDwgPath)
+                ? null : Path.GetDirectoryName(destinationDwgPath);
+            var candidates = new List<string>();
+            if (Path.IsPathRooted(storedPath)) candidates.Add(storedPath);
+            else
+            {
+                if (!string.IsNullOrWhiteSpace(sourceFolder))
+                    candidates.Add(Path.Combine(sourceFolder, storedPath));
+                if (!string.IsNullOrWhiteSpace(destinationFolder))
+                    candidates.Add(Path.Combine(destinationFolder, storedPath));
+            }
+            if (!string.IsNullOrWhiteSpace(sourceFolder))
+                candidates.Add(Path.Combine(sourceFolder, Path.GetFileName(storedPath)));
+            foreach (string candidate in candidates)
+            {
+                try
+                {
+                    string fullPath = Path.GetFullPath(candidate);
+                    if (File.Exists(fullPath)) return fullPath;
+                }
+                catch (System.Exception) { }
+            }
+            return null;
         }
 
         private sealed class TitleBlockPicker : Form
