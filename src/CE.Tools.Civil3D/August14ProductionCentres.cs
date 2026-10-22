@@ -111,7 +111,7 @@ namespace CETools.Civil3D
                 {
                     A("CE-Import Missing Project Styles", "CE_PROJECTSTYLEIMPORT", "Import a source Civil 3D style drawing when Water dropdowns are empty.", "01 SETTINGS"),
                     A("CE-Water Settings", "CE_WATERSETTINGS", "Choose alignment/profile/profile-view/band styles and asset spacing.", "01 SETTINGS"),
-                    A("CE-Multiple Networks from Polylines", "CE_NETWORKFROMPOLYLINESBATCH", "Create multiple Water network sources in the same drawing.", "02 PREPARE"),
+                    A("CE-Multiple Networks from Polylines", "CE_WATERNETWORKMULTI", "Create multiple Water network sources in the same drawing.", "02 PREPARE"),
                     A("CE-Reset Stale Network Batch", "CE_NETWORKBATCHRESET", "Clear a stuck CE network batch state.", "02 PREPARE"),
                     A("CE-Sequence Water Routes", "CE_WATERSEQ", "Store W-MAIN and branch route order.", "03 CREATE"),
                     A("CE-Water Alignments", "CE_WATERALIGN", "Create/refresh linked Water alignments.", "04 DESIGN"),

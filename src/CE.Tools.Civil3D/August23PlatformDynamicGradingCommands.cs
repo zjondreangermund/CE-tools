@@ -60,6 +60,11 @@ namespace CETools.Civil3D
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
             if (selectedSurface == null) return;
+            if (settings.Text("Criteria") == "Grade to Surface" && selectedSurface.ObjectId.IsNull)
+            {
+                document.Editor.WriteMessage("\nChoose an existing target surface to create grading.");
+                return;
+            }
             bool intermediate = string.Equals(settings.Text("Intermediate"), "Yes", StringComparison.OrdinalIgnoreCase);
 
             PromptSelectionResult selection = SelectFeatureLines(document.Editor, "\nSelect feature lines to drape dynamically: ");
@@ -119,7 +124,7 @@ namespace CETools.Civil3D
                         featureLineId,
                         new DirectDrapeLink
                         {
-                            SurfaceHandle = selectedSurface.ObjectId.Handle.ToString(),
+                            SurfaceHandle = selectedSurface.ObjectId.IsNull ? string.Empty : selectedSurface.ObjectId.Handle.ToString(),
                             Intermediate = intermediate
                         });
                     linked++;
@@ -153,8 +158,7 @@ namespace CETools.Civil3D
             List<SurfaceOption> surfaces = ReadSurfaces(document);
             if (surfaces.Count == 0)
             {
-                document.Editor.WriteMessage("\nCE_PLATFORMGRADETOSURFACE cancelled. No Civil 3D surfaces were found.");
-                return;
+                surfaces.Add(new SurfaceOption("<No target surface>", ObjectId.Null));
             }
 
             List<string> siteNames = ReadSiteNames(document);
@@ -185,11 +189,11 @@ namespace CETools.Civil3D
             settings.AddChoice(
                 "Side", "02 Grading side", "Projection / grading side", "Auto",
                 "Auto uses the outward side for closed feature lines. For open bellmouth/road strings choose Outside/Inside or explicit Left/Right. The chosen side is stored with the link and reused when road elevations move.",
-                new[] { "Auto", "Outside", "Inside", "Left", "Right" });
+                new[] { "Auto", "Outside", "Inside", "Left", "Right", "Away from all alignments" });
             settings.AddChoice(
                 "Criteria", "03 Grading criteria", "Grading criteria", "Grade to Surface",
                 "Junction bellmouth grading uses Grade to Surface.",
-                new[] { "Grade to Surface" });
+                new[] { "Grade to Surface", "Do not create grading (surfaces / infill only)" });
             settings.AddChoice(
                 "CutFormat", "04 Cut", "Cut format", "Slope (H:V)",
                 "Choose whether the cut value is entered as a horizontal-to-vertical slope ratio or as grade percent.",
@@ -271,8 +275,8 @@ namespace CETools.Civil3D
                 "True chainage spacing along the bellmouth/platform geometry.");
             settings.AddChoice(
                 "ConnectedSurfaces", "09 Surfaces", "Connected feature-line surfaces", "Create separate surface for every connected feature-line group",
-                "Create one separate Civil 3D TIN surface for every connected feature-line group among the processed grading sources. Each group surface includes all connected source feature lines plus its linked toe/daylight feature lines; unrelated groups are never merged into one surface.",
-                new[] { "Create separate surface for every connected feature-line group", "Do not create connected surfaces" });
+                "Create one separate Civil 3D TIN surface for every connected feature-line group among the processed grading sources. Each group surface includes all connected source feature lines plus its linked toe/daylight feature lines; Choose one combined surface to collect all processed junctions while keeping each area bounded by its toe.",
+                new[] { "Create separate surface for every connected feature-line group", "Create one surface for all junctions", "Do not create connected surfaces" });
             settings.AddText(
                 "ConnectedSurfacePrefix", "09 Surfaces", "Connected surface name prefix", "CE-JUNCTION-GRADE",
                 "Each connected group is refreshed as <prefix>-<root source handle>.");
@@ -302,6 +306,8 @@ namespace CETools.Civil3D
                 return;
             }
 
+            bool combineJunctions = settings.Text("ConnectedSurfaces") == "Create one surface for all junctions";
+            bool wantsInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase);
             var requested = new GradeLink
             {
                 SurfaceHandle = selectedSurface.ObjectId.Handle.ToString(),
@@ -310,7 +316,7 @@ namespace CETools.Civil3D
                 MaxDistance = Math.Max(0.10, settings.Double("MaxDistance", 50.0)),
                 SearchStep = Math.Max(0.05, settings.Double("SearchStep", 0.5)),
                 Side = SafeSide(settings.Text("Side")),
-                NativeInfill = string.Equals(settings.Text("Infill"), "Yes", StringComparison.OrdinalIgnoreCase),
+                NativeInfill = wantsInfill && !combineJunctions,
                 SiteName = SafeName(settings.Text("Site"), "<Auto: source site / CE-PLATFORM-SITE>"),
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
                 KeepExistingPresentation =
@@ -328,6 +334,7 @@ namespace CETools.Civil3D
                 SlopeLineInterval = Math.Max(0.10, settings.Double("SlopeLineInterval", 5.0))
             };
 
+            bool createGrading = settings.Text("Criteria") == "Grade to Surface";
             int completed = 0;
             int skipped = 0;
             int groups = 0;
@@ -335,7 +342,7 @@ namespace CETools.Civil3D
             int slopeLines = 0;
             int cutSlopeLines = 0;
             int fillSlopeLines = 0;
-            foreach (ObjectId sourceId in gradeSourceIds.Distinct())
+            foreach (ObjectId sourceId in gradeSourceIds.Distinct().Where(id => createGrading))
             {
                 GradeBuildResult result = BuildOrRefreshGrade(document, sourceId, requested, true);
                 if (result.Success)
@@ -354,15 +361,18 @@ namespace CETools.Civil3D
                 }
             }
 
+            var surfaceSources = gradeSourceIds.ToList();
+            if (combineJunctions && wantsInfill && settings.Text("InfillScope") != "Closed lines in grading selection")
+                surfaceSources.AddRange(ResolveClosedJunctionInfillIds(document, settings.Text("InfillScope")));
             var connectedSurfaceResult = new ConnectedSurfaceBuildResult();
             if ((settings.Text("ConnectedSurfaces") ?? string.Empty)
                     .StartsWith(
-                        "Create separate surface",
+                        "Create ",
                         StringComparison.OrdinalIgnoreCase))
             {
                 connectedSurfaceResult = CreateConnectedGradeSurfaces(
                     document,
-                    gradeSourceIds,
+                    surfaceSources,
                     SafeName(
                         settings.Text("ConnectedSurfacePrefix"),
                         "CE-JUNCTION-GRADE"),
@@ -370,7 +380,8 @@ namespace CETools.Civil3D
                         0.001,
                         settings.Double(
                             "ConnectedTolerance",
-                            0.050)));
+                            0.050)),
+                    combineJunctions);
                 foreach (string message in connectedSurfaceResult.Messages)
                     document.Editor.WriteMessage(
                         "\n" + message);
@@ -380,16 +391,26 @@ namespace CETools.Civil3D
             int separateInfillsExisting = 0;
             int separateInfillsSkipped = 0;
             if (requested.NativeInfill &&
-                !string.Equals(
+                (!createGrading || !string.Equals(
                     settings.Text("InfillScope"),
                     "Closed lines in grading selection",
-                    StringComparison.OrdinalIgnoreCase))
+                    StringComparison.OrdinalIgnoreCase)))
             {
-                List<ObjectId> infillIds = ResolveClosedJunctionInfillIds(
-                    document,
-                    settings.Text("InfillScope"));
+                List<ObjectId> infillIds = settings.Text("InfillScope") == "Closed lines in grading selection"
+                    ? gradeSourceIds.Where(id => { SourceSnapshot snapshot; string error;
+                        return TryReadSource(document.Database, id, out snapshot, out error) && snapshot.Closed; }).ToList()
+                    : ResolveClosedJunctionInfillIds(document, settings.Text("InfillScope"));
                 foreach (ObjectId infillSourceId in infillIds.Distinct())
                 {
+                    if (!createGrading)
+                    {
+                        SourceSnapshot infillSource; string infillError; ObjectId infillSurface;
+                        if (TryReadSource(document.Database, infillSourceId, out infillSource, out infillError) &&
+                            TryCreateFallbackInfillSurface(document.Database, infillSourceId, infillSource,
+                                "CE-JUNCTION-INFILL", out infillSurface, out infillError)) separateInfillsCreated++;
+                        else { separateInfillsSkipped++; document.Editor.WriteMessage("\nInfill skipped: " + infillError); }
+                        continue;
+                    }
                     NativeInfillResult infillResult =
                         CreateOrRefreshNativeInfill(
                             document,
@@ -1218,6 +1239,11 @@ namespace CETools.Civil3D
                 link.Side,
                 spacing);
             error = string.Empty;
+            if (link.Side == "Away from all alignments" && !OrientAwayFromAlignments(database, samples))
+            {
+                error = "No unambiguous side away from the drawing alignments was found. Choose Left/Right for this source.";
+                return false;
+            }
 
             if (samples.Count < 2)
             {
@@ -3827,7 +3853,7 @@ namespace CETools.Civil3D
             Document document,
             IEnumerable<ObjectId> sourceIds,
             string prefix,
-            double tolerance)
+            double tolerance, bool combineAll = false)
         {
             var result =
                 new ConnectedSurfaceBuildResult();
@@ -3914,7 +3940,7 @@ namespace CETools.Civil3D
                         if (visited[candidate] ||
                             candidate == current)
                             continue;
-                        if (!ConnectedInPlan(
+                        if (!combineAll && !ConnectedInPlan(
                                 members[current].Points,
                                 members[candidate].Points,
                                 tolerance))
@@ -3957,15 +3983,40 @@ namespace CETools.Civil3D
                     SafeName(
                         prefix,
                         "CE-JUNCTION-GRADE") +
-                    "-" +
-                    rootHandle;
+                    (combineAll ? "-ALL" : "-" + rootHandle);
 
+                var footprints = new List<List<Point3d>>();
+                foreach (int index in indices)
+                {
+                    ConnectedGradeMember member = members[index];
+                    SourceSnapshot src; string boundaryError;
+                    if (!TryReadSource(document.Database, member.SourceId, out src, out boundaryError)) continue;
+                    List<Point3d> sourcePoints = BoundarySamples(document.Database, src);
+                    SourceSnapshot toe;
+                    if (!member.ToeId.IsNull && TryReadSource(document.Database, member.ToeId, out toe, out boundaryError))
+                    {
+                        List<Point3d> toePoints = BoundarySamples(document.Database, toe);
+                        if (src.Closed) footprints.Add(toePoints);
+                        else
+                        {
+                            if (sourcePoints[0].DistanceTo(toePoints[0]) > sourcePoints[0].DistanceTo(toePoints[toePoints.Count - 1])) toePoints.Reverse();
+                            toePoints.Reverse();
+                            footprints.Add(sourcePoints.Concat(toePoints).ToList());
+                        }
+                    }
+                    else if (src.Closed) footprints.Add(sourcePoints);
+                    else
+                    {
+                        featureLineIds.Remove(member.SourceId);
+                        result.Messages.Add("Surface omitted open source " + member.SourceId.Handle + " because it has no toe boundary.");
+                    }
+                }
                 string error;
                 if (TryCreateOrRefreshConnectedSurface(
                         document.Database,
                         featureLineIds,
                         surfaceName,
-                        out error))
+                        out error, footprints))
                 {
                     result.Created++;
                 }
@@ -4043,11 +4094,105 @@ namespace CETools.Civil3D
                 dy * dy);
         }
 
+        private static List<Point3d> BoundarySamples(Database database, SourceSnapshot source)
+        {
+            var samples = BuildSlopeRaySamples(database, source, "Auto", 0.25)
+                .Select(sample => sample.Point).ToList();
+            var points = samples.Count >= 3 ? samples : source.Points.ToList();
+            for (int i = points.Count - 1; i > 0; i--)
+                if (PlanDistance(points[i], points[i - 1]) < 1e-6) points.RemoveAt(i);
+            if (points.Count > 2 && PlanDistance(points[0], points[points.Count - 1]) < 1e-6)
+                points.RemoveAt(points.Count - 1);
+            return points;
+        }
+
+        private static void ApplyToeFootprints(TinSurface surface, IList<List<Point3d>> loops)
+        {
+            var points = loops.SelectMany(loop => loop).ToList();
+            double minX = points.Min(p => p.X) - 10, maxX = points.Max(p => p.X) + 10;
+            double minY = points.Min(p => p.Y) - 10, maxY = points.Max(p => p.Y) + 10;
+            var cover = new Point3dCollection(new[] { new Point3d(minX, minY, 0),
+                new Point3d(maxX, minY, 0), new Point3d(maxX, maxY, 0), new Point3d(minX, maxY, 0) });
+            surface.BoundariesDefinition.AddBoundaries(cover, 0.05, SurfaceBoundaryType.Hide, true);
+            foreach (List<Point3d> loop in loops)
+                surface.BoundariesDefinition.AddBoundaries(new Point3dCollection(loop.ToArray()),
+                    0.05, SurfaceBoundaryType.Show, true);
+        }
+
+        private static bool OrientAwayFromAlignments(Database database, IList<SlopeRaySample> samples)
+        {
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (civil == null) return false;
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+            {
+                var alignments = civil.GetAlignmentIds().Cast<ObjectId>()
+                    .Select(id => tr.GetObject(id, OpenMode.ForRead, false) as Autodesk.Civil.DatabaseServices.Alignment)
+                    .Where(a => a != null).ToList();
+                if (alignments.Count == 0) return false;
+                foreach (SlopeRaySample sample in samples)
+                {
+                    bool plusAllowed = true, minusAllowed = true;
+                    foreach (var alignment in alignments)
+                    {
+                        double origin = AlignmentClearance(alignment, sample.Point, new Vector2d(0, 0));
+                        double plus = AlignmentClearance(alignment, sample.Point, sample.Direction);
+                        double minus = AlignmentClearance(alignment, sample.Point, -sample.Direction);
+                        if (!Finite(origin) || !Finite(plus) || !Finite(minus)) return false;
+                        plusAllowed &= plus > origin + 1e-6;
+                        minusAllowed &= minus > origin + 1e-6;
+                    }
+                    // Do not silently grade toward a second alignment or guess on a centreline.
+                    if (plusAllowed == minusAllowed) return false;
+                    if (minusAllowed) sample.Direction = -sample.Direction;
+                }
+            }
+            return true;
+        }
+
+        private static double AlignmentClearance(Autodesk.Civil.DatabaseServices.Alignment alignment,
+            Point3d point, Vector2d direction)
+        {
+            double station = 0, offset = 0;
+            try
+            {
+                alignment.StationOffset(point.X + direction.X, point.Y + direction.Y, ref station, ref offset);
+                return Math.Abs(offset);
+            }
+            catch { return double.NaN; }
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_REBUILDALLSURFACES", CommandFlags.Modal)]
+        public void RebuildAllSurfaces()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (document == null || civil == null) return;
+            int rebuilt = 0, skipped = 0;
+            foreach (ObjectId id in civil.GetSurfaceIds())
+            {
+                try
+                {
+                    using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+                    {
+                        CivilSurface surface = tr.GetObject(id, OpenMode.ForWrite, false) as CivilSurface;
+                        if (surface == null || surface.IsReferenceObject) { skipped++; continue; }
+                        MethodInfo rebuild = surface.GetType().GetMethod("Rebuild", Type.EmptyTypes);
+                        if (rebuild == null) { skipped++; continue; }
+                        rebuild.Invoke(surface, null);
+                        tr.Commit(); rebuilt++;
+                    }
+                }
+                catch (System.Exception error) { skipped++; document.Editor.WriteMessage("\nSurface {0}: {1}", id.Handle, error.GetBaseException().Message); }
+            }
+            document.Editor.Regen();
+            document.Editor.WriteMessage("\nRebuilt surfaces={0}; skipped/failed={1}.", rebuilt, skipped);
+        }
+
         private static bool TryCreateOrRefreshConnectedSurface(
             Database database,
             IList<ObjectId> featureLineIds,
             string surfaceName,
-            out string error)
+            out string error, IList<List<Point3d>> footprints)
         {
             error = string.Empty;
             if (database == null ||
@@ -4103,6 +4248,8 @@ namespace CETools.Civil3D
                     }
                 }
 
+                if (footprints == null || footprints.Count == 0 || footprints.Any(loop => loop.Count < 3))
+                    throw new InvalidOperationException("A closed source/toe boundary is required. Open strings without toes cannot bound infill.");
                 if (allPoints.Count < 3)
                 {
                     error =
@@ -4139,10 +4286,12 @@ namespace CETools.Civil3D
                     // Preserve the selected source/toe strings as breaklines when
                     // the host exposes a compatible AddStandardBreaklines overload.
                     // Vertices remain a safe fallback on Civil 3D 2023 variants.
-                    TryAddStandardBreaklines(
-                        surface,
-                        featureLineIds);
+                    if (!TryAddStandardBreaklines(surface, featureLineIds))
+                        throw new InvalidOperationException("Source/toe breaklines could not be added; the previous surface was retained.");
 
+                    // Hide the whole TIN, then show only bounded source/toe areas.
+                    // Separate junctions must never be joined across their convex hull.
+                    ApplyToeFootprints(surface, footprints);
                     surface.Rebuild();
                     write.Commit();
                 }
@@ -4386,8 +4535,7 @@ namespace CETools.Civil3D
 
                     var uniquePoints =
                         new List<Point3d>();
-                    foreach (Point3d point in
-                        source.Points)
+                    foreach (Point3d point in BoundarySamples(database, source))
                     {
                         if (!Finite(point))
                             continue;
@@ -5106,6 +5254,7 @@ namespace CETools.Civil3D
 
         private static string SafeSide(string value)
         {
+            if (string.Equals(value, "Away from all alignments", StringComparison.OrdinalIgnoreCase)) return "Away from all alignments";
             if (string.Equals(value, "Left", StringComparison.OrdinalIgnoreCase)) return "Left";
             if (string.Equals(value, "Right", StringComparison.OrdinalIgnoreCase)) return "Right";
             if (string.Equals(value, "Inside", StringComparison.OrdinalIgnoreCase)) return "Inside";

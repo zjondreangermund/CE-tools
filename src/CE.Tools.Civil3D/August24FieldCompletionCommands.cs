@@ -143,7 +143,7 @@ namespace CETools.Civil3D
                     A("CE-Water Production", "CE_WATERTOOLS", "Open the Sewer-format Water production centre.", "00 Production"),
                     A("CE-Water Pressure Parts / Styles / Rules", "CE_WATERSTYLES", "Choose Water pressure pipes, fittings, appurtenances, styles and rules.", "01 Settings"),
                     A("CE-Water Settings", "CE_WATERSETTINGS", "Choose Water alignment/profile/profile-view/band styles and asset spacing.", "01 Settings"),
-                    A("CE-Multiple Water Network Sources", "CE_NETWORKFROMPOLYLINESBATCH", "Create selected Water network sources without duplicate runs.", "02 Network"),
+                    A("CE-Water Network from Multiple Polylines", "CE_WATERNETWORKMULTI", "Create selected Water network sources without duplicate runs.", "02 Network"),
                     A("CE-Sequence Water Mains / Branches", "CE_WATERSEQ", "Create W-MAIN and branch route order.", "02 Network"),
                     A("CE-Network Data / Levels", "CE_NETWORKDATA", "Review Water pressure-network objects and levels.", "03 Design"),
                     A("CE-Water Alignments", "CE_WATERALIGN", "Create/refresh linked Water alignments.", "04 Complete"),
