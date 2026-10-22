@@ -135,7 +135,7 @@ namespace CETools.Civil3D
             Step("Water settings", "CE_WATERSETTINGS", "Choose water-specific pressure parts, rules, alignment/profile styles, labels and spacing.", "01 SETTINGS"),
             Step("Water styles", "CE_WATERSTYLES", "Activate water-specific styles, rules and parts.", "01 SETTINGS"),
             Step("Utility route from road reserve", "CE_UTILITYFROMROADRESERVE", "Create preliminary water route geometry using the Water layer/discipline choice.", "02 PREPARE"),
-            Step("Multiple water networks", "CE_NETWORKFROMPOLYLINESBATCH", "Create selected pressure networks without duplicate source runs.", "03 CREATE"),
+            Step("Water network from multiple polylines", "CE_WATERNETWORKMULTI", "Create one pipe/structure network using water parts and styles, with nodes at source vertices.", "03 CREATE"),
             Step("Sequence mains and branches", "CE_WATERSEQ", "Create W-MAIN and branch route order.", "03 CREATE"),
             Step("Network data / levels", "CE_NETWORKDATA", "Review water pressure-network objects and levels.", "04 DESIGN"),
             Step("Water alignments", "CE_WATERALIGN", "Create/refresh linked water alignments.", "05 COMPLETE"),

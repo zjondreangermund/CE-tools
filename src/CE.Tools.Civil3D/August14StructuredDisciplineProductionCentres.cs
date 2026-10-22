@@ -361,7 +361,7 @@ namespace CETools.Civil3D
                 new List<DisciplineWorkflowAction>
                 {
                     A("CE-Utility Route from Road Reserve", "CE_UTILITYFROMROADRESERVE", "Create preliminary Water planning routes from road-reserve geometry.", "02 PREPARE"),
-                    A("CE-Multiple Networks from Polylines", "CE_NETWORKFROMPOLYLINESBATCH", "Create multiple Water network sources.", "03 CREATE"),
+                    A("CE-Multiple Networks from Polylines", "CE_WATERNETWORKMULTI", "Create multiple Water network sources.", "03 CREATE"),
                     A("CE-Reset Stale Network Batch", "CE_NETWORKBATCHRESET", "Clear a stuck network batch state.", "03 CREATE"),
                     A("CE-Sequence Water Routes", "CE_WATERSEQ", "Create W-MAIN and branch route order.", "03 CREATE"),
                     A("CE-Check / Correct Flow Direction", "CE_FLOWTOOUTLET", "Correct selected planning-route direction when required.", "04 DESIGN")
