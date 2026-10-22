@@ -20,3 +20,11 @@ The water command uses the same Civil 3D pipe/structure network representation a
 - Where only the bounded TIN fallback works, rerun native infill on the same closed feature line. Expect the existing surface to be reused and its newly selected style applied, rather than another suffixed surface.
 
 Runtime verification is still required in Civil 3D; screenshots alone cannot establish that an infill object persisted or triangulated correctly.
+
+## Water parts-list follow-up
+
+- With a Water Pipe Network parts list containing water pipe sizes and only Null Structure, run CE_WATERNETWORKMULTI with connections enabled. The Null Structure must appear in the part picker, receive the chosen water node style, and be reused at shared source vertices. No manhole family is required.
+- With no structure sizes, connected mode must give a popup identifying the missing node parts before drawing edits. Do not substitute a sewer structure.
+- With connections disabled, the command must not require a structure part or structure style, and must create zero nodes.
+- With zero pipe sizes, expect a separate pipe-specific diagnostic. Pressure Network catalogues are not interchangeable with Pipe Network parts lists.
+- Existing sewer multi-source behaviour is unchanged. Validate the actual installed catalogue in Civil 3D; a screenshot cannot confirm which part sizes are present.
