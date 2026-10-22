@@ -64,6 +64,7 @@ namespace CETools.Civil3D
                         AllowDuplicates = false,
                         RejectObjectsFromNonCurrentSpace = true
                     });
+                if (choice.Status != PromptStatus.OK || choice.Value == null) return;
             }
             if (choice.Status == PromptStatus.OK && choice.Value != null &&
                 (preselected || choice.Value.Count > 0))
