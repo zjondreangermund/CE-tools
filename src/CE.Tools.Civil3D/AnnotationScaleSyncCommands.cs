@@ -55,7 +55,7 @@ namespace CETools.Civil3D
             _initialized = true;
             AcApplication.DocumentManager.DocumentToBeDestroyed +=
                 OnDocumentToBeDestroyed;
-#if !CE_CIVIL3D_2024
+#if !(CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027)
             AcApplication.Idle += OnIdle;
 #endif
         }
@@ -63,7 +63,7 @@ namespace CETools.Civil3D
         public static void Terminate()
         {
             if (!_initialized) return;
-#if !CE_CIVIL3D_2024
+#if !(CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027)
             AcApplication.Idle -= OnIdle;
 #endif
             AcApplication.DocumentManager.DocumentToBeDestroyed -=
@@ -95,7 +95,7 @@ namespace CETools.Civil3D
                 CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(commandNames)) return;
 
-#if CE_CIVIL3D_2024
+#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
             // Passive CANNOSCALE monitoring must NEVER rewrite user dimension
             // objects or add arbitrary contexts when a layout/viewport changes.
             // This also avoids continuous regen and CE dimension rebuild loops.
@@ -158,7 +158,7 @@ namespace CETools.Civil3D
                     if (block == null ||
                         (!block.IsLayout && !block.IsAnonymous))
                         continue;
-#if CE_CIVIL3D_2024
+#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
                     // Annotative scale sync applies to model-space engineering
                     // annotations, NEVER paper-space title blocks/text.
                     // This was forcing layouts' text Annotative=Yes on CANNOSCALE
@@ -177,7 +177,7 @@ namespace CETools.Civil3D
                             false) as Entity;
                         if (!IsSupportedAnnotation(entity)) continue;
 
-#if CE_CIVIL3D_2024
+#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
                         // An explicit scale sync must not turn existing
                         // dimensions/text into annotative objects or change
                         // their apparent paper height. Dimension styles own
@@ -200,7 +200,7 @@ namespace CETools.Civil3D
             // Segment labels store their configured paper height and offset. Queue
             // the universal dynamic pass whenever an annotation scale is applied so
             // their model-space size/offset is rebuilt for the new CANNOSCALE.
-#if !CE_CIVIL3D_2024
+#if !(CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027)
             UniversalDynamicRefreshManager.Queue();
 #endif
             return updated;
@@ -224,7 +224,7 @@ namespace CETools.Civil3D
                        StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
-#if CE_CIVIL3D_2024
+#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
         private static bool IsAlreadyAnnotative(object value)
         {
             if (value == null) return false;
@@ -289,7 +289,7 @@ namespace CETools.Civil3D
             }
         }
 
-#if CE_CIVIL3D_2024
+#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
         /// <summary>
         /// Read only annotation scales actually referenced by this drawing's
         /// paper-space viewports, plus its current model annotation scale.
