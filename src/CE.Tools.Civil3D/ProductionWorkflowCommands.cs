@@ -25,6 +25,7 @@ namespace CETools.Civil3D
             Step("Standards", "CE_STANDARDS", "Record the project design and documentation standards.", "02 PREPARE"),
             Step("Project coordination", "CE_PROJECTCOORDINATION", "Coordinate source drawings, location and page setup.", "02 PREPARE"),
             Step("Metadata refresh", "CE_PROJECTMETADATAREFRESH", "Refresh linked project metadata after coordination changes.", "03 CREATE"),
+            Step("Import sheets and model from DWG", "CE_IMPORTSHEETS", "Copy all or selected layouts, viewports and model geometry from a DWG without opening it.", "06 DELIVER"),
             Step("Drawing register", "CE_DRAWINGREGISTEREDIT", "Review drawing numbers, titles, revisions and issue data.", "05 COMPLETE"),
             Step("Drawing / client books", "CE_BOOKTOOLS", "Create final drawing books, client books and indexes.", "06 DELIVER")
         }); }
