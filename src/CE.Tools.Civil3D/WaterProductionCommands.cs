@@ -128,7 +128,7 @@ namespace CETools.Civil3D
             if (sources.Count == 0)
             {
                 editor.WriteMessage(
-                    "\nCE_WATERSEQ: select open polylines or Civil 3D pressure-pipe objects.");
+                    "\nCE_WATERSEQ: select polylines (including closed loops), gravity pipes or pressure pipes.");
                 return;
             }
 
@@ -774,7 +774,7 @@ namespace CETools.Civil3D
                     new PromptSelectionOptions
                     {
                         MessageForAdding =
-                            "\nSelect open water-main polylines or Civil 3D pressure-pipe objects: ",
+                            "\nSelect water polylines, gravity pipes or pressure pipes: ",
                         AllowDuplicates = false,
                         RejectObjectsFromNonCurrentSpace = true
                     });
@@ -862,11 +862,23 @@ namespace CETools.Civil3D
             kind = string.Empty;
 
             var polyline = item as Polyline;
-            if (polyline != null && !polyline.Closed && polyline.NumberOfVertices >= 2)
+            if (polyline != null && polyline.NumberOfVertices >= 2)
             {
                 for (int index = 0; index < polyline.NumberOfVertices; index++)
                     AddDistinct(points, polyline.GetPoint3dAt(index));
-                kind = "Polyline";
+                kind = polyline.Closed ? "ClosedPolylineLoop" : "Polyline";
+                return points.Count >= 2;
+            }
+
+            // A Civil 3D gravity water network uses ordinary Pipe entities,
+            // not only pressure-pipe entities. Accept both and retain their
+            // start/end elevations when creating branch route alignments.
+            var gravityPipe = item as Autodesk.Civil.DatabaseServices.Pipe;
+            if (gravityPipe != null)
+            {
+                AddDistinct(points, gravityPipe.StartPoint);
+                AddDistinct(points, gravityPipe.EndPoint);
+                kind = "GravityPipe";
                 return points.Count >= 2;
             }
 
