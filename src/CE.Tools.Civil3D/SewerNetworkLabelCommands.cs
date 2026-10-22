@@ -76,9 +76,27 @@ namespace CETools.Civil3D
             }
         }
 
+        internal static SewerNetworkLabelResult EnsureWaterLabels(
+            Document document, IEnumerable<ObjectId> networkIds,
+            string pipeLabelStyle, string structureLabelStyle)
+        {
+            try
+            {
+                return EnsureLabelsCore(document, networkIds,
+                    pipeLabelStyle, structureLabelStyle);
+            }
+            catch (System.Exception exception)
+            {
+                return new SewerNetworkLabelResult
+                {
+                    Warning = "Water gravity label creation failed: " + exception.Message
+                };
+            }
+        }
+
         private static SewerNetworkLabelResult EnsureLabelsCore(
-            Document document,
-            IEnumerable<ObjectId> networkIds)
+            Document document, IEnumerable<ObjectId> networkIds,
+            string requestedPipeStyle = null, string requestedStructureStyle = null)
         {
             var result = new SewerNetworkLabelResult();
             if (document == null || networkIds == null) return result;
@@ -97,9 +115,9 @@ namespace CETools.Civil3D
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 ObjectId pipeStyleId = ResolveStyleId(
-                    pipeStyles, settings.PipePlanLabelStyle, transaction);
+                    pipeStyles, requestedPipeStyle ?? settings.PipePlanLabelStyle, transaction);
                 ObjectId structureStyleId = ResolveStyleId(
-                    structureStyles, settings.StructurePlanLabelStyle, transaction);
+                    structureStyles, requestedStructureStyle ?? settings.StructurePlanLabelStyle, transaction);
                 var unavailableStyles = new List<string>();
                 if (pipeStyleId.IsNull)
                     unavailableStyles.Add("pipe plan-label style");
