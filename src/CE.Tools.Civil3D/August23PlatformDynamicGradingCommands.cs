@@ -220,7 +220,7 @@ namespace CETools.Civil3D
                 "Create native infill for closed junction feature lines. Open sidewalk/shoulder bellmouth edge strings still receive linked Grade-to-Surface daylight geometry.",
                 new[] { "Yes", "No" });
             settings.AddChoice(
-                "InfillScope", "07 Grading group", "Closed junction infill scope", "Multiple selected closed junction feature lines",
+                "InfillScope", "07 Grading group", "Closed junction infill scope", "All closed junction feature lines",
                 "Choose closed lines from the grading selection, select multiple closed junction feature lines separately after grading, or infill all recognised closed junction feature lines.",
                 new[]
                 {
@@ -367,8 +367,8 @@ namespace CETools.Civil3D
             }
 
             var surfaceSources = gradeSourceIds.ToList();
-            if (combineJunctions && wantsInfill && settings.Text("InfillScope") != "Closed lines in grading selection")
-                surfaceSources.AddRange(ResolveClosedJunctionInfillIds(document, settings.Text("InfillScope")));
+            // Infills are processed separately below; do not ask the user to
+            // select the same closed boundaries twice during surface creation.
             var connectedSurfaceResult = new ConnectedSurfaceBuildResult();
             if ((settings.Text("ConnectedSurfaces") ?? string.Empty)
                     .StartsWith(
@@ -395,16 +395,14 @@ namespace CETools.Civil3D
             int separateInfillsCreated = 0;
             int separateInfillsExisting = 0;
             int separateInfillsSkipped = 0;
-            if (wantsInfill &&
-                (!createGrading || !string.Equals(
-                    settings.Text("InfillScope"),
-                    "Closed lines in grading selection",
-                    StringComparison.OrdinalIgnoreCase)))
+            int closedCandidates = 0;
+            if (wantsInfill)
             {
                 List<ObjectId> infillIds = settings.Text("InfillScope") == "Closed lines in grading selection"
                     ? gradeSourceIds.Where(id => { SourceSnapshot snapshot; string error;
                         return TryReadSource(document.Database, id, out snapshot, out error) && snapshot.Closed; }).ToList()
                     : ResolveClosedJunctionInfillIds(document, settings.Text("InfillScope"));
+                closedCandidates = infillIds.Distinct().Count();
                 foreach (ObjectId infillSourceId in infillIds.Distinct())
                 {
                     if (!createGrading)
@@ -437,10 +435,12 @@ namespace CETools.Civil3D
 
             System.Windows.Forms.MessageBox.Show(
                 "Graded sources: " + completed + "\nSurfaces created/refreshed: " + connectedSurfaceResult.Created +
+                "\nClosed infill candidates: " + closedCandidates +
                 "\nSeparate infills created: " + separateInfillsCreated + "\nExisting infills: " + separateInfillsExisting +
+                "\nInfills skipped: " + separateInfillsSkipped +
                 "\nSurface groups skipped: " + connectedSurfaceResult.Skipped +
-                (wantsInfill && completed == 0 && connectedSurfaceResult.Created == 0 && separateInfillsCreated == 0 && separateInfillsExisting == 0
-                    ? "\n\nNo infill was created. Select genuinely closed feature lines. Open strings need linked toe boundaries for grading surfaces; separate open edges are not a closed infill boundary." : string.Empty),
+                (wantsInfill && closedCandidates == 0 && separateInfillsCreated == 0 && separateInfillsExisting == 0
+                    ? "\n\nNo closed feature-line boundaries were found. Road sidewalks, gutters and junction centres bounded by multiple OPEN lines need a separate enclosed-region detector; grading surface creation alone does not create Civil 3D infills." : string.Empty),
                 "CE Tools - Grading / Infill Results");
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
