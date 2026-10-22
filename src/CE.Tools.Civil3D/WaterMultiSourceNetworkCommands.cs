@@ -44,25 +44,47 @@ namespace CETools.Civil3D
             if (document == null || civilDocument == null) return;
 
             Editor editor = document.Editor;
-            editor.SetImpliedSelection(new ObjectId[0]);
-
-            PromptSelectionResult selected = editor.GetSelection(
-                new PromptSelectionOptions
+            PromptSelectionResult selected = editor.SelectImplied();
+            List<ObjectId> sourceIds;
+            if (selected.Status == PromptStatus.OK && selected.Value != null && selected.Value.Count > 0)
+            {
+                sourceIds = FilterSupportedSources(document.Database, selected.Value.GetObjectIds());
+                editor.SetImpliedSelection(new ObjectId[0]);
+            }
+            else
+            {
+                var scope = new PromptKeywordOptions("\nWater source selection [All/Selected] <Selected>: ");
+                scope.Keywords.Add("All");
+                scope.Keywords.Add("Selected");
+                scope.AllowNone = true;
+                PromptResult choice = editor.GetKeywords(scope);
+                if (choice.Status == PromptStatus.Cancel) return;
+                if (choice.Status == PromptStatus.OK &&
+                    string.Equals(choice.StringResult, "All", StringComparison.OrdinalIgnoreCase))
                 {
-                    MessageForAdding =
-                        "\nSelect ALL water source lines/polylines/feature lines for ONE water network: ",
-                    MessageForRemoval = "\nRemove water source objects: ",
-                    AllowDuplicates = false,
-                    RejectObjectsFromNonCurrentSpace = true
-                });
-            if (selected.Status != PromptStatus.OK ||
-                selected.Value == null ||
-                selected.Value.Count == 0)
-                return;
-
-            List<ObjectId> sourceIds = FilterSupportedSources(
-                document.Database,
-                selected.Value.GetObjectIds());
+                    var allIds = new List<ObjectId>();
+                    using (Transaction read = document.Database.TransactionManager.StartTransaction())
+                    {
+                        var model = (BlockTableRecord)read.GetObject(
+                            SymbolUtilityServices.GetBlockModelSpaceId(document.Database), OpenMode.ForRead);
+                        foreach (ObjectId id in model) allIds.Add(id);
+                    }
+                    sourceIds = FilterSupportedSources(document.Database, allIds);
+                }
+                else
+                {
+                    selected = editor.GetSelection(new PromptSelectionOptions
+                    {
+                        MessageForAdding = "\nSelect water source lines/polylines/feature lines: ",
+                        MessageForRemoval = "\nRemove source objects: ",
+                        AllowDuplicates = false,
+                        RejectObjectsFromNonCurrentSpace = true
+                    });
+                    if (selected.Status != PromptStatus.OK ||
+                        selected.Value == null || selected.Value.Count == 0) return;
+                    sourceIds = FilterSupportedSources(document.Database, selected.Value.GetObjectIds());
+                }
+            }
             if (sourceIds.Count == 0)
             {
                 ShowMessage(
