@@ -157,7 +157,7 @@ namespace CETools.Civil3D
                                     bool inside;
                                     if (TryRegionConsensus(curve, boundaries, out inside))
                                     {
-                                        #if CE_CIVIL3D_2024
+                                        #if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
                                         bool keepUnsplit = keepInside ? inside : !inside;
                                         if (!keepUnsplit)
 #else
