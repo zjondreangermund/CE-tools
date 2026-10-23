@@ -378,6 +378,10 @@ namespace CETools.Civil3D
                 {
                     A("CE-Network Data", "CE_NETWORKDATA", "Review pressure-network objects and levels.", "04 DESIGN"),
                     A("CE-Water Alignments", "CE_WATERALIGN", "Create/refresh linked Water alignments.", "05 COMPLETE"),
+                    A("CE-Water Branch Names", "CE_WATERBRANCHNAMES", "Label all or selected Water branches.", "05 COMPLETE"),
+                    A("CE-Link Water Gravity Parts to Surface", "CE_SEWLINKSURFACE", "Shared gravity-network surface and slopes command; select Water parts.", "04 DESIGN"),
+                    A("CE-Fit All Profile Views", "CE_PROFILEVIEWFITALL", "Fit profile views.", "05 COMPLETE"),
+                    A("CE-Arrange Multiple Profile Views", "CE_PROFILEVIEWARRANGE", "Arrange multiple profile views.", "05 COMPLETE"),
                     A("CE-Water Profiles", "CE_WATERPROFILE", "Create linked Water existing-ground profiles and views from selected surface.", "05 COMPLETE"),
                     A("Repair Water Profile 1 / Profile 2 Bands", "CE_WATERBANDFIX", "Correct existing water profile-view band links without recreating drawings.", "05 COMPLETE"),
                     A("CE-Water Gravity Pipe/Structure Profile Views", "CE_WATERGRAVITYPROFILEPARTS", "Select all or multiple Water gravity pipes/structures and matching Water profile views.", "05 COMPLETE"),
