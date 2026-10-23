@@ -23,26 +23,29 @@ namespace CETools.Civil3D
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             CivilDocument civil = CivilApplication.ActiveDocument;
             if (document == null || civil == null) return;
-            PromptSelectionResult implied = document.Editor.SelectImplied();
+            var options = new ProductionSettingsDialogModel(
+                "CE Tools - Water Branch Names",
+                "Select Water branch alignments and control name display without changing pipe geometry.");
+            options.AddChoice("Scope", "01 Selection", "Water alignments", "All Water alignments",
+                "Select all Water alignments or multiple Water alignments from the drawing.",
+                new[] { "All Water alignments", "Multiple selected alignments" });
+            options.AddChoice("Direction", "02 Presentation", "Label direction", "Along alignment",
+                "Orient branch names with the local alignment tangent or keep horizontal.",
+                new[] { "Along alignment", "Horizontal" });
+            options.AddPositiveDouble("TextHeight", "02 Presentation", "Name text height", 2.5,
+                "Drawing units for the displayed branch name.");
+            if (!DisciplineWorkflowDialogs.EditSettings(options)) return;
             HashSet<ObjectId> selected = null;
-            if (implied.Status == PromptStatus.OK && implied.Value != null && implied.Value.Count > 0)
-                selected = new HashSet<ObjectId>(implied.Value.GetObjectIds());
-            else
+            if (options.Text("Scope") == "Multiple selected alignments")
             {
-                var scope = new PromptKeywordOptions("\nWater branch names [All/Selected] <All>: ");
-                scope.Keywords.Add("All"); scope.Keywords.Add("Selected"); scope.AllowNone = true;
-                PromptResult answer = document.Editor.GetKeywords(scope);
-                if (answer.Status == PromptStatus.Cancel) return;
-                if (answer.Status == PromptStatus.OK && answer.StringResult == "Selected")
+                PromptSelectionResult pick = document.Editor.GetSelection(new PromptSelectionOptions
                 {
-                    PromptSelectionResult pick = document.Editor.GetSelection(new PromptSelectionOptions
-                    {
-                        MessageForAdding = "\nSelect multiple Water alignments: ",
-                        AllowDuplicates = false, RejectObjectsFromNonCurrentSpace = true
-                    });
-                    if (pick.Status != PromptStatus.OK || pick.Value == null) return;
-                    selected = new HashSet<ObjectId>(pick.Value.GetObjectIds());
-                }
+                    MessageForAdding = "\nSelect multiple Water alignments: ",
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
+                if (pick.Status != PromptStatus.OK || pick.Value == null) return;
+                selected = new HashSet<ObjectId>(pick.Value.GetObjectIds());
             }
             int added = 0, existing = 0, skipped = 0;
             using (document.LockDocument())
@@ -89,7 +92,23 @@ namespace CETools.Civil3D
                     label.Contents = route;
                     label.Location = location;
                     label.Attachment = AttachmentPoint.MiddleCenter;
-                    label.TextHeight = 2.5;
+                    label.TextHeight = options.Double("TextHeight", 2.5);
+                    if (options.Text("Direction") == "Along alignment")
+                    {
+                        try
+                        {
+                            double lead = Math.Max(alignment.StartingStation, station - 0.05);
+                            double tail = Math.Min(alignment.EndingStation, station + 0.05);
+                            double x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+                            alignment.PointLocation(lead, 0, ref x1, ref y1);
+                            alignment.PointLocation(tail, 0, ref x2, ref y2);
+                            double angle = Math.Atan2(y2 - y1, x2 - x1);
+                            if (angle > Math.PI / 2) angle -= Math.PI;
+                            if (angle < -Math.PI / 2) angle += Math.PI;
+                            label.Rotation = angle;
+                        }
+                        catch (System.Exception) { }
+                    }
                     label.LayerId = alignment.LayerId;
                     model.AppendEntity(label);
                     transaction.AddNewlyCreatedDBObject(label, true);
