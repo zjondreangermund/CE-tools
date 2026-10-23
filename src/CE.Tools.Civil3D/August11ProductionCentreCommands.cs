@@ -222,6 +222,7 @@ namespace CETools.Civil3D
                 Action("Safe Profile Fallback", "CE_WATERPROFILESAFE", "Create direct surface profiles/profile views when pressure-part projection is unavailable.", "05 COMPLETE"),
                 Action("Pressure-Part Labels", "CE_WATERLABELS", "Apply water pressure-pipe, fitting and appurtenance labels.", "05 COMPLETE"),
                 Action("Water Gravity Pipe / Structure Labels", "CE_WATERGRAVITYLABELS", "Create Water-specific gravity pipe and structure labels without changing Sewer settings.", "05 COMPLETE"),
+                Action("Number Water Pipes / Structures by Branch", "CE_WATERPARTNUMBER", "Preview or apply P1.1 / N1.1 part names along Water branch alignments.", "05 COMPLETE"),
                 Action("Water Pipe / Structure Profile Label Styles", "CE_SEWPROFILELABELSTYLESMULTI", "Apply native gravity pipe and structure profile label styles to selected Water profile views.", "05 COMPLETE"),
                 Action("Water Profile View Data Sources", "CE_PROFILEVIEWDATASOURCES", "Review profile and network data source links in selected Water profile views.", "05 COMPLETE"),
                 Action("Water Profile Sheets", "CE_WATERPROFILESHEETS", "Prepare Water profile layouts and fit selected Water profile views with existing scale controls.", "06 DELIVER"),
