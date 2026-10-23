@@ -142,6 +142,22 @@ namespace CETools.Civil3D
             CivilDocument civil = CivilApplication.ActiveDocument;
             if (document == null || civil == null) return;
 
+            if (string.Equals(discipline, "Water", StringComparison.OrdinalIgnoreCase))
+            {
+                var typeChoice = new ProductionSettingsDialogModel(
+                    "CE Tools - Water Pipe / Structure Label Types",
+                    "Choose ordinary gravity pipes/structures or pressure pipes/fittings/appurtenances.");
+                typeChoice.AddChoice("NetworkType", "01 Water network type", "Label network type",
+                    "Normal gravity pipes / structures",
+                    "Use normal Civil 3D gravity pipe and structure label styles, or retain the pressure-label workflow.",
+                    new[] { "Normal gravity pipes / structures", "Pressure pipes / fittings / appurtenances" });
+                if (!DisciplineWorkflowDialogs.EditSettings(typeChoice)) return;
+                if (typeChoice.Text("NetworkType") == "Normal gravity pipes / structures")
+                {
+                    new WaterGravityLabelCommands().LabelGravityWater();
+                    return;
+                }
+            }
             object labelRoot = ReadProperty(ReadProperty(civil, "Styles"), "LabelStyles");
             object pipeStyles = ReadPressureLabelStyles(labelRoot, "Pipe");
             object fittingStyles = ReadPressureLabelStyles(labelRoot, "Fitting");
