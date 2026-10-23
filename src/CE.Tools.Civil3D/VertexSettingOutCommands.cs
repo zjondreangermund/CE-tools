@@ -1431,6 +1431,46 @@ namespace CETools.Civil3D
             if (!vertices && !midpoints) return;
             foreach (VertexSettingSource source in sources)
             {
+                if (midpoints)
+                {
+                    // Engineering mode deliberately omits tangent midpoints at
+                    // <=20 drawing units. Midpoint-only must still produce one
+                    // midpoint on every straight source segment.
+                    var allRecords = source.Records.ToList();
+                    var verticesBySegment = allRecords
+                        .Where(r => string.Equals(r.Kind, "VERTEX",
+                            StringComparison.OrdinalIgnoreCase))
+                        .OrderBy(r => r.SegmentIndex).ToList();
+                    for (int i = 0; i + 1 < verticesBySegment.Count; i++)
+                    {
+                        var start = verticesBySegment[i];
+                        var finish = verticesBySegment[i + 1];
+                        if (allRecords.Any(r => r.SegmentIndex == start.SegmentIndex &&
+                            (r.Kind ?? string.Empty).IndexOf("MIDPOINT",
+                                StringComparison.OrdinalIgnoreCase) >= 0)) continue;
+                        // Do not replace actual curved geometry with a chord
+                        // midpoint on arcs that have an arc-centre record.
+                        if (allRecords.Any(r => r.SegmentIndex == start.SegmentIndex &&
+                            string.Equals(r.Kind, "ARC CENTER",
+                                StringComparison.OrdinalIgnoreCase))) continue;
+                        var midpoint = new Autodesk.AutoCAD.Geometry.Point3d(
+                            (start.Point.X + finish.Point.X) * 0.5,
+                            (start.Point.Y + finish.Point.Y) * 0.5,
+                            (start.Point.Z + finish.Point.Z) * 0.5);
+                        allRecords.Add(new VertexSettingRecord
+                        {
+                            Key = source.Handle + "|T" +
+                                start.SegmentIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) + "F50",
+                            Kind = "TANGENT MIDPOINT",
+                            SourceHandle = source.Handle,
+                            SourceName = source.Name,
+                            SegmentIndex = start.SegmentIndex,
+                            SegmentLength = start.Point.DistanceTo(finish.Point),
+                            Point = midpoint
+                        });
+                    }
+                    source.Records = allRecords;
+                }
                 source.Records = source.Records
                     .Where(record => vertices
                         ? string.Equals(record.Kind, "VERTEX", StringComparison.OrdinalIgnoreCase)

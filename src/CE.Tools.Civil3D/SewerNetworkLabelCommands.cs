@@ -131,6 +131,14 @@ namespace CETools.Civil3D
                         " was found. Import/select the source-drawing styles in Sewer Settings.";
                 }
 
+                // Water labels may already exist with a different plan style.
+                // Updating their native StyleId is necessary: skipping an
+                // existing label makes the user's selected style appear ignored.
+                // Do not change position, anchor or rotation.
+                if (requestedPipeStyle != null || requestedStructureStyle != null)
+                    UpdateExistingWaterLabelStyles(document.Database, transaction,
+                        networkIds, pipeStyleId, structureStyleId);
+
                 HashSet<ObjectId> labelledParts = ReadExistingLabelledParts(
                     document.Database, transaction);
                 Type pipeLabelType = FindCivilType("PipeLabel");
@@ -226,6 +234,49 @@ namespace CETools.Civil3D
 
             // Some builds expose a PlanLabelStyles compatibility property.
             return ReadProperty(family, "PlanLabelStyles") ?? family;
+        }
+
+        private static void UpdateExistingWaterLabelStyles(Database database,
+            Transaction transaction, IEnumerable<ObjectId> networkIds,
+            ObjectId pipeStyle, ObjectId structureStyle)
+        {
+            var parts = new HashSet<ObjectId>();
+            foreach (ObjectId id in networkIds)
+            {
+                CivilNetwork network;
+                try { network = transaction.GetObject(id, OpenMode.ForRead, false) as CivilNetwork; }
+                catch { continue; }
+                if (network == null) continue;
+                foreach (ObjectId item in network.GetPipeIds()) parts.Add(item);
+                foreach (ObjectId item in network.GetStructureIds()) parts.Add(item);
+            }
+            var model = transaction.GetObject(
+                SymbolUtilityServices.GetBlockModelSpaceId(database),
+                OpenMode.ForRead, false) as BlockTableRecord;
+            if (model == null) return;
+            foreach (ObjectId id in model)
+            {
+                DBObject label;
+                try { label = transaction.GetObject(id, OpenMode.ForRead, false); }
+                catch { continue; }
+                string typeName = label.GetType().Name;
+                bool pipe = typeName.IndexOf("PipeLabel", StringComparison.OrdinalIgnoreCase) >= 0;
+                bool structure = typeName.IndexOf("StructureLabel", StringComparison.OrdinalIgnoreCase) >= 0;
+                if (!pipe && !structure) continue;
+                ObjectId parent = ReadObjectIdProperty(label,
+                    "FeatureId", "PipeId", "StructureId", "ParentEntityId", "EntityId");
+                if (!parts.Contains(parent)) continue;
+                ObjectId style = pipe ? pipeStyle : structureStyle;
+                if (style.IsNull) continue;
+                try
+                {
+                    var writable = transaction.GetObject(id, OpenMode.ForWrite, false);
+                    var property = writable.GetType().GetProperty("StyleId");
+                    if (property != null && property.CanWrite)
+                        property.SetValue(writable, style, null);
+                }
+                catch (System.Exception) { /* Preserve a style Civil 3D cannot edit. */ }
+            }
         }
 
         private static HashSet<ObjectId> ReadExistingLabelledParts(
