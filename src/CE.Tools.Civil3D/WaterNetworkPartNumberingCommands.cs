@@ -119,7 +119,16 @@ namespace CETools.Civil3D
                     part.NewName = (part.Pipe ? "P" : "N") + group.Key + "." + n.ToString(CultureInfo.InvariantCulture);
                 }
             }
-            if (assignments.Count == 0)\n            {\n                MessageBox.Show("None of the " + unmatched + " Water parts matched a numbered Water branch alignment.\n" +\n                    "Check that CE_WATERALIGN generated Water alignments on the same pipe routes, " +\n                    "or increase the maximum alignment offset in the popup. No part names were changed.",\n                    "CE Tools - Water Numbering");\n                return;\n            }\n            if (options.Text("Action") == "Preview only")
+            if (assignments.Count == 0)
+            {
+                MessageBox.Show("None of the " + unmatched +
+                    " Water parts matched a numbered Water branch alignment.\\n" +
+                    "Check that CE_WATERALIGN generated Water alignments on the same pipe routes, " +
+                    "or increase the maximum alignment offset in the popup. No part names were changed.",
+                    "CE Tools - Water Numbering");
+                return;
+            }
+            if (options.Text("Action") == "Preview only")
             {
                 doc.Editor.WriteMessage("\nWater numbering preview: matched={0}; unmatched={1}.",
                     assignments.Count, unmatched);
