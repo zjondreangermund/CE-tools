@@ -3426,7 +3426,9 @@ namespace CETools.Civil3D
                     segments.Add(snapshot);
                 else skipped++;
             }
-            const double snapTolerance = 0.02;
+            // Use the same connection tolerance configured for the junction grading
+            // surface, rather than a second hidden 20 mm closure rule.
+            const double snapTolerance = 0.05;
             while (segments.Count > 0)
             {
                 SourceSnapshot first = segments[0];
@@ -3469,6 +3471,8 @@ namespace CETools.Civil3D
                         first.ObjectId.Handle);
                     continue;
                 }
+                // Snap the final seam to the first point if they are within
+                // tolerance; preserve all original feature-line geometry.
                 polygon.RemoveAt(polygon.Count - 1);
                 string surfaceName = "CE-CONNECTED-INFILL-" + first.ObjectId.Handle.ToString();
                 if (!FindSurfaceByName(document.Database, surfaceName).IsNull)
