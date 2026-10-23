@@ -35,7 +35,8 @@ namespace CETools.Civil3D
             }
             if (layouts.Count == 0) return;
             var validator = PlotSettingsValidator.Current;
-            validator.RefreshLists();
+            using (var plotSettings = new PlotSettings(false))
+                validator.RefreshLists(plotSettings);
             bool colorDependent = database.PlotStyleMode;
             string style = colorDependent ? "monochrome.ctb" : "monochrome.stb";
             bool styleAvailable = validator.GetPlotStyleSheetList()
@@ -56,7 +57,7 @@ namespace CETools.Civil3D
                     Text = "Plot table: " + style + (styleAvailable ? "" : " (not installed; display existing plot style only)"),
                     Padding = new Padding(12) };
                 var buttons = new FlowLayoutPanel { Dock = DockStyle.Bottom, Height = 45,
-                    FlowDirection = FlowDirection.RightToLeft };
+                    FlowDirection = System.Windows.Forms.FlowDirection.RightToLeft };
                 var ok = new Button { Text = "Apply", AutoSize = true, DialogResult = DialogResult.OK };
                 var cancel = new Button { Text = "Cancel", AutoSize = true, DialogResult = DialogResult.Cancel };
                 buttons.Controls.Add(ok); buttons.Controls.Add(cancel);
