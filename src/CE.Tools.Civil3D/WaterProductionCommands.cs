@@ -144,7 +144,7 @@ namespace CETools.Civil3D
                     ? "W-MAIN"
                     : ordered[index].SourceKind == "ClosedPolylineLoop"
                         ? "W-LOOP" + index.ToString("00", CultureInfo.InvariantCulture)
-                        : "W-B" + index.ToString("00", CultureInfo.InvariantCulture);
+                        : "BRANCH-" + index.ToString(CultureInfo.InvariantCulture);
                 editor.WriteMessage(
                     "\n  {0}: source={1}; length={2:0.###}; vertices={3}",
                     routeName,
@@ -166,7 +166,7 @@ namespace CETools.Civil3D
                         RouteSource source = ordered[index];
                         string routeName = index == 0
                             ? "W-MAIN"
-                            : "W-B" + index.ToString("00", CultureInfo.InvariantCulture);
+                            : "BRANCH-" + index.ToString(CultureInfo.InvariantCulture);
                         DBObject sourceObject = transaction.GetObject(
                             source.SourceId,
                             OpenMode.ForWrite,
@@ -919,7 +919,7 @@ namespace CETools.Civil3D
                         ? storedRoute
                         : unnamed++ == 0
                             ? "W-MAIN"
-                            : "W-B" + unnamed.ToString("00", CultureInfo.InvariantCulture);
+                            : "BRANCH-" + unnamed.ToString(CultureInfo.InvariantCulture);
                     result.Add(new RouteSource(
                         id,
                         id.Handle.ToString(),
