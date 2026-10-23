@@ -78,7 +78,7 @@ namespace CETools.Civil3D
             model.AddText("AssetLayer", "Layers and Annotation", "Asset review layer", settings.AssetLayer, "Layer for valve and hydrant review markers.");
             model.AddPaperHeight("LabelHeight", "Layers and Annotation", "Plan label paper height", settings.LabelHeight, "Select a standard annotative paper height or enter another positive value.");
             model.AddPositiveDouble("IsolatingValveSpacing", "Asset Spacing", "Maximum isolating-valve spacing", settings.IsolatingValveSpacing, "Maximum route spacing used for isolating-valve review markers.");
-            model.AddPositiveDouble("HydrantSpacing", "Asset Spacing", "Maximum hydrant spacing", settings.HydrantSpacing, "Maximum route spacing used for hydrant review markers.");
+            model.AddChoice("HydrantSpacingOption", "Asset Spacing", "Fire hydrant spacing", settings.HydrantSpacing <= 180.0 ? "120 m" : "240 m", "Review hydrant markers at 120 m or 240 m intervals along the Water alignment.", new[] { "120 m", "240 m" });
             model.AddPositiveDouble("AssetRadius", "Asset Spacing", "Asset marker radius", settings.AssetRadius, "Drawing-unit radius of generated review markers.");
             model.AddPositiveInteger("ProfileColumns", "Profile View Layout", "Profile views per row", settings.ProfileColumns, "Number of generated views before wrapping to the next row.");
             model.AddPositiveDouble("ProfileHorizontalSpacing", "Profile View Layout", "Horizontal spacing", settings.ProfileHorizontalSpacing, "Drawing-unit spacing between profile-view columns.");
@@ -96,7 +96,7 @@ namespace CETools.Civil3D
             settings.AssetLayer = model.Text("AssetLayer");
             settings.LabelHeight = model.Double("LabelHeight", settings.LabelHeight);
             settings.IsolatingValveSpacing = model.Double("IsolatingValveSpacing", settings.IsolatingValveSpacing);
-            settings.HydrantSpacing = model.Double("HydrantSpacing", settings.HydrantSpacing);
+            settings.HydrantSpacing = model.Text("HydrantSpacingOption") == "240 m" ? 240.0 : 120.0;
             settings.AssetRadius = model.Double("AssetRadius", settings.AssetRadius);
             settings.ProfileColumns = model.Integer("ProfileColumns", settings.ProfileColumns);
             settings.ProfileHorizontalSpacing = model.Double("ProfileHorizontalSpacing", settings.ProfileHorizontalSpacing);
