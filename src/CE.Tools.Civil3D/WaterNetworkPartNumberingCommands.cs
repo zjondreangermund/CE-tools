@@ -119,7 +119,7 @@ namespace CETools.Civil3D
                     part.NewName = (part.Pipe ? "P" : "N") + group.Key + "." + n.ToString(CultureInfo.InvariantCulture);
                 }
             }
-            if (options.Text("Action") == "Preview only")
+            if (assignments.Count == 0)\n            {\n                MessageBox.Show("None of the " + unmatched + " Water parts matched a numbered Water branch alignment.\n" +\n                    "Check that CE_WATERALIGN generated Water alignments on the same pipe routes, " +\n                    "or increase the maximum alignment offset in the popup. No part names were changed.",\n                    "CE Tools - Water Numbering");\n                return;\n            }\n            if (options.Text("Action") == "Preview only")
             {
                 doc.Editor.WriteMessage("\nWater numbering preview: matched={0}; unmatched={1}.",
                     assignments.Count, unmatched);
@@ -183,15 +183,26 @@ namespace CETools.Civil3D
                 catch (System.Exception) { }
             }
             if (best == null) return null;
-            string name = best.Name;
+            string name = best.Name ?? string.Empty;
+            string description = best.Description ?? string.Empty;
+            // Alignments created before BRANCH-N naming retain their original
+            // names. Their CE route identity may be stored in Description.
+            int position = description.IndexOf("route=", StringComparison.OrdinalIgnoreCase);
+            if (position >= 0)
+            {
+                string tagged = description.Substring(position + 6).Split('|')[0].Trim();
+                if (tagged.Length > 0) name = tagged;
+            }
             int branchNumber = 0;
             if (name.StartsWith("BRANCH-", StringComparison.OrdinalIgnoreCase))
                 int.TryParse(name.Substring(7), out branchNumber);
-            else if (!name.StartsWith("W-MAIN", StringComparison.OrdinalIgnoreCase))
-            {
-                // A Water alignment without BRANCH-N has no reliable branch number.
-                return null;
-            }
+            else if (name.StartsWith("W-B", StringComparison.OrdinalIgnoreCase))
+                int.TryParse(name.Substring(3), out branchNumber);
+            else if (name.StartsWith("W-MAIN", StringComparison.OrdinalIgnoreCase) ||
+                     name.Equals("MAIN", StringComparison.OrdinalIgnoreCase))
+                branchNumber = 0;
+            else
+                return null; // Never silently number against an unknown route.
             return new PartRoute {
                 PartId = partId, Route = branchNumber.ToString(CultureInfo.InvariantCulture),
                 Station = bestStation, Pipe = pipe
