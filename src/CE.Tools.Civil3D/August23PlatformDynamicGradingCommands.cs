@@ -3402,94 +3402,154 @@ namespace CETools.Civil3D
         // Selected OPEN Civil feature lines can form a closed region when their
         // endpoints coincide. Build the boundary from all selected segments
         // without changing the original lines or manufacturing a closing edge.
+        private sealed class InfillFaceArc
+        {
+            internal int From;
+            internal int To;
+            internal int Reverse;
+            internal SourceSnapshot Source;
+            internal List<Point3d> Points;
+        }
+
+        // Trace each bounded face of an endpoint-connected feature-line graph.
+        // The old greedy single-chain algorithm lost junction centres whenever
+        // three or more open lines met at a shared endpoint.
         private static void CreateConnectedOpenInfills(Document document, ObjectId styleId,
             out int created, out int existing, out int skipped,
             IEnumerable<ObjectId> gradingSelection = null)
         {
             created = 0; existing = 0; skipped = 0;
             ObjectId[] ids;
-            if (gradingSelection != null)
-                ids = gradingSelection.Distinct().ToArray();
+            if (gradingSelection != null) ids = gradingSelection.Distinct().ToArray();
             else
             {
                 PromptSelectionResult selection = SelectFeatureLines(document.Editor,
-                    "\\nSelect connected OPEN feature lines around one or more infill regions: ");
+                    "\\nSelect connected OPEN feature lines around infill regions: ");
                 if (selection.Status != PromptStatus.OK || selection.Value == null) return;
                 ids = selection.Value.GetObjectIds();
             }
-            var segments = new List<SourceSnapshot>();
+
+            const double tolerance = 0.05;
+            var nodes = new List<Point3d>();
+            var arcs = new List<InfillFaceArc>();
             foreach (ObjectId id in ids.Distinct())
             {
-                SourceSnapshot snapshot; string problem;
-                if (TryReadSource(document.Database, id, out snapshot, out problem) &&
-                    !snapshot.Closed && snapshot.Points != null && snapshot.Points.Count >= 2)
-                    segments.Add(snapshot);
-                else skipped++;
-            }
-            // Use the same connection tolerance configured for the junction grading
-            // surface, rather than a second hidden 20 mm closure rule.
-            const double snapTolerance = 0.05;
-            while (segments.Count > 0)
-            {
-                SourceSnapshot first = segments[0];
-                segments.RemoveAt(0);
-                var polygon = new List<Point3d>(BoundarySamples(document.Database, first));
-                bool extended = true;
-                while (extended && segments.Count > 0 &&
-                    PlanDistance(polygon[0], polygon[polygon.Count - 1]) > snapTolerance)
-                {
-                    extended = false;
-                    for (int i = 0; i < segments.Count; ++i)
-                    {
-                        var candidate = BoundarySamples(document.Database, segments[i]);
-                        if (candidate.Count < 2) continue;
-                        if (PlanDistance(polygon[polygon.Count - 1], candidate[0]) <= snapTolerance)
-                            polygon.AddRange(candidate.Skip(1));
-                        else if (PlanDistance(polygon[polygon.Count - 1], candidate[candidate.Count - 1]) <= snapTolerance)
-                        {
-                            candidate.Reverse();
-                            polygon.AddRange(candidate.Skip(1));
-                        }
-                        else if (PlanDistance(polygon[0], candidate[candidate.Count - 1]) <= snapTolerance)
-                            polygon.InsertRange(0, candidate.Take(candidate.Count - 1));
-                        else if (PlanDistance(polygon[0], candidate[0]) <= snapTolerance)
-                        {
-                            candidate.Reverse();
-                            polygon.InsertRange(0, candidate.Take(candidate.Count - 1));
-                        }
-                        else continue;
-                        segments.RemoveAt(i);
-                        extended = true;
-                        break;
-                    }
-                }
-                if (polygon.Count < 4 ||
-                    PlanDistance(polygon[0], polygon[polygon.Count - 1]) > snapTolerance)
+                SourceSnapshot source; string issue;
+                if (!TryReadSource(document.Database, id, out source, out issue) ||
+                    source.Points == null || source.Points.Count < 2)
                 {
                     skipped++;
-                    document.Editor.WriteMessage("\\nOpen infill skipped: endpoints do not make a complete loop (start {0}).",
-                        first.ObjectId.Handle);
                     continue;
                 }
-                // Snap the final seam to the first point if they are within
-                // tolerance; preserve all original feature-line geometry.
-                polygon.RemoveAt(polygon.Count - 1);
-                string surfaceName = "CE-CONNECTED-INFILL-" + first.ObjectId.Handle.ToString();
-                if (!FindSurfaceByName(document.Database, surfaceName).IsNull)
+                var points = BoundarySamples(document.Database, source);
+                if (points.Count < 2) { skipped++; continue; }
+                int from = FindInfillNode(nodes, points[0], tolerance);
+                int to = FindInfillNode(nodes, points[points.Count - 1], tolerance);
+                if (from == to && points.Count < 3) { skipped++; continue; }
+                int forward = arcs.Count;
+                arcs.Add(new InfillFaceArc {
+                    From = from, To = to, Reverse = forward + 1,
+                    Source = source, Points = points });
+                var reversed = new List<Point3d>(points);
+                reversed.Reverse();
+                arcs.Add(new InfillFaceArc {
+                    From = to, To = from, Reverse = forward,
+                    Source = source, Points = reversed });
+            }
+
+            var outgoing = new List<List<int>>();
+            for (int i = 0; i < nodes.Count; i++) outgoing.Add(new List<int>());
+            for (int i = 0; i < arcs.Count; i++) outgoing[arcs[i].From].Add(i);
+            foreach (var list in outgoing)
+                list.Sort((left, right) => InfillBearing(arcs[left]).CompareTo(InfillBearing(arcs[right])));
+
+            var visited = new HashSet<int>();
+            int rejected = 0;
+            for (int origin = 0; origin < arcs.Count; origin++)
+            {
+                if (visited.Contains(origin)) continue;
+                int current = origin;
+                var local = new HashSet<int>();
+                var boundary = new List<Point3d>();
+                bool closed = false;
+                while (local.Add(current) && local.Count <= arcs.Count)
                 {
-                    existing++;
-                    continue;
+                    InfillFaceArc edge = arcs[current];
+                    if (boundary.Count == 0) boundary.AddRange(edge.Points);
+                    else boundary.AddRange(edge.Points.Skip(1));
+                    var connections = outgoing[edge.To];
+                    int reverseAtNode = connections.IndexOf(edge.Reverse);
+                    if (reverseAtNode < 0 || connections.Count < 2) break;
+                    // Turn clockwise from the arriving reverse edge to walk
+                    // the same face through shared 3-way and 4-way junctions.
+                    current = connections[(reverseAtNode - 1 + connections.Count) % connections.Count];
+                    if (current == origin) { closed = true; break; }
                 }
-                ObjectId made; string error;
-                if (TryCreateFallbackInfillSurface(document.Database, first.ObjectId, first,
-                    "CE-CONNECTED-INFILL", out made, out error, styleId, polygon))
+                foreach (int edge in local) visited.Add(edge);
+                if (!closed || boundary.Count < 4) { rejected++; continue; }
+
+                double signedArea = 0;
+                for (int i = 0; i < boundary.Count - 1; i++)
+                    signedArea += boundary[i].X * boundary[i + 1].Y -
+                                  boundary[i + 1].X * boundary[i].Y;
+                if (signedArea <= tolerance * tolerance) continue; // exterior face
+
+                if (PlanDistance(boundary[0], boundary[boundary.Count - 1]) > tolerance)
+                { rejected++; continue; }
+                boundary.RemoveAt(boundary.Count - 1);
+                if (boundary.Count < 3) { rejected++; continue; }
+
+                // Stable face identity from its unique source handles. Distinct
+                // faces with identical memberships also include a center point.
+                var handles = local.Select(i => arcs[i].Source.ObjectId.Handle.ToString())
+                    .Distinct().OrderBy(h => h, StringComparer.Ordinal).ToArray();
+                double cx = boundary.Average(p => p.X), cy = boundary.Average(p => p.Y);
+                string signature = string.Join("|", handles) + "|" +
+                    Math.Round(cx, 2).ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" +
+                    Math.Round(cy, 2).ToString(System.Globalization.CultureInfo.InvariantCulture);
+                uint hash = 2166136261;
+                foreach (char ch in signature) { hash ^= ch; hash *= 16777619; }
+                string prefix = "CE-INFILL-FACE-" + hash.ToString("X8");
+                SourceSnapshot root = arcs[origin].Source;
+                string exactName = prefix + "-" + root.ObjectId.Handle;
+                if (!FindSurfaceByName(document.Database, exactName).IsNull)
+                { existing++; continue; }
+
+                ObjectId surface; string error;
+                if (TryCreateFallbackInfillSurface(document.Database, root.ObjectId, root,
+                    prefix, out surface, out error, styleId, boundary))
                     created++;
                 else
                 {
                     skipped++;
-                    document.Editor.WriteMessage("\\nConnected infill failed: " + error);
+                    document.Editor.WriteMessage("\\nBounded junction face skipped: " + error);
                 }
             }
+            skipped += rejected;
+            document.Editor.WriteMessage(
+                "\\nJunction graph infill: bounded faces created={0}, existing={1}, skipped={2}. " +
+                "Only endpoint-connected planar faces are used; source feature lines are preserved.",
+                created, existing, skipped);
+        }
+
+        private static int FindInfillNode(List<Point3d> nodes, Point3d point, double tolerance)
+        {
+            for (int i = 0; i < nodes.Count; i++)
+                if (PlanDistance(nodes[i], point) <= tolerance) return i;
+            nodes.Add(point);
+            return nodes.Count - 1;
+        }
+
+        private static double InfillBearing(InfillFaceArc arc)
+        {
+            Point3d first = arc.Points[0];
+            for (int i = 1; i < arc.Points.Count; i++)
+            {
+                Point3d next = arc.Points[i];
+                if (PlanDistance(first, next) > 1e-7)
+                    return Math.Atan2(next.Y - first.Y, next.X - first.X);
+            }
+            return 0;
         }
 
         private static List<ObjectId> ResolveClosedJunctionInfillIds(
