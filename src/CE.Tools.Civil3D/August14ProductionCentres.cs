@@ -124,6 +124,7 @@ namespace CETools.Civil3D
                     A("CE-Water Band Profile1 / Profile2 Repair", "CE_WATERBANDFIX", "Repair Water profile band references.", "05 COMPLETE"),
                     A("CE-Water Gravity Parts to Profile Views", "CE_WATERGRAVITYPROFILEPARTS", "Place Water gravity pipes and structures in matching profile views.", "05 COMPLETE"),
                     A("CE-Water Gravity Pipe/Structure Labels", "CE_WATERGRAVITYLABELS", "Use Water label styles without modifying Sewer settings.", "05 COMPLETE"),
+                    A("Number Water Pipes / Structures by Branch", "CE_WATERPARTNUMBER", "Preview or apply P1.1 / N1.1 part names along Water branch alignments.", "05 COMPLETE"),
                     A("Water Pipe / Structure Profile Label Styles", "CE_SEWPROFILELABELSTYLESMULTI", "Apply native gravity pipe and structure profile label styles to selected Water profile views.", "05 COMPLETE"),
                     A("Water Profile View Data Sources", "CE_PROFILEVIEWDATASOURCES", "Review profile and network data source links in selected Water profile views.", "05 COMPLETE"),
                     A("Water Profile Sheets", "CE_WATERPROFILESHEETS", "Prepare Water profile layouts and fit selected Water profile views with existing scale controls.", "06 DELIVER"),
