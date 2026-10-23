@@ -388,7 +388,8 @@ namespace CETools.Civil3D
                     A("CE-Water Asset Review Markers", "CE_WATERPLACE", "Place linked valve/hydrant review markers.", "05 COMPLETE"),
                     A("CE-Vertex Setting-Out", "CE_VERTEXSETTINGOUT", "Generate linked Water setting-out.", "05 COMPLETE"),
                     A("CE-Water Bill of Quantities", "CE_BOQWATER", "Create linked Water quantities.", "06 DELIVER"),
-                    A("CE-Water Report", "CE_REPORTWATER", "Generate Water report/drawing handoff.", "06 DELIVER")
+                    A("CE-Water Report", "CE_REPORTWATER", "Generate Water report/drawing handoff.", "06 DELIVER"),
+                    A("CE-Paper Space Black and White", "CE_PAPERMONO", "Display layouts with monochrome plot styles without editing object colours.", "06 DELIVER")
                 });
         }
 
