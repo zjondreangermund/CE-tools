@@ -62,7 +62,7 @@ namespace CETools.Civil3D
                 buttons.Controls.Add(ok); buttons.Controls.Add(cancel);
                 form.AcceptButton = ok; form.CancelButton = cancel;
                 form.Controls.Add(info); form.Controls.Add(selection); form.Controls.Add(label); form.Controls.Add(buttons);
-                if (AcApplication.ShowModalDialog(form) != DialogResult.OK) return;
+                if (form.ShowDialog() != DialogResult.OK) return;
                 var chosen = selection.SelectedIndex == 0 ? layouts :
                     new List<string> { Convert.ToString(selection.SelectedItem) };
                 int updated = 0;
