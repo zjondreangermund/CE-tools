@@ -4766,10 +4766,10 @@ namespace CETools.Civil3D
             if (database == null ||
                 source == null ||
                 source.Points == null ||
-                source.Points.Count < 3)
+                (boundaryOverride == null ? source.Points.Count < 3 : boundaryOverride.Count < 3))
             {
                 error =
-                    "The closed source does not contain enough vertices for a TIN infill.";
+                    "The infill boundary does not contain enough vertices for a TIN surface.";
                 return false;
             }
 
