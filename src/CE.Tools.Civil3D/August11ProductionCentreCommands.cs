@@ -220,6 +220,7 @@ namespace CETools.Civil3D
                 Action("Water Gravity Pipe / Structure Labels", "CE_WATERGRAVITYLABELS", "Create Water-specific gravity pipe and structure labels without changing Sewer settings.", "05 COMPLETE"),
                 Action("Valve / Hydrant Review", "CE_WATERPLACE", "Place linked valve and hydrant review markers/assets.", "05 COMPLETE"),
                 Action("Setting-Out", "CE_VERTEXSETTINGOUT", "Create linked water setting-out and leaders.", "05 COMPLETE"),
+                Action("Paper Space Black and White", "CE_PAPERMONO", "Match paper-space layout appearance to monochrome plot preview without changing entity colours.", "06 DELIVER"),
                 Action("BOQ", "CE_BOQWATER", "Create linked water quantities.", "05 COMPLETE"),
                 Action("Water Supplementary", "CE_WATERFIELDSUPPLEMENTARY", "Open water-specific field and supplementary utilities.", "05 COMPLETE"),
                 Action("DELIVER - Water Report", "CE_REPORTWATER", "Generate the water report/drawing handoff.", "06 DELIVER"),
