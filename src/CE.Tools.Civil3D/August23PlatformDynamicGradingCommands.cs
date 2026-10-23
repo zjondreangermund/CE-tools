@@ -227,7 +227,8 @@ namespace CETools.Civil3D
                     "Multiple selected closed junction feature lines",
                     "All closed junction feature lines",
                     "Closed lines in grading selection",
-                    "Connected open feature lines (select boundaries)"
+                    "Connected open feature lines (select boundaries)",
+                    "Auto connected OPEN lines from grading selection"
                 });
             settings.AddChoice(
                 "Site", "07 Grading group", "Grading / toe Site", "<Auto: source site / CE-PLATFORM-SITE>",
@@ -321,7 +322,7 @@ namespace CETools.Civil3D
                 MaxDistance = Math.Max(0.10, settings.Double("MaxDistance", 50.0)),
                 SearchStep = Math.Max(0.05, settings.Double("SearchStep", 0.5)),
                 Side = SafeSide(settings.Text("Side")),
-                NativeInfill = wantsInfill,
+                NativeInfill = false, // Separate infill pass below; never repeatedly try native infill on each open grade edge.
                 SiteName = SafeName(settings.Text("Site"), "<Auto: source site / CE-PLATFORM-SITE>"),
                 ShowSlopeLines = string.Equals(settings.Text("ShowSlopeLines"), "Yes", StringComparison.OrdinalIgnoreCase),
                 KeepExistingPresentation =
@@ -402,14 +403,18 @@ namespace CETools.Civil3D
                 List<ObjectId> infillIds = settings.Text("InfillScope") == "Closed lines in grading selection"
                     ? gradeSourceIds.Where(id => { SourceSnapshot snapshot; string error;
                         return TryReadSource(document.Database, id, out snapshot, out error) && snapshot.Closed; }).ToList()
-                    : settings.Text("InfillScope") == "Connected open feature lines (select boundaries)"
+                    : (settings.Text("InfillScope") == "Connected open feature lines (select boundaries)" ||
+                       settings.Text("InfillScope") == "Auto connected OPEN lines from grading selection")
                         ? new List<ObjectId>()
                         : ResolveClosedJunctionInfillIds(document, settings.Text("InfillScope"));
-                if (settings.Text("InfillScope") == "Connected open feature lines (select boundaries)")
+                if (settings.Text("InfillScope") == "Connected open feature lines (select boundaries)" ||
+                    settings.Text("InfillScope") == "Auto connected OPEN lines from grading selection")
                 {
                     int openCreated, openExisting, openSkipped;
                     CreateConnectedOpenInfills(document, outputStyleId,
-                        out openCreated, out openExisting, out openSkipped);
+                        out openCreated, out openExisting, out openSkipped,
+                        settings.Text("InfillScope") == "Auto connected OPEN lines from grading selection"
+                            ? gradeSourceIds : null);
                     separateInfillsCreated += openCreated;
                     separateInfillsExisting += openExisting;
                     separateInfillsSkipped += openSkipped;
@@ -3398,14 +3403,22 @@ namespace CETools.Civil3D
         // endpoints coincide. Build the boundary from all selected segments
         // without changing the original lines or manufacturing a closing edge.
         private static void CreateConnectedOpenInfills(Document document, ObjectId styleId,
-            out int created, out int existing, out int skipped)
+            out int created, out int existing, out int skipped,
+            IEnumerable<ObjectId> gradingSelection = null)
         {
             created = 0; existing = 0; skipped = 0;
-            PromptSelectionResult selection = SelectFeatureLines(document.Editor,
-                "\\nSelect connected OPEN feature lines around one or more infill regions: ");
-            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+            ObjectId[] ids;
+            if (gradingSelection != null)
+                ids = gradingSelection.Distinct().ToArray();
+            else
+            {
+                PromptSelectionResult selection = SelectFeatureLines(document.Editor,
+                    "\\nSelect connected OPEN feature lines around one or more infill regions: ");
+                if (selection.Status != PromptStatus.OK || selection.Value == null) return;
+                ids = selection.Value.GetObjectIds();
+            }
             var segments = new List<SourceSnapshot>();
-            foreach (ObjectId id in selection.Value.GetObjectIds().Distinct())
+            foreach (ObjectId id in ids.Distinct())
             {
                 SourceSnapshot snapshot; string problem;
                 if (TryReadSource(document.Database, id, out snapshot, out problem) &&
