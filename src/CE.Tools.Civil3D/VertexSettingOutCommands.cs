@@ -113,7 +113,7 @@ namespace CETools.Civil3D
             settings.AddChoice(
                 "Generation", "01 Output", "Point generation", "Engineering setting-out points",
                 "Choose the complete arc/tangent engineering rules or only the original polyline/feature-line vertices.",
-                new[] { "Engineering setting-out points", "Polyline vertices only" });
+                new[] { "Engineering setting-out points", "Polyline vertices only", "Midpoints only" });
             settings.AddChoice(
                 "Elevation", "01 Output", "XYZ elevation source", "Source geometry",
                 "Read Z from the selected source geometry, a Civil 3D surface, or a separate feature line. The reference remains linked on refresh.",
@@ -1425,19 +1425,17 @@ namespace CETools.Civil3D
             IList<VertexSettingSource> sources,
             string mode)
         {
-            if (sources == null ||
-                !string.Equals(
-                    mode,
-                    "Polyline vertices only",
-                    StringComparison.OrdinalIgnoreCase))
-                return;
+            if (sources == null) return;
+            bool vertices = string.Equals(mode, "Polyline vertices only", StringComparison.OrdinalIgnoreCase);
+            bool midpoints = string.Equals(mode, "Midpoints only", StringComparison.OrdinalIgnoreCase);
+            if (!vertices && !midpoints) return;
             foreach (VertexSettingSource source in sources)
             {
                 source.Records = source.Records
-                    .Where(record => string.Equals(
-                        record.Kind,
-                        "VERTEX",
-                        StringComparison.OrdinalIgnoreCase))
+                    .Where(record => vertices
+                        ? string.Equals(record.Kind, "VERTEX", StringComparison.OrdinalIgnoreCase)
+                        : record.Kind != null &&
+                          record.Kind.IndexOf("MIDPOINT", StringComparison.OrdinalIgnoreCase) >= 0)
                     .ToList();
                 source.Dimensions = new List<VertexRadialDimension>();
             }

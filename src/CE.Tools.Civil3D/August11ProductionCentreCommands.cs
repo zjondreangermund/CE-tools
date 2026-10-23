@@ -224,6 +224,7 @@ namespace CETools.Civil3D
                 Action("Water Gravity Pipe / Structure Labels", "CE_WATERGRAVITYLABELS", "Create Water-specific gravity pipe and structure labels without changing Sewer settings.", "05 COMPLETE"),
                 Action("Water Pipe / Structure Profile Label Styles", "CE_SEWPROFILELABELSTYLESMULTI", "Apply native gravity pipe and structure profile label styles to selected Water profile views.", "05 COMPLETE"),
                 Action("Water Profile View Data Sources", "CE_PROFILEVIEWDATASOURCES", "Review profile and network data source links in selected Water profile views.", "05 COMPLETE"),
+                Action("Water Profile Sheets", "CE_WATERPROFILESHEETS", "Prepare Water profile layouts and fit selected Water profile views with existing scale controls.", "06 DELIVER"),
                 Action("Water Sheets - Import Layouts", "CE_IMPORTSHEETS", "Import selected paper-space layouts and their viewport content from another drawing.", "06 DELIVER"),
                 Action("Valve / Hydrant Review", "CE_WATERPLACE", "Place linked valve and hydrant review markers/assets.", "05 COMPLETE"),
                 Action("Setting-Out", "CE_VERTEXSETTINGOUT", "Create linked water setting-out and leaders.", "05 COMPLETE"),

@@ -150,6 +150,7 @@ namespace CETools.Civil3D
  Step("Water gravity pipe / structure labels", "CE_WATERGRAVITYLABELS", "Use Water gravity label styles without modifying Sewer settings.", "05 COMPLETE"),
  Step("Water Pipe / Structure Profile Label Styles", "CE_SEWPROFILELABELSTYLESMULTI", "Apply native gravity pipe and structure profile label styles to selected Water profile views.", "05 COMPLETE"),
  Step("Water Profile View Data Sources", "CE_PROFILEVIEWDATASOURCES", "Review profile and network data source links in selected Water profile views.", "05 COMPLETE"),
+ Step("Water Profile Sheets", "CE_WATERPROFILESHEETS", "Prepare Water profile layouts and fit selected Water profile views with existing scale controls.", "06 DELIVER"),
  Step("Water Sheets - Import Layouts", "CE_IMPORTSHEETS", "Import selected paper-space layouts and their viewport content from another drawing.", "06 DELIVER"),
             Step("Safe water profile fallback", "CE_WATERPROFILESAFE", "Use the water-specific direct surface profile fallback when pressure projection is unavailable.", "05 COMPLETE"),
             Step("Water pressure-part labels", "CE_WATERLABELS", "Apply water-specific pressure pipe/fitting/appurtenance labels.", "05 COMPLETE"),
