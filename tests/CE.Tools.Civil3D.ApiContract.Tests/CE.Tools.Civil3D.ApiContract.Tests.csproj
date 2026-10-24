@@ -10,5 +10,6 @@
     <Compile Include="../../src/CE.Tools.Civil3D/ProfileViewBandPersistence.cs" Link="ProfileViewBandPersistence.cs" />
     <Compile Include="../../src/CE.Tools.Civil3D/ProfileViewNativeEditor.cs" Link="ProfileViewNativeEditor.cs" />
     <Compile Include="../../src/CE.Tools.Civil3D/SewerPipeConnections.cs" Link="SewerPipeConnections.cs" />
+    <Compile Include="../../src/CE.Tools.Civil3D/AutoDesignDictionaryEntries.cs" Link="AutoDesignDictionaryEntries.cs" />
   </ItemGroup>
 </Project>

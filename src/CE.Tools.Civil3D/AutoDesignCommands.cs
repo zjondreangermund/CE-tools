@@ -32,13 +32,19 @@ namespace CETools.Civil3D
             Document doc = AcApplication.DocumentManager.MdiActiveDocument;
             if (doc == null || CivilApplication.ActiveDocument == null || busy) return;
             busy = true;
-            try { Run(doc); }
-            catch (System.Exception ex) { doc.Editor.WriteMessage("\nAutoDesign stopped: " + ex.Message + ". Rerun CE_AUTODESIGN to resume."); }
+            string stage = "initialising";
+            try { Run(doc, value => stage = value); }
+            catch (System.Exception ex)
+            {
+                doc.Editor.WriteMessage("\nAutoDesign stopped during " + stage + ": " + ex.GetType().Name + ": " + ex.Message + ". Rerun CE_AUTODESIGN to resume.");
+                doc.Editor.WriteMessage("\nAutoDesign diagnostic: " + ex.ToString());
+            }
             finally { busy = false; }
         }
 
-        private static void Run(Document doc)
+        private static void Run(Document doc, Action<string> setStage)
         {
+            setStage("reading Sewer networks");
             var networks = new Dictionary<string, ObjectId>();
             using (var tr = doc.Database.TransactionManager.StartTransaction())
                 foreach (ObjectId id in CivilApplication.ActiveDocument.GetPipeNetworkIds())
@@ -60,6 +66,7 @@ namespace CETools.Civil3D
                 "Full AutoDesign can create missing alignments from already approved CE-sequenced branches using explicit saved styles. Existing alignments/profiles are preserved.",
                 new[] { "Review only", "Create missing using saved styles" });
             // Transient run choices: Analyse Only must not write persisted settings.
+            setStage("opening run options");
             var window = new ProductionSettingsWindow(model);
             AcApplication.ShowModalWindow(window);
             if (!window.Accepted) return;
@@ -69,8 +76,10 @@ namespace CETools.Civil3D
                 model.Text("Mode") == "Full AutoDesign" ? AutoDesignMode.FullAutoDesign : AutoDesignMode.CompleteExistingDesign;
             ObjectId network = ObjectId.Null;
             networks.TryGetValue(model.Text("Network"), out network);
+            setStage("validating source geometry");
             var issues = Validate(doc, sewer, roads, network);
             bool createAlignments = mode == AutoDesignMode.FullAutoDesign && model.Text("CreateAlignments") == "Create missing using saved styles";
+            setStage("building dependencies and reading saved styles");
             var steps = BuildSteps(doc, sewer, roads, network, issues, createAlignments);
             string key = scope + ":" + (network.IsNull ? "none" : network.Handle.ToString()) + ":";
             // Scope-specific IDs prevent a successful road run from blessing sewer outputs.
@@ -79,10 +88,16 @@ namespace CETools.Civil3D
                 step.Id = key + step.Id;
                 step.Dependencies = step.Dependencies.Select(x => key + x).ToArray();
             }
+            setStage("reading resume checkpoints");
             var checkpoints = ReadJournal(doc.Database);
             var engine = new AutoDesignEngine();
-            Func<string> fingerprint = () => Fingerprint(doc.Database);
+            Func<string> fingerprint = () =>
+            {
+                setStage("fingerprinting drawing objects and dictionaries");
+                return Fingerprint(doc.Database);
+            };
             var plan = engine.Plan(steps, mode, fingerprint(), checkpoints);
+            setStage("reporting drawing inventory");
             doc.Editor.WriteMessage("\nAutoDesign analysis: " + scope + "; " + mode);
             foreach (var line in Inventory(doc)) doc.Editor.WriteMessage("\n  EXISTING: " + line);
             WriteReport(doc, plan, issues);
@@ -102,6 +117,7 @@ namespace CETools.Civil3D
                 engine.Run(plan, mode, checkpoints, fingerprint, () => WriteJournal(doc.Database, checkpoints),
                     (item, index, total) =>
                     {
+                        setStage(item.Step.Description);
                         doc.Editor.WriteMessage("\n[{0}/{1}] {2}: {3}", index, total, item.Status, item.Step.Description);
                         meter.MeterProgress();
                     }, () => HostApplicationServices.Current.UserBreak());
@@ -109,6 +125,7 @@ namespace CETools.Civil3D
             finally { LinkedTableAutoRefreshManager.EndInternalUpdate(); meter.Stop(); }
             LinkedTableAutoRefreshManager.ClearPending(doc);
             doc.Editor.Regen();
+            setStage("validating completed work");
             var finalIssues = Validate(doc, sewer, roads, network, true);
             WriteReport(doc, plan, finalIssues);
             ShowReport(plan, finalIssues, Inventory(doc));
@@ -350,7 +367,8 @@ namespace CETools.Civil3D
             {
                 var nod = (DBDictionary)tr.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForRead);
                 if (!nod.Contains(Journal)) return result;
-                var record = (Xrecord)tr.GetObject(nod.GetAt(Journal), OpenMode.ForRead);
+                var record = tr.GetObject(nod.GetAt(Journal), OpenMode.ForRead) as Xrecord;
+                if (record == null) throw new InvalidOperationException("AutoDesign checkpoint entry is not an Xrecord. Its existing data has been preserved.");
                 if (record.Data == null) return result;
                 foreach (TypedValue value in record.Data)
                 {
@@ -446,7 +464,7 @@ namespace CETools.Civil3D
             if (!seen.Add(id)) return;
             var dictionary = tr.GetObject(id, OpenMode.ForRead) as DBDictionary;
             if (dictionary == null) return;
-            foreach (DBDictionaryEntry entry in dictionary.Cast<DBDictionaryEntry>().OrderBy(x => x.Key))
+            foreach (var entry in AutoDesignDictionaryEntries.Read(dictionary))
             {
                 if (entry.Key == Journal) continue;
                 var obj = tr.GetObject(entry.Value, OpenMode.ForRead);
