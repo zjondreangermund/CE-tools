@@ -106,7 +106,8 @@ namespace CETools.Civil3D
         internal static SewerDynamicSequenceResult Resequence(
             Document document,
             IEnumerable<ObjectId> networkIds,
-            bool force)
+            bool force,
+            bool refreshOutputs = true)
         {
             var result = new SewerDynamicSequenceResult();
             if (document == null || networkIds == null) return result;
@@ -175,7 +176,9 @@ namespace CETools.Civil3D
                     transaction.Commit();
                 }
 
-                foreach (ObjectId networkId in refreshedNetworks)
+                // AutoDesign batches downstream labels/tables after all prerequisites.
+                // Existing manual callers retain their original refresh path by default.
+                if (refreshOutputs) foreach (ObjectId networkId in refreshedNetworks)
                 {
                     SewerNetworkLabelCommands.EnsureLabels(
                         document,
@@ -183,7 +186,7 @@ namespace CETools.Civil3D
                 }
                 if (refreshedNetworks.Count > 0)
                 {
-                    SewerLabelStyleSyncCommands.ApplySelectedStyles(document);
+                    if (refreshOutputs) SewerLabelStyleSyncCommands.ApplySelectedStyles(document);
                     RefreshGeneratedAlignments(
                         document,
                         civilDocument,
@@ -191,7 +194,7 @@ namespace CETools.Civil3D
                         result);
                     try
                     {
-                        LinkedRefreshEngine.Refresh(document, false);
+                        if (refreshOutputs) LinkedRefreshEngine.Refresh(document, false);
                     }
                     catch
                     {
