@@ -1022,6 +1022,25 @@ namespace CETools.Civil3D
             networkIds = ids.ToList();
         }
 
+        // Read-only assessment. AutoDesign may skip unnecessary alignment creation
+        // instead of presenting an approval on every rerun, including drawings
+        // where all branch alignments already exist.
+        internal static int CountMissingForAutoDesign(Document document, ObjectId networkId)
+        {
+            if (document == null || networkId.IsNull) return 0;
+            var civil = CivilApplication.ActiveDocument;
+            if (civil == null) return 0;
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                var plan = BuildNetworkPlan(networkId, tr);
+                var alignments = civil.GetAlignmentIds().Cast<ObjectId>()
+                    .Select(id => tr.GetObject(id, OpenMode.ForRead)).ToList();
+                return plan.Branches.Count(branch => !alignments.Any(alignment =>
+                    HasTag(alignment, BuildBranchKey(networkId.Handle.ToString(),
+                        branch.BranchName), "Alignment")));
+            }
+        }
+
         // Additive orchestration adapter: reuse the existing plans/creation logic, but
         // never pass an existing branch to its replacement path.
         internal static int CreateMissingForAutoDesign(Document document, IEnumerable<ObjectId> networkIds)
