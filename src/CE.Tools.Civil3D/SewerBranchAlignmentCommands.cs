@@ -1033,6 +1033,10 @@ namespace CETools.Civil3D
             using (Transaction tr = document.Database.TransactionManager.StartTransaction())
             {
                 var plan = BuildNetworkPlan(networkId, tr);
+                var network = tr.GetObject(networkId, OpenMode.ForRead) as CivilNetwork;
+                if (network != null && network.GetPipeIds().Count > 0 && plan.Branches.Count == 0)
+                    throw new InvalidOperationException(
+                        "No CE-sequenced Sewer branches were found. Run network sequencing before checking branch alignments.");
                 var alignments = civil.GetAlignmentIds().Cast<ObjectId>()
                     .Select(id => tr.GetObject(id, OpenMode.ForRead)).ToList();
                 return plan.Branches.Count(branch => !alignments.Any(alignment =>
