@@ -233,11 +233,30 @@ namespace CETools.Civil3D
                     var result = SewerNetworkDynamicSequenceCommands.Resequence(doc, new[] { network }, false, false, false);
                     Require(result.Warning, result.RefreshFailures + result.SkippedNetworks, "Sewer sequencing (network must carry CE sequence names)");
                 }, null);
-                add("alignments", "Create only missing approved CE branch alignments", new[] { "sequence" },
-                    () => SewerBranchAlignmentCommands.CreateMissingForAutoDesign(doc, new[] { network }),
-                    createAlignments ? null : "Select Full AutoDesign and Create missing using saved styles to create missing approved branches.");
-                add("alignment-review", "Review outdated existing Sewer alignment geometry", new[] { "sewer" }, null,
-                    "Use the CE_SEWALIGN preview to review changed branch geometry. Existing alignment replacement may invalidate dependent profiles and is never silent.");
+                // Do not report missing-alignment approval unless a read-only
+                // comparison against existing tagged CE alignments found work.
+                // Existing alignments are NEVER replaced automatically.
+                int missingBranches = -1;
+                string alignmentAssessmentError = null;
+                if (!network.IsNull)
+                {
+                    try { missingBranches = SewerBranchAlignmentCommands.CountMissingForAutoDesign(doc, network); }
+                    catch (System.Exception ex) { alignmentAssessmentError = ex.Message; }
+                }
+                string alignmentApproval = network.IsNull ? "Select an existing Sewer network first." :
+                    alignmentAssessmentError != null ? "Review branch alignments: " + alignmentAssessmentError :
+                    missingBranches == 0 ? null :
+                    createAlignments ? null :
+                    "Detected " + missingBranches + " missing CE branch alignment(s). Select Full AutoDesign and Create missing using saved styles to create only these missing approved branches.";
+                add("alignments",
+                    missingBranches == 0 ? "Existing CE branch alignments already present" :
+                    "Create " + (missingBranches < 0 ? "missing" : missingBranches.ToString(CultureInfo.InvariantCulture) + " missing") + " approved CE branch alignments",
+                    new[] { "sequence" },
+                    () => { if (missingBranches > 0) SewerBranchAlignmentCommands.CreateMissingForAutoDesign(doc, new[] { network }); },
+                    alignmentApproval);
+                // An existing alignment may have changed, but there is no
+                // verified geometry-difference adapter yet. Do not display a
+                // fabricated 'outdated alignment' finding on EVERY run.
                 var settings = SewerProductionSettings.Read(doc.Database);
                 string labelApproval = string.IsNullOrWhiteSpace(settings.PipePlanLabelStyle) ||
                     string.IsNullOrWhiteSpace(settings.StructurePlanLabelStyle) ||
@@ -292,8 +311,13 @@ namespace CETools.Civil3D
             };
             steps.Add(creation);
             // Missing deliverables must remain visible in EVERY mode, not silently reported as complete.
-            if (issues.Count > 0)
-                add("review", "Resolve design validation findings", new string[0], null, string.Join("; ", issues));
+            // Missing native profile views already have a dedicated approval
+            // stage. Do not count the same issue twice as another approval.
+            var separateIssues = issues.Where(x => !x.StartsWith(
+                "No CE-linked native profile views", StringComparison.OrdinalIgnoreCase)).ToList();
+            if (separateIssues.Count > 0)
+                add("review", "Resolve other design validation findings", new string[0],
+                    null, string.Join("; ", separateIssues));
             return steps;
         }
 
