@@ -253,7 +253,7 @@ namespace CETools.Civil3D
                     catch (System.Exception ex) { alignmentAssessmentError = ex.Message; }
                 }
                 string alignmentApproval = network.IsNull ? "Select an existing Sewer network first." :
-                    alignmentAssessmentError != null ? "Review branch alignments: " + alignmentAssessmentError :
+                    alignmentAssessmentError != null && !createAlignments ? "Review branch alignments after sequencing: " + alignmentAssessmentError :
                     missingBranches == 0 ? null :
                     createAlignments ? null :
                     "Detected " + missingBranches + " missing CE branch alignment(s). Select Full AutoDesign and Create missing using saved styles to create only these missing approved branches.";
@@ -261,7 +261,14 @@ namespace CETools.Civil3D
                     missingBranches == 0 ? "Existing CE branch alignments already present" :
                     "Create " + (missingBranches < 0 ? "missing" : missingBranches.ToString(CultureInfo.InvariantCulture) + " missing") + " approved CE branch alignments",
                     new[] { "sequence" },
-                    () => { if (missingBranches > 0) SewerBranchAlignmentCommands.CreateMissingForAutoDesign(doc, new[] { network }); },
+                    () =>
+                    {
+                        // Reinspect after CE sequencing: branch names can become
+                        // valid during this run, and approved missing-only
+                        // creation then proceeds without reopening popups.
+                        if (createAlignments && (missingBranches != 0 || alignmentAssessmentError != null))
+                            SewerBranchAlignmentCommands.CreateMissingForAutoDesign(doc, new[] { network });
+                    },
                     alignmentApproval);
                 // An existing alignment may have changed, but there is no
                 // verified geometry-difference adapter yet. Do not display a
