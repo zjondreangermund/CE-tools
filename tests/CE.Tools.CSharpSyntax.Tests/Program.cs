@@ -22,6 +22,7 @@ var trees = new List<SyntaxTree>();
 
 UsingAliasValidation.RunRegressionChecks();
 ModalDialogValidation.RunRegressionChecks();
+AutoDesignScanValidation.RunRegressionChecks();
 
 foreach (string sourceFile in sourceFiles.OrderBy(path => path, StringComparer.OrdinalIgnoreCase))
 {
@@ -32,6 +33,7 @@ foreach (string sourceFile in sourceFiles.OrderBy(path => path, StringComparer.O
         path: sourceFile);
     trees.Add(tree);
     failures.AddRange(ModalDialogValidation.FindErrors(tree));
+    failures.AddRange(AutoDesignScanValidation.FindErrors(tree));
 
     foreach (Diagnostic diagnostic in tree.GetDiagnostics()
         .Where(item => item.Severity == DiagnosticSeverity.Error))
@@ -63,4 +65,5 @@ if (failures.Count > 0)
 Console.WriteLine($"Civil 3D C# syntax validation passed for {sourceFiles.Length} source files.");
 Console.WriteLine("Civil 3D shared-alias compiler validation passed (including 4 regression cases).");
 Console.WriteLine("AutoCAD modal dialog owner validation passed (including 4 regression cases).");
+Console.WriteLine("AutoDesign scan safety validation passed (including 5 regression cases).");
 return 0;

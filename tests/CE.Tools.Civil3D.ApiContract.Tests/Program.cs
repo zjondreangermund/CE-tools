@@ -18,6 +18,7 @@ internal static class Program
 
     private static void Main()
     {
+        AutoDesignSafetyTests.Run(Check);
         AutoDesignDictionaryTests.Run(Check);
         ProfileViewNativeEditorTests.Run(Check);
         SewerPipeConnectionTests.Run(Check);
