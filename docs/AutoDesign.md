@@ -154,3 +154,14 @@ Quantity/schedule refresh requires validated Sewer sources or rebuilt Road sourc
 ## Popup default reminders
 
 Shared CE settings and surface-selection popups reopen with their last confirmed values for that saved drawing on this computer. Values are saved after successful popup validation/confirmation; Cancel does not replace them. Existing drawing/project stores remain in place, with last-confirmed local choices applied when the window opens. Choices no longer present in the popup list are ignored. Saving reminders does not execute commands, bypass the AutoDesign run preview, or modify the drawing in Analyse Only.
+
+
+## 2026-10-24: Road/Sewer setup and actionable review
+
+`CE_AUTODESIGN` now asks for **Mode / Workflow first**, followed by a **discipline-specific input popup**. Road-only runs no longer enumerate Sewer networks or display a Sewer-network dropdown. Road sources list matching `RD-` and `ROAD` alignments. Individual Road choices are **review focus only**, because the existing linked Road elevation/naming/refresh adapters still modify drawing-wide outputs; execution of any such selection requires a warning and an additional explicit drawing-wide approval.
+
+Sewer runs compare CE-sequenced branches against existing **CE-tagged** alignments without modifying geometry. If none are missing, they do not request missing-alignment approval. If sequencing has not completed before the analysis, an explicitly approved Full AutoDesign run may reevaluate alignment creation after the sequence command; every source pipe and requested style is still validated by the existing additive creation adapter. Generic “existing alignments are outdated” warnings are not emitted without proven geometry change. Existing alignments are never silently replaced.
+
+A missing native linked Sewer profile view remains a **NeedsApproval** item; the final review window now offers **Open Sewer Profile Setup (CE_SEWPROFILE)**, which explicitly launches the existing interactive command after AutoDesign exits. AutoDesign does not guess styles, datum or profile placement. Duplicate approval entries for that same profile finding are suppressed, while unresolved profile absence continues to block final design validation, not independent quantities.
+
+These are workflow/UX and execution-gating changes, not unattended creation of new Road corridors or finished Sewer profiles. Validate with actual Civil 3D 2023/2024 drawings before engineering sign-off.
