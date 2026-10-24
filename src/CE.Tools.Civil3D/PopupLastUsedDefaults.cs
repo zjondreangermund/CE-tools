@@ -12,7 +12,7 @@ namespace CETools.Civil3D
         private static readonly ConditionalWeakTable<Document, UnsavedScope> UnsavedDrawings =
             new ConditionalWeakTable<Document, UnsavedScope>();
 
-        internal static ProductionSettingsDialogModel Load(ProductionSettingsDialogModel model, Document document)
+        internal static ProductionSettingsDialogModel Load(ProductionSettingsDialogModel model, Document document, bool preferSuppliedDefaults = false)
         {
             if (model == null || document == null) return null;
             try
@@ -24,7 +24,7 @@ namespace CETools.Civil3D
                 var remembered = new ProductionSettingsDialogModel("CE_LAST_USED/" + scope + "/" + model.Title, string.Empty);
                 // Share fields so the existing store's choice validation applies to the real dialog.
                 foreach (ProductionSettingsField field in model.Fields) remembered.Fields.Add(field);
-                CrossDrawingProductionSettingsStore.Load(remembered);
+                if (!preferSuppliedDefaults) CrossDrawingProductionSettingsStore.Load(remembered);
                 return remembered;
             }
             catch { return null; }
