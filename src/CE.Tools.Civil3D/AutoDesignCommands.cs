@@ -52,45 +52,111 @@ namespace CETools.Civil3D
 
         private static void Run(Document doc, Action<string> setStage)
         {
-            setStage("reading Sewer networks");
-            var networks = new Dictionary<string, ObjectId>();
-            using (var tr = doc.Database.TransactionManager.StartTransaction())
-                foreach (ObjectId id in CivilApplication.ActiveDocument.GetPipeNetworkIds())
-                {
-                    setStage("reading Sewer network " + id.Handle);
-                    var n = tr.GetObject(id, OpenMode.ForRead) as CivilNetwork;
-                    if (n != null && !n.IsReferenceObject)
-                        networks[n.Name + " [" + id.Handle + "]"] = id;
-                }
-            const string none = "Select an existing sewer network";
-            string preferred = AutoDesignDrawingChanges.For(doc.Database).PreferredSewerNetworkHandle;
-            string selectedChoice = networks.Where(pair => pair.Value.Handle.ToString() == preferred).Select(pair => pair.Key).FirstOrDefault() ?? none;
-            var model = new ProductionSettingsDialogModel("CE Tools - AutoDesign",
-                "V1: analyse and complete linked designs. Engineering choices are reported for review. " +
-                "Road and linked-output services operate drawing-wide. Save the DWG to retain resume checkpoints.");
-            model.AddChoice("Mode", "AutoDesign", "Mode", "Analyse Only", "Analyse Only never changes drawing objects or checkpoints.",
+            // Ask for the discipline first. A Roads-only run must never ask
+            // the user to select a Sewer network or traverse Sewer networks
+            // before the user has selected that workflow.
+            setStage("opening discipline and mode options");
+            var workflow = new ProductionSettingsDialogModel("CE Tools - AutoDesign",
+                "Select an AutoDesign mode and discipline. A second popup shows only the " +
+                "inputs relevant to your selected discipline.");
+            workflow.AddChoice("Mode", "01 AutoDesign", "Mode", "Analyse Only",
+                "Analyse Only does not modify drawing objects or checkpoints.",
                 new[] { "Analyse Only", "Complete Existing Design", "Full AutoDesign" });
-            model.AddChoice("Scope", "AutoDesign", "Workflow", "Sewer", "Select the discipline to process.", new[] { "Sewer", "Roads", "Sewer and Roads" });
-            model.AddChoice("Network", "AutoDesign", "Sewer network", selectedChoice,
-                "Explicit selection avoids treating a water gravity network as sewer.", new[] { none }.Concat(networks.Keys.OrderBy(x => x)).ToArray());
-            model.AddChoice("CreateAlignments", "AutoDesign", "Missing branch alignments", "Review only",
-                "Full AutoDesign can create missing alignments from already approved CE-sequenced branches using explicit saved styles. Existing alignments/profiles are preserved.",
-                new[] { "Review only", "Create missing using saved styles" });
-            // The shared window remembers confirmed choices locally; Analyse Only still makes no DWG settings/checkpoint writes.
-            setStage("opening run options");
-            var window = new ProductionSettingsWindow(model);
-            AcApplication.ShowModalWindow(window);
-            if (!window.Accepted) return;
-            string scope = model.Text("Scope");
+            workflow.AddChoice("Scope", "01 AutoDesign", "Workflow", "Sewer",
+                "Select Sewer, Roads or the combined workflow.",
+                new[] { "Sewer", "Roads", "Sewer and Roads" });
+            var workflowWindow = new ProductionSettingsWindow(workflow);
+            AcApplication.ShowModalWindow(workflowWindow);
+            if (!workflowWindow.Accepted) return;
+
+            string scope = workflow.Text("Scope");
             bool sewer = scope != "Roads", roads = scope != "Sewer";
-            AutoDesignMode mode = model.Text("Mode") == "Analyse Only" ? AutoDesignMode.AnalyseOnly :
-                model.Text("Mode") == "Full AutoDesign" ? AutoDesignMode.FullAutoDesign : AutoDesignMode.CompleteExistingDesign;
+            AutoDesignMode mode = workflow.Text("Mode") == "Analyse Only" ? AutoDesignMode.AnalyseOnly :
+                workflow.Text("Mode") == "Full AutoDesign" ? AutoDesignMode.FullAutoDesign : AutoDesignMode.CompleteExistingDesign;
+
+            const string none = "Select an existing sewer network";
+            const string allRoads = "All road assets (drawing-wide refresh)";
+            var networks = new Dictionary<string, ObjectId>();
+            var roadChoices = new List<string> { allRoads };
             ObjectId network = ObjectId.Null;
-            networks.TryGetValue(model.Text("Network"), out network);
-            AutoDesignDrawingChanges.For(doc.Database).PreferredSewerNetworkHandle = network.IsNull ? null : network.Handle.ToString();
+            string selectedChoice = none;
+            if (sewer)
+            {
+                setStage("reading Sewer networks");
+                using (var tr = doc.Database.TransactionManager.StartTransaction())
+                    foreach (ObjectId id in CivilApplication.ActiveDocument.GetPipeNetworkIds())
+                    {
+                        setStage("reading gravity network " + id.Handle);
+                        var n = tr.GetObject(id, OpenMode.ForRead) as CivilNetwork;
+                        if (n != null && !n.IsReferenceObject)
+                            networks[n.Name + " [" + id.Handle + "]"] = id;
+                    }
+                string preferred = AutoDesignDrawingChanges.For(doc.Database).PreferredSewerNetworkHandle;
+                selectedChoice = networks.Where(pair => pair.Value.Handle.ToString() == preferred)
+                    .Select(pair => pair.Key).FirstOrDefault() ?? none;
+            }
+            if (roads)
+            {
+                setStage("reading Road alignment choices");
+                using (var tr = doc.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (ObjectId id in CivilApplication.ActiveDocument.GetAlignmentIds())
+                    {
+                        var alignment = tr.GetObject(id, OpenMode.ForRead)
+                            as Autodesk.Civil.DatabaseServices.Alignment;
+                        if (alignment == null || alignment.IsReferenceObject) continue;
+                        string name = alignment.Name ?? string.Empty;
+                        if (name.StartsWith("ROAD", StringComparison.OrdinalIgnoreCase) ||
+                            name.StartsWith("RD-", StringComparison.OrdinalIgnoreCase) ||
+                            name.IndexOf(" ROAD ", StringComparison.OrdinalIgnoreCase) >= 0)
+                            roadChoices.Add("Review focus: " + name + " [" + id.Handle + "]");
+                    }
+                }
+            }
+
+            var inputs = new ProductionSettingsDialogModel(
+                sewer && roads ? "CE Tools - AutoDesign: Sewer and Road Inputs" :
+                sewer ? "CE Tools - AutoDesign: Sewer Inputs" : "CE Tools - AutoDesign: Road Inputs",
+                roads ? "Road-linked elevations, names and linked-output refresh are currently DRAWING-WIDE. " +
+                    "Selecting one Road provides a review focus, not isolated execution; you must explicitly " +
+                    "confirm before running drawing-wide updates." :
+                    "Select your existing Sewer network. Missing native profile views need an approved " +
+                    "Civil 3D profile style, datum and placement before creation.");
+            if (sewer)
+            {
+                inputs.AddChoice("Network", "01 Sewer", "Sewer network", selectedChoice,
+                    "Select an existing Sewer gravity network. Water gravity networks must not be used.",
+                    new[] { none }.Concat(networks.Keys.OrderBy(x => x)).ToArray());
+                inputs.AddChoice("CreateAlignments", "01 Sewer", "Missing branch alignments", "Review only",
+                    "Full AutoDesign may create missing approved CE-sequenced branch alignments using saved styles. " +
+                    "It never replaces existing alignments silently.",
+                    new[] { "Review only", "Create missing using saved styles" });
+            }
+            if (roads)
+                inputs.AddChoice("RoadFocus", "02 Roads", "Road alignment / review focus", allRoads,
+                    "Choose a Road to inspect, or all Road assets. Existing Road refresh adapters remain drawing-wide.",
+                    roadChoices.OrderBy(x => x == allRoads ? 0 : 1).ThenBy(x => x).ToArray());
+
+            setStage("opening discipline-specific inputs");
+            var inputsWindow = new ProductionSettingsWindow(inputs);
+            AcApplication.ShowModalWindow(inputsWindow);
+            if (!inputsWindow.Accepted) return;
+            if (sewer)
+            {
+                networks.TryGetValue(inputs.Text("Network"), out network);
+                AutoDesignDrawingChanges.For(doc.Database).PreferredSewerNetworkHandle =
+                    network.IsNull ? null : network.Handle.ToString();
+            }
+            string roadFocus = roads ? inputs.Text("RoadFocus") : string.Empty;
+            if (roads && roadFocus != allRoads && mode != AutoDesignMode.AnalyseOnly &&
+                !DisciplineWorkflowDialogs.Confirm("CE AutoDesign - Road scope",
+                    "You selected " + roadFocus + " for REVIEW ONLY. Road elevation, label and linked-output " +
+                    "refresh services currently run drawing-wide, not just for this alignment. " +
+                    "Continue with drawing-wide refresh of all eligible existing Road outputs?"))
+                return;
             setStage("validating source geometry");
             var issues = Validate(doc, sewer, roads, network);
-            bool createAlignments = mode == AutoDesignMode.FullAutoDesign && model.Text("CreateAlignments") == "Create missing using saved styles";
+            bool createAlignments = sewer && mode == AutoDesignMode.FullAutoDesign && inputs.Text("CreateAlignments") == "Create missing using saved styles";
             setStage("building dependencies and reading saved styles");
             var steps = BuildSteps(doc, sewer, roads, network, issues, createAlignments, setStage);
             string key = scope + ":" + (network.IsNull ? "none" : network.Handle.ToString()) + ":";
@@ -110,7 +176,7 @@ namespace CETools.Civil3D
             };
             var plan = engine.Plan(steps, mode, fingerprint(), checkpoints);
             setStage("reporting drawing inventory");
-            doc.Editor.WriteMessage("\nAutoDesign analysis: " + scope + "; " + mode);
+            doc.Editor.WriteMessage("\nAutoDesign analysis: " + scope + "; " + mode);\n            if (roads) doc.Editor.WriteMessage("\n  ROAD SCOPE: " + roadFocus + " (drawing-wide refresh adapters).");
             foreach (var line in Inventory(doc)) doc.Editor.WriteMessage("\n  EXISTING: " + line);
             WriteReport(doc, plan, issues);
             setStage("showing analysis report");
