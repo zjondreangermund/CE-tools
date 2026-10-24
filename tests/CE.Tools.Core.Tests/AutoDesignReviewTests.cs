@@ -9,22 +9,26 @@ namespace CETools.Core.Tests
         public static int Run()
         {
             int executions = 0;
-            var plan = new AutoDesignEngine().Plan(new[]
+            var engine = new AutoDesignEngine();
+            var checkpoints = new Dictionary<string, AutoDesignCheckpoint>();
+            var plan = engine.Plan(new[]
             {
                 new AutoDesignStep { Id = "approved", Description = "Place profiles", ApprovalReason = "Use CE_SEWPROFILE to choose placement.", Execute = () => executions++ },
                 new AutoDesignStep { Id = "blocked", Description = "Validate profiles", Dependencies = new[] { "approved" } },
-                new AutoDesignStep { Id = "done", Description = "Successful work" }
-            }, AutoDesignMode.CompleteExistingDesign, "drawing", new Dictionary<string, AutoDesignCheckpoint>());
-            plan[2].Status = AutoDesignStatus.Completed;
+                new AutoDesignStep { Id = "done", Description = "Successful work", Execute = () => { } }
+            }, AutoDesignMode.CompleteExistingDesign, "drawing", checkpoints);
+            engine.Run(plan, AutoDesignMode.CompleteExistingDesign, checkpoints, () => "drawing", () => { }, (item, index, total) => { }, () => false);
             string text = AutoDesignReview.AttentionText(plan, new[] { "Check cover", "Check cover" });
             Check(text.Contains("Approval decisions: 1; failed: 0; blocked: 1; validation findings: 1"));
             Check(text.Contains("Use CE_SEWPROFILE to choose placement.") && text.Contains("Blocked: Validate profiles"));
             Check(!text.Contains("Successful work") && executions == 0 && plan[0].Status == AutoDesignStatus.NeedsApproval);
-            plan[1].Status = AutoDesignStatus.Failed;
-            plan[1].Message = "Native refresh failed";
-            Check(AutoDesignReview.AttentionText(plan, new string[0]).Contains("Native refresh failed"));
-            plan[1].Status = AutoDesignStatus.Cancelled;
-            Check(AutoDesignReview.AttentionText(plan, new string[0]).Contains("Cancelled: Validate profiles"));
+            var retry = engine.Plan(new[] { new AutoDesignStep { Id = "refresh", Description = "Refresh profiles", Execute = () => { throw new InvalidOperationException("Native refresh failed"); } } },
+                AutoDesignMode.CompleteExistingDesign, "drawing", checkpoints);
+            engine.Run(retry, AutoDesignMode.CompleteExistingDesign, checkpoints, () => "drawing", () => { }, (item, index, total) => { }, () => false);
+            Check(AutoDesignReview.AttentionText(retry, new string[0]).Contains("Native refresh failed"));
+            retry = engine.Plan(new[] { new AutoDesignStep { Id = "resume", Description = "Refresh profiles" } }, AutoDesignMode.CompleteExistingDesign, "drawing", checkpoints);
+            engine.Run(retry, AutoDesignMode.CompleteExistingDesign, checkpoints, () => "drawing", () => { }, (item, index, total) => { }, () => true);
+            Check(AutoDesignReview.AttentionText(retry, new string[0]).Contains("Cancelled: Refresh profiles"));
             Check(AutoDesignReview.AttentionText(new AutoDesignItem[0], new string[0]).Contains("No outstanding automation items"));
             return 6;
         }
