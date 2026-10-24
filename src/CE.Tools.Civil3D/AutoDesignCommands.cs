@@ -213,7 +213,15 @@ namespace CETools.Civil3D
             var finalIssues = Validate(doc, sewer, roads, network, true);
             WriteReport(doc, plan, finalIssues);
             setStage("showing final review report");
-            ShowReport(plan, finalIssues, Inventory(doc), true);
+            bool openSewerProfiles = ShowReport(plan, finalIssues, Inventory(doc), true, sewer);
+            if (openSewerProfiles)
+            {
+                // Defer to the existing manual CE_SEWPROFILE popup for approval
+                // of style, datum and placement. This is an explicit user click
+                // after the AutoDesign run, not silent engineering creation.
+                doc.Editor.WriteMessage("\\nOpening CE_SEWPROFILE for user-approved profile creation. Rerun AutoDesign after profiles are created.");
+                doc.SendStringToExecute("_.CE_SEWPROFILE\\n", true, false, false);
+            }
             doc.Editor.WriteMessage("\nAutoDesign pass finished. This is not engineering sign-off. Save the DWG to retain checkpoints; rerun to resume/recheck.");
         }
 
@@ -474,7 +482,8 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static void ShowReport(IList<AutoDesignItem> plan, IList<string> issues, IList<string> inventory, bool showAttention = false)
+        private static bool ShowReport(IList<AutoDesignItem> plan, IList<string> issues, IList<string> inventory,
+            bool showAttention = false, bool allowSewerProfileSetup = false)
         {
             using (var form = new System.Windows.Forms.Form())
             using (var report = new System.Windows.Forms.TextBox())
@@ -518,7 +527,25 @@ namespace CETools.Civil3D
                 form.CancelButton = close;
                 form.Controls.Add(tabs);
                 form.Controls.Add(close);
+                bool openProfile = false;
+                if (allowSewerProfileSetup && plan.Any(item =>
+                    item.Step.Id.EndsWith(":profiles", StringComparison.Ordinal) &&
+                    item.Status == AutoDesignStatus.NeedsApproval))
+                {
+                    var profileButton = new System.Windows.Forms.Button
+                    {
+                        Text = "Open Sewer Profile Setup (CE_SEWPROFILE)",
+                        Dock = System.Windows.Forms.DockStyle.Bottom, Height = 38
+                    };
+                    profileButton.Click += (sender, args) =>
+                    {
+                        openProfile = true;
+                        form.Close();
+                    };
+                    form.Controls.Add(profileButton);
+                }
                 Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(form);
+                return openProfile;
             }
         }
 
