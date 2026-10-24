@@ -27,6 +27,10 @@ namespace CETools.Civil3D
             return Sessions.GetValue(database, db => new AutoDesignDrawingChanges(db));
         }
 
+        // Explicit source choice is remembered only for this open drawing/session.
+        // Never infer that an unselected gravity network is Sewer.
+        internal string PreferredSewerNetworkHandle { get; set; }
+
         internal string Stamp
         {
             get { return "CE_AUTODESIGN_SESSION_2:" + session + ":" + Interlocked.Read(ref revision).ToString(CultureInfo.InvariantCulture); }

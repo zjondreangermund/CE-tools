@@ -63,13 +63,15 @@ namespace CETools.Civil3D
                         networks[n.Name + " [" + id.Handle + "]"] = id;
                 }
             const string none = "Select an existing sewer network";
+            string preferred = AutoDesignDrawingChanges.For(doc.Database).PreferredSewerNetworkHandle;
+            string selectedChoice = networks.Where(pair => pair.Value.Handle.ToString() == preferred).Select(pair => pair.Key).FirstOrDefault() ?? none;
             var model = new ProductionSettingsDialogModel("CE Tools - AutoDesign",
                 "V1: analyse and complete linked designs. Engineering choices are reported for review. " +
                 "Road and linked-output services operate drawing-wide. Save the DWG to retain resume checkpoints.");
             model.AddChoice("Mode", "AutoDesign", "Mode", "Analyse Only", "Analyse Only never changes drawing objects or checkpoints.",
                 new[] { "Analyse Only", "Complete Existing Design", "Full AutoDesign" });
             model.AddChoice("Scope", "AutoDesign", "Workflow", "Sewer", "Select the discipline to process.", new[] { "Sewer", "Roads", "Sewer and Roads" });
-            model.AddChoice("Network", "AutoDesign", "Sewer network", none,
+            model.AddChoice("Network", "AutoDesign", "Sewer network", selectedChoice,
                 "Explicit selection avoids treating a water gravity network as sewer.", new[] { none }.Concat(networks.Keys.OrderBy(x => x)).ToArray());
             model.AddChoice("CreateAlignments", "AutoDesign", "Missing branch alignments", "Review only",
                 "Full AutoDesign can create missing alignments from already approved CE-sequenced branches using explicit saved styles. Existing alignments/profiles are preserved.",
@@ -85,6 +87,7 @@ namespace CETools.Civil3D
                 model.Text("Mode") == "Full AutoDesign" ? AutoDesignMode.FullAutoDesign : AutoDesignMode.CompleteExistingDesign;
             ObjectId network = ObjectId.Null;
             networks.TryGetValue(model.Text("Network"), out network);
+            AutoDesignDrawingChanges.For(doc.Database).PreferredSewerNetworkHandle = network.IsNull ? null : network.Handle.ToString();
             setStage("validating source geometry");
             var issues = Validate(doc, sewer, roads, network);
             bool createAlignments = mode == AutoDesignMode.FullAutoDesign && model.Text("CreateAlignments") == "Create missing using saved styles";
@@ -156,7 +159,7 @@ namespace CETools.Civil3D
             add("sources", "Rebuild only stale editable surfaces/corridors", new string[0], () => RebuildStale(doc, roads, setStage), null);
             if (sewer)
             {
-                string gate = network.IsNull ? "Select/approve the sewer route, outfall, reference surface and parts using the existing sewer workflow; then select that network here." :
+                string gate = network.IsNull ? "Select the existing Sewer network in AutoDesign options. The inventory lists networks already present; no new network needs to be created just to select one." :
                     issues.FirstOrDefault(x => x.StartsWith("PROTECTED:", StringComparison.Ordinal));
                 add("sewer", "Existing sewer source", new[] { "sources" }, () => { }, gate);
                 add("sequence", "Refresh existing CE sewer numbering without replacing alignments", new[] { "sewer" }, () =>
@@ -187,11 +190,12 @@ namespace CETools.Civil3D
                     var result = SewerNetworkLabelCommands.EnsureLabels(doc, new[] { network });
                     Require(result.Warning, result.Skipped, "Sewer plan labels");
                 }, labelApproval);
-                add("profiles", "Refresh linked CE sewer profile parts and bands", new[] { "sequence" }, () =>
+                var profileViews = ProfileViewBandRuntimeManager.ReadAutoDesignViews(doc, network);
+                add("profiles", profileViews.Count == 0 ? "Create/link missing Sewer profile views" : "Refresh linked CE sewer profile parts and bands", new[] { "sequence" }, () =>
                 {
-                    var result = ProfileViewBandRuntimeManager.RefreshAll(doc);
+                    var result = ProfileViewBandRuntimeManager.RefreshForAutoDesign(doc, profileViews);
                     Require(result.Warning, result.Skipped, "Sewer profiles");
-                }, null);
+                }, AutoDesignWorkflowPolicy.ProfileApproval(!network.IsNull, profileViews.Count));
             }
             if (roads)
             {
@@ -205,15 +209,12 @@ namespace CETools.Civil3D
                     August11RoadNamingCurveCommands.SyncRoadNames(doc, false);
                 }, null);
             }
-            var prerequisites = new List<string>();
-            if (sewer) prerequisites.AddRange(new[] { "labels", "profiles" });
-            if (roads) prerequisites.Add("road-labels");
-            add("outputs", "Refresh existing linked quantities, schedules and drawing annotations", prerequisites.ToArray(), () =>
+            add("outputs", "Refresh existing linked quantities, schedules and drawing annotations", AutoDesignWorkflowPolicy.OutputDependencies(sewer, roads), () =>
             {
                 var result = LinkedRefreshEngine.RefreshForAutoDesign(doc);
                 Require(null, result.Failed, "Linked outputs");
             }, null);
-            add("validation", "Validate completed design for review", new[] { "outputs" }, () =>
+            add("validation", "Validate completed design for review", AutoDesignWorkflowPolicy.ValidationDependencies(sewer, roads), () =>
             {
                 var findings = Validate(doc, sewer, roads, network, true);
                 if (findings.Count > 0) throw new InvalidOperationException(string.Join("; ", findings));
@@ -244,7 +245,7 @@ namespace CETools.Civil3D
                 if (sewer)
                 {
                     var network = networkId.IsNull ? null : tr.GetObject(networkId, OpenMode.ForRead) as CivilNetwork;
-                    if (network == null) issues.Add("Missing selected sewer network: approve route/outfall/parts first.");
+                    if (network == null) issues.Add("No Sewer network selected. Choose the existing network in AutoDesign options.");
                     else
                     {
                         var connections = new List<AutoDesignConnection>();
@@ -279,8 +280,8 @@ namespace CETools.Civil3D
                                 issues.Add("Structure " + structure.Name + " has sump at/above rim.");
                         }
                     }
-                    bool profileView = ModelObjects(doc.Database, tr).Any(x => x.GetType().Name == "ProfileView");
-                    if (!profileView) issues.Add("Missing profile views: approve long-section styles, datum and placement in manual sewer production.");
+                    if (!networkId.IsNull && ProfileViewBandRuntimeManager.ReadAutoDesignViews(doc, networkId).Count == 0)
+                        issues.Add("No CE-linked native profile views for the selected Sewer network. Approve styles, datum and placement with CE_SEWPROFILE; drawn grids are not detected as native views.");
                 }
                 if (checkStale)
                 {
@@ -364,7 +365,14 @@ namespace CETools.Civil3D
                 result.Add("Alignments: " + civil.GetAlignmentIds().Count + "; surfaces: " + civil.GetSurfaceIds().Count);
                 var objects = ModelObjects(doc.Database, tr).ToList();
                 var corridors = objects.OfType<CivilCorridor>().ToList();
-                result.Add("Corridors: " + corridors.Count + "; profile views: " + objects.OfType<Autodesk.Civil.DatabaseServices.ProfileView>().Count());
+                var nativeViews = new HashSet<ObjectId>();
+                foreach (ObjectId alignmentId in civil.GetAlignmentIds())
+                {
+                    var alignment = tr.GetObject(alignmentId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Alignment;
+                    if (alignment == null) continue;
+                    foreach (ObjectId viewId in alignment.GetProfileViewIds()) if (!viewId.IsNull && !viewId.IsErased) nativeViews.Add(viewId);
+                }
+                result.Add("Corridors: " + corridors.Count + "; native profile views: " + nativeViews.Count);
                 int staleSurfaces = 0;
                 foreach (ObjectId id in civil.GetSurfaceIds())
                 {

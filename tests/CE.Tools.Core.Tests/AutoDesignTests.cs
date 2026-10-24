@@ -21,7 +21,9 @@ namespace CETools.Core.Tests
             ReentrancyRejected();
             PartialFailureDoesNotBlessOtherStages();
             PersistenceFailureStopsExecution();
-            return 12;
+            MissingProfilesDoNotBlockQuantities();
+            MissingSourcesStillBlockQuantities();
+            return 14;
         }
         private static AutoDesignStep Step(string id, Action action = null, params string[] dependencies)
         { return new AutoDesignStep { Id = id, Execute = action ?? (() => { }), Dependencies = dependencies }; }
@@ -121,6 +123,38 @@ namespace CETools.Core.Tests
             try { e.Run(p, AutoDesignMode.FullAutoDesign, j, () => "x", () => { throw new InvalidOperationException("cannot checkpoint"); }, (x, i, n) => { }, () => false); }
             catch (InvalidOperationException) { }
             Check(calls == 0, "never mutate if pre-step checkpoint cannot be written");
+        }
+        private static void MissingProfilesDoNotBlockQuantities()
+        {
+            var e = new AutoDesignEngine(); var j = Journal(); int outputCalls = 0, profileCalls = 0;
+            var profiles = Step("profiles", () => profileCalls++, "sequence");
+            profiles.ApprovalReason = AutoDesignWorkflowPolicy.ProfileApproval(true, 0);
+            var steps = new[]
+            {
+                Step("sewer"), Step("sequence", null, "sewer"), Step("labels", null, "sequence"), profiles,
+                Step("outputs", () => outputCalls++, AutoDesignWorkflowPolicy.OutputDependencies(true, false)),
+                Step("validation", null, AutoDesignWorkflowPolicy.ValidationDependencies(true, false))
+            };
+            var plan = e.Plan(steps, AutoDesignMode.CompleteExistingDesign, "drawing", j);
+            Check(plan.Single(x => x.Step.Id == "outputs").Status == AutoDesignStatus.Ready, "missing profiles must not block source-based quantities");
+            Run(e, plan, j);
+            Check(outputCalls == 1 && profileCalls == 0, "quantities run without invoking absent profile adapters");
+            Check(plan.Single(x => x.Step.Id == "profiles").Status == AutoDesignStatus.NeedsApproval && !plan.Any(x => x.Status == AutoDesignStatus.Failed), "known absent views are review gates, not failed executions");
+            Check(plan.Single(x => x.Step.Id == "validation").Status == AutoDesignStatus.Blocked, "missing profiles still prevent final sign-off");
+            Check(AutoDesignWorkflowPolicy.ProfileApproval(true, 2) == null, "existing linked views permit refresh");
+        }
+
+        private static void MissingSourcesStillBlockQuantities()
+        {
+            var e = new AutoDesignEngine(); var j = Journal(); int calls = 0;
+            var source = Step("sewer"); source.ApprovalReason = "Choose existing network";
+            var plan = e.Plan(new[] { source, Step("outputs", () => calls++, AutoDesignWorkflowPolicy.OutputDependencies(true, false)) },
+                AutoDesignMode.CompleteExistingDesign, "drawing", j);
+            Run(e, plan, j);
+            Check(calls == 0 && plan.Last().Status == AutoDesignStatus.Blocked, "unselected/unvalidated sources still block quantities");
+            Check(AutoDesignWorkflowPolicy.ProfileApproval(false, 0).Contains("Select the existing"), "missing selection must not imply missing network geometry");
+            Check(AutoDesignWorkflowPolicy.OutputDependencies(false, true).SequenceEqual(new[] { "road-sources" }), "road quantities require rebuilt sources, not display labels");
+            Check(AutoDesignWorkflowPolicy.ValidationDependencies(false, true).Contains("road-labels"), "road labels remain a final validation prerequisite");
         }
     }
 }

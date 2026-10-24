@@ -11,6 +11,10 @@ internal static class AutoDesignSafetyTests
         var changes = AutoDesignDrawingChanges.For(database);
         string stamp = changes.Stamp;
         check(AutoDesignDrawingChanges.For(database).Stamp == stamp, "Same drawing keeps its session and no-op revision.");
+        changes.PreferredSewerNetworkHandle = "AB12";
+        check(AutoDesignDrawingChanges.For(database).PreferredSewerNetworkHandle == "AB12", "Remember the explicit Sewer source while this drawing stays open.");
+        check(changes.Stamp == stamp, "Remembering a source makes no drawing/checkpoint changes.");
+        check(AutoDesignDrawingChanges.For(new Database()).PreferredSewerNetworkHandle == null, "Never infer a Sewer source for another drawing.");
         database.NotifyModified();
         check(changes.Stamp != stamp, "Source modification invalidates completed work.");
         stamp = changes.Stamp; database.NotifyAppended();

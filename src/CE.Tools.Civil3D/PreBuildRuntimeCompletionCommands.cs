@@ -1331,6 +1331,47 @@ namespace CETools.Civil3D
 
         internal static ProfileBandRuntimeResult RefreshAll(Document document)
         {
+            return RefreshViews(document, null);
+        }
+
+        internal static ProfileBandRuntimeResult RefreshForAutoDesign(Document document, IList<ObjectId> views)
+        {
+            if (views == null || views.Count == 0)
+                return new ProfileBandRuntimeResult { Warning = "No CE-linked native profile views were supplied. Review profile creation/placement first." };
+            return RefreshViews(document, views);
+        }
+
+        internal static List<ObjectId> ReadAutoDesignViews(Document document, ObjectId networkId)
+        {
+            var result = new HashSet<ObjectId>();
+            if (document == null || networkId.IsNull) return result.ToList();
+            string prefix = networkId.Handle + "|";
+            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId alignmentId in CivilApplication.ActiveDocument.GetAlignmentIds())
+                {
+                    var alignment = transaction.GetObject(alignmentId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Alignment;
+                    if (alignment == null) continue;
+                    foreach (ObjectId viewId in alignment.GetProfileViewIds())
+                    {
+                        if (viewId.IsNull || viewId.IsErased) continue;
+                        var view = transaction.GetObject(viewId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.ProfileView;
+                        if (view == null) continue;
+                        using (ResultBuffer tag = view.GetXDataForApplication(SewerProfileApp))
+                        {
+                            if (tag == null) continue;
+                            string[] values = tag.AsArray().Where(value => value.TypeCode == (int)DxfCode.ExtendedDataAsciiString)
+                                .Select(value => value.Value as string).Where(value => value != null).ToArray();
+                            if (values.Length >= 2 && values[0].StartsWith(prefix, StringComparison.OrdinalIgnoreCase) && values[1] == "ProfileView") result.Add(viewId);
+                        }
+                    }
+                }
+            }
+            return result.OrderBy(id => id.Handle.Value).ToList();
+        }
+
+        private static ProfileBandRuntimeResult RefreshViews(Document document, IList<ObjectId> views)
+        {
             var result = new ProfileBandRuntimeResult();
             if (document == null) return result;
             SewerProductionSettings sewer = SewerProductionSettings.Read(document.Database);
@@ -1345,7 +1386,7 @@ namespace CETools.Civil3D
             }
             return Apply(
                 document,
-                ResolveTargetViews(document, "All CE sewer profile views"),
+                views ?? ResolveTargetViews(document, "All CE sewer profile views"),
                 style,
                 string.Empty,
                 true,

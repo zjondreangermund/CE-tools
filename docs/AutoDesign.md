@@ -142,3 +142,11 @@ Autodesk-linked compilation and live Civil 3D DWG validation remain necessary; n
 ## Native-shutdown hardening
 
 Analyse Only now uses the lightweight drawing revision and defers native style-collection enumeration to the explicit label execution stage. Initial analysis still reads selected network geometry and basic inventory; model-space object opening is restricted to registered corridor/profile-view classes, while other counts come from known Civil collections. Arbitrary proxy/custom/block objects are not opened for inventory. Autodesk-linked testing remains necessary. The source-level safety guard rejects reintroducing native fingerprint calls, arbitrary property enumeration or recursive dictionary scans into AutoDesign analysis.
+
+## Missing profile outputs and source choice
+
+AutoDesign remembers only the explicitly chosen Sewer network during the current open drawing/session. A fresh session still requires selection; a lone gravity network is never automatically classified as Sewer. The report distinguishes an unselected source from missing geometry.
+
+Native profile views are discovered from alignment-owned view IDs. Sewer refresh targets must carry CE profile metadata for the selected network. Drawn grids/blocks are not native profile views. An absent linked view is a **NeedsApproval** creation/linking item, not an attempted refresh failure. Existing linked profile refreshes use the same saved-style/apply logic as the manual command, with an explicit view list.
+
+Quantity/schedule refresh requires validated Sewer sources or rebuilt Road sources. Missing profile views or display labels do not prevent independent quantities from refreshing. Final validation still depends on sequence, labels, profiles and output completion and therefore remains blocked until missing deliverables are resolved. No profile placement, datum or engineering choice is invented.
