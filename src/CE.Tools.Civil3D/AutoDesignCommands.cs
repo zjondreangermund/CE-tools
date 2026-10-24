@@ -462,6 +462,22 @@ namespace CETools.Civil3D
                 }
                 result.Add("Gravity networks: " + networks + "; pipes: " + pipes + "; structures: " + structures);
                 result.Add("Alignments: " + civil.GetAlignmentIds().Count + "; surfaces: " + civil.GetSurfaceIds().Count);
+                if (roads)
+                {
+                    var roadNames = new List<string>();
+                    foreach (ObjectId id in civil.GetAlignmentIds())
+                    {
+                        var alignment = tr.GetObject(id, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Alignment;
+                        if (alignment == null) continue;
+                        string name = alignment.Name ?? string.Empty;
+                        if (name.StartsWith("ROAD", StringComparison.OrdinalIgnoreCase) ||
+                            name.StartsWith("RD-", StringComparison.OrdinalIgnoreCase))
+                            roadNames.Add(name);
+                    }
+                    result.Add("Road alignments: " + roadNames.Count + "; " +
+                        string.Join(", ", roadNames.OrderBy(x => x).Take(10)));
+                    result.Add("Road focus: " + roadFocus + " (drawing-wide refresh)");
+                }
                 var objects = ModelObjects(doc.Database, tr).ToList();
                 var corridors = objects.OfType<CivilCorridor>().ToList();
                 var nativeViews = new HashSet<ObjectId>();
