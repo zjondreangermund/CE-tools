@@ -332,7 +332,7 @@ namespace CETools.Civil3D
                     "Use existing manual design commands for flagged decisions. Save the DWG to retain checkpoints. " +
                     "Rerun CE_AUTODESIGN to analyse changes or resume interrupted work.";
                 form.Controls.Add(report);
-                AcApplication.ShowModalDialog(form);
+                Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(form);
             }
         }
 

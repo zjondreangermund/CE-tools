@@ -68,7 +68,7 @@ namespace CETools.Civil3D
                     #if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
                     form.ShowDialog();
 #else
-                    AcApplication.ShowModalDialog(form);
+                    Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(form);
 #endif
                     if (form.Action == SurveyDialogAction.Close ||
                         form.Action == SurveyDialogAction.None)
