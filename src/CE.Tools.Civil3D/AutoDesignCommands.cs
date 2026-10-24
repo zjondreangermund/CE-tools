@@ -178,15 +178,15 @@ namespace CETools.Civil3D
             setStage("reporting drawing inventory");
             doc.Editor.WriteMessage("\nAutoDesign analysis: " + scope + "; " + mode);
             if (roads) doc.Editor.WriteMessage("\n  ROAD SCOPE: " + roadFocus + " (drawing-wide refresh adapters).");
-            foreach (var line in Inventory(doc)) doc.Editor.WriteMessage("\n  EXISTING: " + line);
+            foreach (var line in Inventory(doc, sewer, roads, roadFocus)) doc.Editor.WriteMessage("\n  EXISTING: " + line);
             WriteReport(doc, plan, issues);
             setStage("showing analysis report");
             if (mode == AutoDesignMode.AnalyseOnly)
             {
-                ShowReport(plan, issues, Inventory(doc), true);
+                ShowReport(plan, issues, Inventory(doc, sewer, roads, roadFocus), true);
                 return;
             }
-            ShowReport(plan, issues, Inventory(doc));
+            ShowReport(plan, issues, Inventory(doc, sewer, roads, roadFocus));
             if (!DisciplineWorkflowDialogs.Confirm("CE AutoDesign - Run previewed work",
                 "Run the ready compatible steps shown in the report? Engineering review gates remain blocked.")) return;
             var meter = new ProgressMeter();
@@ -214,7 +214,7 @@ namespace CETools.Civil3D
             var finalIssues = Validate(doc, sewer, roads, network, true);
             WriteReport(doc, plan, finalIssues);
             setStage("showing final review report");
-            bool openSewerProfiles = ShowReport(plan, finalIssues, Inventory(doc), true, sewer);
+            bool openSewerProfiles = ShowReport(plan, finalIssues, Inventory(doc, sewer, roads, roadFocus), true, sewer);
             if (openSewerProfiles)
             {
                 // Defer to the existing manual CE_SEWPROFILE popup for approval
@@ -445,7 +445,7 @@ namespace CETools.Civil3D
             }
         }
 
-        private static List<string> Inventory(Document doc)
+        private static List<string> Inventory(Document doc, bool sewer, bool roads, string roadFocus)
         {
             var result = new List<string>();
             using (var tr = doc.Database.TransactionManager.StartTransaction())
