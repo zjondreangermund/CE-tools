@@ -76,7 +76,7 @@ namespace CETools.Civil3D
             model.AddChoice("CreateAlignments", "AutoDesign", "Missing branch alignments", "Review only",
                 "Full AutoDesign can create missing alignments from already approved CE-sequenced branches using explicit saved styles. Existing alignments/profiles are preserved.",
                 new[] { "Review only", "Create missing using saved styles" });
-            // Transient run choices: Analyse Only must not write persisted settings.
+            // The shared window remembers confirmed choices locally; Analyse Only still makes no DWG settings/checkpoint writes.
             setStage("opening run options");
             var window = new ProductionSettingsWindow(model);
             AcApplication.ShowModalWindow(window);
