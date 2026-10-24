@@ -88,6 +88,7 @@ namespace CETools.Civil3D
             // A drawing can still keep its own override of the shared defaults.
             if (document != null && !CrossDrawingSettingsPreference.UseSavedProjectSettings)
                 ProductionSettingsPersistenceStore.Load(document.Database, model);
+            model.PreferSuppliedDefaults = CrossDrawingSettingsPreference.UseSavedProjectSettings;
             var window = new ProductionSettingsWindow(model);
             AcApplication.ShowModalWindow(window);
             if (window.Accepted)
@@ -483,6 +484,7 @@ namespace CETools.Civil3D
 
         public string Title { get; private set; }
         public string Note { get; private set; }
+        internal bool PreferSuppliedDefaults { get; set; }
         public IList<ProductionSettingsField> Fields { get { return _fields; } }
 
         public void AddText(string key, string group, string label, string value, string description)
@@ -572,12 +574,14 @@ namespace CETools.Civil3D
     internal sealed class ProductionSettingsWindow : Window
     {
         private readonly ProductionSettingsDialogModel _model;
+        private readonly ProductionSettingsDialogModel _rememberedDefaults;
         private readonly Dictionary<ProductionSettingsField, Control> _controls =
             new Dictionary<ProductionSettingsField, Control>();
 
         public ProductionSettingsWindow(ProductionSettingsDialogModel model)
         {
             _model = model;
+            _rememberedDefaults = PopupLastUsedDefaults.Load(model, AcApplication.DocumentManager.MdiActiveDocument, model.PreferSuppliedDefaults);
             Title = model.Title;
             Width = 820;
             Height = 680;
@@ -797,6 +801,11 @@ namespace CETools.Civil3D
                 field.Value = value;
             }
 
+            if (!PopupLastUsedDefaults.Save(_rememberedDefaults))
+            {
+                Document document = AcApplication.DocumentManager.MdiActiveDocument;
+                if (document != null) document.Editor.WriteMessage("\nCE Tools could not remember these popup defaults on this computer. The entered settings are still applied to this run.");
+            }
             Accepted = true;
             DialogResult = true;
             Close();

@@ -127,7 +127,7 @@ copy of a Sewer drawing and a Road drawing:
 
 Full AutoDesign now offers **Create missing using saved styles**. This reuses the existing Sewer branch-plan/creation routines, requires every pipe to carry approved CE sequence data and requires explicit available alignment styles. Existing branch alignments are excluded from the creation plan, preserving dependent profile references. Review changed existing alignments through the manual CE_SEWALIGN preview.
 
-AutoDesign's numbering pass disables alignment replacement separately from downstream refreshes. Existing manual callers keep both original defaults. Run choices are transient, so Analyse Only does not save dialog settings. Execution shows a review report and requires run confirmation.
+AutoDesign's numbering pass disables alignment replacement separately from downstream refreshes. Existing manual callers keep both original defaults. Confirmed run choices are remembered in user-local popup defaults, so Analyse Only still makes no DWG settings/checkpoint writes. Execution shows a review report and requires run confirmation.
 
 Additional topology validation blocks mutations for disconnected components, loops, isolated structures, duplicate/parallel edges, cross-network endpoints and self-connections. This does not certify engineering gradients, hydraulic capacity or cover. Strict excavation/BOQ/workbook refresh adapters report recoverable failures without changing manual command behaviour. Object-change revisions invalidate the drawing-wide plan, including profile edits, without querying native profile fingerprints.
 
@@ -145,8 +145,12 @@ Analyse Only now uses the lightweight drawing revision and defers native style-c
 
 ## Missing profile outputs and source choice
 
-AutoDesign remembers only the explicitly chosen Sewer network during the current open drawing/session. A fresh session still requires selection; a lone gravity network is never automatically classified as Sewer. The report distinguishes an unselected source from missing geometry.
+The shared popup remembers confirmed AutoDesign choices for each saved drawing on this computer, including mode, workflow, network and missing-alignment options. Unsaved drawings have separate temporary scopes. Saved choices are reused only when still available; a lone gravity network is never automatically classified as Sewer. The report distinguishes an unselected source from missing geometry.
 
 Native profile views are discovered from alignment-owned view IDs. Sewer refresh targets must carry CE profile metadata for the selected network. Drawn grids/blocks are not native profile views. An absent linked view is a **NeedsApproval** creation/linking item, not an attempted refresh failure. Existing linked profile refreshes use the same saved-style/apply logic as the manual command, with an explicit view list.
 
 Quantity/schedule refresh requires validated Sewer sources or rebuilt Road sources. Missing profile views or display labels do not prevent independent quantities from refreshing. Final validation still depends on sequence, labels, profiles and output completion and therefore remains blocked until missing deliverables are resolved. No profile placement, datum or engineering choice is invented.
+
+## Popup default reminders
+
+Shared CE settings and surface-selection popups reopen with their last confirmed values for that saved drawing on this computer. Values are saved after successful popup validation/confirmation; Cancel does not replace them. Existing drawing/project stores remain in place, with last-confirmed local choices applied when the window opens. Choices no longer present in the popup list are ignored. Saving reminders does not execute commands, bypass the AutoDesign run preview, or modify the drawing in Analyse Only.

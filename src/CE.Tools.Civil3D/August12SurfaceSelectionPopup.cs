@@ -11,9 +11,9 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 namespace CETools.Civil3D
 {
     /// <summary>
-    /// Drawing-local CE popup for choosing Civil 3D surfaces. Surface choices
-    /// are deliberately not persisted across drawings because ObjectIds and
-    /// available surface names are drawing specific.
+    /// Drawing-local CE popup for choosing Civil 3D surfaces. The shared popup
+    /// remembers confirmed choices for this saved drawing, and rejects choices
+    /// absent from the current drawing's surface list.
     /// </summary>
     internal static class August12SurfaceSelectionPopup
     {
