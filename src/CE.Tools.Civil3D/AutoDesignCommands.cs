@@ -56,7 +56,13 @@ namespace CETools.Civil3D
             model.AddChoice("Scope", "AutoDesign", "Workflow", "Sewer", "Select the discipline to process.", new[] { "Sewer", "Roads", "Sewer and Roads" });
             model.AddChoice("Network", "AutoDesign", "Sewer network", none,
                 "Explicit selection avoids treating a water gravity network as sewer.", new[] { none }.Concat(networks.Keys.OrderBy(x => x)).ToArray());
-            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+            model.AddChoice("CreateAlignments", "AutoDesign", "Missing branch alignments", "Review only",
+                "Full AutoDesign can create missing alignments from already approved CE-sequenced branches using explicit saved styles. Existing alignments/profiles are preserved.",
+                new[] { "Review only", "Create missing using saved styles" });
+            // Transient run choices: Analyse Only must not write persisted settings.
+            var window = new ProductionSettingsWindow(model);
+            AcApplication.ShowModalWindow(window);
+            if (!window.Accepted) return;
             string scope = model.Text("Scope");
             bool sewer = scope != "Roads", roads = scope != "Sewer";
             AutoDesignMode mode = model.Text("Mode") == "Analyse Only" ? AutoDesignMode.AnalyseOnly :
@@ -64,7 +70,8 @@ namespace CETools.Civil3D
             ObjectId network = ObjectId.Null;
             networks.TryGetValue(model.Text("Network"), out network);
             var issues = Validate(doc, sewer, roads, network);
-            var steps = BuildSteps(doc, sewer, roads, network, issues);
+            bool createAlignments = mode == AutoDesignMode.FullAutoDesign && model.Text("CreateAlignments") == "Create missing using saved styles";
+            var steps = BuildSteps(doc, sewer, roads, network, issues, createAlignments);
             string key = scope + ":" + (network.IsNull ? "none" : network.Handle.ToString()) + ":";
             // Scope-specific IDs prevent a successful road run from blessing sewer outputs.
             foreach (var step in steps)
@@ -84,6 +91,9 @@ namespace CETools.Civil3D
                 ShowReport(plan, issues, Inventory(doc));
                 return;
             }
+            ShowReport(plan, issues, Inventory(doc));
+            if (!DisciplineWorkflowDialogs.Confirm("CE AutoDesign - Run previewed work",
+                "Run the ready compatible steps shown in the report? Engineering review gates remain blocked.")) return;
             var meter = new ProgressMeter();
             meter.Start("CE AutoDesign"); meter.SetLimit(Math.Max(1, plan.Count * 2));
             LinkedTableAutoRefreshManager.BeginInternalUpdate();
@@ -105,7 +115,7 @@ namespace CETools.Civil3D
             doc.Editor.WriteMessage("\nAutoDesign pass finished. This is not engineering sign-off. Save the DWG to retain checkpoints; rerun to resume/recheck.");
         }
 
-        private static List<AutoDesignStep> BuildSteps(Document doc, bool sewer, bool roads, ObjectId network, List<string> issues)
+        private static List<AutoDesignStep> BuildSteps(Document doc, bool sewer, bool roads, ObjectId network, List<string> issues, bool createAlignments)
         {
             var steps = new List<AutoDesignStep>();
             Action<string, string, string[], Action, string> add = (id, description, dependencies, action, approval) =>
@@ -116,11 +126,16 @@ namespace CETools.Civil3D
                 string gate = network.IsNull ? "Select/approve the sewer route, outfall, reference surface and parts using the existing sewer workflow; then select that network here." :
                     issues.FirstOrDefault(x => x.StartsWith("PROTECTED:", StringComparison.Ordinal));
                 add("sewer", "Existing sewer source", new[] { "sources" }, () => { }, gate);
-                add("sequence", "Refresh existing CE sewer topology and branch alignments", new[] { "sewer" }, () =>
+                add("sequence", "Refresh existing CE sewer numbering without replacing alignments", new[] { "sewer" }, () =>
                 {
-                    var result = SewerNetworkDynamicSequenceCommands.Resequence(doc, new[] { network }, false, false);
+                    var result = SewerNetworkDynamicSequenceCommands.Resequence(doc, new[] { network }, false, false, false);
                     Require(result.Warning, result.RefreshFailures + result.SkippedNetworks, "Sewer sequencing (network must carry CE sequence names)");
                 }, null);
+                add("alignments", "Create only missing approved CE branch alignments", new[] { "sequence" },
+                    () => SewerBranchAlignmentCommands.CreateMissingForAutoDesign(doc, new[] { network }),
+                    createAlignments ? null : "Select Full AutoDesign and Create missing using saved styles to create missing approved branches.");
+                add("alignment-review", "Review outdated existing Sewer alignment geometry", new[] { "sewer" }, null,
+                    "Use the CE_SEWALIGN preview to review changed branch geometry. Existing alignment replacement may invalidate dependent profiles and is never silent.");
                 var settings = SewerProductionSettings.Read(doc.Database);
                 bool pipeStyleExists = SewerNetworkLabelCommands.ReadPipeLabelStyleNames(doc)
                     .Any(x => string.Equals(x, settings.PipePlanLabelStyle, StringComparison.OrdinalIgnoreCase));
@@ -157,7 +172,7 @@ namespace CETools.Civil3D
             if (roads) prerequisites.Add("road-labels");
             add("outputs", "Refresh existing linked quantities, schedules and drawing annotations", prerequisites.ToArray(), () =>
             {
-                var result = LinkedRefreshEngine.Refresh(doc, false);
+                var result = LinkedRefreshEngine.RefreshForAutoDesign(doc);
                 Require(null, result.Failed, "Linked outputs");
             }, null);
             add("validation", "Validate completed design for review", new[] { "outputs" }, () =>
@@ -194,12 +209,18 @@ namespace CETools.Civil3D
                     if (network == null) issues.Add("Missing selected sewer network: approve route/outfall/parts first.");
                     else
                     {
+                        var connections = new List<AutoDesignConnection>();
                         int pipes = 0;
                         foreach (ObjectId id in network.GetPipeIds())
                         {
                             var pipe = tr.GetObject(id, OpenMode.ForRead) as CivilPipe;
                             if (pipe == null) continue;
                             pipes++;
+                            connections.Add(new AutoDesignConnection { Id = id.Handle.ToString(),
+                                Start = pipe.StartStructureId.IsNull ? null : pipe.StartStructureId.Handle.ToString(),
+                                End = pipe.EndStructureId.IsNull ? null : pipe.EndStructureId.Handle.ToString() });
+                            if (double.IsNaN(pipe.StartPoint.Z) || double.IsInfinity(pipe.StartPoint.Z) || double.IsNaN(pipe.EndPoint.Z) || double.IsInfinity(pipe.EndPoint.Z))
+                                issues.Add("PROTECTED: invalid pipe geometry " + pipe.Name);
                             if (pipe.IsReferenceObject || ((LayerTableRecord)tr.GetObject(pipe.LayerId, OpenMode.ForRead)).IsLocked)
                                 issues.Add("PROTECTED: pipe " + pipe.Name + " is referenced or on a locked layer.");
                             if (pipe.StartStructureId.IsNull || pipe.EndStructureId.IsNull)
@@ -208,6 +229,8 @@ namespace CETools.Civil3D
                             if (pipe.StartPoint.DistanceTo(pipe.EndPoint) < 0.001) issues.Add("Zero-length pipe " + pipe.Name);
                             if (Math.Abs(pipe.StartPoint.Z - pipe.EndPoint.Z) < 0.000001) issues.Add("Flat sewer pipe " + pipe.Name + ": confirm gravity grade.");
                         }
+                        foreach (string finding in AutoDesignTopology.Validate(network.GetStructureIds().Cast<ObjectId>().Select(id => id.Handle.ToString()), connections))
+                            issues.Add("PROTECTED: " + finding);
                         if (pipes == 0) issues.Add("Selected sewer network has no pipes.");
                         foreach (ObjectId id in network.GetStructureIds())
                         {
@@ -380,6 +403,16 @@ namespace CETools.Civil3D
                         if (poly != null) for (int i = 0; i < poly.NumberOfVertices; i++)
                             text.Append(poly.GetPoint3dAt(i).X.ToString("R", CultureInfo.InvariantCulture)).Append(',').Append(poly.GetPoint3dAt(i).Y.ToString("R", CultureInfo.InvariantCulture)).Append(',').Append(poly.GetPoint3dAt(i).Z.ToString("R", CultureInfo.InvariantCulture)).Append('/').Append(poly.GetBulgeAt(i).ToString("R", CultureInfo.InvariantCulture)).Append('\n');
                         if (!obj.ExtensionDictionary.IsNull) AppendDictionary(text, tr, obj.ExtensionDictionary, new HashSet<ObjectId>());
+                    }
+                }
+                foreach (ObjectId alignmentId in CivilApplication.ActiveDocument.GetAlignmentIds())
+                {
+                    var alignment = tr.GetObject(alignmentId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Alignment;
+                    if (alignment == null) continue;
+                    foreach (ObjectId profileId in alignment.GetProfileIds())
+                    {
+                        var profile = tr.GetObject(profileId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Profile;
+                        if (profile != null) text.Append("Profile=").Append(profileId.Handle).Append(':').Append(profile.ComputeFingerPrint()).Append('\n');
                     }
                 }
                 AppendDictionary(text, tr, db.NamedObjectsDictionaryId, new HashSet<ObjectId>());

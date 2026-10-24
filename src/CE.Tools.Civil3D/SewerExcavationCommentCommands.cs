@@ -409,6 +409,18 @@ namespace CETools.Civil3D
             }
         }
 
+        internal static int RefreshForAutoDesign(Document document)
+        {
+            int refreshed = 0;
+            foreach (ObjectId tableId in FindLinkedTables(document.Database))
+            {
+                if (!RefreshTable(document, tableId, false))
+                    throw new InvalidOperationException("Sewer excavation table refresh failed: " + tableId.Handle);
+                refreshed++;
+            }
+            return refreshed;
+        }
+
         internal static int RefreshAll(Document document)
         {
             if (document == null) return 0;

@@ -48,6 +48,7 @@ namespace CETools.Civil3D
                 "Sequence a complete network automatically or select Branch-1 first, then create linked alignments, profiles and production labels.",
                 new List<DisciplineWorkflowAction>
                 {
+                    new DisciplineWorkflowAction("AutoDesign - analyse and complete", "CE_AUTODESIGN", "Analyse Sewer/Road dependencies, run compatible steps and review engineering decisions.", "0 — AutoDesign"),
                     new DisciplineWorkflowAction("Choose production styles", "CE_SEWSETTINGS", "Choose alignment/profile styles, alignment/profile label sets, profile-view style, band set, and pipe/structure labels before production starts.", "0 — Production setup"),
                     new DisciplineWorkflowAction("Automatic network sequence + options", "CE_SEWSEQWORKFLOW", "Sequence and number the complete connected sewer network.", "1 — Network"),
                     new DisciplineWorkflowAction("Sequence with selected main + options", "CE_SEWSEQMAINWORKFLOW", "Select the intended main route before branch numbering.", "1 — Network"),

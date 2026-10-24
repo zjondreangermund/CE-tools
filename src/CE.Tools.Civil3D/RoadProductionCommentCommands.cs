@@ -47,6 +47,7 @@ namespace CETools.Civil3D
                 "Create road design objects in sequence using the active drawing styles and CE Project Style Centre choices.",
                 new List<DisciplineWorkflowAction>
                 {
+                    RoadAction("AutoDesign - analyse and complete", "CE_AUTODESIGN", "Analyse dependencies and refresh compatible existing design outputs.", "0 — AutoDesign"),
                     RoadAction("Choose production styles", "CE_PROJECTSTYLES", "Choose road alignment/profile styles, label sets, profile-view band set, assembly, corridor and code-set styles before production starts.", "0 — Production setup"),
                     RoadAction("Create road alignments", "CE_ROADALIGN", "Create sequential linked road alignments from selected polylines.", "1 — Alignments"),
                     RoadAction("Create NGL and final road profiles", "CE_ROADPROFILEFULL", "Create existing-ground profiles, final editable design profiles and ordered profile views.", "2 — Profiles"),

@@ -970,6 +970,16 @@ namespace CETools.Civil3D
 
         public static RefreshSummary Refresh(Document document, bool rebuildCivil)
         {
+            return RefreshCore(document, rebuildCivil, false);
+        }
+
+        internal static RefreshSummary RefreshForAutoDesign(Document document)
+        {
+            return RefreshCore(document, false, true);
+        }
+
+        private static RefreshSummary RefreshCore(Document document, bool rebuildCivil, bool strictQuantities)
+        {
             var summary = new RefreshSummary();
             // Rebuild design sources first so every linked label, table and
             // estimate reads the latest Civil 3D geometry in this same pass.
@@ -1079,8 +1089,8 @@ namespace CETools.Civil3D
             summary.BoqTables += NetworkAssetScheduleCommands.RefreshAll(document);
             summary.CoordinateTables += RoadCrossSectionScheduleCommands.RefreshAll(document);
             summary.BoqTables += StandardQuantityTemplateCommands.RefreshAll(document);
-            summary.BoqTables += SewerExcavationCommentCommands.RefreshAll(document);
-            summary.BoqTables += WaterSewerCostEstimateCommands.RefreshAll(document);
+            summary.BoqTables += strictQuantities ? SewerExcavationCommentCommands.RefreshForAutoDesign(document) : SewerExcavationCommentCommands.RefreshAll(document);
+            summary.BoqTables += strictQuantities ? WaterSewerCostEstimateCommands.RefreshForAutoDesign(document) : WaterSewerCostEstimateCommands.RefreshAll(document);
             try
             {
                 summary.CoordinateFollowers +=
