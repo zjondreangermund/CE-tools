@@ -2,9 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
-using System.Reflection;
-using System.Security.Cryptography;
-using System.Text;
 using CETools.Core;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
@@ -33,9 +30,20 @@ namespace CETools.Civil3D
             if (doc == null || CivilApplication.ActiveDocument == null || busy) return;
             busy = true;
             string stage = "initialising";
-            try { Run(doc, value => stage = value); }
+            var diagnostics = new AutoDesignDiagnostics();
+            diagnostics.Start(doc.Name);
+            Action<string> setStage = value => { stage = value; diagnostics.Write("STAGE " + value); };
+            try
+            {
+                doc.Editor.WriteMessage("\nCE_AUTODESIGN safety build 2 - lightweight revision tracking.");
+                AutoDesignDrawingChanges.For(doc.Database);
+                if (diagnostics.LogPath != null) doc.Editor.WriteMessage("\nAutoDesign diagnostic log: " + diagnostics.LogPath);
+                Run(doc, setStage);
+                diagnostics.Write("FINISHED (including user cancellation)");
+            }
             catch (System.Exception ex)
             {
+                diagnostics.Write("FAILED during " + stage + "\r\n" + ex.ToString());
                 doc.Editor.WriteMessage("\nAutoDesign stopped during " + stage + ": " + ex.GetType().Name + ": " + ex.Message + ". Rerun CE_AUTODESIGN to resume.");
                 doc.Editor.WriteMessage("\nAutoDesign diagnostic: " + ex.ToString());
             }
@@ -49,6 +57,7 @@ namespace CETools.Civil3D
             using (var tr = doc.Database.TransactionManager.StartTransaction())
                 foreach (ObjectId id in CivilApplication.ActiveDocument.GetPipeNetworkIds())
                 {
+                    setStage("reading Sewer network " + id.Handle);
                     var n = tr.GetObject(id, OpenMode.ForRead) as CivilNetwork;
                     if (n != null && !n.IsReferenceObject)
                         networks[n.Name + " [" + id.Handle + "]"] = id;
@@ -80,7 +89,7 @@ namespace CETools.Civil3D
             var issues = Validate(doc, sewer, roads, network);
             bool createAlignments = mode == AutoDesignMode.FullAutoDesign && model.Text("CreateAlignments") == "Create missing using saved styles";
             setStage("building dependencies and reading saved styles");
-            var steps = BuildSteps(doc, sewer, roads, network, issues, createAlignments);
+            var steps = BuildSteps(doc, sewer, roads, network, issues, createAlignments, setStage);
             string key = scope + ":" + (network.IsNull ? "none" : network.Handle.ToString()) + ":";
             // Scope-specific IDs prevent a successful road run from blessing sewer outputs.
             foreach (var step in steps)
@@ -93,14 +102,15 @@ namespace CETools.Civil3D
             var engine = new AutoDesignEngine();
             Func<string> fingerprint = () =>
             {
-                setStage("fingerprinting drawing objects and dictionaries");
-                return Fingerprint(doc.Database);
+                setStage("reading drawing change revision");
+                return AutoDesignDrawingChanges.For(doc.Database).Stamp;
             };
             var plan = engine.Plan(steps, mode, fingerprint(), checkpoints);
             setStage("reporting drawing inventory");
             doc.Editor.WriteMessage("\nAutoDesign analysis: " + scope + "; " + mode);
             foreach (var line in Inventory(doc)) doc.Editor.WriteMessage("\n  EXISTING: " + line);
             WriteReport(doc, plan, issues);
+            setStage("showing analysis report");
             if (mode == AutoDesignMode.AnalyseOnly)
             {
                 ShowReport(plan, issues, Inventory(doc));
@@ -114,7 +124,11 @@ namespace CETools.Civil3D
             LinkedTableAutoRefreshManager.BeginInternalUpdate();
             try
             {
-                engine.Run(plan, mode, checkpoints, fingerprint, () => WriteJournal(doc.Database, checkpoints),
+                engine.Run(plan, mode, checkpoints, fingerprint, () =>
+                    {
+                        setStage("saving AutoDesign checkpoint");
+                        WriteJournal(doc.Database, checkpoints);
+                    },
                     (item, index, total) =>
                     {
                         setStage(item.Step.Description);
@@ -124,20 +138,22 @@ namespace CETools.Civil3D
             }
             finally { LinkedTableAutoRefreshManager.EndInternalUpdate(); meter.Stop(); }
             LinkedTableAutoRefreshManager.ClearPending(doc);
+            setStage("regenerating display");
             doc.Editor.Regen();
             setStage("validating completed work");
             var finalIssues = Validate(doc, sewer, roads, network, true);
             WriteReport(doc, plan, finalIssues);
+            setStage("showing final review report");
             ShowReport(plan, finalIssues, Inventory(doc));
             doc.Editor.WriteMessage("\nAutoDesign pass finished. This is not engineering sign-off. Save the DWG to retain checkpoints; rerun to resume/recheck.");
         }
 
-        private static List<AutoDesignStep> BuildSteps(Document doc, bool sewer, bool roads, ObjectId network, List<string> issues, bool createAlignments)
+        private static List<AutoDesignStep> BuildSteps(Document doc, bool sewer, bool roads, ObjectId network, List<string> issues, bool createAlignments, Action<string> setStage)
         {
             var steps = new List<AutoDesignStep>();
             Action<string, string, string[], Action, string> add = (id, description, dependencies, action, approval) =>
                 steps.Add(new AutoDesignStep { Id = id, Description = description, Dependencies = dependencies, Execute = action, ApprovalReason = approval });
-            add("sources", "Rebuild only stale editable surfaces/corridors", new string[0], () => RebuildStale(doc, roads), null);
+            add("sources", "Rebuild only stale editable surfaces/corridors", new string[0], () => RebuildStale(doc, roads, setStage), null);
             if (sewer)
             {
                 string gate = network.IsNull ? "Select/approve the sewer route, outfall, reference surface and parts using the existing sewer workflow; then select that network here." :
@@ -154,15 +170,20 @@ namespace CETools.Civil3D
                 add("alignment-review", "Review outdated existing Sewer alignment geometry", new[] { "sewer" }, null,
                     "Use the CE_SEWALIGN preview to review changed branch geometry. Existing alignment replacement may invalidate dependent profiles and is never silent.");
                 var settings = SewerProductionSettings.Read(doc.Database);
-                bool pipeStyleExists = SewerNetworkLabelCommands.ReadPipeLabelStyleNames(doc)
-                    .Any(x => string.Equals(x, settings.PipePlanLabelStyle, StringComparison.OrdinalIgnoreCase));
-                bool structureStyleExists = SewerNetworkLabelCommands.ReadStructureLabelStyleNames(doc)
-                    .Any(x => string.Equals(x, settings.StructurePlanLabelStyle, StringComparison.OrdinalIgnoreCase));
-                string labelApproval = !pipeStyleExists || !structureStyleExists ||
+                string labelApproval = string.IsNullOrWhiteSpace(settings.PipePlanLabelStyle) ||
+                    string.IsNullOrWhiteSpace(settings.StructurePlanLabelStyle) ||
                     settings.PipePlanLabelStyle == CivilStyleCatalogV2.DrawingDefault || settings.StructurePlanLabelStyle == CivilStyleCatalogV2.DrawingDefault
-                    ? "Select and save explicit existing pipe and structure plan-label styles in Sewer Settings first; AutoDesign will not choose fallback styles." : null;
+                    ? "Select and save explicit pipe and structure plan-label styles in Sewer Settings first; AutoDesign will not choose fallback styles." : null;
                 add("labels", "Ensure missing sewer plan labels using saved styles", new[] { "sequence" }, () =>
                 {
+                    setStage("checking selected Sewer plan-label styles");
+                    bool pipeStyleExists = SewerNetworkLabelCommands.ReadPipeLabelStyleNames(doc)
+                        .Any(x => string.Equals(x, settings.PipePlanLabelStyle, StringComparison.OrdinalIgnoreCase));
+                    bool structureStyleExists = SewerNetworkLabelCommands.ReadStructureLabelStyleNames(doc)
+                        .Any(x => string.Equals(x, settings.StructurePlanLabelStyle, StringComparison.OrdinalIgnoreCase));
+                    if (!pipeStyleExists || !structureStyleExists)
+                        throw new InvalidOperationException("A saved Sewer label style is unavailable. Select an installed style in Sewer Settings.");
+                    setStage("creating missing Sewer plan labels");
                     var result = SewerNetworkLabelCommands.EnsureLabels(doc, new[] { network });
                     Require(result.Warning, result.Skipped, "Sewer plan labels");
                 }, labelApproval);
@@ -177,7 +198,7 @@ namespace CETools.Civil3D
                 add("roads", "Refresh existing linked road feature-line elevations", new[] { "sources" },
                     () => { August24RoadElevationDynamicManager.RefreshAllLinked(doc); }, null);
                 // Linked elevation writes can dirty surfaces/corridors again: one bounded second source pass.
-                add("road-sources", "Rebuild sources dirtied by road elevation updates", new[] { "roads" }, () => RebuildStale(doc, true), null);
+                add("road-sources", "Rebuild sources dirtied by road elevation updates", new[] { "roads" }, () => RebuildStale(doc, true, setStage), null);
                 add("road-labels", "Refresh linked junction labels and road names", new[] { "road-sources" }, () =>
                 {
                     RoadJunctionCompletionCommands.RefreshAll(doc);
@@ -280,10 +301,22 @@ namespace CETools.Civil3D
         private static IEnumerable<DBObject> ModelObjects(Database db, Transaction tr)
         {
             var model = (BlockTableRecord)tr.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(db), OpenMode.ForRead);
-            foreach (ObjectId id in model) if (!id.IsErased) yield return tr.GetObject(id, OpenMode.ForRead);
+            var corridorClass = RXObject.GetClass(typeof(CivilCorridor));
+            var profileViewClass = RXObject.GetClass(typeof(Autodesk.Civil.DatabaseServices.ProfileView));
+            foreach (ObjectId id in model)
+            {
+                if (id.IsNull || id.IsErased) continue;
+                var objectClass = id.ObjectClass;
+                // Analysis only needs these two native model types. Do not open
+                // arbitrary proxy/custom/block objects merely to inspect their properties.
+                bool corridor = objectClass != null && corridorClass != null && objectClass.IsDerivedFrom(corridorClass);
+                bool profileView = objectClass != null && profileViewClass != null && objectClass.IsDerivedFrom(profileViewClass);
+                if (!corridor && !profileView) continue;
+                yield return tr.GetObject(id, OpenMode.ForRead);
+            }
         }
 
-        private static void RebuildStale(Document doc, bool roads)
+        private static void RebuildStale(Document doc, bool roads, Action<string> setStage)
         {
             using (var tr = doc.Database.TransactionManager.StartTransaction())
             {
@@ -291,17 +324,19 @@ namespace CETools.Civil3D
                 if (roads) ids.AddRange(ModelObjects(doc.Database, tr).OfType<CivilCorridor>().Select(x => x.ObjectId));
                 foreach (ObjectId id in ids.Distinct())
                 {
+                    setStage("checking native source [" + id.Handle + "]");
                     var obj = tr.GetObject(id, OpenMode.ForRead);
                     var surface = obj as CivilSurface;
                     var corridor = obj as CivilCorridor;
                     bool stale = surface != null ? surface.IsOutOfDate : corridor != null && corridor.IsOutOfDate;
                     if (!stale) continue;
-                    var reference = obj.GetType().GetProperty("IsReferenceObject");
-                    if (reference != null && Equals(reference.GetValue(obj, null), true))
+                    var civilEntity = obj as Autodesk.Civil.DatabaseServices.Entity;
+                    if (civilEntity != null && civilEntity.IsReferenceObject)
                         throw new InvalidOperationException("Stale reference " + id.Handle + " must be refreshed from its source drawing.");
                     var entity = obj as Autodesk.AutoCAD.DatabaseServices.Entity;
                     if (entity != null && ((LayerTableRecord)tr.GetObject(entity.LayerId, OpenMode.ForRead)).IsLocked)
                         throw new InvalidOperationException("Stale object " + id.Handle + " is on a locked layer; review/unlock it first.");
+                    setStage("native rebuild " + obj.GetType().Name + " [" + id.Handle + "]");
                     obj.UpgradeOpen();
                     // Same native rebuild APIs used by the existing CE surface/corridor commands.
                     if (surface != null) surface.Rebuild(); else corridor.Rebuild();
@@ -315,18 +350,28 @@ namespace CETools.Civil3D
             var result = new List<string>();
             using (var tr = doc.Database.TransactionManager.StartTransaction())
             {
+                var civil = CivilApplication.ActiveDocument;
+                int networks = 0, pipes = 0, structures = 0;
+                foreach (ObjectId id in civil.GetPipeNetworkIds())
+                {
+                    var network = tr.GetObject(id, OpenMode.ForRead) as CivilNetwork;
+                    if (network == null) continue;
+                    networks++;
+                    pipes += network.GetPipeIds().Count;
+                    structures += network.GetStructureIds().Count;
+                }
+                result.Add("Gravity networks: " + networks + "; pipes: " + pipes + "; structures: " + structures);
+                result.Add("Alignments: " + civil.GetAlignmentIds().Count + "; surfaces: " + civil.GetSurfaceIds().Count);
                 var objects = ModelObjects(doc.Database, tr).ToList();
-                foreach (var group in objects.GroupBy(x => x.GetType().Name).OrderBy(x => x.Key))
-                    if (new[] { "Pipe", "Structure", "TinSurface", "TinVolumeSurface", "Corridor", "Alignment", "Profile", "ProfileView", "PipeLabel", "StructureLabel", "Table", "FeatureLine", "Polyline" }.Contains(group.Key))
-                        result.Add(group.Key + ": " + group.Count());
-                int staleSurfaces = 0, staleCorridors = 0;
-                foreach (ObjectId id in CivilApplication.ActiveDocument.GetSurfaceIds())
+                var corridors = objects.OfType<CivilCorridor>().ToList();
+                result.Add("Corridors: " + corridors.Count + "; profile views: " + objects.OfType<Autodesk.Civil.DatabaseServices.ProfileView>().Count());
+                int staleSurfaces = 0;
+                foreach (ObjectId id in civil.GetSurfaceIds())
                 {
                     var surface = tr.GetObject(id, OpenMode.ForRead) as CivilSurface;
                     if (surface != null && surface.IsOutOfDate) staleSurfaces++;
                 }
-                staleCorridors = objects.OfType<CivilCorridor>().Count(x => x.IsOutOfDate);
-                result.Add("Outdated surfaces: " + staleSurfaces + "; outdated corridors: " + staleCorridors);
+                result.Add("Outdated surfaces: " + staleSurfaces + "; outdated corridors: " + corridors.Count(x => x.IsOutOfDate));
             }
             return result;
         }
@@ -383,6 +428,7 @@ namespace CETools.Civil3D
 
         private static void WriteJournal(Database db, IDictionary<string, AutoDesignCheckpoint> checkpoints)
         {
+            using (AutoDesignDrawingChanges.For(db).IgnoreCheckpointWrites())
             using (var tr = db.TransactionManager.StartTransaction())
             {
                 var nod = (DBDictionary)tr.GetObject(db.NamedObjectsDictionaryId, OpenMode.ForWrite);
@@ -395,90 +441,7 @@ namespace CETools.Civil3D
             }
         }
 
-        // Conservative drawing-wide content hash: output deletions and saved setting changes invalidate work.
-        // No database event, object-open flag, timestamps or journal writes enter this hash.
-        private static string Fingerprint(Database db)
-        {
-            var text = new StringBuilder("CE_AUTODESIGN_ADAPTER_1\n");
-            using (var tr = db.TransactionManager.StartTransaction())
-            {
-                var blocks = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
-                foreach (ObjectId blockId in blocks)
-                {
-                    var block = (BlockTableRecord)tr.GetObject(blockId, OpenMode.ForRead);
-                    if (block.IsFromExternalReference) continue;
-                    foreach (ObjectId id in block)
-                    {
-                        if (id.IsErased) continue;
-                        var obj = tr.GetObject(id, OpenMode.ForRead);
-                        text.Append(id.Handle).Append(':').Append(obj.GetType().FullName).Append('\n');
-                        AppendProperties(text, obj);
-                        var civil = obj as Autodesk.Civil.DatabaseServices.Entity;
-                        if (civil != null) text.Append("CivilFingerprint=").Append(civil.ComputeFingerPrint()).Append('\n');
-                        if (obj.XData != null) foreach (TypedValue value in obj.XData)
-                            text.Append("XData=").Append(value.TypeCode).Append(':').Append(StableText(value.Value)).Append('\n');
-                        var poly = obj as Polyline;
-                        if (poly != null) for (int i = 0; i < poly.NumberOfVertices; i++)
-                            text.Append(poly.GetPoint3dAt(i).X.ToString("R", CultureInfo.InvariantCulture)).Append(',').Append(poly.GetPoint3dAt(i).Y.ToString("R", CultureInfo.InvariantCulture)).Append(',').Append(poly.GetPoint3dAt(i).Z.ToString("R", CultureInfo.InvariantCulture)).Append('/').Append(poly.GetBulgeAt(i).ToString("R", CultureInfo.InvariantCulture)).Append('\n');
-                        if (!obj.ExtensionDictionary.IsNull) AppendDictionary(text, tr, obj.ExtensionDictionary, new HashSet<ObjectId>());
-                    }
-                }
-                foreach (ObjectId alignmentId in CivilApplication.ActiveDocument.GetAlignmentIds())
-                {
-                    var alignment = tr.GetObject(alignmentId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Alignment;
-                    if (alignment == null) continue;
-                    foreach (ObjectId profileId in alignment.GetProfileIds())
-                    {
-                        var profile = tr.GetObject(profileId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Profile;
-                        if (profile != null) text.Append("Profile=").Append(profileId.Handle).Append(':').Append(profile.ComputeFingerPrint()).Append('\n');
-                    }
-                }
-                AppendDictionary(text, tr, db.NamedObjectsDictionaryId, new HashSet<ObjectId>());
-            }
-            using (var hash = SHA256.Create()) return BitConverter.ToString(hash.ComputeHash(Encoding.UTF8.GetBytes(text.ToString()))).Replace("-", "");
-        }
-
-        private static string StableText(object value)
-        {
-            if (value is byte[]) return BitConverter.ToString((byte[])value);
-            if (value is ObjectId) { var id = (ObjectId)value; return id.IsNull ? "NULL" : id.Handle.ToString(); }
-            if (value is double) return ((double)value).ToString("R", CultureInfo.InvariantCulture);
-            return Convert.ToString(value, CultureInfo.InvariantCulture);
-        }
-
-        private static void AppendProperties(StringBuilder text, object obj)
-        {
-            foreach (var p in obj.GetType().GetProperties(BindingFlags.Instance | BindingFlags.Public).OrderBy(x => x.Name))
-            {
-                if (p.GetIndexParameters().Length != 0 || !p.CanRead || p.Name.StartsWith("Is", StringComparison.Ordinal) && p.Name != "IsOutOfDate") continue;
-                Type type = p.PropertyType;
-                if (!(type.IsPrimitive || type.IsEnum || type == typeof(string) || type == typeof(ObjectId) ||
-                    type.Namespace == "Autodesk.AutoCAD.Geometry")) continue;
-                try { text.Append(p.Name).Append('=').Append(StableText(p.GetValue(obj, null))).Append('\n'); }
-                catch (System.Exception) { text.Append(p.Name).Append("=<unavailable>\n"); }
-            }
-        }
-
-        private static void AppendDictionary(StringBuilder text, Transaction tr, ObjectId id, HashSet<ObjectId> seen)
-        {
-            if (!seen.Add(id)) return;
-            var dictionary = tr.GetObject(id, OpenMode.ForRead) as DBDictionary;
-            if (dictionary == null) return;
-            foreach (var entry in AutoDesignDictionaryEntries.Read(dictionary))
-            {
-                if (entry.Key == Journal) continue;
-                var obj = tr.GetObject(entry.Value, OpenMode.ForRead);
-                var record = obj as Xrecord;
-                if (record != null && record.Data != null)
-                {
-                    text.Append(entry.Key).Append(':');
-                    foreach (TypedValue value in record.Data)
-                        text.Append(value.TypeCode).Append('=').Append(StableText(value.Value)).Append(';');
-                    text.Append('\n');
-                }
-                else if (obj is DBDictionary) AppendDictionary(text, tr, entry.Value, seen);
-                else { text.Append(entry.Key).Append(':'); AppendProperties(text, obj); }
-            }
-        }
+        // Change tracking is handled by AutoDesignDrawingChanges. Do not reintroduce
+        // native fingerprint calls, arbitrary property reflection or dictionary walks here.
     }
 }

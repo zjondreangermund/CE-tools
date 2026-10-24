@@ -29,9 +29,17 @@ namespace Autodesk.AutoCAD.DatabaseServices
         public static ObjectId Null { get { return new ObjectId(); } }
     }
     public enum OpenMode { ForRead, ForWrite }
+    public sealed class ObjectEventArgs : EventArgs { }
+    public sealed class ObjectErasedEventArgs : EventArgs { }
     public sealed class Database
     {
         internal Autodesk.Civil.ApplicationServices.CivilDocument CivilDocument;
+        public event EventHandler<ObjectEventArgs> ObjectModified;
+        public event EventHandler<ObjectEventArgs> ObjectAppended;
+        public event EventHandler<ObjectErasedEventArgs> ObjectErased;
+        internal void NotifyModified() { ObjectModified?.Invoke(this, new ObjectEventArgs()); }
+        internal void NotifyAppended() { ObjectAppended?.Invoke(this, new ObjectEventArgs()); }
+        internal void NotifyErased() { ObjectErased?.Invoke(this, new ObjectErasedEventArgs()); }
     }
     public sealed class Transaction
     {

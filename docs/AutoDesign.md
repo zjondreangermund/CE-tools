@@ -45,16 +45,17 @@ The setup dialog discloses that **road, profile-band and linked-output services
 are drawing-wide**, even when one sewer network is selected. Civil source rebuilds
 are also drawing-wide but only touch stale objects. V1 uses conservative
 **drawing-wide invalidation**, not minimal per-object dependency invalidation.
-Geometry, Civil native fingerprints, object additions/deletions, XData, extension
-records and drawing settings enter a content hash. Unrelated edits can cause a
-conservative recheck. Unsupported / external settings and changes to external
-source files still require manual review and their normal reference refresh.
+A lightweight session revision tracks object-modified, appended and erased events.
+The callbacks only increment a counter; they do not inspect objects or perform design work.
+No native ComputeFingerPrint call, arbitrary property reflection, block-definition
+walk or recursive dictionary scan is used for change detection. Unrelated drawing edits
+can conservatively invalidate the plan. External preference/workbook/reference-file
+changes still need their normal manual refresh and review.
 
 ## Recovery and refresh safety
 
 The runner rejects cycles, missing dependencies and duplicate task IDs, runs each
-stage at most once per invocation, and never subscribes AutoDesign to Idle or
-object-modified events. A reentrancy guard prevents a second run. Stage failures
+stage at most once per invocation, and never runs design work from Idle or object events. A reentrancy guard prevents a second run. Stage failures
 block dependent tasks while independent work can continue. Partial failures
 invalidate earlier checkpoints so partial writes are not treated as current.
 Existing output services perform their normal link-based refresh or label
@@ -66,7 +67,18 @@ between stages. An individual existing service can take time and cannot always b
 interrupted mid-stage. Rerun `CE_AUTODESIGN` to resume. A Running checkpoint is
 retried, not assumed successful. Checkpoints live in `CE_AUTODESIGN_V1` in the DWG
 named-object dictionary. **Save the drawing to retain them across closing/crashes.**
-They participate in normal drawing save/undo behavior. Nothing external is written.
+They participate in normal drawing save/undo behavior. A reopened drawing gets a new
+session revision, so completed stages are conservatively revalidated; Running/Failed work
+remains retryable through the existing idempotent adapters. Successful work in an unchanged
+open drawing is still skipped. AutoDesign's own checkpoint transactions are excluded from
+revision tracking, so they cannot invalidate themselves.
+
+A synchronously flushed diagnostic log is written before each stage and before each native
+source rebuild to `%LOCALAPPDATA%\CE Tools\Diagnostics\AutoDesign-last-run.log`.
+The next run preserves it as `AutoDesign-previous-run.log`. A native shutdown cannot be
+caught reliably by managed exception handling, so the last written stage/object is the
+recovery evidence. These files record the drawing name, stage and managed errors; they do
+not save the drawing or certify crash recovery. Logging failures do not stop the command.
 
 ## Validation boundary and remaining integrations
 
@@ -117,7 +129,7 @@ Full AutoDesign now offers **Create missing using saved styles**. This reuses th
 
 AutoDesign's numbering pass disables alignment replacement separately from downstream refreshes. Existing manual callers keep both original defaults. Run choices are transient, so Analyse Only does not save dialog settings. Execution shows a review report and requires run confirmation.
 
-Additional topology validation blocks mutations for disconnected components, loops, isolated structures, duplicate/parallel edges, cross-network endpoints and self-connections. This does not certify engineering gradients, hydraulic capacity or cover. Strict excavation/BOQ/workbook refresh adapters report recoverable failures without changing manual command behaviour. Profile fingerprints are included even when profiles are stored below alignments rather than directly in model space.
+Additional topology validation blocks mutations for disconnected components, loops, isolated structures, duplicate/parallel edges, cross-network endpoints and self-connections. This does not certify engineering gradients, hydraulic capacity or cover. Strict excavation/BOQ/workbook refresh adapters report recoverable failures without changing manual command behaviour. Object-change revisions invalidate the drawing-wide plan, including profile edits, without querying native profile fingerprints.
 
 The existing Sewer/Road production menus now launch the working CE_AUTODESIGN command. The additional topology/integration regression executable runs with:
 
@@ -126,3 +138,7 @@ dotnet run --project tests/CE.Tools.AutoDesign.Tests
 ```
 
 Autodesk-linked compilation and live Civil 3D DWG validation remain necessary; neither is available in the Linux development environment. Save the DWG to retain checkpoints after closing.
+
+## Native-shutdown hardening
+
+Analyse Only now uses the lightweight drawing revision and defers native style-collection enumeration to the explicit label execution stage. Initial analysis still reads selected network geometry and basic inventory; model-space object opening is restricted to registered corridor/profile-view classes, while other counts come from known Civil collections. Arbitrary proxy/custom/block objects are not opened for inventory. Autodesk-linked testing remains necessary. The source-level safety guard rejects reintroducing native fingerprint calls, arbitrary property enumeration or recursive dictionary scans into AutoDesign analysis.

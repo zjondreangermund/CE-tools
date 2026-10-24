@@ -11,5 +11,7 @@
     <Compile Include="../../src/CE.Tools.Civil3D/ProfileViewNativeEditor.cs" Link="ProfileViewNativeEditor.cs" />
     <Compile Include="../../src/CE.Tools.Civil3D/SewerPipeConnections.cs" Link="SewerPipeConnections.cs" />
     <Compile Include="../../src/CE.Tools.Civil3D/AutoDesignDictionaryEntries.cs" Link="AutoDesignDictionaryEntries.cs" />
+    <Compile Include="../../src/CE.Tools.Civil3D/AutoDesignDrawingChanges.cs" Link="AutoDesignDrawingChanges.cs" />
+    <Compile Include="../../src/CE.Tools.Civil3D/AutoDesignDiagnostics.cs" Link="AutoDesignDiagnostics.cs" />
   </ItemGroup>
 </Project>
