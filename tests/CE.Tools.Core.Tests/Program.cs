@@ -36,6 +36,7 @@ namespace CETools.Core.Tests
                 _tests += RoadSheetingTests.Run();
                 _tests += CornerConnectionTests.Run();
                 _tests += AutoDesignTests.Run();
+                _tests += AutoDesignReviewTests.Run();
 
                 Console.WriteLine($"CE Tools core tests passed: {_tests}");
                 return 0;

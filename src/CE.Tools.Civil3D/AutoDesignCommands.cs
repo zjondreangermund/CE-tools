@@ -116,7 +116,7 @@ namespace CETools.Civil3D
             setStage("showing analysis report");
             if (mode == AutoDesignMode.AnalyseOnly)
             {
-                ShowReport(plan, issues, Inventory(doc));
+                ShowReport(plan, issues, Inventory(doc), true);
                 return;
             }
             ShowReport(plan, issues, Inventory(doc));
@@ -147,7 +147,7 @@ namespace CETools.Civil3D
             var finalIssues = Validate(doc, sewer, roads, network, true);
             WriteReport(doc, plan, finalIssues);
             setStage("showing final review report");
-            ShowReport(plan, finalIssues, Inventory(doc));
+            ShowReport(plan, finalIssues, Inventory(doc), true);
             doc.Editor.WriteMessage("\nAutoDesign pass finished. This is not engineering sign-off. Save the DWG to retain checkpoints; rerun to resume/recheck.");
         }
 
@@ -384,13 +384,15 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static void ShowReport(IList<AutoDesignItem> plan, IList<string> issues, IList<string> inventory)
+        private static void ShowReport(IList<AutoDesignItem> plan, IList<string> issues, IList<string> inventory, bool showAttention = false)
         {
             using (var form = new System.Windows.Forms.Form())
             using (var report = new System.Windows.Forms.TextBox())
             {
-                form.Text = "CE AutoDesign - Results / Engineering Review";
+                form.Text = showAttention ? "CE AutoDesign - Approvals and attention" : "CE AutoDesign - Run preview";
                 form.Width = 950; form.Height = 650;
+                form.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
+                form.MinimizeBox = false;
                 report.Multiline = true; report.ReadOnly = true; report.WordWrap = true;
                 report.ScrollBars = System.Windows.Forms.ScrollBars.Vertical;
                 report.Dock = System.Windows.Forms.DockStyle.Fill;
@@ -401,7 +403,31 @@ namespace CETools.Civil3D
                     "V1 does not certify hydraulic capacity, cover/slope criteria, constructability or final sheets. " +
                     "Use existing manual design commands for flagged decisions. Save the DWG to retain checkpoints. " +
                     "Rerun CE_AUTODESIGN to analyse changes or resume interrupted work.";
-                form.Controls.Add(report);
+                var tabs = new System.Windows.Forms.TabControl { Dock = System.Windows.Forms.DockStyle.Fill };
+                var details = new System.Windows.Forms.TabPage("Full report");
+                details.Controls.Add(report);
+                if (showAttention)
+                {
+                    var attention = new System.Windows.Forms.TabPage("Approvals / Needs attention");
+                    attention.Controls.Add(new System.Windows.Forms.TextBox
+                    {
+                        Multiline = true, ReadOnly = true, WordWrap = true,
+                        ScrollBars = System.Windows.Forms.ScrollBars.Vertical,
+                        Dock = System.Windows.Forms.DockStyle.Fill,
+                        Text = AutoDesignReview.AttentionText(plan, issues)
+                    });
+                    tabs.TabPages.Add(attention);
+                }
+                tabs.TabPages.Add(details);
+                var close = new System.Windows.Forms.Button
+                {
+                    Text = "Close", Dock = System.Windows.Forms.DockStyle.Bottom, Height = 36,
+                    DialogResult = System.Windows.Forms.DialogResult.OK
+                };
+                form.AcceptButton = close;
+                form.CancelButton = close;
+                form.Controls.Add(tabs);
+                form.Controls.Add(close);
                 Autodesk.AutoCAD.ApplicationServices.Application.ShowModalDialog(form);
             }
         }
