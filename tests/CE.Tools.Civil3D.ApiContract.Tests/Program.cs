@@ -18,6 +18,7 @@ internal static class Program
 
     private static void Main()
     {
+        AutoDesignDictionaryTests.Run(Check);
         ProfileViewNativeEditorTests.Run(Check);
         SewerPipeConnectionTests.Run(Check);
         var database = new Database();
