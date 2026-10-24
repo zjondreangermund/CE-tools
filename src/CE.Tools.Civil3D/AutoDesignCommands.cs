@@ -458,16 +458,19 @@ namespace CETools.Civil3D
             using (var tr = doc.Database.TransactionManager.StartTransaction())
             {
                 var civil = CivilApplication.ActiveDocument;
-                int networks = 0, pipes = 0, structures = 0;
-                foreach (ObjectId id in civil.GetPipeNetworkIds())
+                if (sewer)
                 {
-                    var network = tr.GetObject(id, OpenMode.ForRead) as CivilNetwork;
-                    if (network == null) continue;
-                    networks++;
-                    pipes += network.GetPipeIds().Count;
-                    structures += network.GetStructureIds().Count;
+                    int networks = 0, pipes = 0, structures = 0;
+                    foreach (ObjectId id in civil.GetPipeNetworkIds())
+                    {
+                        var network = tr.GetObject(id, OpenMode.ForRead) as CivilNetwork;
+                        if (network == null) continue;
+                        networks++;
+                        pipes += network.GetPipeIds().Count;
+                        structures += network.GetStructureIds().Count;
+                    }
+                    result.Add("Gravity networks: " + networks + "; pipes: " + pipes + "; structures: " + structures);
                 }
-                result.Add("Gravity networks: " + networks + "; pipes: " + pipes + "; structures: " + structures);
                 result.Add("Alignments: " + civil.GetAlignmentIds().Count + "; surfaces: " + civil.GetSurfaceIds().Count);
                 if (roads)
                 {
