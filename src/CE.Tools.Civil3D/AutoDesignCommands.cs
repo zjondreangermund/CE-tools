@@ -176,7 +176,8 @@ namespace CETools.Civil3D
             };
             var plan = engine.Plan(steps, mode, fingerprint(), checkpoints);
             setStage("reporting drawing inventory");
-            doc.Editor.WriteMessage("\nAutoDesign analysis: " + scope + "; " + mode);\n            if (roads) doc.Editor.WriteMessage("\n  ROAD SCOPE: " + roadFocus + " (drawing-wide refresh adapters).");
+            doc.Editor.WriteMessage("\nAutoDesign analysis: " + scope + "; " + mode);
+            if (roads) doc.Editor.WriteMessage("\n  ROAD SCOPE: " + roadFocus + " (drawing-wide refresh adapters).");
             foreach (var line in Inventory(doc)) doc.Editor.WriteMessage("\n  EXISTING: " + line);
             WriteReport(doc, plan, issues);
             setStage("showing analysis report");
@@ -219,8 +220,8 @@ namespace CETools.Civil3D
                 // Defer to the existing manual CE_SEWPROFILE popup for approval
                 // of style, datum and placement. This is an explicit user click
                 // after the AutoDesign run, not silent engineering creation.
-                doc.Editor.WriteMessage("\\nOpening CE_SEWPROFILE for user-approved profile creation. Rerun AutoDesign after profiles are created.");
-                doc.SendStringToExecute("_.CE_SEWPROFILE\\n", true, false, false);
+                doc.Editor.WriteMessage("\nOpening CE_SEWPROFILE for user-approved profile creation. Rerun AutoDesign after profiles are created.");
+                doc.SendStringToExecute("_.CE_SEWPROFILE\n", true, false, false);
             }
             doc.Editor.WriteMessage("\nAutoDesign pass finished. This is not engineering sign-off. Save the DWG to retain checkpoints; rerun to resume/recheck.");
         }
