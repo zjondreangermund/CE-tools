@@ -1022,6 +1022,49 @@ namespace CETools.Civil3D
             networkIds = ids.ToList();
         }
 
+        // Additive orchestration adapter: reuse the existing plans/creation logic, but
+        // never pass an existing branch to its replacement path.
+        internal static int CreateMissingForAutoDesign(Document document, IEnumerable<ObjectId> networkIds)
+        {
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            var plans = new List<NetworkAlignmentPlan>();
+            SewerProductionSettings settings = SewerProductionSettings.Read(document.Database);
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (string kind in new[] { "Alignment Style", "Alignment Label Set Style" })
+                {
+                    string requested = kind == "Alignment Style" ? settings.AlignmentStyle : settings.AlignmentLabelSetStyle;
+                    string resolved;
+                    ObjectId style = CivilStyleCatalogV2.ResolveStyleId(document.Database, civil, kind, requested, tr, out resolved);
+                    if (string.IsNullOrWhiteSpace(requested) || style.IsNull || !string.Equals(requested, resolved, StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException("Select an available " + kind + " in Sewer Settings; AutoDesign does not choose a fallback style.");
+                }
+                var alignments = civil.GetAlignmentIds().Cast<ObjectId>().Select(id => tr.GetObject(id, OpenMode.ForRead)).ToList();
+                foreach (ObjectId networkId in networkIds.Distinct())
+                {
+                    var network = tr.GetObject(networkId, OpenMode.ForRead) as CivilNetwork;
+                    if (network == null || network.IsReferenceObject) throw new InvalidOperationException("Sewer source is missing or referenced.");
+                    foreach (ObjectId pipeId in network.GetPipeIds())
+                    {
+                        int branch, sequence;
+                        var pipe = tr.GetObject(pipeId, OpenMode.ForRead) as CivilPipe;
+                        if (pipe == null || !TryReadBranch(pipe, out branch, out sequence))
+                            throw new InvalidOperationException("Approve and sequence every source pipe with CE_SEWSEQ before AutoDesign alignment creation.");
+                    }
+                    NetworkAlignmentPlan plan = BuildNetworkPlan(networkId, tr);
+                    var missing = plan.Branches.Where(branch => !alignments.Any(alignment =>
+                        HasTag(alignment, BuildBranchKey(networkId.Handle.ToString(), branch.BranchName), "Alignment"))).ToList();
+                    if (missing.Count > 0) plans.Add(new NetworkAlignmentPlan(plan.NetworkId, plan.NetworkName, missing));
+                }
+            }
+            if (plans.Count == 0) return 0;
+            int created, labels;
+            CreateAlignmentsAndLabels(document.Database, civil, plans, out created, out labels);
+            if (created != plans.Sum(plan => plan.Branches.Count))
+                throw new InvalidOperationException("Not all missing Sewer alignments were created. Analyse and resume.");
+            return created;
+        }
+
         private static NetworkAlignmentPlan BuildNetworkPlan(
             ObjectId networkId,
             Transaction transaction)

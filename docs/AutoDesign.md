@@ -24,8 +24,8 @@ available.
 ## Working stages and dependencies
 
 1. Rebuild only surfaces marked out of date, and corridors for Road scopes.
-2. Sewer: existing selected CE network → topology / branch alignment sequencing
-   → missing native plan labels and linked CE profile parts / bands.
+2. Sewer: existing selected CE network → topology / branch numbering
+   → missing native plan labels and linked CE profile parts / bands. Full mode can additionally create missing approved branch alignments.
 3. Roads: existing road elevation links → one bounded pass rebuilding newly
    stale surfaces/corridors → linked junction labels and road names.
 4. After prerequisites succeed: refresh existing linked annotations, schedules,
@@ -98,7 +98,7 @@ copy of a Sewer drawing and a Road drawing:
 
 1. Analyse Only: compare before/after objects, settings and journal (no changes).
 2. Complete existing design: confirm only stale editable sources rebuild, CE
-   branch alignments and missing plan labels refresh, existing linked profiles /
+   branch numbering and missing plan labels refresh, existing linked profiles /
    schedules update, and validation findings remain visible.
 3. Rerun unchanged: confirm successful stages are Current and labels do not double.
 4. Move/delete a pipe, edit surface data or saved style, and remove a generated
@@ -110,3 +110,19 @@ copy of a Sewer drawing and a Road drawing:
    flagged, and the report must not claim an engineered design is complete.
 8. Verify the existing manual sewer sequence and road commands still behave as
    before; the optional batching parameter defaults to the preserved manual path.
+
+## Missing-alignment adapter and additional safeguards
+
+Full AutoDesign now offers **Create missing using saved styles**. This reuses the existing Sewer branch-plan/creation routines, requires every pipe to carry approved CE sequence data and requires explicit available alignment styles. Existing branch alignments are excluded from the creation plan, preserving dependent profile references. Review changed existing alignments through the manual CE_SEWALIGN preview.
+
+AutoDesign's numbering pass disables alignment replacement separately from downstream refreshes. Existing manual callers keep both original defaults. Run choices are transient, so Analyse Only does not save dialog settings. Execution shows a review report and requires run confirmation.
+
+Additional topology validation blocks mutations for disconnected components, loops, isolated structures, duplicate/parallel edges, cross-network endpoints and self-connections. This does not certify engineering gradients, hydraulic capacity or cover. Strict excavation/BOQ/workbook refresh adapters report recoverable failures without changing manual command behaviour. Profile fingerprints are included even when profiles are stored below alignments rather than directly in model space.
+
+The existing Sewer/Road production menus now launch the working CE_AUTODESIGN command. The additional topology/integration regression executable runs with:
+
+```text
+dotnet run --project tests/CE.Tools.AutoDesign.Tests
+```
+
+Autodesk-linked compilation and live Civil 3D DWG validation remain necessary; neither is available in the Linux development environment. Save the DWG to retain checkpoints after closing.

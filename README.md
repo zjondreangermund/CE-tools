@@ -306,3 +306,7 @@ To uninstall:
 - Test new alpha builds on a copy of a drawing.
 
 See the command-specific test plans in [`docs`](docs) before using a new alpha build on a live project.
+
+### AutoDesign (first version)
+
+Run `CE_AUTODESIGN` to analyse Sewer/Road dependencies, refresh compatible existing outputs, create approved missing Sewer labels/branch alignments, and review engineering decisions. Includes three modes, progress, topology checks and DWG checkpoints for resuming. See [AutoDesign scope and validation](docs/AutoDesign.md) for supported operations and Civil 3D runtime checks.

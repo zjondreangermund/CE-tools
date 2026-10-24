@@ -183,6 +183,15 @@ namespace CETools.Civil3D
                 enabled ? "ON" : "OFF");
         }
 
+        internal static int RefreshForAutoDesign(Document document)
+        {
+            CostEstimateLink link = ReadLink(document.Database);
+            if (link == null || string.IsNullOrWhiteSpace(link.Path)) return 0;
+            if (RefreshAll(document, true) != 1)
+                throw new InvalidOperationException("Linked cost workbook could not be refreshed. Check the saved path and close the workbook before resuming.");
+            return 1;
+        }
+
         internal static int RefreshAll(Document document)
         {
             return RefreshAll(document, false);

@@ -273,6 +273,9 @@ jobs:
       - name: Parse Civil 3D C# syntax
         run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
 
+      - name: Test AutoDesign dependency planning and recovery
+        run: dotnet run --project tests/CE.Tools.AutoDesign.Tests/CE.Tools.AutoDesign.Tests.csproj -c Release
+
       - name: Run geometry tests
         run: dotnet run --project tests/CE.Tools.Core.Tests/CE.Tools.Core.Tests.csproj -c Release
 

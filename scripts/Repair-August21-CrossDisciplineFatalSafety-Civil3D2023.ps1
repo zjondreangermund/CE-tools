@@ -259,7 +259,17 @@ $newPost = @'
                     catch { result.RefreshFailures++; }
                 }
 '@ -replace "`r?`n","`r`n"
-if ($dynamic.Contains($oldPost)) {
+# AutoDesign explicitly disables legacy downstream work; preserve that boundary
+# when converting the manual path to the historical deferred-label workflow.
+$batchPost = $oldPost.Replace('foreach (ObjectId networkId in refreshedNetworks)', 'if (refreshOutputs) foreach (ObjectId networkId in refreshedNetworks)')
+$batchPost = $batchPost.Replace('SewerLabelStyleSyncCommands.ApplySelectedStyles(document);', 'if (refreshOutputs) SewerLabelStyleSyncCommands.ApplySelectedStyles(document);')
+$batchPost = $batchPost.Replace('RefreshGeneratedAlignments(', 'if (refreshAlignments) RefreshGeneratedAlignments(')
+$batchPost = $batchPost.Replace('LinkedRefreshEngine.Refresh(document, false);', 'if (refreshOutputs) LinkedRefreshEngine.Refresh(document, false);')
+if ($dynamic.Contains($batchPost)) {
+    $guardedPost = $newPost.Replace('if (refreshedNetworks.Count > 0)', 'if (refreshedNetworks.Count > 0 && refreshOutputs)')
+    $dynamic = $dynamic.Replace($batchPost,$guardedPost)
+}
+elseif ($dynamic.Contains($oldPost)) {
     $dynamic = $dynamic.Replace($oldPost,$newPost)
 }
 elseif (-not $dynamic.Contains('document.SendStringToExecute(') -or

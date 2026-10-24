@@ -107,7 +107,8 @@ namespace CETools.Civil3D
             Document document,
             IEnumerable<ObjectId> networkIds,
             bool force,
-            bool refreshOutputs = true)
+            bool refreshOutputs = true,
+            bool refreshAlignments = true)
         {
             var result = new SewerDynamicSequenceResult();
             if (document == null || networkIds == null) return result;
@@ -187,7 +188,7 @@ namespace CETools.Civil3D
                 if (refreshedNetworks.Count > 0)
                 {
                     if (refreshOutputs) SewerLabelStyleSyncCommands.ApplySelectedStyles(document);
-                    RefreshGeneratedAlignments(
+                    if (refreshAlignments) RefreshGeneratedAlignments(
                         document,
                         civilDocument,
                         refreshedNetworks,
