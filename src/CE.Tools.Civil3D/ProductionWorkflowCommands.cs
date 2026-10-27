@@ -57,6 +57,7 @@ namespace CETools.Civil3D
             Step("Stepped platform offsets", "CE_PLATFORMSTEPOFFSETS", "Create linked stepped offsets for multiple platforms.", "03 DESIGN"),
             Step("Drape / platform surface", "CE_PLATFORMDRAPE", "Drape accepted platform controls to the selected surface.", "03 DESIGN"),
             Step("Merge road / grading outputs", "CE_ROADSURFACEMERGE", "Create CE Final Surface from selected natural ground and all or selected TOP/grading surfaces.", "04 SURFACES"),
+            Step("Merge all junction TIN surfaces", "CE_JUNCTIONSURFACEMERGE", "Combine CE junction grading, kerb and gutter infill surfaces into CE Junctions All without changing the originals.", "04 SURFACES"),
             Step("Platform setting-out", "CE_PLATFORMSETTINGOUT", "Generate linked platform vertex/grid setting-out and tables.", "05 COMPLETE"),
             Step("Platform names / register", "CE_PLATFORMTABLE", "Create the linked platform name/elevation register.", "05 COMPLETE"),
             Step("Platform cut / fill", "CE_PLATFORMCUTFILL", "Calculate linked NG-versus-design quantities.", "06 DELIVER"),
