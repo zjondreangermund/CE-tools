@@ -49,7 +49,7 @@ namespace CETools.Civil3D
                 @"^MH(?<branch>\d+)\.",
                 RegexOptions.IgnoreCase |
                 RegexOptions.CultureInvariant);
-        [CommandMethod("CE_TOOLS", "CE_BOQWATER", CommandFlags.Modal | CommandFlags.Redraw)]
+        [CommandMethod("CE_TOOLS", "CE_WATEREXCAVATIONBOQ", CommandFlags.Modal | CommandFlags.Redraw)]
         public void BuildWaterBoq()
         {
             Document document = ActiveDocument();
