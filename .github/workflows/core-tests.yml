@@ -34,6 +34,9 @@ jobs:
             throw 'Civil 3D 2023 repaired PluginEntry.cs does not use direct panel items.'
           }
 
+      - name: Validate Oct 27 noded junction grading and infill safeguards
+        run: python3 scripts/Validate-October27JunctionNodedInfill.py
+
       - name: Validate circle centre, midpoint and feature-line PI interval commands
         run: python3 scripts/Validate-October27CircleCentresAndFeatureLineIntervals.py
 
