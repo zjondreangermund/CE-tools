@@ -185,6 +185,7 @@ namespace CETools.Civil3D
                     A("CE-Platform Slopes / Levels", "CE_PLATFORMSLOPE", "Constant slope, fixed slope or flatten to highest elevation.", "04 DESIGN"),
                     A("CE-Drape / Platform Surface", "CE_PLATFORMDRAPE", "Drape linked platform controls to a selected surface.", "04 DESIGN"),
                     A("CE-Merge Road / Grading Surface Outputs", "CE_ROADSURFACEMERGE", "Create CE Top All, CE Bottom All or CE Final Surface from selected natural ground and road/grading sources.", "04 DESIGN"),
+                    A("CE-Merge All Junction Surfaces", "CE_JUNCTIONSURFACEMERGE", "Create CE Junctions All from all CE junction grading and kerb/gutter infill TIN surfaces.", "04 DESIGN"),
                     A("CE-Platform Setting-Out", "CE_PLATFORMSETTINGOUT", "Linked vertex/grid setting-out and tables.", "05 COMPLETE"),
                     A("CE-Platform Names / Register", "CE_PLATFORMTABLE", "Linked platform names, elevations and register.", "05 COMPLETE"),
                     A("CE-Platform Cut / Fill", "CE_PLATFORMCUTFILL", "Linked NG versus design quantities.", "06 DELIVER"),

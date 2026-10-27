@@ -134,6 +134,7 @@ namespace CETools.Civil3D
                 Action("DELIVER - Cut / Fill", "CE_PLATFORMCUTFILL", "Linked NG versus design quantities.", "06 DELIVER"),
                 Action("Drawings / Sections", "CE_PLATFORMDRAWINGS", "Create platform layouts and section source lines.", "06 DELIVER"),
                 Action("Merge road / grading outputs", "CE_ROADSURFACEMERGE", "Create CE Top All, CE Bottom All or CE Final Surface without changing numbered source surfaces.", "05 COMPLETE"),
+                Action("Merge all junction surfaces", "CE_JUNCTIONSURFACEMERGE", "Combine the CE junction grading and infill surfaces into CE Junctions All.", "05 COMPLETE"),
                 Action("▶ RUN COMPLETE PLATFORM PRODUCTION", "CE_PLATFORMWORKFLOW", "Open one ordered, non-duplicated platform workflow from boundaries through drawings.", "00 COMPLETE WORKFLOW")
             });
         }

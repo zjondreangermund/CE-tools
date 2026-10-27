@@ -159,10 +159,16 @@ namespace CETools.Civil3D
                 return true;
             }
 
-            // Never let a previously active Roads/Sewer/etc. selection leak into
-            // a different production discipline. Until this discipline has its
-            // own saved preset, activate an empty selection so downstream style
-            // resolvers use their drawing/discipline defaults.
+            ProjectStyleSelection current = ProjectStyleCenterCommands.ReadSelection(database);
+            if (current.Exists && string.Equals(current.Discipline, discipline,
+                StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // If there is no saved choice for this discipline, don't apply an
+            // unrelated discipline's styles to its engineering objects.
+            // Imported global presets are now registered under the same
+            // discipline keys by ApplySavedPreset, so this clean fallback is
+            // only for genuinely unconfigured disciplines.
             var clean = new ProjectStyleSelection
             {
                 Exists = true,
