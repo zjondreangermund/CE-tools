@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
+using System.Reflection;
+using Autodesk.Civil.ApplicationServices;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -873,6 +875,14 @@ namespace CETools.Civil3D
                 "Output layer",
                 "CE-CONNECTORS-LINES",
                 "Layer for all generated connector geometry.");
+            settings.AddChoice("Site", "02 Output", "Connector feature-line Site",
+                "<No Site (siteless)>",
+                "Choose an existing Civil 3D Site for new connector feature lines, or create a new Site. " +
+                "Polylines remain siteless.",
+                new[] { "<No Site (siteless)>", "<Create new Site>" }
+                    .Concat(ReadConnectorSiteNames(document)).Distinct().ToArray());
+            settings.AddText("NewSite", "02 Output", "New Site name", "CE-CONNECTOR-SITE",
+                "Only used when the Site selection is <Create new Site>.");
             settings.AddChoice("Scope", "01 Endpoint selection", "Source objects", "Select multiple",
                 "Use window/crossing selection, existing preselection, or all supported objects in the current space.",
                 new[] { "Select multiple", "All in current space" });
@@ -977,6 +987,20 @@ namespace CETools.Civil3D
                 return;
             }
 
+            ObjectId connectorSite = ObjectId.Null;
+            if (string.Equals(settings.Text("Output"), "Feature Lines", StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(settings.Text("Site"), "<No Site (siteless)>", StringComparison.OrdinalIgnoreCase))
+            {
+                string siteName = string.Equals(settings.Text("Site"), "<Create new Site>",
+                    StringComparison.OrdinalIgnoreCase) ? settings.Text("NewSite") : settings.Text("Site");
+                connectorSite = ResolveConnectorSite(document, siteName);
+                if (connectorSite.IsNull)
+                {
+                    editor.WriteMessage("\nCE_CONNECTENDPOINTS cancelled. Cannot resolve/create Site '{0}'.", siteName);
+                    return;
+                }
+            }
+
             int created = 0;
             int connected = 0;
             using (Transaction tr = document.Database.TransactionManager.StartTransaction())
@@ -1015,7 +1039,9 @@ namespace CETools.Civil3D
                         owner.AppendEntity(temporary);
                         tr.AddNewlyCreatedDBObject(temporary, true);
                         string name = "CE-ENDPOINT-CONNECTOR-" + Guid.NewGuid().ToString("N");
-                        ObjectId featureId = CivilFeatureLine.Create(name, temporary.ObjectId);
+                        ObjectId featureId = connectorSite.IsNull
+                            ? CivilFeatureLine.Create(name, temporary.ObjectId)
+                            : CivilFeatureLine.Create(name, temporary.ObjectId, connectorSite);
                         CivilFeatureLine feature = tr.GetObject(featureId, OpenMode.ForWrite, false) as CivilFeatureLine;
                         if (feature != null && !layerId.IsNull) feature.LayerId = layerId;
                         if (!temporary.IsErased) temporary.Erase();
@@ -1041,6 +1067,72 @@ namespace CETools.Civil3D
             editor.WriteMessage(
                 "\nCE_CONNECTENDPOINTS complete. Connector objects={0}; connected endpoints={1}; clusters={2}; output={3}. Source Lines/Polylines/FeatureLines were not changed.",
                 created, connected, clusters.Count, settings.Text("Output"));
+        }
+
+        private static List<string> ReadConnectorSiteNames(Document document)
+        {
+            var names = new List<string>();
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (document == null || civil == null) return names;
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in civil.GetSiteIds())
+                {
+                    DBObject site = tr.GetObject(id, OpenMode.ForRead, false);
+                    PropertyInfo name = site.GetType().GetProperty("Name");
+                    string value = name == null ? null : name.GetValue(site, null) as string;
+                    if (!string.IsNullOrWhiteSpace(value)) names.Add(value);
+                }
+            }
+            return names.OrderBy(value => value, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private static ObjectId ResolveConnectorSite(Document document, string siteName)
+        {
+            if (document == null || string.IsNullOrWhiteSpace(siteName))
+                return ObjectId.Null;
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (civil == null) return ObjectId.Null;
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in civil.GetSiteIds())
+                {
+                    DBObject site = tr.GetObject(id, OpenMode.ForRead, false);
+                    PropertyInfo name = site.GetType().GetProperty("Name");
+                    string value = name == null ? null : name.GetValue(site, null) as string;
+                    if (string.Equals(value, siteName, StringComparison.OrdinalIgnoreCase))
+                        return id;
+                }
+            }
+            // Civil 3D host versions expose different public Site.Create
+            // signatures. Only attempt known compatible argument forms.
+            Type type = typeof(CivilFeatureLine).Assembly.GetType(
+                "Autodesk.Civil.DatabaseServices.Site", false);
+            if (type == null) return ObjectId.Null;
+            foreach (MethodInfo method in type.GetMethods(BindingFlags.Public | BindingFlags.Static)
+                .Where(item => item.Name == "Create"))
+            {
+                ParameterInfo[] parameters = method.GetParameters();
+                object[] args = new object[parameters.Length];
+                bool compatible = true;
+                for (int i = 0; i < parameters.Length; i++)
+                {
+                    Type parameter = parameters[i].ParameterType;
+                    if (parameter == typeof(string)) args[i] = siteName;
+                    else if (parameter == typeof(CivilDocument)) args[i] = civil;
+                    else if (parameter == typeof(Database)) args[i] = document.Database;
+                    else { compatible = false; break; }
+                }
+                if (!compatible || !parameters.Any(p => p.ParameterType == typeof(string)))
+                    continue;
+                try
+                {
+                    object created = method.Invoke(null, args);
+                    if (created is ObjectId) return (ObjectId)created;
+                }
+                catch (System.Exception) { /* Try next supported signature. */ }
+            }
+            return ObjectId.Null;
         }
 
         // ---------------------------------------------------------------------
