@@ -102,9 +102,31 @@ namespace CETools.Civil3D
             {
                 using (DocumentLock documentLock = document.LockDocument())
                 {
+                    // Keep any previously saved drawing-specific styles before
+                    // changing the active discipline to the global preset.
+                    // Otherwise entering a Sewer tab after applying a Water
+                    // preset loses the drawing's original Sewer choices.
+                    if (existing.Exists && existing.Values.Any(item =>
+                        !string.IsNullOrWhiteSpace(item.Value) &&
+                        !string.Equals(item.Value, "<Use drawing default>",
+                            StringComparison.OrdinalIgnoreCase)))
+                    {
+                        ProjectStyleSelection previous = August11DisciplineStylePresetManager.ReadPreset(
+                            document.Database, existing.Discipline);
+                        if (!previous.Exists || previous.Values.Count == 0)
+                            August11DisciplineStylePresetManager.SavePreset(document.Database, existing);
+                    }
+
                     WriteActiveSelection(document.Database, selected);
                     foreach (ProjectStyleSelection preset in presets.Values)
+                    {
                         WriteDisciplineSelection(document.Database, preset);
+                        // Both production-centre code paths must use the same
+                        // per-discipline saved selection. Previously this
+                        // migration was missing, so ActivateForProduction
+                        // overwrote the active preset with empty defaults.
+                        August11DisciplineStylePresetManager.SavePreset(document.Database, preset);
+                    }
                     SynchronizeDisciplineSettings(document.Database, selected);
                 }
             }
