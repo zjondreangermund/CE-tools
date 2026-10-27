@@ -16,6 +16,8 @@ using CivilSurface = Autodesk.Civil.DatabaseServices.Surface;
 using TinSurface = Autodesk.Civil.DatabaseServices.TinSurface;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
+[assembly: CommandClass(typeof(CETools.Civil3D.August23PlatformDynamicGradingCommands))]
+
 namespace CETools.Civil3D
 {
     /// <summary>
@@ -36,6 +38,11 @@ namespace CETools.Civil3D
         private const string DirectDrapeKey = "CE_PLATFORM_DIRECT_DRAPE";
         private const string PlatformSiteName = "CE-PLATFORM-SITE";
         private const double Tolerance = 0.000001;
+        // Drawing-session values supplied by the Grade-to-Surface settings.
+        // They affect generated TIN data only; source feature lines remain unchanged.
+        private static double _infillWeedDistance = 0.0;
+        private static double _infillWeedAngle = 0.0;
+        private static double _infillMaxBoundarySegmentLength = 0.25;
 
         [CommandMethod("CE_TOOLS", "CE_PLATFORMDRAPEMULTI", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void DrapeMultipleFeatureLines()
@@ -217,20 +224,20 @@ namespace CETools.Civil3D
                 "Horizontal search increment before the final surface intersection is bisected.");
             settings.AddPositiveDouble(
                 "InfillWeedDistance", "06 Search", "Infill weeding distance", 0.0,
-                "Remove only very close, nearly collinear TIN boundary points; 0 preserves the original points.");
+                "Remove redundant TIN input points closer than this distance. Use 0 to preserve all boundary points; keep low around bellmouth curves.");
             settings.AddPositiveDouble(
                 "InfillWeedAngle", "06 Search", "Infill weeding angle (degrees)", 0.0,
-                "Maximum direction change for removing short redundant segments when the weeding distance is positive.");
+                "Minimum direction-change angle for weeding redundant points, where supported by the Civil 3D API. Use 0 to disable weeding.");
             settings.AddPositiveDouble(
                 "InfillMaxBoundarySegment", "06 Search", "Maximum infill boundary segment length", 0.25,
-                "Maximum spacing of interpolated points along bellmouth boundaries.");
+                "Maximum spacing of interpolated points along the bellmouth boundary. Smaller values follow curves more closely but increase TIN size.");
             settings.AddChoice(
                 "Infill", "07 Grading group", "Create native grading group / infill where possible", "Yes",
                 "Create native infill for closed junction feature lines. Open sidewalk/shoulder bellmouth edge strings still receive linked Grade-to-Surface daylight geometry.",
                 new[] { "Yes", "No" });
             settings.AddChoice(
                 "InfillScope", "07 Grading group", "Junction infill scope", "Auto connected OPEN lines from grading selection",
-                "Trace enclosed faces from endpoint-connected open feature lines; select the actual enclosing boundary strings. Closed-line scopes remain available.",
+                "Trace enclosed faces from endpoint-connected open feature lines in the current grading selection. The individual feature lines do not need their own Closed property; endpoints must meet within tolerance and form a complete non-crossing loop. Closed feature-line workflows remain available as alternatives.",
                 new[]
                 {
                     "Multiple selected closed junction feature lines",
@@ -292,6 +299,9 @@ namespace CETools.Civil3D
             List<SurfaceOption> outputStyles = AddSurfaceStyleChoice(document, settings);
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
             ObjectId outputStyleId = outputStyles.FirstOrDefault(item => item.Name == settings.Text("OutputSurfaceStyle"))?.ObjectId ?? ObjectId.Null;
+            _infillWeedDistance = Math.Max(0.0, settings.Double("InfillWeedDistance", 0.0));
+            _infillWeedAngle = Math.Max(0.0, Math.Min(180.0, settings.Double("InfillWeedAngle", 0.0)));
+            _infillMaxBoundarySegmentLength = Math.Max(0.01, settings.Double("InfillMaxBoundarySegment", 0.25));
 
 
             SurfaceOption selectedSurface = surfaces.FirstOrDefault(item => string.Equals(item.Name, settings.Text("Surface"), StringComparison.OrdinalIgnoreCase));
@@ -309,10 +319,6 @@ namespace CETools.Civil3D
             double fillRatio = string.Equals(settings.Text("FillFormat"), "Grade (%)", StringComparison.OrdinalIgnoreCase)
                 ? 100.0 / Math.Max(0.001, Math.Abs(settings.Double("FillGrade", 50.0)))
                 : Math.Max(0.001, settings.Double("FillSlope", 2.0));
-
-            double infillMaxBoundarySegment = Math.Max(0.01, settings.Double("InfillMaxBoundarySegment", 0.25));
-            double infillWeedDistance = Math.Max(0.0, settings.Double("InfillWeedDistance", 0.0));
-            double infillWeedAngle = Math.Max(0.0, Math.Min(180.0, settings.Double("InfillWeedAngle", 0.0)));
 
             List<ObjectId> gradeSourceIds = ResolveGradeSourceIds(
                 document,
@@ -424,12 +430,13 @@ namespace CETools.Civil3D
                     settings.Text("InfillScope") == "Auto connected OPEN lines from grading selection")
                 {
                     int openCreated, openExisting, openSkipped;
-                    // Junction faces are bounded by the actual green edge strings,
-                    // which can differ from the source lines selected for daylight.
-                    // Request those boundaries explicitly instead of guessing them.
+                    // Junction infill boundaries are a different selection from the four
+                    // source edges used to generate daylight slopes. Always ask for the
+                    // green junction boundary linework; passing gradeSourceIds here only
+                    // supplies the graded source edges and cannot reliably enclose the
+                    // separate bellmouth/junction faces.
                     CreateConnectedOpenInfills(document, outputStyleId,
-                        out openCreated, out openExisting, out openSkipped,
-                        null, infillMaxBoundarySegment, infillWeedDistance, infillWeedAngle);
+                        out openCreated, out openExisting, out openSkipped, null);
                     separateInfillsCreated += openCreated;
                     separateInfillsExisting += openExisting;
                     separateInfillsSkipped += openSkipped;
@@ -473,7 +480,7 @@ namespace CETools.Civil3D
                 "\nInfills skipped: " + separateInfillsSkipped +
                 "\nSurface groups skipped: " + connectedSurfaceResult.Skipped +
                 (wantsInfill && closedCandidates == 0 && separateInfillsCreated == 0 && separateInfillsExisting == 0
-                    ? "\n\nNo infill face was created. Check endpoint gaps, crossing segments, duplicate edges and whether the selected linework encloses planar regions. This creates bounded TIN surfaces, not native Civil 3D grading infills." : string.Empty),
+                    ? "\n\nNo infill face was created. For connected open feature lines, check endpoint gaps, crossing segments, duplicate edges and whether the selected lines form a complete planar loop. Each source feature line may remain open; the connected group must enclose a face." : string.Empty),
                 "CE Tools - Grading / Infill Results");
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
@@ -3417,6 +3424,42 @@ namespace CETools.Civil3D
         // Selected OPEN Civil feature lines can form a closed region when their
         // endpoints coincide. Build the boundary from all selected segments
         // without changing the original lines or manufacturing a closing edge.
+        private sealed class InfillRawSegment
+        {
+            internal Point3d A;
+            internal Point3d B;
+            internal SourceSnapshot Source;
+            internal List<double> Cuts;
+        }
+
+        private static Point3d InterpolatePlanSegment(Point3d a, Point3d b, double t)
+        {
+            t = Math.Max(0.0, Math.Min(1.0, t));
+            return new Point3d(a.X + (b.X - a.X) * t, a.Y + (b.Y - a.Y) * t,
+                a.Z + (b.Z - a.Z) * t);
+        }
+
+        private static bool TryPlanSegmentIntersection(Point3d a, Point3d b, Point3d c, Point3d d,
+            out double ta, out double tb, out Point3d point)
+        {
+            ta = tb = 0.0; point = Point3d.Origin;
+            double rx = b.X - a.X, ry = b.Y - a.Y;
+            double sx = d.X - c.X, sy = d.Y - c.Y;
+            double denominator = rx * sy - ry * sx;
+            if (Math.Abs(denominator) < 1e-10) return false; // parallel/collinear; endpoints are clustered separately
+            double qx = c.X - a.X, qy = c.Y - a.Y;
+            double t = (qx * sy - qy * sx) / denominator;
+            double u = (qx * ry - qy * rx) / denominator;
+            const double eps = 1e-8;
+            if (t < -eps || t > 1.0 + eps || u < -eps || u > 1.0 + eps) return false;
+            ta = Math.Max(0.0, Math.Min(1.0, t));
+            tb = Math.Max(0.0, Math.Min(1.0, u));
+            Point3d pa = InterpolatePlanSegment(a, b, ta);
+            Point3d pb = InterpolatePlanSegment(c, d, tb);
+            point = new Point3d((pa.X + pb.X) * 0.5, (pa.Y + pb.Y) * 0.5, (pa.Z + pb.Z) * 0.5);
+            return true;
+        }
+
         private sealed class InfillFaceArc
         {
             internal int From;
@@ -3426,15 +3469,12 @@ namespace CETools.Civil3D
             internal List<Point3d> Points;
         }
 
-        // Trace each bounded face of an endpoint-connected feature-line graph.
+        // Trace bounded faces of a noded, endpoint-connected feature-line graph.
         // The old greedy single-chain algorithm lost junction centres whenever
         // three or more open lines met at a shared endpoint.
         private static void CreateConnectedOpenInfills(Document document, ObjectId styleId,
             out int created, out int existing, out int skipped,
-            IEnumerable<ObjectId> gradingSelection = null,
-            double maxBoundarySegment = 0.25,
-            double weedDistance = 0.0,
-            double weedAngle = 0.0)
+            IEnumerable<ObjectId> gradingSelection = null)
         {
             created = 0; existing = 0; skipped = 0;
             ObjectId[] ids;
@@ -3442,7 +3482,7 @@ namespace CETools.Civil3D
             else
             {
                 PromptSelectionResult selection = SelectFeatureLines(document.Editor,
-                    "\\nSelect connected OPEN feature lines around infill regions: ");
+                    "\nSelect junction, kerb and gutter boundary feature lines (open or closed; exclude daylight/slope lines): ");
                 if (selection.Status != PromptStatus.OK || selection.Value == null) return;
                 ids = selection.Value.GetObjectIds();
             }
@@ -3450,6 +3490,9 @@ namespace CETools.Civil3D
             const double tolerance = 0.05;
             var nodes = new List<Point3d>();
             var arcs = new List<InfillFaceArc>();
+            int slopeLinesExcluded = 0;
+            var rawSegments = new List<InfillRawSegment>();
+            var kerbGutterEnds = new List<KerbGutterEndpoint>();
             foreach (ObjectId id in ids.Distinct())
             {
                 SourceSnapshot source; string issue;
@@ -3459,20 +3502,81 @@ namespace CETools.Civil3D
                     skipped++;
                     continue;
                 }
-                var points = BoundarySamples(document.Database, source, maxBoundarySegment);
+                // Red cut/fill daylight rays are grading outputs, not green junction boundary edges.
+                if (IsGeneratedDaylightSlopeLine(document.Database, source))
+                {
+                    slopeLinesExcluded++;
+                    continue;
+                }
+                // Use the actual selected junction boundary geometry here. BoundarySamples
+                // is a grading/daylight sampler and may substitute generated slope-ray
+                // samples for the source vertices, which destroys the green boundary graph.
+                var points = source.Points == null ? new List<Point3d>() : source.Points.ToList();
+                for (int p = points.Count - 1; p > 0; p--)
+                    if (PlanDistance(points[p], points[p - 1]) <= 1e-7) points.RemoveAt(p);
+                if (points.Count > 2 && PlanDistance(points[0], points[points.Count - 1]) <= 1e-7)
+                    points.RemoveAt(points.Count - 1);
                 if (points.Count < 2) { skipped++; continue; }
-                int from = FindInfillNode(nodes, points[0], tolerance);
-                int to = FindInfillNode(nodes, points[points.Count - 1], tolerance);
-                if (from == to && points.Count < 3) { skipped++; continue; }
-                int forward = arcs.Count;
-                arcs.Add(new InfillFaceArc {
-                    From = from, To = to, Reverse = forward + 1,
-                    Source = source, Points = points });
-                var reversed = new List<Point3d>(points);
-                reversed.Reverse();
-                arcs.Add(new InfillFaceArc {
-                    From = to, To = from, Reverse = forward,
-                    Source = source, Points = reversed });
+                string boundaryLayer = GetInfillSourceLayerName(document.Database, source.LayerId);
+                if (IsKerbGutterBoundaryLayer(boundaryLayer))
+                {
+                    kerbGutterEnds.Add(new KerbGutterEndpoint { Point = points[0], Source = source, LayerName = boundaryLayer });
+                    kerbGutterEnds.Add(new KerbGutterEndpoint { Point = points[points.Count - 1], Source = source, LayerName = boundaryLayer });
+                }
+                int segmentCount = source.Closed ? points.Count : points.Count - 1;
+                for (int segment = 0; segment < segmentCount; segment++)
+                {
+                    Point3d a = points[segment];
+                    Point3d b = points[(segment + 1) % points.Count];
+                    if (PlanDistance(a, b) <= 1e-7) continue;
+                    rawSegments.Add(new InfillRawSegment { A = a, B = b, Source = source,
+                        Cuts = new List<double> { 0.0, 1.0 } });
+                }
+            }
+
+            // Kerb/gutter strips are often represented by two open longitudinal feature lines.
+            // Pair nearby free endpoints on the specified CE layers with virtual end caps so
+            // each strip can form a closed infill face. Source feature lines are never modified.
+            AddVirtualKerbGutterEndCaps(kerbGutterEnds, rawSegments, tolerance: 0.05, maximumGap: 3.0);
+
+            // Node T/X crossings and touching linework before face tracing. Merely
+            // clustering endpoints is insufficient when one line terminates on
+            // the middle of another line. This is a virtual graph operation: the
+            // original Civil 3D feature lines are never trimmed or rewritten.
+            for (int i = 0; i < rawSegments.Count; i++)
+            {
+                for (int j = i + 1; j < rawSegments.Count; j++)
+                {
+                    double ti, tj; Point3d intersection;
+                    if (TryPlanSegmentIntersection(rawSegments[i].A, rawSegments[i].B,
+                        rawSegments[j].A, rawSegments[j].B, out ti, out tj, out intersection))
+                    {
+                        rawSegments[i].Cuts.Add(ti);
+                        rawSegments[j].Cuts.Add(tj);
+                    }
+                }
+            }
+            foreach (InfillRawSegment segment in rawSegments)
+            {
+                List<double> cuts = segment.Cuts.OrderBy(t => t).Aggregate(new List<double>(), (list, t) =>
+                {
+                    if (list.Count == 0 || Math.Abs(list[list.Count - 1] - t) > 1e-8) list.Add(t);
+                    return list;
+                });
+                for (int k = 0; k < cuts.Count - 1; k++)
+                {
+                    Point3d a = InterpolatePlanSegment(segment.A, segment.B, cuts[k]);
+                    Point3d b = InterpolatePlanSegment(segment.A, segment.B, cuts[k + 1]);
+                    if (PlanDistance(a, b) <= 1e-7) continue;
+                    int from = FindInfillNode(nodes, a, tolerance);
+                    int to = FindInfillNode(nodes, b, tolerance);
+                    if (from == to) continue;
+                    int forward = arcs.Count;
+                    arcs.Add(new InfillFaceArc { From = from, To = to, Reverse = forward + 1,
+                        Source = segment.Source, Points = new List<Point3d> { nodes[from], nodes[to] } });
+                    arcs.Add(new InfillFaceArc { From = to, To = from, Reverse = forward,
+                        Source = segment.Source, Points = new List<Point3d> { nodes[to], nodes[from] } });
+                }
             }
 
             var outgoing = new List<List<int>>();
@@ -3483,6 +3587,7 @@ namespace CETools.Civil3D
 
             var visited = new HashSet<int>();
             int rejected = 0;
+            var combinedBoundaries = new List<List<Point3d>>();
             for (int origin = 0; origin < arcs.Count; origin++)
             {
                 if (visited.Contains(origin)) continue;
@@ -3517,37 +3622,469 @@ namespace CETools.Civil3D
                 boundary.RemoveAt(boundary.Count - 1);
                 if (boundary.Count < 3) { rejected++; continue; }
 
-                // Stable face identity from its unique source handles. Distinct
-                // faces with identical memberships also include a center point.
-                var handles = local.Select(i => arcs[i].Source.ObjectId.Handle.ToString())
-                    .Distinct().OrderBy(h => h, StringComparer.Ordinal).ToArray();
-                double cx = boundary.Average(p => p.X), cy = boundary.Average(p => p.Y);
-                string signature = string.Join("|", handles) + "|" +
-                    Math.Round(cx, 2).ToString(System.Globalization.CultureInfo.InvariantCulture) + "|" +
-                    Math.Round(cy, 2).ToString(System.Globalization.CultureInfo.InvariantCulture);
-                uint hash = 2166136261;
-                foreach (char ch in signature) { hash ^= ch; hash *= 16777619; }
-                string prefix = "CE-INFILL-FACE-" + hash.ToString("X8");
-                SourceSnapshot root = arcs[origin].Source;
-                string exactName = prefix + "-" + root.ObjectId.Handle;
-                if (!FindSurfaceByName(document.Database, exactName).IsNull)
-                { existing++; continue; }
-
-                ObjectId surface; string error;
-                if (TryCreateFallbackInfillSurface(document.Database, root.ObjectId, root,
-                    prefix, out surface, out error, styleId, boundary, weedDistance, weedAngle))
+                // Do not skip a face merely because an older per-face infill surface
+                // exists. Rebuild the combined junction surface from the current
+                // selected boundary graph every run.
+                combinedBoundaries.Add(boundary);
+            }
+            // Create one separate TIN surface per bounded face, including junction, kerb and gutter faces.
+            // Keep each face independent so the surfaces can be reviewed and merged later.
+            for (int faceIndex = 0; faceIndex < combinedBoundaries.Count; faceIndex++)
+            {
+                string separateName = "CE-JUNCTION-INFILL-" + (faceIndex + 1).ToString("000");
+                // Repeated runs must not create CE-JUNCTION-INFILL-001 (1), (2), ...
+                if (!FindSurfaceByName(document.Database, separateName).IsNull)
+                {
+                    existing++;
+                    continue;
+                }
+                string separateError;
+                var oneBoundary = new List<List<Point3d>> { combinedBoundaries[faceIndex] };
+                if (TryCreateCombinedJunctionInfillSurface(
+                        document.Database, oneBoundary, separateName, styleId, out separateError))
                     created++;
                 else
                 {
                     skipped++;
-                    document.Editor.WriteMessage("\\nBounded junction face skipped: " + error);
+                    document.Editor.WriteMessage("\nJunction infill " + (faceIndex + 1).ToString() +
+                        " failed: " + separateError);
                 }
             }
+            int kerbGutterCreated, kerbGutterSkipped;
+            CreateKerbGutterStripInfills(document, styleId, out kerbGutterCreated, out kerbGutterSkipped);
+            created += kerbGutterCreated;
+            skipped += kerbGutterSkipped;
+
             skipped += rejected;
             document.Editor.WriteMessage(
-                "\\nJunction graph infill: bounded faces created={0}, existing={1}, skipped={2}. " +
-                "Only endpoint-connected planar faces are used; source feature lines are preserved.",
-                created, existing, skipped);
+                "\nJunction graph infill: bounded faces created={0}, existing={1}, skipped={2}. " +
+                "Selected boundaries are traced directly; crossings/T-junctions are virtually noded. " +
+                "Separate kerb/gutter strip infills created={3}, skipped={4}. Source feature lines are preserved. Daylight/slope sources excluded={5}.",
+                created, existing, skipped, kerbGutterCreated, kerbGutterSkipped, slopeLinesExcluded);
+        }
+
+        private static bool TryCreateCombinedJunctionInfillSurface(
+            Database database, IList<List<Point3d>> boundaries, string requestedName,
+            ObjectId outputStyleId, out string error)
+        {
+            error = string.Empty;
+            ObjectId surfaceId = ObjectId.Null;
+            if (database == null || boundaries == null || boundaries.Count == 0)
+            {
+                error = "No closed junction boundaries were supplied.";
+                return false;
+            }
+            try
+            {
+                if (!FindSurfaceByName(database, requestedName).IsNull)
+                {
+                    error = "A generated infill with this name already exists. It was retained without duplication.";
+                    return false;
+                }
+                surfaceId = TinSurface.Create(database, requestedName);
+                using (Transaction tr = database.TransactionManager.StartTransaction())
+                {
+                    TinSurface surface = tr.GetObject(surfaceId, OpenMode.ForWrite, false) as TinSurface;
+                    if (surface == null) throw new InvalidOperationException("Civil 3D did not return the combined TIN surface.");
+                    if (!outputStyleId.IsNull) surface.StyleId = outputStyleId;
+
+                    var allPoints = new List<Point3d>();
+                    var loops = new List<Point3dCollection>();
+                    foreach (List<Point3d> raw in boundaries)
+                    {
+                        if (raw == null) continue;
+                        var loop = new List<Point3d>();
+                        foreach (Point3d p in raw)
+                        {
+                            if (!Finite(p)) continue;
+                            if (loop.Count == 0 || loop[loop.Count - 1].DistanceTo(p) > 1e-6)
+                                loop.Add(p);
+                        }
+                        if (loop.Count > 2 && loop[0].DistanceTo(loop[loop.Count - 1]) <= 1e-6)
+                            loop.RemoveAt(loop.Count - 1);
+                        if (loop.Count < 3) continue;
+
+                        var dense = new List<Point3d>();
+                        double maxLength = Math.Max(0.01, _infillMaxBoundarySegmentLength);
+                        for (int i = 0; i < loop.Count; i++)
+                        {
+                            Point3d a = loop[i], b = loop[(i + 1) % loop.Count];
+                            dense.Add(a);
+                            int pieces = Math.Max(1, (int)Math.Ceiling(a.DistanceTo(b) / maxLength));
+                            for (int part = 1; part < pieces; part++)
+                            {
+                                double t = (double)part / pieces;
+                                dense.Add(new Point3d(a.X + (b.X-a.X)*t, a.Y + (b.Y-a.Y)*t, a.Z + (b.Z-a.Z)*t));
+                            }
+                        }
+                        if (dense.Count < 3) continue;
+                        allPoints.AddRange(dense);
+                        loops.Add(new Point3dCollection(dense.ToArray()));
+                    }
+                    if (loops.Count == 0) throw new InvalidOperationException("No valid closed junction loops remained.");
+                    surface.AddVertices(new Point3dCollection(allPoints.ToArray()));
+                    // Each junction is an independent outer island on the same surface;
+                    // do not join separated junctions with a single convex-hull perimeter.
+                    foreach (Point3dCollection loop in loops)
+                        surface.BoundariesDefinition.AddBoundaries(loop, 0.05, SurfaceBoundaryType.Outer, true);
+                    surface.Rebuild();
+                    tr.Commit();
+                }
+                return true;
+            }
+            catch (System.Exception ex)
+            {
+                error = ex.Message;
+                if (!surfaceId.IsNull) { try { Cleanup(database, surfaceId); } catch { } }
+                return false;
+            }
+        }
+
+        private static double PolylinePlanLength(IList<Point3d> points)
+        {
+            double length = 0.0;
+            if (points == null) return length;
+            for (int i = 1; i < points.Count; i++)
+                length += PlanDistance(points[i - 1], points[i]);
+            return length;
+        }
+
+        private static double PointToPlanSegmentDistance(Point3d point, Point3d a, Point3d b)
+        {
+            double dx = b.X - a.X, dy = b.Y - a.Y;
+            double denom = dx * dx + dy * dy;
+            if (denom <= 1e-16) return PlanDistance(point, a);
+            double t = ((point.X - a.X) * dx + (point.Y - a.Y) * dy) / denom;
+            t = Math.Max(0.0, Math.Min(1.0, t));
+            return PlanDistance(point, new Point3d(a.X + t * dx, a.Y + t * dy, a.Z + t * (b.Z - a.Z)));
+        }
+
+        private static double PointToPlanPolylineDistance(Point3d point, IList<Point3d> line)
+        {
+            double best = double.MaxValue;
+            if (line == null || line.Count < 2) return best;
+            for (int i = 1; i < line.Count; i++)
+                best = Math.Min(best, PointToPlanSegmentDistance(point, line[i - 1], line[i]));
+            return best;
+        }
+
+        private static double MeanPolylineSeparation(IList<Point3d> first, IList<Point3d> second)
+        {
+            if (first == null || second == null || first.Count < 2 || second.Count < 2)
+                return double.MaxValue;
+            double total = 0.0;
+            int count = 0;
+            int strideA = Math.Max(1, first.Count / 30);
+            int strideB = Math.Max(1, second.Count / 30);
+            for (int i = 0; i < first.Count; i += strideA)
+            {
+                total += PointToPlanPolylineDistance(first[i], second);
+                count++;
+            }
+            for (int i = 0; i < second.Count; i += strideB)
+            {
+                total += PointToPlanPolylineDistance(second[i], first);
+                count++;
+            }
+            return count == 0 ? double.MaxValue : total / count;
+        }
+
+        private static bool IsSimplePlanLoop(IList<Point3d> points)
+        {
+            if (points == null || points.Count < 4) return false;
+            int n = points.Count;
+            for (int i = 0; i < n; i++)
+            {
+                Point3d a = points[i], b = points[(i + 1) % n];
+                if (PlanDistance(a, b) <= 1e-6) return false;
+                for (int j = i + 1; j < n; j++)
+                {
+                    if (j == i || j == i + 1 || (i == 0 && j == n - 1)) continue;
+                    Point3d c = points[j], d = points[(j + 1) % n];
+                    double ta, tb; Point3d intersection;
+                    if (TryPlanSegmentIntersection(a, b, c, d, out ta, out tb, out intersection))
+                    {
+                        if (ta > 1e-6 && ta < 1.0 - 1e-6 && tb > 1e-6 && tb < 1.0 - 1e-6)
+                            return false;
+                    }
+                }
+            }
+            return true;
+        }
+
+        private static void CreateKerbGutterStripInfills(
+            Document document, ObjectId styleId, out int created, out int skipped)
+        {
+            created = 0;
+            skipped = 0;
+            if (document == null || document.Database == null) return;
+
+            var candidates = new List<SourceSnapshot>();
+            try
+            {
+                using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+                {
+                    BlockTable bt = (BlockTable)tr.GetObject(document.Database.BlockTableId, OpenMode.ForRead);
+                    BlockTableRecord model = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
+                    foreach (ObjectId id in model)
+                    {
+                        SourceSnapshot source;
+                        string error;
+                        if (!TryReadSource(document.Database, id, out source, out error) ||
+                            source == null || source.Points == null || source.Points.Count < 2)
+                            continue;
+                        string layer = GetInfillSourceLayerName(document.Database, source.LayerId);
+                        if (IsKerbGutterBoundaryLayer(layer))
+                            candidates.Add(source);
+                    }
+                    tr.Commit();
+                }
+            }
+            catch (System.Exception ex)
+            {
+                document.Editor.WriteMessage("\nKerb/gutter strip scan failed: " + ex.Message);
+                return;
+            }
+
+            var used = new HashSet<ObjectId>();
+            int sequence = 1;
+
+            // Build every plausible boundary pair first, then consume the strongest
+            // pairs globally. The former per-source greedy search could let an early
+            // left-side boundary claim a right-side partner and leave the right-hand
+            // kerb/gutter strips unpaired.
+            var pairCandidates = new List<Tuple<int, int, double>>();
+            for (int i = 0; i < candidates.Count; i++)
+            {
+                SourceSnapshot first = candidates[i];
+                string firstLayer = GetInfillSourceLayerName(document.Database, first.LayerId);
+                bool firstIsFront = string.Equals(firstLayer, "CE-KERB FRONT", StringComparison.OrdinalIgnoreCase);
+                bool firstIsBack = string.Equals(firstLayer, "CE-KERB BACK", StringComparison.OrdinalIgnoreCase);
+                bool firstIsGutter = string.Equals(firstLayer, "CE-GUTTERS", StringComparison.OrdinalIgnoreCase);
+                for (int j = i + 1; j < candidates.Count; j++)
+                {
+                    SourceSnapshot second = candidates[j];
+                    string secondLayer = GetInfillSourceLayerName(document.Database, second.LayerId);
+                    bool allowed =
+                        (firstIsFront && string.Equals(secondLayer, "CE-KERB BACK", StringComparison.OrdinalIgnoreCase)) ||
+                        (firstIsBack && string.Equals(secondLayer, "CE-KERB FRONT", StringComparison.OrdinalIgnoreCase)) ||
+                        (firstIsGutter && string.Equals(secondLayer, "CE-GUTTERS", StringComparison.OrdinalIgnoreCase));
+                    if (!allowed) continue;
+
+                    double directStart = PlanDistance(first.Points[0], second.Points[0]);
+                    double directEnd = PlanDistance(first.Points[first.Points.Count - 1], second.Points[second.Points.Count - 1]);
+                    double reverseStart = PlanDistance(first.Points[0], second.Points[second.Points.Count - 1]);
+                    double reverseEnd = PlanDistance(first.Points[first.Points.Count - 1], second.Points[0]);
+                    double direct = directStart + directEnd;
+                    double reverse = reverseStart + reverseEnd;
+                    double score = Math.Min(direct, reverse);
+                    // Use the worst endpoint gap for the better orientation. Taking the
+                    // minimum of all four endpoint distances allowed unrelated lines to
+                    // pass when only one endpoint happened to be nearby.
+                    double maxEndGap = direct <= reverse
+                        ? Math.Max(directStart, directEnd)
+                        : Math.Max(reverseStart, reverseEnd);
+                    double firstLength = PolylinePlanLength(first.Points);
+                    double secondLength = PolylinePlanLength(second.Points);
+                    if (firstLength <= 0.01 || secondLength <= 0.01) continue;
+                    double lengthRatio = Math.Min(firstLength, secondLength) / Math.Max(firstLength, secondLength);
+                    double meanSeparation = MeanPolylineSeparation(first.Points, second.Points);
+                    if (meanSeparation > 8.0 || meanSeparation < 0.005) continue;
+
+                    // Corridor-generated kerb/gutter boundaries are not always sampled
+                    // at identical stations. Requiring both end caps to be within only
+                    // 0.25-2.0 drawing units rejected legitimate segmented/offset partners
+                    // even when the two polylines run alongside one another. Allow a
+                    // wider, length-aware cap gap, but keep it bounded and continue to
+                    // rank smaller gaps first. The loop validator below remains the final
+                    // guard against crossing/doubled-back strip boundaries.
+                    double shorterLength = Math.Min(firstLength, secondLength);
+                    double allowedEndGap = Math.Max(2.0,
+                        Math.Min(10.0, meanSeparation * 8.0 + shorterLength * 0.5));
+                    if (maxEndGap > allowedEndGap) continue;
+
+                    double pairScore = meanSeparation * 8.0 + score * 0.15 +
+                        (1.0 - lengthRatio) * 4.0 + maxEndGap * 1.5;
+                    pairCandidates.Add(Tuple.Create(i, j, pairScore));
+                }
+            }
+
+            foreach (Tuple<int, int, double> candidatePair in pairCandidates.OrderBy(p => p.Item3))
+            {
+                int i = candidatePair.Item1;
+                int j = candidatePair.Item2;
+                SourceSnapshot first = candidates[i];
+                SourceSnapshot paired = candidates[j];
+                if (used.Contains(first.ObjectId) || used.Contains(paired.ObjectId)) continue;
+
+                string firstLayer = GetInfillSourceLayerName(document.Database, first.LayerId);
+                bool firstIsGutter = string.Equals(firstLayer, "CE-GUTTERS", StringComparison.OrdinalIgnoreCase);
+                double sameDirectionScore =
+                    PlanDistance(first.Points[0], paired.Points[0]) +
+                    PlanDistance(first.Points[first.Points.Count - 1], paired.Points[paired.Points.Count - 1]);
+                double opposedDirectionScore =
+                    PlanDistance(first.Points[0], paired.Points[paired.Points.Count - 1]) +
+                    PlanDistance(first.Points[first.Points.Count - 1], paired.Points[0]);
+                // To trace a strip boundary, traverse the first line start-to-end and
+                // the paired line end-to-start. Therefore reverse the paired line when
+                // its start/end correspond to the first line's start/end (same-direction
+                // endpoint score is lower). Reversing based on the opposite score
+                // connects the wrong ends and can create self-crossing loops.
+                bool reverseSecond = sameDirectionScore < opposedDirectionScore;
+
+                var boundary = new List<Point3d>();
+                boundary.AddRange(first.Points);
+                IEnumerable<Point3d> secondPoints = reverseSecond
+                    ? paired.Points.AsEnumerable().Reverse()
+                    : paired.Points.AsEnumerable();
+                boundary.AddRange(secondPoints);
+                if (boundary.Count < 4)
+                {
+                    skipped++;
+                    continue;
+                }
+
+                string name = "CE-" + (firstIsGutter ? "GUTTER" : "KERB") + "-INFILL-" + sequence.ToString("000");
+                sequence++;
+                string errorText;
+                for (int pointIndex = boundary.Count - 1; pointIndex > 0; pointIndex--)
+                {
+                    if (PlanDistance(boundary[pointIndex], boundary[pointIndex - 1]) <= 1e-6)
+                        boundary.RemoveAt(pointIndex);
+                }
+                if (boundary.Count > 2 && PlanDistance(boundary[0], boundary[boundary.Count - 1]) <= 1e-6)
+                    boundary.RemoveAt(boundary.Count - 1);
+                if (boundary.Count < 4 || !IsSimplePlanLoop(boundary))
+                {
+                    skipped++;
+                    document.Editor.WriteMessage("\nKerb/gutter strip infill skipped (" + name +
+                        "): paired boundaries do not form a simple closed strip (crossing, duplicate, or doubled-back vertices).");
+                    continue;
+                }
+                if (!FindSurfaceByName(document.Database, name).IsNull)
+                {
+                    // A previously generated strip is still present; count it
+                    // as paired rather than generating a duplicate surface.
+                    used.Add(first.ObjectId);
+                    used.Add(paired.ObjectId);
+                    continue;
+                }
+                if (TryCreateCombinedJunctionInfillSurface(
+                        document.Database, new List<List<Point3d>> { boundary }, name, styleId, out errorText))
+                {
+                    created++;
+                    used.Add(first.ObjectId);
+                    used.Add(paired.ObjectId);
+                }
+                else
+                {
+                    skipped++;
+                    document.Editor.WriteMessage("\nKerb/gutter strip infill failed (" + name + "): " + errorText);
+                }
+            }
+
+            // Report unmatched source boundaries explicitly; these are the likely
+            // reason a side appears to have no gutter/kerb infill.
+            foreach (SourceSnapshot source in candidates)
+            {
+                if (!used.Contains(source.ObjectId))
+                {
+                    skipped++;
+                    string layer = GetInfillSourceLayerName(document.Database, source.LayerId);
+                    document.Editor.WriteMessage("\nKerb/gutter strip infill: no valid partner found for boundary on layer " + layer +
+                        " (handle " + source.ObjectId.Handle.ToString() + ").");
+                }
+            }
+        }
+
+        private sealed class KerbGutterEndpoint
+        {
+            internal Point3d Point;
+            internal SourceSnapshot Source;
+            internal string LayerName;
+        }
+
+        private static string GetInfillSourceLayerName(Database database, ObjectId layerId)
+        {
+            try
+            {
+                using (Transaction tr = database.TransactionManager.StartTransaction())
+                {
+                    LayerTableRecord layer = tr.GetObject(layerId, OpenMode.ForRead, false) as LayerTableRecord;
+                    string name = layer == null ? string.Empty : layer.Name;
+                    tr.Commit();
+                    return name ?? string.Empty;
+                }
+            }
+            catch { return string.Empty; }
+        }
+
+        private static bool IsKerbGutterBoundaryLayer(string layerName)
+        {
+            return string.Equals(layerName, "CE-GUTTERS", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(layerName, "CE-KERB FRONT", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(layerName, "CE-KERB BACK", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void AddVirtualKerbGutterEndCaps(
+            IList<KerbGutterEndpoint> endpoints,
+            IList<InfillRawSegment> rawSegments,
+            double tolerance,
+            double maximumGap)
+        {
+            if (endpoints == null || rawSegments == null || endpoints.Count < 2) return;
+            var used = new HashSet<int>();
+            for (int i = 0; i < endpoints.Count; i++)
+            {
+                if (used.Contains(i) || endpoints[i].Source == null) continue;
+                int best = -1;
+                double bestDistance = double.MaxValue;
+                for (int j = 0; j < endpoints.Count; j++)
+                {
+                    if (i == j || used.Contains(j) || endpoints[j].Source == null) continue;
+                    if (endpoints[i].Source.ObjectId == endpoints[j].Source.ObjectId) continue;
+                    if (!string.Equals(endpoints[i].LayerName, endpoints[j].LayerName, StringComparison.OrdinalIgnoreCase)) continue;
+                    double distance = PlanDistance(endpoints[i].Point, endpoints[j].Point);
+                    if (distance <= tolerance || distance > maximumGap || distance >= bestDistance) continue;
+
+                    // Do not add a cap if the endpoints are already connected by selected linework.
+                    bool alreadyConnected = rawSegments.Any(seg =>
+                        (PlanDistance(seg.A, endpoints[i].Point) <= tolerance && PlanDistance(seg.B, endpoints[j].Point) <= tolerance) ||
+                        (PlanDistance(seg.B, endpoints[i].Point) <= tolerance && PlanDistance(seg.A, endpoints[j].Point) <= tolerance));
+                    if (alreadyConnected) continue;
+                    best = j;
+                    bestDistance = distance;
+                }
+                if (best < 0) continue;
+                rawSegments.Add(new InfillRawSegment
+                {
+                    A = endpoints[i].Point,
+                    B = endpoints[best].Point,
+                    Source = endpoints[i].Source,
+                    Cuts = new List<double> { 0.0, 1.0 }
+                });
+                used.Add(i);
+                used.Add(best);
+            }
+        }
+
+        private static bool IsGeneratedDaylightSlopeLine(Database database, SourceSnapshot source)
+        {
+            if (source == null) return true;
+            string name = source.Name ?? string.Empty;
+            if (name.IndexOf("SLOPE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                name.IndexOf("DAYLIGHT", StringComparison.OrdinalIgnoreCase) >= 0) return true;
+            try
+            {
+                using (Transaction tr = database.TransactionManager.StartTransaction())
+                {
+                    LayerTableRecord layer = tr.GetObject(source.LayerId, OpenMode.ForRead, false) as LayerTableRecord;
+                    if (layer != null && (layer.Name.IndexOf("SLOPE", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        layer.Name.IndexOf("DAYLIGHT", StringComparison.OrdinalIgnoreCase) >= 0)) return true;
+                }
+            }
+            catch { }
+            return false;
         }
 
         private static int FindInfillNode(List<Point3d> nodes, Point3d point, double tolerance)
@@ -4372,10 +4909,9 @@ namespace CETools.Civil3D
             }
         }
 
-        private static List<Point3d> BoundarySamples(Database database, SourceSnapshot source,
-            double maxSegment = 0.25)
+        private static List<Point3d> BoundarySamples(Database database, SourceSnapshot source)
         {
-            var samples = BuildSlopeRaySamples(database, source, "Auto", Math.Max(0.01, maxSegment))
+            var samples = BuildSlopeRaySamples(database, source, "Auto", 0.25)
                 .Select(sample => sample.Point).ToList();
             var points = samples.Count >= 3 ? samples : source.Points.ToList();
             for (int i = points.Count - 1; i > 0; i--)
@@ -4735,11 +5271,16 @@ namespace CETools.Civil3D
                                  typeof(double))
                         {
                             // mid-ordinate, maximum distance, weed distance and
-                            // weed angle. Zero keeps original feature-line vertices.
-                            arguments[index] =
-                                doubleIndex++ == 0
-                                    ? 0.05
-                                    : 0.0;
+                            // weed angle. Weeding values are user-configurable;
+                            // zero preserves the original vertices.
+                            int currentDouble = doubleIndex++;
+                            arguments[index] = currentDouble == 0
+                                ? 0.05
+                                : currentDouble == 2
+                                    ? _infillWeedDistance
+                                    : currentDouble == 3
+                                        ? _infillWeedAngle * Math.PI / 180.0
+                                        : 0.0;
                         }
                         else if (type ==
                                  typeof(bool))
@@ -4800,8 +5341,7 @@ namespace CETools.Civil3D
             string prefix,
             out ObjectId surfaceId,
             out string error, ObjectId outputStyleId = default(ObjectId),
-            IList<Point3d> boundaryOverride = null,
-            double weedDistance = 0.0, double weedAngle = 0.0)
+            IList<Point3d> boundaryOverride = null)
         {
             surfaceId = ObjectId.Null;
             error = string.Empty;
@@ -4870,17 +5410,43 @@ namespace CETools.Civil3D
                         throw new InvalidOperationException(
                             "The closed source has fewer than three distinct points.");
 
-                    if (weedDistance > 0 && uniquePoints.Count > 3)
-                        uniquePoints = WeedInfillBoundary(uniquePoints, weedDistance, weedAngle);
+                    // Preserve the prior conservative TIN boundary weeding
+                    // behaviour rather than dropping it during the face-graph upgrade.
+                    if (_infillWeedDistance > 0 && uniquePoints.Count > 3)
+                        uniquePoints = WeedInfillBoundary(uniquePoints,
+                            _infillWeedDistance, _infillWeedAngle);
 
-                    var vertices =
-                        new Point3dCollection(
-                            uniquePoints.ToArray());
-                    surface.AddVertices(
-                        vertices);
+                    // Densify each boundary edge before building the TIN. Junction
+                    // bellmouths are represented by short connected feature-line
+                    // segments; using only sparse vertices makes long, visibly flat
+                    // triangles cut across the curved returns. Insert interpolated
+                    // points along each existing edge without moving any source
+                    // vertex or changing its elevation. The outer boundary uses the
+                    // same densified loop so the TIN follows the curved footprint.
+                    double maxBoundarySegmentLength = Math.Max(0.01, _infillMaxBoundarySegmentLength);
+                    var smoothBoundary = new List<Point3d>();
+                    for (int i = 0; i < uniquePoints.Count; i++)
+                    {
+                        Point3d a = uniquePoints[i];
+                        Point3d b = uniquePoints[(i + 1) % uniquePoints.Count];
+                        smoothBoundary.Add(a);
+                        double length = a.DistanceTo(b);
+                        int pieces = Math.Max(1, (int)Math.Ceiling(length / maxBoundarySegmentLength));
+                        for (int part = 1; part < pieces; part++)
+                        {
+                            double t = (double)part / pieces;
+                            smoothBoundary.Add(new Point3d(
+                                a.X + (b.X - a.X) * t,
+                                a.Y + (b.Y - a.Y) * t,
+                                a.Z + (b.Z - a.Z) * t));
+                        }
+                    }
+                    var vertices = new Point3dCollection(smoothBoundary.ToArray());
+                    surface.AddVertices(vertices);
 
                     // A real outer boundary is critical at concave junctions and
                     // platforms; without it the TIN would bridge the convex hull.
+                    // Use the densified loop to preserve the bellmouth footprint.
                     surface.BoundariesDefinition.AddBoundaries(
                         vertices,
                         0.05,
