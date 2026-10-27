@@ -159,16 +159,17 @@ namespace CETools.Civil3D
                 return true;
             }
 
-            // Never let a previously active Roads/Sewer/etc. selection leak into
-            // a different production discipline. Until this discipline has its
-            // own saved preset, activate an empty selection so downstream style
-            // resolvers use their drawing/discipline defaults.
-            var clean = new ProjectStyleSelection
-            {
-                Exists = true,
-                Discipline = string.IsNullOrWhiteSpace(discipline) ? "Roads" : discipline.Trim()
-            };
-            WriteRecord(database, ActiveRecordName, clean);
+            // Missing discipline presets must not erase the user's chosen
+            // saved project styles. The previous implementation wrote an
+            // empty active selection on *every* production-tab click; the
+            // Project Style Centre then showed <Use drawing default>.
+            // Preserve the existing active selection until the user explicitly
+            // configures this discipline. Never silently replace it with an
+            // empty Xrecord.
+            ProjectStyleSelection current = ProjectStyleCenterCommands.ReadSelection(database);
+            if (current.Exists)
+                return string.Equals(current.Discipline, discipline,
+                    StringComparison.OrdinalIgnoreCase);
             return false;
         }
 
