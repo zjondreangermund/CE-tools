@@ -105,6 +105,10 @@ namespace CETools.Civil3D
                             !string.Equals(existing.Name, JunctionOutput, StringComparison.OrdinalIgnoreCase))
                             continue;
                         existing.UpgradeOpen();
+                        // Free the canonical name before assigning it to the
+                        // validated staging surface. Do not commit either
+                        // operation unless the full merge and rename succeed.
+                        existing.Name = "CE-JUNCTION-MERGE-REPLACED-" + Guid.NewGuid().ToString("N");
                         existing.Erase();
                     }
                     output.Name = JunctionOutput;
