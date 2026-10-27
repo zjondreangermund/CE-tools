@@ -27,101 +27,118 @@ namespace CETools.Civil3D
             if (document == null) return;
 
             Editor editor = document.Editor;
-            PromptSelectionResult selection = editor.GetSelection(
-                new PromptSelectionOptions { MessageForAdding = "\nSelect feature lines to densify: " });
-            if (selection.Status != PromptStatus.OK) return;
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Densify Feature Lines",
+                "Insert PI geometry vertices or elevation-only points at regular distances " +
+                "along multiple selected editable Civil 3D feature lines. Existing points are preserved.");
+            settings.AddPositiveDouble("Interval", "01 Spacing", "Vertex interval / distance (m)",
+                _lastInterval, "Insert points at this interval measured from the beginning of each feature line.");
+            settings.AddChoice("PointType", "02 Point type", "Insert point type",
+                "PI vertices",
+                "PI vertices divide the feature-line geometry and may affect curved segments. " +
+                "Elevation points retain existing plan geometry and add elevation controls only.",
+                new[] { "PI vertices", "Elevation points (preserve plan geometry)" });
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
-            PromptDoubleResult intervalResult = editor.GetDouble(new PromptDoubleOptions(
-                string.Format("\nMaximum vertex interval in drawing units <{0:G}>: ", _lastInterval))
+            double interval = settings.Double("Interval", _lastInterval);
+            if (interval <= PointTolerance)
             {
-                AllowNegative = false,
-                AllowZero = false,
-                AllowNone = true,
-                DefaultValue = _lastInterval,
-                UseDefaultValue = true
-            });
-            if (intervalResult.Status != PromptStatus.OK && intervalResult.Status != PromptStatus.None) return;
-            double interval = intervalResult.Status == PromptStatus.None ? _lastInterval : intervalResult.Value;
-            if (interval <= 0.0)
-            {
-                editor.WriteMessage("\nInterval must be greater than zero.");
+                editor.WriteMessage("\nChoose a distance greater than the point tolerance.");
                 return;
             }
             _lastInterval = interval;
+            bool piVertices = settings.Text("PointType") == "PI vertices";
+
+            PromptSelectionResult selection = editor.GetSelection(
+                new PromptSelectionOptions {
+                    MessageForAdding = "\nSelect editable Civil 3D feature lines to densify: ",
+                    AllowDuplicates = false,
+                    RejectObjectsFromNonCurrentSpace = true
+                });
+            if (selection.Status != PromptStatus.OK || selection.Value == null) return;
 
             int eligible = 0, skipped = 0, planned = 0;
-            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
-            {
-                foreach (SelectedObject item in selection.Value)
-                {
-                    CivilFeatureLine fl = OpenFeatureLine(tr, item);
-                    if (!IsEditable(tr, fl)) { skipped++; continue; }
-                    eligible++;
-                    planned += CountInsertions(fl, interval);
-                }
-            }
-
-            if (planned == 0)
-            {
-                editor.WriteMessage("\nCE_DENSIFYFEATURELINES: no new vertices are required. Feature lines checked: {0}; skipped: {1}.", eligible, skipped);
-                return;
-            }
-
-            PromptKeywordOptions confirmOptions = new PromptKeywordOptions(
-                string.Format("\nAdd approximately {0} interpolated vertices to {1} feature lines? [Yes/No] <No>: ", planned, eligible))
-            { AllowNone = true };
-            confirmOptions.Keywords.Add("Yes");
-            confirmOptions.Keywords.Add("No");
-            PromptResult confirm = editor.GetKeywords(confirmOptions);
-            if (confirm.Status != PromptStatus.OK || !string.Equals(confirm.StringResult, "Yes", StringComparison.OrdinalIgnoreCase))
-            {
-                editor.WriteMessage("\nCE_DENSIFYFEATURELINES cancelled. No changes were made.");
-                return;
-            }
-
-            int changedLines = 0, added = 0, applySkipped = 0;
             try
             {
                 using (Transaction tr = document.Database.TransactionManager.StartTransaction())
                 {
                     foreach (SelectedObject item in selection.Value)
                     {
-                        CivilFeatureLine fl = OpenFeatureLine(tr, item);
-                        if (!IsEditable(tr, fl)) { applySkipped++; continue; }
-
-                        double length = fl.Length2D;
-                        if (length <= interval + PointTolerance) continue;
-
-                        // Work from the end toward the start so inserted points do not
-                        // affect the remaining chainage targets on implementations that
-                        // recalculate internal point indexing after each insertion.
-                        var targets = new List<double>();
-                        for (double station = interval; station < length - PointTolerance; station += interval)
-                            targets.Add(station);
-
-                        Point3dCollection existing = ReadAllPoints(fl);
-                        bool changed = false;
-                        fl.UpgradeOpen();
-                        for (int i = targets.Count - 1; i >= 0; i--)
-                        {
-                            Point3d p = fl.GetPointAtDist(targets[i]);
-                            if (HasNearbyPoint(existing, p)) continue;
-                            fl.InsertElevationPoint(p);
-                            added++;
-                            changed = true;
-                            existing.Add(p);
-                        }
-                        if (changed) changedLines++;
+                        CivilFeatureLine line = OpenFeatureLine(tr, item);
+                        if (!IsEditable(tr, line)) { skipped++; continue; }
+                        eligible++;
+                        planned += CountInsertions(line, interval);
+                        if (planned > 100000)
+                            throw new InvalidOperationException(
+                                "This selection exceeds 100,000 requested points. Increase spacing or split the selection.");
                     }
-                    tr.Commit();
                 }
-                editor.WriteMessage(
-                    "\nCE_DENSIFYFEATURELINES complete. Feature lines densified: {0}; vertices added: {1}; skipped: {2}. Interval: {3:G} drawing units.",
-                    changedLines, added, skipped + applySkipped, interval);
             }
             catch (System.Exception ex)
             {
-                editor.WriteMessage("\nCE_DENSIFYFEATURELINES failed; transaction was not committed. {0}", ex.Message);
+                editor.WriteMessage("\nCE_DENSIFYFEATURELINES preview stopped: " + ex.Message);
+                return;
+            }
+
+            if (planned == 0)
+            {
+                editor.WriteMessage("\nNo additional vertices are required. Eligible feature lines: {0}; skipped: {1}.",
+                    eligible, skipped);
+                return;
+            }
+
+            string mode = piVertices ? "PI vertices (edit feature-line geometry)" :
+                                       "elevation points (preserve plan geometry)";
+            if (!DisciplineWorkflowDialogs.Confirm("CE Tools - Densify Feature Lines",
+                "Selected feature lines: " + eligible + "\n" +
+                "New points: approximately " + planned + "\n" +
+                "Distance: " + interval.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " m\n" +
+                "Insert: " + mode + "\n\n" +
+                (piVertices ? "PI vertices can change the shape of curved feature lines.\n" : "") +
+                "Continue on the selected feature lines?"))
+                return;
+
+            int changed = 0, added = 0, applySkipped = 0;
+            try
+            {
+                using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (SelectedObject item in selection.Value)
+                    {
+                        CivilFeatureLine line = OpenFeatureLine(tr, item);
+                        if (!IsEditable(tr, line)) { applySkipped++; continue; }
+                        double length = line.Length2D;
+                        if (length <= interval + PointTolerance) continue;
+                        var targets = new List<Point3d>();
+                        Point3dCollection existing = ReadAllPoints(line);
+                        for (double station = interval; station < length - PointTolerance; station += interval)
+                        {
+                            Point3d point = line.GetPointAtDist(station);
+                            if (!HasNearbyPoint(existing, point)) targets.Add(point);
+                        }
+                        // Capture all target points before editing; reverse order
+                        // to avoid moving downstream station targets.
+                        if (targets.Count == 0) continue;
+                        line.UpgradeOpen();
+                        for (int i = targets.Count - 1; i >= 0; i--)
+                        {
+                            if (piVertices) line.InsertPIPoint(targets[i]);
+                            else line.InsertElevationPoint(targets[i]);
+                            added++;
+                        }
+                        changed++;
+                    }
+                    tr.Commit();
+                }
+                document.Editor.Regen();
+                editor.WriteMessage("\nCE_DENSIFYFEATURELINES completed. Feature lines changed={0}; " +
+                    "new {1}={2}; skipped={3}; distance={4:G} m.",
+                    changed, piVertices ? "PI vertices" : "elevation points",
+                    added, skipped + applySkipped, interval);
+            }
+            catch (System.Exception ex)
+            {
+                editor.WriteMessage("\nCE_DENSIFYFEATURELINES failed; transaction was not committed: " + ex.Message);
             }
         }
 

@@ -63,7 +63,7 @@ namespace CETools.Civil3D
             Database database,
             Transaction transaction,
             IEnumerable<ObjectId> sourceIds,
-            out int rejected)
+            out int rejected, bool includeAllMidpoints = false)
         {
             var result = new List<VertexSettingSource>();
             rejected = 0;
@@ -86,7 +86,7 @@ namespace CETools.Civil3D
                     continue;
                 }
 
-                VertexSettingSource source = BuildSource(entity, transaction);
+                VertexSettingSource source = BuildSource(entity, transaction, includeAllMidpoints);
                 if (source == null || source.Records == null || source.Records.Count == 0)
                 {
                     rejected++;
@@ -99,7 +99,7 @@ namespace CETools.Civil3D
 
         public static bool IsSupported(Entity entity)
         {
-            return entity is Polyline ||
+            return entity is Circle || entity is Polyline ||
                    entity is Arc || entity is Line ||
                    entity is Polyline2d ||
                    entity is Polyline3d ||
@@ -108,13 +108,32 @@ namespace CETools.Civil3D
 
         private static VertexSettingSource BuildSource(
             Entity entity,
-            Transaction transaction)
+            Transaction transaction,
+            bool includeAllMidpoints)
         {
             if (entity == null || !IsSupported(entity)) return null;
 
             var points = new List<Point3d>();
             var bulges = new List<double>();
             bool closed;
+
+            Circle circle = entity as Circle;
+            if (circle != null)
+            {
+                string circleHandle = entity.Handle.ToString();
+                return new VertexSettingSource
+                {
+                    SourceId = entity.ObjectId,
+                    Handle = circleHandle,
+                    Name = ResolveSourceName(entity),
+                    Records = new List<VertexSettingRecord>
+                    {
+                        Record(circleHandle, ResolveSourceName(entity), "CC",
+                            "CIRCLE CENTER", 0, circle.Center, 0.0, circle.Radius)
+                    },
+                    Dimensions = new List<VertexRadialDimension>()
+                };
+            }
 
             Arc arc = entity as Arc;
             if (arc != null)
@@ -123,11 +142,11 @@ namespace CETools.Civil3D
                 // two-vertex bulged polyline. Respect a reversed plan normal.
                 double sign = arc.Normal.Z < 0 ? -1.0 : 1.0;
                 return BuildFromVertices(entity, new[] { arc.StartPoint, arc.EndPoint },
-                    new[] { sign * Math.Tan(arc.TotalAngle / 4.0) }, false);
+                    new[] { sign * Math.Tan(arc.TotalAngle / 4.0) }, false, includeAllMidpoints);
             }
             Line line = entity as Line;
             if (line != null)
-                return BuildFromVertices(entity, new[] { line.StartPoint, line.EndPoint }, new[] { 0.0 }, false);
+                return BuildFromVertices(entity, new[] { line.StartPoint, line.EndPoint }, new[] { 0.0 }, false, includeAllMidpoints);
 
             Polyline lightweight = entity as Polyline;
             if (lightweight != null)
@@ -138,7 +157,7 @@ namespace CETools.Civil3D
                 int segmentCount = closed ? points.Count : Math.Max(0, points.Count - 1);
                 for (int index = 0; index < segmentCount; index++)
                     bulges.Add(lightweight.GetBulgeAt(index));
-                return BuildFromVertices(entity, points, bulges, closed);
+                return BuildFromVertices(entity, points, bulges, closed, includeAllMidpoints);
             }
 
             Polyline2d polyline2d = entity as Polyline2d;
@@ -157,7 +176,7 @@ namespace CETools.Civil3D
                 closed = polyline2d.Closed;
                 RemoveClosingDuplicate(points, bulges);
                 TrimBulges(points, bulges, closed);
-                return BuildFromVertices(entity, points, bulges, closed);
+                return BuildFromVertices(entity, points, bulges, closed, includeAllMidpoints);
             }
 
             Polyline3d polyline3d = entity as Polyline3d;
@@ -175,7 +194,7 @@ namespace CETools.Civil3D
                 RemoveClosingDuplicate(points, null);
                 int segmentCount = closed ? points.Count : Math.Max(0, points.Count - 1);
                 for (int index = 0; index < segmentCount; index++) bulges.Add(0.0);
-                return BuildFromVertices(entity, points, bulges, closed);
+                return BuildFromVertices(entity, points, bulges, closed, includeAllMidpoints);
             }
 
             CivilFeatureLine featureLine = entity as CivilFeatureLine;
@@ -194,7 +213,7 @@ namespace CETools.Civil3D
                     catch { bulge = 0.0; }
                     bulges.Add(bulge);
                 }
-                return BuildFromVertices(entity, points, bulges, closed);
+                return BuildFromVertices(entity, points, bulges, closed, includeAllMidpoints);
             }
 
             return null;
@@ -204,7 +223,8 @@ namespace CETools.Civil3D
             Entity entity,
             IList<Point3d> points,
             IList<double> bulges,
-            bool closed)
+            bool closed,
+            bool includeAllMidpoints = false)
         {
             if (entity == null || points == null || points.Count < 2) return null;
             int segmentCount = closed ? points.Count : points.Count - 1;
@@ -234,7 +254,7 @@ namespace CETools.Civil3D
                 if (Math.Abs(bulge) > Tolerance &&
                     TryArc(start, end, bulge, out ArcData arc))
                 {
-                    if (arc.Length > 10.0 + Tolerance)
+                    if (includeAllMidpoints || arc.Length > 10.0 + Tolerance)
                     {
                         records.Add(Record(
                             handle,
@@ -276,7 +296,7 @@ namespace CETools.Civil3D
                     AddTangentPoint(records, handle, sourceName, segment, start, end, 0.50, length, "TANGENT MIDPOINT");
                     AddTangentPoint(records, handle, sourceName, segment, start, end, 0.75, length, "TANGENT 3/4");
                 }
-                else if (length > 20.0 + Tolerance)
+                else if (includeAllMidpoints || length > 20.0 + Tolerance)
                 {
                     AddTangentPoint(records, handle, sourceName, segment, start, end, 0.50, length, "TANGENT MIDPOINT");
                 }

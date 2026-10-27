@@ -37,10 +37,11 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(
                 document,
                 "CE Tools - Vertex Setting-Out",
-                "Create dynamic COGO, MText or MLeader setting-out points from multiple polylines and feature lines.",
+                "Create linked COGO, MText or MLeader setting-out points from lines, polylines, feature lines, arcs and circles.",
                 new List<DisciplineWorkflowAction>
                 {
-                    new DisciplineWorkflowAction("Create multi-source setting-out", "CE_VERTEXSETTINGOUT", "Add vertices, long-tangent points, arc midpoints, arc centres and radius dimensions.", "01 Create"),
+                    new DisciplineWorkflowAction("Create multi-source setting-out", "CE_VERTEXSETTINGOUT", "Add vertices, segment midpoints, circle centres, arc centres and radius dimensions.", "01 Create"),
+                    new DisciplineWorkflowAction("Densify feature lines by distance", "CE_DENSIFYFEATURELINES", "Insert real PI vertices or elevation points at a chosen interval.", "01 Create"),
                     new DisciplineWorkflowAction("Refresh linked setting-out", "CE_VERTEXSETTINGOUTREFRESH", "Recalculate names, coordinates, annotations, radius dimensions and the linked table.", "02 Maintain"),
                     new DisciplineWorkflowAction("Export linked setting-out", "CE_VERTEXSETTINGOUTEXPORT", "Refresh and export the selected linked table to Excel.", "03 Export")
                 });
@@ -77,7 +78,7 @@ namespace CETools.Civil3D
             if (selectedIds == null)
             {
                 PromptSelectionResult selection = GetSelection(document.Editor,
-                    "\nSelect multiple polylines, feature lines, arcs and/or lines: ");
+                    "\nSelect multiple circles, arcs, polylines, feature lines and/or lines: ");
                 if (selection.Status != PromptStatus.OK || selection.Value == null) return;
                 selectedIds = selection.Value.GetObjectIds();
             }
@@ -105,15 +106,16 @@ namespace CETools.Civil3D
 
             var settings = new ProductionSettingsDialogModel(
                 junctions ? "CE Tools - Junction Setting-Out Settings" : "CE Tools - Vertex Setting-Out Settings",
-                "All vertices are included. Arcs longer than 10 m receive a midpoint; every arc receives a centre point and radius dimension. Tangents longer than 20 m receive a midpoint, and tangents longer than 40 m receive three equally spaced points.");
+                "Choose engineering rules, individual vertices or segment midpoints, circle centres, or circle centres plus segment midpoints. Engineering mode retains the existing minimum-length rules.");
             settings.AddChoice(
                 "Output", "01 Output", "Point output", "COGO",
                 "Choose one dynamic point/annotation output for every generated setting-out location.",
                 new[] { "COGO", "MText", "MLeader" });
             settings.AddChoice(
                 "Generation", "01 Output", "Point generation", "Engineering setting-out points",
-                "Choose the complete arc/tangent engineering rules or only the original polyline/feature-line vertices.",
-                new[] { "Engineering setting-out points", "Polyline vertices only", "Midpoints only" });
+                "Engineering follows existing length rules. Midpoints uses true arc and straight-segment midpoints of any length. Circle centres are true circle object centres.",
+                new[] { "Engineering setting-out points", "Polyline vertices only", "Midpoints only",
+                    "Circle centres only", "Circle centres and midpoints" });
             settings.AddChoice(
                 "Elevation", "01 Output", "XYZ elevation source", "Source geometry",
                 "Read Z from the selected source geometry, a Civil 3D surface, or a separate feature line. The reference remains linked on refresh.",
@@ -262,7 +264,7 @@ namespace CETools.Civil3D
                     document.Database,
                     transaction,
                     sourceIds,
-                    out geometryRejected);
+                    out geometryRejected, UsesAllMidpoints(generationMode));
             }
             rejected += geometryRejected;
             ApplyGenerationMode(sources, generationMode);
@@ -637,7 +639,7 @@ namespace CETools.Civil3D
                     document.Database,
                     transaction,
                     sourceIds,
-                    out rejected);
+                    out rejected, UsesAllMidpoints(link.GenerationMode));
                 ApplyGenerationMode(sources, link.GenerationMode);
                 ApplyElevationReference(
                     document.Database,
@@ -1421,62 +1423,33 @@ namespace CETools.Civil3D
             }
         }
 
-        private static void ApplyGenerationMode(
-            IList<VertexSettingSource> sources,
-            string mode)
+        private static bool UsesAllMidpoints(string mode)
+        {
+            return string.Equals(mode, "Midpoints only", StringComparison.OrdinalIgnoreCase) ||
+                   string.Equals(mode, "Circle centres and midpoints", StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void ApplyGenerationMode(IList<VertexSettingSource> sources, string mode)
         {
             if (sources == null) return;
             bool vertices = string.Equals(mode, "Polyline vertices only", StringComparison.OrdinalIgnoreCase);
-            bool midpoints = string.Equals(mode, "Midpoints only", StringComparison.OrdinalIgnoreCase);
-            if (!vertices && !midpoints) return;
+            bool midpointOnly = string.Equals(mode, "Midpoints only", StringComparison.OrdinalIgnoreCase);
+            bool circleOnly = string.Equals(mode, "Circle centres only", StringComparison.OrdinalIgnoreCase);
+            bool combined = string.Equals(mode, "Circle centres and midpoints", StringComparison.OrdinalIgnoreCase);
+            // Engineering setting-out mode remains unfiltered, preserving
+            // the historical >10m arc, >20m tangent and >40m quarter rules.
+            if (!vertices && !midpointOnly && !circleOnly && !combined) return;
             foreach (VertexSettingSource source in sources)
             {
-                if (midpoints)
+                source.Records = source.Records.Where(record =>
                 {
-                    // Engineering mode deliberately omits tangent midpoints at
-                    // <=20 drawing units. Midpoint-only must still produce one
-                    // midpoint on every straight source segment.
-                    var allRecords = source.Records.ToList();
-                    var verticesBySegment = allRecords
-                        .Where(r => string.Equals(r.Kind, "VERTEX",
-                            StringComparison.OrdinalIgnoreCase))
-                        .OrderBy(r => r.SegmentIndex).ToList();
-                    for (int i = 0; i + 1 < verticesBySegment.Count; i++)
-                    {
-                        var start = verticesBySegment[i];
-                        var finish = verticesBySegment[i + 1];
-                        if (allRecords.Any(r => r.SegmentIndex == start.SegmentIndex &&
-                            (r.Kind ?? string.Empty).IndexOf("MIDPOINT",
-                                StringComparison.OrdinalIgnoreCase) >= 0)) continue;
-                        // Do not replace actual curved geometry with a chord
-                        // midpoint on arcs that have an arc-centre record.
-                        if (allRecords.Any(r => r.SegmentIndex == start.SegmentIndex &&
-                            string.Equals(r.Kind, "ARC CENTER",
-                                StringComparison.OrdinalIgnoreCase))) continue;
-                        var midpoint = new Autodesk.AutoCAD.Geometry.Point3d(
-                            (start.Point.X + finish.Point.X) * 0.5,
-                            (start.Point.Y + finish.Point.Y) * 0.5,
-                            (start.Point.Z + finish.Point.Z) * 0.5);
-                        allRecords.Add(new VertexSettingRecord
-                        {
-                            Key = source.Handle + "|T" +
-                                start.SegmentIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) + "F50",
-                            Kind = "TANGENT MIDPOINT",
-                            SourceHandle = source.Handle,
-                            SourceName = source.Name,
-                            SegmentIndex = start.SegmentIndex,
-                            SegmentLength = start.Point.DistanceTo(finish.Point),
-                            Point = midpoint
-                        });
-                    }
-                    source.Records = allRecords;
-                }
-                source.Records = source.Records
-                    .Where(record => vertices
-                        ? string.Equals(record.Kind, "VERTEX", StringComparison.OrdinalIgnoreCase)
-                        : record.Kind != null &&
-                          record.Kind.IndexOf("MIDPOINT", StringComparison.OrdinalIgnoreCase) >= 0)
-                    .ToList();
+                    string kind = record.Kind ?? string.Empty;
+                    if (vertices) return string.Equals(kind, "VERTEX", StringComparison.OrdinalIgnoreCase);
+                    bool isCircleCentre = string.Equals(kind, "CIRCLE CENTER", StringComparison.OrdinalIgnoreCase);
+                    if (circleOnly) return isCircleCentre;
+                    bool isMidpoint = kind.IndexOf("MIDPOINT", StringComparison.OrdinalIgnoreCase) >= 0;
+                    return combined ? isCircleCentre || isMidpoint : isMidpoint;
+                }).ToList();
                 source.Dimensions = new List<VertexRadialDimension>();
             }
         }
