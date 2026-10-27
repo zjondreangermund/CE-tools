@@ -43,7 +43,7 @@ namespace CETools.Civil3D
             double interval = settings.Double("Interval", _lastInterval);
             if (interval <= PointTolerance)
             {
-                editor.WriteMessage("\\nChoose a distance greater than the point tolerance.");
+                editor.WriteMessage("\nChoose a distance greater than the point tolerance.");
                 return;
             }
             _lastInterval = interval;
@@ -51,7 +51,7 @@ namespace CETools.Civil3D
 
             PromptSelectionResult selection = editor.GetSelection(
                 new PromptSelectionOptions {
-                    MessageForAdding = "\\nSelect editable Civil 3D feature lines to densify: ",
+                    MessageForAdding = "\nSelect editable Civil 3D feature lines to densify: ",
                     AllowDuplicates = false,
                     RejectObjectsFromNonCurrentSpace = true
                 });
@@ -76,13 +76,13 @@ namespace CETools.Civil3D
             }
             catch (System.Exception ex)
             {
-                editor.WriteMessage("\\nCE_DENSIFYFEATURELINES preview stopped: " + ex.Message);
+                editor.WriteMessage("\nCE_DENSIFYFEATURELINES preview stopped: " + ex.Message);
                 return;
             }
 
             if (planned == 0)
             {
-                editor.WriteMessage("\\nNo additional vertices are required. Eligible feature lines: {0}; skipped: {1}.",
+                editor.WriteMessage("\nNo additional vertices are required. Eligible feature lines: {0}; skipped: {1}.",
                     eligible, skipped);
                 return;
             }
@@ -90,11 +90,11 @@ namespace CETools.Civil3D
             string mode = piVertices ? "PI vertices (edit feature-line geometry)" :
                                        "elevation points (preserve plan geometry)";
             if (!DisciplineWorkflowDialogs.Confirm("CE Tools - Densify Feature Lines",
-                "Selected feature lines: " + eligible + "\\n" +
-                "New points: approximately " + planned + "\\n" +
-                "Distance: " + interval.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " m\\n" +
-                "Insert: " + mode + "\\n\\n" +
-                (piVertices ? "PI vertices can change the shape of curved feature lines.\\n" : "") +
+                "Selected feature lines: " + eligible + "\n" +
+                "New points: approximately " + planned + "\n" +
+                "Distance: " + interval.ToString("0.###", System.Globalization.CultureInfo.InvariantCulture) + " m\n" +
+                "Insert: " + mode + "\n\n" +
+                (piVertices ? "PI vertices can change the shape of curved feature lines.\n" : "") +
                 "Continue on the selected feature lines?"))
                 return;
 
@@ -131,14 +131,14 @@ namespace CETools.Civil3D
                     tr.Commit();
                 }
                 document.Editor.Regen();
-                editor.WriteMessage("\\nCE_DENSIFYFEATURELINES completed. Feature lines changed={0}; " +
+                editor.WriteMessage("\nCE_DENSIFYFEATURELINES completed. Feature lines changed={0}; " +
                     "new {1}={2}; skipped={3}; distance={4:G} m.",
                     changed, piVertices ? "PI vertices" : "elevation points",
                     added, skipped + applySkipped, interval);
             }
             catch (System.Exception ex)
             {
-                editor.WriteMessage("\\nCE_DENSIFYFEATURELINES failed; transaction was not committed: " + ex.Message);
+                editor.WriteMessage("\nCE_DENSIFYFEATURELINES failed; transaction was not committed: " + ex.Message);
             }
         }
 
