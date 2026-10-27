@@ -34,6 +34,9 @@ jobs:
             throw 'Civil 3D 2023 repaired PluginEntry.cs does not use direct panel items.'
           }
 
+      - name: Validate uploaded CE commands and workflow registration
+        run: python3 scripts/Validate-October27UploadedCommands.py
+
       - name: Validate AutoDesign Road and Sewer review paths
         run: python3 scripts/Validate-October24AutoDesignReviewFlow.py
 

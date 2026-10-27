@@ -79,6 +79,11 @@ namespace CETools.Civil3D
             Step("Road names", "CE_ROADNAMES", "Create/update linked road names at cross/T-junction midpoint spans.", "05 ANNOTATION"),
             Step("Synchronize road names", "CE_ROADNAMESYNC", "Synchronize names across alignments, profiles, corridors, sections and assemblies.", "05 ANNOTATION"),
             Step("Road dimensions", "CE_ROADDIMENSIONS", "Create/update linked road dimensions while avoiding label overlap.", "05 ANNOTATION"),
+            Step("Densify feature lines", "CE_DENSIFYFEATURELINES", "Add elevation vertices at a chosen maximum interval with explicit approval.", "04 JUNCTIONS"),
+            Step("Road crossing FG profile PVIs", "CE_ROADCROSSINGPVIS", "Insert verified crossing PVIs into eligible design profiles.", "06 CIVIL 3D"),
+            Step("Drape road crossing PVIs", "CE_DRAPECROSSROADPVIS", "Use matching finished TOP-RD surface elevations at road crossings.", "06 CIVIL 3D"),
+            Step("Remove crossing PVIs (review first)", "CE_REMOVEROADCROSSINGPVIS", "Remove PVIs at crossing stations; may remove manually created PVIs.", "06 CIVIL 3D"),
+            Step("Batch road cross sections", "CE_BATCHCROSSSECTIONS", "Generate sample-line groups and section views with one settings window.", "10 REFRESH"),
             Step("Road alignments", "CE_ROADALIGN", "Create linked Civil 3D road alignments.", "06 CIVIL 3D"),
             Step("NGL / final profiles", "CE_ROADPROFILEFULL", "Create the NGL and final road profiles with vertical curves and profile-view styling.", "06 CIVIL 3D"),
             Step("Road assemblies", "CE_ASSEMBLYTOOLS", "Create/select the road assemblies used by the corridors.", "06 CIVIL 3D"),
@@ -157,6 +162,10 @@ namespace CETools.Civil3D
             Step("Water pressure-part labels", "CE_WATERLABELS", "Apply water-specific pressure pipe/fitting/appurtenance labels.", "05 COMPLETE"),
             Step("Valve / hydrant review markers", "CE_WATERPLACE", "Place linked water asset review markers.", "05 COMPLETE"),
             Step("Vertex setting-out", "CE_VERTEXSETTINGOUT", "Generate linked water setting-out and leaders.", "05 COMPLETE"),
+            Step("Water excavation table", "CE_WATEREXCAVATION", "Build a linked trench excavation, bedding, blanket and backfill table.", "06 DELIVER"),
+            Step("Refresh Water excavation table", "CE_WATEREXCAVATIONREFRESH", "Refresh an existing linked Water excavation table from its source network.", "06 DELIVER"),
+            Step("Water excavation table info", "CE_WATEREXCAVATIONINFO", "Inspect an existing linked Water excavation table.", "06 DELIVER"),
+            Step("Water excavation BOQ export", "CE_WATEREXCAVATIONBOQ", "Export reviewed excavation and materials quantities.", "06 DELIVER"),
             Step("Water BOQ", "CE_BOQWATER", "Create linked water quantities.", "06 DELIVER"),
             Step("Water report", "CE_REPORTWATER", "Generate water report/drawing handoff.", "06 DELIVER")
         }); }
