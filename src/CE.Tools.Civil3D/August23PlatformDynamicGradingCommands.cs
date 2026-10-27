@@ -3431,7 +3431,10 @@ namespace CETools.Civil3D
         // three or more open lines met at a shared endpoint.
         private static void CreateConnectedOpenInfills(Document document, ObjectId styleId,
             out int created, out int existing, out int skipped,
-            IEnumerable<ObjectId> gradingSelection = null)
+            IEnumerable<ObjectId> gradingSelection = null,
+            double maxBoundarySegment = 0.25,
+            double weedDistance = 0.0,
+            double weedAngle = 0.0)
         {
             created = 0; existing = 0; skipped = 0;
             ObjectId[] ids;
@@ -3456,7 +3459,7 @@ namespace CETools.Civil3D
                     skipped++;
                     continue;
                 }
-                var points = BoundarySamples(document.Database, source);
+                var points = BoundarySamples(document.Database, source, maxBoundarySegment);
                 if (points.Count < 2) { skipped++; continue; }
                 int from = FindInfillNode(nodes, points[0], tolerance);
                 int to = FindInfillNode(nodes, points[points.Count - 1], tolerance);
@@ -3532,7 +3535,7 @@ namespace CETools.Civil3D
 
                 ObjectId surface; string error;
                 if (TryCreateFallbackInfillSurface(document.Database, root.ObjectId, root,
-                    prefix, out surface, out error, styleId, boundary))
+                    prefix, out surface, out error, styleId, boundary, weedDistance, weedAngle))
                     created++;
                 else
                 {
@@ -4369,9 +4372,10 @@ namespace CETools.Civil3D
             }
         }
 
-        private static List<Point3d> BoundarySamples(Database database, SourceSnapshot source)
+        private static List<Point3d> BoundarySamples(Database database, SourceSnapshot source,
+            double maxSegment = 0.25)
         {
-            var samples = BuildSlopeRaySamples(database, source, "Auto", 0.25)
+            var samples = BuildSlopeRaySamples(database, source, "Auto", Math.Max(0.01, maxSegment))
                 .Select(sample => sample.Point).ToList();
             var points = samples.Count >= 3 ? samples : source.Points.ToList();
             for (int i = points.Count - 1; i > 0; i--)
@@ -4767,6 +4771,28 @@ namespace CETools.Civil3D
             return false;
         }
 
+        private static List<Point3d> WeedInfillBoundary(IList<Point3d> input,
+            double distance, double angleDegrees)
+        {
+            // Preserve corners and all points by default. Weeding only
+            // removes a short segment whose direction is nearly unchanged.
+            var result = new List<Point3d>(input);
+            double radians = Math.Max(0, Math.Min(180, angleDegrees)) * Math.PI / 180.0;
+            for (int i = result.Count - 1; i >= 0 && result.Count > 3; i--)
+            {
+                Point3d prev = result[(i + result.Count - 1) % result.Count];
+                Point3d cur = result[i], next = result[(i + 1) % result.Count];
+                double first = PlanDistance(prev, cur), second = PlanDistance(cur, next);
+                if (first > distance && second > distance) continue;
+                if (first < 1e-9 || second < 1e-9) { result.RemoveAt(i); continue; }
+                double dot = ((cur.X - prev.X) * (next.X - cur.X) +
+                              (cur.Y - prev.Y) * (next.Y - cur.Y)) / (first * second);
+                double turn = Math.Acos(Math.Max(-1, Math.Min(1, dot)));
+                if (turn <= radians + 1e-9) result.RemoveAt(i);
+            }
+            return result;
+        }
+
         private static bool TryCreateFallbackInfillSurface(
             Database database,
             ObjectId sourceId,
@@ -4774,7 +4800,8 @@ namespace CETools.Civil3D
             string prefix,
             out ObjectId surfaceId,
             out string error, ObjectId outputStyleId = default(ObjectId),
-            IList<Point3d> boundaryOverride = null)
+            IList<Point3d> boundaryOverride = null,
+            double weedDistance = 0.0, double weedAngle = 0.0)
         {
             surfaceId = ObjectId.Null;
             error = string.Empty;
@@ -4842,6 +4869,9 @@ namespace CETools.Civil3D
                     if (uniquePoints.Count < 3)
                         throw new InvalidOperationException(
                             "The closed source has fewer than three distinct points.");
+
+                    if (weedDistance > 0 && uniquePoints.Count > 3)
+                        uniquePoints = WeedInfillBoundary(uniquePoints, weedDistance, weedAngle);
 
                     var vertices =
                         new Point3dCollection(
