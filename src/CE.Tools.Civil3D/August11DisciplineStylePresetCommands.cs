@@ -159,17 +159,22 @@ namespace CETools.Civil3D
                 return true;
             }
 
-            // Missing discipline presets must not erase the user's chosen
-            // saved project styles. The previous implementation wrote an
-            // empty active selection on *every* production-tab click; the
-            // Project Style Centre then showed <Use drawing default>.
-            // Preserve the existing active selection until the user explicitly
-            // configures this discipline. Never silently replace it with an
-            // empty Xrecord.
             ProjectStyleSelection current = ProjectStyleCenterCommands.ReadSelection(database);
-            if (current.Exists)
-                return string.Equals(current.Discipline, discipline,
-                    StringComparison.OrdinalIgnoreCase);
+            if (current.Exists && string.Equals(current.Discipline, discipline,
+                StringComparison.OrdinalIgnoreCase))
+                return true;
+
+            // If there is no saved choice for this discipline, don't apply an
+            // unrelated discipline's styles to its engineering objects.
+            // Imported global presets are now registered under the same
+            // discipline keys by ApplySavedPreset, so this clean fallback is
+            // only for genuinely unconfigured disciplines.
+            var clean = new ProjectStyleSelection
+            {
+                Exists = true,
+                Discipline = string.IsNullOrWhiteSpace(discipline) ? "Roads" : discipline.Trim()
+            };
+            WriteRecord(database, ActiveRecordName, clean);
             return false;
         }
 
