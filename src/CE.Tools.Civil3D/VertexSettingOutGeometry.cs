@@ -459,8 +459,7 @@ namespace CETools.Civil3D
         private static void TrimBulges(
             IList<Point3d> points,
             IList<double> bulges,
-            bool closed,
-            bool includeAllMidpoints = false)
+            bool closed)
         {
             int required = closed ? points.Count : Math.Max(0, points.Count - 1);
             while (bulges.Count > required) bulges.RemoveAt(bulges.Count - 1);
