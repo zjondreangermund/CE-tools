@@ -30,6 +30,112 @@ namespace CETools.Civil3D
         private const string BottomOutput = "CE Bottom All";
         private const string FinalOutput = "CE Final Surface";
 
+        private const string JunctionOutput = "CE Junctions All";
+
+        [CommandMethod("CE_TOOLS", "CE_JUNCTIONSURFACEMERGE",
+            CommandFlags.Modal | CommandFlags.Redraw)]
+        public void MergeJunctionSurfacesCommand()
+        {
+            Document document = ActiveDocument();
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (document == null || civil == null) return;
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Merge Junction Surfaces",
+                "Create or refresh a combined Civil 3D TIN for CE junction grading, " +
+                "kerb/gutter and enclosed-region infills without changing any source surfaces.");
+            settings.AddChoice("Sources", "01 Sources", "Junction surfaces",
+                "All junction grading and infill surfaces",
+                "Use CE-generated junction TIN surfaces. Other road TOP/BOTTOM, NG and unrelated grading surfaces are excluded.",
+                new[] { "All junction grading and infill surfaces",
+                    "Junction grading surfaces only", "Junction infill surfaces only" });
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+
+            List<SurfaceChoice> sources = ReadSurfaces(document, civil)
+                .Where(item => IsJunctionSourceSurface(item.Name) &&
+                    !string.Equals(item.Name, JunctionOutput, StringComparison.OrdinalIgnoreCase))
+                .Where(item =>
+                {
+                    string selection = settings.Text("Sources");
+                    if (selection == "Junction grading surfaces only")
+                        return item.Name.IndexOf("GRADE", StringComparison.OrdinalIgnoreCase) >= 0;
+                    if (selection == "Junction infill surfaces only")
+                        return item.Name.IndexOf("INFILL", StringComparison.OrdinalIgnoreCase) >= 0;
+                    return true;
+                })
+                .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+
+            if (sources.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_JUNCTIONSURFACEMERGE: No CE junction TIN surfaces matched this selection.");
+                return;
+            }
+
+            try
+            {
+                // Perform the entire replacement within ONE transaction.
+                // A failed paste/rebuild keeps the previous output intact.
+                using (DocumentLock documentLock = document.LockDocument())
+                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
+                {
+                    ObjectId styleId = sources[0].StyleId;
+                    string temporaryName = "CE-JUNCTION-MERGE-STAGING-" + Guid.NewGuid().ToString("N");
+                    ObjectId outputId = styleId.IsNull
+                        ? TinSurface.Create(document.Database, temporaryName)
+                        : TinSurface.Create(temporaryName, styleId);
+                    TinSurface output = transaction.GetObject(outputId, OpenMode.ForWrite, false) as TinSurface;
+                    if (output == null)
+                        throw new InvalidOperationException("Civil 3D did not create the junction TIN.");
+                    int pasted = 0;
+                    foreach (SurfaceChoice item in sources)
+                    {
+                        DBObject source = transaction.GetObject(item.Id, OpenMode.ForRead, false);
+                        if (!TryMergeTinSurface(output, source, item.Id))
+                            throw new InvalidOperationException(
+                                "Cannot paste junction source surface '" + item.Name + "'.");
+                        pasted++;
+                    }
+                    if (pasted == 0) throw new InvalidOperationException("No valid junction TIN sources.");
+                    output.Rebuild();
+                    foreach (ObjectId id in civil.GetSurfaceIds())
+                    {
+                        if (id == outputId) continue;
+                        CivilSurface existing = transaction.GetObject(id, OpenMode.ForRead, false) as CivilSurface;
+                        if (existing == null ||
+                            !string.Equals(existing.Name, JunctionOutput, StringComparison.OrdinalIgnoreCase))
+                            continue;
+                        existing.UpgradeOpen();
+                        existing.Erase();
+                    }
+                    output.Name = JunctionOutput;
+                    TrySetDescription(output,
+                        "CE junction combined TIN. Sources: " + string.Join(", ", sources.Select(x => x.Name)));
+                    transaction.Commit();
+                }
+                document.Editor.Regen();
+                document.Editor.WriteMessage(
+                    "\nCE_JUNCTIONSURFACEMERGE complete: {0} source surfaces combined in '{1}'. " +
+                    "Original junction surfaces remain unchanged.",
+                    sources.Count, JunctionOutput);
+            }
+            catch (System.Exception error)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_JUNCTIONSURFACEMERGE failed safely. The existing merged surface was retained: " +
+                    error.Message);
+            }
+        }
+
+        private static bool IsJunctionSourceSurface(string name)
+        {
+            string value = (name ?? string.Empty).Trim();
+            return value.StartsWith("CE-JUNCTION-GRADE", StringComparison.OrdinalIgnoreCase) ||
+                   value.StartsWith("CE-JUNCTION-INFILL", StringComparison.OrdinalIgnoreCase) ||
+                   value.StartsWith("CE-KERB-INFILL", StringComparison.OrdinalIgnoreCase) ||
+                   value.StartsWith("CE-GUTTER-INFILL", StringComparison.OrdinalIgnoreCase) ||
+                   value.StartsWith("CE-INFILL", StringComparison.OrdinalIgnoreCase);
+        }
+
         [CommandMethod("CE_TOOLS", "CE_ROADSURFACEMERGE", CommandFlags.Modal | CommandFlags.Redraw)]
         public void MergeProductionSurfaces()
         {
