@@ -215,13 +215,22 @@ namespace CETools.Civil3D
             settings.AddPositiveDouble(
                 "SearchStep", "06 Search", "Surface search step", 0.5,
                 "Horizontal search increment before the final surface intersection is bisected.");
+            settings.AddPositiveDouble(
+                "InfillWeedDistance", "06 Search", "Infill weeding distance", 0.0,
+                "Remove only very close, nearly collinear TIN boundary points; 0 preserves the original points.");
+            settings.AddPositiveDouble(
+                "InfillWeedAngle", "06 Search", "Infill weeding angle (degrees)", 0.0,
+                "Maximum direction change for removing short redundant segments when the weeding distance is positive.");
+            settings.AddPositiveDouble(
+                "InfillMaxBoundarySegment", "06 Search", "Maximum infill boundary segment length", 0.25,
+                "Maximum spacing of interpolated points along bellmouth boundaries.");
             settings.AddChoice(
                 "Infill", "07 Grading group", "Create native grading group / infill where possible", "Yes",
                 "Create native infill for closed junction feature lines. Open sidewalk/shoulder bellmouth edge strings still receive linked Grade-to-Surface daylight geometry.",
                 new[] { "Yes", "No" });
             settings.AddChoice(
-                "InfillScope", "07 Grading group", "Closed junction infill scope", "All closed junction feature lines",
-                "Choose closed lines from the grading selection, select multiple closed junction feature lines separately after grading, or infill all recognised closed junction feature lines.",
+                "InfillScope", "07 Grading group", "Junction infill scope", "Auto connected OPEN lines from grading selection",
+                "Trace enclosed faces from endpoint-connected open feature lines; select the actual enclosing boundary strings. Closed-line scopes remain available.",
                 new[]
                 {
                     "Multiple selected closed junction feature lines",
@@ -300,6 +309,10 @@ namespace CETools.Civil3D
             double fillRatio = string.Equals(settings.Text("FillFormat"), "Grade (%)", StringComparison.OrdinalIgnoreCase)
                 ? 100.0 / Math.Max(0.001, Math.Abs(settings.Double("FillGrade", 50.0)))
                 : Math.Max(0.001, settings.Double("FillSlope", 2.0));
+
+            double infillMaxBoundarySegment = Math.Max(0.01, settings.Double("InfillMaxBoundarySegment", 0.25));
+            double infillWeedDistance = Math.Max(0.0, settings.Double("InfillWeedDistance", 0.0));
+            double infillWeedAngle = Math.Max(0.0, Math.Min(180.0, settings.Double("InfillWeedAngle", 0.0)));
 
             List<ObjectId> gradeSourceIds = ResolveGradeSourceIds(
                 document,
@@ -411,10 +424,12 @@ namespace CETools.Civil3D
                     settings.Text("InfillScope") == "Auto connected OPEN lines from grading selection")
                 {
                     int openCreated, openExisting, openSkipped;
+                    // Junction faces are bounded by the actual green edge strings,
+                    // which can differ from the source lines selected for daylight.
+                    // Request those boundaries explicitly instead of guessing them.
                     CreateConnectedOpenInfills(document, outputStyleId,
                         out openCreated, out openExisting, out openSkipped,
-                        settings.Text("InfillScope") == "Auto connected OPEN lines from grading selection"
-                            ? gradeSourceIds : null);
+                        null, infillMaxBoundarySegment, infillWeedDistance, infillWeedAngle);
                     separateInfillsCreated += openCreated;
                     separateInfillsExisting += openExisting;
                     separateInfillsSkipped += openSkipped;
@@ -458,7 +473,7 @@ namespace CETools.Civil3D
                 "\nInfills skipped: " + separateInfillsSkipped +
                 "\nSurface groups skipped: " + connectedSurfaceResult.Skipped +
                 (wantsInfill && closedCandidates == 0 && separateInfillsCreated == 0 && separateInfillsExisting == 0
-                    ? "\n\nNo closed feature-line boundaries were found. Road sidewalks, gutters and junction centres bounded by multiple OPEN lines need a separate enclosed-region detector; grading surface creation alone does not create Civil 3D infills." : string.Empty),
+                    ? "\n\nNo infill face was created. Check endpoint gaps, crossing segments, duplicate edges and whether the selected linework encloses planar regions. This creates bounded TIN surfaces, not native Civil 3D grading infills." : string.Empty),
                 "CE Tools - Grading / Infill Results");
             document.Editor.Regen();
             PlatformDynamicRefreshManager.Queue();
