@@ -34,6 +34,9 @@ jobs:
             throw 'Civil 3D 2023 repaired PluginEntry.cs does not use direct panel items.'
           }
 
+      - name: Validate endpoint Sites, junction merged TIN and saved style persistence
+        run: python3 scripts/Validate-October27SiteJunctionMergeSavedStyles.py
+
       - name: Validate Oct 27 noded junction grading and infill safeguards
         run: python3 scripts/Validate-October27JunctionNodedInfill.py
 
