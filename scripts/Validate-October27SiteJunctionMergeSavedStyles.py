@@ -41,8 +41,12 @@ checks = {
         "August11DisciplineStylePresetManager.SavePreset(document.Database, preset)" in preset,
     "older drawing styles preserved before saved preset":
         "August11DisciplineStylePresetManager.SavePreset(document.Database, existing)" in preset,
-    "empty preset no longer clobbers active styles":
-        "WriteRecord(database, ActiveRecordName, clean)" not in discipline,
+    "configured production discipline does not lose its saved choices":
+        "if (preset.Exists)" in discipline and
+        "WriteRecord(database, ActiveRecordName, preset)" in discipline,
+    "unconfigured disciplines retain isolated drawing defaults":
+        "var clean = new ProjectStyleSelection" in discipline and
+        "WriteRecord(database, ActiveRecordName, clean)" in discipline,
 }
 for name, passed in checks.items():
     if not passed: raise AssertionError(name)
