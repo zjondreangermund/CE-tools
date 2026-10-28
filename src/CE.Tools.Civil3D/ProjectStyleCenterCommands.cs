@@ -1041,13 +1041,21 @@ namespace CETools.Civil3D
     {
         private readonly ComboBox _discipline;
         private readonly Dictionary<string, ComboBox> _selectors;
+        private readonly Func<string, ProjectStyleSelection> _loadDiscipline;
+        private readonly Dictionary<string, ProjectStyleSelection> _staged =
+            new Dictionary<string, ProjectStyleSelection>(StringComparer.OrdinalIgnoreCase);
+        private string _visibleDiscipline;
 
         public ProjectStyleCenterWindow(
             IEnumerable<string> disciplines,
             IEnumerable<string> keys,
             IDictionary<string, List<string>> catalogue,
-            ProjectStyleSelection existing)
+            ProjectStyleSelection existing,
+            Func<string, ProjectStyleSelection> loadDiscipline = null)
         {
+            _loadDiscipline = loadDiscipline;
+            _visibleDiscipline = existing == null ? "Roads" :
+                (existing.Discipline ?? "Roads");
             Accepted = false;
             ImportRequested = false;
             _selectors = new Dictionary<string, ComboBox>(StringComparer.OrdinalIgnoreCase);
@@ -1100,9 +1108,7 @@ namespace CETools.Civil3D
                 MinWidth = 280,
                 Margin = new Thickness(8, 2, 0, 2)
             };
-            _discipline.SelectedItem = string.IsNullOrWhiteSpace(existing.Discipline)
-                ? "Roads"
-                : existing.Discipline;
+            _discipline.SelectedItem = _visibleDiscipline;
             Grid.SetColumn(_discipline, 1);
             disciplinePanel.Children.Add(_discipline);
             DockPanel.SetDock(disciplinePanel, Dock.Top);
@@ -1141,7 +1147,8 @@ namespace CETools.Civil3D
                     MinWidth = 340
                 };
                 string selected;
-                if (!existing.Values.TryGetValue(key, out selected) ||
+                if (existing == null ||
+                    !existing.Values.TryGetValue(key, out selected) ||
                     string.IsNullOrWhiteSpace(selected))
                 {
                     selected = "<Use drawing default>";
@@ -1206,6 +1213,40 @@ namespace CETools.Civil3D
             // high DPI and covered the style selectors.
             root.Children.Remove(scroll);
             root.Children.Add(scroll);
+
+            // Previously the discipline ComboBox changed its name without
+            // reloading its style selectors. Saving then wrote Roads defaults
+            // over previously configured Water/Sewer presets.
+            _discipline.SelectionChanged += (sender, args) =>
+            {
+                string next = Convert.ToString(_discipline.SelectedItem,
+                    CultureInfo.CurrentCulture);
+                if (string.IsNullOrWhiteSpace(next) ||
+                    string.Equals(next, _visibleDiscipline, StringComparison.OrdinalIgnoreCase))
+                    return;
+                if (!string.IsNullOrWhiteSpace(_visibleDiscipline))
+                    _staged[_visibleDiscipline] = Snapshot(_visibleDiscipline);
+                ProjectStyleSelection chosen;
+                if (!_staged.TryGetValue(next, out chosen))
+                    chosen = _loadDiscipline == null ? null : _loadDiscipline(next);
+                foreach (KeyValuePair<string, ComboBox> selector in _selectors)
+                {
+                    string value = null;
+                    if (chosen != null)
+                        chosen.Values.TryGetValue(selector.Key, out value);
+                    selector.Value.Text = string.IsNullOrWhiteSpace(value)
+                        ? "<Use drawing default>" : value;
+                }
+                _visibleDiscipline = next;
+            };
+        }
+
+        private ProjectStyleSelection Snapshot(string discipline)
+        {
+            var value = new ProjectStyleSelection { Discipline = discipline, Exists = true };
+            foreach (KeyValuePair<string, ComboBox> selector in _selectors)
+                value.Values[selector.Key] = (selector.Value.Text ?? string.Empty).Trim();
+            return value;
         }
 
         public bool Accepted { get; private set; }
