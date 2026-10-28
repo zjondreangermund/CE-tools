@@ -145,6 +145,8 @@ namespace CETools.Civil3D
                         August11DisciplineStylePresetManager.SavePreset(document.Database, preset);
                     }
                     SynchronizeDisciplineSettings(document.Database, selected);
+                    ProjectStyleCenterCommands.SaveLastEditedDiscipline(
+                        document.Database, selected.Discipline);
                 }
             }
             catch
