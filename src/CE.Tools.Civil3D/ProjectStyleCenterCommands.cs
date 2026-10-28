@@ -1042,6 +1042,7 @@ namespace CETools.Civil3D
         private readonly ComboBox _discipline;
         private readonly Dictionary<string, ComboBox> _selectors;
         private readonly Func<string, ProjectStyleSelection> _loadDiscipline;
+        private readonly TextBlock _presetStatus;
         private readonly Dictionary<string, ProjectStyleSelection> _staged =
             new Dictionary<string, ProjectStyleSelection>(StringComparer.OrdinalIgnoreCase);
         private string _visibleDiscipline;
@@ -1113,6 +1114,16 @@ namespace CETools.Civil3D
             disciplinePanel.Children.Add(_discipline);
             DockPanel.SetDock(disciplinePanel, Dock.Top);
             root.Children.Add(disciplinePanel);
+
+            _presetStatus = new TextBlock
+            {
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(8, 0, 0, 10),
+                Foreground = System.Windows.Media.Brushes.DimGray
+            };
+            UpdatePresetStatus(_visibleDiscipline, existing);
+            DockPanel.SetDock(_presetStatus, Dock.Top);
+            root.Children.Add(_presetStatus);
 
             var scroll = new ScrollViewer
             {
@@ -1238,7 +1249,21 @@ namespace CETools.Civil3D
                         ? "<Use drawing default>" : value;
                 }
                 _visibleDiscipline = next;
+                UpdatePresetStatus(next, chosen);
             };
+        }
+
+        private void UpdatePresetStatus(string discipline, ProjectStyleSelection selection)
+        {
+            int count = selection == null ? 0 : selection.Values.Count(item =>
+                !string.IsNullOrWhiteSpace(item.Value) &&
+                !string.Equals(item.Value, "<Use drawing default>",
+                    StringComparison.OrdinalIgnoreCase));
+            _presetStatus.Text = count > 0 ?
+                "Loaded " + count.ToString(CultureInfo.InvariantCulture) +
+                " configured " + discipline + " style choices. Other disciplines keep their own settings." :
+                "No configured " + discipline + " styles. Drawing defaults are shown for this discipline only; " +
+                "your saved choices in other disciplines have not been deleted.";
         }
 
         private ProjectStyleSelection Snapshot(string discipline)
