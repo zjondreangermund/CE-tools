@@ -846,7 +846,7 @@ namespace CETools.Civil3D
             }
         }
 
-        private static void SaveLastEditedDiscipline(Database database, string discipline)
+        internal static void SaveLastEditedDiscipline(Database database, string discipline)
         {
             using (Transaction tr = database.TransactionManager.StartTransaction())
             {
