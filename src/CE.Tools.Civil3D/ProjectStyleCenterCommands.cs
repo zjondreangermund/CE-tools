@@ -30,6 +30,7 @@ namespace CETools.Civil3D
     {
         private const string RootDictionaryName = "CE_TOOLS";
         private const string RecordName = "PROJECT_STYLE_SELECTION";
+        private const string StyleEditorRecordName = "PROJECT_STYLE_LAST_EDITED_DISCIPLINE";
         private const string SchemaVersion = "1";
 
         private static readonly string[] Disciplines =
@@ -110,12 +111,16 @@ namespace CETools.Civil3D
             {
                 Dictionary<string, List<string>> catalogue =
                     ReadCivilStyleCatalogue(document);
-                ProjectStyleSelection existing = ReadSelection(document.Database);
+                // The production tabs change the active discipline. They must
+                // NOT choose which preset the main editor opens or cause the
+                // editor to show an empty Roads preset over saved Water styles.
+                ProjectStyleSelection existing = ReadStyleCentreSelection(document.Database);
                 var window = new ProjectStyleCenterWindow(
                     Disciplines,
                     SelectionKeys,
                     catalogue,
-                    existing);
+                    existing,
+                    discipline => ReadDisciplineChoices(document.Database, discipline));
                 AcApplication.ShowModalWindow(window);
                 if (window.ImportRequested)
                 {
@@ -131,6 +136,7 @@ namespace CETools.Civil3D
                 ProjectStyleSelection selection = window.BuildSelection();
                 WriteSelection(document.Database, selection);
                 August11DisciplineStylePresetManager.SavePreset(document.Database, selection);
+                SaveLastEditedDiscipline(document.Database, selection.Discipline);
                 ProjectStylePresetManager.SaveFromDrawing(document);
                 CogoPointProjectStyleManager.Queue();
                 CogoPointProjectStyleCommands.ApplySelectedStyles(document, true);
@@ -774,6 +780,104 @@ namespace CETools.Civil3D
             catch
             {
                 return null;
+            }
+        }
+
+        internal static ProjectStyleSelection ReadDisciplineChoices(Database database, string discipline)
+        {
+            ProjectStyleSelection preset =
+                August11DisciplineStylePresetManager.ReadPreset(database, discipline);
+            if (!preset.Exists || preset.Values.Count == 0)
+                preset = CeGlobalDisciplineStyleDefaults.Read(discipline);
+            if (!preset.Exists)
+                preset = new ProjectStyleSelection { Discipline = discipline, Exists = false };
+            preset.Discipline = discipline;
+            return preset;
+        }
+
+        private static bool HasSelectedStyles(ProjectStyleSelection preset)
+        {
+            return preset != null && preset.Exists && preset.Values.Any(pair =>
+                !string.IsNullOrWhiteSpace(pair.Value) &&
+                !string.Equals(pair.Value, "<Use drawing default>",
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
+        private static ProjectStyleSelection ReadStyleCentreSelection(Database database)
+        {
+            ProjectStyleSelection active = ReadSelection(database);
+            string previousEditor = ReadLastEditedDiscipline(database);
+            if (!string.IsNullOrWhiteSpace(previousEditor))
+                return ReadDisciplineChoices(database, previousEditor);
+            // Upgrade legacy drawings that have no editor-state record. Prefer
+            // the current discipline if it has saved choices, otherwise use
+            // a discipline with a configured preset instead of silently
+            // selecting an empty active record written by a production tab.
+            if (HasSelectedStyles(ReadDisciplineChoices(database, active.Discipline)))
+                return ReadDisciplineChoices(database, active.Discipline);
+            foreach (string discipline in Disciplines)
+            {
+                ProjectStyleSelection saved = ReadDisciplineChoices(database, discipline);
+                if (HasSelectedStyles(saved)) return saved;
+            }
+            return active;
+        }
+
+        private static string ReadLastEditedDiscipline(Database database)
+        {
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+            {
+                DBDictionary nod = tr.GetObject(database.NamedObjectsDictionaryId,
+                    OpenMode.ForRead, false) as DBDictionary;
+                if (nod == null || !nod.Contains(RootDictionaryName)) return null;
+                DBDictionary root = tr.GetObject(nod.GetAt(RootDictionaryName),
+                    OpenMode.ForRead, false) as DBDictionary;
+                if (root == null || !root.Contains(StyleEditorRecordName)) return null;
+                Xrecord record = tr.GetObject(root.GetAt(StyleEditorRecordName),
+                    OpenMode.ForRead, false) as Xrecord;
+                if (record == null || record.Data == null) return null;
+                foreach (TypedValue value in record.Data)
+                {
+                    string name = value.Value as string;
+                    if (Disciplines.Any(item => string.Equals(item, name,
+                        StringComparison.OrdinalIgnoreCase))) return name;
+                }
+                return null;
+            }
+        }
+
+        private static void SaveLastEditedDiscipline(Database database, string discipline)
+        {
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+            {
+                DBDictionary nod = tr.GetObject(database.NamedObjectsDictionaryId,
+                    OpenMode.ForWrite, false) as DBDictionary;
+                if (nod == null) return;
+                DBDictionary root;
+                if (nod.Contains(RootDictionaryName))
+                    root = tr.GetObject(nod.GetAt(RootDictionaryName),
+                        OpenMode.ForWrite, false) as DBDictionary;
+                else
+                {
+                    root = new DBDictionary();
+                    nod.SetAt(RootDictionaryName, root);
+                    tr.AddNewlyCreatedDBObject(root, true);
+                }
+                if (root == null) return;
+                Xrecord record;
+                if (root.Contains(StyleEditorRecordName))
+                    record = tr.GetObject(root.GetAt(StyleEditorRecordName),
+                        OpenMode.ForWrite, false) as Xrecord;
+                else
+                {
+                    record = new Xrecord();
+                    root.SetAt(StyleEditorRecordName, record);
+                    tr.AddNewlyCreatedDBObject(record, true);
+                }
+                if (record == null) return;
+                record.Data = new ResultBuffer(new TypedValue(
+                    (int)DxfCode.Text, discipline ?? "Roads"));
+                tr.Commit();
             }
         }
 
