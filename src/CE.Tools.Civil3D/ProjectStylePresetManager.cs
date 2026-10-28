@@ -81,6 +81,14 @@ namespace CETools.Civil3D
             }
         }
 
+        private static bool HasConfiguredStyles(ProjectStyleSelection preset)
+        {
+            return preset != null && preset.Values.Any(value =>
+                !string.IsNullOrWhiteSpace(value.Value) &&
+                !string.Equals(value.Value, "<Use drawing default>",
+                    StringComparison.OrdinalIgnoreCase));
+        }
+
         internal static bool ApplySavedPreset(Document document, bool showResult)
         {
             if (document == null) return false;
@@ -92,9 +100,18 @@ namespace CETools.Civil3D
             ProjectStyleSelection selected = null;
             if (existing.Exists && !string.IsNullOrWhiteSpace(existing.Discipline))
                 presets.TryGetValue(existing.Discipline, out selected);
-            if (selected == null)
-                selected = presets.OrderBy(item => item.Key)
-                    .Select(item => item.Value)
+            // An old/empty per-discipline preset must not take priority over
+            // another discipline's populated preset when the user chooses
+            // "Use saved project styles" on the drawing-open prompt.
+            // All saved disciplines still get imported below; this affects
+            // only the initial active selection.
+            if (selected == null || !HasConfiguredStyles(selected))
+                selected = presets.Values
+                    .OrderByDescending(item => item.Values.Count(value =>
+                        !string.IsNullOrWhiteSpace(value.Value) &&
+                        !string.Equals(value.Value, "<Use drawing default>",
+                            StringComparison.OrdinalIgnoreCase)))
+                    .ThenBy(item => item.Discipline, StringComparer.OrdinalIgnoreCase)
                     .FirstOrDefault();
             if (selected == null) return false;
 
