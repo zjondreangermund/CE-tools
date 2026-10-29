@@ -253,6 +253,10 @@ namespace CETools.Civil3D
                 "m",
                 totals.JunctionBellmouthLength,
                 "Unique CE road-junction / bellmouth return curves"));
+            foreach (KeyValuePair<string, double> road in
+                totals.RoadSurfaceAreasByRoad.OrderBy(item => item.Key, StringComparer.CurrentCultureIgnoreCase))
+                rows.Add(Row("Road surface - " + road.Key, "m2", road.Value,
+                    "Left-to-right carriageway width at applied corridor sections × station spacing"));
             rows.Add(Row(
                 "Road surface - total carriageway",
                 "m2",
@@ -571,9 +575,10 @@ namespace CETools.Civil3D
                             AddValue(totals.LayerVolumes, key, volume);
                         }
 
-                        totals.RoadSurfaceArea +=
-                            0.5 * (first.RoadSurfaceWidth + second.RoadSurfaceWidth) *
-                            delta / areaDivisor;
+                        double pavedArea = 0.5 * (first.RoadSurfaceWidth +
+                            second.RoadSurfaceWidth) * delta / areaDivisor;
+                        totals.RoadSurfaceArea += pavedArea;
+                        AddValue(totals.RoadSurfaceAreasByRoad, corridor.Name, pavedArea);
                         if (!shoulderAsSidewalk)
                             totals.ShoulderArea +=
                                 0.5 * (first.ShoulderWidth + second.ShoulderWidth) *
@@ -1363,9 +1368,11 @@ namespace CETools.Civil3D
             {
                 LayerVolumes = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
                 RoadLengths = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                RoadSurfaceAreasByRoad = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
             }
             internal double TotalRoadLength { get; set; }
             internal IDictionary<string, double> RoadLengths { get; private set; }
+            internal IDictionary<string, double> RoadSurfaceAreasByRoad { get; private set; }
             internal double CutVolume { get; set; }
             internal double FillVolume { get; set; }
             internal double KerbLength { get; set; }
