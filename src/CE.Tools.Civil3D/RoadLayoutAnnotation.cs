@@ -374,7 +374,7 @@ namespace CETools.Civil3D
                     left = new List<Point3d> { centre + normal * halfRoad };
                     right = new List<Point3d> { centre - normal * halfRoad };
                 }
-                if (!manual && !TryRoadWidthPoints(
+                else if (!TryRoadWidthPoints(
                         source,
                         tr,
                         space,
