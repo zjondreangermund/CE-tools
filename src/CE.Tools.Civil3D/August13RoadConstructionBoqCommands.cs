@@ -660,6 +660,167 @@ namespace CETools.Civil3D
                 .ToList();
         }
 
+
+        // Measured pavement areas use the union of horizontal section links:
+        // stacked TOP/PAVE/BASE links represent the same carriageway XY span
+        // and must NEVER be added together as independent road widths.
+        private static Tuple<double, double> LinkOffsetRange(CalculatedLink link)
+        {
+            if (link == null || link.CalculatedPoints == null ||
+                link.CalculatedPoints.Count < 2) return null;
+            double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+            foreach (CalculatedPoint point in link.CalculatedPoints)
+            {
+                if (point == null) continue;
+                double offset = point.StationOffsetElevationToBaseline.Y;
+                if (double.IsNaN(offset) || double.IsInfinity(offset)) continue;
+                lo = Math.Min(lo, offset);
+                hi = Math.Max(hi, offset);
+            }
+            if (double.IsInfinity(lo) || hi - lo <= 1e-9) return null;
+            return Tuple.Create(lo, hi);
+        }
+
+        private static List<Tuple<double, double>> MergeIntervals(IEnumerable<Tuple<double, double>> intervals)
+        {
+            var result = new List<Tuple<double, double>>();
+            if (intervals == null) return result;
+            foreach (var interval in intervals.Where(x => x != null && x.Item2 - x.Item1 > 1e-9)
+                .OrderBy(x => x.Item1).ThenBy(x => x.Item2))
+            {
+                if (result.Count == 0 || interval.Item1 > result[result.Count - 1].Item2 + 1e-8)
+                    result.Add(interval);
+                else
+                {
+                    var last = result[result.Count - 1];
+                    result[result.Count - 1] = Tuple.Create(last.Item1,
+                        Math.Max(last.Item2, interval.Item2));
+                }
+            }
+            return result;
+        }
+
+        private static double UnionWidth(IEnumerable<Tuple<double, double>> intervals)
+        {
+            return MergeIntervals(intervals).Sum(x => x.Item2 - x.Item1);
+        }
+
+        private static double NetWidth(IEnumerable<Tuple<double, double>> roadLinks,
+            IEnumerable<Tuple<double, double>> excluded)
+        {
+            var road = MergeIntervals(roadLinks);
+            var outside = MergeIntervals(excluded);
+            double result = 0;
+            foreach (var strip in road)
+            {
+                double width = strip.Item2 - strip.Item1;
+                foreach (var other in outside)
+                    width -= Math.Max(0, Math.Min(strip.Item2, other.Item2) -
+                        Math.Max(strip.Item1, other.Item1));
+                result += Math.Max(0, width);
+            }
+            return Math.Max(0, result);
+        }
+
+        private static void ReadJunctionSurfaceQuantities(
+            CivilDocument civil, Transaction transaction, double unitsPerMetre,
+            QuantityAccumulator totals, ICollection<string> warnings)
+        {
+            // Surface triangulation is calculated from the LIVE, visible TIN.
+            // Never mix the merged result with the constituent junction surfaces
+            // when reporting a total, as that would double count every face.
+            var surfaces = new List<TinSurface>();
+            foreach (ObjectId id in civil.GetSurfaceIds())
+            {
+                TinSurface tin = transaction.GetObject(id, OpenMode.ForRead, false)
+                    as TinSurface;
+                if (tin != null && !tin.IsErased) surfaces.Add(tin);
+            }
+            TinSurface merged = surfaces.FirstOrDefault(surface =>
+                string.Equals(surface.Name, "CE Junctions All",
+                    StringComparison.OrdinalIgnoreCase));
+            var infills = surfaces.Where(surface =>
+                surface.Name.StartsWith("CE-JUNCTION-INFILL", StringComparison.OrdinalIgnoreCase) ||
+                surface.Name.StartsWith("CE-KERB-INFILL", StringComparison.OrdinalIgnoreCase) ||
+                surface.Name.StartsWith("CE-GUTTER-INFILL", StringComparison.OrdinalIgnoreCase) ||
+                surface.Name.StartsWith("CE-INFILL", StringComparison.OrdinalIgnoreCase)).ToList();
+            var grading = surfaces.Where(surface =>
+                surface.Name.StartsWith("CE-JUNCTION-GRADE", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            double areaDivisor = unitsPerMetre * unitsPerMetre;
+            if (merged != null)
+            {
+                double planar, slope;
+                if (TryReadTinAreas(merged, out planar, out slope))
+                {
+                    totals.JunctionArea2D = planar / areaDivisor;
+                    totals.JunctionAreaSource =
+                        "Visible triangulation of merged CE Junctions All (2D; source TINs excluded)";
+                }
+                else warnings.Add("The merged junction TIN has no measurable visible triangles.");
+            }
+            else if (infills.Count > 0)
+            {
+                foreach (TinSurface surface in infills)
+                {
+                    double planar, actual;
+                    if (TryReadTinAreas(surface, out planar, out actual))
+                        totals.JunctionArea2D += planar / areaDivisor;
+                }
+                totals.JunctionAreaSource =
+                    "Sum of individual CE junction/kerb/gutter infill TINs (overlap check required)";
+                if (infills.Count > 1)
+                    warnings.Add("Junction infill TINs may overlap. Merge junction surfaces to measure the unified area.");
+            }
+            else
+            {
+                foreach (TinSurface surface in grading)
+                {
+                    double planar, actual;
+                    if (TryReadTinAreas(surface, out planar, out actual))
+                        totals.JunctionArea2D += planar / areaDivisor;
+                }
+                totals.JunctionAreaSource =
+                    "CE junction grading TINs (no merged surface or infill found; possible overlap)";
+                if (grading.Count > 1)
+                    warnings.Add("Junction grading TINs may overlap. Merge junction surfaces before final BOQ.");
+            }
+            foreach (TinSurface surface in grading)
+            {
+                double planar, actual;
+                if (TryReadTinAreas(surface, out planar, out actual))
+                    totals.JunctionGradingArea3D += actual / areaDivisor;
+            }
+            if (grading.Count == 0)
+                warnings.Add("No CE-JUNCTION-GRADE TIN surfaces found; junction daylight grading excluded from side slopes.");
+            else
+                warnings.Add("Gross junction grading 3D area includes any flat faces; review before using as net cut/fill slope area.");
+        }
+
+        private static bool TryReadTinAreas(TinSurface surface, out double planar, out double actual)
+        {
+            planar = 0;
+            actual = 0;
+            try
+            {
+                foreach (TinSurfaceTriangle triangle in surface.GetTriangles(false))
+                {
+                    Point3d a = triangle.Vertex1.Location;
+                    Point3d b = triangle.Vertex2.Location;
+                    Point3d c = triangle.Vertex3.Location;
+                    double xy = 0.5 * Math.Abs((b.X - a.X) * (c.Y - a.Y) -
+                                                (b.Y - a.Y) * (c.X - a.X));
+                    if (xy <= 1e-12) continue;
+                    double xyz = 0.5 * (b - a).CrossProduct(c - a).Length;
+                    if (double.IsNaN(xyz) || double.IsInfinity(xyz)) continue;
+                    planar += xy;
+                    actual += xyz;
+                }
+            }
+            catch (System.Exception) { return false; }
+            return planar > 1e-9;
+        }
+
         private static bool TryReadAppliedAssemblyStation(
             AppliedAssembly assembly,
             out double station)
