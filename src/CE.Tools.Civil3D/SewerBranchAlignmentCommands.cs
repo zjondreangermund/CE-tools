@@ -744,6 +744,7 @@ namespace CETools.Civil3D
                                     StringComparison.OrdinalIgnoreCase) &&
                                  (branchPlan.BranchNumber % 2) != 0);
 
+                            var placedAnchors = new List<Point3d>();
                             foreach (SewerBranchLabelPlacement.Placement placement in
                                 placements)
                             {
@@ -757,6 +758,8 @@ namespace CETools.Civil3D
                                     AnchorToNearestPipePlanLabel(
                                         placement,
                                         pipeLabelAnchors, transaction);
+                                if (placedAnchors.Any(p => p.DistanceTo(anchoredPlacement.Point) < 0.001)) { label.Dispose(); continue; }
+                                placedAnchors.Add(anchoredPlacement.Point);
                                 SewerBranchLabelPlacement.ConfigureLabel(
                                     label,
                                     database,
@@ -1784,6 +1787,7 @@ namespace CETools.Civil3D
                                 StringComparison.OrdinalIgnoreCase) &&
                              (branch.BranchNumber % 2) != 0);
 
+                        var placedAnchors = new List<Point3d>();
                         foreach (SewerBranchLabelPlacement.Placement placement in placements)
                         {
                             var label = new MText();
@@ -1793,6 +1797,8 @@ namespace CETools.Civil3D
                                 AnchorToNearestPipePlanLabel(
                                     placement,
                                     pipeLabelAnchors, transaction);
+                            if (placedAnchors.Any(p => p.DistanceTo(anchoredPlacement.Point) < 0.001)) { label.Dispose(); continue; }
+                            placedAnchors.Add(anchoredPlacement.Point);
                             SewerBranchLabelPlacement.ConfigureLabel(
                                 label,
                                 database,
@@ -2411,6 +2417,14 @@ namespace CETools.Civil3D
                 if (!TryReadLabelCentre(entity, out point))
                     continue;
                 result[featureId] = point;
+            }
+            // Keep unlabelled pipes in the matching set so their branch names do
+            // not get moved onto a neighbouring pipe's label.
+            foreach (ObjectId pipeId in pipes)
+            {
+                if (result.ContainsKey(pipeId)) continue;
+                var pipe = transaction.GetObject(pipeId, OpenMode.ForRead) as CivilPipe;
+                if (pipe != null) result[pipeId] = pipe.StartPoint + (pipe.EndPoint - pipe.StartPoint) * 0.5;
             }
 
             return result;
