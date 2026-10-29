@@ -2327,9 +2327,11 @@ namespace CETools.Civil3D
             else if (key == "BranchLabelLongSectionFrequency")
             {
                 settings.BranchLabelLongSectionFrequency =
-                    string.Equals(value, "Every second pipe", StringComparison.OrdinalIgnoreCase)
-                        ? "Every second pipe"
-                        : "Every pipe";
+                    string.Equals(value, "Consistent 50 m", StringComparison.OrdinalIgnoreCase)
+                        ? "Consistent 50 m"
+                        : string.Equals(value, "Every second pipe", StringComparison.OrdinalIgnoreCase)
+                            ? "Every second pipe"
+                            : "Every pipe";
             }
             else if (key == "LabelHeight")
             {

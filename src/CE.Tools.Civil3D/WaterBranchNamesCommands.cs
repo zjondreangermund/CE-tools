@@ -272,6 +272,15 @@ namespace CETools.Civil3D
                     double station = 0, offset = 0;
                     alignment.StationOffset(mid.X, mid.Y, ref station, ref offset);
                     if (Math.Abs(offset) > 0.1 || station < alignment.StartingStation || station > alignment.EndingStation) continue;
+                    bool onRoute = true;
+                    foreach (var endpoint in new[] { pipe.StartPoint, pipe.EndPoint })
+                    {
+                        double endpointStation = 0, endpointOffset = 0;
+                        alignment.StationOffset(endpoint.X, endpoint.Y, ref endpointStation, ref endpointOffset);
+                        if (Math.Abs(endpointOffset) > 0.1 || endpointStation < alignment.StartingStation - 0.001 || endpointStation > alignment.EndingStation + 0.001)
+                        { onRoute = false; break; }
+                    }
+                    if (!onRoute) continue;
                     Point3d anchor;
                     result[station] = anchors.TryGetValue(pipe.ObjectId, out anchor) ? anchor : mid;
                 }
