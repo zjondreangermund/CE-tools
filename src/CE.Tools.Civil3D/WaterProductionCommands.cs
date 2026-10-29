@@ -1554,6 +1554,22 @@ namespace CETools.Civil3D
             throw new InvalidOperationException("The drawing contains no " + description + ".");
         }
 
+        internal static bool IsGeneratedRouteLabel(MText text, CivilAlignment alignment)
+        {
+            string type, route, source, extra, labelType, labelRoute, labelSource, labelExtra;
+            return TryReadTag(alignment, out type, out route, out source, out extra) &&
+                TryReadTag(text, out labelType, out labelRoute, out labelSource, out labelExtra) &&
+                labelType == "RouteLabel" && labelSource == source;
+        }
+
+        internal static void LinkBranchLabel(Database database, Transaction transaction, MText text, CivilAlignment alignment)
+        {
+            string type, route, source, extra;
+            if (!TryReadTag(alignment, out type, out route, out source, out extra)) return;
+            EnsureRegApp(database, transaction);
+            text.XData = BuildTag("RouteLabel", route, source, extra);
+        }
+
         internal static void SyncBranchIdentity(Database database, Transaction transaction, CivilAlignment alignment, string branch)
         {
             EnsureRegApp(database, transaction);

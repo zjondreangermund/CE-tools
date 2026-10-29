@@ -141,7 +141,7 @@ namespace CETools.Civil3D
                         if (string.IsNullOrWhiteSpace(route)) route = name;
                     }
                     string displayName = options.Text("NameSource") == "Stored route identity" ? route : name;
-                    var owned = existingNames.Where(t => !t.IsErased && Owns(t, alignment.ObjectId.Handle.ToString())).ToList();
+                    var owned = existingNames.Where(t => !t.IsErased && (Owns(t, alignment.ObjectId.Handle.ToString()) || WaterProductionCommands.IsGeneratedRouteLabel(t, alignment))).ToList();
                     if (owned.Count > 0 && options.Text("Existing") == "Keep existing matching labels") { existing += owned.Count; continue; }
                     foreach (var text in owned) { text.UpgradeOpen(); text.Erase(); updated++; }
                     int labelIndex = 0;
@@ -179,6 +179,7 @@ namespace CETools.Civil3D
                         AnnotationScaleSyncManager.AddAllAnnotationScaleContexts(label, document.Database);
                         label.Rotation = options.Text("Direction") == "Along alignment" ? angle : 0.0;
                         label.LayerId = layerId;
+                        WaterProductionCommands.LinkBranchLabel(document.Database, transaction, label, alignment);
                         label.XData = new ResultBuffer(new TypedValue(1001, "CE_WATER_BRANCH_LABEL"),
                             new TypedValue(1000, alignment.ObjectId.Handle.ToString()));
                         existingNames.Remove(label); // never reuse one label for two stations

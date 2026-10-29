@@ -651,6 +651,7 @@ namespace CETools.Civil3D
                 double ownedShoulderArea = 0.0;
                 foreach (AppliedSubassembly applied in assembly.GetAppliedSubassemblies())
                 {
+                    if (applied == null || applied.SubassemblyId.IsNull || applied.SubassemblyId.IsErased) continue;
                     var template = transaction.GetObject(applied.SubassemblyId, OpenMode.ForRead, false)
                         as Subassembly;
                     if (template == null || !ContainsAny(template.Name.Replace(" ", ""), "BASICSHOULDER")) continue;
