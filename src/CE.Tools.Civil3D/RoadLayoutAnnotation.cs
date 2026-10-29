@@ -191,7 +191,14 @@ namespace CETools.Civil3D
                 "Use an existing drawing DIMSTYLE for every generated road-width dimension.", dimensionStyles);
             model.AddChoice("WidthSource", "02 Dimensions", "Road width source", "Auto: active corridor assembly / linked edges",
                 "Auto reads lane/road offsets from the applied assembly used by the active corridor for Civil 3D alignments and falls back to linked CE road edges. Linked edges only keeps the preliminary-layout behaviour.",
-                new[] { "Auto: active corridor assembly / linked edges", "Active corridor assembly lanes", "Linked CE road edges only" });
+                new[] { "Auto: active corridor assembly / linked edges", "Active corridor assembly lanes", "Linked CE road edges only", "Manual lane and road widths" });
+            model.AddPositiveDouble("ManualLane", "02 Dimensions", "Manual lane width (m)", 3.5,
+                "Width of one lane when Manual lane and road widths is selected.");
+            model.AddPositiveDouble("ManualRoad", "02 Dimensions", "Manual full road width (m)", 7.0,
+                "Overall carriageway width when Manual lane and road widths is selected.");
+            model.AddChoice("Units", "02 Dimensions", "Dimension units", "Metres to millimetres",
+                "Convert drawing measurements in metres to mm, or keep mm where the DWG is already in millimetres.",
+                new[] { "Metres to millimetres", "Drawing units already millimetres" });
             model.AddChoice("Mode", "02 Dimensions", "Dimension type", "Lane and full road widths", "Widths to measure.", new[] { "Lane widths", "Full road width", "Lane and full road widths" });
             model.AddChoice("Placement", "02 Dimensions", "Dimension locations", SectionPlacement,
                 "Detect all crossing roads, including unselected roads. Include road-end sections.", new[] { "Road midpoint", SectionPlacement });
@@ -240,7 +247,10 @@ namespace CETools.Civil3D
                         Offset = model.Double("Offset", 1),
                         Avoid = model.Text("Avoid") != "No",
                         DimensionStyleId = dimensionStyleId,
-                        WidthSource = model.Text("WidthSource")
+                        WidthSource = model.Text("WidthSource"),
+                        ManualLane = model.Double("ManualLane", 3.5),
+                        ManualRoad = model.Double("ManualRoad", 7.0),
+                        MillimetreFactor = model.Text("Units") == "Drawing units already millimetres" ? 1.0 : 1000.0
                     };
                     count += AddRoadDimensions(
                         document.Database,
@@ -357,7 +367,14 @@ namespace CETools.Civil3D
                 Vector3d normal = RoadAnnotationPlacement.Above(tangent);
                 List<Point3d> left;
                 List<Point3d> right;
-                if (!TryRoadWidthPoints(
+                bool manual = recipe.WidthSource == "Manual lane and road widths";
+                if (manual)
+                {
+                    double halfRoad = recipe.ManualRoad * 0.5;
+                    left = new List<Point3d> { centre + normal * halfRoad };
+                    right = new List<Point3d> { centre - normal * halfRoad };
+                }
+                if (!manual && !TryRoadWidthPoints(
                         source,
                         tr,
                         space,
@@ -375,8 +392,8 @@ namespace CETools.Civil3D
                 var pairs = new List<Tuple<Point3d, Point3d, int>>();
                 if (recipe.Mode != "Full road width")
                 {
-                    pairs.Add(Tuple.Create(left[0], centre, 1));
-                    pairs.Add(Tuple.Create(centre, right[0], -1));
+                    pairs.Add(Tuple.Create(manual ? centre + normal * recipe.ManualLane : left[0], centre, 1));
+                    pairs.Add(Tuple.Create(centre, manual ? centre - normal * recipe.ManualLane : right[0], -1));
                 }
                 if (recipe.Mode != "Lane widths") pairs.Add(Tuple.Create(left[0], right[0], 2));
                 foreach (var pair in pairs)
@@ -397,9 +414,16 @@ namespace CETools.Civil3D
                             string.Empty,
                             recipe.DimensionStyleId.IsNull ? db.Dimstyle : recipe.DimensionStyleId);
                         dim.SetDatabaseDefaults(db);
+                        // Drawings are in metres, but engineering width
+                        // dimensions must read as millimetres.
+                        dim.Dimlfac = recipe.MillimetreFactor;
+                        dim.Dimdec = 0;
+                        dim.Dimpost = "<> mm";
+                        PaperAnnotationScale.SetAnnotative(dim);
                         dim.LayerId = layer;
                         space.AppendEntity(dim);
                         tr.AddNewlyCreatedDBObject(dim, true);
+                        AnnotationScaleSyncManager.AddAllAnnotationScaleContexts(dim, db);
                         WriteAnnotationLink(dim, tr, source.Parent, "ROAD_DIM", recipe);
                         occupancy.Reserve(bounds);
                         count++; placed = true; break;
@@ -1397,20 +1421,24 @@ namespace CETools.Civil3D
         {
             internal string Name = "", Layer, Position = "Above", Mode = "Lane and full road widths", WidthSource = "";
             internal double Offset, PaperHeight = 2.5;
+            internal double ManualLane = 3.5, ManualRoad = 7.0, MillimetreFactor = 1000.0;
             internal bool Sections, Avoid = true, BackgroundMask = true;
             internal ObjectId DimensionStyleId = ObjectId.Null;
             internal string Encode()
             {
-                return "ANNOT3|" + Position + "|" + Mode + "|" + Sections + "|" + Avoid + "|" +
+                return "ANNOT4|" + Position + "|" + Mode + "|" + Sections + "|" + Avoid + "|" +
                     (BackgroundMask ? "1" : "0") + "|" + WidthSource + "|" +
-                    (DimensionStyleId.IsNull ? string.Empty : DimensionStyleId.Handle.ToString());
+                    (DimensionStyleId.IsNull ? string.Empty : DimensionStyleId.Handle.ToString()) + "|" +
+                    ManualLane.ToString(CultureInfo.InvariantCulture) + "|" +
+                    ManualRoad.ToString(CultureInfo.InvariantCulture) + "|" +
+                    MillimetreFactor.ToString(CultureInfo.InvariantCulture);
             }
             internal static AnnotationRecipe Decode(RoadLink link, Entity entity)
             {
                 var recipe = new AnnotationRecipe { Name = link.Name, Layer = entity.Layer, Offset = Math.Abs(link.Offset),
                     Position = link.Offset < 0 ? "Below" : "Above", PaperHeight = link.Width > 0 ? link.Width : 2.5 };
                 string[] fields = (link.Group ?? "").Split('|');
-                if (fields.Length >= 8 && fields[0] == "ANNOT3")
+                if (fields.Length >= 8 && (fields[0] == "ANNOT3" || fields[0] == "ANNOT4"))
                 {
                     recipe.Position = fields[1];
                     recipe.Mode = fields[2];
@@ -1418,6 +1446,16 @@ namespace CETools.Civil3D
                     recipe.Avoid = fields[4] == "True";
                     recipe.BackgroundMask = fields[5] != "0";
                     recipe.WidthSource = fields[6];
+                    if (fields[0] == "ANNOT4" && fields.Length >= 11)
+                    {
+                        double parsed;
+                        if (double.TryParse(fields[8], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+                            recipe.ManualLane = parsed;
+                        if (double.TryParse(fields[9], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+                            recipe.ManualRoad = parsed;
+                        if (double.TryParse(fields[10], NumberStyles.Float, CultureInfo.InvariantCulture, out parsed))
+                            recipe.MillimetreFactor = parsed;
+                    }
                     long handle;
                     if (long.TryParse(fields[7], NumberStyles.HexNumber, CultureInfo.InvariantCulture, out handle))
                     {
