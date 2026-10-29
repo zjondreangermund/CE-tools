@@ -132,19 +132,13 @@ namespace CETools.Civil3D
                 return;
             }
 
-            List<RouteSource> ordered = sources
-                .OrderByDescending(source => source.Length)
-                .ThenBy(source => source.SourceHandle, StringComparer.OrdinalIgnoreCase)
-                .ToList();
+            if (!ConfigureRoutes(document, sources, true)) return;
+            List<RouteSource> ordered = sources;
 
             editor.WriteMessage("\nCE_WATERSEQ preview:");
             for (int index = 0; index < ordered.Count; index++)
             {
-                string routeName = index == 0
-                    ? "W-MAIN"
-                    : ordered[index].SourceKind == "ClosedPolylineLoop"
-                        ? "W-LOOP" + index.ToString("00", CultureInfo.InvariantCulture)
-                        : "BRANCH-" + index.ToString(CultureInfo.InvariantCulture);
+                string routeName = ordered[index].RouteName;
                 editor.WriteMessage(
                     "\n  {0}: source={1}; length={2:0.###}; vertices={3}",
                     routeName,
@@ -164,9 +158,7 @@ namespace CETools.Civil3D
                     for (int index = 0; index < ordered.Count; index++)
                     {
                         RouteSource source = ordered[index];
-                        string routeName = index == 0
-                            ? "W-MAIN"
-                            : "BRANCH-" + index.ToString(CultureInfo.InvariantCulture);
+                        string routeName = source.RouteName;
                         DBObject sourceObject = transaction.GetObject(
                             source.SourceId,
                             OpenMode.ForWrite,
@@ -178,12 +170,22 @@ namespace CETools.Civil3D
                             index.ToString(CultureInfo.InvariantCulture));
                         TrySetProperty(sourceObject, "Description", "CE water route " + routeName);
                         TrySetProperty(sourceObject, "Name", routeName);
+                        foreach (ObjectId alignmentId in CivilApplication.ActiveDocument.GetAlignmentIds())
+                        {
+                            var alignment = transaction.GetObject(alignmentId, OpenMode.ForRead) as CivilAlignment;
+                            string type, oldRoute, sourceHandle, extra;
+                            if (alignment == null || !TryReadTag(alignment, out type, out oldRoute, out sourceHandle, out extra) || sourceHandle != source.SourceHandle) continue;
+                            alignment.UpgradeOpen();
+                            // Keep naming atomic; alignment creation/numbering owns name collision handling.
+                            alignment.Description = "CE water alignment | route=" + routeName + " | source=" + sourceHandle;
+                            SyncBranchIdentity(document.Database, transaction, alignment, routeName);
+                        }
                     }
                     transaction.Commit();
                 }
 
                 editor.WriteMessage(
-                    "\nCE_WATERSEQ complete. Routes sequenced: {0}. The longest route is W-MAIN.",
+                    "\nCE_WATERSEQ complete. Routes sequenced: {0}. Branches start at BRANCH-1; diameter/length priority and elevation direction applied.",
                     ordered.Count);
             }
             catch (System.Exception exception)
@@ -235,6 +237,7 @@ namespace CETools.Civil3D
                 return;
             }
 
+            if (!ConfigureRoutes(document, sources, !linkedOnly)) return;
             WaterSettings settings = WaterSettings.Read(document.Database);
             editor.WriteMessage(
                 "\nCE_WATERALIGN preview: routes={0}; alignment layer={1}.",
@@ -292,12 +295,18 @@ namespace CETools.Civil3D
                             transaction,
                             new[] { "Alignment", "RouteLabel" });
 
-                        ObjectId polylineId = AddTemporaryPolyline(
-                            document.Database,
-                            modelSpace,
-                            source.Points,
-                            alignmentLayerId,
-                            transaction);
+                        ObjectId polylineId;
+                        var original = transaction.GetObject(source.SourceId, OpenMode.ForRead, false) as Polyline;
+                        if (original != null)
+                        {
+                            var copy = (Polyline)original.Clone();
+                            copy.LayerId = alignmentLayerId;
+                            if (copy.GetPoint3dAt(0).DistanceTo(source.Points[0]) > 0.001) copy.ReverseCurve();
+                            polylineId = modelSpace.AppendEntity(copy);
+                            transaction.AddNewlyCreatedDBObject(copy, true);
+                        }
+                        else polylineId = AddTemporaryPolyline(document.Database, modelSpace,
+                            source.Points, alignmentLayerId, transaction);
                         var options = new CivilPolylineOptions
                         {
                             AddCurvesBetweenTangents = false,
@@ -336,6 +345,8 @@ namespace CETools.Civil3D
                             source.RouteName,
                             source.SourceHandle,
                             source.SourceKind);
+                        var sourceObject = transaction.GetObject(source.SourceId, OpenMode.ForWrite, false);
+                        sourceObject.XData = BuildTag("Source", source.RouteName, source.SourceHandle, source.SourceKind);
                         created++;
 
                         var label = new MText();
@@ -917,9 +928,7 @@ namespace CETools.Civil3D
                         out storedExtra);
                     string routeName = useStoredRouteNames && tagged && storedType == "Source"
                         ? storedRoute
-                        : unnamed++ == 0
-                            ? "W-MAIN"
-                            : "BRANCH-" + unnamed.ToString(CultureInfo.InvariantCulture);
+                        : "BRANCH-" + (++unnamed).ToString(CultureInfo.InvariantCulture);
                     result.Add(new RouteSource(
                         id,
                         id.Handle.ToString(),
@@ -931,6 +940,85 @@ namespace CETools.Civil3D
             }
 
             return result;
+        }
+
+        private static bool ConfigureRoutes(Document document, List<RouteSource> sources, bool renumber)
+        {
+            var surfaces = WorkflowRepairCommands.ReadSurfaceChoices(document);
+            var options = new ProductionSettingsDialogModel("CE Tools - Water Branch Sequence / Alignments",
+                "One alignment per selected source polyline. Larger pipes take priority, then longer branches. Source pipe geometry is preserved.");
+            options.AddChoice("Priority", "01 Sequence", "Priority branches", "Larger pipes, then longer branches",
+                "Use diameter first or length first. Elevation breaks ties; all names start at BRANCH-1.",
+                new[] { "Larger pipes, then longer branches", "Longer branches, then larger pipes", "Highest elevation first" });
+            options.AddChoice("TargetSurface", "02 Direction", "Target surface", "<Source elevations>",
+                "Sample branch endpoints on this surface for high-to-low alignment direction. No pipe levels are changed.",
+                new[] { "<Source elevations>" }.Concat(surfaces.Select(x => x.Name)).ToArray());
+            options.AddChoice("Direction", "02 Direction", "Alignment direction", "Highest to lowest elevation",
+                "Reverse the alignment copy when needed; keep the selected source unchanged.",
+                new[] { "Highest to lowest elevation", "As selected polylines" });
+            if (!DisciplineWorkflowDialogs.EditSettings(options)) return false;
+            var selectedSurface = surfaces.FirstOrDefault(x => x.Name == options.Text("TargetSurface"));
+            using (var tr = document.Database.TransactionManager.StartTransaction())
+            {
+                var surface = selectedSurface == null ? null : tr.GetObject(selectedSurface.ObjectId, OpenMode.ForRead) as CivilSurface;
+                foreach (var source in sources)
+                {
+                    var pipe = tr.GetObject(source.SourceId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Pipe;
+                    source.Diameter = pipe == null ? 0.0 : pipe.InnerDiameterOrWidth;
+                    var sourceCurve = tr.GetObject(source.SourceId, OpenMode.ForRead) as Curve;
+                    if (sourceCurve is Polyline) source.Length = ((Polyline)sourceCurve).Length;
+                    if (pipe == null && sourceCurve != null)
+                    {
+                        foreach (ObjectId networkId in CivilApplication.ActiveDocument.GetPipeNetworkIds())
+                        {
+                            var network = tr.GetObject(networkId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Network;
+                            if (network == null || !(network.Name.IndexOf("water", StringComparison.OrdinalIgnoreCase) >= 0 || network.Name.StartsWith("W-", StringComparison.OrdinalIgnoreCase))) continue;
+                            foreach (ObjectId pipeId in network.GetPipeIds())
+                            {
+                                var candidate = tr.GetObject(pipeId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Pipe;
+                                if (candidate == null) continue;
+                                // Compare in plan: a ground-level polyline need not share pipe invert Z.
+                                var start = candidate.StartPoint; var end = candidate.EndPoint;
+                                var mid = start + (end - start) * 0.5;
+                                bool onRoute = true;
+                                foreach (var point in new[] { start, mid, end })
+                                {
+                                    var nearest = sourceCurve.GetClosestPointTo(point, Vector3d.ZAxis, false);
+                                    if (new Point2d(point.X, point.Y).GetDistanceTo(new Point2d(nearest.X, nearest.Y)) > 0.1) { onRoute = false; break; }
+                                }
+                                if (onRoute) source.Diameter = Math.Max(source.Diameter, candidate.InnerDiameterOrWidth);
+                            }
+                        }
+                    }
+                    source.StartElevation = source.Points[0].Z;
+                    source.EndElevation = source.Points[source.Points.Count - 1].Z;
+                    if (surface != null)
+                    {
+                        try
+                        {
+                            source.StartElevation = surface.FindElevationAtXY(source.Points[0].X, source.Points[0].Y);
+                            var end = source.Points[source.Points.Count - 1];
+                            source.EndElevation = surface.FindElevationAtXY(end.X, end.Y);
+                        }
+                        catch (System.Exception)
+                        {
+                            document.Editor.WriteMessage("\nWater sequence cancelled: source {0} is outside the selected surface. No changes made.", source.SourceHandle);
+                            return false;
+                        }
+                    }
+                    if (options.Text("Direction") == "Highest to lowest elevation" && source.EndElevation > source.StartElevation)
+                        source.Points = source.Points.Reverse().ToList();
+                }
+            }
+            if (renumber)
+            {
+                var sorted = sources.OrderBy(x => x, Comparer<RouteSource>.Create((a, b) =>
+                    WaterBranchPriority.Compare(a.Diameter, a.Length, Math.Max(a.StartElevation, a.EndElevation), a.SourceHandle,
+                        b.Diameter, b.Length, Math.Max(b.StartElevation, b.EndElevation), b.SourceHandle, options.Text("Priority")))).ToList();
+                sources.Clear(); sources.AddRange(sorted);
+                for (int i = 0; i < sources.Count; i++) sources[i].RouteName = "BRANCH-" + (i + 1).ToString(CultureInfo.InvariantCulture);
+            }
+            return true;
         }
 
         private static List<RouteSource> ReadLinkedSources(
@@ -1466,6 +1554,52 @@ namespace CETools.Civil3D
             throw new InvalidOperationException("The drawing contains no " + description + ".");
         }
 
+        internal static bool IsGeneratedRouteLabel(MText text, CivilAlignment alignment)
+        {
+            string type, route, source, extra, labelType, labelRoute, labelSource, labelExtra;
+            return TryReadTag(alignment, out type, out route, out source, out extra) &&
+                TryReadTag(text, out labelType, out labelRoute, out labelSource, out labelExtra) &&
+                labelType == "RouteLabel" && labelSource == source;
+        }
+
+        internal static void LinkBranchLabel(Database database, Transaction transaction, MText text, CivilAlignment alignment)
+        {
+            string type, route, source, extra;
+            if (!TryReadTag(alignment, out type, out route, out source, out extra)) return;
+            EnsureRegApp(database, transaction);
+            text.XData = BuildTag("RouteLabel", route, source, extra);
+        }
+
+        internal static void SyncBranchIdentity(Database database, Transaction transaction, CivilAlignment alignment, string branch)
+        {
+            EnsureRegApp(database, transaction);
+            string type, route, source, extra;
+            if (TryReadTag(alignment, out type, out route, out source, out extra))
+            {
+                alignment.XData = BuildTag(type, branch, source, extra);
+                ObjectId sourceId;
+                if (TryGetObjectId(database, source, out sourceId) && !sourceId.IsErased)
+                {
+                    var sourceObject = transaction.GetObject(sourceId, OpenMode.ForWrite, false);
+                    sourceObject.XData = BuildTag("Source", branch, source, extra);
+                }
+                var model = (BlockTableRecord)transaction.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(database), OpenMode.ForRead);
+                foreach (ObjectId id in model)
+                {
+                    var text = transaction.GetObject(id, OpenMode.ForRead, false) as MText;
+                    if (text == null) continue;
+                    string labelType, labelRoute, labelSource, labelExtra;
+                    bool linked = TryReadTag(text, out labelType, out labelRoute, out labelSource, out labelExtra) &&
+                        labelType == "RouteLabel" && labelSource == source;
+                    using (var tag = text.GetXDataForApplication("CE_WATER_BRANCH_LABEL"))
+                        linked |= tag != null && tag.AsArray().Skip(1).Any(v => Convert.ToString(v.Value) == alignment.ObjectId.Handle.ToString());
+                    if (!linked) continue;
+                    text.UpgradeOpen(); text.Contents = branch;
+                    if (labelType == "RouteLabel") text.XData = BuildTag(labelType, branch, labelSource, labelExtra);
+                }
+            }
+        }
+
         private static string ResolveAlignmentName(
             CivilDocument civilDocument,
             string routeName,
@@ -1480,7 +1614,7 @@ namespace CETools.Civil3D
                 if (alignment != null)
                     existing.Add(alignment.Name);
             }
-            string baseName = "WATER - " + routeName;
+            string baseName = routeName;
             string candidate = baseName;
             int suffix = 2;
             while (existing.Contains(candidate) || !reservedNames.Add(candidate))
@@ -1801,11 +1935,14 @@ namespace CETools.Civil3D
 
             public ObjectId SourceId { get; }
             public string SourceHandle { get; }
-            public string RouteName { get; }
+            public string RouteName { get; set; }
             public string SourceKind { get; }
             public string SourceDescription { get; }
-            public IReadOnlyList<Point3d> Points { get; }
-            public double Length { get; }
+            public IReadOnlyList<Point3d> Points { get; set; }
+            public double Length { get; set; }
+            public double Diameter;
+            public double StartElevation;
+            public double EndElevation;
         }
 
         private sealed class AlignmentRecord
@@ -1823,7 +1960,7 @@ namespace CETools.Civil3D
             }
 
             public ObjectId AlignmentId { get; }
-            public string RouteName { get; }
+            public string RouteName { get; set; }
             public string SourceHandle { get; }
             public string SourceKind { get; }
         }
@@ -1848,7 +1985,7 @@ namespace CETools.Civil3D
                 Reason = reason;
             }
 
-            public string RouteName { get; }
+            public string RouteName { get; set; }
             public string SourceHandle { get; }
             public string AssetType { get; }
             public string AssetCode { get; }

@@ -156,6 +156,9 @@ namespace CETools.Civil3D
                 "Skip sources already tagged as completed for Water, or deliberately process them again.",
                 new[] { "Skip previously completed", "Process again" });
 
+            setup.AddChoice("CreateAlignments", "02 Creation", "Branch alignments from selected polylines", "Create one per selected polyline",
+                "Preserve source polylines as linked alignment sources. Configure branch priority and elevation direction after network creation.",
+                new[] { "Create one per selected polyline", "Network only" });
             if (!DisciplineWorkflowDialogs.EditSettings(setup)) return;
 
             bool skipCompleted = string.Equals(
@@ -280,6 +283,12 @@ namespace CETools.Civil3D
                 "Erase source objects",
                 StringComparison.OrdinalIgnoreCase);
 
+            bool createAlignments = setup.Text("CreateAlignments") == "Create one per selected polyline";
+            if (createAlignments && eraseSources)
+            {
+                eraseSources = false;
+                editor.WriteMessage("\nSource objects retained because linked branch alignments were requested.");
+            }
             string networkName = setup.Text("NetworkName");
             if (string.IsNullOrWhiteSpace(networkName))
                 networkName = "CE-Water Network";
@@ -431,6 +440,20 @@ namespace CETools.Civil3D
                         "Water");
             }
 
+            if (createAlignments)
+            {
+                var polylineIds = new List<ObjectId>();
+                using (var tr = document.Database.TransactionManager.StartTransaction())
+                    foreach (var id in sourceIds)
+                        if (tr.GetObject(id, OpenMode.ForRead) is Polyline) polylineIds.Add(id);
+                if (polylineIds.Count > 0)
+                {
+                    editor.SetImpliedSelection(polylineIds.ToArray());
+                    new WaterProductionCommands().CreateAlignments();
+                    editor.SetImpliedSelection(new ObjectId[0]);
+                }
+                else editor.WriteMessage("\nNo 2D source polylines for alignments. Use CE_WATERALIGN for the other source types.");
+            }
             editor.Regen();
             ShowMessage(
                 "\nCE_WATERNETWORKMULTI complete. Network='{0}'; selected sources={1}; pipes={2}; structures={3}. No single-object CreateNetworkFromObject prompt was used.",

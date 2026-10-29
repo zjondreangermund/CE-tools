@@ -78,12 +78,12 @@ namespace CETools.Civil3D
 
         internal static SewerNetworkLabelResult EnsureWaterLabels(
             Document document, IEnumerable<ObjectId> networkIds,
-            string pipeLabelStyle, string structureLabelStyle)
+            string pipeLabelStyle, string structureLabelStyle, ISet<ObjectId> selectedParts = null)
         {
             try
             {
                 return EnsureLabelsCore(document, networkIds,
-                    pipeLabelStyle, structureLabelStyle);
+                    pipeLabelStyle, structureLabelStyle, selectedParts);
             }
             catch (System.Exception exception)
             {
@@ -96,7 +96,7 @@ namespace CETools.Civil3D
 
         private static SewerNetworkLabelResult EnsureLabelsCore(
             Document document, IEnumerable<ObjectId> networkIds,
-            string requestedPipeStyle = null, string requestedStructureStyle = null)
+            string requestedPipeStyle = null, string requestedStructureStyle = null, ISet<ObjectId> selectedParts = null)
         {
             var result = new SewerNetworkLabelResult();
             if (document == null || networkIds == null) return result;
@@ -137,7 +137,7 @@ namespace CETools.Civil3D
                 // Do not change position, anchor or rotation.
                 if (requestedPipeStyle != null || requestedStructureStyle != null)
                     UpdateExistingWaterLabelStyles(document.Database, transaction,
-                        networkIds, pipeStyleId, structureStyleId);
+                        networkIds, pipeStyleId, structureStyleId, selectedParts);
 
                 HashSet<ObjectId> labelledParts = ReadExistingLabelledParts(
                     document.Database, transaction);
@@ -163,6 +163,7 @@ namespace CETools.Civil3D
 
                     foreach (ObjectId pipeId in network.GetPipeIds())
                     {
+                        if (selectedParts != null && !selectedParts.Contains(pipeId)) continue;
                         if (labelledParts.Contains(pipeId))
                         {
                             result.ExistingLabels++;
@@ -178,6 +179,7 @@ namespace CETools.Civil3D
 
                     foreach (ObjectId structureId in network.GetStructureIds())
                     {
+                        if (selectedParts != null && !selectedParts.Contains(structureId)) continue;
                         if (labelledParts.Contains(structureId))
                         {
                             result.ExistingLabels++;
@@ -238,7 +240,7 @@ namespace CETools.Civil3D
 
         private static void UpdateExistingWaterLabelStyles(Database database,
             Transaction transaction, IEnumerable<ObjectId> networkIds,
-            ObjectId pipeStyle, ObjectId structureStyle)
+            ObjectId pipeStyle, ObjectId structureStyle, ISet<ObjectId> selectedParts)
         {
             var parts = new HashSet<ObjectId>();
             foreach (ObjectId id in networkIds)
@@ -265,7 +267,7 @@ namespace CETools.Civil3D
                 if (!pipe && !structure) continue;
                 ObjectId parent = ReadObjectIdProperty(label,
                     "FeatureId", "PipeId", "StructureId", "ParentEntityId", "EntityId");
-                if (!parts.Contains(parent)) continue;
+                if (!parts.Contains(parent) || (selectedParts != null && !selectedParts.Contains(parent))) continue;
                 ObjectId style = pipe ? pipeStyle : structureStyle;
                 if (style.IsNull) continue;
                 try
