@@ -16,6 +16,9 @@ namespace CETools.Civil3D
 
         public void Initialize()
         {
+            // Ensure every CE-owned WPF production dialog reads the same
+            // saved dark/light choice as the welcome screen.
+            CeInterfaceTheme.Initialize();
             ParkingOptionAutoRefreshManager.Initialize();
             DynamicSectionUpdateManager.Initialize();
             DynamicIntersectionUpdateManager.Initialize();
