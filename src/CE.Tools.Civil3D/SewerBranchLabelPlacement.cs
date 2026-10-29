@@ -89,7 +89,7 @@ namespace CETools.Civil3D
             if (totalLength <= GeometryTolerance)
                 return result;
 
-            double longThreshold =
+            double longThreshold = longStraightSectionLength < 0 ? 0 :
                 Math.Max(
                     GeometryTolerance,
                     longStraightSectionLength <=
@@ -119,88 +119,14 @@ namespace CETools.Civil3D
                     MaximumLabelsPerBranch)
                     break;
 
-                // Every straight branch section receives one name at the
-                // geometric centre of the complete straight run, not merely
-                // at the midpoint of whichever pipe happens to be longest.
-                double runCentreDistance =
-                    run.StartDistance +
-                    (run.Length * 0.5);
-                AddUniquePlacement(
-                    result,
-                    PlacementAtDistance(
-                        points,
-                        segmentLengths,
-                        runCentreDistance));
-
-                if (run.Length <=
-                    longThreshold)
-                    continue;
-
-                if (consistentSpacing)
+                var centres = new List<double>();
+                for (int i = run.StartSegment; i <= run.EndSegment; i++)
+                    if (segmentLengths[i] > GeometryTolerance) centres.Add(cumulative[i] + segmentLengths[i] * 0.5);
+                foreach (double distance in BranchLabelRepeatPlan.Select(centres, run.StartDistance, run.StartDistance + run.Length,
+                    longStraightSectionLength >= 0, longThreshold, longSectionFrequency))
                 {
-                    // Use a true fixed chainage interval so branch names do not
-                    // bunch up where pipe lengths differ. Start at half an interval
-                    // from the run start, then continue every 50 m.
-                    double first =
-                        run.StartDistance +
-                        (RepeatSpacing * 0.5);
-                    for (double distance = first;
-                         distance <
-                            run.StartDistance +
-                            run.Length -
-                            GeometryTolerance;
-                         distance += RepeatSpacing)
-                    {
-                        AddUniquePlacement(
-                            result,
-                            PlacementAtDistance(
-                                points,
-                                segmentLengths,
-                                distance));
-                        if (result.Count >=
-                            MaximumLabelsPerBranch)
-                            break;
-                    }
-                }
-                else
-                {
-                    // Legacy option: repeat over pipe centres.
-                    int stride =
-                        everySecondPipe
-                            ? 2
-                            : 1;
-                    int ordinal = 0;
-                    for (int segmentIndex =
-                             run.StartSegment;
-                         segmentIndex <=
-                             run.EndSegment;
-                         segmentIndex++)
-                    {
-                        if (segmentLengths[
-                                segmentIndex] <=
-                            GeometryTolerance)
-                            continue;
-
-                        if ((ordinal % stride) == 0)
-                        {
-                            double pipeCentreDistance =
-                                cumulative[
-                                    segmentIndex] +
-                                (segmentLengths[
-                                    segmentIndex] *
-                                 0.5);
-                            AddUniquePlacement(
-                                result,
-                                PlacementAtDistance(
-                                    points,
-                                    segmentLengths,
-                                    pipeCentreDistance));
-                            if (result.Count >=
-                                MaximumLabelsPerBranch)
-                                break;
-                        }
-                        ordinal++;
-                    }
+                    AddUniquePlacement(result, PlacementAtDistance(points, segmentLengths, distance));
+                    if (result.Count >= MaximumLabelsPerBranch) break;
                 }
             }
 

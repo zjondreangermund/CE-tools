@@ -31,8 +31,8 @@ for marker in [
         errors.append("Missing branch-name command marker: " + marker)
 
 for marker in [
-    'runCentreDistance',
-    'pipeCentreDistance',
+    'BranchLabelRepeatPlan.Select(',
+    'cumulative[i] + segmentLengths[i] * 0.5',
     '"Every second pipe"',
     'label.ColorIndex = 3;',
     'label.Rotation = placement.Rotation;',

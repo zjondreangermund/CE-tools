@@ -61,9 +61,18 @@ namespace CETools.Civil3D
         {
             try
             {
-                SewerNetworkLabelResult result = EnsureLabelsCore(
-                    document, networkIds);
+                var networkList = networkIds.ToList();
+                SewerNetworkLabelResult result = EnsureLabelsCore(document, networkList);
                 SewerLabelStyleSyncCommands.ApplySelectedStyles(document);
+                var parts = new HashSet<ObjectId>();
+                using (var tr = document.Database.TransactionManager.StartTransaction())
+                    foreach (var id in networkList)
+                    {
+                        var network = tr.GetObject(id, OpenMode.ForRead) as CivilNetwork;
+                        if (network != null) foreach (ObjectId pipeId in network.GetPipeIds()) parts.Add(pipeId);
+                    }
+                try { PipeLabelSideCommands.Apply(document, parts); }
+                catch (System.Exception ex) { result.Warning += " Pipe-label side layout: " + ex.Message; }
                 return result;
             }
             catch (System.Exception exception)
@@ -82,8 +91,20 @@ namespace CETools.Civil3D
         {
             try
             {
-                return EnsureLabelsCore(document, networkIds,
+                var networkList = networkIds.ToList();
+                var result = EnsureLabelsCore(document, networkList,
                     pipeLabelStyle, structureLabelStyle, selectedParts);
+                var labelParts = selectedParts == null ? new HashSet<ObjectId>() : new HashSet<ObjectId>(selectedParts);
+                if (selectedParts == null)
+                using (var tr = document.Database.TransactionManager.StartTransaction())
+                    foreach (var id in networkList)
+                    {
+                        var network = tr.GetObject(id, OpenMode.ForRead) as CivilNetwork;
+                        if (network != null) foreach (ObjectId pipeId in network.GetPipeIds()) labelParts.Add(pipeId);
+                    }
+                try { PipeLabelSideCommands.Apply(document, labelParts); }
+                catch (System.Exception ex) { result.Warning += " Pipe-label side layout: " + ex.Message; }
+                return result;
             }
             catch (System.Exception exception)
             {
@@ -215,7 +236,7 @@ namespace CETools.Civil3D
                     pipe ? "Pipe Label Style" : "Structure Label Style");
         }
 
-        private static object ReadLabelStyleCollection(
+        internal static object ReadLabelStyleCollection(
             CivilDocument civilDocument,
             bool pipe)
         {

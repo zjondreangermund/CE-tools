@@ -128,7 +128,7 @@ namespace CETools.Civil3D
             if (sources.Count == 0)
             {
                 editor.WriteMessage(
-                    "\nCE_WATERSEQ: select polylines (including closed loops), gravity pipes or pressure pipes.");
+                    "\nCE_WATERSEQ: select Water alignments, polylines (including closed loops), gravity pipes or pressure pipes.");
                 return;
             }
 
@@ -155,6 +155,16 @@ namespace CETools.Civil3D
                 using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
                 {
                     EnsureRegApp(document.Database, transaction);
+                    var alignmentIds = new HashSet<ObjectId>(ordered.Where(x => x.SourceKind == "Alignment").Select(x => x.SourceId));
+                    var targetNames = new HashSet<string>(ordered.Where(x => alignmentIds.Contains(x.SourceId)).Select(x => x.RouteName), StringComparer.OrdinalIgnoreCase);
+                    foreach (ObjectId id in CivilApplication.ActiveDocument.GetAlignmentIds())
+                    {
+                        var other = transaction.GetObject(id, OpenMode.ForRead) as CivilAlignment;
+                        if (other != null && !alignmentIds.Contains(id) && targetNames.Contains(other.Name))
+                            throw new InvalidOperationException("Branch name " + other.Name + " is used by an unselected alignment. Include all affected alignments.");
+                    }
+                    foreach (var id in alignmentIds)
+                        ((CivilAlignment)transaction.GetObject(id, OpenMode.ForWrite)).Name = "CE-WATER-SEQUENCE-" + Guid.NewGuid().ToString("N");
                     for (int index = 0; index < ordered.Count; index++)
                     {
                         RouteSource source = ordered[index];
@@ -163,6 +173,14 @@ namespace CETools.Civil3D
                             source.SourceId,
                             OpenMode.ForWrite,
                             false);
+                        var selectedAlignment = sourceObject as CivilAlignment;
+                        if (selectedAlignment != null)
+                        {
+                            selectedAlignment.Name = routeName;
+                            selectedAlignment.Description = "CE water alignment | route=" + routeName;
+                            SyncBranchIdentity(document.Database, transaction, selectedAlignment, routeName);
+                            continue;
+                        }
                         sourceObject.XData = BuildTag(
                             "Source",
                             routeName,
@@ -237,6 +255,11 @@ namespace CETools.Civil3D
                 return;
             }
 
+            if (sources.Any(source => source.SourceKind == "Alignment"))
+            {
+                editor.WriteMessage("\nExisting alignments are accepted by CE_WATERSEQ. CE_WATERALIGN creates from polylines/pipes; select those sources here.");
+                return;
+            }
             if (!ConfigureRoutes(document, sources, !linkedOnly)) return;
             WaterSettings settings = WaterSettings.Read(document.Database);
             editor.WriteMessage(
@@ -889,7 +912,7 @@ namespace CETools.Civil3D
                     new PromptSelectionOptions
                     {
                         MessageForAdding =
-                            "\nSelect water polylines, gravity pipes or pressure pipes: ",
+                            "\nSelect Water alignments, polylines, gravity pipes or pressure pipes: ",
                         AllowDuplicates = false,
                         RejectObjectsFromNonCurrentSpace = true
                     });
@@ -967,7 +990,9 @@ namespace CETools.Civil3D
                     source.Diameter = pipe == null ? 0.0 : pipe.InnerDiameterOrWidth;
                     var sourceCurve = tr.GetObject(source.SourceId, OpenMode.ForRead) as Curve;
                     if (sourceCurve is Polyline) source.Length = ((Polyline)sourceCurve).Length;
-                    if (pipe == null && sourceCurve != null)
+                    var existingAlignment = tr.GetObject(source.SourceId, OpenMode.ForRead) as CivilAlignment;
+                    if (existingAlignment != null) source.Length = existingAlignment.Length;
+                    if (pipe == null && (sourceCurve != null || existingAlignment != null))
                     {
                         foreach (ObjectId networkId in CivilApplication.ActiveDocument.GetPipeNetworkIds())
                         {
@@ -983,8 +1008,18 @@ namespace CETools.Civil3D
                                 bool onRoute = true;
                                 foreach (var point in new[] { start, mid, end })
                                 {
-                                    var nearest = sourceCurve.GetClosestPointTo(point, Vector3d.ZAxis, false);
-                                    if (new Point2d(point.X, point.Y).GetDistanceTo(new Point2d(nearest.X, nearest.Y)) > 0.1) { onRoute = false; break; }
+                                    if (existingAlignment != null)
+                                    {
+                                        double station = 0, offset = 0;
+                                        try { existingAlignment.StationOffset(point.X, point.Y, ref station, ref offset); }
+                                        catch (System.Exception) { onRoute = false; break; }
+                                        if (Math.Abs(offset) > 0.1 || station < existingAlignment.StartingStation || station > existingAlignment.EndingStation) { onRoute = false; break; }
+                                    }
+                                    else
+                                    {
+                                        var nearest = sourceCurve.GetClosestPointTo(point, Vector3d.ZAxis, false);
+                                        if (new Point2d(point.X, point.Y).GetDistanceTo(new Point2d(nearest.X, nearest.Y)) > 0.1) { onRoute = false; break; }
+                                    }
                                 }
                                 if (onRoute) source.Diameter = Math.Max(source.Diameter, candidate.InnerDiameterOrWidth);
                             }
@@ -1058,6 +1093,25 @@ namespace CETools.Civil3D
             points = new List<Point3d>();
             kind = string.Empty;
 
+            var alignmentSource = item as CivilAlignment;
+            if (alignmentSource != null && !alignmentSource.IsReferenceObject)
+            {
+                var stations = new SortedSet<double> { alignmentSource.StartingStation, alignmentSource.EndingStation };
+                foreach (var entity in alignmentSource.Entities)
+                    foreach (string property in new[] { "StartStation", "EndStation" })
+                    {
+                        var info = entity.GetType().GetProperty(property);
+                        if (info != null) stations.Add(Convert.ToDouble(info.GetValue(entity, null)));
+                    }
+                foreach (double station in stations)
+                {
+                    double x = 0, y = 0;
+                    alignmentSource.PointLocation(station, 0, ref x, ref y);
+                    AddDistinct(points, new Point3d(x, y, 0));
+                }
+                kind = "Alignment";
+                return points.Count >= 2;
+            }
             var polyline = item as Polyline;
             if (polyline != null && polyline.NumberOfVertices >= 2)
             {

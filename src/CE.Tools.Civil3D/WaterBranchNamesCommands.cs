@@ -46,6 +46,8 @@ namespace CETools.Civil3D
             options.AddChoice("Side", "02 Presentation", "Branch-name side", "Above", "Side relative to the readable branch tangent.", new[] { "Above", "Below", "Alternating" });
             options.AddPositiveDouble("AboveOffset", "02 Presentation", "Above offset (paper mm)", 10, "Offset above the branch centreline.");
             options.AddPositiveDouble("BelowOffset", "02 Presentation", "Below offset (paper mm)", 5.5, "Offset below the branch centreline.");
+            options.AddChoice("UseLongThreshold", "03 Long branches", "Use long-section threshold", "OFF",
+                "OFF repeats at the selected pipe/50 m frequency on every branch, regardless of length.", new[] { "OFF", "ON" });
             options.AddPositiveDouble("LongThreshold", "03 Long branches", "Long straight section threshold (m)", 50, "One centred label per alignment entity; repeat on longer sections.");
             options.AddChoice("LongFrequency", "03 Long branches", "Long-section repeat frequency", "Every second pipe",
                 "Additional labels at pipe centres, every second pipe, or fixed 50 m spacing.",
@@ -93,6 +95,7 @@ namespace CETools.Civil3D
                     var layer = new LayerTableRecord { Name = layerName, Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(Autodesk.AutoCAD.Colors.ColorMethod.ByAci, 3) };
                     layerId = layerTable.Add(layer); transaction.AddNewlyCreatedDBObject(layer, true);
                 }
+                var drawingScales = AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(document.Database, transaction);
                 var existingNames = new List<MText>();
                 foreach (ObjectId id in model)
                 {
@@ -144,8 +147,9 @@ namespace CETools.Civil3D
                     var owned = existingNames.Where(t => !t.IsErased && (Owns(t, alignment.ObjectId.Handle.ToString()) || WaterProductionCommands.IsGeneratedRouteLabel(t, alignment))).ToList();
                     if (owned.Count > 0 && options.Text("Existing") == "Keep existing matching labels") { existing += owned.Count; continue; }
                     foreach (var text in owned) { text.UpgradeOpen(); text.Erase(); updated++; }
+                    var pipeAnchors = ReadPipeAnchors(alignment, civil, transaction);
                     int labelIndex = 0;
-                    foreach (double station in LabelStations(alignment, civil, transaction, options))
+                    foreach (double station in LabelStations(alignment, civil, transaction, options, pipeAnchors))
                     {
                         double x = 0, y = 0;
                         try { alignment.PointLocation(station, 0, ref x, ref y); }
@@ -154,7 +158,9 @@ namespace CETools.Civil3D
                         bool below = options.Text("Side") == "Below" || (options.Text("Side") == "Alternating" && labelIndex % 2 == 1);
                         double offset = PaperAnnotationScale.ModelTextHeight(document.Database,
                             options.Double(below ? "BelowOffset" : "AboveOffset", below ? 5.5 : 10)) * (below ? -1 : 1);
-                        var location = new Point3d(x - Math.Sin(angle) * offset, y + Math.Cos(angle) * offset, 0);
+                        var anchor = new Point3d(x, y, 0);
+                        if (pipeAnchors.Count > 0) anchor = pipeAnchors.OrderBy(a => Math.Abs(a.Key - station)).First().Value;
+                        var location = new Point3d(anchor.X - Math.Sin(angle) * offset, anchor.Y + Math.Cos(angle) * offset, anchor.Z);
                         // Migrate an old untagged/route label only when both its text and location match.
                         MText old = existingNames.Where(t => !t.IsErased &&
                             new Point2d(t.Location.X, t.Location.Y).GetDistanceTo(new Point2d(x, y)) <= Math.Max(15.0, Math.Abs(offset)))
@@ -176,7 +182,8 @@ namespace CETools.Civil3D
                         label.Attachment = AttachmentPoint.MiddleCenter;
                         label.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(document.Database, options.Double("TextHeight", 3.5));
                         PaperAnnotationScale.SetAnnotative(label);
-                        AnnotationScaleSyncManager.AddAllAnnotationScaleContexts(label, document.Database);
+                        AnnotationScaleSyncManager.AddUsedDrawingScaleContexts(label, drawingScales);
+                        label.BackgroundFill = true; label.UseBackgroundColor = true; label.BackgroundScaleFactor = 1.1;
                         label.Rotation = options.Text("Direction") == "Along alignment" ? angle : 0.0;
                         label.LayerId = layerId;
                         WaterProductionCommands.LinkBranchLabel(document.Database, transaction, label, alignment);
@@ -203,7 +210,7 @@ namespace CETools.Civil3D
         }
 
         private static IEnumerable<double> LabelStations(CivilAlignment alignment, CivilDocument civil,
-            Transaction tr, ProductionSettingsDialogModel options)
+            Transaction tr, ProductionSettingsDialogModel options, Dictionary<double, Point3d> pipeAnchors)
         {
             var result = new List<double>();
             var sections = new List<Tuple<double, double>>();
@@ -233,7 +240,18 @@ namespace CETools.Civil3D
                 runs.Add(section);
             }
             sections = runs;
-            var pipeStations = new List<double>();
+            var pipeStations = pipeAnchors.Keys.OrderBy(x => x).ToList();
+            foreach (var section in sections)
+                result.AddRange(BranchLabelRepeatPlan.Select(pipeStations, section.Item1, section.Item2,
+                    options.Text("UseLongThreshold") == "ON", options.Double("LongThreshold", 50), options.Text("LongFrequency")));
+            return result.GroupBy(x => Math.Round(x, 3)).Select(g => g.First()).OrderBy(x => x);
+        }
+
+        private static Dictionary<double, Point3d> ReadPipeAnchors(CivilAlignment alignment, CivilDocument civil, Transaction tr)
+        {
+            var result = new Dictionary<double, Point3d>();
+            var model = (BlockTableRecord)tr.GetObject(SymbolUtilityServices.GetBlockModelSpaceId(alignment.Database), OpenMode.ForRead);
+            var pipes = new List<Autodesk.Civil.DatabaseServices.Pipe>();
             foreach (ObjectId networkId in civil.GetPipeNetworkIds())
             {
                 var network = tr.GetObject(networkId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Network;
@@ -242,30 +260,33 @@ namespace CETools.Civil3D
                 {
                     var pipe = tr.GetObject(pipeId, OpenMode.ForRead) as Autodesk.Civil.DatabaseServices.Pipe;
                     if (pipe == null) continue;
-                    var mid = pipe.StartPoint + (pipe.EndPoint - pipe.StartPoint) * 0.5;
-                    try
-                    {
-                        double station = 0, offset = 0;
-                        alignment.StationOffset(mid.X, mid.Y, ref station, ref offset);
-                        if (Math.Abs(offset) <= 0.1 && station >= alignment.StartingStation && station <= alignment.EndingStation) pipeStations.Add(station);
-                    }
-                    catch (System.Exception) { }
+                    pipes.Add(pipe);
                 }
             }
-            foreach (var section in sections)
+            var anchors = SewerBranchAlignmentCommands.ReadPipePlanLabelAnchors(model, pipes.Select(p => p.ObjectId), tr);
+            foreach (var pipe in pipes)
             {
-                result.Add((section.Item1 + section.Item2) * 0.5);
-                if (section.Item2 - section.Item1 <= options.Double("LongThreshold", 50)) continue;
-                if (options.Text("LongFrequency") == "Consistent 50 m")
-                    for (double station = section.Item1 + 25; station < section.Item2; station += 50) result.Add(station);
-                else
+                var mid = pipe.StartPoint + (pipe.EndPoint - pipe.StartPoint) * 0.5;
+                try
                 {
-                    var stations = pipeStations.Where(x => x >= section.Item1 && x <= section.Item2).OrderBy(x => x).ToList();
-                    int stride = options.Text("LongFrequency") == "Every pipe" ? 1 : 2;
-                    for (int i = 0; i < stations.Count; i += stride) result.Add(stations[i]);
+                    double station = 0, offset = 0;
+                    alignment.StationOffset(mid.X, mid.Y, ref station, ref offset);
+                    if (Math.Abs(offset) > 0.1 || station < alignment.StartingStation || station > alignment.EndingStation) continue;
+                    bool onRoute = true;
+                    foreach (var endpoint in new[] { pipe.StartPoint, pipe.EndPoint })
+                    {
+                        double endpointStation = 0, endpointOffset = 0;
+                        alignment.StationOffset(endpoint.X, endpoint.Y, ref endpointStation, ref endpointOffset);
+                        if (Math.Abs(endpointOffset) > 0.1 || endpointStation < alignment.StartingStation - 0.001 || endpointStation > alignment.EndingStation + 0.001)
+                        { onRoute = false; break; }
+                    }
+                    if (!onRoute) continue;
+                    Point3d anchor;
+                    result[station] = anchors.TryGetValue(pipe.ObjectId, out anchor) ? anchor : mid;
                 }
+                catch (System.Exception) { }
             }
-            return result.GroupBy(x => Math.Round(x, 3)).Select(g => g.First()).OrderBy(x => x);
+            return result;
         }
 
         private static double ReadTangentAngle(CivilAlignment alignment, double station)

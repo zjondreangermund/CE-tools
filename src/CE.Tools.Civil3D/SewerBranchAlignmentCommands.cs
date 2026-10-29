@@ -510,11 +510,13 @@ namespace CETools.Civil3D
                 "Below offset (paper mm)",
                 productionSettings.BranchLabelBelowOffset,
                 "Perpendicular paper distance below the existing plan PipeLabel text; falls back to the sewer centreline only when no PipeLabel can be resolved.");
+            model.AddChoice("UseLongThreshold", "03 Long branches", "Use long-section threshold", "OFF",
+                "OFF repeats at the chosen frequency on every branch.", new[] { "OFF", "ON" });
             model.AddPositiveDouble(
                 "LongThreshold",
                 "03 Long branches",
                 "Long straight section threshold (m)",
-                productionSettings.BranchLabelLongSectionLength,
+                Math.Max(0.01, productionSettings.BranchLabelLongSectionLength),
                 "Each straight run always receives one centred Branch-x name. Runs longer than this also receive extra names at pipe centres.");
             model.AddChoice(
                 "LongFrequency",
@@ -558,7 +560,7 @@ namespace CETools.Civil3D
                 model.Double(
                     "BelowOffset",
                     productionSettings.BranchLabelBelowOffset);
-            productionSettings.BranchLabelLongSectionLength =
+            productionSettings.BranchLabelLongSectionLength = model.Text("UseLongThreshold") == "OFF" ? -1 :
                 model.Double(
                     "LongThreshold",
                     productionSettings.BranchLabelLongSectionLength);
@@ -742,6 +744,7 @@ namespace CETools.Civil3D
                                     StringComparison.OrdinalIgnoreCase) &&
                                  (branchPlan.BranchNumber % 2) != 0);
 
+                            var placedAnchors = new List<Point3d>();
                             foreach (SewerBranchLabelPlacement.Placement placement in
                                 placements)
                             {
@@ -754,7 +757,9 @@ namespace CETools.Civil3D
                                 SewerBranchLabelPlacement.Placement anchoredPlacement =
                                     AnchorToNearestPipePlanLabel(
                                         placement,
-                                        pipeLabelAnchors.Values);
+                                        pipeLabelAnchors, transaction);
+                                if (placedAnchors.Any(p => p.DistanceTo(anchoredPlacement.Point) < 0.001)) { label.Dispose(); continue; }
+                                placedAnchors.Add(anchoredPlacement.Point);
                                 SewerBranchLabelPlacement.ConfigureLabel(
                                     label,
                                     database,
@@ -1782,6 +1787,7 @@ namespace CETools.Civil3D
                                 StringComparison.OrdinalIgnoreCase) &&
                              (branch.BranchNumber % 2) != 0);
 
+                        var placedAnchors = new List<Point3d>();
                         foreach (SewerBranchLabelPlacement.Placement placement in placements)
                         {
                             var label = new MText();
@@ -1790,7 +1796,9 @@ namespace CETools.Civil3D
                             SewerBranchLabelPlacement.Placement anchoredPlacement =
                                 AnchorToNearestPipePlanLabel(
                                     placement,
-                                    pipeLabelAnchors.Values);
+                                    pipeLabelAnchors, transaction);
+                            if (placedAnchors.Any(p => p.DistanceTo(anchoredPlacement.Point) < 0.001)) { label.Dispose(); continue; }
+                            placedAnchors.Add(anchoredPlacement.Point);
                             SewerBranchLabelPlacement.ConfigureLabel(
                                 label,
                                 database,
@@ -2366,7 +2374,7 @@ namespace CETools.Civil3D
                 .ToList();
         }
 
-        private static Dictionary<ObjectId, Point3d> ReadPipePlanLabelAnchors(
+        internal static Dictionary<ObjectId, Point3d> ReadPipePlanLabelAnchors(
             BlockTableRecord modelSpace,
             IEnumerable<ObjectId> pipeIds,
             Transaction transaction)
@@ -2409,6 +2417,14 @@ namespace CETools.Civil3D
                 if (!TryReadLabelCentre(entity, out point))
                     continue;
                 result[featureId] = point;
+            }
+            // Keep unlabelled pipes in the matching set so their branch names do
+            // not get moved onto a neighbouring pipe's label.
+            foreach (ObjectId pipeId in pipes)
+            {
+                if (result.ContainsKey(pipeId)) continue;
+                var pipe = transaction.GetObject(pipeId, OpenMode.ForRead) as CivilPipe;
+                if (pipe != null) result[pipeId] = pipe.StartPoint + (pipe.EndPoint - pipe.StartPoint) * 0.5;
             }
 
             return result;
@@ -2497,18 +2513,21 @@ namespace CETools.Civil3D
         private static SewerBranchLabelPlacement.Placement
             AnchorToNearestPipePlanLabel(
                 SewerBranchLabelPlacement.Placement placement,
-                IEnumerable<Point3d> pipeLabelAnchors)
+                IDictionary<ObjectId, Point3d> pipeLabelAnchors, Transaction transaction)
         {
             if (placement == null) return null;
             Point3d best = placement.Point;
             double bestDistance = double.PositiveInfinity;
             bool found = false;
 
-            foreach (Point3d candidate in
-                pipeLabelAnchors ?? Enumerable.Empty<Point3d>())
+            foreach (var anchor in pipeLabelAnchors ?? new Dictionary<ObjectId, Point3d>())
             {
-                double dx = candidate.X - placement.Point.X;
-                double dy = candidate.Y - placement.Point.Y;
+                var pipe = transaction.GetObject(anchor.Key, OpenMode.ForRead) as CivilPipe;
+                if (pipe == null) continue;
+                Point3d centre = pipe.StartPoint + (pipe.EndPoint - pipe.StartPoint) * 0.5;
+                double dx = centre.X - placement.Point.X;
+                double dy = centre.Y - placement.Point.Y;
+                Point3d candidate = anchor.Value;
                 double distance = dx * dx + dy * dy;
                 if (distance >= bestDistance) continue;
                 bestDistance = distance;

@@ -21,41 +21,6 @@ namespace CETools.Civil3D
     public sealed class CorridorRegionToggleCommands
     {
         private const string SnapshotKey = "CE_CORRIDOR_REGION_ENABLED_SNAPSHOT_V1";
-        private sealed class RegionState
-        {
-            public string CorridorHandle;
-            public int Baseline;
-            public int Region;
-            public double Start;
-            public double End;
-            public bool Enabled;
-            public bool? BaselineEnabled;
-            public string Encode()
-            {
-                return string.Join("|", CorridorHandle,
-                    Baseline.ToString(CultureInfo.InvariantCulture),
-                    Region.ToString(CultureInfo.InvariantCulture),
-                    Start.ToString("R", CultureInfo.InvariantCulture),
-                    End.ToString("R", CultureInfo.InvariantCulture),
-                    Enabled ? "1" : "0", BaselineEnabled.HasValue ?
-                        (BaselineEnabled.Value ? "1" : "0") : "?");
-            }
-            public static RegionState Parse(string line)
-            {
-                string[] p = (line ?? "").Split('|');
-                if (p.Length != 6 && p.Length != 7) return null;
-                int b, r; double s, e;
-                if (!int.TryParse(p[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out b) ||
-                    !int.TryParse(p[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out r) ||
-                    !double.TryParse(p[3], NumberStyles.Float, CultureInfo.InvariantCulture, out s) ||
-                    !double.TryParse(p[4], NumberStyles.Float, CultureInfo.InvariantCulture, out e)) return null;
-                return new RegionState { CorridorHandle = p[0], Baseline = b, Region = r,
-                    Start = s, End = e, Enabled = p[5] == "1",
-                    BaselineEnabled = p.Length == 7 && (p[6] == "1" || p[6] == "0") ?
-                        (bool?)(p[6] == "1") : null };
-            }
-        }
-
         [CommandMethod("CE_TOOLS", "CE_CORRIDORREGIONSALLON",
             CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void AllOn() { Run(false); }
@@ -73,6 +38,7 @@ namespace CETools.Civil3D
             DisciplineWorkflowDialogs.SelectAndRun(d, "CE Tools - Corridor Region Toggle",
                 "Enable every region temporarily and restore the exact previously enabled/disabled states.",
                 new List<DisciplineWorkflowAction> {
+                    new DisciplineWorkflowAction("Automatic rebuild ON / OFF", "CE_AUTOMATICREBUILD", "Set native corridor/surface automatic rebuild flags.", "00 Rebuild"),
                     new DisciplineWorkflowAction("Enable all regions (save current state)",
                         "CE_CORRIDORREGIONSALLON", "Snapshot region states before switching all on.", "01 Enable"),
                     new DisciplineWorkflowAction("Restore saved region states",
@@ -100,7 +66,7 @@ namespace CETools.Civil3D
             using (doc.LockDocument())
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
-                List<RegionState> saved = Load(tr, doc.Database);
+                List<CorridorRegionSnapshot> saved = Load(tr, doc.Database);
                 if (restore && saved.Count == 0)
                 {
                     doc.Editor.WriteMessage("\nNo region snapshot exists. Enable all once to save the original states.");
@@ -110,89 +76,66 @@ namespace CETools.Civil3D
                 {
                     doc.Editor.WriteMessage("\nExisting corridor-region snapshot preserved. All baseline and region processing flags will be enabled again.");
                 }
-                var newSnapshot = new List<RegionState>();
-                int switched = 0, unchanged = 0, missing = 0;
-                var matched = new HashSet<RegionState>();
+                // Capture every flag before changing any baseline. A baseline switch
+                // must never contaminate the snapshot of its region flags.
+                var live = new List<CorridorRegionSnapshot>();
+                var regions = new Dictionary<CorridorRegionSnapshot, BaselineRegion>();
+                var baselines = new Dictionary<CorridorRegionSnapshot, Baseline>();
                 foreach (ObjectId id in all)
                 {
-                    Corridor corridor = tr.GetObject(id, OpenMode.ForWrite, false) as Corridor;
+                    var corridor = tr.GetObject(id, OpenMode.ForWrite, false) as Corridor;
                     if (corridor == null || corridor.IsReferenceObject) continue;
-                    string handle = id.Handle.ToString();
                     for (int b = 0; b < corridor.Baselines.Count; b++)
                     {
-                        Baseline baseline = corridor.Baselines[b];
+                        var baseline = corridor.Baselines[b];
                         bool originalBaseline = baseline.NeedsProcessing;
-                        // Autodesk requires BOTH baseline and every region to
-                        // be enabled before regions can build.
-                        if (!restore && !baseline.NeedsProcessing)
-                            baseline.NeedsProcessing = true;
                         for (int n = 0; n < baseline.BaselineRegions.Count; n++)
                         {
-                            BaselineRegion region = baseline.BaselineRegions[n];
-                            if (region == null) continue;
-                            if (!restore)
-                            {
-                                newSnapshot.Add(new RegionState {
-                                    CorridorHandle = handle, Baseline = b, Region = n,
-                                    Start = region.StartStation, End = region.EndStation,
-                                    Enabled = region.NeedsProcessing,
-                                    BaselineEnabled = originalBaseline
-                                });
-                                if (!region.NeedsProcessing) { region.NeedsProcessing = true; switched++; }
-                                else unchanged++;
-                            }
-                            else
-                            {
-                                RegionState old = saved.FirstOrDefault(s =>
-                                    string.Equals(s.CorridorHandle, handle, StringComparison.OrdinalIgnoreCase) &&
-                                    s.Baseline == b && s.Region == n &&
-                                    Math.Abs(s.Start - region.StartStation) < 0.001 &&
-                                    Math.Abs(s.End - region.EndStation) < 0.001);
-                                if (old == null)
-                                {
-                                    var candidates = saved.Where(s => !matched.Contains(s) &&
-                                        string.Equals(s.CorridorHandle, handle, StringComparison.OrdinalIgnoreCase) &&
-                                        s.Baseline == b && Math.Abs(s.Start - region.StartStation) < 0.001 &&
-                                        Math.Abs(s.End - region.EndStation) < 0.001).ToList();
-                                    if (candidates.Count == 1) old = candidates[0];
-                                    if (old == null)
-                                    {
-                                        // Baselines may also have been reordered. Restore only a unique
-                                        // range in the same corridor; ambiguous/edited geometry stays flagged.
-                                        candidates = saved.Where(s => !matched.Contains(s) &&
-                                            string.Equals(s.CorridorHandle, handle, StringComparison.OrdinalIgnoreCase) &&
-                                            Math.Abs(s.Start - region.StartStation) < 0.001 &&
-                                            Math.Abs(s.End - region.EndStation) < 0.001).ToList();
-                                        if (candidates.Count == 1) old = candidates[0];
-                                    }
-                                }
-                                if (old == null || !matched.Add(old)) { missing++; continue; }
-                                if (region.NeedsProcessing != old.Enabled)
-                                { region.NeedsProcessing = old.Enabled; switched++; }
-                                else unchanged++;
-                                if (old.BaselineEnabled.HasValue &&
-                                    baseline.NeedsProcessing != old.BaselineEnabled.Value)
-                                    baseline.NeedsProcessing = old.BaselineEnabled.Value;
-                            }
+                            var region = baseline.BaselineRegions[n];
+                            var state = new CorridorRegionSnapshot { CorridorHandle = id.Handle.ToString(), CorridorName = corridor.Name,
+                                Baseline = b, BaselineName = baseline.Name, Region = n, RegionName = region.Name,
+                                Start = region.StartStation, End = region.EndStation, Enabled = region.NeedsProcessing,
+                                BaselineEnabled = originalBaseline };
+                            live.Add(state); regions[state] = region; baselines[state] = baseline;
                         }
                     }
                 }
-                if (restore) missing += saved.Count(s => !matched.Contains(s));
-                if (restore && missing == 0)
-                    ClearSnapshot(tr, doc.Database);
-                if (!restore && saved.Count == 0)
+                int switched = 0, unchanged = 0, missing = 0;
+                var matched = new HashSet<CorridorRegionSnapshot>();
+                var baselineRestore = new Dictionary<Baseline, bool>();
+                if (!restore && saved.Count == 0) Save(tr, doc.Database, live);
+                foreach (var current in live)
                 {
-                    if (newSnapshot.Count == 0)
+                    var baseline = baselines[current]; var region = regions[current];
+                    if (!restore)
                     {
-                        doc.Editor.WriteMessage("\nNo writable corridor regions found; nothing changed.");
-                        return;
+                        baseline.NeedsProcessing = true;
+                        if (!region.NeedsProcessing) { region.NeedsProcessing = true; switched++; } else unchanged++;
+                        continue;
                     }
-                    Save(tr, doc.Database, newSnapshot);
+                    var matches = CorridorRegionSnapshot.Find(current, saved, live);
+                    if (matches.Count == 0)
+                    {
+                        missing++;
+                        doc.Editor.WriteMessage("\nUnmatched: {0} / {1} / {2} [{3:0.###}–{4:0.###}]", current.CorridorName,
+                            current.BaselineName, current.RegionName, current.Start, current.End);
+                        continue;
+                    }
+                    foreach (var match in matches) matched.Add(match);
+                    var old = matches[0];
+                    if (region.NeedsProcessing != old.Enabled) { region.NeedsProcessing = old.Enabled; switched++; } else unchanged++;
+                    if (old.BaselineEnabled.HasValue) baselineRestore[baseline] = old.BaselineEnabled.Value;
                 }
+                // Restore baseline flags LAST so region writes cannot re-enable a disabled baseline.
+                foreach (var item in baselineRestore) item.Key.NeedsProcessing = item.Value;
+                int unusedSaved = restore ? saved.Count(s => !matched.Contains(s)) : 0;
+                if (restore && missing == 0 && unusedSaved == 0) ClearSnapshot(tr, doc.Database);
+                if (restore && unusedSaved > 0)
+                    doc.Editor.WriteMessage("\nSaved regions not matched to current geometry: {0}. Snapshot retained.", unusedSaved);
                 tr.Commit();
                 doc.Editor.WriteMessage(
                     restore
-                        ? "\nCE_CORRIDORREGIONSRESTORE: restored={0}, unchanged={1}, unmatched regions={2}. Snapshot is cleared only when all regions match."
+                        ? "\nCE_CORRIDORREGIONSRESTORE: restored={0}, unchanged={1}, unmatched regions={2}. Snapshot is cleared only when all regions match; see separate saved-region count above."
                         : "\nCE_CORRIDORREGIONSALLON: enabled={0}, already on={1}, unmatched={2}. Every baseline (including first, last and intermediate) is marked for corridor rebuilding.",
                     switched, unchanged, missing);
             }
@@ -210,19 +153,19 @@ namespace CETools.Civil3D
             if (record != null) record.Erase();
         }
 
-        private static List<RegionState> Load(Transaction tr, Database database)
+        private static List<CorridorRegionSnapshot> Load(Transaction tr, Database database)
         {
             DBDictionary dictionary = tr.GetObject(database.NamedObjectsDictionaryId,
                 OpenMode.ForRead) as DBDictionary;
             if (dictionary == null || !dictionary.Contains(SnapshotKey))
-                return new List<RegionState>();
+                return new List<CorridorRegionSnapshot>();
             Xrecord x = tr.GetObject(dictionary.GetAt(SnapshotKey), OpenMode.ForRead) as Xrecord;
-            return x == null || x.Data == null ? new List<RegionState>() :
-                x.Data.AsArray().Select(v => RegionState.Parse(Convert.ToString(v.Value, CultureInfo.InvariantCulture)))
+            return x == null || x.Data == null ? new List<CorridorRegionSnapshot>() :
+                x.Data.AsArray().Select(v => CorridorRegionSnapshot.Parse(Convert.ToString(v.Value, CultureInfo.InvariantCulture)))
                     .Where(v => v != null).ToList();
         }
 
-        private static void Save(Transaction tr, Database database, List<RegionState> states)
+        private static void Save(Transaction tr, Database database, List<CorridorRegionSnapshot> states)
         {
             DBDictionary dictionary = tr.GetObject(database.NamedObjectsDictionaryId,
                 OpenMode.ForWrite) as DBDictionary;

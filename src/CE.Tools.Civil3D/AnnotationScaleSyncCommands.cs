@@ -95,13 +95,12 @@ namespace CETools.Civil3D
                 CultureInfo.InvariantCulture);
             if (!string.IsNullOrWhiteSpace(commandNames)) return;
 
-#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
             // Passive CANNOSCALE monitoring must NEVER rewrite user dimension
             // objects or add arbitrary contexts when a layout/viewport changes.
             // This also avoids continuous regen and CE dimension rebuild loops.
             LastScaleByDatabase[document.Database] = ReadCurrentScaleName();
             return;
-#endif
+
             string currentScale = ReadCurrentScaleName();
             string previousScale;
             if (LastScaleByDatabase.TryGetValue(
