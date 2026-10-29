@@ -29,6 +29,7 @@ namespace CETools.Civil3D
             public double Start;
             public double End;
             public bool Enabled;
+            public bool? BaselineEnabled;
             public string Encode()
             {
                 return string.Join("|", CorridorHandle,
@@ -36,18 +37,22 @@ namespace CETools.Civil3D
                     Region.ToString(CultureInfo.InvariantCulture),
                     Start.ToString("R", CultureInfo.InvariantCulture),
                     End.ToString("R", CultureInfo.InvariantCulture),
-                    Enabled ? "1" : "0");
+                    Enabled ? "1" : "0", BaselineEnabled.HasValue ?
+                        (BaselineEnabled.Value ? "1" : "0") : "?");
             }
             public static RegionState Parse(string line)
             {
                 string[] p = (line ?? "").Split('|');
-                if (p.Length != 6) return null;
+                if (p.Length != 6 && p.Length != 7) return null;
                 int b, r; double s, e;
                 if (!int.TryParse(p[1], NumberStyles.Integer, CultureInfo.InvariantCulture, out b) ||
                     !int.TryParse(p[2], NumberStyles.Integer, CultureInfo.InvariantCulture, out r) ||
                     !double.TryParse(p[3], NumberStyles.Float, CultureInfo.InvariantCulture, out s) ||
                     !double.TryParse(p[4], NumberStyles.Float, CultureInfo.InvariantCulture, out e)) return null;
-                return new RegionState { CorridorHandle = p[0], Baseline = b, Region = r, Start = s, End = e, Enabled = p[5] == "1" };
+                return new RegionState { CorridorHandle = p[0], Baseline = b, Region = r,
+                    Start = s, End = e, Enabled = p[5] == "1",
+                    BaselineEnabled = p.Length == 7 && (p[6] == "1" || p[6] == "0") ?
+                        (bool?)(p[6] == "1") : null };
             }
         }
 
@@ -103,8 +108,7 @@ namespace CETools.Civil3D
                 }
                 if (!restore && saved.Count > 0)
                 {
-                    doc.Editor.WriteMessage("\nA saved snapshot already exists. Restore it before saving another state; original flags were not overwritten.");
-                    return;
+                    doc.Editor.WriteMessage("\nExisting corridor-region snapshot preserved. All baseline and region processing flags will be enabled again.");
                 }
                 var newSnapshot = new List<RegionState>();
                 int switched = 0, unchanged = 0, missing = 0;
@@ -116,6 +120,11 @@ namespace CETools.Civil3D
                     for (int b = 0; b < corridor.Baselines.Count; b++)
                     {
                         Baseline baseline = corridor.Baselines[b];
+                        bool originalBaseline = baseline.NeedsProcessing;
+                        // Autodesk requires BOTH baseline and every region to
+                        // be enabled before regions can build.
+                        if (!restore && !baseline.NeedsProcessing)
+                            baseline.NeedsProcessing = true;
                         for (int n = 0; n < baseline.BaselineRegions.Count; n++)
                         {
                             BaselineRegion region = baseline.BaselineRegions[n];
@@ -125,7 +134,8 @@ namespace CETools.Civil3D
                                 newSnapshot.Add(new RegionState {
                                     CorridorHandle = handle, Baseline = b, Region = n,
                                     Start = region.StartStation, End = region.EndStation,
-                                    Enabled = region.NeedsProcessing
+                                    Enabled = region.NeedsProcessing,
+                                    BaselineEnabled = originalBaseline
                                 });
                                 if (!region.NeedsProcessing) { region.NeedsProcessing = true; switched++; }
                                 else unchanged++;
@@ -141,13 +151,16 @@ namespace CETools.Civil3D
                                 if (region.NeedsProcessing != old.Enabled)
                                 { region.NeedsProcessing = old.Enabled; switched++; }
                                 else unchanged++;
+                                if (old.BaselineEnabled.HasValue &&
+                                    baseline.NeedsProcessing != old.BaselineEnabled.Value)
+                                    baseline.NeedsProcessing = old.BaselineEnabled.Value;
                             }
                         }
                     }
                 }
                 if (restore && missing == 0)
                     ClearSnapshot(tr, doc.Database);
-                if (!restore)
+                if (!restore && saved.Count == 0)
                 {
                     if (newSnapshot.Count == 0)
                     {
@@ -159,8 +172,8 @@ namespace CETools.Civil3D
                 tr.Commit();
                 doc.Editor.WriteMessage(
                     restore
-                        ? "\nCE_CORRIDORREGIONSRESTORE: restored={0}, unchanged={1}, unmatched regions={2}. Snapshot retained."
-                        : "\nCE_CORRIDORREGIONSALLON: enabled={0}, already on={1}; original states saved in drawing.",
+                        ? "\nCE_CORRIDORREGIONSRESTORE: restored={0}, unchanged={1}, unmatched regions={2}. Snapshot is cleared only when all regions match."
+                        : "\nCE_CORRIDORREGIONSALLON: enabled={0}, already on={1}, unmatched={2}. Every baseline (including first, last and intermediate) is marked for corridor rebuilding.",
                     switched, unchanged, missing);
             }
             doc.Editor.Regen();
