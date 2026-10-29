@@ -112,6 +112,7 @@ namespace CETools.Civil3D
                 }
                 var newSnapshot = new List<RegionState>();
                 int switched = 0, unchanged = 0, missing = 0;
+                var matched = new HashSet<RegionState>();
                 foreach (ObjectId id in all)
                 {
                     Corridor corridor = tr.GetObject(id, OpenMode.ForWrite, false) as Corridor;
@@ -147,7 +148,25 @@ namespace CETools.Civil3D
                                     s.Baseline == b && s.Region == n &&
                                     Math.Abs(s.Start - region.StartStation) < 0.001 &&
                                     Math.Abs(s.End - region.EndStation) < 0.001);
-                                if (old == null) { missing++; continue; }
+                                if (old == null)
+                                {
+                                    var candidates = saved.Where(s => !matched.Contains(s) &&
+                                        string.Equals(s.CorridorHandle, handle, StringComparison.OrdinalIgnoreCase) &&
+                                        s.Baseline == b && Math.Abs(s.Start - region.StartStation) < 0.001 &&
+                                        Math.Abs(s.End - region.EndStation) < 0.001).ToList();
+                                    if (candidates.Count == 1) old = candidates[0];
+                                    if (old == null)
+                                    {
+                                        // Baselines may also have been reordered. Restore only a unique
+                                        // range in the same corridor; ambiguous/edited geometry stays flagged.
+                                        candidates = saved.Where(s => !matched.Contains(s) &&
+                                            string.Equals(s.CorridorHandle, handle, StringComparison.OrdinalIgnoreCase) &&
+                                            Math.Abs(s.Start - region.StartStation) < 0.001 &&
+                                            Math.Abs(s.End - region.EndStation) < 0.001).ToList();
+                                        if (candidates.Count == 1) old = candidates[0];
+                                    }
+                                }
+                                if (old == null || !matched.Add(old)) { missing++; continue; }
                                 if (region.NeedsProcessing != old.Enabled)
                                 { region.NeedsProcessing = old.Enabled; switched++; }
                                 else unchanged++;
@@ -158,6 +177,7 @@ namespace CETools.Civil3D
                         }
                     }
                 }
+                if (restore) missing += saved.Count(s => !matched.Contains(s));
                 if (restore && missing == 0)
                     ClearSnapshot(tr, doc.Database);
                 if (!restore && saved.Count == 0)

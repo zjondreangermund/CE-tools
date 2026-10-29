@@ -62,7 +62,7 @@ if [int(x[0]) for x in actions] != list(range(1, 45)):
     raise AssertionError("Road Production numbering must be sequential")
 names = [x[1] for x in actions]
 for before, after in (
-    ("CE_ROADCORRIDORFULL", "CE_ROADPROFILEVIEWSPLIT"),
+    ("CE_ROADCORRIDORFULL", "CE_ROADTOPBOTTOMPROFILE"),
     ("CE_ROADTOPBOTTOMPROFILE", "CE_ROADCROSSINGPVIS"),
     ("CE_ROADCROSSINGPVIS", "CE_REMOVEROADCROSSINGPVIS"),
     ("CE_REMOVEROADCROSSINGPVIS", "CE_ROADVERTICALCURVES"),

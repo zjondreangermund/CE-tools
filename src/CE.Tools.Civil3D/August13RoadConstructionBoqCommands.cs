@@ -128,7 +128,7 @@ namespace CETools.Civil3D
                             unitsPerMetre,
                             totals,
                             warnings,
-                            shoulderAsSidewalk);
+                            shoulderAsSidewalk, transaction);
                         totals.KerbLength += ReadKerbFeatureLineLength(
                             corridor,
                             unitsPerMetre);
@@ -193,6 +193,8 @@ namespace CETools.Civil3D
                 ? totals.SidewalkShapeVolume
                 : totals.SidewalkArea * sidewalkDepth;
             bool estimatedSidewalk = totals.SidewalkShapeVolume <= 1e-9;
+            if (totals.SidewalkArea <= 1e-9)
+                warnings.Add("No calculated sidewalk top links found. Rebuild enabled corridor regions and check BasicShoulder subassembly names / Top link codes; zero is not a verified absence of sidewalks.");
             if (estimatedSidewalk && totals.SidewalkArea > 1e-9)
                 warnings.Add("Sidewalk volume uses area x configured BasicShoulder thickness; confirm the subassembly depth.");
 
@@ -535,7 +537,7 @@ namespace CETools.Civil3D
             double unitsPerMetre,
             QuantityAccumulator totals,
             ICollection<string> warnings,
-            bool shoulderAsSidewalk)
+            bool shoulderAsSidewalk, Transaction transaction)
         {
             double volumeDivisor = unitsPerMetre * unitsPerMetre * unitsPerMetre;
             double areaDivisor = unitsPerMetre * unitsPerMetre;
@@ -546,7 +548,7 @@ namespace CETools.Civil3D
                 foreach (BaselineRegion region in baseline.BaselineRegions)
                 {
                     if (region == null || !region.NeedsProcessing) continue;
-                    List<SectionSnapshot> sections = ReadSections(region);
+                    List<SectionSnapshot> sections = ReadSections(region, transaction);
                     if (sections.Count < 2)
                     {
                         warnings.Add(
@@ -599,7 +601,7 @@ namespace CETools.Civil3D
             }
         }
 
-        private static List<SectionSnapshot> ReadSections(BaselineRegion region)
+        private static List<SectionSnapshot> ReadSections(BaselineRegion region, Transaction transaction)
         {
             var result = new List<SectionSnapshot>();
             foreach (AppliedAssembly assembly in region.AppliedAssemblies)
@@ -646,6 +648,24 @@ namespace CETools.Civil3D
                         else roadTopLinks.Add(span);
                     }
                 }
+                double ownedShoulderArea = 0.0;
+                foreach (AppliedSubassembly applied in assembly.GetAppliedSubassemblies())
+                {
+                    var template = transaction.GetObject(applied.SubassemblyId, OpenMode.ForRead, false)
+                        as Subassembly;
+                    if (template == null || !ContainsAny(template.Name.Replace(" ", ""), "BASICSHOULDER")) continue;
+                    foreach (CalculatedLink link in applied.Links)
+                    {
+                        // Bottom/base links must not be counted as another walking surface.
+                        if (link == null || !ContainsAny(JoinCodes(link.CorridorCodes), "TOP")) continue;
+                        var span = LinkOffsetRange(link);
+                        if (span != null) shoulderLinks.Add(span);
+                    }
+                    foreach (CalculatedShape shape in applied.Shapes)
+                        if (shape != null) ownedShoulderArea += Math.Abs(shape.Area);
+                }
+                // Use the owned shapes once; do not add them again to coded shoulder shapes.
+                snapshot.ShoulderShapeArea = Math.Max(snapshot.ShoulderShapeArea, ownedShoulderArea);
                 snapshot.ShoulderWidth = UnionWidth(shoulderLinks);
                 snapshot.SidewalkWidth = UnionWidth(sidewalkLinks);
                 var roadLinks = roadPaveLinks.Count > 0 ? roadPaveLinks : roadTopLinks;
@@ -653,8 +673,7 @@ namespace CETools.Civil3D
                 // If only generic TOP links were available, remove known
                 // sidewalk/shoulder intervals. A road surface must stop at
                 // the left and right carriageway edges, not at daylight toes.
-                if (roadPaveLinks.Count == 0)
-                    snapshot.RoadSurfaceWidth = NetWidth(roadLinks, shoulderLinks.Concat(sidewalkLinks));
+                snapshot.RoadSurfaceWidth = NetWidth(roadLinks, shoulderLinks.Concat(sidewalkLinks));
                 result.Add(snapshot);
             }
 
