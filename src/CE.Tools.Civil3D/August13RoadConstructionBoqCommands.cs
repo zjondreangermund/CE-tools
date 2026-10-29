@@ -49,8 +49,17 @@ namespace CETools.Civil3D
                 "Corridor baseline station ranges",
                 "Full alignments include the entire road beyond corridor regions. Each alignment is counted once; other quantities still come from corridors.",
                 new[] { "Corridor baseline station ranges", "Full road alignments", "Selected road alignments" });
+            model.AddChoice("ShoulderAsSidewalk", "03 Sidewalk", "BasicShoulder classification",
+                "Count BasicShoulder as sidewalk",
+                "BasicShoulder is the sidewalk subassembly in this project. Other shoulder-code classifications can be excluded.",
+                new[] { "Count BasicShoulder as sidewalk", "Keep coded shoulders separate" });
+            model.AddPositiveDouble("SidewalkThickness", "03 Sidewalk", "BasicShoulder thickness / depth (m)",
+                0.10, "Used only if no coded sidewalk/shoulder shapes provide an exact sectional volume.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             double unitsPerMetre = Math.Max(model.Double("UnitsPerMetre", 1.0), 1e-9);
+            bool shoulderAsSidewalk = model.Text("ShoulderAsSidewalk") ==
+                "Count BasicShoulder as sidewalk";
+            double sidewalkDepth = model.Double("SidewalkThickness", 0.10) / unitsPerMetre;
             bool alignmentLengths = !string.Equals(model.Text("RoadLengthSource"),
                 "Corridor baseline station ranges", StringComparison.OrdinalIgnoreCase);
             HashSet<ObjectId> selectedAlignments = null;
@@ -118,7 +127,8 @@ namespace CETools.Civil3D
                             corridor,
                             unitsPerMetre,
                             totals,
-                            warnings);
+                            warnings,
+                            shoulderAsSidewalk);
                         totals.KerbLength += ReadKerbFeatureLineLength(
                             corridor,
                             unitsPerMetre);
@@ -158,7 +168,12 @@ namespace CETools.Civil3D
                             document.Database,
                             transaction,
                             unitsPerMetre);
-
+                    ReadJunctionSurfaceQuantities(
+                        civilDocument,
+                        transaction,
+                        unitsPerMetre,
+                        totals,
+                        warnings);
                     transaction.Commit();
                 }
             }
@@ -169,6 +184,17 @@ namespace CETools.Civil3D
                     exception.Message);
                 return;
             }
+
+            // Prefer measured Civil 3D shape quantities where shoulder/
+            // sidewalk codes identify a real computed closed section.
+            // Only when unavailable use the explicitly configured BasicShoulder
+            // thickness, disclosing that it is an area x thickness estimate.
+            double sidewalkVolume = totals.SidewalkShapeVolume > 1e-9
+                ? totals.SidewalkShapeVolume
+                : totals.SidewalkArea * sidewalkDepth;
+            bool estimatedSidewalk = totals.SidewalkShapeVolume <= 1e-9;
+            if (estimatedSidewalk && totals.SidewalkArea > 1e-9)
+                warnings.Add("Sidewalk volume uses area x configured BasicShoulder thickness; confirm the subassembly depth.");
 
             var rows = new List<IList<string>>();
 
@@ -228,10 +254,10 @@ namespace CETools.Civil3D
                 totals.JunctionBellmouthLength,
                 "Unique CE road-junction / bellmouth return curves"));
             rows.Add(Row(
-                "Road surface",
+                "Road surface - total carriageway",
                 "m2",
                 totals.RoadSurfaceArea,
-                "Road/top/pave/lane coded corridor links"));
+                "Union of left and right paved assembly link offsets (no stacked duplicate links)"));
             if (totals.ShoulderArea > 1e-9)
             {
                 rows.Add(Row(
@@ -241,15 +267,39 @@ namespace CETools.Civil3D
                     "Shoulder/shld/verge/hard-strip coded corridor links"));
             }
             rows.Add(Row(
-                "Sidewalks",
+                "Sidewalks - surface area",
                 "m2",
                 totals.SidewalkArea,
-                "Sidewalk/walk/footway coded corridor links"));
+                shoulderAsSidewalk
+                    ? "BasicShoulder/sidewalk coded top links (both sides)"
+                    : "Sidewalk/walk/footway coded top links"));
             rows.Add(Row(
-                "Cut/fill side slopes",
+                "Sidewalks - volume",
+                "m3",
+                sidewalkVolume,
+                estimatedSidewalk
+                    ? "Integrated sidewalk area × configured BasicShoulder thickness"
+                    : "Calculated assembly shape cross-sections integrated between stations"));
+            rows.Add(Row(
+                "Junctions - total surface area",
+                "m2",
+                totals.JunctionArea2D,
+                totals.JunctionAreaSource));
+            rows.Add(Row(
+                "Junction grading surfaces - 3D area",
+                "m2",
+                totals.JunctionGradingArea3D,
+                "Visible TIN triangles of CE-JUNCTION-GRADE surfaces; includes any flat grading faces"));
+            rows.Add(Row(
+                "Cut/fill side slopes - corridors",
                 "m2",
                 totals.SideSlopeArea,
-                "Daylight/slope/batter coded corridor links"));
+                "Daylight/slope/batter coded links in every processed road corridor"));
+            rows.Add(Row(
+                "Cut/fill slopes incl junction grading - gross",
+                "m2",
+                totals.SideSlopeArea + totals.JunctionGradingArea3D,
+                "Corridor side slopes + CE junction grading surfaces (gross; may include flat/overlap areas)"));
 
             string note = string.Format(
                 CultureInfo.CurrentCulture,
@@ -480,7 +530,8 @@ namespace CETools.Civil3D
             Corridor corridor,
             double unitsPerMetre,
             QuantityAccumulator totals,
-            ICollection<string> warnings)
+            ICollection<string> warnings,
+            bool shoulderAsSidewalk)
         {
             double volumeDivisor = unitsPerMetre * unitsPerMetre * unitsPerMetre;
             double areaDivisor = unitsPerMetre * unitsPerMetre;
@@ -523,12 +574,18 @@ namespace CETools.Civil3D
                         totals.RoadSurfaceArea +=
                             0.5 * (first.RoadSurfaceWidth + second.RoadSurfaceWidth) *
                             delta / areaDivisor;
-                        totals.ShoulderArea +=
-                            0.5 * (first.ShoulderWidth + second.ShoulderWidth) *
-                            delta / areaDivisor;
+                        if (!shoulderAsSidewalk)
+                            totals.ShoulderArea +=
+                                0.5 * (first.ShoulderWidth + second.ShoulderWidth) *
+                                delta / areaDivisor;
                         totals.SidewalkArea +=
-                            0.5 * (first.SidewalkWidth + second.SidewalkWidth) *
+                            0.5 * (first.SidewalkWidth + second.SidewalkWidth +
+                                (shoulderAsSidewalk ? first.ShoulderWidth + second.ShoulderWidth : 0.0)) *
                             delta / areaDivisor;
+                        totals.SidewalkShapeVolume +=
+                            0.5 * (first.SidewalkShapeArea + second.SidewalkShapeArea +
+                                (shoulderAsSidewalk ? first.ShoulderShapeArea + second.ShoulderShapeArea : 0.0)) *
+                            delta / volumeDivisor;
                         totals.SideSlopeArea +=
                             0.5 * (first.SideSlopeWidth + second.SideSlopeWidth) *
                             delta / areaDivisor;
@@ -553,23 +610,46 @@ namespace CETools.Civil3D
                     string code = PrimaryShapeCode(shape.CorridorCodes);
                     if (string.IsNullOrWhiteSpace(code)) code = "Unclassified";
                     AddValue(snapshot.ShapeAreas, code, Math.Abs(shape.Area));
+                    if (ContainsAny(code, "SIDEWALK", "FOOTWAY", "WALK"))
+                        snapshot.SidewalkShapeArea += Math.Abs(shape.Area);
+                    else if (ContainsAny(code, "SHOULDER", "SHLD", "BASICSHOULDER"))
+                        snapshot.ShoulderShapeArea += Math.Abs(shape.Area);
                 }
 
+                var roadPaveLinks = new List<Tuple<double, double>>();
+                var roadTopLinks = new List<Tuple<double, double>>();
+                var shoulderLinks = new List<Tuple<double, double>>();
+                var sidewalkLinks = new List<Tuple<double, double>>();
                 foreach (CalculatedLink link in assembly.Links)
                 {
                     if (link == null) continue;
                     double width = LinkCrossSectionLength(link);
                     if (width <= 1e-9) continue;
                     LinkQuantityClass quantityClass = ClassifyLink(link.CorridorCodes);
-                    if (quantityClass == LinkQuantityClass.Shoulder)
-                        snapshot.ShoulderWidth += width;
-                    else if (quantityClass == LinkQuantityClass.Sidewalk)
-                        snapshot.SidewalkWidth += width;
+                    Tuple<double, double> span = LinkOffsetRange(link);
+                    if (quantityClass == LinkQuantityClass.Shoulder && span != null)
+                        shoulderLinks.Add(span);
+                    else if (quantityClass == LinkQuantityClass.Sidewalk && span != null)
+                        sidewalkLinks.Add(span);
                     else if (quantityClass == LinkQuantityClass.SideSlope)
                         snapshot.SideSlopeWidth += width;
-                    else if (quantityClass == LinkQuantityClass.RoadSurface)
-                        snapshot.RoadSurfaceWidth += width;
+                    else if (quantityClass == LinkQuantityClass.RoadSurface && span != null)
+                    {
+                        string codes = JoinCodes(link.CorridorCodes);
+                        if (ContainsAny(codes, "PAVE", "LANE", "ROAD"))
+                            roadPaveLinks.Add(span);
+                        else roadTopLinks.Add(span);
+                    }
                 }
+                snapshot.ShoulderWidth = UnionWidth(shoulderLinks);
+                snapshot.SidewalkWidth = UnionWidth(sidewalkLinks);
+                var roadLinks = roadPaveLinks.Count > 0 ? roadPaveLinks : roadTopLinks;
+                snapshot.RoadSurfaceWidth = UnionWidth(roadLinks);
+                // If only generic TOP links were available, remove known
+                // sidewalk/shoulder intervals. A road surface must stop at
+                // the left and right carriageway edges, not at daylight toes.
+                if (roadPaveLinks.Count == 0)
+                    snapshot.RoadSurfaceWidth = NetWidth(roadLinks, shoulderLinks.Concat(sidewalkLinks));
                 result.Add(snapshot);
             }
 
@@ -1110,6 +1190,8 @@ namespace CETools.Civil3D
             internal IDictionary<string, double> ShapeAreas { get; private set; }
             internal double RoadSurfaceWidth { get; set; }
             internal double ShoulderWidth { get; set; }
+            internal double SidewalkShapeArea { get; set; }
+            internal double ShoulderShapeArea { get; set; }
             internal double SidewalkWidth { get; set; }
             internal double SideSlopeWidth { get; set; }
         }
@@ -1131,6 +1213,10 @@ namespace CETools.Civil3D
             internal double ShoulderArea { get; set; }
             internal double SidewalkArea { get; set; }
             internal double SideSlopeArea { get; set; }
+            internal double SidewalkShapeVolume { get; set; }
+            internal double JunctionArea2D { get; set; }
+            internal double JunctionGradingArea3D { get; set; }
+            internal string JunctionAreaSource = "No CE junction TIN surfaces found";
             internal IDictionary<string, double> LayerVolumes { get; private set; }
         }
 
