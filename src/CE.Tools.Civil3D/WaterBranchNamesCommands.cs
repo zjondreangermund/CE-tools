@@ -34,6 +34,13 @@ namespace CETools.Civil3D
                 new[] { "Along alignment", "Horizontal" });
             options.AddPositiveDouble("TextHeight", "02 Presentation", "Name text height", 2.5,
                 "Drawing units for the displayed branch name.");
+            options.AddChoice("NameSource", "02 Presentation", "Label text", "Alignment name",
+                "Use the actual branch alignment name or the stored CE route identity.",
+                new[] { "Alignment name", "Stored route identity" });
+            options.AddChoice("Existing", "03 Existing names", "Previously placed names",
+                "Update matching labels",
+                "Update matching Water branch labels without adding duplicates; other drawing annotations are not changed.",
+                new[] { "Update matching labels", "Keep existing matching labels" });
             if (!DisciplineWorkflowDialogs.EditSettings(options)) return;
             HashSet<ObjectId> selected = null;
             if (options.Text("Scope") == "Multiple selected alignments")
@@ -47,7 +54,7 @@ namespace CETools.Civil3D
                 if (pick.Status != PromptStatus.OK || pick.Value == null) return;
                 selected = new HashSet<ObjectId>(pick.Value.GetObjectIds());
             }
-            int added = 0, existing = 0, skipped = 0;
+            int added = 0, updated = 0, existing = 0, skipped = 0;
             using (document.LockDocument())
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
@@ -65,12 +72,14 @@ namespace CETools.Civil3D
                     var alignment = transaction.GetObject(id, OpenMode.ForRead, false) as CivilAlignment;
                     if (alignment == null || alignment.IsReferenceObject) { skipped++; continue; }
                     string name = alignment.Name;
+                    string description = alignment.Description ?? string.Empty;
                     bool water = name.StartsWith("W-", StringComparison.OrdinalIgnoreCase) ||
                         name.IndexOf("WATER", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        (alignment.Description ?? string.Empty).StartsWith("CE water alignment", StringComparison.OrdinalIgnoreCase);
+                        description.IndexOf("CE water alignment", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        (name.StartsWith("BRANCH-", StringComparison.OrdinalIgnoreCase) &&
+                         description.IndexOf("water", StringComparison.OrdinalIgnoreCase) >= 0);
                     if (!water) continue;
                     string route = name;
-                    string description = alignment.Description ?? string.Empty;
                     const string prefix = "route=";
                     int routeIndex = description.IndexOf(prefix, StringComparison.OrdinalIgnoreCase);
                     if (routeIndex >= 0)
@@ -78,37 +87,46 @@ namespace CETools.Civil3D
                         route = description.Substring(routeIndex + prefix.Length).Split('|')[0].Trim();
                         if (string.IsNullOrWhiteSpace(route)) route = name;
                     }
+                    string displayName = options.Text("NameSource") == "Stored route identity" ? route : name;
                     double station = (alignment.StartingStation + alignment.EndingStation) * 0.5;
                     double x = 0, y = 0;
                     try { alignment.PointLocation(station, 0, ref x, ref y); }
                     catch { skipped++; continue; }
                     var location = new Point3d(x, y, 0);
-                    // Idempotent: leave labels already placed by CE_WATERALIGN or by this command.
-                    if (existingNames.Any(t => string.Equals(t.Text.Trim(), route, StringComparison.OrdinalIgnoreCase) &&
-                        new Point2d(t.Location.X, t.Location.Y).GetDistanceTo(new Point2d(x,y)) <= 15.0))
-                    { existing++; continue; }
+                    // A CE Water alignment may already have a previous branch
+                    // MText at this station. Do not skip the correction simply
+                    // because the old label happens to exist.
+                    MText old = existingNames
+                        .Where(t => new Point2d(t.Location.X, t.Location.Y)
+                            .GetDistanceTo(new Point2d(x, y)) <= 15.0)
+                        .Where(t => string.Equals(t.Text.Trim(), name, StringComparison.OrdinalIgnoreCase) ||
+                            string.Equals(t.Text.Trim(), route, StringComparison.OrdinalIgnoreCase) ||
+                            (t.Text.Trim().StartsWith("W-B", StringComparison.OrdinalIgnoreCase) &&
+                             route.StartsWith("BRANCH-", StringComparison.OrdinalIgnoreCase)))
+                        .OrderBy(t => new Point2d(t.Location.X, t.Location.Y)
+                            .GetDistanceTo(new Point2d(x, y)))
+                        .FirstOrDefault();
+                    if (old != null)
+                    {
+                        if (options.Text("Existing") == "Keep existing matching labels")
+                        { existing++; continue; }
+                        old.UpgradeOpen();
+                        old.Contents = displayName;
+                        old.TextHeight = options.Double("TextHeight", 2.5);
+                        if (options.Text("Direction") == "Along alignment")
+                            old.Rotation = ReadTangentAngle(alignment, station);
+                        else old.Rotation = 0.0;
+                        updated++;
+                        continue;
+                    }
                     var label = new MText();
                     label.SetDatabaseDefaults(document.Database);
-                    label.Contents = route;
+                    label.Contents = displayName;
                     label.Location = location;
                     label.Attachment = AttachmentPoint.MiddleCenter;
                     label.TextHeight = options.Double("TextHeight", 2.5);
                     if (options.Text("Direction") == "Along alignment")
-                    {
-                        try
-                        {
-                            double lead = Math.Max(alignment.StartingStation, station - 0.05);
-                            double tail = Math.Min(alignment.EndingStation, station + 0.05);
-                            double x1 = 0, y1 = 0, x2 = 0, y2 = 0;
-                            alignment.PointLocation(lead, 0, ref x1, ref y1);
-                            alignment.PointLocation(tail, 0, ref x2, ref y2);
-                            double angle = Math.Atan2(y2 - y1, x2 - x1);
-                            if (angle > Math.PI / 2) angle -= Math.PI;
-                            if (angle < -Math.PI / 2) angle += Math.PI;
-                            label.Rotation = angle;
-                        }
-                        catch (System.Exception) { }
-                    }
+                        label.Rotation = ReadTangentAngle(alignment, station);
                     label.LayerId = alignment.LayerId;
                     model.AppendEntity(label);
                     transaction.AddNewlyCreatedDBObject(label, true);
@@ -119,10 +137,27 @@ namespace CETools.Civil3D
             }
             document.Editor.Regen();
             System.Windows.Forms.MessageBox.Show("Water branch names added: " + added +
+                "\nExisting branch names updated: " + updated +
                 "\nExisting matching names retained: " + existing +
                 "\nSkipped: " + skipped +
-                "\n\nWater alignments and existing labels were not modified.",
+                "\n\nWater alignment geometry was not modified.",
                 "CE Tools - Water Branch Names");
+        }
+        private static double ReadTangentAngle(CivilAlignment alignment, double station)
+        {
+            try
+            {
+                double lead = Math.Max(alignment.StartingStation, station - 0.1);
+                double tail = Math.Min(alignment.EndingStation, station + 0.1);
+                double x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+                alignment.PointLocation(lead, 0, ref x1, ref y1);
+                alignment.PointLocation(tail, 0, ref x2, ref y2);
+                double angle = Math.Atan2(y2 - y1, x2 - x1);
+                if (angle > Math.PI / 2) angle -= Math.PI;
+                if (angle < -Math.PI / 2) angle += Math.PI;
+                return angle;
+            }
+            catch (System.Exception) { return 0.0; }
         }
     }
 }

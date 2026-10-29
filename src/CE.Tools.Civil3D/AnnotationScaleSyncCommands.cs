@@ -369,95 +369,16 @@ namespace CETools.Civil3D
         }
 #endif
 
-        internal static int AddAllAnnotationScaleContexts(
-            Entity entity,
-            Database database)
+        internal static int AddAllAnnotationScaleContexts(Entity entity, Database database)
         {
-            if (entity == null ||
-                database == null)
-                return 0;
-
+            // Keep the legacy method name for callers, but never apply ALL
+            // annotation scale definitions. Only the currently active drawing
+            // annotation scale belongs on new text/MText/MLeader/dimensions.
+            // Other scales are added explicitly by used-viewport operations.
+            if (entity == null || database == null) return 0;
             SetAnnotative(entity);
-            int added = 0;
-            try
-            {
-                object manager = database.GetType()
-                    .GetProperty(
-                        "ObjectContextManager",
-                        BindingFlags.Public | BindingFlags.Instance)
-                    ?.GetValue(database, null);
-                if (manager == null)
-                    return 0;
-
-                MethodInfo getCollection = manager.GetType().GetMethod(
-                    "GetContextCollection",
-                    new[] { typeof(string) });
-                object collection = getCollection?.Invoke(
-                    manager,
-                    new object[] { "ACDB_ANNOTATIONSCALES" });
-                if (collection == null)
-                    return 0;
-
-                IEnumerable enumerable =
-                    collection as IEnumerable;
-                if (enumerable != null)
-                {
-                    foreach (object context in enumerable)
-                    {
-                        if (context != null &&
-                            AddContext(
-                                entity,
-                                context))
-                            added++;
-                    }
-                    return added;
-                }
-
-                // Compatibility path for host wrappers that do not implement
-                // IEnumerable but expose Count and an indexer/Item accessor.
-                PropertyInfo countProperty =
-                    collection.GetType().GetProperty(
-                        "Count",
-                        BindingFlags.Public | BindingFlags.Instance);
-                PropertyInfo itemProperty =
-                    collection.GetType().GetProperty(
-                        "Item",
-                        BindingFlags.Public | BindingFlags.Instance);
-                if (countProperty == null ||
-                    itemProperty == null)
-                    return added;
-
-                int count = Convert.ToInt32(
-                    countProperty.GetValue(
-                        collection,
-                        null),
-                    CultureInfo.InvariantCulture);
-                for (int index = 0;
-                     index < count;
-                     index++)
-                {
-                    object context = null;
-                    try
-                    {
-                        context = itemProperty.GetValue(
-                            collection,
-                            new object[] { index });
-                    }
-                    catch { }
-                    if (context != null &&
-                        AddContext(
-                            entity,
-                            context))
-                        added++;
-                }
-            }
-            catch
-            {
-                // The current annotation-scale context is still supplied by the
-                // existing idle synchronizer. Missing host enumeration support
-                // must never block label creation.
-            }
-            return added;
+            object current = ResolveCurrentAnnotationContext(database);
+            return current != null && AddContext(entity, current) ? 1 : 0;
         }
 
         private static object ResolveCurrentAnnotationContext(Database database)
