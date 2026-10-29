@@ -322,6 +322,14 @@ namespace CETools.Civil3D
                 }
             }
 
+            // Many CE Tools popups set a light Background directly on a
+            // Grid, DockPanel or StackPanel. Setting Window.Background alone
+            // leaves those full-size panels bright white in Dark mode.
+            Panel panel = value as Panel;
+            if (panel != null && panel.Background != null &&
+                panel.Background != Brushes.Transparent)
+                panel.Background = palette.Window;
+
             Border border = value as Border;
             if (border != null && border.Background != null && border.Background != Brushes.Transparent)
             {

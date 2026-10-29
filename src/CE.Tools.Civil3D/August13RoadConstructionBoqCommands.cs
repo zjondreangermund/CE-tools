@@ -49,8 +49,17 @@ namespace CETools.Civil3D
                 "Corridor baseline station ranges",
                 "Full alignments include the entire road beyond corridor regions. Each alignment is counted once; other quantities still come from corridors.",
                 new[] { "Corridor baseline station ranges", "Full road alignments", "Selected road alignments" });
+            model.AddChoice("ShoulderAsSidewalk", "03 Sidewalk", "BasicShoulder classification",
+                "Count BasicShoulder as sidewalk",
+                "BasicShoulder is the sidewalk subassembly in this project. Other shoulder-code classifications can be excluded.",
+                new[] { "Count BasicShoulder as sidewalk", "Keep coded shoulders separate" });
+            model.AddPositiveDouble("SidewalkThickness", "03 Sidewalk", "BasicShoulder thickness / depth (m)",
+                0.10, "Used only if no coded sidewalk/shoulder shapes provide an exact sectional volume.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             double unitsPerMetre = Math.Max(model.Double("UnitsPerMetre", 1.0), 1e-9);
+            bool shoulderAsSidewalk = model.Text("ShoulderAsSidewalk") ==
+                "Count BasicShoulder as sidewalk";
+            double sidewalkDepth = model.Double("SidewalkThickness", 0.10) / unitsPerMetre;
             bool alignmentLengths = !string.Equals(model.Text("RoadLengthSource"),
                 "Corridor baseline station ranges", StringComparison.OrdinalIgnoreCase);
             HashSet<ObjectId> selectedAlignments = null;
@@ -118,7 +127,8 @@ namespace CETools.Civil3D
                             corridor,
                             unitsPerMetre,
                             totals,
-                            warnings);
+                            warnings,
+                            shoulderAsSidewalk);
                         totals.KerbLength += ReadKerbFeatureLineLength(
                             corridor,
                             unitsPerMetre);
@@ -158,7 +168,12 @@ namespace CETools.Civil3D
                             document.Database,
                             transaction,
                             unitsPerMetre);
-
+                    ReadJunctionSurfaceQuantities(
+                        civilDocument,
+                        transaction,
+                        unitsPerMetre,
+                        totals,
+                        warnings);
                     transaction.Commit();
                 }
             }
@@ -169,6 +184,17 @@ namespace CETools.Civil3D
                     exception.Message);
                 return;
             }
+
+            // Prefer measured Civil 3D shape quantities where shoulder/
+            // sidewalk codes identify a real computed closed section.
+            // Only when unavailable use the explicitly configured BasicShoulder
+            // thickness, disclosing that it is an area x thickness estimate.
+            double sidewalkVolume = totals.SidewalkShapeVolume > 1e-9
+                ? totals.SidewalkShapeVolume
+                : totals.SidewalkArea * sidewalkDepth;
+            bool estimatedSidewalk = totals.SidewalkShapeVolume <= 1e-9;
+            if (estimatedSidewalk && totals.SidewalkArea > 1e-9)
+                warnings.Add("Sidewalk volume uses area x configured BasicShoulder thickness; confirm the subassembly depth.");
 
             var rows = new List<IList<string>>();
 
@@ -227,11 +253,15 @@ namespace CETools.Civil3D
                 "m",
                 totals.JunctionBellmouthLength,
                 "Unique CE road-junction / bellmouth return curves"));
+            foreach (KeyValuePair<string, double> road in
+                totals.RoadSurfaceAreasByRoad.OrderBy(item => item.Key, StringComparer.CurrentCultureIgnoreCase))
+                rows.Add(Row("Road surface - " + road.Key, "m2", road.Value,
+                    "Left-to-right carriageway width at applied corridor sections × station spacing"));
             rows.Add(Row(
-                "Road surface",
+                "Road surface - total carriageway",
                 "m2",
                 totals.RoadSurfaceArea,
-                "Road/top/pave/lane coded corridor links"));
+                "Union of left and right paved assembly link offsets (no stacked duplicate links)"));
             if (totals.ShoulderArea > 1e-9)
             {
                 rows.Add(Row(
@@ -241,15 +271,39 @@ namespace CETools.Civil3D
                     "Shoulder/shld/verge/hard-strip coded corridor links"));
             }
             rows.Add(Row(
-                "Sidewalks",
+                "Sidewalks - surface area",
                 "m2",
                 totals.SidewalkArea,
-                "Sidewalk/walk/footway coded corridor links"));
+                shoulderAsSidewalk
+                    ? "BasicShoulder/sidewalk coded top links (both sides)"
+                    : "Sidewalk/walk/footway coded top links"));
             rows.Add(Row(
-                "Cut/fill side slopes",
+                "Sidewalks - volume",
+                "m3",
+                sidewalkVolume,
+                estimatedSidewalk
+                    ? "Integrated sidewalk area × configured BasicShoulder thickness"
+                    : "Calculated assembly shape cross-sections integrated between stations"));
+            rows.Add(Row(
+                "Junctions - total surface area",
+                "m2",
+                totals.JunctionArea2D,
+                totals.JunctionAreaSource));
+            rows.Add(Row(
+                "Junction grading surfaces - 3D area",
+                "m2",
+                totals.JunctionGradingArea3D,
+                "Visible TIN triangles of CE-JUNCTION-GRADE surfaces; includes any flat grading faces"));
+            rows.Add(Row(
+                "Cut/fill side slopes - corridors",
                 "m2",
                 totals.SideSlopeArea,
-                "Daylight/slope/batter coded corridor links"));
+                "Daylight/slope/batter coded links in every processed road corridor"));
+            rows.Add(Row(
+                "Cut/fill slopes incl junction grading - gross",
+                "m2",
+                totals.SideSlopeArea + totals.JunctionGradingArea3D,
+                "Corridor side slopes + CE junction grading surfaces (gross; may include flat/overlap areas)"));
 
             string note = string.Format(
                 CultureInfo.CurrentCulture,
@@ -480,7 +534,8 @@ namespace CETools.Civil3D
             Corridor corridor,
             double unitsPerMetre,
             QuantityAccumulator totals,
-            ICollection<string> warnings)
+            ICollection<string> warnings,
+            bool shoulderAsSidewalk)
         {
             double volumeDivisor = unitsPerMetre * unitsPerMetre * unitsPerMetre;
             double areaDivisor = unitsPerMetre * unitsPerMetre;
@@ -520,15 +575,22 @@ namespace CETools.Civil3D
                             AddValue(totals.LayerVolumes, key, volume);
                         }
 
-                        totals.RoadSurfaceArea +=
-                            0.5 * (first.RoadSurfaceWidth + second.RoadSurfaceWidth) *
-                            delta / areaDivisor;
-                        totals.ShoulderArea +=
-                            0.5 * (first.ShoulderWidth + second.ShoulderWidth) *
-                            delta / areaDivisor;
+                        double pavedArea = 0.5 * (first.RoadSurfaceWidth +
+                            second.RoadSurfaceWidth) * delta / areaDivisor;
+                        totals.RoadSurfaceArea += pavedArea;
+                        AddValue(totals.RoadSurfaceAreasByRoad, corridor.Name, pavedArea);
+                        if (!shoulderAsSidewalk)
+                            totals.ShoulderArea +=
+                                0.5 * (first.ShoulderWidth + second.ShoulderWidth) *
+                                delta / areaDivisor;
                         totals.SidewalkArea +=
-                            0.5 * (first.SidewalkWidth + second.SidewalkWidth) *
+                            0.5 * (first.SidewalkWidth + second.SidewalkWidth +
+                                (shoulderAsSidewalk ? first.ShoulderWidth + second.ShoulderWidth : 0.0)) *
                             delta / areaDivisor;
+                        totals.SidewalkShapeVolume +=
+                            0.5 * (first.SidewalkShapeArea + second.SidewalkShapeArea +
+                                (shoulderAsSidewalk ? first.ShoulderShapeArea + second.ShoulderShapeArea : 0.0)) *
+                            delta / volumeDivisor;
                         totals.SideSlopeArea +=
                             0.5 * (first.SideSlopeWidth + second.SideSlopeWidth) *
                             delta / areaDivisor;
@@ -553,23 +615,46 @@ namespace CETools.Civil3D
                     string code = PrimaryShapeCode(shape.CorridorCodes);
                     if (string.IsNullOrWhiteSpace(code)) code = "Unclassified";
                     AddValue(snapshot.ShapeAreas, code, Math.Abs(shape.Area));
+                    if (ContainsAny(code, "SIDEWALK", "FOOTWAY", "WALK"))
+                        snapshot.SidewalkShapeArea += Math.Abs(shape.Area);
+                    else if (ContainsAny(code, "SHOULDER", "SHLD", "BASICSHOULDER"))
+                        snapshot.ShoulderShapeArea += Math.Abs(shape.Area);
                 }
 
+                var roadPaveLinks = new List<Tuple<double, double>>();
+                var roadTopLinks = new List<Tuple<double, double>>();
+                var shoulderLinks = new List<Tuple<double, double>>();
+                var sidewalkLinks = new List<Tuple<double, double>>();
                 foreach (CalculatedLink link in assembly.Links)
                 {
                     if (link == null) continue;
                     double width = LinkCrossSectionLength(link);
                     if (width <= 1e-9) continue;
                     LinkQuantityClass quantityClass = ClassifyLink(link.CorridorCodes);
-                    if (quantityClass == LinkQuantityClass.Shoulder)
-                        snapshot.ShoulderWidth += width;
-                    else if (quantityClass == LinkQuantityClass.Sidewalk)
-                        snapshot.SidewalkWidth += width;
+                    Tuple<double, double> span = LinkOffsetRange(link);
+                    if (quantityClass == LinkQuantityClass.Shoulder && span != null)
+                        shoulderLinks.Add(span);
+                    else if (quantityClass == LinkQuantityClass.Sidewalk && span != null)
+                        sidewalkLinks.Add(span);
                     else if (quantityClass == LinkQuantityClass.SideSlope)
                         snapshot.SideSlopeWidth += width;
-                    else if (quantityClass == LinkQuantityClass.RoadSurface)
-                        snapshot.RoadSurfaceWidth += width;
+                    else if (quantityClass == LinkQuantityClass.RoadSurface && span != null)
+                    {
+                        string codes = JoinCodes(link.CorridorCodes);
+                        if (ContainsAny(codes, "PAVE", "LANE", "ROAD"))
+                            roadPaveLinks.Add(span);
+                        else roadTopLinks.Add(span);
+                    }
                 }
+                snapshot.ShoulderWidth = UnionWidth(shoulderLinks);
+                snapshot.SidewalkWidth = UnionWidth(sidewalkLinks);
+                var roadLinks = roadPaveLinks.Count > 0 ? roadPaveLinks : roadTopLinks;
+                snapshot.RoadSurfaceWidth = UnionWidth(roadLinks);
+                // If only generic TOP links were available, remove known
+                // sidewalk/shoulder intervals. A road surface must stop at
+                // the left and right carriageway edges, not at daylight toes.
+                if (roadPaveLinks.Count == 0)
+                    snapshot.RoadSurfaceWidth = NetWidth(roadLinks, shoulderLinks.Concat(sidewalkLinks));
                 result.Add(snapshot);
             }
 
@@ -578,6 +663,167 @@ namespace CETools.Civil3D
                 .Select(group => group.First())
                 .OrderBy(item => item.Station)
                 .ToList();
+        }
+
+
+        // Measured pavement areas use the union of horizontal section links:
+        // stacked TOP/PAVE/BASE links represent the same carriageway XY span
+        // and must NEVER be added together as independent road widths.
+        private static Tuple<double, double> LinkOffsetRange(CalculatedLink link)
+        {
+            if (link == null || link.CalculatedPoints == null ||
+                link.CalculatedPoints.Count < 2) return null;
+            double lo = double.PositiveInfinity, hi = double.NegativeInfinity;
+            foreach (CalculatedPoint point in link.CalculatedPoints)
+            {
+                if (point == null) continue;
+                double offset = point.StationOffsetElevationToBaseline.Y;
+                if (double.IsNaN(offset) || double.IsInfinity(offset)) continue;
+                lo = Math.Min(lo, offset);
+                hi = Math.Max(hi, offset);
+            }
+            if (double.IsInfinity(lo) || hi - lo <= 1e-9) return null;
+            return Tuple.Create(lo, hi);
+        }
+
+        private static List<Tuple<double, double>> MergeIntervals(IEnumerable<Tuple<double, double>> intervals)
+        {
+            var result = new List<Tuple<double, double>>();
+            if (intervals == null) return result;
+            foreach (var interval in intervals.Where(x => x != null && x.Item2 - x.Item1 > 1e-9)
+                .OrderBy(x => x.Item1).ThenBy(x => x.Item2))
+            {
+                if (result.Count == 0 || interval.Item1 > result[result.Count - 1].Item2 + 1e-8)
+                    result.Add(interval);
+                else
+                {
+                    var last = result[result.Count - 1];
+                    result[result.Count - 1] = Tuple.Create(last.Item1,
+                        Math.Max(last.Item2, interval.Item2));
+                }
+            }
+            return result;
+        }
+
+        private static double UnionWidth(IEnumerable<Tuple<double, double>> intervals)
+        {
+            return MergeIntervals(intervals).Sum(x => x.Item2 - x.Item1);
+        }
+
+        private static double NetWidth(IEnumerable<Tuple<double, double>> roadLinks,
+            IEnumerable<Tuple<double, double>> excluded)
+        {
+            var road = MergeIntervals(roadLinks);
+            var outside = MergeIntervals(excluded);
+            double result = 0;
+            foreach (var strip in road)
+            {
+                double width = strip.Item2 - strip.Item1;
+                foreach (var other in outside)
+                    width -= Math.Max(0, Math.Min(strip.Item2, other.Item2) -
+                        Math.Max(strip.Item1, other.Item1));
+                result += Math.Max(0, width);
+            }
+            return Math.Max(0, result);
+        }
+
+        private static void ReadJunctionSurfaceQuantities(
+            CivilDocument civil, Transaction transaction, double unitsPerMetre,
+            QuantityAccumulator totals, ICollection<string> warnings)
+        {
+            // Surface triangulation is calculated from the LIVE, visible TIN.
+            // Never mix the merged result with the constituent junction surfaces
+            // when reporting a total, as that would double count every face.
+            var surfaces = new List<TinSurface>();
+            foreach (ObjectId id in civil.GetSurfaceIds())
+            {
+                TinSurface tin = transaction.GetObject(id, OpenMode.ForRead, false)
+                    as TinSurface;
+                if (tin != null && !tin.IsErased) surfaces.Add(tin);
+            }
+            TinSurface merged = surfaces.FirstOrDefault(surface =>
+                string.Equals(surface.Name, "CE Junctions All",
+                    StringComparison.OrdinalIgnoreCase));
+            var infills = surfaces.Where(surface =>
+                surface.Name.StartsWith("CE-JUNCTION-INFILL", StringComparison.OrdinalIgnoreCase) ||
+                surface.Name.StartsWith("CE-KERB-INFILL", StringComparison.OrdinalIgnoreCase) ||
+                surface.Name.StartsWith("CE-GUTTER-INFILL", StringComparison.OrdinalIgnoreCase) ||
+                surface.Name.StartsWith("CE-INFILL", StringComparison.OrdinalIgnoreCase)).ToList();
+            var grading = surfaces.Where(surface =>
+                surface.Name.StartsWith("CE-JUNCTION-GRADE", StringComparison.OrdinalIgnoreCase)).ToList();
+
+            double areaDivisor = unitsPerMetre * unitsPerMetre;
+            if (merged != null)
+            {
+                double planar, slope;
+                if (TryReadTinAreas(merged, out planar, out slope))
+                {
+                    totals.JunctionArea2D = planar / areaDivisor;
+                    totals.JunctionAreaSource =
+                        "Visible triangulation of merged CE Junctions All (2D; source TINs excluded)";
+                }
+                else warnings.Add("The merged junction TIN has no measurable visible triangles.");
+            }
+            else if (infills.Count > 0)
+            {
+                foreach (TinSurface surface in infills)
+                {
+                    double planar, actual;
+                    if (TryReadTinAreas(surface, out planar, out actual))
+                        totals.JunctionArea2D += planar / areaDivisor;
+                }
+                totals.JunctionAreaSource =
+                    "Sum of individual CE junction/kerb/gutter infill TINs (overlap check required)";
+                if (infills.Count > 1)
+                    warnings.Add("Junction infill TINs may overlap. Merge junction surfaces to measure the unified area.");
+            }
+            else
+            {
+                foreach (TinSurface surface in grading)
+                {
+                    double planar, actual;
+                    if (TryReadTinAreas(surface, out planar, out actual))
+                        totals.JunctionArea2D += planar / areaDivisor;
+                }
+                totals.JunctionAreaSource =
+                    "CE junction grading TINs (no merged surface or infill found; possible overlap)";
+                if (grading.Count > 1)
+                    warnings.Add("Junction grading TINs may overlap. Merge junction surfaces before final BOQ.");
+            }
+            foreach (TinSurface surface in grading)
+            {
+                double planar, actual;
+                if (TryReadTinAreas(surface, out planar, out actual))
+                    totals.JunctionGradingArea3D += actual / areaDivisor;
+            }
+            if (grading.Count == 0)
+                warnings.Add("No CE-JUNCTION-GRADE TIN surfaces found; junction daylight grading excluded from side slopes.");
+            else
+                warnings.Add("Gross junction grading 3D area includes any flat faces; review before using as net cut/fill slope area.");
+        }
+
+        private static bool TryReadTinAreas(TinSurface surface, out double planar, out double actual)
+        {
+            planar = 0;
+            actual = 0;
+            try
+            {
+                foreach (TinSurfaceTriangle triangle in surface.GetTriangles(false))
+                {
+                    Point3d a = triangle.Vertex1.Location;
+                    Point3d b = triangle.Vertex2.Location;
+                    Point3d c = triangle.Vertex3.Location;
+                    double xy = 0.5 * Math.Abs((b.X - a.X) * (c.Y - a.Y) -
+                                                (b.Y - a.Y) * (c.X - a.X));
+                    if (xy <= 1e-12) continue;
+                    double xyz = 0.5 * (b - a).CrossProduct(c - a).Length;
+                    if (double.IsNaN(xyz) || double.IsInfinity(xyz)) continue;
+                    planar += xy;
+                    actual += xyz;
+                }
+            }
+            catch (System.Exception) { return false; }
+            return planar > 1e-9;
         }
 
         private static bool TryReadAppliedAssemblyStation(
@@ -1110,6 +1356,8 @@ namespace CETools.Civil3D
             internal IDictionary<string, double> ShapeAreas { get; private set; }
             internal double RoadSurfaceWidth { get; set; }
             internal double ShoulderWidth { get; set; }
+            internal double SidewalkShapeArea { get; set; }
+            internal double ShoulderShapeArea { get; set; }
             internal double SidewalkWidth { get; set; }
             internal double SideSlopeWidth { get; set; }
         }
@@ -1120,9 +1368,11 @@ namespace CETools.Civil3D
             {
                 LayerVolumes = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
                 RoadLengths = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
+                RoadSurfaceAreasByRoad = new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase);
             }
             internal double TotalRoadLength { get; set; }
             internal IDictionary<string, double> RoadLengths { get; private set; }
+            internal IDictionary<string, double> RoadSurfaceAreasByRoad { get; private set; }
             internal double CutVolume { get; set; }
             internal double FillVolume { get; set; }
             internal double KerbLength { get; set; }
@@ -1131,6 +1381,10 @@ namespace CETools.Civil3D
             internal double ShoulderArea { get; set; }
             internal double SidewalkArea { get; set; }
             internal double SideSlopeArea { get; set; }
+            internal double SidewalkShapeVolume { get; set; }
+            internal double JunctionArea2D { get; set; }
+            internal double JunctionGradingArea3D { get; set; }
+            internal string JunctionAreaSource = "No CE junction TIN surfaces found";
             internal IDictionary<string, double> LayerVolumes { get; private set; }
         }
 

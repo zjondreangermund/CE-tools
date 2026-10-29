@@ -42,6 +42,7 @@ namespace CETools.Civil3D
             model.AddChoice("Theme", "Appearance", "CE Tools theme", CeThemeStore.Read(), "Applied to CE Tools welcome and dedicated production windows.", new[] { "Dark", "Light" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             CeThemeStore.Write(model.Text("Theme"));
+            CeInterfaceTheme.RefreshOpenWindows();
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             if (document != null) document.Editor.WriteMessage("\nCE Tools theme saved: {0}.", CeThemeStore.Read());
         }
