@@ -76,10 +76,10 @@ for marker in [
 
 for marker in [
     'BuildStraightRuns(',
-    'runCentreDistance',
+    'BranchLabelRepeatPlan.Select(',
     '"Every pipe"',
     '"Every second pipe"',
-    'pipeCentreDistance',
+    'cumulative[i] + segmentLengths[i] * 0.5',
     'SameStraightDirection(',
 ]:
     if marker not in placement:

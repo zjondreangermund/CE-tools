@@ -216,8 +216,9 @@ namespace CETools.Civil3D
             model.AddChoice("BranchLabelSide", "Layers and Annotation", "Branch-label offset side", settings.BranchLabelSide, "Place branch names above/below existing plan PipeLabel text when available; structure labels are never used as anchors.", new[] { "Alternating", "Above", "Below" });
             model.AddPositiveDouble("BranchLabelAboveOffset", "Layers and Annotation", "Above offset distance (paper mm)", settings.BranchLabelAboveOffset, "Move branch names this paper distance above the plan PipeLabel text, with centreline fallback only if no PipeLabel can be resolved.");
             model.AddPositiveDouble("BranchLabelBelowOffset", "Layers and Annotation", "Below offset distance (paper mm)", settings.BranchLabelBelowOffset, "Move branch names this paper distance below the plan PipeLabel text, with centreline fallback only if no PipeLabel can be resolved.");
-            model.AddPositiveDouble("BranchLabelLongSectionLength", "Layers and Annotation", "Long straight section threshold (m)", settings.BranchLabelLongSectionLength, "Every straight branch run gets one centred BRANCH name. Runs longer than this also receive repeated names at pipe centres.");
-            model.AddChoice("BranchLabelLongSectionFrequency", "Layers and Annotation", "Long-section repeat frequency", settings.BranchLabelLongSectionFrequency, "For long straight runs, add extra BRANCH names at every pipe centre or every second pipe centre.", new[] { "Every pipe", "Every second pipe" });
+            model.AddChoice("UseBranchThreshold", "Layers and Annotation", "Use long-section threshold", settings.BranchLabelLongSectionLength < 0 ? "OFF" : "ON", "OFF applies the repeat frequency to all runs.", new[] { "OFF", "ON" });
+            model.AddPositiveDouble("BranchLabelLongSectionLength", "Layers and Annotation", "Long straight section threshold (m)", Math.Max(0.01, settings.BranchLabelLongSectionLength), "Every straight branch run gets one centred BRANCH name. Runs longer than this also receive repeated names at pipe centres.");
+            model.AddChoice("BranchLabelLongSectionFrequency", "Layers and Annotation", "Long-section repeat frequency", settings.BranchLabelLongSectionFrequency, "For long straight runs, add extra BRANCH names at every pipe centre or every second pipe centre.", new[] { "Every pipe", "Every second pipe", "Consistent 50 m" });
             model.AddPositiveInteger("ProfileColumns", "Profile View Layout", "Profile views per row", settings.ProfileColumns, "Number of generated views before wrapping to the next row.");
             model.AddPositiveDouble("ProfileHorizontalSpacing", "Profile View Layout", "Horizontal spacing", settings.ProfileHorizontalSpacing, "Drawing-unit spacing between profile-view columns.");
             model.AddPositiveDouble("ProfileVerticalSpacing", "Profile View Layout", "Vertical spacing", settings.ProfileVerticalSpacing, "Drawing-unit spacing between profile-view rows.");
@@ -240,7 +241,7 @@ namespace CETools.Civil3D
             settings.BranchLabelSide = model.Text("BranchLabelSide");
             settings.BranchLabelAboveOffset = model.Double("BranchLabelAboveOffset", settings.BranchLabelAboveOffset);
             settings.BranchLabelBelowOffset = model.Double("BranchLabelBelowOffset", settings.BranchLabelBelowOffset);
-            settings.BranchLabelLongSectionLength = model.Double("BranchLabelLongSectionLength", settings.BranchLabelLongSectionLength);
+            settings.BranchLabelLongSectionLength = model.Text("UseBranchThreshold") == "OFF" ? -1 : model.Double("BranchLabelLongSectionLength", Math.Max(0.01, settings.BranchLabelLongSectionLength));
             settings.BranchLabelLongSectionFrequency = model.Text("BranchLabelLongSectionFrequency");
             settings.ProfileColumns = model.Integer("ProfileColumns", settings.ProfileColumns);
             settings.ProfileHorizontalSpacing = model.Double("ProfileHorizontalSpacing", settings.ProfileHorizontalSpacing);
@@ -2320,7 +2321,7 @@ namespace CETools.Civil3D
             else if (key == "BranchLabelLongSectionLength")
             {
                 double spacing;
-                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && spacing > 0.0)
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && (spacing > 0 || spacing == -1))
                     settings.BranchLabelLongSectionLength = spacing;
             }
             else if (key == "BranchLabelLongSectionFrequency")
@@ -2352,13 +2353,13 @@ namespace CETools.Civil3D
             else if (key == "ProfileHorizontalSpacing")
             {
                 double spacing;
-                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && spacing > 0.0)
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && (spacing > 0 || spacing == -1))
                     settings.ProfileHorizontalSpacing = spacing;
             }
             else if (key == "ProfileVerticalSpacing")
             {
                 double spacing;
-                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && spacing > 0.0)
+                if (double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out spacing) && (spacing > 0 || spacing == -1))
                     settings.ProfileVerticalSpacing = spacing;
             }
         }

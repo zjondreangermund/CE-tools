@@ -56,9 +56,9 @@ namespace CETools.Civil3D
                 new[] { "<Alignment direction>" }.Concat(surfaces.Select(x => x.Name)).ToArray());
             var pipeStyles = SewerNetworkLabelCommands.ReadPipeLabelStyleNames(doc);
             var structureStyles = SewerNetworkLabelCommands.ReadStructureLabelStyleNames(doc);
-            options.AddChoice("PipeStyle", "04 Layout labels", "Pipe label style", "<Keep existing>",
+            options.AddChoice("PipeStyle", "04 Layout labels", "Pipe label style", WaterLabelDefaults.Read(doc.Database, "Pipe Label Style", "<Keep existing>"),
                 "Apply this plan label style to the numbered pipes.", new[] { "<Keep existing>" }.Concat(pipeStyles).ToArray());
-            options.AddChoice("StructureStyle", "04 Layout labels", "Structure label style", "<Keep existing>",
+            options.AddChoice("StructureStyle", "04 Layout labels", "Structure label style", WaterLabelDefaults.Read(doc.Database, "Structure Label Style", "<Keep existing>"),
                 "Apply this plan label style to the numbered structures.", new[] { "<Keep existing>" }.Concat(structureStyles).ToArray());
             if (!DisciplineWorkflowDialogs.EditSettings(options)) return;
 

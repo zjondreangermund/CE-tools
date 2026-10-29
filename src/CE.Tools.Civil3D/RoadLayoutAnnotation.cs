@@ -339,10 +339,8 @@ namespace CETools.Civil3D
                 AnnotationScaleSyncManager.AddUsedDrawingScaleContexts(
                     text, drawingScales);
 #else
-                AnnotationScaleSyncManager
-                    .AddAllAnnotationScaleContexts(
-                        text,
-                        db);
+                AnnotationScaleSyncManager.AddUsedDrawingScaleContexts(text,
+                    AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(db, tr));
 #endif
                 WriteAnnotationLink(text, tr, source.Parent, "ROAD_NAME", recipe);
                 count++;

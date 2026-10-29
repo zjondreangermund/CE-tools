@@ -16,10 +16,10 @@ assert 'if (entity is Dimension || !IsAlreadyAnnotative(entity))' in sync
 assert 'internal static IList<object> ReadUsedDrawingScaleContexts(' in sync
 assert 'internal static int AddUsedDrawingScaleContexts(' in sync
 assert 'vp.GetType().GetProperty(' in sync
-# "Add all scales" remains available only for the 2023 legacy path.
+# Road names use drawing viewport scales on both supported host paths.
 assert '#if CE_CIVIL3D_2024\n                // Keep name rotation' in road
 assert 'AddUsedDrawingScaleContexts(\n                    text, drawingScales)' in road
-assert '#else\n                AnnotationScaleSyncManager\n                    .AddAllAnnotationScaleContexts(' in road
+assert '#else\n                AnnotationScaleSyncManager.AddUsedDrawingScaleContexts(' in road
 
 # A scale change alone cannot trigger dynamic dimensions to erase/rebuild.
 assert 'text.Append(source.GetType().FullName).Append(\'|\');' in multi

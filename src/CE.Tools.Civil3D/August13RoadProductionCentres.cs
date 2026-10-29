@@ -70,6 +70,8 @@ namespace CETools.Civil3D
     A("CE-Merge All Junction Surfaces", "CE_JUNCTIONSURFACEMERGE", "Create CE Junctions All from all CE junction grading and kerb/gutter infill TIN surfaces.", "04 DESIGN"),
     A("CE-Corridor Feature Lines","CE_CORRIDORFEATURELINES","Create individual feature lines from selected corridor centreline/edge/kerb/sidewalk/shoulder/toe codes or all corridor feature lines.","03 Corridors"),
     A("CE-Split Corridors","CE_CORSPLIT","Split corridor regions at specified stations.","03 Corridors"),
+    A("CE-Automatic Rebuild ON / OFF","CE_AUTOMATICREBUILD","Set all corridor and surface automatic rebuild flags independently.","03 Corridors"),
+    A("CE-Name Viewport Scales","CE_NAMESVIEWPORTSCALES","Apply current drawing viewport scales to existing Road/Sewer/Water names.","05 Annotation"),
     A("CE-Rebuild Corridors","CE_CORREBUILD","Rebuild corridor model data.","03 Corridors"),
     A("CE-Road Junction Design","CE_ROADJUNCTIONCONSTRUCTIONTOOLS","Create/finalize junction geometry, corridor regions and outputs.","04 Junction Design"),
     A("CE-Junction Stepped Offset Fallback","CE_JUNCTIONSTEPPEDOFFSETWORKFLOW","Use feature-line stepped offsets when corridor junction design is unreliable.","04 Junction Design"),

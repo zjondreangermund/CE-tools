@@ -272,6 +272,7 @@ namespace CETools.Civil3D
                 {
                     A("CE-Sewer Settings", "CE_SEWERSETTINGSPRODUCTIONCENTRE", "Parts, styles, labels, profile and band settings.", "01 Sewer Production"),
                     A("CE-Sewer Network / Layout Production", "CE_SEWERLAYOUTPRODUCTIONCENTRE", "Midblock/road-reserve routing, networks and sequencing.", "01 Sewer Production"),
+                    A("CE-Network Layout Checks / Labels", "CE_NETWORKLAYOUTTOOLS", "Vertex/structure check, label sides, viewport scales and numeric branch sorting.", "01 Sewer Production"),
                     A("CE-Sewer Design Production", "CE_SEWERDESIGNPRODUCTIONCENTRE", "Network data, alignments, profiles, labels, BOQ and report.", "01 Sewer Production")
                 });
         }
@@ -379,6 +380,7 @@ namespace CETools.Civil3D
                 {
                     A("CE-Network Data", "CE_NETWORKDATA", "Review pressure-network objects and levels.", "04 DESIGN"),
                     A("CE-Water Alignments", "CE_WATERALIGN", "Create/refresh linked Water alignments.", "05 COMPLETE"),
+                    A("CE-Network Layout Checks / Labels", "CE_NETWORKLAYOUTTOOLS", "Vertex/structure check, label sides, viewport scales and numeric branch sorting.", "05 COMPLETE"),
                     A("CE-Water Branch Names", "CE_WATERBRANCHNAMES", "Label all or selected Water branches.", "05 COMPLETE"),
                     A("CE-Link Water Gravity Parts to Surface", "CE_SEWLINKSURFACE", "Shared gravity-network surface and slopes command; select Water parts.", "04 DESIGN"),
                     A("CE-Fit All Profile Views", "CE_PROFILEVIEWFITALL", "Fit profile views.", "05 COMPLETE"),

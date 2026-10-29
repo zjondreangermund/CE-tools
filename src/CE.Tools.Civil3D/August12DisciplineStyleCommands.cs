@@ -34,7 +34,7 @@ namespace CETools.Civil3D
         public void SewerStyles() { Open("Sewer", GravityNetworkKeys); }
 
         [CommandMethod("CE_TOOLS", "CE_WATERSTYLES", CommandFlags.Modal | CommandFlags.Redraw)]
-        public void WaterStyles() { Open("Water", PressureNetworkKeys); }
+        public void WaterStyles() { Open("Water", GravityNetworkKeys.Concat(PressureNetworkKeys)); }
 
         [CommandMethod("CE_TOOLS", "CE_BULKWATERSTYLES", CommandFlags.Modal | CommandFlags.Redraw)]
         public void BulkWaterStyles() { Open("Bulk Water", PressureNetworkKeys); }

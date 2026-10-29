@@ -89,10 +89,10 @@ namespace CETools.Civil3D
                     "CE Tools - Gravity Water Labels");
                 return;
             }
-            model.AddChoice("PipeStyle", "01 Water labels", "Water pipe label style", pipeNames[0],
+            model.AddChoice("PipeStyle", "01 Water labels", "Water pipe label style", WaterLabelDefaults.Read(document.Database, "Pipe Label Style", pipeNames[0]),
                 "Use a water-specific Civil 3D gravity pipe plan label style.", pipeNames);
             model.AddChoice("StructureStyle", "01 Water labels", "Water structure label style",
-                structureNames[0], "Use a water-specific gravity structure style.", structureNames);
+                WaterLabelDefaults.Read(document.Database, "Structure Label Style", structureNames[0]), "Use a water-specific gravity structure style.", structureNames);
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             SewerNetworkLabelResult result = SewerNetworkLabelCommands.EnsureWaterLabels(
                 document, networks, model.Text("PipeStyle"), model.Text("StructureStyle"));
