@@ -34,6 +34,9 @@ jobs:
             throw 'Civil 3D 2023 repaired PluginEntry.cs does not use direct panel items.'
           }
 
+      - name: Validate Oct 29 Road/Water command and popup follow-ups
+        run: python3 scripts/Validate-October29RoadWaterFollowup.py
+
       - name: Validate Oct 28 per-discipline project style persistence
         run: python3 scripts/Validate-October28ProjectStylePersistence.py
 
