@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Diagnostics;
 using System.Reflection;
 using System.Windows;
 using System.Windows.Controls;
@@ -211,6 +212,24 @@ namespace CETools.Civil3D
                 document.Editor.WriteMessage(
                     "\nCE Tools report exported to Excel: {0}",
                     path);
+                // Save in the exact destination selected above, then open the
+                // completed workbook with the user's default .xlsx handler.
+                // A file association problem must never be presented as an
+                // export failure because the workbook is already on disk.
+                try
+                {
+                    Process.Start(new ProcessStartInfo
+                    {
+                        FileName = path,
+                        UseShellExecute = true
+                    });
+                }
+                catch (System.Exception openError)
+                {
+                    document.Editor.WriteMessage(
+                        "\nWorkbook saved but could not open automatically: {0}",
+                        openError.Message);
+                }
             }
             catch (System.Exception exception)
             {
