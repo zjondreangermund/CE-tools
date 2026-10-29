@@ -13,7 +13,10 @@ assert "db.ObjectModified += OnObjectModified" in code
 assert "AcApplication.Idle += OnIdle" in code
 assert "CE_VPTEXTUPRIGHT" in code and "CE_VPTEXTAUTO" in code
 assert "IsAlreadyAnnotative(entity)" in code
-assert "TryEnableNativePaperOrientation(entity)" in code
+# Native paper orientation is deliberately DISABLED by the 2024 safety
+# guard: enabling it can override plan-view label rotation.
+assert "TrySetNativePaperOrientation(entity, false)" in code
+assert "private static bool TryEnableNativePaperOrientation(Entity entity)" in code
 assert "Point3d oldTextLocation = leader.TextLocation;" in code
 assert "leader.TextLocation = oldTextLocation;" in code
 assert "if (inconsistent) { conflicts++; continue; }" in code
