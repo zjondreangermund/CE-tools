@@ -24,7 +24,10 @@ namespace CETools.Civil3D
                 var remembered = new ProductionSettingsDialogModel("CE_LAST_USED/" + scope + "/" + model.Title, string.Empty);
                 // Share fields so the existing store's choice validation applies to the real dialog.
                 foreach (ProductionSettingsField field in model.Fields) remembered.Fields.Add(field);
-                if (!preferSuppliedDefaults) CrossDrawingProductionSettingsStore.Load(remembered);
+                // Restore the last confirmed values even when a drawing has
+                // chosen saved project style presets. Style preferences must
+                // not unexpectedly reset unrelated command inputs.
+                CrossDrawingProductionSettingsStore.Load(remembered);
                 return remembered;
             }
             catch { return null; }
