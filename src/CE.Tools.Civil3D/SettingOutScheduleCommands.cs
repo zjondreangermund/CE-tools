@@ -430,7 +430,7 @@ namespace CETools.Civil3D
                 XlsxSheet sheet = sheets[si];
                 if (sheet == null || sheet.Rows == null) continue;
                 string name = sheet.Name ?? string.Empty;
-                int firstDataRow = name == "Selected Elements" ? 1 : 2;
+                int firstDataRow = name == "Selected Elements" ? 1 : name == "Horizontal Alignment Data" ? 3 : 2;
                 for (int ri = firstDataRow; ri < sheet.Rows.Count; ri++)
                 {
                     IList<string> row = sheet.Rows[ri];
@@ -455,8 +455,16 @@ namespace CETools.Civil3D
                     }
                     if (name == "Horizontal Alignment Data")
                     {
-                        for (int ci = 11; ci <= 14 && ci < row.Count; ci++)
-                            row[ci] = TransformPointText(row[ci], swap, reverseSigns);
+                        for (int ci = 11; ci <= 17 && ci + 1 < row.Count; ci += 2)
+                        {
+                            double y, x;
+                            if (!double.TryParse(row[ci], NumberStyles.Float, CultureInfo.InvariantCulture, out y) ||
+                                !double.TryParse(row[ci + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out x)) continue;
+                            if (swap) { double temp = y; y = x; x = temp; }
+                            if (reverseSigns) { y = -y; x = -x; }
+                            row[ci] = y.ToString("0.000", CultureInfo.InvariantCulture);
+                            row[ci + 1] = x.ToString("0.000", CultureInfo.InvariantCulture);
+                        }
                     }
                 }
             }
@@ -817,6 +825,15 @@ namespace CETools.Civil3D
             sheets[4] = ReplaceReportRows(sheets[4], pipeRows);
         }
 
+        private static string[] FormatDesignPointColumns(object point)
+        {
+            double x, y;
+            // Point objects are read in drawing coordinates; output Y before X.
+            if (!TryPointXY(point, out x, out y)) return new[] { "", "" };
+            return new[] { y.ToString("0.000", CultureInfo.InvariantCulture),
+                           x.ToString("0.000", CultureInfo.InvariantCulture) };
+        }
+
         private static void PopulateHorizontalAlignmentReport(Document document, IList<XlsxSheet> sheets)
         {
             if (document == null || sheets == null || sheets.Count < 8) return;
@@ -914,10 +931,10 @@ namespace CETools.Civil3D
                             if (TryAlignmentPoint(alignment, endStation, 0.0, out px, out py))
                                 endObject = new Point3d(px, py, 0.0);
                         }
-                        string pi = FormatDesignPoint(piObject);
-                        string start = FormatDesignPoint(startObject);
-                        string end = FormatDesignPoint(endObject);
-                        string center = FormatDesignPoint(centerObject);
+                        string[] pi = FormatDesignPointColumns(piObject);
+                        string[] start = FormatDesignPointColumns(startObject);
+                        string[] end = FormatDesignPointColumns(endObject);
+                        string[] center = FormatDesignPointColumns(centerObject);
                         rows.Add(new List<string> {
                             alignment.Name ?? string.Empty,
                             FormatMaybe(roadLength, "0.000"),
@@ -925,7 +942,7 @@ namespace CETools.Civil3D
                             FormatMaybe(length, "0.000"), FormatMaybe(radius, "0.000"),
                             FormatMaybe(designSpeed, "0.###"), direction,
                             FormatStation(startStation), FormatStation(endStation), FormatStation(piStation),
-                            pi, start, end, center
+                            pi[0], pi[1], start[0], start[1], end[0], end[1], center[0], center[1]
                         });
                     }
                 }
@@ -934,7 +951,17 @@ namespace CETools.Civil3D
             rows = rows.OrderBy(r => r.Count > 0 ? r[0] : string.Empty,
                 Comparer<string>.Create(CompareNaturalPointNames))
                 .ToList();
-            sheets[5] = ReplaceReportRows(sheets[5], rows);
+            // Title, grouped column headings and independent Y/X subheadings.
+            // Retain all four coordinate pairs as individual numeric Excel columns.
+            var horizontalRows = new List<IList<string>>();
+            horizontalRows.Add(new List<string> { "ROAD - HORIZONTAL ALIGNMENT DATA" });
+            horizontalRows.Add(new List<string> { "Alignment", "Road Length (m)", "No.", "Type", "Entity Length (m)",
+                "Radius (m)", "Design Speed", "Direction", "Start Station", "End Station", "PI Station",
+                "PI Point", "", "Start Point", "", "End Point", "", "Center Point", "" });
+            horizontalRows.Add(new List<string> { "", "", "", "", "", "", "", "", "", "", "",
+                "Y", "X", "Y", "X", "Y", "X", "Y", "X" });
+            horizontalRows.AddRange(rows);
+            sheets[5] = new XlsxSheet("Horizontal Alignment Data", horizontalRows);
         }
 
         private static void PopulateVerticalAlignmentReport(Document document, IList<XlsxSheet> sheets)
