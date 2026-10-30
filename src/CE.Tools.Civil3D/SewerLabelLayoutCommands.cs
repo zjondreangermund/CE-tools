@@ -22,6 +22,55 @@ namespace CETools.Civil3D
         private const double Tolerance = 1e-8;
         private const int MaximumOffsetAttempts = 16;
 
+        // Shared, popup-driven collision pass for CE-generated MText/DBText names.
+        // Native Civil 3D label entities are intentionally excluded: their positions
+        // are controlled by label styles and must not be moved as generic text.
+        [CommandMethod("CE_TOOLS", "CE_LABELCOLLISIONREVIEW", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void ReviewNameCollisions()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null) return;
+            var options = new ProductionSettingsDialogModel(
+                "CE Tools - Name Label Collision Control",
+                "Avoid overlapping CE-generated road, water and sewer text. Civil 3D native labels are not moved.");
+            options.AddChoice("Discipline", "01 Scope", "Names to review", "All",
+                new[] { "All", "Road", "Water", "Sewer" },
+                "Only CE-generated MText and DBText on matching layers are moved.");
+            options.AddChoice("Overlap", "02 Placement", "Avoid overlapping name text", "ON",
+                new[] { "ON", "OFF" }, "OFF leaves existing label positions unchanged.");
+            if (!DisciplineWorkflowDialogs.EditSettings(options)) return;
+            if (options.Text("Overlap") != "ON") return;
+
+            string category = options.Text("Discipline");
+            var ids = new List<ObjectId>();
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                BlockTableRecord space = tr.GetObject(document.Database.CurrentSpaceId, OpenMode.ForRead) as BlockTableRecord;
+                if (space == null) return;
+                foreach (ObjectId id in space)
+                {
+                    Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+                    if (!(entity is MText) && !(entity is DBText)) continue;
+                    string layer = (entity.Layer ?? string.Empty).ToUpperInvariant();
+                    if (!layer.StartsWith("CE-") && !layer.StartsWith("CE_")) continue;
+                    bool road = layer.Contains("ROAD") || layer.Contains("ALIGN");
+                    bool water = layer.Contains("WATER");
+                    bool sewer = layer.Contains("SEW") || layer.Contains("BRANCH");
+                    if ((category == "All" && (road || water || sewer)) ||
+                        (category == "Road" && road) || (category == "Water" && water) ||
+                        (category == "Sewer" && sewer)) ids.Add(id);
+                }
+            }
+            if (ids.Count == 0)
+            {
+                document.Editor.WriteMessage("\\nNo supported CE-generated name text found on the selected drawing space.");
+                return;
+            }
+            document.Editor.SetImpliedSelection(ids.ToArray());
+            try { SortSewerLabels(); }
+            finally { document.Editor.SetImpliedSelection(new ObjectId[0]); }
+        }
+
         [CommandMethod(
             "CE_TOOLS",
             "CE_SEWLABELSORT",
