@@ -34,10 +34,10 @@ namespace CETools.Civil3D
                 "CE Tools - Name Label Collision Control",
                 "Avoid overlapping CE-generated road, water and sewer text. Civil 3D native labels are not moved.");
             options.AddChoice("Discipline", "01 Scope", "Names to review", "All",
-                new[] { "All", "Road", "Water", "Sewer" },
-                "Only CE-generated MText and DBText on matching layers are moved.");
+                "Only CE-generated MText and DBText on matching layers are moved.",
+                new[] { "All", "Road", "Water", "Sewer" });
             options.AddChoice("Overlap", "02 Placement", "Avoid overlapping name text", "ON",
-                new[] { "ON", "OFF" }, "OFF leaves existing label positions unchanged.");
+                "OFF leaves existing label positions unchanged.", new[] { "ON", "OFF" });
             if (!DisciplineWorkflowDialogs.EditSettings(options)) return;
             if (options.Text("Overlap") != "ON") return;
 
