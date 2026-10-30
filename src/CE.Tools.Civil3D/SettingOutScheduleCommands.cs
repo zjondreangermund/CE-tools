@@ -475,6 +475,52 @@ namespace CETools.Civil3D
             return string.Format(CultureInfo.InvariantCulture, "({0:0.000}m,{1:0.000}m)", a, b);
         }
 
+        // Prefer the pipe's explicit Civil 3D reference alignment. When absent,
+        // resolve numbered P<n>.<m> pipes only to an unambiguous matching branch.
+        // Never substitute a common network name for the branch identity.
+        private static string ResolvePipeBranchName(CivilPipe pipe, CivilNetwork network,
+            Transaction transaction, IDictionary<int, string> alignmentNames)
+        {
+            try
+            {
+                ObjectId reference = pipe.RefAlignmentId;
+                if (!reference.IsNull && !reference.IsErased)
+                {
+                    CivilAlignment alignment = transaction.GetObject(reference, OpenMode.ForRead, false) as CivilAlignment;
+                    if (alignment != null && !string.IsNullOrWhiteSpace(alignment.Name)) return alignment.Name;
+                }
+            }
+            catch { }
+            string description = ReadDesignText(pipe, "Description");
+            Match match = Regex.Match(pipe.Name ?? string.Empty, @"^P(?<number>\\d+)\\.", RegexOptions.IgnoreCase);
+            if (!match.Success) match = Regex.Match(description ?? string.Empty, @"Branch\\s*-\\s*(?<number>\\d+)", RegexOptions.IgnoreCase);
+            int number;
+            string name;
+            if (match.Success && int.TryParse(match.Groups["number"].Value, NumberStyles.None,
+                CultureInfo.InvariantCulture, out number) && alignmentNames.TryGetValue(number, out name))
+                return name;
+            return string.Empty;
+        }
+
+        private static Dictionary<int, string> ReadBranchAlignmentNames(Transaction transaction)
+        {
+            var result = new Dictionary<int, string>();
+            var ambiguous = new HashSet<int>();
+            foreach (ObjectId id in CivilApplication.ActiveDocument.GetAlignmentIds())
+            {
+                CivilAlignment alignment = transaction.GetObject(id, OpenMode.ForRead, false) as CivilAlignment;
+                if (alignment == null) continue;
+                Match match = Regex.Match(alignment.Name ?? string.Empty,
+                    @"(?:^| - )Branch\\s*-\\s*(?<number>\\d+)$", RegexOptions.IgnoreCase);
+                int number;
+                if (!match.Success || !int.TryParse(match.Groups["number"].Value, out number)) continue;
+                if (result.ContainsKey(number)) ambiguous.Add(number);
+                else result[number] = alignment.Name;
+            }
+            foreach (int number in ambiguous) result.Remove(number);
+            return result;
+        }
+
         private static void PopulateWaterStructureAndPipeReports(Document document, IList<XlsxSheet> sheets)
         {
             if (document == null || sheets == null || sheets.Count < 5) return;
@@ -486,6 +532,7 @@ namespace CETools.Civil3D
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 CivilSurface groundSurface = FindExportSurface(document, transaction, _exportGroundSurfaceName, false);
+                Dictionary<int, string> branchAlignments = ReadBranchAlignmentNames(transaction);
                 foreach (ObjectId networkId in civilDocument.GetPipeNetworkIds())
                 {
                     CivilNetwork network = transaction.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
@@ -535,7 +582,7 @@ namespace CETools.Civil3D
                                 ? slopePercent.ToString("0.000", CultureInfo.InvariantCulture) : string.Empty,
                             FormatMaybe(startInvert, "0.000"),
                             FormatMaybe(endInvert, "0.000"),
-                            networkName
+                            ResolvePipeBranchName(pipe, network, transaction, branchAlignments)
                         });
                     }
 
@@ -666,6 +713,7 @@ namespace CETools.Civil3D
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
                 CivilSurface groundSurface = FindExportSurface(document, transaction, _exportGroundSurfaceName, false);
+                Dictionary<int, string> branchAlignments = ReadBranchAlignmentNames(transaction);
                 foreach (ObjectId networkId in civilDocument.GetPipeNetworkIds())
                 {
                     CivilNetwork network = transaction.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
@@ -719,7 +767,7 @@ namespace CETools.Civil3D
                                 ? slopePercent.ToString("0.000", CultureInfo.InvariantCulture) : string.Empty,
                             FormatMaybe(startInvert, "0.000"),
                             FormatMaybe(endInvert, "0.000"),
-                            networkName
+                            ResolvePipeBranchName(pipe, network, transaction, branchAlignments)
                         });
                     }
 
