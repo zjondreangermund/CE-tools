@@ -459,17 +459,7 @@ namespace CETools.Civil3D
                 ? AttachmentPoint.BottomCenter
                 : AttachmentPoint.TopCenter;
             label.Annotative = AnnotativeStates.True;
-            // Restrict branch labels to the current and actually used viewport
-            // annotation scales; do not blindly attach every scale in the drawing.
-            try
-            {
-                Transaction activeTransaction = database.TransactionManager.TopTransaction;
-                if (activeTransaction != null)
-                    AnnotationScaleSyncManager.AddUsedDrawingScaleContexts(
-                        label, AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(
-                            database, activeTransaction));
-            }
-            catch { }
+            // Scale representations are attached after final geometry and DB registration.
             // MText.TextHeight is the model height even for this annotative
             // entity in Civil 3D 2023. Convert the selected absolute paper-mm
             // value through the active annotation scale so Properties reports

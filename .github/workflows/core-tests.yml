@@ -297,6 +297,9 @@ jobs:
       - name: Parse Civil 3D C# syntax
         run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
 
+      - name: Test name annotation scale orientation contract
+        run: dotnet run --project tests/CE.Tools.NameScale.Tests/CE.Tools.NameScale.Tests.csproj -c Release
+
       - name: Test region snapshot recovery and branch label repetition
         run: dotnet run --project tests/CE.Tools.LayoutFollowup.Tests/CE.Tools.LayoutFollowup.Tests.csproj -c Release
 

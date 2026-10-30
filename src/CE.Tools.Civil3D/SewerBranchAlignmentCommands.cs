@@ -778,11 +778,8 @@ namespace CETools.Civil3D
                                 transaction.AddNewlyCreatedDBObject(
                                     label,
                                     true);
-                                AnnotationScaleSyncManager
-                                    .AddUsedDrawingScaleContexts(
-                                        label,
-                                        AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(
-                                            database, transaction));
+                                NameAnnotationScaleOrientation.Synchronize(label,
+                                    AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(database, transaction));
                                 labelsCreated++;
                             }
 
@@ -1811,6 +1808,8 @@ namespace CETools.Civil3D
                             label.XData = BuildTag(branchKey, "Label");
                             modelSpace.AppendEntity(label);
                             transaction.AddNewlyCreatedDBObject(label, true);
+                            NameAnnotationScaleOrientation.Synchronize(label,
+                                AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(database, transaction));
                             labelsCreated++;
                         }
                     }

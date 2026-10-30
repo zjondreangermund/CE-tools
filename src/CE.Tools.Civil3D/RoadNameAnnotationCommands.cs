@@ -359,6 +359,8 @@ namespace CETools.Civil3D
                     }
                     catch { }
 
+                    NameAnnotationScaleOrientation.Synchronize(label,
+                        AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(document.Database, transaction));
                     WriteLabelLink(
                         label,
                         handle);

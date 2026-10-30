@@ -182,9 +182,9 @@ namespace CETools.Civil3D
                         label.Attachment = AttachmentPoint.MiddleCenter;
                         label.TextHeight = PaperAnnotationScale.AnnotativeTextHeight(document.Database, options.Double("TextHeight", 3.5));
                         PaperAnnotationScale.SetAnnotative(label);
-                        AnnotationScaleSyncManager.AddUsedDrawingScaleContexts(label, drawingScales);
                         label.BackgroundFill = true; label.UseBackgroundColor = true; label.BackgroundScaleFactor = 1.1;
                         label.Rotation = options.Text("Direction") == "Along alignment" ? angle : 0.0;
+                        NameAnnotationScaleOrientation.Synchronize(label, drawingScales);
                         label.LayerId = layerId;
                         WaterProductionCommands.LinkBranchLabel(document.Database, transaction, label, alignment);
                         label.XData = new ResultBuffer(new TypedValue(1001, "CE_WATER_BRANCH_LABEL"),
