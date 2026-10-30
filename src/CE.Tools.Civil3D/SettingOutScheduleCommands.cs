@@ -980,6 +980,15 @@ namespace CETools.Civil3D
                         if (double.IsNaN(k)) k = ReadDesignDouble(pvi, "K", "KValue");
                         double radius = ReadDesignDouble(curve, "Radius", "CurveRadius");
                         if (double.IsNaN(radius)) radius = ReadDesignDouble(pvi, "Radius", "CurveRadius");
+                        // Calculate parabolic curve parameters from corrected percentage grades.
+                        // Trust the profile's curve length, not a K-value computed with decimal gradients.
+                        if (!double.IsNaN(curveLength) && curveLength > 0 &&
+                            !double.IsNaN(gradeIn) && !double.IsNaN(gradeOut) &&
+                            Math.Abs(gradeOut - gradeIn) > 1e-8)
+                        {
+                            k = curveLength / Math.Abs(gradeOut - gradeIn);
+                            radius = k * 100.0;
+                        }
                         double designSpeed = ReadDesignDouble(curve, "DesignSpeed", "DesignSpeedValue", "Speed");
                         if (double.IsNaN(designSpeed)) designSpeed = ReadDesignDouble(pvi, "DesignSpeed", "DesignSpeedValue", "Speed");
                         if (double.IsNaN(designSpeed)) designSpeed = ReadDesignDouble(selectedProfile, "DesignSpeed", "DesignSpeedValue", "Speed");
@@ -2420,6 +2429,7 @@ namespace CETools.Civil3D
             AddControlRow(grid, 6, "Existing / natural ground surface", _groundSurface);
             AddControlRow(grid, 7, "Final / design surface", _finishedSurface);
             root.Children.Add(grid);
+            Loaded += delegate { CeInterfaceTheme.Apply(this); };
         }
 
         public bool Accepted { get; private set; }
