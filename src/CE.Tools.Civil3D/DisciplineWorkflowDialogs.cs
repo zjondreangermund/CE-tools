@@ -58,7 +58,11 @@ namespace CETools.Civil3D
                 try
                 {
                     Document active = AcApplication.DocumentManager.MdiActiveDocument;
-                    if (active != null) active.Window.Focus();
+                    if (active != null && active.Window != null)
+                    {
+                        var focus = active.Window.GetType().GetMethod("Focus", Type.EmptyTypes);
+                        if (focus != null) focus.Invoke(active.Window, null);
+                    }
                 }
                 catch { }
             };
