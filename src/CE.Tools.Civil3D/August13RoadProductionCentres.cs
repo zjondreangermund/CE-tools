@@ -105,6 +105,8 @@ namespace CETools.Civil3D
         A("11. Create CE road assembly","CE_ASSEMBLYCREATE","Road production sequence step 11.","11 Road Sequence"),
         A("12. CE-NGL and Final Road Profiles","CE_ROADPROFILEFULL","Road production sequence step 12.","12 Road Sequence"),
         A("13. Assign Profile View Styles to Multiple Views","CE_PROFILEVIEWSTYLEMULTI","Road production sequence step 13.","13 Road Sequence"),
+        A("13a. Assign Profile Label Sets","CE_PROFILELABELSETMULTI","Apply label sets to multiple design profiles.","13 Road Sequence"),
+        A("13b. Export Design Data Schedules","CE_DESIGNDATAEXPORT","Export road, water and sewer schedules to Excel with NG/FG surface selection.","13 Road Sequence"),
         A("14. Import Band Set / Repair Road Band Sources","CE_PROFILEVIEWDATASOURCES","Road production sequence step 14.","14 Road Sequence"),
         A("15. CE-Match Profile View Properties","CE_PROFILEVIEWMATCH","Road production sequence step 15.","15 Road Sequence"),
         A("16. CE-Fit All Profile Views","CE_PROFILEVIEWFITALL","Road production sequence step 16.","16 Road Sequence"),
