@@ -288,7 +288,6 @@ namespace CETools.Civil3D
             }
         }
 
-#if CE_CIVIL3D_2024 || CE_CIVIL3D_2025 || CE_CIVIL3D_2026 || CE_CIVIL3D_2027
         /// <summary>
         /// Read only annotation scales actually referenced by this drawing's
         /// paper-space viewports, plus its current model annotation scale.
@@ -366,7 +365,6 @@ namespace CETools.Civil3D
                 if (context != null && AddContext(entity, context)) count++;
             return count;
         }
-#endif
 
         internal static int AddAllAnnotationScaleContexts(Entity entity, Database database)
         {

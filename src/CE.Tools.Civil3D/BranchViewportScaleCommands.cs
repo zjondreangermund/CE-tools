@@ -1,5 +1,6 @@
 using System;
 using System.Linq;
+using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Runtime;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
@@ -31,9 +32,39 @@ namespace CETools.Civil3D
             }
             doc.Editor.Regen(); doc.Editor.WriteMessage("\nRoad/Sewer/Water names assigned current and used viewport scales: {0}.", count);
         }
-        private static bool IsName(MText text)
+        [CommandMethod("CE_TOOLS", "CE_NAMESCALEROTATION", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void RepairRotation()
         {
-            foreach (string app in new[] { "CE_TOOLS_SEWALIGN", "CE_WATER_BRANCH_LABEL", "CE_TOOLS_WATER", "CE_ROAD_NAME_LINK" })
+            var doc = AcApplication.DocumentManager.MdiActiveDocument;
+            if (doc == null) return;
+            doc.Editor.WriteMessage("\nUse the annotation scale showing the CORRECT name angle and position. This copies that representation to all scales of selected CE names.");
+            var selection = doc.Editor.GetSelection(new PromptSelectionOptions {
+                MessageForAdding = "\nSelect CE road/branch names to synchronize: ", AllowDuplicates = false
+            }, new SelectionFilter(new[] { new TypedValue((int)DxfCode.Start, "MTEXT") }));
+            if (selection.Status != PromptStatus.OK) return;
+            int changed = 0, skipped = 0;
+            using (doc.LockDocument())
+            using (var tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                var scales = AnnotationScaleSyncManager.ReadUsedDrawingScaleContexts(doc.Database, tr);
+                foreach (ObjectId id in selection.Value.GetObjectIds())
+                {
+                    var text = tr.GetObject(id, OpenMode.ForRead) as MText;
+                    if (text == null || !IsName(text)) { skipped++; continue; }
+                    text.UpgradeOpen();
+                    PaperAnnotationScale.SetAnnotative(text);
+                    NameAnnotationScaleOrientation.Synchronize(text, scales);
+                    changed++;
+                }
+                tr.Commit();
+            }
+            doc.Editor.Regen();
+            doc.Editor.WriteMessage("\nName scale representations synchronized: {0}; unrelated objects skipped: {1}.", changed, skipped);
+        }
+
+        internal static bool IsName(MText text)
+        {
+            foreach (string app in new[] { "CE_TOOLS_SEWALIGN", "CE_WATER_BRANCH_LABEL", "CE_TOOLS_WATER", "CE_ROAD_NAME_LINK", "CE_ROAD_NAME_ANNOTATION" })
                 using (var data = text.GetXDataForApplication(app)) if (data != null) return true;
             // Road annotation links also live in extension dictionaries.
             if (!text.ExtensionDictionary.IsNull)

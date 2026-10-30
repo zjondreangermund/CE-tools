@@ -272,6 +272,14 @@ namespace CETools.Civil3D
                         // viewport's horizontal text rule. Also undo the native
                         // "Match orientation to layout" flag previously set
                         // on older generated names so rotation stays editable.
+                        if (entity is MText && BranchViewportScaleCommands.IsName((MText)entity))
+                        {
+                            // Branch names, including custom-layer labels, also
+                            // retain their alignment angle when viewports refresh.
+                            if (IsAlreadyAnnotative(entity) &&
+                                TrySetNativePaperOrientation(entity, false)) native++;
+                            continue;
+                        }
                         if (IsLinkedRoadName(entity, tr))
                         {
                             if (IsAlreadyAnnotative(entity) &&
