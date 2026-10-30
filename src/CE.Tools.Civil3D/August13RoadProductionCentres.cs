@@ -17,6 +17,7 @@ namespace CETools.Civil3D
    {
     A("CE-Road Settings","CE_ROADSETTINGSCENTRE","Road-only project and Civil 3D settings.","01 Road Production"),
     A("CE-Road Layout Production","CE_ROADLAYOUTPRODUCTIONCENTRE","Road reserve geometry, junctions, annotation and setting-out.","01 Road Production"),
+    A("Vehicle Tracking (Preliminary)","CE_VEHICLETRACKING","Review vehicle edge and wheel guides, offsets, junction-path intent and clearance/sight inputs.","01 Road Production"),
     A("CE-Road Design Production","CE_ROADDESIGNPRODUCTIONCENTRE","Alignments, profiles, corridors, junction design, BOQ and drawings.","01 Road Production"),
     A("FINAL ROAD PRODUCTION","CE_FINALROADPRODUCTION","Run the approved road-production sequence from ROAD SEQUENCE.docx.","01 Road Production")
    });
