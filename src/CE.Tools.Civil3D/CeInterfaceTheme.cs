@@ -270,6 +270,7 @@ namespace CETools.Civil3D
             if (item == null) return;
             item.Background = item.IsHighlighted || item.IsSelected ? palette.Accent : palette.Input;
             item.Foreground = item.IsHighlighted || item.IsSelected ? Brushes.White : palette.Foreground;
+            item.SetCurrentValue(Control.ForegroundProperty, item.IsHighlighted || item.IsSelected ? Brushes.White : palette.Foreground);
             item.BorderBrush = palette.Border;
         }
 

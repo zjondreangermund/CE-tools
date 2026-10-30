@@ -51,6 +51,21 @@ namespace CETools.Civil3D
             {
                 KeepOpenOnAction = true
             };
+            // Restore focus to Civil 3D when a modeless production centre closes.
+            // No minimization or WindowState change is performed on AutoCAD.
+            window.Closed += delegate
+            {
+                try
+                {
+                    Document active = AcApplication.DocumentManager.MdiActiveDocument;
+                    if (active != null && active.Window != null)
+                    {
+                        var focus = active.Window.GetType().GetMethod("Focus", Type.EmptyTypes);
+                        if (focus != null) focus.Invoke(active.Window, null);
+                    }
+                }
+                catch { }
+            };
             AcApplication.ShowModelessWindow(window);
         }
 
