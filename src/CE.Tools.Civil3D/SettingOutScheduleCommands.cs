@@ -40,6 +40,8 @@ namespace CETools.Civil3D
     {
         private const string LinkRecordName = "CE_SETTING_OUT_LINKS";
         private const string SchemaVersion = "1";
+        private static string _exportGroundSurfaceName = string.Empty;
+        private static string _exportFinishedSurfaceName = string.Empty;
 
         [CommandMethod("CE_TOOLS", "CE_SETTINGOUTTOOLS", CommandFlags.Modal)]
         public void SettingOutTools()
@@ -349,9 +351,11 @@ namespace CETools.Civil3D
                 return;
             }
 
-            var exportOptions = new DesignDataExportOptionsWindow();
+            var exportOptions = new DesignDataExportOptionsWindow(document);
             AcApplication.ShowModalWindow(exportOptions);
             if (!exportOptions.Accepted) return;
+            _exportGroundSurfaceName = exportOptions.GroundSurfaceName;
+            _exportFinishedSurfaceName = exportOptions.FinishedSurfaceName;
             bool swapCoordinates = exportOptions.SwapCoordinates;
             bool reverseCoordinateSigns = exportOptions.ReverseCoordinateSigns;
             double chainageInterval = exportOptions.ChainageInterval;
@@ -481,7 +485,7 @@ namespace CETools.Civil3D
 
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                CivilSurface groundSurface = FindUniqueExistingGroundSurface(document, transaction);
+                CivilSurface groundSurface = FindExportSurface(document, transaction, _exportGroundSurfaceName, false);
                 foreach (ObjectId networkId in civilDocument.GetPipeNetworkIds())
                 {
                     CivilNetwork network = transaction.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
@@ -530,7 +534,8 @@ namespace CETools.Civil3D
                             !double.IsNaN(slopePercent) && !double.IsInfinity(slopePercent)
                                 ? slopePercent.ToString("0.000", CultureInfo.InvariantCulture) : string.Empty,
                             FormatMaybe(startInvert, "0.000"),
-                            FormatMaybe(endInvert, "0.000")
+                            FormatMaybe(endInvert, "0.000"),
+                            networkName
                         });
                     }
 
@@ -576,6 +581,22 @@ namespace CETools.Civil3D
 
             sheets[1] = ReplaceReportRows(sheets[1], structureRows);
             sheets[2] = ReplaceReportRows(sheets[2], pipeRows);
+        }
+
+        private static CivilSurface FindExportSurface(Document document, Transaction transaction, string selectedName, bool finished)
+        {
+            if (!string.IsNullOrWhiteSpace(selectedName))
+            {
+                foreach (ObjectId id in CivilApplication.ActiveDocument.GetSurfaceIds())
+                {
+                    CivilSurface surface = transaction.GetObject(id, OpenMode.ForRead, false) as CivilSurface;
+                    if (surface != null && string.Equals(surface.Name, selectedName, StringComparison.OrdinalIgnoreCase)) return surface;
+                }
+                // Never silently substitute another surface for a missing explicitly selected one.
+                return null;
+            }
+            return finished ? FindUniqueFinishedGroundSurface(CivilApplication.ActiveDocument, transaction)
+                            : FindUniqueExistingGroundSurface(document, transaction);
         }
 
         private static CivilSurface FindUniqueExistingGroundSurface(Document document, Transaction transaction)
@@ -644,7 +665,7 @@ namespace CETools.Civil3D
 
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                CivilSurface groundSurface = FindUniqueExistingGroundSurface(document, transaction);
+                CivilSurface groundSurface = FindExportSurface(document, transaction, _exportGroundSurfaceName, false);
                 foreach (ObjectId networkId in civilDocument.GetPipeNetworkIds())
                 {
                     CivilNetwork network = transaction.GetObject(networkId, OpenMode.ForRead, false) as CivilNetwork;
@@ -674,6 +695,11 @@ namespace CETools.Civil3D
                         if (length <= 1e-9)
                             length = ReadDesignDouble(pipe, "Length2DCenterToCenter", "Length2D", "Length3DCenterToCenter", "Length3D");
 
+                        // Export gravity pipes in their downhill reporting direction; do not alter Civil 3D geometry.
+                        if (!double.IsNaN(startInvert) && !double.IsNaN(endInvert) && endInvert > startInvert)
+                        {
+                            double temporary = startInvert; startInvert = endInvert; endInvert = temporary;
+                        }
                         double slopePercent = length > 1e-9 && !double.IsNaN(startInvert) && !double.IsNaN(endInvert)
                             ? ((startInvert - endInvert) / length) * 100.0 : double.NaN;
                         string pipeName = ReadDesignText(pipe, "Name", "PartName");
@@ -692,7 +718,8 @@ namespace CETools.Civil3D
                             !double.IsNaN(slopePercent) && !double.IsInfinity(slopePercent)
                                 ? slopePercent.ToString("0.000", CultureInfo.InvariantCulture) : string.Empty,
                             FormatMaybe(startInvert, "0.000"),
-                            FormatMaybe(endInvert, "0.000")
+                            FormatMaybe(endInvert, "0.000"),
+                            networkName
                         });
                     }
 
@@ -938,7 +965,10 @@ namespace CETools.Civil3D
                         double station = pviList[i].Station;
                         double elevation = pviList[i].Elevation;
                         double gradeIn = ReadDesignDouble(pvi, "GradeIn", "IncomingGrade", "GradeInPercent");
+                        // Civil 3D GradeIn/GradeOut are decimal gradients (0.005 = 0.5%).
+                        if (!double.IsNaN(gradeIn)) gradeIn *= 100.0;
                         double gradeOut = ReadDesignDouble(pvi, "GradeOut", "OutgoingGrade", "GradeOutPercent");
+                        if (!double.IsNaN(gradeOut)) gradeOut *= 100.0;
                         if (double.IsNaN(gradeIn) && i > 0) gradeIn = GradeBetween(pviList[i - 1].Pvi, pvi);
                         if (double.IsNaN(gradeOut) && i + 1 < pviList.Count) gradeOut = GradeBetween(pvi, pviList[i + 1].Pvi);
                         object curve = ReadDesignObject(pvi, "VerticalCurve", "Curve");
@@ -1057,8 +1087,8 @@ namespace CETools.Civil3D
             CivilDocument civil = CivilApplication.ActiveDocument;
             using (Transaction tr = document.Database.TransactionManager.StartTransaction())
             {
-                CivilSurface eg = FindUniqueExistingGroundSurface(document, tr);
-                CivilSurface fg = FindUniqueFinishedGroundSurface(civil, tr);
+                CivilSurface eg = FindExportSurface(document, tr, _exportGroundSurfaceName, false);
+                CivilSurface fg = FindExportSurface(document, tr, _exportFinishedSurfaceName, true);
                 foreach (ObjectId id in civil.GetAlignmentIds())
                 {
                     CivilAlignment alignment = tr.GetObject(id, OpenMode.ForRead, false) as CivilAlignment;
@@ -1187,8 +1217,8 @@ namespace CETools.Civil3D
             if (document == null || junctionRows == null || junctionRows.Count <= 2) return;
             using (Transaction tr = document.Database.TransactionManager.StartTransaction())
             {
-                CivilSurface eg = FindUniqueExistingGroundSurface(document, tr);
-                CivilSurface fg = FindUniqueFinishedGroundSurface(CivilApplication.ActiveDocument, tr);
+                CivilSurface eg = FindExportSurface(document, tr, _exportGroundSurfaceName, false);
+                CivilSurface fg = FindExportSurface(document, tr, _exportFinishedSurfaceName, true);
                 for (int i = 2; i < junctionRows.Count; i++)
                 {
                     IList<string> row = junctionRows[i];
@@ -1463,9 +1493,9 @@ namespace CETools.Civil3D
             {
                 ReportSheet("Road Junction Setting-Out", "ROAD JUNCTIONS - SETTING-OUT CO-ORDINATES", new[] { "POINT", "Y", "X", "EXISTING GROUND LEVEL (m)", "FINAL LEVEL (m)", "HEIGHT DIFFERENCE (m)" }),
                 ReportSheet("Water Structure Data", "WATER - STRUCTURE DATA", new[] { "Node Name", "Type", "Y Coordinate", "X Coordinate", "Surface Elevation (m)", "Rim Elevation (m)", "Invert Elevation (m)", "Depth Below Surface (m)" }),
-                ReportSheet("Water Pipe Data", "WATER - PIPE DATA", new[] { "Pipe Name", "Pipe Description", "Pipe Size", "Length (m)", "Slope (%)", "Start Invert Elevation (m)", "End Invert Elevation (m)" }),
+                ReportSheet("Water Pipe Data", "WATER - PIPE DATA", new[] { "Pipe Name", "Pipe Description", "Pipe Size", "Length (m)", "Slope (%)", "Start Invert Elevation (m)", "End Invert Elevation (m)", "Branch Name" }),
                 ReportSheet("Sewer Structure Data", "SEWER - STRUCTURE DATA", new[] { "Node Name", "X Coordinate", "Y Coordinate", "Surface Elevation (m)", "Rim Elevation (m)", "Invert Elevation (m)", "Depth (m)", "Node Type" }),
-                ReportSheet("Sewer Pipe Data", "SEWER - PIPE DATA", new[] { "Pipe Name", "Pipe Description", "Pipe Size", "Length (m)", "Slope (%)", "Start Invert Elevation (m)", "End Invert Elevation (m)" }),
+                ReportSheet("Sewer Pipe Data", "SEWER - PIPE DATA", new[] { "Pipe Name", "Pipe Description", "Pipe Size", "Length (m)", "Slope (%)", "Start Invert Elevation (m)", "End Invert Elevation (m)", "Branch Name" }),
                 ReportSheet("Horizontal Alignment Data", "ROAD - HORIZONTAL ALIGNMENT DATA", new[] { "Alignment", "Road Length (m)", "No.", "Type", "Entity Length (m)", "Radius (m)", "Design Speed", "Direction", "Start Station", "End Station", "PI Station", "PI Point (-Y,-X)", "Start Point (-Y,-X)", "End Point (-Y,-X)", "Center Point (-Y,-X)" }),
                 ReportSheet("Vertical Alignment Data", "ROAD - VERTICAL ALIGNMENT DATA", new[] { "Alignment", "No.", "PVI Station", "PVI Elevation", "Grade In (%)", "Grade Out (%)", "Profile Curve Type", "Profile Curve Length (m)", "K Value", "Curve Radius (m)", "Design Speed" }),
                 ReportSheet("Construction Levels", "ROAD - LEVELS FOR CONSTRUCTION", new[] { "Alignment", "Chainage (m)", "Y(-)", "X(+)", "NG - Left - 3.000 (m)", "NG - CL Levels (m)", "NG - Right - 3.000 (m)", "Final Road - 3.000m - Left (m)", "Final Road CL Levels (m)", "Final Road - 3.000m - Right (m)", "Left - 3.000 (m) - Diff", "CL - 0.000 (m) - Diff", "Right - 3.000 (m) - Diff" })
@@ -2274,6 +2304,21 @@ namespace CETools.Civil3D
         }
     }
 
+    internal static class DesignDataExportSurfaceStore
+    {
+        private static string FileName { get { return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "CE Tools", "DesignDataExport.surfaces"); } }
+        public static string Read(bool finished)
+        {
+            try { string[] names = File.ReadAllLines(FileName); return names.Length > (finished ? 1 : 0) ? names[finished ? 1 : 0] : string.Empty; }
+            catch { return string.Empty; }
+        }
+        public static void Save(string ground, string finished)
+        {
+            try { Directory.CreateDirectory(Path.GetDirectoryName(FileName)); File.WriteAllLines(FileName, new[] { ground ?? string.Empty, finished ?? string.Empty }); }
+            catch { }
+        }
+    }
+
     internal sealed class DesignDataExportOptionsWindow : Window
     {
         private readonly CheckBox _swapCoordinates;
@@ -2282,12 +2327,14 @@ namespace CETools.Civil3D
         private readonly TextBox _leftOffset;
         private readonly TextBox _centreOffset;
         private readonly TextBox _rightOffset;
+        private readonly ComboBox _groundSurface;
+        private readonly ComboBox _finishedSurface;
 
-        public DesignDataExportOptionsWindow()
+        public DesignDataExportOptionsWindow(Document document)
         {
             Title = "CE Tools - Design Data Export Options";
             Width = 520;
-            Height = 390;
+            Height = 475;
             MinWidth = 480;
             WindowStartupLocation = WindowStartupLocation.CenterOwner;
             ResizeMode = ResizeMode.NoResize;
@@ -2338,6 +2385,7 @@ namespace CETools.Civil3D
                 CentreOffset = centre;
                 RightOffset = right;
                 SaveDesignExportDefaults(SwapCoordinates, ReverseCoordinateSigns, interval, left, centre, right);
+                DesignDataExportSurfaceStore.Save(GroundSurfaceName, FinishedSurfaceName);
                 Accepted = true;
                 DialogResult = true;
             };
@@ -2351,7 +2399,7 @@ namespace CETools.Civil3D
             var grid = new Grid();
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(230) });
             grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
-            for (int i = 0; i < 6; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+            for (int i = 0; i < 8; i++) grid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
             _swapCoordinates = new CheckBox { Content = "Swap X and Y coordinates", Margin = new Thickness(0, 5, 0, 5) };
             _reverseSigns = new CheckBox { Content = "Reverse coordinate signs", Margin = new Thickness(0, 5, 0, 5) };
             string[] defaults = ReadDesignExportDefaults();
@@ -2367,10 +2415,39 @@ namespace CETools.Civil3D
             AddControlRow(grid, 3, "Left offset from alignment", _leftOffset);
             AddControlRow(grid, 4, "Centre offset from alignment", _centreOffset);
             AddControlRow(grid, 5, "Right offset from alignment", _rightOffset);
+            _groundSurface = SurfaceSelector(document, false);
+            _finishedSurface = SurfaceSelector(document, true);
+            AddControlRow(grid, 6, "Existing / natural ground surface", _groundSurface);
+            AddControlRow(grid, 7, "Final / design surface", _finishedSurface);
             root.Children.Add(grid);
         }
 
         public bool Accepted { get; private set; }
+        public string GroundSurfaceName { get { return Convert.ToString(_groundSurface.SelectedItem, CultureInfo.InvariantCulture) ?? string.Empty; } }
+        public string FinishedSurfaceName { get { return Convert.ToString(_finishedSurface.SelectedItem, CultureInfo.InvariantCulture) ?? string.Empty; } }
+        private static ComboBox SurfaceSelector(Document document, bool finished)
+        {
+            var combo = new ComboBox { MinWidth = 170, Margin = new Thickness(0, 3, 0, 3) };
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in CivilApplication.ActiveDocument.GetSurfaceIds())
+                {
+                    CivilSurface surface = tr.GetObject(id, OpenMode.ForRead, false) as CivilSurface;
+                    if (surface != null) combo.Items.Add(surface.Name);
+                }
+            }
+            string last = DesignDataExportSurfaceStore.Read(finished);
+            foreach (object item in combo.Items)
+                if (string.Equals(Convert.ToString(item), last, StringComparison.OrdinalIgnoreCase)) { combo.SelectedItem = item; break; }
+            if (combo.SelectedItem == null && combo.Items.Count > 0)
+            {
+                string[] words = finished ? new[] { "FG", "FINAL", "DESIGN", "FINISHED" } : new[] { "EG", "NG", "EXIST", "NATURAL", "GROUND" };
+                foreach (object item in combo.Items)
+                    if (words.Any(word => Convert.ToString(item).ToUpperInvariant().Contains(word))) { combo.SelectedItem = item; break; }
+                if (combo.SelectedItem == null) combo.SelectedIndex = 0;
+            }
+            return combo;
+        }
         public bool SwapCoordinates { get { return _swapCoordinates.IsChecked == true; } }
         public bool ReverseCoordinateSigns { get { return _reverseSigns.IsChecked == true; } }
         public double ChainageInterval { get; private set; }
