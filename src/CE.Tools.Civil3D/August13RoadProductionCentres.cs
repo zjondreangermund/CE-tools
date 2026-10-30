@@ -107,6 +107,7 @@ namespace CETools.Civil3D
         A("13. Assign Profile View Styles to Multiple Views","CE_PROFILEVIEWSTYLEMULTI","Road production sequence step 13.","13 Road Sequence"),
         A("13a. Assign Profile Label Sets","CE_PROFILELABELSETMULTI","Apply label sets to multiple design profiles.","13 Road Sequence"),
         A("13b. Export Design Data Schedules","CE_DESIGNDATAEXPORT","Export road, water and sewer schedules to Excel with NG/FG surface selection.","13 Road Sequence"),
+        A("13c. Review Overlapping Name Labels","CE_LABELCOLLISIONREVIEW","Popup for road, water and sewer CE-generated text overlap avoidance.","13 Road Sequence"),
         A("14. Import Band Set / Repair Road Band Sources","CE_PROFILEVIEWDATASOURCES","Road production sequence step 14.","14 Road Sequence"),
         A("15. CE-Match Profile View Properties","CE_PROFILEVIEWMATCH","Road production sequence step 15.","15 Road Sequence"),
         A("16. CE-Fit All Profile Views","CE_PROFILEVIEWFITALL","Road production sequence step 16.","16 Road Sequence"),
