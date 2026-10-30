@@ -21,6 +21,7 @@ namespace CETools.Civil3D
         private const string FreezeRecordName = "CE_TOOLS_LABEL_FREEZE";
         private const double Tolerance = 1e-8;
         private const int MaximumOffsetAttempts = 16;
+        private static double _uniformSpacingFactor = 1.5;
 
         // Shared, popup-driven collision pass for CE-generated MText/DBText names.
         // Native Civil 3D label entities are intentionally excluded: their positions
@@ -38,7 +39,10 @@ namespace CETools.Civil3D
                 new[] { "All", "Road", "Water", "Sewer" });
             options.AddChoice("Overlap", "02 Placement", "Avoid overlapping name text", "ON",
                 "OFF leaves existing label positions unchanged.", new[] { "ON", "OFF" });
+            options.AddPositiveDouble("Spacing", "02 Placement", "Uniform minimum clearance (text heights)", 1.5,
+                "Use the same minimum clearance for road, water and sewer CE text.");
             if (!DisciplineWorkflowDialogs.EditSettings(options)) return;
+            _uniformSpacingFactor = Math.Max(1.0, options.Double("Spacing", 1.5));
             if (options.Text("Overlap") != "ON") return;
 
             string category = options.Text("Discipline");
@@ -155,7 +159,7 @@ namespace CETools.Civil3D
                             Tolerance,
                             candidate.Extents.MaxPoint.Y -
                             candidate.Extents.MinPoint.Y);
-                        double step = Math.Max(height * 1.35, GetTextHeight(entity) * 1.5);
+                        double step = Math.Max(height * _uniformSpacingFactor, GetTextHeight(entity) * _uniformSpacingFactor);
                         Vector3d normal = new Vector3d(
                             -Math.Sin(candidate.Rotation),
                             Math.Cos(candidate.Rotation),
