@@ -167,7 +167,7 @@ namespace CETools.Civil3D
                         tr.AddNewlyCreatedDBObject(raster, true);
                         RasterImage.EnableReactors(true);
                         raster.AssociateRasterDef(imageDef);
-                        Tag(raster, sign);
+                        Tag(raster, sign, alignment.Name, station);
                         if (options.Text("Circle") == "ON")
                         {
                             var marker = new Circle(point, Vector3d.ZAxis, options.Double("Radius", 0.3));
@@ -175,7 +175,7 @@ namespace CETools.Civil3D
                             marker.LayerId = layerId;
                             space.AppendEntity(marker);
                             tr.AddNewlyCreatedDBObject(marker, true);
-                            Tag(marker, sign);
+                            Tag(marker, sign, alignment.Name, station);
                         }
                         added++;
                     }
@@ -195,10 +195,50 @@ namespace CETools.Civil3D
             apps.Add(record);
             transaction.AddNewlyCreatedDBObject(record, true);
         }
-        private static void Tag(Entity entity, string name)
+        private static void Tag(Entity entity, string name, string alignment, double station)
         {
-            entity.XData = new ResultBuffer(new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
-                new TypedValue((int)DxfCode.ExtendedDataAsciiString, name));
+            entity.XData = new ResultBuffer(
+                new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
+                new TypedValue((int)DxfCode.ExtendedDataAsciiString, name),
+                new TypedValue((int)DxfCode.ExtendedDataAsciiString, alignment ?? string.Empty),
+                new TypedValue((int)DxfCode.ExtendedDataReal, station));
+        }
+        internal sealed class SignRecord
+        {
+            public string Name;
+            public string Alignment;
+            public double Station;
+            public Point3d Point;
+            public string ImagePath;
+        }
+        internal static List<SignRecord> ReadSigns(Database database, Transaction transaction)
+        {
+            var found = new List<SignRecord>();
+            BlockTableRecord space = transaction.GetObject(
+                database.CurrentSpaceId, OpenMode.ForRead) as BlockTableRecord;
+            if (space == null) return found;
+            foreach (ObjectId id in space)
+            {
+                RasterImage image = transaction.GetObject(id, OpenMode.ForRead, false) as RasterImage;
+                if (image == null || image.IsErased) continue;
+                using (ResultBuffer data = image.GetXDataForApplication(AppName))
+                {
+                    if (data == null) continue;
+                    TypedValue[] values = data.AsArray();
+                    if (values.Length < 4) continue;
+                    var sign = new SignRecord
+                    {
+                        Name = Convert.ToString(values[1].Value, CultureInfo.InvariantCulture),
+                        Alignment = Convert.ToString(values[2].Value, CultureInfo.InvariantCulture),
+                        Station = Convert.ToDouble(values[3].Value, CultureInfo.InvariantCulture),
+                        Point = image.Orientation.Origin
+                    };
+                    RasterImageDef def = transaction.GetObject(image.ImageDefId, OpenMode.ForRead, false) as RasterImageDef;
+                    sign.ImagePath = def == null ? string.Empty : def.SourceFileName;
+                    found.Add(sign);
+                }
+            }
+            return found;
         }
         private static ObjectId EnsureLayer(Database db, Transaction tr, string name)
         {
