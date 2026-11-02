@@ -113,6 +113,11 @@ namespace CETools.Civil3D
                 "Name", "Join", "Output feature-line name",
                 "CE-STEPPED-FL",
                 "A unique suffix is added automatically if the requested name already exists.");
+            settings.AddChoice("Output", "02 Output", "Joined output type", "Feature Line",
+                "Make a new Civil 3D feature line or a 3D polyline.", new[] { "Feature Line", "Polyline" });
+            settings.AddChoice("Sources", "02 Output", "Selected source objects", "Keep all",
+                "Delete selected sources only after an explicit confirmation and a successfully created joined output.",
+                new[] { "Keep all", "Remove selected after join" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
 
             PromptSelectionResult selection = SelectFeatureLines(
@@ -136,15 +141,16 @@ namespace CETools.Civil3D
             string outputName;
             try
             {
-                August21PlatformRelativeFatalSafety.CreateJoinedFeatureLine(
-                    document,
-                    ids,
+                bool deleteSources = settings.Text("Sources") == "Remove selected after join";
+                if (deleteSources && !DisciplineWorkflowDialogs.Confirm(
+                    "CE Tools - Remove Source Geometry",
+                    "This will DELETE the selected source feature lines/polylines after the new joined output has been generated. Continue?"))
+                    return;
+                JoinSelectedSteppedGeometry(document, ids,
                     Math.Max(0.000001, settings.Double("Gap", 0.050)),
                     SafeName(settings.Text("Name"), "CE-STEPPED-FL"),
-                    out pieceCount,
-                    out vertexCount,
-                    out largestGap,
-                    out outputName);
+                    settings.Text("Output") == "Feature Line", deleteSources,
+                    out pieceCount, out vertexCount, out largestGap, out outputName);
             }
             catch (System.Exception exception)
             {
@@ -161,6 +167,96 @@ namespace CETools.Civil3D
                 vertexCount,
                 largestGap,
                 outputName);
+        }
+
+        private static void JoinSelectedSteppedGeometry(Document document, IList<ObjectId> ids,
+            double tolerance, string name, bool featureLineOutput, bool deleteSources,
+            out int pieceCount, out int vertexCount, out double largestGap, out string outputName)
+        {
+            pieceCount = 0; vertexCount = 0; largestGap = 0; outputName = name;
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                var pieces = new List<List<Point3d>>();
+                foreach (ObjectId id in ids)
+                {
+                    Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
+                    if (entity == null || entity.IsErased) throw new InvalidOperationException("Source geometry unavailable.");
+                    var points = new List<Point3d>();
+                    var fl = entity as CivilFeatureLine;
+                    var pl = entity as Polyline;
+                    var pl3 = entity as Polyline3d;
+                    if (fl != null)
+                    {
+                        if (fl.IsReferenceObject || fl.Closed)
+                            throw new InvalidOperationException("Reference or closed feature lines cannot be joined.");
+                        points.AddRange(fl.GetPoints(FeatureLinePointType.AllPoints).Cast<Point3d>());
+                    }
+                    else if (pl != null)
+                    {
+                        if (pl.Closed) throw new InvalidOperationException("Closed polylines cannot be joined.");
+                        for (int i = 0; i < pl.NumberOfVertices; i++) points.Add(pl.GetPoint3dAt(i));
+                    }
+                    else if (pl3 != null)
+                    {
+                        if (pl3.Closed) throw new InvalidOperationException("Closed 3D polylines cannot be joined.");
+                        foreach (ObjectId vertex in pl3)
+                        {
+                            PolylineVertex3d v = tr.GetObject(vertex, OpenMode.ForRead, false) as PolylineVertex3d;
+                            if (v != null) points.Add(v.Position);
+                        }
+                    }
+                    else throw new InvalidOperationException("Select only feature lines or open 2D/3D polylines.");
+                    if (points.Count < 2) throw new InvalidOperationException("A source needs at least two vertices.");
+                    pieces.Add(points);
+                }
+                var ordered = new List<Point3d>(pieces[0]);
+                var remaining = pieces.Skip(1).ToList();
+                while (remaining.Count > 0)
+                {
+                    double best = double.PositiveInfinity;
+                    List<Point3d> selected = null;
+                    bool reverse = false;
+                    foreach (var candidate in remaining)
+                    {
+                        double startGap = ordered[ordered.Count - 1].DistanceTo(candidate[0]);
+                        double endGap = ordered[ordered.Count - 1].DistanceTo(candidate[candidate.Count - 1]);
+                        if (startGap < best) { best = startGap; selected = candidate; reverse = false; }
+                        if (endGap < best) { best = endGap; selected = candidate; reverse = true; }
+                    }
+                    if (best > tolerance) throw new InvalidOperationException(
+                        "A selected endpoint gap exceeds the maximum tolerance: " +
+                        best.ToString("0.###", CultureInfo.InvariantCulture));
+                    largestGap = Math.Max(largestGap, best);
+                    var next = reverse ? selected.AsEnumerable().Reverse().ToList() : selected;
+                    ordered.AddRange(next.Skip(best <= 1e-7 ? 1 : 0));
+                    remaining.Remove(selected);
+                }
+                BlockTable table = tr.GetObject(document.Database.BlockTableId, OpenMode.ForRead) as BlockTable;
+                BlockTableRecord space = tr.GetObject(table[BlockTableRecord.ModelSpace], OpenMode.ForWrite) as BlockTableRecord;
+                var joined = new Polyline3d(Poly3dType.SimplePoly, new Point3dCollection(ordered.ToArray()), false);
+                joined.SetDatabaseDefaults(document.Database);
+                space.AppendEntity(joined);
+                tr.AddNewlyCreatedDBObject(joined, true);
+                if (featureLineOutput)
+                {
+                    ObjectId fid = CivilFeatureLine.Create(name + "-" + Guid.NewGuid().ToString("N").Substring(0, 6),
+                        joined.ObjectId);
+                    outputName = ((CivilFeatureLine)tr.GetObject(fid, OpenMode.ForRead)).Name;
+                    joined.Erase();
+                }
+                else outputName = joined.Handle.ToString();
+                if (deleteSources)
+                {
+                    foreach (ObjectId id in ids)
+                    {
+                        Entity entity = tr.GetObject(id, OpenMode.ForWrite, false) as Entity;
+                        if (entity != null) entity.Erase();
+                    }
+                }
+                pieceCount = pieces.Count;
+                vertexCount = ordered.Count;
+                tr.Commit();
+            }
         }
 
         private static PromptSelectionResult SelectFeatureLines(Editor editor, string message)
