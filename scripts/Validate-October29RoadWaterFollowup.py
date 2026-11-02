@@ -55,9 +55,9 @@ for title, passed in checks.items():
     if not passed: raise AssertionError("Oct29 regression: " + title)
     print("PASS:", title)
 
-actions = re.findall(r'A\("(\d+)\.[^"]+","(CE_[A-Z0-9_]+)".*?"(\d+) Road Sequence"\)', seq)
-if len(actions) != 44: raise AssertionError("Expected 44 final Road sequence steps; got " + str(len(actions)))
-if [int(x[0]) for x in actions] != list(range(1, 45)):
+actions = re.findall(r'A\("(\d+)\.[^"]+","(CE_[A-Z0-9_]+)".*?"(\d+) Final Road Production"\)', seq)
+if len(actions) != 47: raise AssertionError("Expected 47 final Road sequence steps; got " + str(len(actions)))
+if [int(x[0]) for x in actions] != list(range(1, 48)):
     raise AssertionError("Final Road sequence numbering must be contiguous")
 ordered = [x[1] for x in actions]
 for before, after in (("CE_ALIGNLABELSETMULTI", "CE_ROADNAMES"),
