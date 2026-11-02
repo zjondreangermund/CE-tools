@@ -142,6 +142,8 @@ namespace CETools.Civil3D
                 return;
             }
             int added = 0;
+            try
+            {
             using (DocumentLock locked = document.LockDocument())
             using (Transaction tr = document.Database.TransactionManager.StartTransaction())
             {
@@ -240,6 +242,12 @@ namespace CETools.Civil3D
                     }
                 }
                 tr.Commit();
+            }
+            }
+            catch (System.Exception error)
+            {
+                document.Editor.WriteMessage("\nCE_ROADSIGNS stopped without committing the sign batch: {0}", error.Message);
+                return;
             }
             document.Editor.Regen();
             document.Editor.WriteMessage("\nCE_ROADSIGNS: {0} externally linked signs added from folder: {1}", added, folder);
