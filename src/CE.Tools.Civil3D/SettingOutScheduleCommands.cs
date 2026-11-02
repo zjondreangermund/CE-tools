@@ -399,6 +399,7 @@ namespace CETools.Civil3D
                 PopulateVerticalAlignmentReport(document, sheets);
                 PopulateConstructionLevelsReport(document, sheets, chainageInterval, leftOffset, centreOffset, rightOffset);
                 PopulateJunctionSurfaceLevels(document, junctionRows);
+                PopulateRoadSignSettingOutReport(document, sheets);
 
                 // Keep water/sewer branch, structure and pipe rows in natural numeric
                 // order (e.g. W2.9 before W2.10, MH2.9 before MH2.10, P2.9 before P2.10).
@@ -424,7 +425,8 @@ namespace CETools.Civil3D
                 if (scope == "Roads")
                     sheets = sheets.Where(sheet => sheet.Name == "Road Junction Setting-Out" ||
                         sheet.Name == "Horizontal Alignment Data" || sheet.Name == "Vertical Alignment Data" ||
-                        sheet.Name == "Construction Levels").ToList();
+                        sheet.Name == "Construction Levels" ||
+                        sheet.Name == "Road Signs Setting-Out").ToList();
                 else if (scope == "Sewer branches")
                     sheets = SplitSewerReportsIntoBranches(sheets);
                 SimpleXlsxWriter.Write(path, sheets);
@@ -438,6 +440,38 @@ namespace CETools.Civil3D
             }
         }
 
+
+        private static void PopulateRoadSignSettingOutReport(Document doc, IList<XlsxSheet> sheets)
+        {
+            var rows = new List<IList<string>>
+            {
+                new List<string> { "ROAD SIGNS - SETTING-OUT CO-ORDINATES" },
+                new List<string> { "POINT", "Y", "X", "ROAD ALIGNMENT", "CHAINAGE (m)",
+                    "SIGN TYPE", "IMAGE SOURCE FILE", "IMAGE LINK STATUS" }
+            };
+            using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                var signs = RoadSignPlacementCommands.ReadSigns(doc.Database, tr);
+                int number = 0;
+                foreach (var sign in signs.OrderBy(x => x.Alignment, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Station))
+                {
+                    number++;
+                    rows.Add(new List<string> {
+                        "RS" + number.ToString(CultureInfo.InvariantCulture),
+                        sign.Point.Y.ToString("0.000", CultureInfo.InvariantCulture),
+                        sign.Point.X.ToString("0.000", CultureInfo.InvariantCulture),
+                        sign.Alignment ?? string.Empty,
+                        sign.Station.ToString("0.000", CultureInfo.InvariantCulture),
+                        sign.Name ?? string.Empty,
+                        sign.ImagePath ?? string.Empty,
+                        File.Exists(sign.ImagePath ?? string.Empty) ? "Linked" : "Missing source"
+                    });
+                }
+            }
+            if (rows.Count == 2)
+                rows.Add(new List<string> { "No CE road signs found in the current drawing space." });
+            sheets.Add(new XlsxSheet("Road Signs Setting-Out", rows));
+        }
 
         private static List<XlsxSheet> SplitSewerReportsIntoBranches(IList<XlsxSheet> all)
         {
@@ -490,7 +524,7 @@ namespace CETools.Civil3D
                     IList<string> row = sheet.Rows[ri];
                     if (row == null) continue;
                     int first = -1, second = -1;
-                    if (name == "Road Junction Setting-Out") { first = 1; second = 2; }
+                    if (name == "Road Junction Setting-Out" || name == "Road Signs Setting-Out") { first = 1; second = 2; }
                     else if (name == "Water Structure Data") { first = 2; second = 3; }
                     else if (name == "Sewer Structure Data") { first = 1; second = 2; }
                     else if (name == "Construction Levels") { first = 2; second = 3; }
