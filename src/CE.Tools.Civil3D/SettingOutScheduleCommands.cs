@@ -394,12 +394,19 @@ namespace CETools.Civil3D
             {
                 var sheets = BuildDesignDataReportLayouts();
                 SetConstructionLevelHeaders(sheets, leftOffset, centreOffset, rightOffset);
-                PopulateWaterStructureAndPipeReports(document, sheets);
-                PopulateSewerStructureAndPipeReports(document, sheets);
-                PopulateHorizontalAlignmentReport(document, sheets);
-                PopulateVerticalAlignmentReport(document, sheets);
-                PopulateConstructionLevelsReport(document, sheets, chainageInterval, leftOffset, centreOffset, rightOffset);
-                PopulateJunctionSurfaceLevels(document, junctionRows);
+                // Never enumerate unrelated Civil 3D networks/profiles during a
+                // discipline-scoped export: this also avoids unnecessary native API reads.
+                if (scope == "All")
+                    PopulateWaterStructureAndPipeReports(document, sheets);
+                if (scope == "All" || scope == "Sewer branches")
+                    PopulateSewerStructureAndPipeReports(document, sheets);
+                if (scope == "All" || scope == "Roads")
+                {
+                    PopulateHorizontalAlignmentReport(document, sheets);
+                    PopulateVerticalAlignmentReport(document, sheets);
+                    PopulateConstructionLevelsReport(document, sheets, chainageInterval, leftOffset, centreOffset, rightOffset);
+                    PopulateJunctionSurfaceLevels(document, junctionRows);
+                }
 
                 // Keep water/sewer branch, structure and pipe rows in natural numeric
                 // order (e.g. W2.9 before W2.10, MH2.9 before MH2.10, P2.9 before P2.10).
