@@ -120,7 +120,7 @@ namespace CETools.Civil3D
             int failed = 0;
             int removedVertices = 0;
 
-            using (DocumentLock documentLock = document.LockDocument())
+            // One transaction per source polyline: a failed cleanup must not partially mutate other selected polylines.\n            using (DocumentLock documentLock = document.LockDocument())
             {
                 foreach (ObjectId id in
                     selection.Value.GetObjectIds().Distinct())
