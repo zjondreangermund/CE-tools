@@ -71,7 +71,10 @@ namespace CETools.Civil3D
                 new[] { "All", "Multiple selected" });
             options.AddChoice("Position", "02 Alignments", "Sign station location", "From start and end",
                 "Use start/end distances or one absolute alignment chainage.",
-                new[] { "From start and end", "From start", "From end", "Specified chainage", "Approach all alignment curves" });
+                new[] { "From start and end", "From start", "From end", "Specified chainage", "Approach all alignment curves", "Stop at junctions", "Yield at junctions" });
+            options.AddChoice("JunctionControl", "02 Alignments", "Junction priority arrangement", "2-way selected roads",
+                "For two-way control, select minor road alignments. Four-way requires selecting every approach road.",
+                new[] { "2-way selected roads", "4-way all selected approaches" });
             options.AddPositiveDouble("SharpCurveRadius", "02 Alignments", "Sharp curve threshold radius (m)", 35.0,
                 "Curve radius below this value uses TURN signs; larger circular curves use CURVE signs.");
             options.AddPositiveDouble("Approach", "02 Alignments", "Distance from alignment start/end (m)", 25.0,
@@ -121,7 +124,8 @@ namespace CETools.Civil3D
             string imagePath = new[] { ".jpg", ".jpeg", ".png" }
                 .Select(ext => Path.Combine(folder, sign + ext))
                 .FirstOrDefault(File.Exists);
-            if (imagePath == null && options.Text("Position") != "Approach all alignment curves")
+            if (imagePath == null && options.Text("Position") != "Approach all alignment curves" &&
+                options.Text("Position") != "Stop at junctions" && options.Text("Position") != "Yield at junctions")
             {
                 System.Windows.MessageBox.Show("Image " + sign + " was not found in " + folder +
                     ". Extract the supplied CE RoadSigns reference package into this folder and try again.",
@@ -192,6 +196,11 @@ namespace CETools.Civil3D
                         case "Approach all alignment curves":
                             placements.AddRange(CurveWarningPositions(alignment, approach,
                                 options.Double("SharpCurveRadius", 35.0))); break;
+                        case "Stop at junctions":
+                        case "Yield at junctions":
+                            placements.AddRange(JunctionApproaches(alignment, civil, tr, approach,
+                                options.Text("Position") == "Stop at junctions" ?
+                                (options.Text("JunctionControl") == "4-way all selected approaches" ? "STOP_4WAY" : "STOP") : "YIELD")); break;
                         default:
                             placements.Add(new KeyValuePair<double, string>(first + approach, sign));
                             placements.Add(new KeyValuePair<double, string>(last - approach, sign)); break;
@@ -284,6 +293,45 @@ namespace CETools.Civil3D
             document.Editor.WriteMessage("\nCE_ROADSIGNS: {0} externally linked signs added from folder: {1}", added, folder);
             if (options.Text("VertexSettingOut") == "ON")
                 document.SendStringToExecute("CE_VERTEXSETTINGOUTTOOLS ", true, false, true);
+        }
+
+        // Junctions are identified by the actual intersection of centreline entities.
+        // The user explicitly chooses which approach roads carry priority control;
+        // no automatic major/minor road hierarchy is inferred.
+        private static IEnumerable<KeyValuePair<double, string>> JunctionApproaches(
+            CivilAlignment road, CivilDocument civil, Transaction transaction,
+            double approachDistance, string signName)
+        {
+            var output = new List<KeyValuePair<double, string>>();
+            foreach (ObjectId otherId in civil.GetAlignmentIds())
+            {
+                if (otherId == road.ObjectId) continue;
+                CivilAlignment other = transaction.GetObject(otherId, OpenMode.ForRead, false) as CivilAlignment;
+                if (other == null || !IsRoad(other)) continue;
+                var intersections = new Point3dCollection();
+                try { road.IntersectWith(other, Intersect.OnBothOperands,
+                    intersections, IntPtr.Zero, IntPtr.Zero); }
+                catch { continue; }
+                foreach (Point3d p in intersections)
+                {
+                    double station = 0.0, offset = 0.0;
+                    try { road.StationOffset(p.X, p.Y, ref station, ref offset); }
+                    catch { continue; }
+                    if (Math.Abs(offset) > 0.25) continue;
+                    if (station - approachDistance >= road.StartingStation)
+                        output.Add(new KeyValuePair<double, string>(station - approachDistance, signName));
+                    if (station + approachDistance <= road.EndingStation)
+                        output.Add(new KeyValuePair<double, string>(station + approachDistance, signName));
+                }
+            }
+            return output;
+        }
+        private static bool IsRoad(CivilAlignment alignment)
+        {
+            string name = (alignment.Name ?? string.Empty).ToUpperInvariant();
+            return name.StartsWith("RD-") || name.StartsWith("ROAD-") ||
+                   name.StartsWith("RD_") || name.StartsWith("ROAD_") ||
+                   name.StartsWith("RD ") || name.StartsWith("ROAD ");
         }
 
         private static IEnumerable<KeyValuePair<double, string>> CurveWarningPositions(
