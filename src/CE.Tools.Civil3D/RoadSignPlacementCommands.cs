@@ -99,6 +99,12 @@ namespace CETools.Civil3D
                 new[] { "ON", "OFF" });
             options.AddPositiveDouble("Radius", "04 Drawing", "Sign circle radius (m)", 0.3,
                 "Radius of the setting-out marker.");
+            options.AddChoice("Leader", "04 Drawing", "Annotative sign multileaders", "OFF",
+                "ON adds a closed-filled arrowhead leader and sign-type annotation.", new[] { "OFF", "ON" });
+            options.AddPositiveDouble("ArrowSize", "04 Drawing", "Leader arrowhead size (m)", 0.2,
+                "Closed-filled multileader arrowhead size.");
+            options.AddPositiveDouble("LeaderDistance", "04 Drawing", "Leader text offset (m)", 2.0,
+                "Distance from the sign symbol to its annotation text.");
             options.AddChoice("VertexSettingOut", "04 Drawing", "Open Vertex Setting-Out after placement", "OFF",
                 "Open the existing CE vertex setting-out popup after sign insertion.",
                 new[] { "OFF", "ON" });
@@ -237,6 +243,31 @@ namespace CETools.Civil3D
                             space.AppendEntity(marker);
                             tr.AddNewlyCreatedDBObject(marker, true);
                             Tag(marker, placedSign, alignment.Name, station);
+                        }
+                        if (options.Text("Leader") == "ON")
+                        {
+                            double leaderDistance = options.Double("LeaderDistance", 2.0);
+                            var landing = new Point3d(point.X + Math.Cos(angle) * leaderDistance,
+                                point.Y + Math.Sin(angle) * leaderDistance, point.Z);
+                            var leader = new MLeader();
+                            leader.SetDatabaseDefaults(db);
+                            leader.LayerId = layerId;
+                            leader.ContentType = ContentType.MTextContent;
+                            leader.LeaderLineType = LeaderType.StraightLeader;
+                            leader.ArrowSymbolId = ObjectId.Null; // Standard closed-filled arrowhead
+                            leader.ArrowSize = options.Double("ArrowSize", 0.2);
+                            leader.EnableDogleg = false;
+                            leader.Annotative = AnnotativeStates.True;
+                            int groupIndex = leader.AddLeader();
+                            int lineIndex = leader.AddLeaderLine(groupIndex);
+                            leader.AddFirstVertex(lineIndex, point);
+                            leader.AddLastVertex(lineIndex, landing);
+                            leader.MText = new MText { Contents = placedSign.Replace("_", " "),
+                                Location = landing, TextHeight = 0.3,
+                                Annotative = AnnotativeStates.True };
+                            space.AppendEntity(leader);
+                            tr.AddNewlyCreatedDBObject(leader, true);
+                            Tag(leader, placedSign, alignment.Name, station);
                         }
                         added++;
                     }
