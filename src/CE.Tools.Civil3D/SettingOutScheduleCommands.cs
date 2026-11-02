@@ -281,7 +281,8 @@ namespace CETools.Civil3D
             int exported = 0;
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                foreach (SelectedObject selected in selection.Value)
+                foreach (SelectedObject selected in (selection == null || selection.Value == null ?
+                    new SelectedObject[0] : selection.Value.Cast<SelectedObject>()))
                 {
                     if (selected == null || selected.ObjectId.IsNull) continue;
                     Entity entity = transaction.GetObject(selected.ObjectId, OpenMode.ForRead, false) as Entity;
@@ -393,12 +394,19 @@ namespace CETools.Civil3D
             {
                 var sheets = BuildDesignDataReportLayouts();
                 SetConstructionLevelHeaders(sheets, leftOffset, centreOffset, rightOffset);
-                PopulateWaterStructureAndPipeReports(document, sheets);
-                PopulateSewerStructureAndPipeReports(document, sheets);
-                PopulateHorizontalAlignmentReport(document, sheets);
-                PopulateVerticalAlignmentReport(document, sheets);
-                PopulateConstructionLevelsReport(document, sheets, chainageInterval, leftOffset, centreOffset, rightOffset);
-                PopulateJunctionSurfaceLevels(document, junctionRows);
+                // Never enumerate unrelated Civil 3D networks/profiles during a
+                // discipline-scoped export: this also avoids unnecessary native API reads.
+                if (scope == "All")
+                    PopulateWaterStructureAndPipeReports(document, sheets);
+                if (scope == "All" || scope == "Sewer branches")
+                    PopulateSewerStructureAndPipeReports(document, sheets);
+                if (scope == "All" || scope == "Roads")
+                {
+                    PopulateHorizontalAlignmentReport(document, sheets);
+                    PopulateVerticalAlignmentReport(document, sheets);
+                    PopulateConstructionLevelsReport(document, sheets, chainageInterval, leftOffset, centreOffset, rightOffset);
+                    PopulateJunctionSurfaceLevels(document, junctionRows);
+                }
 
                 // Keep water/sewer branch, structure and pipe rows in natural numeric
                 // order (e.g. W2.9 before W2.10, MH2.9 before MH2.10, P2.9 before P2.10).
@@ -561,6 +569,11 @@ namespace CETools.Civil3D
             if (match.Success && int.TryParse(match.Groups["number"].Value, NumberStyles.None,
                 CultureInfo.InvariantCulture, out number) && alignmentNames.TryGetValue(number, out name))
                 return name;
+            // Numbered sewer pipes belong to the corresponding numbered branch
+            // even if their reference-alignment property is empty (e.g. 200/250 mm pipes).
+            if (match.Success && int.TryParse(match.Groups["number"].Value, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out number))
+                return "Branch-" + number.ToString(CultureInfo.InvariantCulture);
             return string.Empty;
         }
 
@@ -814,7 +827,10 @@ namespace CETools.Civil3D
                             ? ((startInvert - endInvert) / length) * 100.0 : double.NaN;
                         string pipeName = ReadDesignText(pipe, "Name", "PartName");
                         if (string.IsNullOrWhiteSpace(pipeName)) pipeName = pipe.Handle.ToString();
-                        string description = ReadDesignText(pipe, "Description", "PartDescription", "PartFamilyName");
+                        string description = ReadDesignText(pipe, "PartDescription", "PartFamilyName", "Description");
+                        if (System.Text.RegularExpressions.Regex.IsMatch(description ?? string.Empty,
+                            @"^Branch[-\\s]*\\d+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                            description = ReadDesignText(pipe, "PartSizeName", "PartFamilyName");
                         string size = ReadDesignText(pipe, "PartSizeName", "NominalDiameter", "InnerDiameterOrWidth", "InnerDiameter", "Diameter");
                         if (string.IsNullOrWhiteSpace(size) && diameter > 0.0)
                             size = diameter.ToString("0.###", CultureInfo.InvariantCulture) + " drawing units";

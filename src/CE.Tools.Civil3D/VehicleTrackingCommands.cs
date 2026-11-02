@@ -15,6 +15,72 @@ namespace CETools.Civil3D
     /// <summary>Preliminary plan-view vehicle envelope review; not a swept-path simulator or sight-line certification.</summary>
     public sealed class VehicleTrackingCommands
     {
+        private static Point3d At(CivilAlignment a, double station)
+        {
+            double x = 0, y = 0;
+            a.PointLocation(station, 0, ref x, ref y);
+            return new Point3d(x, y, 0);
+        }
+
+        private static List<Point3d> BuildTurningCentreline(CivilAlignment approach,
+            CivilAlignment outgoing, double step, double length, bool left)
+        {
+            var results = new List<Point3d>();
+            var intersections = new Point3dCollection();
+            try { approach.IntersectWith(outgoing, Intersect.OnBothOperands, intersections,
+                IntPtr.Zero, IntPtr.Zero); }
+            catch { return results; }
+            if (intersections.Count != 1) return results; // avoid ambiguous junctions
+            Point3d junction = intersections[0];
+            double incomingStation = 0, incomingOffset = 0, outgoingStation = 0, outgoingOffset = 0;
+            try
+            {
+                approach.StationOffset(junction.X, junction.Y, ref incomingStation, ref incomingOffset);
+                outgoing.StationOffset(junction.X, junction.Y, ref outgoingStation, ref outgoingOffset);
+            }
+            catch { return results; }
+            if (Math.Abs(incomingOffset) > 0.5 || Math.Abs(outgoingOffset) > 0.5) return results;
+            double blend = Math.Min(length, incomingStation - approach.StartingStation);
+            if (blend <= step || incomingStation >= approach.EndingStation) return results;
+            Point3d initial = At(approach, incomingStation - blend);
+            Point3d j0 = At(approach, incomingStation - Math.Min(0.05, blend / 3));
+            Point3d j1 = At(approach, incomingStation);
+            Point3d out0 = At(outgoing, Math.Max(outgoing.StartingStation, outgoingStation - 0.05));
+            Point3d out1 = At(outgoing, Math.Min(outgoing.EndingStation, outgoingStation + 0.05));
+            Vector3d arrival = (j1 - j0).GetNormal();
+            Vector3d outward = (out1 - out0).GetNormal();
+            bool increasing = ((arrival.X * outward.Y - arrival.Y * outward.X) > 0) == left;
+            if (!increasing) outward = -outward;
+            if (Math.Abs(arrival.X * outward.Y - arrival.Y * outward.X) < 0.05) return results;
+            double finishStation = outgoingStation + (increasing ? blend : -blend);
+            if (finishStation < outgoing.StartingStation || finishStation > outgoing.EndingStation) return results;
+            Point3d finalTurn = At(outgoing, finishStation);
+            for (double station = approach.StartingStation; station < incomingStation - blend; station += step)
+                results.Add(At(approach, station));
+            results.Add(initial);
+            int segments = Math.Max(12, (int)Math.Ceiling(2 * blend / step));
+            for (int i = 1; i <= segments; i++)
+            {
+                double t = (double)i / segments;
+                results.Add(new Point3d(
+                    (1 - t) * (1 - t) * initial.X + 2 * t * (1 - t) * junction.X + t * t * finalTurn.X,
+                    (1 - t) * (1 - t) * initial.Y + 2 * t * (1 - t) * junction.Y + t * t * finalTurn.Y, 0));
+            }
+            if (increasing)
+            {
+                for (double station = finishStation + step; station < outgoing.EndingStation; station += step)
+                    results.Add(At(outgoing, station));
+                results.Add(At(outgoing, outgoing.EndingStation));
+            }
+            else
+            {
+                for (double station = finishStation - step; station > outgoing.StartingStation; station -= step)
+                    results.Add(At(outgoing, station));
+                results.Add(At(outgoing, outgoing.StartingStation));
+            }
+            return results;
+        }
+
         [CommandMethod("CE_TOOLS", "CE_VEHICLETRACKING", CommandFlags.Modal | CommandFlags.Redraw)]
         public void Run()
         {
@@ -32,6 +98,8 @@ namespace CETools.Civil3D
             model.AddChoice("Maneuver", "02 Path", "Movement", "Follow selected path",
                 "For junction turns, select the completed vehicle centreline path through the junction.",
                 new[] { "Follow selected path", "T-junction left", "T-junction right", "Cross-junction left", "Cross-junction right" });
+            model.AddPositiveDouble("TurnBlend", "02 Path", "Junction turning transition length (m)", 12.0,
+                "Smooth preliminary movement through the chosen intersection. Does not model actual vehicle off-tracking.");
             model.AddChoice("OffsetSide", "02 Path", "Travel offset side", "Right (+)",
                 "Signed offset: negative left, positive right.",
                 new[] { "Right (+)", "Left (-)" });
@@ -54,6 +122,17 @@ namespace CETools.Civil3D
             picked.AddAllowedClass(typeof(Polyline), true);
             PromptEntityResult choice = doc.Editor.GetEntity(picked);
             if (choice.Status != PromptStatus.OK) return;
+            bool turnRequested = model.Text("Maneuver") != "Follow selected path";
+            ObjectId leavingRoadId = ObjectId.Null;
+            if (turnRequested)
+            {
+                var departure = new PromptEntityOptions("\nSelect outgoing road alignment for the turning movement: ");
+                departure.SetRejectMessage("\nSelect a Civil 3D road alignment.");
+                departure.AddAllowedClass(typeof(CivilAlignment), true);
+                PromptEntityResult second = doc.Editor.GetEntity(departure);
+                if (second.Status != PromptStatus.OK || second.ObjectId == choice.ObjectId) return;
+                leavingRoadId = second.ObjectId;
+            }
             double width = model.Double("Width", 2.5), track = model.Double("Track", 2.0);
             double interval = model.Double("Spacing", 2.0), signedOffset = model.Double("Offset", 0.01) *
                 (model.Text("OffsetSide") == "Left (-)" ? -1.0 : 1.0);
@@ -69,10 +148,29 @@ namespace CETools.Civil3D
                 var alignment = path as CivilAlignment;
                 var polyline = path as Polyline;
                 if (alignment == null && polyline == null) return;
+                List<Point3d> turningPath = null;
+                if (turnRequested)
+                {
+                    CivilAlignment exitRoad = tr.GetObject(leavingRoadId, OpenMode.ForRead, false) as CivilAlignment;
+                    if (alignment == null || exitRoad == null)
+                    {
+                        doc.Editor.WriteMessage("\nJunction turning requires two Civil 3D alignments.");
+                        return;
+                    }
+                    turningPath = BuildTurningCentreline(alignment, exitRoad, interval,
+                        model.Double("TurnBlend", 12.0),
+                        model.Text("Maneuver").EndsWith("left", StringComparison.OrdinalIgnoreCase));
+                    if (turningPath.Count < 3)
+                    {
+                        doc.Editor.WriteMessage("\nNo valid turning connection found. No tracking lines created.");
+                        return;
+                    }
+                }
                 double from = alignment != null ? alignment.StartingStation : 0.0;
                 double to = alignment != null ? alignment.EndingStation : polyline.Length;
                 if (to <= from) return;
-                int count = (int)Math.Ceiling((to - from) / interval) + 1;
+                int count = turningPath == null ?
+                    (int)Math.Ceiling((to - from) / interval) + 1 : turningPath.Count;
                 if (count > 10000) { doc.Editor.WriteMessage("\nToo many tracking samples; increase the interval."); return; }
                 var tracks = new[] { new List<Point3d>(), new List<Point3d>(), new List<Point3d>(), new List<Point3d>() };
                 for (int i = 0; i < count; i++)
@@ -80,7 +178,14 @@ namespace CETools.Civil3D
                     double station = Math.Min(to, from + i * interval);
                     Point3d center;
                     double tangent;
-                    if (alignment != null)
+                    if (turningPath != null)
+                    {
+                        center = turningPath[i];
+                        Point3d previous = turningPath[Math.Max(0, i - 1)];
+                        Point3d following = turningPath[Math.Min(turningPath.Count - 1, i + 1)];
+                        tangent = Math.Atan2(following.Y - previous.Y, following.X - previous.X);
+                    }
+                    else if (alignment != null)
                     {
                         double x = 0, y = 0, x1 = 0, y1 = 0;
                         alignment.PointLocation(station, 0, ref x, ref y);

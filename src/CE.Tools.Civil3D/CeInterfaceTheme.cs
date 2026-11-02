@@ -142,7 +142,11 @@ namespace CETools.Civil3D
                     ? null
                     : combo.Template.FindName("PART_Popup", combo) as Popup;
                 if (popup != null && popup.Child is DependencyObject)
+                {
                     ApplyTree((DependencyObject)popup.Child, palette);
+                    if (string.Equals(CeThemeStore.Read(), "Dark", StringComparison.OrdinalIgnoreCase))
+                        ForceDropdownTextWhite((DependencyObject)popup.Child);
+                }
 
                 foreach (object item in combo.Items)
                 {
@@ -152,6 +156,25 @@ namespace CETools.Civil3D
                 }
             }
             catch { }
+        }
+
+        // ComboBox popup is hosted separately; inherited label/text colors can
+        // stay muted gray despite white foreground on the ComboBox itself.
+        private static void ForceDropdownTextWhite(DependencyObject visual)
+        {
+            if (visual == null) return;
+            TextBlock text = visual as TextBlock;
+            if (text != null) text.Foreground = Brushes.White;
+            ComboBoxItem item = visual as ComboBoxItem;
+            if (item != null) item.Foreground = Brushes.White;
+            int count = 0;
+            try { count = VisualTreeHelper.GetChildrenCount(visual); } catch { return; }
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child = null;
+                try { child = VisualTreeHelper.GetChild(visual, i); } catch { }
+                if (child != null) ForceDropdownTextWhite(child);
+            }
         }
 
         private static bool IsCeWindow(Window window)
