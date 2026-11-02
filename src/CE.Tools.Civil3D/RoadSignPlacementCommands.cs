@@ -1,5 +1,7 @@
 using System;
+using System.Collections;
 using System.Collections.Generic;
+using System.Reflection;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -69,7 +71,9 @@ namespace CETools.Civil3D
                 new[] { "All", "Multiple selected" });
             options.AddChoice("Position", "02 Alignments", "Sign station location", "From start and end",
                 "Use start/end distances or one absolute alignment chainage.",
-                new[] { "From start and end", "From start", "From end", "Specified chainage" });
+                new[] { "From start and end", "From start", "From end", "Specified chainage", "Approach all alignment curves" });
+            options.AddPositiveDouble("SharpCurveRadius", "02 Alignments", "Sharp curve threshold radius (m)", 35.0,
+                "Curve radius below this value uses TURN signs; larger circular curves use CURVE signs.");
             options.AddPositiveDouble("Approach", "02 Alignments", "Distance from alignment start/end (m)", 25.0,
                 "Place before the end point or after the start point, measured along alignment.");
             options.AddPositiveDouble("Station", "02 Alignments", "Specified chainage (m)", 10.0,
@@ -111,7 +115,7 @@ namespace CETools.Civil3D
             string imagePath = new[] { ".jpg", ".jpeg", ".png" }
                 .Select(ext => Path.Combine(folder, sign + ext))
                 .FirstOrDefault(File.Exists);
-            if (imagePath == null)
+            if (imagePath == null && options.Text("Position") != "Approach all alignment curves")
             {
                 System.Windows.MessageBox.Show("Image " + sign + " was not found in " + folder +
                     ". Extract the supplied CE RoadSigns reference package into this folder and try again.",
@@ -162,24 +166,39 @@ namespace CETools.Civil3D
                         entity.Erase();
                     }
                 }
-                ObjectId imageDefId = EnsureImageDefinition(db, tr, imagePath);
-                RasterImageDef imageDef = tr.GetObject(imageDefId, OpenMode.ForRead) as RasterImageDef;
                 foreach (ObjectId alignmentId in alignments.Distinct())
                 {
                     CivilAlignment alignment = tr.GetObject(alignmentId, OpenMode.ForRead, false) as CivilAlignment;
                     if (alignment == null) continue;
                     double first = alignment.StartingStation, last = alignment.EndingStation;
                     double approach = options.Double("Approach", 25.0);
-                    var stations = new List<double>();
+                    var placements = new List<KeyValuePair<double, string>>();
                     switch (options.Text("Position"))
                     {
-                        case "From start": stations.Add(first + approach); break;
-                        case "From end": stations.Add(last - approach); break;
-                        case "Specified chainage": stations.Add(options.Double("Station", 10.0)); break;
-                        default: stations.Add(first + approach); stations.Add(last - approach); break;
+                        case "From start":
+                            placements.Add(new KeyValuePair<double, string>(first + approach, sign)); break;
+                        case "From end":
+                            placements.Add(new KeyValuePair<double, string>(last - approach, sign)); break;
+                        case "Specified chainage":
+                            placements.Add(new KeyValuePair<double, string>(options.Double("Station", 10.0), sign)); break;
+                        case "Approach all alignment curves":
+                            placements.AddRange(CurveWarningPositions(alignment, approach,
+                                options.Double("SharpCurveRadius", 35.0))); break;
+                        default:
+                            placements.Add(new KeyValuePair<double, string>(first + approach, sign));
+                            placements.Add(new KeyValuePair<double, string>(last - approach, sign)); break;
                     }
-                    foreach (double station in stations.Distinct())
+                    foreach (var placement in placements.GroupBy(x => x.Key.ToString("0.000", CultureInfo.InvariantCulture)
+                        + "|" + x.Value).Select(g => g.First()))
                     {
+                        double station = placement.Key;
+                        string placedSign = placement.Value;
+                        string placedPath = new[] { ".jpg", ".jpeg", ".png" }
+                            .Select(ext => Path.Combine(folder, placedSign + ext)).FirstOrDefault(File.Exists);
+                        if (placedPath == null)
+                            throw new FileNotFoundException("Required sign image is missing: " + placedSign, folder);
+                        ObjectId imageDefId = EnsureImageDefinition(db, tr, placedPath);
+                        RasterImageDef imageDef = tr.GetObject(imageDefId, OpenMode.ForRead) as RasterImageDef;
                         if (station < first || station > last) continue;
                         double x = 0, y = 0, tx = 0, ty = 0;
                         double a = Math.Max(first, station - 0.05);
@@ -207,7 +226,7 @@ namespace CETools.Civil3D
                         tr.AddNewlyCreatedDBObject(raster, true);
                         RasterImage.EnableReactors(true);
                         raster.AssociateRasterDef(imageDef);
-                        Tag(raster, sign, alignment.Name, station);
+                        Tag(raster, placedSign, alignment.Name, station);
                         if (options.Text("Circle") == "ON")
                         {
                             var marker = new Circle(point, Vector3d.ZAxis, options.Double("Radius", 0.3));
@@ -215,7 +234,7 @@ namespace CETools.Civil3D
                             marker.LayerId = layerId;
                             space.AppendEntity(marker);
                             tr.AddNewlyCreatedDBObject(marker, true);
-                            Tag(marker, sign, alignment.Name, station);
+                            Tag(marker, placedSign, alignment.Name, station);
                         }
                         added++;
                     }
@@ -223,9 +242,71 @@ namespace CETools.Civil3D
                 tr.Commit();
             }
             document.Editor.Regen();
-            document.Editor.WriteMessage("\nCE_ROADSIGNS: {0} externally linked signs added. Source: {1}", added, imagePath);
+            document.Editor.WriteMessage("\nCE_ROADSIGNS: {0} externally linked signs added from folder: {1}", added, folder);
             if (options.Text("VertexSettingOut") == "ON")
                 document.SendStringToExecute("CE_VERTEXSETTINGOUTTOOLS ", true, false, true);
+        }
+
+        private static IEnumerable<KeyValuePair<double, string>> CurveWarningPositions(
+            CivilAlignment alignment, double approach, double sharpThreshold)
+        {
+            var result = new List<KeyValuePair<double, string>>();
+            PropertyInfo entitiesProperty = alignment.GetType().GetProperty("Entities");
+            IEnumerable entities = entitiesProperty == null ? null :
+                entitiesProperty.GetValue(alignment, null) as IEnumerable;
+            if (entities == null) return result;
+            foreach (object entity in entities)
+            {
+                if (entity == null) continue;
+                double radius = ReadNumber(entity, "Radius");
+                double begin = ReadNumber(entity, "StartingStation", "StartStation");
+                double finish = ReadNumber(entity, "EndingStation", "EndStation");
+                if (double.IsNaN(radius) || radius <= 0 ||
+                    double.IsNaN(begin) || double.IsNaN(finish) || finish <= begin) continue;
+                double from = Math.Max(alignment.StartingStation, begin + 0.05);
+                double to = Math.Min(alignment.EndingStation, finish - 0.05);
+                if (to <= from) continue;
+                double firstHeading = LocalHeading(alignment, from);
+                double lastHeading = LocalHeading(alignment, to);
+                double turn = Math.Atan2(Math.Sin(lastHeading - firstHeading),
+                    Math.Cos(lastHeading - firstHeading));
+                if (Math.Abs(turn) < 0.001) continue;
+                bool left = turn > 0;
+                bool sharp = radius < sharpThreshold;
+                string incoming = sharp ? (left ? "TURN_LEFT" : "TURN_RIGHT") :
+                    (left ? "CURVE_LEFT" : "CURVE_RIGHT");
+                string opposite = sharp ? (left ? "TURN_RIGHT" : "TURN_LEFT") :
+                    (left ? "CURVE_RIGHT" : "CURVE_LEFT");
+                if (begin - approach >= alignment.StartingStation)
+                    result.Add(new KeyValuePair<double, string>(begin - approach, incoming));
+                if (finish + approach <= alignment.EndingStation)
+                    result.Add(new KeyValuePair<double, string>(finish + approach, opposite));
+            }
+            return result;
+        }
+        private static double ReadNumber(object source, params string[] names)
+        {
+            foreach (string name in names)
+            {
+                try
+                {
+                    PropertyInfo p = source.GetType().GetProperty(name);
+                    if (p == null) continue;
+                    object value = p.GetValue(source, null);
+                    if (value != null) return Convert.ToDouble(value, CultureInfo.InvariantCulture);
+                }
+                catch { }
+            }
+            return double.NaN;
+        }
+        private static double LocalHeading(CivilAlignment alignment, double station)
+        {
+            double before = Math.Max(alignment.StartingStation, station - 0.02);
+            double after = Math.Min(alignment.EndingStation, station + 0.02);
+            double x0 = 0, y0 = 0, x1 = 0, y1 = 0;
+            alignment.PointLocation(before, 0.0, ref x0, ref y0);
+            alignment.PointLocation(after, 0.0, ref x1, ref y1);
+            return Math.Atan2(y1 - y0, x1 - x0);
         }
 
         private static void EnsureRegApp(Database database, Transaction transaction)
