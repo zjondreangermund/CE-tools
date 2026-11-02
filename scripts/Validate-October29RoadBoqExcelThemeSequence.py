@@ -55,7 +55,7 @@ for key, value in tests.items():
         raise AssertionError("Road BoQ Excel Theme regression: " + key)
     print("PASS:", key)
 
-actions = re.findall(r'A\\("(\\d+)\\.[^"]+","(CE_[A-Z0-9_]+)".*?"(\\d+) Final Road Production"\\)', centres)
+actions = re.findall(r'A\("(\d+)\.[^"]+","(CE_[A-Z0-9_]+)".*?"(\d+) Final Road Production"\)', centres)
 if len(actions) != 47:
     raise AssertionError("Expected 47 numbered Final Road Production commands, got %d" % len(actions))
 if [int(x[0]) for x in actions] != list(range(1, 48)):
