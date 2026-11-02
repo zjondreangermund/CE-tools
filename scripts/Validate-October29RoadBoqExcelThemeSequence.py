@@ -55,11 +55,11 @@ for key, value in tests.items():
         raise AssertionError("Road BoQ Excel Theme regression: " + key)
     print("PASS:", key)
 
-actions = re.findall(r'A\("(\d+)\.[^"]+","(CE_[A-Z0-9_]+)".*?"(\d+) Road Sequence"\)', centres)
-if len(actions) != 44:
-    raise AssertionError("Expected 44 numbered Road Production commands, got %d" % len(actions))
-if [int(x[0]) for x in actions] != list(range(1, 45)):
-    raise AssertionError("Road Production numbering must be sequential")
+actions = re.findall(r'A\\("(\\d+)\\.[^"]+","(CE_[A-Z0-9_]+)".*?"(\\d+) Final Road Production"\\)', centres)
+if len(actions) != 47:
+    raise AssertionError("Expected 47 numbered Final Road Production commands, got %d" % len(actions))
+if [int(x[0]) for x in actions] != list(range(1, 48)):
+    raise AssertionError("Final Road Production numbering must be sequential")
 names = [x[1] for x in actions]
 for before, after in (
     ("CE_ROADCORRIDORFULL", "CE_ROADTOPBOTTOMPROFILE"),
@@ -69,4 +69,6 @@ for before, after in (
 ):
     if names.index(after) != names.index(before) + 1:
         raise AssertionError(after + " must directly follow " + before)
-print("PASS: all 44 numbered Road Production command order and positions")
+if names[-3:] != ["CE_ROADAUTOSHEETS", "CE_DESIGNDATAEXPORT", "CE_ROADBOQCONSTRUCTION"]:
+    raise AssertionError("Final steps must be sheets, design export, construction BOQ")
+print("PASS: all 47 Final Road Production steps, no suffix letters, and final output order")
