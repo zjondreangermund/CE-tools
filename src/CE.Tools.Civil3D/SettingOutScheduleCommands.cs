@@ -80,7 +80,7 @@ namespace CETools.Civil3D
             int rejected = 0;
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                foreach (SelectedObject selected in selection.Value)
+                foreach (SelectedObject selected in (selection == null ? new SelectedObject[0] : selection.Value.Cast<SelectedObject>()))
                 {
                     if (selected == null || selected.ObjectId.IsNull)
                     {
@@ -224,6 +224,12 @@ namespace CETools.Civil3D
             ExportSettingOutSchedule();
         }
 
+        [CommandMethod("CE_TOOLS", "CE_ROADDESIGNDATAEXPORT", CommandFlags.Modal)]
+        public void ExportRoadData() { Document d = ActiveDocument(); if (d != null) ExportAllDesignElements(d, "Roads"); }
+
+        [CommandMethod("CE_TOOLS", "CE_SEWERDESIGNDATAEXPORT", CommandFlags.Modal)]
+        public void ExportSewerData() { Document d = ActiveDocument(); if (d != null) ExportAllDesignElements(d, "Sewer branches"); }
+
         [CommandMethod("CE_TOOLS", "CE_SETTINGOUTEXPORT", CommandFlags.Modal)]
         public void ExportSettingOutSchedule()
         {
@@ -246,18 +252,22 @@ namespace CETools.Civil3D
                 MessageBoxResult.No);
             if (choice != MessageBoxResult.Yes) return;
 
-            ExportAllDesignElements(document);
+            var model = new ProductionSettingsDialogModel("CE Tools - Design Data Export Scope",
+                "Export complete design data, road-only reports, or separately numbered sewer branches.");
+            model.AddChoice("Scope", "01 Reports", "Report scope", "All",
+                "Roads: alignments, construction and junctions. Sewer branches: separate pipe and structure sheets.",
+                new[] { "All", "Roads", "Sewer branches" });
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+            ExportAllDesignElements(document, model.Text("Scope"));
         }
 
-        private static void ExportAllDesignElements(Document document)
+        private static void ExportAllDesignElements(Document document, string scope = "All")
         {
             Editor editor = document.Editor;
-            PromptSelectionResult selection = GetSelection(editor, "\nSelect multiple design elements to include in the export: ");
-            if (selection.Status != PromptStatus.OK || selection.Value == null || selection.Value.Count == 0)
-            {
-                editor.WriteMessage("\\nNo design elements were selected for export.");
-                return;
-            }
+            PromptSelectionResult selection = scope == "All" ?
+                GetSelection(editor, "\\nSelect multiple design elements to include in the export: ") : null;
+            if (scope == "All" && (selection == null || selection.Status != PromptStatus.OK ||
+                selection.Value == null || selection.Value.Count == 0)) return;
 
             var rows = new List<IList<string>>
             {
@@ -345,7 +355,7 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
 
-            if (exported == 0)
+            if (scope == "All" && exported == 0)
             {
                 editor.WriteMessage("\\nNo exportable design geometry was found.");
                 return;
@@ -366,7 +376,8 @@ namespace CETools.Civil3D
             string path;
             var save = new SaveFileDialog();
             {
-                string initialPath = GetDefaultExportPath("CE-Design-Elements-Setting-Out.xlsx");
+                string initialPath = GetDefaultExportPath(scope == "Roads" ? "CE-Road-Design-Data.xlsx" :
+                    scope == "Sewer branches" ? "CE-Sewer-Branch-Data.xlsx" : "CE-Design-Elements-Setting-Out.xlsx");
                 save.Filter = "Excel Workbook (*.xlsx)|*.xlsx";
                 save.Title = "Export All CE Tools Design Elements";
                 save.DefaultExt = ".xlsx";
@@ -408,8 +419,14 @@ namespace CETools.Civil3D
                         .ToList();
                     sheets[0] = new XlsxSheet("Road Junction Setting-Out", sortedJunctionRows);
                 }
-                sheets.Add(new XlsxSheet("Selected Elements", rows));
+                if (scope == "All") sheets.Add(new XlsxSheet("Selected Elements", rows));
                 ApplyCoordinateOptions(sheets, swapCoordinates, reverseCoordinateSigns);
+                if (scope == "Roads")
+                    sheets = sheets.Where(sheet => sheet.Name == "Road Junction Setting-Out" ||
+                        sheet.Name == "Horizontal Alignment Data" || sheet.Name == "Vertical Alignment Data" ||
+                        sheet.Name == "Construction Levels").ToList();
+                else if (scope == "Sewer branches")
+                    sheets = SplitSewerReportsIntoBranches(sheets);
                 SimpleXlsxWriter.Write(path, sheets);
                 SaveLastExportPath(path);
                 TryOpenExportedWorkbook(path);
@@ -421,6 +438,43 @@ namespace CETools.Civil3D
             }
         }
 
+
+        private static List<XlsxSheet> SplitSewerReportsIntoBranches(IList<XlsxSheet> all)
+        {
+            var output = new List<XlsxSheet>();
+            XlsxSheet structures = all.FirstOrDefault(x => x.Name == "Sewer Structure Data");
+            XlsxSheet pipes = all.FirstOrDefault(x => x.Name == "Sewer Pipe Data");
+            var branches = new SortedSet<int>();
+            foreach (XlsxSheet sheet in new[] { structures, pipes })
+                if (sheet != null && sheet.Rows != null)
+                    foreach (IList<string> row in sheet.Rows.Skip(2))
+                    {
+                        int n = ReadSewerBranchNumber(row.Count > 0 ? row[0] : "");
+                        if (n > 0) branches.Add(n);
+                    }
+            foreach (int n in branches)
+                foreach (XlsxSheet source in new[] { structures, pipes })
+                {
+                    if (source == null || source.Rows == null || source.Rows.Count < 2) continue;
+                    var report = source.Rows.Take(2).Select(row => (IList<string>)row.ToList()).ToList();
+                    bool pipe = source.Name == "Sewer Pipe Data";
+                    report[0] = new List<string> { "BRANCH-" + n + (pipe ? " - SEWER PIPE DATA" : " - SEWER STRUCTURE DATA") };
+                    report.AddRange(source.Rows.Skip(2).Where(row => row.Count > 0 && ReadSewerBranchNumber(row[0]) == n));
+                    if (report.Count > 2)
+                        output.Add(new XlsxSheet("Branch-" + n + (pipe ? " Pipes" : " Structures"), report));
+                }
+            if (output.Count == 0) throw new InvalidOperationException(
+                "No numbered sewer branches found; verify Pn.x / MHn.x network sequence.");
+            return output;
+        }
+
+        private static int ReadSewerBranchNumber(string name)
+        {
+            Match match = Regex.Match(name ?? "", @"^(?:MH|P)(?<n>\\d+)\\.", RegexOptions.IgnoreCase);
+            int n;
+            return match.Success && int.TryParse(match.Groups["n"].Value,
+                NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ? n : 0;
+        }
 
         private static void ApplyCoordinateOptions(IList<XlsxSheet> sheets, bool swap, bool reverseSigns)
         {
