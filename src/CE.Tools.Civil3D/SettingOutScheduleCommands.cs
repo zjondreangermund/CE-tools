@@ -470,7 +470,7 @@ namespace CETools.Civil3D
 
         private static int ReadSewerBranchNumber(string name)
         {
-            Match match = Regex.Match(name ?? "", @"^(?:MH|P)(?<n>\\d+)\\.", RegexOptions.IgnoreCase);
+            Match match = Regex.Match(name ?? "", @"^(?:MH|P)(?<n>\d+)\.", RegexOptions.IgnoreCase);
             int n;
             return match.Success && int.TryParse(match.Groups["n"].Value,
                 NumberStyles.Integer, CultureInfo.InvariantCulture, out n) ? n : 0;
