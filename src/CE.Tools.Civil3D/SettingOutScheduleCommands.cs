@@ -281,7 +281,8 @@ namespace CETools.Civil3D
             int exported = 0;
             using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
             {
-                foreach (SelectedObject selected in selection.Value)
+                foreach (SelectedObject selected in (selection == null || selection.Value == null ?
+                    new SelectedObject[0] : selection.Value.Cast<SelectedObject>()))
                 {
                     if (selected == null || selected.ObjectId.IsNull) continue;
                     Entity entity = transaction.GetObject(selected.ObjectId, OpenMode.ForRead, false) as Entity;
@@ -814,7 +815,10 @@ namespace CETools.Civil3D
                             ? ((startInvert - endInvert) / length) * 100.0 : double.NaN;
                         string pipeName = ReadDesignText(pipe, "Name", "PartName");
                         if (string.IsNullOrWhiteSpace(pipeName)) pipeName = pipe.Handle.ToString();
-                        string description = ReadDesignText(pipe, "Description", "PartDescription", "PartFamilyName");
+                        string description = ReadDesignText(pipe, "PartDescription", "PartFamilyName", "Description");
+                        if (System.Text.RegularExpressions.Regex.IsMatch(description ?? string.Empty,
+                            @"^Branch[-\\s]*\\d+$", System.Text.RegularExpressions.RegexOptions.IgnoreCase))
+                            description = ReadDesignText(pipe, "PartSizeName", "PartFamilyName");
                         string size = ReadDesignText(pipe, "PartSizeName", "NominalDiameter", "InnerDiameterOrWidth", "InnerDiameter", "Diameter");
                         if (string.IsNullOrWhiteSpace(size) && diameter > 0.0)
                             size = diameter.ToString("0.###", CultureInfo.InvariantCulture) + " drawing units";
