@@ -263,8 +263,7 @@ namespace CETools.Civil3D
                     continue;
 
                 // Preserve all arc transition vertices.
-                if (previousType.Value == SegmentType.Arc ||
-                    nextType.Value == SegmentType.Arc)
+                if (previousType.Value == SegmentType.Arc || nextType.Value == SegmentType.Arc)
                     continue;
 
                 if (previousType.Value != SegmentType.Line ||
