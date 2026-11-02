@@ -52,7 +52,7 @@ namespace CETools.Civil3D
                 new DisciplineWorkflowAction("34. CE-Sewer Construction BOQ", "CE_BOQSEWER", "Calculate sewer earthworks, excavation, pipe and structure construction quantities.", "34 Sewer Sequence")
             };
             DisciplineWorkflowDialogs.SelectAndRun(doc, "FINAL SEWER PRODUCTION",
-                "Ordered workflow from SEWER SEQUENCE.docx; each command is run separately for drawing review.", actions);
+                "Approved sewer production sequence; choose steps individually for drawing review.", actions);
         }
     }
 }
