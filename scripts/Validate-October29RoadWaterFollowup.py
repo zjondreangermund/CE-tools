@@ -61,7 +61,9 @@ if [int(x[0]) for x in actions] != list(range(1, 53)):
     raise AssertionError("Final Road sequence numbering must be contiguous")
 ordered = [x[1] for x in actions]
 for before, after in (("CE_ALIGNLABELSETMULTI", "CE_ROADNAMES"),
-                      ("CE_JUNCTIONGRADETOSURFACE", "CE_PLATFORMDRAPEMULTI")):
+                      ("CE_JUNCTIONGRADETOSURFACE", "CE_ROADSURFACEMERGE"),
+                      ("CE_ROADSURFACEMERGE", "CE_JUNCTIONSURFACEMERGE"),
+                      ("CE_JUNCTIONSURFACEMERGE", "CE_PLATFORMDRAPEMULTI")):
     if ordered.index(after) != ordered.index(before) + 1:
         raise AssertionError("Incorrect sequence: " + after + " must directly follow " + before)
 print("PASS: all final Road production steps numbered and moved in sequence")
