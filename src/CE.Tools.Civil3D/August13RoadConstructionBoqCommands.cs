@@ -307,6 +307,19 @@ namespace CETools.Civil3D
                 totals.SideSlopeArea + totals.JunctionGradingArea3D,
                 "Corridor side slopes + CE junction grading surfaces (gross; may include flat/overlap areas)"));
 
+            // Count only CE_ROADSIGNS raster placements; their separate position
+            // circles are not additional sign quantities.
+            using (Transaction signTransaction = document.Database.TransactionManager.StartTransaction())
+            {
+                var placedSigns = RoadSignPlacementCommands.ReadSigns(document.Database, signTransaction);
+                foreach (var group in placedSigns.GroupBy(x => x.Name ?? "Unknown", StringComparer.OrdinalIgnoreCase)
+                    .OrderBy(x => x.Key, StringComparer.OrdinalIgnoreCase))
+                {
+                    rows.Add(Row("Road signs - " + group.Key, "No.", group.Count(),
+                        "CE_ROADSIGNS linked image insertions (not inferred from junction geometry)"));
+                }
+            }
+
             string note = string.Format(
                 CultureInfo.CurrentCulture,
                 "Road corridors={0}; total road length={1:N3} m. Re-run CE_ROADBOQCONSTRUCTION after alignment/corridor/surface edits to recalculate from the live model. {2}",
