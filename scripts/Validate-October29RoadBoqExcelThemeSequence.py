@@ -56,9 +56,9 @@ for key, value in tests.items():
     print("PASS:", key)
 
 actions = re.findall(r'A\("(\d+)\.[^"]+","(CE_[A-Z0-9_]+)".*?"(\d+) Final Road Production"\)', centres)
-if len(actions) != 47:
-    raise AssertionError("Expected 47 numbered Final Road Production commands, got %d" % len(actions))
-if [int(x[0]) for x in actions] != list(range(1, 48)):
+if len(actions) != 52:
+    raise AssertionError("Expected 52 numbered Final Road Production commands, got %d" % len(actions))
+if [int(x[0]) for x in actions] != list(range(1, 53)):
     raise AssertionError("Final Road Production numbering must be sequential")
 names = [x[1] for x in actions]
 for before, after in (
@@ -71,4 +71,4 @@ for before, after in (
         raise AssertionError(after + " must directly follow " + before)
 if names[-3:] != ["CE_ROADAUTOSHEETS", "CE_DESIGNDATAEXPORT", "CE_ROADBOQCONSTRUCTION"]:
     raise AssertionError("Final steps must be sheets, design export, construction BOQ")
-print("PASS: all 47 Final Road Production steps, no suffix letters, and final output order")
+print("PASS: all 52 Final Road Production steps, no suffix letters, and final output order")
