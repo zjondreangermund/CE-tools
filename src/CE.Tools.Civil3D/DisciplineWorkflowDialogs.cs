@@ -215,7 +215,8 @@ namespace CETools.Civil3D
                         HorizontalContentAlignment = HorizontalAlignment.Stretch,
                         Padding = new Thickness(14, 11, 14, 11),
                         Margin = new Thickness(0, 0, 0, 7),
-                        Content = BuildActionContent(action)
+                        Content = BuildActionContent(action),
+                        ToolTip = BuildActionToolTip(action)
                     };
                     button.Click += OnActionClick;
                     if (!string.IsNullOrWhiteSpace(initiallySelectedCommand) &&
@@ -356,6 +357,20 @@ namespace CETools.Civil3D
             Grid.SetColumn(description, 2);
             grid.Children.Add(description);
             return grid;
+        }
+
+        private static ToolTip BuildActionToolTip(DisciplineWorkflowAction action)
+        {
+            var panel = new StackPanel { MaxWidth = 455, Margin = new Thickness(9) };
+            panel.Children.Add(new TextBlock { Text = action.Title, FontWeight = FontWeights.SemiBold,
+                Foreground = Brushes.White, TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 7) });
+            panel.Children.Add(new TextBlock { Text = action.Description, Foreground = Brushes.White,
+                TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0, 0, 0, 9) });
+            panel.Children.Add(new TextBlock { Text = "Command: " + action.Command,
+                Foreground = Brushes.White, FontFamily = new FontFamily("Consolas"), TextWrapping = TextWrapping.Wrap });
+            return new ToolTip { Content = panel, Background = new SolidColorBrush(Color.FromRgb(17, 23, 34)),
+                Foreground = Brushes.White, BorderBrush = new SolidColorBrush(Color.FromRgb(78, 95, 120)),
+                BorderThickness = new Thickness(1), Padding = new Thickness(6) };
         }
 
         private void OnActionClick(object sender, RoutedEventArgs args)
