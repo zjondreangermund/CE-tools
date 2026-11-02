@@ -562,6 +562,11 @@ namespace CETools.Civil3D
             if (match.Success && int.TryParse(match.Groups["number"].Value, NumberStyles.None,
                 CultureInfo.InvariantCulture, out number) && alignmentNames.TryGetValue(number, out name))
                 return name;
+            // Numbered sewer pipes belong to the corresponding numbered branch
+            // even if their reference-alignment property is empty (e.g. 200/250 mm pipes).
+            if (match.Success && int.TryParse(match.Groups["number"].Value, NumberStyles.Integer,
+                CultureInfo.InvariantCulture, out number))
+                return "Branch-" + number.ToString(CultureInfo.InvariantCulture);
             return string.Empty;
         }
 
