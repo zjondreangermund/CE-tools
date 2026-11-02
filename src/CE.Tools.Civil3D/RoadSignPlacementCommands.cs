@@ -95,6 +95,9 @@ namespace CETools.Civil3D
                 new[] { "ON", "OFF" });
             options.AddPositiveDouble("Radius", "04 Drawing", "Sign circle radius (m)", 0.3,
                 "Radius of the setting-out marker.");
+            options.AddChoice("VertexSettingOut", "04 Drawing", "Open Vertex Setting-Out after placement", "OFF",
+                "Open the existing CE vertex setting-out popup after sign insertion.",
+                new[] { "OFF", "ON" });
             if (!DisciplineWorkflowDialogs.EditSettings(options)) return;
 
             string folder = options.Text("SignFolder");
@@ -214,6 +217,8 @@ namespace CETools.Civil3D
             }
             document.Editor.Regen();
             document.Editor.WriteMessage("\nCE_ROADSIGNS: {0} externally linked signs added. Source: {1}", added, imagePath);
+            if (options.Text("VertexSettingOut") == "ON")
+                document.SendStringToExecute("CE_VERTEXSETTINGOUTTOOLS ", true, false, true);
         }
 
         private static void EnsureRegApp(Database database, Transaction transaction)
@@ -244,8 +249,9 @@ namespace CETools.Civil3D
         internal static List<SignRecord> ReadSigns(Database database, Transaction transaction)
         {
             var found = new List<SignRecord>();
-            BlockTableRecord space = transaction.GetObject(
-                database.CurrentSpaceId, OpenMode.ForRead) as BlockTableRecord;
+            BlockTable table = transaction.GetObject(database.BlockTableId, OpenMode.ForRead) as BlockTable;
+            BlockTableRecord space = table == null ? null : transaction.GetObject(
+                table[BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
             if (space == null) return found;
             foreach (ObjectId id in space)
             {
