@@ -30,6 +30,32 @@ namespace CETools.Civil3D
             if (document == null) return;
             string defaultFolder = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "CE-TOOLS", "RoadSigns");
+            string preferenceFile = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "CE Tools", "RoadSigns.folder");
+            try
+            {
+                if (File.Exists(preferenceFile))
+                {
+                    string saved = File.ReadAllText(preferenceFile).Trim();
+                    if (Directory.Exists(saved)) defaultFolder = saved;
+                }
+            }
+            catch { }
+            string[] packagedNames = { "STOP", "STOP_4WAY", "YIELD", "SPEED_40",
+                "CROSS_JUNCTION", "T_JUNCTION", "SIDE_ROAD", "CURVE_RIGHT", "CURVE_LEFT",
+                "TURN_RIGHT", "TURN_LEFT", "ROAD_HUMP", "ROAD_DIP", "CHEVRON", "ADDITIONAL" };
+            var availableNames = new List<string>(packagedNames);
+            try
+            {
+                if (Directory.Exists(defaultFolder))
+                    availableNames.AddRange(Directory.EnumerateFiles(defaultFolder).Where(file =>
+                        new[] { ".jpg", ".jpeg", ".png" }.Contains(Path.GetExtension(file).ToLowerInvariant()))
+                        .Select(Path.GetFileNameWithoutExtension));
+            }
+            catch { }
+            availableNames = availableNames.Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(x => x, StringComparer.OrdinalIgnoreCase).ToList();
             var options = new ProductionSettingsDialogModel(
                 "CE Tools - Road Sign Placement",
                 "Place linked road-sign images and setting-out markers on selected Civil 3D alignments. Sign compliance must be reviewed.");
@@ -37,9 +63,7 @@ namespace CETools.Civil3D
                 "Choose a permanent folder containing the approved JPG or PNG signs. Images remain externally linked.");
             options.AddChoice("Sign", "01 Sign Library", "Sign image", "STOP",
                 "The selected image must exist in the saved sign folder. Add other .jpg/.png signs to that folder.",
-                new[] { "STOP", "STOP_4WAY", "YIELD", "SPEED_40", "CROSS_JUNCTION", "T_JUNCTION",
-                    "SIDE_ROAD", "CURVE_RIGHT", "CURVE_LEFT", "TURN_RIGHT", "TURN_LEFT",
-                    "ROAD_HUMP", "ROAD_DIP", "CHEVRON", "ADDITIONAL" });
+                availableNames);
             options.AddChoice("Scope", "02 Alignments", "Alignment scope", "Multiple selected",
                 "Choose all drawing alignments or select several road alignments.",
                 new[] { "All", "Multiple selected" });
@@ -74,6 +98,12 @@ namespace CETools.Civil3D
             if (!DisciplineWorkflowDialogs.EditSettings(options)) return;
 
             string folder = options.Text("SignFolder");
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(preferenceFile));
+                File.WriteAllText(preferenceFile, folder);
+            }
+            catch { }
             string sign = options.Text("Sign");
             string imagePath = new[] { ".jpg", ".jpeg", ".png" }
                 .Select(ext => Path.Combine(folder, sign + ext))
