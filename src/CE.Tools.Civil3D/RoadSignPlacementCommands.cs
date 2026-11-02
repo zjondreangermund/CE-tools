@@ -83,8 +83,8 @@ namespace CETools.Civil3D
                 "Sign offset is road half-width plus this distance.");
             options.AddPositiveDouble("Size", "03 Placement", "Sign image plotted width (drawing m)", 1.0,
                 "Resulting linked raster image width.");
-            options.AddPositiveDouble("Rotate", "03 Placement", "Additional rotation (degrees)", 0.01,
-                "Rotation from drawing X axis. Set 0.01 for almost horizontal.");
+            options.AddText("Rotate", "03 Placement", "Additional rotation (degrees)", "0",
+                "Signed angle in degrees; 0 keeps the sign aligned to the local road tangent.");
             options.AddText("Layer", "04 Drawing", "Sign layer", DefaultLayer,
                 "Existing layer is reused, or a new layer is created.");
             options.AddChoice("Existing", "04 Drawing", "Existing CE-generated signs", "Keep",
@@ -129,6 +129,13 @@ namespace CETools.Civil3D
                 PromptSelectionResult chosen = document.Editor.GetSelection(selectionOptions, filter);
                 if (chosen.Status != PromptStatus.OK || chosen.Value == null) return;
                 alignments.AddRange(chosen.Value.GetObjectIds());
+            }
+            double rotationDegrees;
+            if (!double.TryParse(options.Text("Rotate"), NumberStyles.Float,
+                CultureInfo.CurrentCulture, out rotationDegrees))
+            {
+                System.Windows.MessageBox.Show("Enter a valid signed sign rotation in degrees.");
+                return;
             }
             int added = 0;
             using (DocumentLock locked = document.LockDocument())
@@ -194,7 +201,7 @@ namespace CETools.Civil3D
                             Orientation = new CoordinateSystem3d(point,
                                 Vector3d.XAxis * options.Double("Size", 1.0),
                                 Vector3d.YAxis * options.Double("Size", 1.0)),
-                            Rotation = angle + (options.Double("Rotate", 0.01) * Math.PI / 180.0)
+                            Rotation = angle + (rotationDegrees * Math.PI / 180.0)
                         };
                         space.AppendEntity(raster);
                         tr.AddNewlyCreatedDBObject(raster, true);
