@@ -146,11 +146,23 @@ namespace CETools.Civil3D
                     "CE Tools - Remove Source Geometry",
                     "This will DELETE the selected source feature lines/polylines after the new joined output has been generated. Continue?"))
                     return;
-                JoinSelectedSteppedGeometry(document, ids,
-                    Math.Max(0.000001, settings.Double("Gap", 0.050)),
-                    SafeName(settings.Text("Name"), "CE-STEPPED-FL"),
-                    settings.Text("Output") == "Feature Line", deleteSources,
-                    out pieceCount, out vertexCount, out largestGap, out outputName);
+                if (settings.Text("Output") == "Feature Line" && !deleteSources &&
+                    AllSourceFeatureLines(document.Database, ids))
+                {
+                    // Preserve established Civil 3D join behavior for the legacy workflow.
+                    August21PlatformRelativeFatalSafety.CreateJoinedFeatureLine(
+                        document, ids, Math.Max(0.000001, settings.Double("Gap", 0.050)),
+                        SafeName(settings.Text("Name"), "CE-STEPPED-FL"),
+                        out pieceCount, out vertexCount, out largestGap, out outputName);
+                }
+                else
+                {
+                    JoinSelectedSteppedGeometry(document, ids,
+                        Math.Max(0.000001, settings.Double("Gap", 0.050)),
+                        SafeName(settings.Text("Name"), "CE-STEPPED-FL"),
+                        settings.Text("Output") == "Feature Line", deleteSources,
+                        out pieceCount, out vertexCount, out largestGap, out outputName);
+                }
             }
             catch (System.Exception exception)
             {
@@ -167,6 +179,12 @@ namespace CETools.Civil3D
                 vertexCount,
                 largestGap,
                 outputName);
+        }
+
+        private static bool AllSourceFeatureLines(Database database, IList<ObjectId> ids)
+        {
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+                return ids.All(id => tr.GetObject(id, OpenMode.ForRead, false) is CivilFeatureLine);
         }
 
         private static void JoinSelectedSteppedGeometry(Document document, IList<ObjectId> ids,
@@ -242,7 +260,7 @@ namespace CETools.Civil3D
                     ObjectId fid = CivilFeatureLine.Create(name + "-" + Guid.NewGuid().ToString("N").Substring(0, 6),
                         joined.ObjectId);
                     outputName = ((CivilFeatureLine)tr.GetObject(fid, OpenMode.ForRead)).Name;
-                    joined.Erase();
+                    if (!joined.IsErased) joined.Erase();
                 }
                 else outputName = joined.Handle.ToString();
                 if (deleteSources)
