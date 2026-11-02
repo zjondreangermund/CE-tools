@@ -46,7 +46,7 @@ namespace CETools.Civil3D
             catch { }
             string[] packagedNames = { "STOP", "STOP_4WAY", "YIELD", "SPEED_40",
                 "CROSS_JUNCTION", "T_JUNCTION", "SIDE_ROAD", "CURVE_RIGHT", "CURVE_LEFT",
-                "TURN_RIGHT", "TURN_LEFT", "ROAD_HUMP", "ROAD_DIP", "CHEVRON", "ADDITIONAL" };
+                "TURN_RIGHT", "TURN_LEFT", "ROAD_HUMP", "ROAD_DIP", "CHEVRON" };
             var availableNames = new List<string>(packagedNames);
             try
             {
