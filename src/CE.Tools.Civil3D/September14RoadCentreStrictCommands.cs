@@ -120,7 +120,7 @@ namespace CETools.Civil3D
             int failed = 0;
             int removedVertices = 0;
 
-            // One transaction per source polyline: a failed cleanup must not partially mutate other selected polylines.\n            using (DocumentLock documentLock = document.LockDocument())
+            // Endpoints stay protected regardless of a T/X road junction or how adjacent roads are connected.\n            // One transaction per source polyline: a failed cleanup must not partially mutate other selected polylines.\n            using (DocumentLock documentLock = document.LockDocument())
             {
                 foreach (ObjectId id in
                     selection.Value.GetObjectIds().Distinct())
