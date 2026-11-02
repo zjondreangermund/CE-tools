@@ -273,6 +273,7 @@ namespace CETools.Civil3D
                     A("CE-Sewer Settings", "CE_SEWERSETTINGSPRODUCTIONCENTRE", "Parts, styles, labels, profile and band settings.", "01 Sewer Production"),
                     A("CE-Sewer Network / Layout Production", "CE_SEWERLAYOUTPRODUCTIONCENTRE", "Midblock/road-reserve routing, networks and sequencing.", "01 Sewer Production"),
                     A("CE-Network Layout Checks / Labels", "CE_NETWORKLAYOUTTOOLS", "Vertex/structure check, label sides, viewport scales and numeric branch sorting.", "01 Sewer Production"),
+                    A("FINAL SEWER PRODUCTION", "CE_FINALSEWERPRODUCTION", "Approved 34-step sewer production sequence.", "01 Sewer Production"),
                     A("CE-Sewer Design Production", "CE_SEWERDESIGNPRODUCTIONCENTRE", "Network data, alignments, profiles, labels, BOQ and report.", "01 Sewer Production")
                 });
         }
