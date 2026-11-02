@@ -44,16 +44,14 @@ namespace CETools.Civil3D
                 }
             }
             catch { }
-            string[] packagedNames = { "STOP", "STOP_4WAY", "YIELD", "SPEED_40",
-                "CROSS_JUNCTION", "T_JUNCTION", "SIDE_ROAD", "CURVE_RIGHT", "CURVE_LEFT",
-                "TURN_RIGHT", "TURN_LEFT", "ROAD_HUMP", "ROAD_DIP", "CHEVRON" };
+            string[] packagedNames = { "STOP", "STOP_4WAY", "YIELD", "SPEED_40", "SPEED_60", "SPEED_80", "CROSS_JUNCTION", "T_JUNCTION", "SIDE_ROAD", "CURVE_RIGHT", "CURVE_LEFT", "TURN_RIGHT", "TURN_LEFT", "ROAD_HUMP", "ROAD_DIP", "CHEVRON", "DANGER", "DANGER_OTHER" };
             var availableNames = new List<string>(packagedNames);
             try
             {
                 if (Directory.Exists(defaultFolder))
                     availableNames.AddRange(Directory.EnumerateFiles(defaultFolder).Where(file =>
-                        new[] { ".jpg", ".jpeg", ".png" }.Contains(Path.GetExtension(file).ToLowerInvariant()))
-                        .Select(Path.GetFileNameWithoutExtension));
+                        new[] { ".jpg", ".jpeg", ".png", ".svg" }.Contains(Path.GetExtension(file).ToLowerInvariant()))
+                        .Select(file => StripRasterResolution(Path.GetFileNameWithoutExtension(file))));
             }
             catch { }
             availableNames = availableNames.Distinct(StringComparer.OrdinalIgnoreCase)
@@ -121,9 +119,7 @@ namespace CETools.Civil3D
             }
             catch { }
             string sign = options.Text("Sign");
-            string imagePath = new[] { ".jpg", ".jpeg", ".png" }
-                .Select(ext => Path.Combine(folder, sign + ext))
-                .FirstOrDefault(File.Exists);
+            string imagePath = ResolveSignImage(folder, sign);
             if (imagePath == null && options.Text("Position") != "Approach all alignment curves" &&
                 options.Text("Position") != "Stop at junctions" && options.Text("Position") != "Yield at junctions")
             {
@@ -210,8 +206,7 @@ namespace CETools.Civil3D
                     {
                         double station = placement.Key;
                         string placedSign = placement.Value;
-                        string placedPath = new[] { ".jpg", ".jpeg", ".png" }
-                            .Select(ext => Path.Combine(folder, placedSign + ext)).FirstOrDefault(File.Exists);
+                        string placedPath = ResolveSignImage(folder, placedSign);
                         if (placedPath == null)
                             throw new FileNotFoundException("Required sign image is missing: " + placedSign, folder);
                         ObjectId imageDefId = EnsureImageDefinition(db, tr, placedPath);
@@ -394,6 +389,51 @@ namespace CETools.Civil3D
             alignment.PointLocation(before, 0.0, ref x0, ref y0);
             alignment.PointLocation(after, 0.0, ref x1, ref y1);
             return Math.Atan2(y1 - y0, x1 - x0);
+        }
+
+        // Match the original 18 sign codes in the user-supplied vector replacement ZIP.
+        // Civil 3D raster insertion uses PNG exports; SVG is the retained vector master.
+        private static readonly Dictionary<string, string> SignMasters =
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "STOP", "R1 - STOP SIGN" },
+                { "STOP_4WAY", "R1.4 - 4 WAY STOP SIGN" },
+                { "YIELD", "R2 - YIELD SIGN" },
+                { "SPEED_40", "R201 - 40 SIGN" },
+                { "SPEED_60", "R201 - 60 SIGN" },
+                { "SPEED_80", "R201 - 80 SIGN" },
+                { "CROSS_JUNCTION", "W101 - CROSS ROAD" },
+                { "T_JUNCTION", "W104 - T-JUNCTION" },
+                { "SIDE_ROAD", "W110 - STAGGERED JUNCTION" },
+                { "CURVE_RIGHT", "W202 - GENTLE CURVE RIGHT" },
+                { "CURVE_LEFT", "W203 - GENTLE CURVE LEFT" },
+                { "TURN_RIGHT", "W204 - SHARP CURVE RIGHT" },
+                { "TURN_LEFT", "W205 - SHARP CURVE LEFT" },
+                { "ROAD_HUMP", "W332 - SPEEDHUMP" },
+                { "ROAD_DIP", "W350 - DRIFT" },
+                { "CHEVRON", "W409 - T-JUNCTION CHEVRON" },
+                { "DANGER", "W401 - DANGER" },
+                { "DANGER_OTHER", "W402 - DANGER" }
+            };
+        private static string StripRasterResolution(string name)
+        {
+            return System.Text.RegularExpressions.Regex.Replace(name ?? string.Empty,
+                @"_(?:2048|4096)px$", "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        }
+        private static string ResolveSignImage(string folder, string selected)
+        {
+            if (string.IsNullOrWhiteSpace(folder) || string.IsNullOrWhiteSpace(selected) ||
+                !Directory.Exists(folder)) return null;
+            string original;
+            string name = SignMasters.TryGetValue(selected, out original) ? original :
+                StripRasterResolution(selected);
+            foreach (string suffix in new[] { "_4096px.png", "_2048px.png", ".png", ".jpg", ".jpeg" })
+            {
+                string file = Path.Combine(folder, name + suffix);
+                if (File.Exists(file)) return file;
+            }
+            // Missing PNG is an actionable error. Do not pass SVG to RasterImageDef.
+            return null;
         }
 
         private static void EnsureRegApp(Database database, Transaction transaction)
