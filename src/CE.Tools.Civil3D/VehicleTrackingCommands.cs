@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -538,6 +539,22 @@ namespace CETools.Civil3D
             model.AddChoice("Vehicle", "01 Vehicle", "Vehicle type", "Passenger car",
                 "Select a South African design-vehicle template. Axle and tyre layouts are shown individually; verify the chosen standard edition before final design use.",
                 new[] { "Passenger car", "Light delivery vehicle", "Single-unit truck", "Rigid truck", "Articulated truck", "Semi-trailer", "WB-12", "WB-15", "WB-20", "Bus", "Custom" });
+            model.OnChoiceChanged("Vehicle", selected =>
+            {
+                if (string.Equals(selected, "Custom", StringComparison.OrdinalIgnoreCase))
+                    return new Dictionary<string, string>();
+                VehiclePreset dimensions = GetVehiclePreset(selected);
+                Func<double, string> fmt = value => value.ToString("0.###", CultureInfo.InvariantCulture);
+                return new Dictionary<string, string>
+                {
+                    { "Width", fmt(dimensions.Width) },
+                    { "Track", fmt(dimensions.Track) },
+                    { "Wheelbase", fmt(dimensions.Wheelbase) },
+                    { "VehicleLength", fmt(dimensions.Length) },
+                    { "SteeringAngle", fmt(CalculateEquivalentSteeringAngle(
+                        dimensions.Wheelbase, dimensions.Width, dimensions.OuterTurningRadius)) }
+                };
+            });
             model.AddPositiveDouble("Width", "01 Vehicle", "Vehicle overall width (m)", 1.8, "Automatically updated from the selected vehicle type; editable for Custom.");
             model.AddPositiveDouble("Track", "01 Vehicle", "Wheel centre-to-centre track (m)", 1.55, "Automatically updated from the selected vehicle type; editable for Custom.");
             model.AddPositiveDouble("Wheelbase", "01 Vehicle", "Wheelbase (m)", 2.8, "Automatically updated from the selected vehicle type; used to calculate the steering radius.");
