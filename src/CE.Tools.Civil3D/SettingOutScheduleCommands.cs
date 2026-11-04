@@ -449,6 +449,13 @@ namespace CETools.Civil3D
         }
 
 
+        private sealed class RoadSignCogoMatch
+        {
+            internal string Name;
+            internal long Number;
+            internal Point3d Point;
+        }
+
         private static void PopulateRoadSignSettingOutReport(Document doc, IList<XlsxSheet> sheets)
         {
             var rows = new List<IList<string>>
@@ -460,12 +467,70 @@ namespace CETools.Civil3D
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
                 var signs = RoadSignPlacementCommands.ReadSigns(doc.Database, tr);
-                int number = 0;
-                foreach (var sign in signs.OrderBy(x => x.Alignment, StringComparer.OrdinalIgnoreCase).ThenBy(x => x.Station))
+                // CE_VERTEXSETTINGOUT writes its actual displayed point name to
+                // PointName and RawDescription. Export those names as found in the
+                // layout instead of inventing an unrelated RS1, RS2 sequence.
+                var cogoPoints = new List<RoadSignCogoMatch>();
+                BlockTable table = tr.GetObject(doc.Database.BlockTableId, OpenMode.ForRead) as BlockTable;
+                BlockTableRecord model = table == null ? null : tr.GetObject(
+                    table[BlockTableRecord.ModelSpace], OpenMode.ForRead) as BlockTableRecord;
+                if (model != null)
                 {
-                    number++;
+                    foreach (ObjectId id in model)
+                    {
+                        CivilCogoPoint point = tr.GetObject(id, OpenMode.ForRead, false) as CivilCogoPoint;
+                        if (point == null || point.IsErased) continue;
+                        string name = string.IsNullOrWhiteSpace(point.PointName)
+                            ? point.RawDescription : point.PointName;
+                        if (string.IsNullOrWhiteSpace(name))
+                            name = point.PointNumber.ToString(CultureInfo.InvariantCulture);
+                        cogoPoints.Add(new RoadSignCogoMatch
+                        {
+                            Name = name.Trim(),
+                            Number = Convert.ToInt64(point.PointNumber, CultureInfo.InvariantCulture),
+                            Point = new Point3d(point.Easting, point.Northing, point.Elevation)
+                        });
+                    }
+                }
+
+                const double matchingTolerance = 0.025; // metres, plan XY; ignore annotation Z
+                var resolved = new List<Tuple<RoadSignPlacementCommands.SignRecord,
+                    RoadSignCogoMatch, string>>();
+                foreach (var sign in signs)
+                {
+                    var nearby = cogoPoints.Select(point => new
+                    {
+                        Point = point,
+                        Distance = Math.Sqrt(Math.Pow(point.Point.X - sign.Point.X, 2) +
+                                             Math.Pow(point.Point.Y - sign.Point.Y, 2))
+                    })
+                    .Where(item => item.Distance <= matchingTolerance)
+                    .OrderBy(item => item.Distance)
+                    .ToList();
+                    RoadSignCogoMatch match = null;
+                    string status = "COGO POINT NOT FOUND";
+                    if (nearby.Count > 0)
+                    {
+                        // A second COGO point at effectively the same XY would make
+                        // the number ambiguous. Do not silently assign an incorrect one.
+                        if (nearby.Count > 1 &&
+                            Math.Abs(nearby[0].Distance - nearby[1].Distance) < 0.001)
+                            status = "AMBIGUOUS COGO POINT";
+                        else
+                        {
+                            match = nearby[0].Point;
+                            status = match.Name;
+                        }
+                    }
+                    resolved.Add(Tuple.Create(sign, match, status));
+                }
+                foreach (var entry in resolved.OrderBy(x => x.Item2 == null ? long.MaxValue : x.Item2.Number)
+                    .ThenBy(x => x.Item1.Alignment, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(x => x.Item1.Station))
+                {
+                    var sign = entry.Item1;
                     rows.Add(new List<string> {
-                        "RS" + number.ToString(CultureInfo.InvariantCulture),
+                        entry.Item3,
                         sign.Point.Y.ToString("0.000", CultureInfo.InvariantCulture),
                         sign.Point.X.ToString("0.000", CultureInfo.InvariantCulture),
                         sign.Alignment ?? string.Empty,
