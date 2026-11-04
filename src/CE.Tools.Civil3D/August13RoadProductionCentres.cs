@@ -44,6 +44,7 @@ namespace CETools.Civil3D
     A("CE-Join Continuous Road Reserve Centrelines","CE_ROADCONTINUITYFIX","Join continuous centreline strings.","02 Centrelines"),
     A("CE-Multiple Horizontal Centreline Curves","CE_ROUTEHORIZONTALCURVES","Apply specified tangent curve radii to multiple road/route centreline polylines.","03 Geometry"),
     A("CE-Road Offsets","CE_ROADOFFSET","Create road offsets.","03 Geometry"),
+    A("CE-Batch Polyline Offsets","CE_POLYLINEOFFSET","Offset all model-space or multiple selected 2D polylines left, right or both ways without changing originals.","03 Geometry"),
     A("CE-Multiple T/Cross Junction Bellmouths","CE_ROADJUNCTIONBULK","Create T/cross-junction bellmouths.","04 Junctions"),
     A("CE-Multiple Junction Trim","CE_ROADJUNCTIONTRIM","Trim multiple junctions.","04 Junctions"),
     A("CE-Bellmouth Tangent Trim","CE_BELLMOUTHTRIMEDGES","Trim road and sidewalk/shoulder edges exactly to generated bellmouth tangent stations.","04 Junctions"),

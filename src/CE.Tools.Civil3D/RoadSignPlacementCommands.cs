@@ -25,6 +25,24 @@ namespace CETools.Civil3D
     {
         private const string AppName = "CE_ROADSIGN_GENERATED";
         private const string DefaultLayer = "CE-ROAD-SIGNS";
+        private static readonly Dictionary<string, double> SuggestedHeights =
+            new Dictionary<string, double>(StringComparer.OrdinalIgnoreCase)
+            {
+                { "DANGER", 1.80 }, { "DANGER_OTHER", 1.80 },
+                { "CHEVRON", 1.35 }, { "STOP_4WAY", 1.20 }
+            };
+
+        private static double ReadRasterAspectRatio(string fileName)
+        {
+            // Civil 3D 2023 RasterImageDef does not expose ImageSize.
+            // Read the actual PNG pixel dimensions rather than guessing a square.
+            using (System.Drawing.Image sourceImage = System.Drawing.Image.FromFile(fileName))
+            {
+                if (sourceImage.Width <= 0 || sourceImage.Height <= 0)
+                    throw new InvalidOperationException("Sign image dimensions are invalid: " + fileName);
+                return (double)sourceImage.Width / sourceImage.Height;
+            }
+        }
         [CommandMethod("CE_TOOLS", "CE_ROADSIGNS", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
         public void PlaceSigns()
         {
@@ -86,8 +104,17 @@ namespace CETools.Civil3D
                 "Measured perpendicular to road alignment.");
             options.AddPositiveDouble("Offset", "03 Placement", "Distance beyond road edge (m)", 1.0,
                 "Sign offset is road half-width plus this distance.");
-            options.AddPositiveDouble("Size", "03 Placement", "Sign image plotted height (drawing m)", 1.0,
-                "Image height in drawing units; original width-to-height ratio is always preserved.");
+            options.AddPositiveDouble("Size", "03 Placement", "Standard sign plotted height (m)", 1.0,
+                "Base image height. Aspect ratio is always preserved; W401 danger, chevron and 4-way stop use their own optional heights.");
+            options.AddChoice("UseRecommendedSize", "03 Placement", "Use tall sign sizes", "ON",
+                "Use configurable taller plotting height for W401/W402 danger, chevron and 4-way stop. Does not certify physical traffic sign dimensions.",
+                new[] { "ON", "OFF" });
+            options.AddPositiveDouble("DangerHeight", "03 Placement", "Danger marker height (m)", 1.8,
+                "Preserve W401/W402 vertical proportions; set required plotted height.");
+            options.AddPositiveDouble("ChevronHeight", "03 Placement", "Chevron height (m)", 1.35,
+                "Preserve source chevron proportions without stretching or rotating.");
+            options.AddPositiveDouble("Stop4Height", "03 Placement", "Four-way stop height (m)", 1.20,
+                "Preserve source R1.4 proportions without flattening.");
             options.AddText("Rotate", "03 Placement", "Sign display rotation (degrees)", "0",
                 "0 keeps the sign upright in world plan view. Optional manual angle is measured from drawing X; not tied to road direction.");
             options.AddText("Layer", "04 Drawing", "Sign layer", DefaultLayer,
@@ -233,11 +260,26 @@ namespace CETools.Civil3D
                         if (options.Text("Side") == "Right") offset *= -1;
                         var point = new Point3d(x - Math.Sin(travelAngle) * offset,
                             y + Math.Cos(travelAngle) * offset, 0.0);
-                        if (imageDef == null || imageDef.ImageSize.X <= 0 || imageDef.ImageSize.Y <= 0)
-                            throw new InvalidOperationException("Sign raster does not report a valid image size.");
-                        // Do not squash rectangular signs such as R1.4 4-WAY STOP.
+                        if (imageDef == null)
+                            throw new InvalidOperationException("Linked sign definition unavailable.");
+                        // Preserve PNG proportions, including the portrait W401 danger marker.
+                        double aspectRatio = ReadRasterAspectRatio(placedPath);
                         double displayHeight = options.Double("Size", 1.0);
-                        double displayWidth = displayHeight * imageDef.ImageSize.X / imageDef.ImageSize.Y;
+                        if (options.Text("UseRecommendedSize") == "ON")
+                        {
+                            if (string.Equals(placedSign, "DANGER", StringComparison.OrdinalIgnoreCase) ||
+                                string.Equals(placedSign, "DANGER_OTHER", StringComparison.OrdinalIgnoreCase) ||
+                                placedSign.StartsWith("W401", StringComparison.OrdinalIgnoreCase) ||
+                                placedSign.StartsWith("W402", StringComparison.OrdinalIgnoreCase))
+                                displayHeight = options.Double("DangerHeight", 1.8);
+                            else if (string.Equals(placedSign, "CHEVRON", StringComparison.OrdinalIgnoreCase) ||
+                                     placedSign.StartsWith("W409", StringComparison.OrdinalIgnoreCase))
+                                displayHeight = options.Double("ChevronHeight", 1.35);
+                            else if (string.Equals(placedSign, "STOP_4WAY", StringComparison.OrdinalIgnoreCase) ||
+                                     placedSign.StartsWith("R1.4", StringComparison.OrdinalIgnoreCase))
+                                displayHeight = options.Double("Stop4Height", 1.2);
+                        }
+                        double displayWidth = displayHeight * aspectRatio;
                         double displayAngle = rotationDegrees * Math.PI / 180.0;
                         Vector3d imageU = new Vector3d(Math.Cos(displayAngle), Math.Sin(displayAngle), 0.0) * displayWidth;
                         Vector3d imageV = new Vector3d(-Math.Sin(displayAngle), Math.Cos(displayAngle), 0.0) * displayHeight;
