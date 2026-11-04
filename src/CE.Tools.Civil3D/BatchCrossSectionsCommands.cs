@@ -705,7 +705,7 @@ namespace CETools.Civil3D
                 list.SelectionMode = SelectionMode.Extended;
                 list.HorizontalContentAlignment = HorizontalAlignment.Stretch;
                 var factory = new FrameworkElementFactory(typeof(CheckBox));
-                factory.SetValue(CheckBox.ContentProperty, new Binding("Name"));
+                factory.SetBinding(CheckBox.ContentProperty, new Binding("Name"));
                 factory.SetValue(CheckBox.FocusableProperty, false);
                 factory.SetValue(CheckBox.MarginProperty, new Thickness(3, 2, 3, 2));
                 factory.SetBinding(CheckBox.IsCheckedProperty, new Binding("IsSelected")
