@@ -135,14 +135,25 @@ namespace CETools.Civil3D
             // templates; articulated off-tracking is not calculated here.
             switch ((vehicleType ?? string.Empty).Trim())
             {
+                case "TRH17 P - Passenger car":
                 case "Passenger car":
                 case "Light delivery vehicle":
                     return MakePreset(1.80, 1.55, 2.85, 4.80, 6.20,
                         new[] { -1.425, 1.425 }, new[] { false, false });
+                case "TRH17 SU - Single unit truck":
+                    // TRH17 (1988) Table 2.2.1: width 2.60 m, wheelbase 6.10 m,
+                    // front/rear overhang 1.22/1.83 m. Track is a schematic estimate.
+                    return MakePreset(2.60, 2.10, 6.10, 9.15, 13.38,
+                        new[] { -3.05, 3.05 }, new[] { true, false });
                 case "Single-unit truck":
                 case "Rigid truck":
                     return MakePreset(2.50, 2.00, 6.10, 9.10, 13.38,
                         new[] { -3.05, 3.05 }, new[] { true, false });
+                case "TRH17 BUS - Single unit bus":
+                    // TRH17 Table 2.2.1: width 2.60 m, WB 6.00 m,
+                    // front/rear overhang 2.50/3.50 m; assumed track 2.10 m.
+                    return MakePreset(2.60, 2.10, 6.00, 12.00, 14.50,
+                        new[] { -3.0, 3.0 }, new[] { true, false });
                 case "Bus":
                     // City bus: 12.19 m body, 2.59 m wide, 7.62 m axle spacing.
                     return MakePreset(2.59, 2.10, 7.62, 12.19, 14.50,
@@ -538,7 +549,7 @@ namespace CETools.Civil3D
                 "Preliminary plan envelope and review settings. Turning, 3D clearance and sight-distance checks require detailed design validation.");
             model.AddChoice("Vehicle", "01 Vehicle", "Vehicle type", "Passenger car",
                 "Select a South African design-vehicle template. Axle and tyre layouts are shown individually; verify the chosen standard edition before final design use.",
-                new[] { "Passenger car", "Light delivery vehicle", "Single-unit truck", "Rigid truck", "Articulated truck", "Semi-trailer", "WB-12", "WB-15", "WB-20", "Bus", "Custom" });
+                new[] { "TRH17 P - Passenger car", "TRH17 SU - Single unit truck", "TRH17 BUS - Single unit bus", "Passenger car", "Light delivery vehicle", "Single-unit truck", "Rigid truck", "Articulated truck", "Semi-trailer", "WB-12", "WB-15", "WB-20", "Bus", "Custom" });
             model.OnChoiceChanged("Vehicle", selected =>
             {
                 if (string.Equals(selected, "Custom", StringComparison.OrdinalIgnoreCase))
