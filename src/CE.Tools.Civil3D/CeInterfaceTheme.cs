@@ -414,6 +414,7 @@ namespace CETools.Civil3D
 
         private sealed class ThemePalette
         {
+            internal bool IsDark;
             internal Brush Window;
             internal Brush Card;
             internal Brush Input;
@@ -426,6 +427,7 @@ namespace CETools.Civil3D
             {
                 return new ThemePalette
                 {
+                    IsDark = true,
                     Window = new SolidColorBrush(Color.FromRgb(15, 19, 27)),
                     Card = new SolidColorBrush(Color.FromRgb(28, 35, 49)),
                     Input = new SolidColorBrush(Color.FromRgb(20, 27, 38)),
@@ -440,6 +442,7 @@ namespace CETools.Civil3D
             {
                 return new ThemePalette
                 {
+                    IsDark = false,
                     Window = new SolidColorBrush(Color.FromRgb(244, 247, 249)),
                     Card = Brushes.White,
                     Input = Brushes.White,
