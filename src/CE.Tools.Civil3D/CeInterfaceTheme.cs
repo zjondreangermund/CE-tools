@@ -117,6 +117,20 @@ namespace CETools.Civil3D
             if (combo == null) return;
             try
             {
+                // Popup item containers are created lazily and may never inherit
+                // the Window's implicit ComboBoxItem style. Assign the style to
+                // the ComboBox itself so future and virtualized items stay white.
+                if (string.Equals(CeThemeStore.Read(), "Dark", StringComparison.OrdinalIgnoreCase))
+                {
+                    var itemStyle = new Style(typeof(ComboBoxItem));
+                    itemStyle.Setters.Add(new Setter(Control.ForegroundProperty, Brushes.White));
+                    itemStyle.Setters.Add(new Setter(System.Windows.Documents.TextElement.ForegroundProperty, Brushes.White));
+                    itemStyle.Setters.Add(new Setter(Control.BackgroundProperty,
+                        new SolidColorBrush(Color.FromRgb(29, 38, 53))));
+                    itemStyle.Setters.Add(new Setter(UIElement.OpacityProperty, 1.0));
+                    combo.ItemContainerStyle = itemStyle;
+                    combo.Foreground = Brushes.White;
+                }
                 // Civil 3D 2023 targets the .NET Framework WPF API where
                 // ComboBox.DropDownOpenedEvent is not exposed as a routed-event
                 // identifier. Hook the supported instance event instead.
