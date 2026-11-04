@@ -69,7 +69,7 @@ namespace CETools.Civil3D
                 new[] { "All", "Multiple selected" });
             options.AddChoice("Position", "02 Alignments", "Sign station location", "From start and end",
                 "Use start/end distances or one absolute alignment chainage.",
-                new[] { "From start and end", "From start", "From end", "Specified chainage", "Approach all alignment curves", "Stop at junctions", "Yield at junctions" });
+                new[] { "From start and end", "From start", "From end", "Specified chainage", "Approach all alignment curves", "Stop at junctions", "Yield at junctions", "From crossing alignments" });
             options.AddChoice("JunctionControl", "02 Alignments", "Junction priority arrangement", "2-way selected roads",
                 "For two-way control, select minor road alignments. Four-way requires selecting every approach road.",
                 new[] { "2-way selected roads", "4-way all selected approaches" });
@@ -80,16 +80,16 @@ namespace CETools.Civil3D
             options.AddPositiveDouble("Station", "02 Alignments", "Specified chainage (m)", 10.0,
                 "Absolute Civil 3D alignment station; this is not a distance from its start.");
             options.AddChoice("Side", "03 Placement", "Side", "Left",
-                "Left or right relative to increasing alignment station.",
+                "Left or right of the direction of approach (not merely increasing chainage).",
                 new[] { "Left", "Right" });
             options.AddPositiveDouble("RoadHalfWidth", "03 Placement", "Distance from centreline to road edge (m)", 3.0,
                 "Measured perpendicular to road alignment.");
             options.AddPositiveDouble("Offset", "03 Placement", "Distance beyond road edge (m)", 1.0,
                 "Sign offset is road half-width plus this distance.");
-            options.AddPositiveDouble("Size", "03 Placement", "Sign image plotted width (drawing m)", 1.0,
-                "Resulting linked raster image width.");
-            options.AddText("Rotate", "03 Placement", "Additional rotation (degrees)", "0",
-                "Signed angle in degrees; 0 keeps the sign aligned to the local road tangent.");
+            options.AddPositiveDouble("Size", "03 Placement", "Sign image plotted height (drawing m)", 1.0,
+                "Image height in drawing units; original width-to-height ratio is always preserved.");
+            options.AddText("Rotate", "03 Placement", "Sign display rotation (degrees)", "0",
+                "0 keeps the sign upright in world plan view. Optional manual angle is measured from drawing X; not tied to road direction.");
             options.AddText("Layer", "04 Drawing", "Sign layer", DefaultLayer,
                 "Existing layer is reused, or a new layer is created.");
             options.AddChoice("Existing", "04 Drawing", "Existing CE-generated signs", "Keep",
@@ -121,7 +121,8 @@ namespace CETools.Civil3D
             string sign = options.Text("Sign");
             string imagePath = ResolveSignImage(folder, sign);
             if (imagePath == null && options.Text("Position") != "Approach all alignment curves" &&
-                options.Text("Position") != "Stop at junctions" && options.Text("Position") != "Yield at junctions")
+                options.Text("Position") != "Stop at junctions" && options.Text("Position") != "Yield at junctions" &&
+                options.Text("Position") != "From crossing alignments")
             {
                 System.Windows.MessageBox.Show("Image " + sign + " was not found in " + folder +
                     ". Extract the supplied CE RoadSigns reference package into this folder and try again.",
@@ -180,32 +181,37 @@ namespace CETools.Civil3D
                     if (alignment == null) continue;
                     double first = alignment.StartingStation, last = alignment.EndingStation;
                     double approach = options.Double("Approach", 25.0);
-                    var placements = new List<KeyValuePair<double, string>>();
+                    var placements = new List<SignPlacement>();
                     switch (options.Text("Position"))
                     {
                         case "From start":
-                            placements.Add(new KeyValuePair<double, string>(first + approach, sign)); break;
+                            placements.Add(new SignPlacement(first + approach, sign, false)); break;
                         case "From end":
-                            placements.Add(new KeyValuePair<double, string>(last - approach, sign)); break;
+                            placements.Add(new SignPlacement(last - approach, sign, true)); break;
                         case "Specified chainage":
-                            placements.Add(new KeyValuePair<double, string>(options.Double("Station", 10.0), sign)); break;
+                            placements.Add(new SignPlacement(options.Double("Station", 10.0), sign, false)); break;
                         case "Approach all alignment curves":
                             placements.AddRange(CurveWarningPositions(alignment, approach,
                                 options.Double("SharpCurveRadius", 35.0))); break;
                         case "Stop at junctions":
                         case "Yield at junctions":
-                            placements.AddRange(JunctionApproaches(alignment, civil, tr, approach,
-                                options.Text("Position") == "Stop at junctions" ?
-                                (options.Text("JunctionControl") == "4-way all selected approaches" ? "STOP_4WAY" : "STOP") : "YIELD")); break;
+                        case "From crossing alignments":
+                            string selected = options.Text("Position") == "Stop at junctions" ?
+                                (options.Text("JunctionControl") == "4-way all selected approaches" ? "STOP_4WAY" : "STOP") :
+                                (options.Text("Position") == "Yield at junctions" ? "YIELD" : sign);
+                            placements.AddRange(JunctionApproaches(alignment, civil, tr, approach, selected));
+                            break;
                         default:
-                            placements.Add(new KeyValuePair<double, string>(first + approach, sign));
-                            placements.Add(new KeyValuePair<double, string>(last - approach, sign)); break;
+                            placements.Add(new SignPlacement(first + approach, sign, false));
+                            placements.Add(new SignPlacement(last - approach, sign, true)); break;
                     }
-                    foreach (var placement in placements.GroupBy(x => x.Key.ToString("0.000", CultureInfo.InvariantCulture)
-                        + "|" + x.Value).Select(g => g.First()))
+                    // Forward and reverse approach legs are distinct and must retain their travel direction.
+                    foreach (SignPlacement placement in placements.GroupBy(x =>
+                        x.Station.ToString("0.000", CultureInfo.InvariantCulture) + "|" + x.Sign + "|" +
+                        x.ReverseTravel.ToString()).Select(g => g.First()))
                     {
-                        double station = placement.Key;
-                        string placedSign = placement.Value;
+                        double station = placement.Station;
+                        string placedSign = placement.Sign;
                         string placedPath = ResolveSignImage(folder, placedSign);
                         if (placedPath == null)
                             throw new FileNotFoundException("Required sign image is missing: " + placedSign, folder);
@@ -221,24 +227,32 @@ namespace CETools.Civil3D
                         double ux = 0, uy = 0;
                         alignment.PointLocation(b, 0.0, ref ux, ref uy);
                         double angle = Math.Atan2(uy - ty, ux - tx);
+                        // Reverse the tangent for traffic approaching from decreasing chainage.
+                        double travelAngle = angle + (placement.ReverseTravel ? Math.PI : 0.0);
                         double offset = options.Double("RoadHalfWidth", 3.0) + options.Double("Offset", 1.0);
                         if (options.Text("Side") == "Right") offset *= -1;
-                        var point = new Point3d(x - Math.Sin(angle) * offset,
-                            y + Math.Cos(angle) * offset, 0.0);
+                        var point = new Point3d(x - Math.Sin(travelAngle) * offset,
+                            y + Math.Cos(travelAngle) * offset, 0.0);
+                        if (imageDef == null || imageDef.ImageSize.X <= 0 || imageDef.ImageSize.Y <= 0)
+                            throw new InvalidOperationException("Sign raster does not report a valid image size.");
+                        // Do not squash rectangular signs such as R1.4 4-WAY STOP.
+                        double displayHeight = options.Double("Size", 1.0);
+                        double displayWidth = displayHeight * imageDef.ImageSize.X / imageDef.ImageSize.Y;
+                        double displayAngle = rotationDegrees * Math.PI / 180.0;
+                        Vector3d imageU = new Vector3d(Math.Cos(displayAngle), Math.Sin(displayAngle), 0.0) * displayWidth;
+                        Vector3d imageV = new Vector3d(-Math.Sin(displayAngle), Math.Cos(displayAngle), 0.0) * displayHeight;
+                        var imageOrigin = point - imageU * 0.5 - imageV * 0.5;
                         var raster = new RasterImage
                         {
                             ImageDefId = imageDefId,
                             LayerId = layerId,
-                            Orientation = new CoordinateSystem3d(point,
-                                Vector3d.XAxis * options.Double("Size", 1.0),
-                                Vector3d.YAxis * options.Double("Size", 1.0)),
-                            Rotation = angle + (rotationDegrees * Math.PI / 180.0)
+                            Orientation = new CoordinateSystem3d(imageOrigin, imageU, imageV)
                         };
                         space.AppendEntity(raster);
                         tr.AddNewlyCreatedDBObject(raster, true);
                         RasterImage.EnableReactors(true);
                         raster.AssociateRasterDef(imageDef);
-                        Tag(raster, placedSign, alignment.Name, station);
+                        Tag(raster, placedSign, alignment.Name, station, point);
                         if (options.Text("Circle") == "ON")
                         {
                             var marker = new Circle(point, Vector3d.ZAxis, options.Double("Radius", 0.3));
@@ -246,13 +260,13 @@ namespace CETools.Civil3D
                             marker.LayerId = layerId;
                             space.AppendEntity(marker);
                             tr.AddNewlyCreatedDBObject(marker, true);
-                            Tag(marker, placedSign, alignment.Name, station);
+                            Tag(marker, placedSign, alignment.Name, station, point);
                         }
                         if (options.Text("Leader") == "ON")
                         {
                             double leaderDistance = options.Double("LeaderDistance", 2.0);
-                            var landing = new Point3d(point.X + Math.Cos(angle) * leaderDistance,
-                                point.Y + Math.Sin(angle) * leaderDistance, point.Z);
+                            var landing = new Point3d(point.X + Math.Cos(travelAngle) * leaderDistance,
+                                point.Y + Math.Sin(travelAngle) * leaderDistance, point.Z);
                             var leader = new MLeader();
                             leader.SetDatabaseDefaults(db);
                             leader.LayerId = layerId;
@@ -271,7 +285,7 @@ namespace CETools.Civil3D
                                 Annotative = AnnotativeStates.True };
                             space.AppendEntity(leader);
                             tr.AddNewlyCreatedDBObject(leader, true);
-                            Tag(leader, placedSign, alignment.Name, station);
+                            Tag(leader, placedSign, alignment.Name, station, point);
                         }
                         added++;
                     }
@@ -293,11 +307,28 @@ namespace CETools.Civil3D
         // Junctions are identified by the actual intersection of centreline entities.
         // The user explicitly chooses which approach roads carry priority control;
         // no automatic major/minor road hierarchy is inferred.
-        private static IEnumerable<KeyValuePair<double, string>> JunctionApproaches(
+        private sealed class SignPlacement
+        {
+            internal readonly double Station;
+            internal readonly string Sign;
+            internal readonly bool ReverseTravel;
+            internal SignPlacement(double station, string sign, bool reverseTravel)
+            {
+                Station = station;
+                Sign = sign;
+                ReverseTravel = reverseTravel;
+            }
+        }
+
+        // An approach before an intersection travels in increasing chainage.
+        // An approach after it travels in decreasing chainage, so its LEFT side
+        // is the opposite side of the Civil 3D alignment's increasing tangent.
+        private static IEnumerable<SignPlacement> JunctionApproaches(
             CivilAlignment road, CivilDocument civil, Transaction transaction,
             double approachDistance, string signName)
         {
-            var output = new List<KeyValuePair<double, string>>();
+            var output = new List<SignPlacement>();
+            var seen = new HashSet<string>(StringComparer.Ordinal);
             foreach (ObjectId otherId in civil.GetAlignmentIds())
             {
                 if (otherId == road.ObjectId) continue;
@@ -307,16 +338,26 @@ namespace CETools.Civil3D
                 try { road.IntersectWith(other, Intersect.OnBothOperands,
                     intersections, IntPtr.Zero, IntPtr.Zero); }
                 catch { continue; }
-                foreach (Point3d p in intersections)
+                foreach (Point3d intersection in intersections)
                 {
                     double station = 0.0, offset = 0.0;
-                    try { road.StationOffset(p.X, p.Y, ref station, ref offset); }
+                    try { road.StationOffset(intersection.X, intersection.Y, ref station, ref offset); }
                     catch { continue; }
                     if (Math.Abs(offset) > 0.25) continue;
-                    if (station - approachDistance >= road.StartingStation)
-                        output.Add(new KeyValuePair<double, string>(station - approachDistance, signName));
-                    if (station + approachDistance <= road.EndingStation)
-                        output.Add(new KeyValuePair<double, string>(station + approachDistance, signName));
+                    double before = station - approachDistance;
+                    double after = station + approachDistance;
+                    // A crossing requires two approach arms where geometry exists,
+                    // but never places a reverse-travel sign with the forward tangent.
+                    if (before >= road.StartingStation && before < station)
+                    {
+                        string key = before.ToString("0.000", CultureInfo.InvariantCulture) + "|F";
+                        if (seen.Add(key)) output.Add(new SignPlacement(before, signName, false));
+                    }
+                    if (after <= road.EndingStation && after > station)
+                    {
+                        string key = after.ToString("0.000", CultureInfo.InvariantCulture) + "|R";
+                        if (seen.Add(key)) output.Add(new SignPlacement(after, signName, true));
+                    }
                 }
             }
             return output;
@@ -329,10 +370,10 @@ namespace CETools.Civil3D
                    name.StartsWith("RD ") || name.StartsWith("ROAD ");
         }
 
-        private static IEnumerable<KeyValuePair<double, string>> CurveWarningPositions(
+        private static IEnumerable<SignPlacement> CurveWarningPositions(
             CivilAlignment alignment, double approach, double sharpThreshold)
         {
-            var result = new List<KeyValuePair<double, string>>();
+            var result = new List<SignPlacement>();
             PropertyInfo entitiesProperty = alignment.GetType().GetProperty("Entities");
             IEnumerable entities = entitiesProperty == null ? null :
                 entitiesProperty.GetValue(alignment, null) as IEnumerable;
@@ -360,9 +401,9 @@ namespace CETools.Civil3D
                 string opposite = sharp ? (left ? "TURN_RIGHT" : "TURN_LEFT") :
                     (left ? "CURVE_RIGHT" : "CURVE_LEFT");
                 if (begin - approach >= alignment.StartingStation)
-                    result.Add(new KeyValuePair<double, string>(begin - approach, incoming));
+                    result.Add(new SignPlacement(begin - approach, incoming, false));
                 if (finish + approach <= alignment.EndingStation)
-                    result.Add(new KeyValuePair<double, string>(finish + approach, opposite));
+                    result.Add(new SignPlacement(finish + approach, opposite, true));
             }
             return result;
         }
@@ -445,13 +486,15 @@ namespace CETools.Civil3D
             apps.Add(record);
             transaction.AddNewlyCreatedDBObject(record, true);
         }
-        private static void Tag(Entity entity, string name, string alignment, double station)
+        private static void Tag(Entity entity, string name, string alignment, double station, Point3d point)
         {
             entity.XData = new ResultBuffer(
                 new TypedValue((int)DxfCode.ExtendedDataRegAppName, AppName),
                 new TypedValue((int)DxfCode.ExtendedDataAsciiString, name),
                 new TypedValue((int)DxfCode.ExtendedDataAsciiString, alignment ?? string.Empty),
-                new TypedValue((int)DxfCode.ExtendedDataReal, station));
+                new TypedValue((int)DxfCode.ExtendedDataReal, station),
+                new TypedValue((int)DxfCode.ExtendedDataReal, point.X),
+                new TypedValue((int)DxfCode.ExtendedDataReal, point.Y));
         }
         internal sealed class SignRecord
         {
@@ -482,7 +525,10 @@ namespace CETools.Civil3D
                         Name = Convert.ToString(values[1].Value, CultureInfo.InvariantCulture),
                         Alignment = Convert.ToString(values[2].Value, CultureInfo.InvariantCulture),
                         Station = Convert.ToDouble(values[3].Value, CultureInfo.InvariantCulture),
-                        Point = image.Orientation.Origin
+                        Point = values.Length >= 6 ? new Point3d(
+                            Convert.ToDouble(values[4].Value, CultureInfo.InvariantCulture),
+                            Convert.ToDouble(values[5].Value, CultureInfo.InvariantCulture), 0.0) :
+                            image.Orientation.Origin + image.Orientation.Xaxis * 0.5 + image.Orientation.Yaxis * 0.5
                     };
                     RasterImageDef def = transaction.GetObject(image.ImageDefId, OpenMode.ForRead, false) as RasterImageDef;
                     sign.ImagePath = def == null ? string.Empty : def.SourceFileName;
