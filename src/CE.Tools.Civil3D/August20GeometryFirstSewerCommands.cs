@@ -567,7 +567,12 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static List<EdgeLite> BuildEdges(List<ParcelLite> parcels, double minimumLength, bool includeAngled = false)
+        private static List<EdgeLite> BuildEdges(List<ParcelLite> parcels, double minimumLength)
+        {
+            return BuildEdges(parcels, minimumLength, false);
+        }
+
+        private static List<EdgeLite> BuildEdges(List<ParcelLite> parcels, double minimumLength, bool includeAngled)
         {
             var result = new List<EdgeLite>();
             int id = 0;
