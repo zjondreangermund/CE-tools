@@ -4,6 +4,8 @@ using System.Globalization;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Input;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.Geometry;
@@ -577,7 +579,7 @@ namespace CETools.Civil3D
 
         private sealed class BatchCrossSectionsWindow : Window
         {
-            private readonly ListBox _alignments = new ListBox { SelectionMode = SelectionMode.Extended, MinHeight = 130 };
+            private readonly ListBox _alignments = new ListBox { SelectionMode = SelectionMode.Extended, MinHeight = 130, MaxHeight = 220 };
             private readonly TextBox _groupPrefix = Field("SL Collection");
             private readonly TextBox _interval = Field("10");
             private readonly TextBox _left = Field("10");
@@ -599,8 +601,8 @@ namespace CETools.Civil3D
             private readonly CheckBox _includeStart = new CheckBox { Content = "Include range start", IsChecked = true };
             private readonly CheckBox _includeEnd = new CheckBox { Content = "Include range end", IsChecked = true };
             private readonly CheckBox _sampleSources = new CheckBox { Content = "Enable all available section sources", IsChecked = true };
-            private readonly ListBox _surfaces = new ListBox { SelectionMode = SelectionMode.Extended, MinHeight = 75 };
-            private readonly ListBox _corridors = new ListBox { SelectionMode = SelectionMode.Extended, MinHeight = 75 };
+            private readonly ListBox _surfaces = new ListBox { SelectionMode = SelectionMode.Extended, MinHeight = 100, MaxHeight = 205 };
+            private readonly ListBox _corridors = new ListBox { SelectionMode = SelectionMode.Extended, MinHeight = 100, MaxHeight = 205 };
             private readonly CheckBox _createSectionViews = new CheckBox { Content = "Run cross sections (create section views)", IsChecked = true };
             private readonly CheckBox _removeExisting = new CheckBox { Content = "Remove existing sample-line groups / cross sections for selected alignments before creating new ones", IsChecked = false };
             public bool Accepted { get; private set; }
@@ -626,10 +628,11 @@ namespace CETools.Civil3D
                 DockPanel.SetDock(scroll, Dock.Top); root.Children.Add(scroll);
                 var panel = new StackPanel();
                 scroll.Content = panel;
-                panel.Children.Add(new TextBlock { Text = "Select multiple road alignments (Ctrl/Shift for multi-select)", FontWeight = FontWeights.Bold, Margin = new Thickness(0,0,0,5) });
+                panel.Children.Add(new TextBlock { Text = "Road alignments — tick individually, or hold Ctrl/Shift to select several rows", FontWeight = FontWeights.Bold, Margin = new Thickness(0,0,0,5) });
+                ConfigureCheckableList(_alignments);
                 foreach (var a in alignments) _alignments.Items.Add(a);
                 if (_alignments.Items.Count > 0) _alignments.SelectAll();
-                panel.Children.Add(_alignments);
+                AddCheckableSelection(panel, _alignments, "Alignments");
 
                 AddHeader(panel, "01  Sample line group and sampling");
                 AddRow(panel, "Sample-line group name prefix", _groupPrefix);
@@ -646,12 +649,14 @@ namespace CETools.Civil3D
                 panel.Children.Add(_includeStart); panel.Children.Add(_includeEnd);
                 panel.Children.Add(_sampleSources);
                 AddHeader(panel, "01A  Surfaces and corridors to sample");
-                panel.Children.Add(new TextBlock { Text = "Select one or multiple surfaces (Ctrl/Shift for multi-select). Leave empty to use the checkbox above.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,2,0,2) });
+                panel.Children.Add(new TextBlock { Text = "Choose surfaces by ticking boxes or using Ctrl/Shift on rows. Untick Enable all available section sources to sample only the selected items.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,2,0,2) });
+                ConfigureCheckableList(_surfaces);
                 foreach (SectionSourceChoice item in surfaces) _surfaces.Items.Add(item);
-                panel.Children.Add(_surfaces);
-                panel.Children.Add(new TextBlock { Text = "Select one or multiple corridors / corridor surfaces to sample.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,6,0,2) });
+                AddCheckableSelection(panel, _surfaces, "Surfaces");
+                panel.Children.Add(new TextBlock { Text = "Choose the corridor sources to sample. Ctrl/Shift can select multiple rows.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,6,0,2) });
+                ConfigureCheckableList(_corridors);
                 foreach (SectionSourceChoice item in corridors) _corridors.Items.Add(item);
-                panel.Children.Add(_corridors);
+                AddCheckableSelection(panel, _corridors, "Corridors");
 
                 AddHeader(panel, "02  Section view style and bands");
                 AddRow(panel, "Section-view style", _sectionStyle, sectionStyles);
@@ -691,6 +696,55 @@ namespace CETools.Civil3D
                 _fullRange.Checked += (s,e) => { _start.IsEnabled = false; _end.IsEnabled = false; };
                 _fullRange.Unchecked += (s,e) => { _start.IsEnabled = true; _end.IsEnabled = true; };
                 _start.IsEnabled = _end.IsEnabled = false;
+            }
+
+            // The check marks mirror the actual ListBox selection. Ctrl/Shift on
+            // rows remains the native WPF extended-selection behavior.
+            private static void ConfigureCheckableList(ListBox list)
+            {
+                list.SelectionMode = SelectionMode.Extended;
+                list.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+                var factory = new FrameworkElementFactory(typeof(CheckBox));
+                factory.SetValue(CheckBox.ContentProperty, new Binding("Name"));
+                factory.SetValue(CheckBox.FocusableProperty, false);
+                factory.SetValue(CheckBox.MarginProperty, new Thickness(3, 2, 3, 2));
+                factory.SetBinding(CheckBox.IsCheckedProperty, new Binding("IsSelected")
+                {
+                    RelativeSource = new RelativeSource(RelativeSourceMode.FindAncestor, typeof(ListBoxItem), 1),
+                    Mode = BindingMode.TwoWay
+                });
+                list.ItemTemplate = new DataTemplate { VisualTree = factory };
+
+                // A normal click on a check box toggles this row without clearing
+                // other checked rows. Shift and Ctrl clicks are passed to the
+                // ListBox to provide familiar Windows range/multi-selection.
+                list.AddHandler(UIElement.PreviewMouseLeftButtonDownEvent,
+                    new MouseButtonEventHandler((sender, args) =>
+                    {
+                        if ((Keyboard.Modifiers & (ModifierKeys.Shift | ModifierKeys.Control)) != ModifierKeys.None)
+                            return;
+                        DependencyObject source = args.OriginalSource as DependencyObject;
+                        while (source != null && !(source is CheckBox))
+                            source = System.Windows.Media.VisualTreeHelper.GetParent(source);
+                        if (!(source is CheckBox)) return;
+                        ListBoxItem row = ItemsControl.ContainerFromElement(list, (DependencyObject)args.OriginalSource) as ListBoxItem;
+                        if (row == null) return;
+                        row.IsSelected = !row.IsSelected;
+                        args.Handled = true;
+                    }), true);
+            }
+
+            private static void AddCheckableSelection(Panel panel, ListBox list, string description)
+            {
+                var bar = new StackPanel { Orientation = Orientation.Horizontal, Margin = new Thickness(0, 2, 0, 4) };
+                var all = new Button { Content = "Tick all " + description, Margin = new Thickness(0, 0, 8, 0), Padding = new Thickness(8, 3, 8, 3) };
+                var none = new Button { Content = "Clear " + description, Padding = new Thickness(8, 3, 8, 3) };
+                all.Click += (sender, args) => list.SelectAll();
+                none.Click += (sender, args) => list.UnselectAll();
+                bar.Children.Add(all);
+                bar.Children.Add(none);
+                panel.Children.Add(bar);
+                panel.Children.Add(list);
             }
 
             private static TextBox Field(string value) => new TextBox { Text = value, MinWidth = 80, Margin = new Thickness(3) };
