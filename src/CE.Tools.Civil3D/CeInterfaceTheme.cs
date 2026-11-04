@@ -153,6 +153,8 @@ namespace CETools.Civil3D
                     ComboBoxItem container = combo.ItemContainerGenerator.ContainerFromItem(item) as ComboBoxItem;
                     if (container == null) continue;
                     ApplyComboItem(container, palette);
+                    if (string.Equals(CeThemeStore.Read(), "Dark", StringComparison.OrdinalIgnoreCase))
+                        ForceDropdownTextWhite(container);
                 }
             }
             catch { }
@@ -164,9 +166,21 @@ namespace CETools.Civil3D
         {
             if (visual == null) return;
             TextBlock text = visual as TextBlock;
-            if (text != null) text.Foreground = Brushes.White;
+            if (text != null)
+            {
+                text.Foreground = Brushes.White;
+                text.Opacity = 1.0;
+            }
             ComboBoxItem item = visual as ComboBoxItem;
-            if (item != null) item.Foreground = Brushes.White;
+            if (item != null)
+            {
+                // WPF editable ComboBox items can inherit disabled/muted text
+                // even when the container foreground is white.
+                item.Foreground = Brushes.White;
+                item.SetCurrentValue(Control.ForegroundProperty, Brushes.White);
+                item.SetValue(System.Windows.Documents.TextElement.ForegroundProperty, Brushes.White);
+                item.Opacity = 1.0;
+            }
             int count = 0;
             try { count = VisualTreeHelper.GetChildrenCount(visual); } catch { return; }
             for (int i = 0; i < count; i++)
