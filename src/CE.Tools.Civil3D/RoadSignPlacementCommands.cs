@@ -200,6 +200,11 @@ namespace CETools.Civil3D
                 return;
             }
             int added = 0;
+            var newIds = new HashSet<ObjectId>();
+            bool replaceExisting = options.Text("Existing") == "Remove all CE signs";
+            // Keep old signs until the new batch is committed successfully.
+            // Replacing the same raster definition while old image reactors are
+            // erased in the creation transaction can throw eNotOpenForWrite.
             try
             {
             using (DocumentLock locked = document.LockDocument())
@@ -212,20 +217,6 @@ namespace CETools.Civil3D
                 BlockTableRecord space = tr.GetObject(db.CurrentSpaceId, OpenMode.ForWrite) as BlockTableRecord;
                 if (space == null) return;
                 EnsureRegApp(db, tr);
-                if (options.Text("Existing") == "Remove all CE signs")
-                {
-                    foreach (ObjectId id in space)
-                    {
-                        Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
-                        if (entity == null || entity.IsErased) continue;
-                        using (ResultBuffer data = entity.GetXDataForApplication(AppName))
-                        {
-                            if (data == null) continue;
-                        }
-                        entity.UpgradeOpen();
-                        entity.Erase();
-                    }
-                }
                 foreach (ObjectId alignmentId in alignments.Distinct())
                 {
                     CivilAlignment alignment = tr.GetObject(alignmentId, OpenMode.ForRead, false) as CivilAlignment;
@@ -320,6 +311,7 @@ namespace CETools.Civil3D
                         };
                         space.AppendEntity(raster);
                         tr.AddNewlyCreatedDBObject(raster, true);
+                        newIds.Add(raster.ObjectId);
                         RasterImage.EnableReactors(true);
                         raster.AssociateRasterDef(imageDef);
                         Tag(raster, placedSign, alignment.Name, station, point);
@@ -330,6 +322,7 @@ namespace CETools.Civil3D
                             marker.LayerId = layerId;
                             space.AppendEntity(marker);
                             tr.AddNewlyCreatedDBObject(marker, true);
+                            newIds.Add(marker.ObjectId);
                             Tag(marker, placedSign, alignment.Name, station, point);
                         }
                         if (options.Text("Leader") == "ON")
@@ -355,12 +348,50 @@ namespace CETools.Civil3D
                                 Annotative = AnnotativeStates.True };
                             space.AppendEntity(leader);
                             tr.AddNewlyCreatedDBObject(leader, true);
+                            newIds.Add(leader.ObjectId);
                             Tag(leader, placedSign, alignment.Name, station, point);
                         }
                         added++;
                     }
                 }
                 tr.Commit();
+            }
+            // The new transaction ensures old RasterImage reactors are not
+            // removed while the same image definition is being reused.
+            if (replaceExisting && added > 0)
+            {
+                try
+                {
+                    using (Transaction cleanup = document.Database.TransactionManager.StartTransaction())
+                    {
+                        BlockTableRecord existingSpace = cleanup.GetObject(
+                            document.Database.CurrentSpaceId, OpenMode.ForRead) as BlockTableRecord;
+                        if (existingSpace != null)
+                        {
+                            var candidates = existingSpace.Cast<ObjectId>()
+                                .Where(id => !newIds.Contains(id)).ToList();
+                            foreach (ObjectId id in candidates)
+                            {
+                                Entity oldEntity = cleanup.GetObject(id, OpenMode.ForRead, false) as Entity;
+                                if (oldEntity == null || oldEntity.IsErased) continue;
+                                bool tagged;
+                                using (ResultBuffer data = oldEntity.GetXDataForApplication(AppName))
+                                    tagged = data != null;
+                                if (!tagged) continue;
+                                oldEntity.UpgradeOpen();
+                                oldEntity.Erase();
+                            }
+                        }
+                        cleanup.Commit();
+                    }
+                }
+                catch (System.Exception cleanupError)
+                {
+                    document.Editor.WriteMessage(
+                        "\\nNew signs were placed, but older signs could not be removed: {0}. " +
+                        "Use CE_ROADSIGNS to retry clean-up after checking the drawing.",
+                        cleanupError.Message);
+                }
             }
             }
             catch (System.Exception error)
