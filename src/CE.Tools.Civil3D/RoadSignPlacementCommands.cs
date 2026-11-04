@@ -221,6 +221,7 @@ namespace CETools.Civil3D
                 {
                     CivilAlignment alignment = tr.GetObject(alignmentId, OpenMode.ForRead, false) as CivilAlignment;
                     if (alignment == null) continue;
+                    if (stopAtJunctions && !IsRoad(alignment)) continue;
                     double first = alignment.StartingStation, last = alignment.EndingStation;
                     double approach = options.Double("Approach", 25.0);
                     var placements = new List<SignPlacement>();
@@ -259,7 +260,7 @@ namespace CETools.Civil3D
                         if (placedPath == null)
                             throw new FileNotFoundException("Required sign image is missing: " + placedSign, folder);
                         ObjectId imageDefId = EnsureImageDefinition(db, tr, placedPath);
-                        RasterImageDef imageDef = tr.GetObject(imageDefId, OpenMode.ForRead) as RasterImageDef;
+                        RasterImageDef imageDef = tr.GetObject(imageDefId, OpenMode.ForWrite) as RasterImageDef;
                         if (station < first || station > last) continue;
                         double x = 0, y = 0, tx = 0, ty = 0;
                         double a = Math.Max(first, station - 0.05);
@@ -692,7 +693,7 @@ namespace CETools.Civil3D
             if (dictionary.Contains(key))
             {
                 ObjectId existingId = dictionary.GetAt(key);
-                RasterImageDef existing = tr.GetObject(existingId, OpenMode.ForRead) as RasterImageDef;
+                RasterImageDef existing = tr.GetObject(existingId, OpenMode.ForWrite) as RasterImageDef;
                 if (existing != null && string.Equals(Path.GetFullPath(existing.SourceFileName),
                     Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase)) return existingId;
                 key += "_" + Guid.NewGuid().ToString("N").Substring(0, 8);
