@@ -507,6 +507,14 @@ namespace CETools.Civil3D
     {
         private readonly List<ProductionSettingsField> _fields =
             new List<ProductionSettingsField>();
+        internal readonly Dictionary<string, Func<string, IDictionary<string, string>>> ChoiceChanges =
+            new Dictionary<string, Func<string, IDictionary<string, string>>>(StringComparer.OrdinalIgnoreCase);
+
+        public void OnChoiceChanged(string fieldKey, Func<string, IDictionary<string, string>> values)
+        {
+            if (string.IsNullOrWhiteSpace(fieldKey) || values == null) return;
+            ChoiceChanges[fieldKey] = values;
+        }
 
         public ProductionSettingsDialogModel(string title, string note)
         {
@@ -782,6 +790,9 @@ namespace CETools.Civil3D
                 {
                     combo.Text = field.Value;
                 }
+                Func<string, IDictionary<string, string>> callback;
+                if (_model.ChoiceChanges.TryGetValue(field.Key, out callback))
+                    combo.SelectionChanged += (sender, args) => ApplyChoiceDependencies(callback, combo.Text);
                 control = combo;
             }
             else
@@ -798,6 +809,19 @@ namespace CETools.Civil3D
             grid.Children.Add(control);
             _controls[field] = control;
             return grid;
+        }
+
+        private void ApplyChoiceDependencies(Func<string, IDictionary<string, string>> callback, string selected)
+        {
+            IDictionary<string, string> updates = callback(selected);
+            if (updates == null) return;
+            foreach (KeyValuePair<string, string> update in updates)
+            {
+                KeyValuePair<ProductionSettingsField, Control> target = _controls.FirstOrDefault(x =>
+                    string.Equals(x.Key.Key, update.Key, StringComparison.OrdinalIgnoreCase));
+                TextBox textbox = target.Value as TextBox;
+                if (textbox != null) textbox.Text = update.Value;
+            }
         }
 
         private void OnSave(object sender, RoutedEventArgs args)
