@@ -792,7 +792,8 @@ namespace CETools.Civil3D
                 }
                 Func<string, IDictionary<string, string>> callback;
                 if (_model.ChoiceChanges.TryGetValue(field.Key, out callback))
-                    combo.SelectionChanged += (sender, args) => ApplyChoiceDependencies(callback, combo.Text);
+                    combo.SelectionChanged += (sender, args) => ApplyChoiceDependencies(callback,
+                        combo.SelectedItem as string ?? combo.Text);
                 control = combo;
             }
             else
