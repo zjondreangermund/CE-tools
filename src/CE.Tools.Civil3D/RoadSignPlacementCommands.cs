@@ -88,9 +88,10 @@ namespace CETools.Civil3D
             options.AddChoice("Position", "02 Alignments", "Sign station location", "From start and end",
                 "Use start/end distances or one absolute alignment chainage.",
                 new[] { "From start and end", "From start", "From end", "Specified chainage", "Approach all alignment curves", "Stop at junctions", "Yield at junctions", "From crossing alignments" });
-            options.AddChoice("JunctionControl", "02 Alignments", "Junction priority arrangement", "2-way selected roads",
-                "For two-way control, select minor road alignments. Four-way requires selecting every approach road.",
-                new[] { "2-way selected roads", "4-way all selected approaches" });
+            options.AddChoice("JunctionControl", "02 Alignments", "STOP junction approach selection", "Crossing - all 4 directions",
+                "T-junction single direction: only the terminating road. Crossing 2 directions: select exactly one controlled road alignment.",
+                new[] { "T-junction - all 3 directions", "T-junction - 1 direction",
+                    "Crossing - all 4 directions", "Crossing - 2 directions" });
             options.AddPositiveDouble("SharpCurveRadius", "02 Alignments", "Sharp curve threshold radius (m)", 35.0,
                 "Curve radius below this value uses TURN signs; larger circular curves use CURVE signs.");
             options.AddPositiveDouble("Approach", "02 Alignments", "Distance from alignment start/end (m)", 25.0,
@@ -120,13 +121,18 @@ namespace CETools.Civil3D
             options.AddText("Layer", "04 Drawing", "Sign layer", DefaultLayer,
                 "Existing layer is reused, or a new layer is created.");
             options.AddChoice("Existing", "04 Drawing", "Existing CE-generated signs", "Keep",
-                "Remove deletes only CE-generated sign images and marker circles, not unrelated drawing entities.",
+                "Existing signs are removed only AFTER the replacement signs are successfully committed, and only for entities tagged CE_ROADSIGN_GENERATED.",
                 new[] { "Keep", "Remove all CE signs" });
             options.AddChoice("Circle", "04 Drawing", "Sign-setting-out circles", "ON",
-                "Draw sign setting-out markers at the sign centre.",
+                "Keep circle at the true sign setting-out point even when the image is shifted above/below/left/right.",
                 new[] { "ON", "OFF" });
             options.AddPositiveDouble("Radius", "04 Drawing", "Sign circle radius (m)", 0.3,
-                "Radius of the setting-out marker.");
+                "Radius of the setting-out marker, kept at the surveyed sign position.");
+            options.AddChoice("ImagePosition", "04 Drawing", "Image position relative to circle", "Above",
+                "Move only the visible sign image; the setting-out circle and exported coordinate remain unchanged.",
+                new[] { "Centered", "Above", "Below", "Left", "Right" });
+            options.AddPositiveDouble("ImageClearance", "04 Drawing", "Clear distance from circle to image (m)", 0.20,
+                "Edge-to-edge clearance, in metres, additional to the circle radius.");
             options.AddChoice("Leader", "04 Drawing", "Annotative sign multileaders", "OFF",
                 "ON adds a closed-filled arrowhead leader and sign-type annotation.", new[] { "OFF", "ON" });
             options.AddPositiveDouble("ArrowSize", "04 Drawing", "Leader arrowhead size (m)", 0.2,
@@ -158,6 +164,17 @@ namespace CETools.Civil3D
             }
             var alignments = new List<ObjectId>();
             CivilDocument civil = CivilApplication.ActiveDocument;
+            bool stopAtJunctions = options.Text("Position") == "Stop at junctions";
+            string junctionChoice = options.Text("JunctionControl");
+            if (stopAtJunctions && junctionChoice == "Crossing - 2 directions" &&
+                options.Text("Scope") != "Multiple selected")
+            {
+                System.Windows.MessageBox.Show(
+                    "For Crossing - 2 directions, select ONE controlled road alignment using Multiple selected. " +
+                    "The two incoming approaches on that road will receive signs; the crossing road remains uncontrolled.",
+                    "CE Tools - Choose Controlled Road");
+                return;
+            }
             if (options.Text("Scope") == "All") alignments.AddRange(civil.GetAlignmentIds().Cast<ObjectId>());
             else
             {
@@ -167,6 +184,13 @@ namespace CETools.Civil3D
                 PromptSelectionResult chosen = document.Editor.GetSelection(selectionOptions, filter);
                 if (chosen.Status != PromptStatus.OK || chosen.Value == null) return;
                 alignments.AddRange(chosen.Value.GetObjectIds());
+            }
+            if (stopAtJunctions && junctionChoice == "Crossing - 2 directions" && alignments.Distinct().Count() != 1)
+            {
+                System.Windows.MessageBox.Show(
+                    "For Crossing - 2 directions select exactly one controlled road alignment.",
+                    "CE Tools - Choose One Controlled Alignment");
+                return;
             }
             double rotationDegrees;
             if (!double.TryParse(options.Text("Rotate"), NumberStyles.Float,
@@ -223,10 +247,11 @@ namespace CETools.Civil3D
                         case "Stop at junctions":
                         case "Yield at junctions":
                         case "From crossing alignments":
-                            string selected = options.Text("Position") == "Stop at junctions" ?
-                                (options.Text("JunctionControl") == "4-way all selected approaches" ? "STOP_4WAY" : "STOP") :
+                            string selected = stopAtJunctions ?
+                                (junctionChoice == "Crossing - all 4 directions" ? "STOP_4WAY" : "STOP") :
                                 (options.Text("Position") == "Yield at junctions" ? "YIELD" : sign);
-                            placements.AddRange(JunctionApproaches(alignment, civil, tr, approach, selected));
+                            placements.AddRange(JunctionApproaches(alignment, civil, tr, approach, selected,
+                                stopAtJunctions ? junctionChoice : "Any intersection"));
                             break;
                         default:
                             placements.Add(new SignPlacement(first + approach, sign, false));
@@ -283,7 +308,10 @@ namespace CETools.Civil3D
                         double displayAngle = rotationDegrees * Math.PI / 180.0;
                         Vector3d imageU = new Vector3d(Math.Cos(displayAngle), Math.Sin(displayAngle), 0.0) * displayWidth;
                         Vector3d imageV = new Vector3d(-Math.Sin(displayAngle), Math.Cos(displayAngle), 0.0) * displayHeight;
-                        var imageOrigin = point - imageU * 0.5 - imageV * 0.5;
+                        Point3d imageCenter = ShiftSignImage(point, options.Text("ImagePosition"),
+                            options.Double("Radius", 0.3), options.Double("ImageClearance", 0.2),
+                            displayWidth, displayHeight);
+                        var imageOrigin = imageCenter - imageU * 0.5 - imageV * 0.5;
                         var raster = new RasterImage
                         {
                             ImageDefId = imageDefId,
@@ -349,6 +377,24 @@ namespace CETools.Civil3D
         // Junctions are identified by the actual intersection of centreline entities.
         // The user explicitly chooses which approach roads carry priority control;
         // no automatic major/minor road hierarchy is inferred.
+        // The model-space circle is the physical sign setting-out point.
+        // Only the visual image is displaced, with clear edge-to-edge separation.
+        private static Point3d ShiftSignImage(Point3d markerPoint, string direction,
+            double radius, double clearance, double width, double height)
+        {
+            double dx = 0.0, dy = 0.0;
+            double horizontal = radius + clearance + width * 0.5;
+            double vertical = radius + clearance + height * 0.5;
+            switch (direction)
+            {
+                case "Above": dy = vertical; break;
+                case "Below": dy = -vertical; break;
+                case "Left": dx = -horizontal; break;
+                case "Right": dx = horizontal; break;
+            }
+            return new Point3d(markerPoint.X + dx, markerPoint.Y + dy, markerPoint.Z);
+        }
+
         private sealed class SignPlacement
         {
             internal readonly double Station;
@@ -367,7 +413,7 @@ namespace CETools.Civil3D
         // is the opposite side of the Civil 3D alignment's increasing tangent.
         private static IEnumerable<SignPlacement> JunctionApproaches(
             CivilAlignment road, CivilDocument civil, Transaction transaction,
-            double approachDistance, string signName)
+            double approachDistance, string signName, string junctionMode)
         {
             var output = new List<SignPlacement>();
             var seen = new HashSet<string>(StringComparer.Ordinal);
@@ -382,20 +428,37 @@ namespace CETools.Civil3D
                 catch { continue; }
                 foreach (Point3d intersection in intersections)
                 {
-                    double station = 0.0, offset = 0.0;
-                    try { road.StationOffset(intersection.X, intersection.Y, ref station, ref offset); }
+                    double station = 0.0, offset = 0.0, otherStation = 0.0, otherOffset = 0.0;
+                    try
+                    {
+                        road.StationOffset(intersection.X, intersection.Y, ref station, ref offset);
+                        other.StationOffset(intersection.X, intersection.Y, ref otherStation, ref otherOffset);
+                    }
                     catch { continue; }
-                    if (Math.Abs(offset) > 0.25) continue;
+                    if (Math.Abs(offset) > 0.25 || Math.Abs(otherOffset) > 0.25) continue;
+                    const double armTolerance = 0.5; // distinguish an ending road from a through road
+                    bool roadBefore = station - road.StartingStation > armTolerance;
+                    bool roadAfter = road.EndingStation - station > armTolerance;
+                    bool otherBefore = otherStation - other.StartingStation > armTolerance;
+                    bool otherAfter = other.EndingStation - otherStation > armTolerance;
+                    int roadArms = (roadBefore ? 1 : 0) + (roadAfter ? 1 : 0);
+                    int otherArms = (otherBefore ? 1 : 0) + (otherAfter ? 1 : 0);
+                    int arms = roadArms + otherArms;
+                    bool isT = arms == 3;
+                    bool isCross = arms == 4;
+                    if (junctionMode.StartsWith("T-junction", StringComparison.Ordinal) && !isT) continue;
+                    if (junctionMode.StartsWith("Crossing", StringComparison.Ordinal) && !isCross) continue;
+                    if (junctionMode == "T-junction - 1 direction" && roadArms != 1) continue;
+                    // For two-way crossing control the caller requires exactly one
+                    // selected alignment; its two approaches receive the STOP signs.
                     double before = station - approachDistance;
                     double after = station + approachDistance;
-                    // A crossing requires two approach arms where geometry exists,
-                    // but never places a reverse-travel sign with the forward tangent.
-                    if (before >= road.StartingStation && before < station)
+                    if (roadBefore && before >= road.StartingStation)
                     {
                         string key = before.ToString("0.000", CultureInfo.InvariantCulture) + "|F";
                         if (seen.Add(key)) output.Add(new SignPlacement(before, signName, false));
                     }
-                    if (after <= road.EndingStation && after > station)
+                    if (roadAfter && after <= road.EndingStation)
                     {
                         string key = after.ToString("0.000", CultureInfo.InvariantCulture) + "|R";
                         if (seen.Add(key)) output.Add(new SignPlacement(after, signName, true));
