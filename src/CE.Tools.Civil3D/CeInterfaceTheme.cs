@@ -265,7 +265,10 @@ namespace CETools.Civil3D
             {
                 var style = new Style(typeof(ComboBoxItem));
                 style.Setters.Add(new Setter(Control.BackgroundProperty, palette.Input));
-                style.Setters.Add(new Setter(Control.ForegroundProperty, palette.Foreground));
+                style.Setters.Add(new Setter(Control.ForegroundProperty,
+                    palette.IsDark ? Brushes.White : palette.Foreground));
+                style.Setters.Add(new Setter(System.Windows.Documents.TextElement.ForegroundProperty,
+                    palette.IsDark ? Brushes.White : palette.Foreground));
                 style.Setters.Add(new Setter(Control.BorderBrushProperty, palette.Border));
                 style.Setters.Add(new Setter(Control.PaddingProperty, new Thickness(6, 4, 6, 4)));
 
@@ -306,8 +309,11 @@ namespace CETools.Civil3D
         {
             if (item == null) return;
             item.Background = item.IsHighlighted || item.IsSelected ? palette.Accent : palette.Input;
-            item.Foreground = item.IsHighlighted || item.IsSelected ? Brushes.White : palette.Foreground;
-            item.SetCurrentValue(Control.ForegroundProperty, item.IsHighlighted || item.IsSelected ? Brushes.White : palette.Foreground);
+            item.Foreground = palette.IsDark || item.IsHighlighted || item.IsSelected ? Brushes.White : palette.Foreground;
+            item.SetCurrentValue(Control.ForegroundProperty,
+                palette.IsDark || item.IsHighlighted || item.IsSelected ? Brushes.White : palette.Foreground);
+            if (palette.IsDark)
+                item.SetValue(System.Windows.Documents.TextElement.ForegroundProperty, Brushes.White);
             item.BorderBrush = palette.Border;
         }
 
