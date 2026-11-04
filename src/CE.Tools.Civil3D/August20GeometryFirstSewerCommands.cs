@@ -296,6 +296,9 @@ namespace CETools.Civil3D
             model.AddPositiveDouble("MaxWidth", "02 Road Reserve", "Maximum road reserve width", 60.0, "Maximum facing-boundary separation.");
             model.AddPositiveDouble("MinOverlap", "02 Road Reserve", "Minimum overlap (%)", 50.0, "Minimum overlap as percentage of the shorter facing edge.");
             model.AddPositiveDouble("MinEdge", "02 Road Reserve", "Minimum usable outer edge length", 4.0, "Ignore shorter outer erf edges.");
+            model.AddChoice("Coverage", "02 Road Reserve", "Boundary coverage", "Paired + unmatched exposed edges",
+                "Paired edges use the two opposing road boundaries; unmatched exposed erf edges are offset outward from their parcels, including angled edges. Review unmatched results before network creation.",
+                new[] { "Paired + unmatched exposed edges", "Paired facing edges only", "All exposed edges separately" });
             model.AddChoice("Spacing", "03 Manholes", "Maximum manhole spacing", "60 m",
                 "Route vertices and manhole circles are created at this maximum interval.", new[] { "60 m", "80 m", "Custom" });
             model.AddPositiveDouble("CustomSpacing", "03 Manholes", "Custom spacing", 60.0, "Used only for Custom spacing.");
@@ -326,11 +329,19 @@ namespace CETools.Civil3D
                 using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
                 {
                     List<ParcelLite> parcels = ReadParcels(selection.Value.GetObjectIds(), transaction);
-                    List<EdgeLite> exterior = ExteriorEdges(BuildEdges(parcels, minEdge));
-                    List<EdgePair> pairs = PairRoadReserveEdges(exterior, parcels, minWidth, maxWidth, minOverlap);
-                    if (pairs.Count == 0)
+                    List<EdgeLite> exterior = ExteriorEdges(BuildEdges(parcels, minEdge, true));
+                    string coverage = model.Text("Coverage");
+                    List<EdgePair> pairs = coverage == "All exposed edges separately"
+                        ? new List<EdgePair>()
+                        : PairRoadReserveEdges(exterior.Where(edge => edge.Horizontal || edge.Vertical).ToList(),
+                            parcels, minWidth, maxWidth, minOverlap);
+                    var pairedIds = new HashSet<int>(pairs.SelectMany(pair => new[] { pair.First.Id, pair.Second.Id }));
+                    List<EdgeLite> uncovered = coverage == "Paired facing edges only"
+                        ? new List<EdgeLite>()
+                        : exterior.Where(edge => !pairedIds.Contains(edge.Id)).ToList();
+                    if (pairs.Count == 0 && uncovered.Count == 0)
                     {
-                        document.Editor.WriteMessage("\nCE Road Reserve: no facing outer erf edges satisfied the width/overlap conditions.");
+                        document.Editor.WriteMessage("\nCE Road Reserve: no usable facing or exposed outer erf edges found.");
                         return;
                     }
                     CivilSurface surface = OpenSurface(transaction, surfaceId);
@@ -363,6 +374,28 @@ namespace CETools.Civil3D
                         }
                         pairCount++;
                     }
+                    // The old pairing algorithm discarded angled edges and any road
+                    // boundary without a suitable opposite parcel. Offset these
+                    // exposed segments toward the road-side half-plane instead.
+                    int uncoveredCount = 0;
+                    foreach (EdgeLite edge in uncovered)
+                    {
+                        Line2 exposed;
+                        if (!OffsetUnpairedRoadEdge(edge, offset, out exposed) || exposed.Length <= Tol)
+                            continue;
+                        OrientDownhill(ref exposed, surface);
+                        Polyline route = CreateSpacedPolyline(document.Database, exposed, spacing, routeLayer);
+                        space.AppendEntity(route);
+                        transaction.AddNewlyCreatedDBObject(route, true);
+                        WriteLayoutRecord(route, transaction, "ROADRESERVE", spacing, diameter, model.Text("Surface"));
+                        manholeCount += AddManholesAtVertices(document.Database, transaction, space, route,
+                            mhLayer, labelLayer, diameter, "RR-MH", routeNumber);
+                        routeCount++;
+                        routeNumber++;
+                        uncoveredCount++;
+                    }
+                    if (uncoveredCount > 0)
+                        document.Editor.WriteMessage("\nCE Road Reserve: {0} unmatched exposed erf edges offset. Review before building a gravity network.", uncoveredCount);
                     transaction.Commit();
                 }
             }
@@ -534,7 +567,7 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static List<EdgeLite> BuildEdges(List<ParcelLite> parcels, double minimumLength)
+        private static List<EdgeLite> BuildEdges(List<ParcelLite> parcels, double minimumLength, bool includeAngled = false)
         {
             var result = new List<EdgeLite>();
             int id = 0;
@@ -550,7 +583,7 @@ namespace CETools.Civil3D
                     double dy = Math.Abs(b.Y - a.Y);
                     bool horizontal = dx >= dy && dy <= Math.Max(KeyTolerance, dx * 0.02);
                     bool vertical = dy > dx && dx <= Math.Max(KeyTolerance, dy * 0.02);
-                    if (!horizontal && !vertical) continue;
+                    if (!horizontal && !vertical && !includeAngled) continue;
                     result.Add(new EdgeLite(id++, parcel.Index, a, b, length, horizontal, vertical, parcel.Center));
                 }
             }
@@ -745,6 +778,28 @@ namespace CETools.Civil3D
             double parcelX2 = second.ParcelCenter.X - m2.X;
             double otherX2 = m1.X - m2.X;
             return parcelX1 * otherX1 < 0.0 && parcelX2 * otherX2 < 0.0;
+        }
+
+        // Works for horizontal, vertical and angled exposed boundaries. The
+        // normal points AWAY from the parcel centroid, toward the likely reserve.
+        // These are planning strings and must be checked against the true road reserve.
+        private static bool OffsetUnpairedRoadEdge(EdgeLite edge, double offset, out Line2 route)
+        {
+            route = new Line2();
+            double dx = edge.B.X - edge.A.X;
+            double dy = edge.B.Y - edge.A.Y;
+            double length = Math.Sqrt(dx * dx + dy * dy);
+            if (length <= Tol) return false;
+            double nx = -dy / length, ny = dx / length;
+            Point2d centre = Mid(edge.A, edge.B);
+            double towardParcel = (edge.ParcelCenter.X - centre.X) * nx +
+                                  (edge.ParcelCenter.Y - centre.Y) * ny;
+            if (Math.Abs(towardParcel) <= Tol) return false; // ambiguous side; don't guess
+            double side = towardParcel > 0.0 ? -1.0 : 1.0;
+            route = new Line2(
+                new Point2d(edge.A.X + nx * offset * side, edge.A.Y + ny * offset * side),
+                new Point2d(edge.B.X + nx * offset * side, edge.B.Y + ny * offset * side));
+            return true;
         }
 
         private static bool BuildRoadReserveOffsetLines(EdgePair pair, double requestedOffset, out Line2 first, out Line2 second)
