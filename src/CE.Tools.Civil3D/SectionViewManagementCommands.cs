@@ -350,7 +350,7 @@ namespace CETools.Civil3D
             AddScope(settings);
             settings.AddChoice("MatchStyle", "02 Properties", "Match view style", "ON",
                 "Copy the source SectionView.StyleId.", new[] { "ON", "OFF" });
-            settings.AddChoice("MatchBands", "02 Properties", "Match band sets", "ON",
+            settings.AddChoice("MatchBands", "02 Properties", "Match band sets", "OFF",
                 "Copy the source section-view top and bottom band items where supported.",
                 new[] { "ON", "OFF" });
             settings.AddChoice("MatchElevation", "02 Properties", "Match vertical elevation range", "ON",
@@ -614,7 +614,8 @@ namespace CETools.Civil3D
             double bottom = settings.Integer("BottomRows", 5) * rowHeight;
             double top = (settings.Integer("SectionToTopLabelRows", 4) +
                 settings.Double("TopLabelToFrameRows", 1.0)) * rowHeight;
-            int fitted = 0, unsupported = 0;
+            int fitted = 0, unsupported = 0, unchanged = 0;
+            double greatestChange = 0.0;
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
                 foreach (ViewInfo item in selected)
@@ -640,12 +641,30 @@ namespace CETools.Civil3D
                         }
                         if (withClearance)
                         {
+                            double expectedMin = dataMin - bottom;
+                            double expectedMax = dataMax + top;
                             // Autodesk requires manual mode before setting limits.
                             view.IsElevationRangeAutomatic = false;
                             // Expand top first, then bottom, avoiding a transient
                             // inverted min/max pair in Civil 3D.
-                            view.ElevationMax = dataMax + top;
-                            view.ElevationMin = dataMin - bottom;
+                            view.ElevationMax = expectedMax;
+                            view.ElevationMin = expectedMin;
+                            // Verify the actual Civil 3D property values instead
+                            // of reporting success without a visible change.
+                            double actualMin = view.ElevationMin;
+                            double actualMax = view.ElevationMax;
+                            double discrepancy = Math.Max(Math.Abs(actualMin - expectedMin),
+                                Math.Abs(actualMax - expectedMax));
+                            if (discrepancy > 0.01)
+                            {
+                                unsupported++;
+                                doc.Editor.WriteMessage("\\nCE_CROSSSECTIONVIEWFIT: {0} elevation range did not accept requested limits. Wanted {1:0.###}..{2:0.###}, got {3:0.###}..{4:0.###}.",
+                                    item.Name, expectedMin, expectedMax, actualMin, actualMax);
+                                continue;
+                            }
+                            greatestChange = Math.Max(greatestChange, expectedMax - expectedMin);
+                            if (Math.Abs(bottom) + Math.Abs(top) < 0.0001)
+                                unchanged++;
                         }
                         TrySetProperty(view, "IsOffsetRangeAutomatic", true);
                         fitted++;
@@ -661,8 +680,10 @@ namespace CETools.Civil3D
             }
             doc.Editor.Regen();
             doc.Editor.WriteMessage(
-                "\\nCE_CROSSSECTIONVIEWFIT: fitted {0} section views, skipped {1}. Mode: {2}. Row height {3:0.###} m, below {4:0.###} m, above {5:0.###} m.",
-                fitted, unsupported, settings.Text("Elevation"), rowHeight, bottom, top);
+                "\\nCE_CROSSSECTIONVIEWFIT: fitted {0} section views, skipped {1}; range-width maximum {2:0.###} m. Mode: {3}. Row height {4:0.###} m, below {5:0.###} m, above {6:0.###} m.",
+                fitted, unsupported, greatestChange, settings.Text("Elevation"), rowHeight, bottom, top);
+            if (rowHeight >= 20.0 || bottom >= 100.0 || top >= 100.0)
+                doc.Editor.WriteMessage("\\nWarning: very large cross-section elevation clearances may produce extremely tall views. Row height is in drawing elevation units (usually metres), not text height.");
         }
     }
 }
