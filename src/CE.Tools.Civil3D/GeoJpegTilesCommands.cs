@@ -8,6 +8,7 @@ using System.Linq;
 using System.Windows.Forms;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
@@ -104,6 +105,84 @@ namespace CETools.Civil3D
         public void InsertExistingGeoreferencedJpegs()
         {
             Run(false);
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_GEOIMAGECALIBRATE", CommandFlags.Modal | CommandFlags.Redraw)]
+        public void CalibrateFromSurveyedCorners()
+        {
+            Document doc = AcApplication.DocumentManager.MdiActiveDocument;
+            if (doc == null) return;
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Calibrate Existing JPEG from Drawing Control Points",
+                "For an already saved, licensed, approximately nadir-view JPEG: pick its actual "
+                + "upper-left, upper-right and lower-left image corner locations in your drawing. "
+                + "This writes a JGW and inserts the raster. Accuracy depends entirely on the control points "
+                + "and whether the image is orthorectified. Do not use oblique Google Earth screenshots as survey data.");
+            settings.AddChoice("Confirm", "01 Source and survey", "Known control-point coordinates", "Not confirmed",
+                "Only continue with three correctly identified image corners corresponding to accurately located drawing coordinates. Drawing coordinates and image control points must use the SAME projected CRS and units.",
+                new[] { "Not confirmed", "Confirmed accurate drawing corner control points" });
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+            if (settings.Text("Confirm") != "Confirmed accurate drawing corner control points")
+            {
+                doc.Editor.WriteMessage("\nCE_GEOIMAGECALIBRATE: no calibration performed until three accurately known points are confirmed.");
+                return;
+            }
+            string file;
+            using (var picker = new OpenFileDialog
+            {
+                Title = "Choose a licensed JPEG to calibrate",
+                Filter = "JPEG imagery (*.jpg;*.jpeg)|*.jpg;*.jpeg",
+                CheckFileExists = true
+            })
+            {
+                if (picker.ShowDialog() != DialogResult.OK) return;
+                file = picker.FileName;
+            }
+            try
+            {
+                string worldPath = Path.Combine(Path.GetDirectoryName(file),
+                    Path.GetFileNameWithoutExtension(file) + ".jgw");
+                if (File.Exists(worldPath) || File.Exists(Path.ChangeExtension(file, ".jpgw")))
+                    throw new IOException("World file already exists. Back it up or use CE_GEOIMAGEINSERT to attach the correctly referenced image.");
+                int width, height;
+                using (Image image = Image.FromFile(file))
+                {
+                    width = image.Width;
+                    height = image.Height;
+                }
+                PromptPointResult upperLeft = doc.Editor.GetPoint(
+                    "\nPick surveyed DWG coordinate of the image's OUTER upper-left corner: ");
+                if (upperLeft.Status != PromptStatus.OK) return;
+                PromptPointResult upperRight = doc.Editor.GetPoint(
+                    "\nPick surveyed DWG coordinate of the image's OUTER upper-right corner: ");
+                if (upperRight.Status != PromptStatus.OK) return;
+                PromptPointResult lowerLeft = doc.Editor.GetPoint(
+                    "\nPick surveyed DWG coordinate of the image's OUTER lower-left corner: ");
+                if (lowerLeft.Status != PromptStatus.OK) return;
+                // Editor.GetPoint is in UCS. Convert to WCS for world files.
+                var transform = doc.Editor.CurrentUserCoordinateSystem;
+                Point3d ul = upperLeft.Value.TransformBy(transform);
+                Point3d ur = upperRight.Value.TransformBy(transform);
+                Point3d ll = lowerLeft.Value.TransformBy(transform);
+                var world = new World {
+                    A = (ur.X - ul.X) / width,
+                    D = (ur.Y - ul.Y) / width,
+                    B = (ll.X - ul.X) / height,
+                    E = (ll.Y - ul.Y) / height
+                };
+                world.C = ul.X + 0.5 * (world.A + world.B);
+                world.F = ul.Y + 0.5 * (world.D + world.E);
+                world.Validate();
+                world.Write(worldPath);
+                doc.Editor.WriteMessage(
+                    "\nCE_GEOIMAGECALIBRATE: JGW saved at {0}. Verify remaining control points and source licensing. Calibration alone does not make non-orthorectified imagery survey accurate.",
+                    worldPath);
+                InsertAll(doc, new[] { file }, false);
+            }
+            catch (System.Exception error)
+            {
+                doc.Editor.WriteMessage("\nCE_GEOIMAGECALIBRATE: " + error.Message);
+            }
         }
 
         private static void Run(bool withTiling)
