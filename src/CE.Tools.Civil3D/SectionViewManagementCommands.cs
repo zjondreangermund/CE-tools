@@ -84,7 +84,12 @@ namespace CETools.Civil3D
                             applied = true;
                         }
                         if (!bandStyleId.IsNull)
-                            applied = TrySetProperty(view, "BandSetStyleId", bandStyleId) || applied;
+                        {
+                            // SectionView band sets are imported into the Bands
+                            // collection, not assigned as a graph property.
+                            view.Bands.ImportBandSetStyle(bandStyleId);
+                            applied = true;
+                        }
                         if (applied) updated++;
                     }
                     catch { }
@@ -307,6 +312,32 @@ namespace CETools.Civil3D
             catch { return false; }
         }
 
+        private static bool CopyBands(SectionView source, SectionView destination)
+        {
+            // Copy current top and bottom band definitions between SectionViews.
+            // Autodesk exposes GetTop/BottomBandItems and SetTop/BottomBandItems.
+            try
+            {
+                object sourceBands = source.Bands, destinationBands = destination.Bands;
+                if (sourceBands == null || destinationBands == null) return false;
+                bool copied = false;
+                foreach (string position in new[] { "Top", "Bottom" })
+                {
+                    MethodInfo read = sourceBands.GetType().GetMethod("Get" + position + "BandItems", Type.EmptyTypes);
+                    MethodInfo write = destinationBands.GetType().GetMethods()
+                        .FirstOrDefault(x => x.Name == "Set" + position + "BandItems" &&
+                            x.GetParameters().Length == 1);
+                    if (read == null || write == null) continue;
+                    object data = read.Invoke(sourceBands, null);
+                    if (data == null) continue;
+                    try { write.Invoke(destinationBands, new[] { data }); copied = true; }
+                    catch { }
+                }
+                return copied;
+            }
+            catch { return false; }
+        }
+
         [CommandMethod("CE_TOOLS", "CE_CROSSSECTIONVIEWMATCH", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
         public void Match()
         {
@@ -348,8 +379,8 @@ namespace CETools.Civil3D
                         if (dest == null) { skipped++; continue; }
                         bool applied = false;
                         if (settings.Text("MatchStyle") == "ON") { dest.StyleId = style; applied = true; }
-                        if (settings.Text("MatchBands") == "ON" && bandStyle != null)
-                            applied = TrySetProperty(dest, "BandSetStyleId", bandStyle) || applied;
+                        if (settings.Text("MatchBands") == "ON")
+                            applied = CopyBands(source, dest) || applied;
                         if (applied) changed++; else skipped++;
                     }
                     catch { skipped++; }
@@ -461,8 +492,9 @@ namespace CETools.Civil3D
             var settings = new ProductionSettingsDialogModel("CE Tools - Fit Cross Section Views",
                 "Apply automatic offsets/elevation range where the installed Civil 3D SectionView API supports it. Existing view geometry and labels are preserved.");
             AddScope(settings);
-            settings.AddPositiveDouble("Clearance", "02 Display", "Vertical elevation clearance (m)", 1.0,
-                "Only applied when manual section elevation limits are exposed.");
+            settings.AddChoice("Elevation", "02 Display", "Elevation range", "Automatic",
+                "Choose automatic elevation fit. This is the Civil 3D native automatic range.",
+                new[] { "Automatic" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
             List<ViewInfo> selected = ChooseViews(doc, settings.Text("Scope"), views);
             int fitted = 0, unsupported = 0;
