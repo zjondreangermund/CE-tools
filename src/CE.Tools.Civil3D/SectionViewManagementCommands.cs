@@ -313,113 +313,198 @@ namespace CETools.Civil3D
             catch { return false; }
         }
 
-        // Civil 3D section band collections are tied to their owning SectionView.
-        // Never call destination.Bands.SetBottomBandItems(source.Bands.GetBottomBandItems()):
-        // the API rejects a collection from a different view and, more seriously,
-        // Section1/Section2 source IDs are unique to each sample line.
+        // Never transfer a band collection, or its sampled Section IDs, from
+        // one SectionView into another: those IDs belong to an individual
+        // SampleLine.  Only use the source band to describe the desired role.
         private static bool RepairSectionBandSources(SectionView source, SectionView destination,
-            Transaction tr, out int repaired, out int unresolved)
+            Transaction tr, out int repaired, out int unresolved, out int stylesUpdated,
+            IList<string> diagnostics, bool auditOnly)
         {
             repaired = 0;
             unresolved = 0;
+            stylesUpdated = 0;
             SampleLine targetSample = tr.GetObject(destination.SampleLineId, OpenMode.ForRead, false) as SampleLine;
-            if (targetSample == null) return false;
+            if (targetSample == null)
+            {
+                diagnostics.Add("No sample line associated with the destination section view.");
+                unresolved++;
+                return false;
+            }
             var available = new List<Section>();
             foreach (ObjectId sectionId in targetSample.GetSectionIds())
             {
                 try
                 {
-                    Section section = tr.GetObject(sectionId, OpenMode.ForRead, false) as Section;
-                    if (section != null && !section.IsErased && section.SampleLineId == destination.SampleLineId)
-                        available.Add(section);
+                    Section item = tr.GetObject(sectionId, OpenMode.ForRead, false) as Section;
+                    if (item != null && !item.IsErased && item.SampleLineId == destination.SampleLineId)
+                        available.Add(item);
                 }
                 catch { }
             }
-            if (available.Count == 0) return false;
+            if (available.Count == 0)
+            {
+                diagnostics.Add("No sampled sections available in destination sample line " + targetSample.Name);
+                unresolved++;
+                return false;
+            }
             bool changed = false;
             foreach (bool top in new[] { true, false })
             {
-                SectionViewBandItemCollection sourceItems = top
+                SectionViewBandItemCollection template = top
                     ? source.Bands.GetTopBandItems() : source.Bands.GetBottomBandItems();
-                SectionViewBandItemCollection destinationItems = top
+                SectionViewBandItemCollection actual = top
                     ? destination.Bands.GetTopBandItems() : destination.Bands.GetBottomBandItems();
-                if (sourceItems == null || destinationItems == null) continue;
-                int count = Math.Min(sourceItems.Count, destinationItems.Count);
-                bool collectionChanged = false;
-                for (int index = 0; index < count; index++)
+                if (template == null || actual == null) continue;
+                string group = top ? "Top" : "Bottom";
+                if (template.Count != actual.Count)
                 {
-                    SectionViewBandItem sourceBand = sourceItems[index];
-                    SectionViewBandItem destinationBand = destinationItems[index];
-                    // If a view has a different band layout, do not bind a
-                    // surface/elevation row to an unrelated type of data band.
-                    if (sourceBand.BandType != destinationBand.BandType)
+                    diagnostics.Add(group + " band count differs (source " +
+                        template.Count + ", destination " + actual.Count +
+                        "). Cannot match rows reliably; first apply the correct band set.");
+                    unresolved += Math.Abs(template.Count - actual.Count) + 1;
+                    continue;
+                }
+                bool groupChanged = false;
+                for (int index = 0; index < template.Count; index++)
+                {
+                    SectionViewBandItem sourceBand = template[index];
+                    SectionViewBandItem targetBand = actual[index];
+                    if (sourceBand.BandType != targetBand.BandType)
                     {
-                        unresolved += 2;
+                        diagnostics.Add(group + " band " + (index + 1) + " has mismatched type; band set must be corrected first.");
+                        unresolved++;
                         continue;
                     }
-                    // Section data bands have two section source selectors. Other
-                    // band kinds can throw on these properties, so leave them alone.
-                    foreach (int slot in new[] { 1, 2 })
+                    ObjectId[] mapped = new ObjectId[2];
+                    bool[] valid = new bool[2];
+                    for (int slot = 1; slot <= 2; slot++)
                     {
+                        ObjectId sourceSectionId;
+                        ObjectId currentSectionId;
                         try
                         {
-                            ObjectId sourceId = slot == 1 ? sourceBand.Section1Id : sourceBand.Section2Id;
-                            ObjectId currentId = slot == 1 ? destinationBand.Section1Id : destinationBand.Section2Id;
-                            if (sourceId.IsNull || !sourceId.IsValid) continue;
-                            Section reference = tr.GetObject(sourceId, OpenMode.ForRead, false) as Section;
-                            if (reference == null || reference.SampleLineId != source.SampleLineId)
-                            { unresolved++; continue; }
-                            Section match = FindMatchingLocalSection(reference, available, currentId);
-                            if (match == null)
-                            {
-                                unresolved++;
-                                continue; // Never substitute the source road's section.
-                            }
-                            if (currentId == match.ObjectId) continue;
-                            if (slot == 1) destinationBand.Section1Id = match.ObjectId;
-                            else destinationBand.Section2Id = match.ObjectId;
-                            repaired++;
-                            changed = true;
-                            collectionChanged = true;
+                            sourceSectionId = slot == 1 ? sourceBand.Section1Id : sourceBand.Section2Id;
+                            currentSectionId = slot == 1 ? targetBand.Section1Id : targetBand.Section2Id;
                         }
-                        catch { unresolved++; }
+                        catch
+                        {
+                            // A non-section-data band may not expose section data.
+                            continue;
+                        }
+                        if (sourceSectionId.IsNull || !sourceSectionId.IsValid)
+                        {
+                            // An unbound source band stays unbound; never guess.
+                            continue;
+                        }
+                        Section reference;
+                        try { reference = tr.GetObject(sourceSectionId, OpenMode.ForRead, false) as Section; }
+                        catch { reference = null; }
+                        if (reference == null)
+                        {
+                            unresolved++;
+                            diagnostics.Add(group + " band " + (index + 1) + " Section" + slot +
+                                ": template data source is unavailable.");
+                            continue;
+                        }
+                        // Do not require the source band's Section to belong to
+                        // the source view's own sample line. Old drawings sometimes
+                        // have a valid style template bound to another sample line.
+                        List<Section> matches = FindMatchingLocalSections(reference, available);
+                        Section match = matches.Count == 1 ? matches[0] :
+                            matches.FirstOrDefault(sec => sec.ObjectId == currentSectionId);
+                        if (match == null)
+                        {
+                            unresolved++;
+                            diagnostics.Add(group + " band " + (index + 1) + " Section" + slot +
+                                " expects '" + reference.SourceName + "' [" + reference.SourceType +
+                                "] but destination sample line '" + targetSample.Name +
+                                "' has " + (matches.Count == 0 ? "no matching" : "multiple ambiguous") +
+                                " source(s). Available: " + string.Join(", ",
+                                    available.Select(sec => sec.SourceName).Distinct().Take(12)));
+                            continue;
+                        }
+                        if (match.SampleLineId != destination.SampleLineId)
+                            throw new InvalidOperationException("Refusing foreign sample-line data source.");
+                        mapped[slot - 1] = match.ObjectId;
+                        valid[slot - 1] = true;
+                        if (currentSectionId != match.ObjectId)
+                            diagnostics.Add(group + " band " + (index + 1) + " Section" + slot +
+                                ": " + (currentSectionId.IsNull ? "(none)" : "existing source") +
+                                " -> " + match.SourceName);
+                    }
+                    // All required source slots for this row must resolve.
+                    // Do not leave a half-updated comparison band.
+                    bool source1Present = false, source2Present = false;
+                    try { source1Present = !sourceBand.Section1Id.IsNull; } catch { }
+                    try { source2Present = !sourceBand.Section2Id.IsNull; } catch { }
+                    if ((source1Present && !valid[0]) || (source2Present && !valid[1]))
+                        continue;
+                    if (auditOnly) continue;
+                    if (valid[0] && targetBand.Section1Id != mapped[0])
+                    {
+                        targetBand.Section1Id = mapped[0];
+                        repaired++;
+                        groupChanged = true;
+                    }
+                    if (valid[1] && targetBand.Section2Id != mapped[1])
+                    {
+                        targetBand.Section2Id = mapped[1];
+                        repaired++;
+                        groupChanged = true;
+                    }
+                    // Match the reference display band style as well as data
+                    // sources; section view StyleId alone does not copy bands.
+                    if (targetBand.BandStyleId != sourceBand.BandStyleId)
+                    {
+                        targetBand.BandStyleId = sourceBand.BandStyleId;
+                        stylesUpdated++;
+                        groupChanged = true;
+                    }
+                    if (Math.Abs(targetBand.Gap - sourceBand.Gap) > 0.0001)
+                    {
+                        targetBand.Gap = sourceBand.Gap;
+                        groupChanged = true;
+                    }
+                    if (targetBand.ShowLabels != sourceBand.ShowLabels)
+                    {
+                        targetBand.ShowLabels = sourceBand.ShowLabels;
+                        groupChanged = true;
                     }
                 }
-                // Commit only the destination's OWN band collection. Civil 3D
-                // explicitly disallows passing band collections across views.
-                if (collectionChanged)
+                if (groupChanged)
                 {
-                    if (top) destination.Bands.SetTopBandItems(destinationItems);
-                    else destination.Bands.SetBottomBandItems(destinationItems);
+                    // Write back this view's OWN collection only.
+                    if (top) destination.Bands.SetTopBandItems(actual);
+                    else destination.Bands.SetBottomBandItems(actual);
+                    changed = true;
                 }
-                if (sourceItems.Count != destinationItems.Count)
-                    unresolved += Math.Abs(sourceItems.Count - destinationItems.Count);
             }
             return changed;
         }
 
-        private static Section FindMatchingLocalSection(Section reference,
-            IList<Section> candidates, ObjectId currentId)
+        private static List<Section> FindMatchingLocalSections(Section reference,
+            IList<Section> candidates)
         {
-            string referenceKey = NormalizeSectionSourceName(reference.SourceName);
-            if (string.IsNullOrEmpty(referenceKey))
-                referenceKey = NormalizeSectionSourceName(reference.Name);
-            if (string.IsNullOrEmpty(referenceKey)) return null;
-
-            // The available sections belong to the destination sample line.
-            // Match the source role (e.g. NG or CORRIDOR TOP) while allowing
-            // ROAD-01/RD-01 to become ROAD-02/RD-02 on the next road.
-            var matches = candidates.Where(section =>
+            string expected = NormalizeSectionSourceName(reference.SourceName);
+            if (string.IsNullOrWhiteSpace(expected))
+                expected = NormalizeSectionSourceName(reference.Name);
+            if (string.IsNullOrWhiteSpace(expected)) return new List<Section>();
+            // Compare source type as well: a junction grading surface with
+            // a similar name must not replace an NG or corridor section.
+            List<Section> exact = candidates.Where(c =>
+                c.SourceType == reference.SourceType &&
+                NormalizeSectionSourceName(c.SourceName) == expected).ToList();
+            if (exact.Count > 0) return exact;
+            // Same surface reference can have a different display label but
+            // the same underlying sampled surface ID, on the same drawing.
+            if (!reference.SourceId.IsNull)
             {
-                string name = NormalizeSectionSourceName(section.SourceName);
-                if (string.IsNullOrEmpty(name)) name = NormalizeSectionSourceName(section.Name);
-                return name == referenceKey;
-            }).ToList();
-
-            if (matches.Count == 1) return matches[0];
-            // If multiple sections have the same role, retain an existing
-            // matching local binding. Otherwise report ambiguity, don't guess.
-            return matches.FirstOrDefault(section => section.ObjectId == currentId);
+                var bySourceId = candidates.Where(c =>
+                    c.SourceType == reference.SourceType &&
+                    c.SourceId == reference.SourceId).ToList();
+                if (bySourceId.Count > 0) return bySourceId;
+            }
+            return new List<Section>(); // No unsafe default to junction grade.
         }
 
         private static string NormalizeSectionSourceName(string name)
@@ -427,7 +512,7 @@ namespace CETools.Civil3D
             if (string.IsNullOrWhiteSpace(name)) return string.Empty;
             string normalized = Regex.Replace(name.Trim().ToUpperInvariant(),
                 @"(?:ROAD|RD)[-_ ]*0*[0-9]+", "ROAD-#", RegexOptions.IgnoreCase);
-            return Regex.Replace(normalized, @"\\s+", " ");
+            return Regex.Replace(normalized, @"\s+", " ");
         }
 
         [CommandMethod("CE_TOOLS", "CE_CROSSSECTIONVIEWMATCH", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
@@ -445,12 +530,15 @@ namespace CETools.Civil3D
             settings.AddChoice("RepairBandSources", "02 Properties", "Repair Section1/Section2 band data sources", "ON",
                 "For each destination sample line, resolve Section1 and Section2 to local NG and road corridor sections by corresponding source names. Never copy the reference view section IDs.",
                 new[] { "ON", "OFF" });
-            settings.AddChoice("MatchElevation", "02 Properties", "Match vertical elevation range", "ON",
+            settings.AddChoice("MatchElevationAbsolute", "02 Properties", "Copy absolute elevation limits (use only for same vertical datum)", "OFF",
                 "Match source automatic/manual elevation mode and the actual minimum/maximum displayed elevations. Unlike styles alone, this can visibly change the destination section grid.",
                 new[] { "ON", "OFF" });
-            settings.AddChoice("MatchOffset", "02 Properties", "Match horizontal offset range", "ON",
+            settings.AddChoice("MatchOffsetSafe", "02 Properties", "Match horizontal offset range", "OFF",
                 "Match the source offset range's automatic/manual setting and limits where supported.",
                 new[] { "ON", "OFF" });
+            settings.AddChoice("BandAudit", "02 Properties", "Section1/Section2 audit", "Report and repair",
+                "Report the expected source for each band, and any unavailable data sources. Audit only makes no drawing changes.",
+                new[] { "Report and repair", "Audit only (no changes)" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
             PromptEntityOptions opt = new PromptEntityOptions("\nSelect SOURCE cross-section view: ");
             // AutoCAD requires SetRejectMessage to precede AddAllowedClass.
@@ -464,7 +552,9 @@ namespace CETools.Civil3D
                 .Where(x => x.Id != sourcePick.ObjectId).ToList();
             if (targets.Count == 0) return;
             int changed = 0, alreadySame = 0, skipped = 0, styleUpdates = 0,
-                elevationUpdates = 0, offsetUpdates = 0, bandUpdates = 0, unresolvedBandSources = 0;
+                elevationUpdates = 0, offsetUpdates = 0, bandUpdates = 0, bandStyleUpdates = 0,
+                unresolvedBandSources = 0;
+            bool auditOnly = settings.Text("BandAudit") == "Audit only (no changes)";
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
                 SectionView source = tr.GetObject(sourcePick.ObjectId, OpenMode.ForRead, false) as SectionView;
@@ -476,16 +566,16 @@ namespace CETools.Civil3D
                 {
                     try
                     {
-                        SectionView dest = tr.GetObject(item.Id, OpenMode.ForWrite, false) as SectionView;
+                        SectionView dest = tr.GetObject(item.Id, auditOnly ? OpenMode.ForRead : OpenMode.ForWrite, false) as SectionView;
                         if (dest == null) { skipped++; continue; }
                         bool changedThis = false;
-                        if (settings.Text("MatchStyle") == "ON" && dest.StyleId != style)
+                        if (!auditOnly && settings.Text("MatchStyle") == "ON" && dest.StyleId != style)
                         {
                             dest.StyleId = style;
                             changedThis = true;
                             styleUpdates++;
                         }
-                        if (settings.Text("MatchElevation") == "ON")
+                        if (!auditOnly && settings.Text("MatchElevationAbsolute") == "ON")
                         {
                             bool differs = dest.IsElevationRangeAutomatic != sourceAutoElevation ||
                                 Math.Abs(dest.ElevationMin - sourceMin) > 0.001 ||
@@ -503,22 +593,25 @@ namespace CETools.Civil3D
                                 elevationUpdates++;
                             }
                         }
-                        if (settings.Text("MatchOffset") == "ON")
+                        if (!auditOnly && settings.Text("MatchOffsetSafe") == "ON")
                         {
                             bool copied = CopySectionOffsetRange(source, dest);
                             if (copied) { changedThis = true; offsetUpdates++; }
                         }
                         if (settings.Text("RepairBandSources") == "ON")
                         {
-                            int fixedSources, missingSources;
+                            int fixedSources, missingSources, copiedStyles;
+                            var diagnostics = new List<string>();
                             bool fixedBands = RepairSectionBandSources(
-                                source, dest, tr, out fixedSources, out missingSources);
+                                source, dest, tr, out fixedSources, out missingSources,
+                                out copiedStyles, diagnostics, auditOnly);
                             unresolvedBandSources += missingSources;
-                            if (fixedBands) { changedThis = true; bandUpdates += fixedSources; }
-                            if (missingSources > 0)
-                                doc.Editor.WriteMessage(
-                                    "\\nCE_CROSSSECTIONVIEWMATCH: {0}: {1} band sources could not be matched uniquely to this sample line.",
-                                    item.Name, missingSources);
+                            bandUpdates += fixedSources;
+                            bandStyleUpdates += copiedStyles;
+                            if (fixedBands) changedThis = true;
+                            foreach (string detail in diagnostics)
+                                doc.Editor.WriteMessage("\\nCE_CROSSSECTIONVIEWMATCH [{0} / {1}]: {2}",
+                                    item.Road, item.Name, detail);
                         }
                         if (changedThis) changed++;
                         else alreadySame++;
@@ -533,8 +626,8 @@ namespace CETools.Civil3D
             }
             doc.Editor.Regen();
             doc.Editor.WriteMessage(
-                "\\nCE_CROSSSECTIONVIEWMATCH: changed {0}, no differences/unsupported {1}, errors {2}. Styles {3}, vertical ranges {4}, horizontal ranges {5}, corrected Section1/Section2 references {6}, unresolved references {7}.",
-                changed, alreadySame, skipped, styleUpdates, elevationUpdates, offsetUpdates, bandUpdates, unresolvedBandSources);
+                "\\nCE_CROSSSECTIONVIEWMATCH: changed {0}, no differences/unsupported {1}, errors {2}. Styles {3}, vertical ranges {4}, horizontal ranges {5}, corrected Section1/Section2 references {6}, band styles {7}, unresolved references {8}.",
+                changed, alreadySame, skipped, styleUpdates, elevationUpdates, offsetUpdates, bandUpdates, bandStyleUpdates, unresolvedBandSources);
         }
 
         private static bool CopySectionOffsetRange(SectionView source, SectionView dest)
