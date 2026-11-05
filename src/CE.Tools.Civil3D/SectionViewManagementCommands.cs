@@ -344,6 +344,7 @@ namespace CETools.Civil3D
                     ? destination.Bands.GetTopBandItems() : destination.Bands.GetBottomBandItems();
                 if (sourceItems == null || destinationItems == null) continue;
                 int count = Math.Min(sourceItems.Count, destinationItems.Count);
+                bool collectionChanged = false;
                 for (int index = 0; index < count; index++)
                 {
                     SectionViewBandItem sourceBand = sourceItems[index];
@@ -358,7 +359,8 @@ namespace CETools.Civil3D
                             ObjectId currentId = slot == 1 ? destinationBand.Section1Id : destinationBand.Section2Id;
                             if (sourceId.IsNull || !sourceId.IsValid) continue;
                             Section reference = tr.GetObject(sourceId, OpenMode.ForRead, false) as Section;
-                            if (reference == null) { unresolved++; continue; }
+                            if (reference == null || reference.SampleLineId != source.SampleLineId)
+                            { unresolved++; continue; }
                             Section match = FindMatchingLocalSection(reference, available, currentId);
                             if (match == null)
                             {
@@ -370,14 +372,18 @@ namespace CETools.Civil3D
                             else destinationBand.Section2Id = match.ObjectId;
                             repaired++;
                             changed = true;
+                            collectionChanged = true;
                         }
                         catch { unresolved++; }
                     }
                 }
                 // Commit only the destination's OWN band collection. Civil 3D
                 // explicitly disallows passing band collections across views.
-                if (top) destination.Bands.SetTopBandItems(destinationItems);
-                else destination.Bands.SetBottomBandItems(destinationItems);
+                if (collectionChanged)
+                {
+                    if (top) destination.Bands.SetTopBandItems(destinationItems);
+                    else destination.Bands.SetBottomBandItems(destinationItems);
+                }
                 if (sourceItems.Count != destinationItems.Count)
                     unresolved += Math.Abs(sourceItems.Count - destinationItems.Count);
             }
