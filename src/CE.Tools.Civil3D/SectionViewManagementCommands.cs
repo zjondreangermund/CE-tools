@@ -409,12 +409,17 @@ namespace CETools.Civil3D
                 new[] { "Grid", "Horizontal", "Vertical" });
             settings.AddPositiveInteger("Columns", "03 Layout", "Views per row", 3,
                 "Number of cross sections per row within each road group.");
+            settings.AddPositiveInteger("RoadColumns", "03 Layout", "Road groups per row", 2,
+                "Arrange ROAD-01, ROAD-02 etc left-to-right across this many road-group columns.");
+            settings.AddChoice("RoadTitles", "03 Layout", "Add ROAD-xx headings", "OFF",
+                "Create road name text above each arranged road group. Use OFF when headings already exist.",
+                new[] { "OFF", "ON" });
             settings.AddPositiveDouble("HorizontalGap", "03 Layout", "Horizontal gap (m)", 10,
                 "Free space between adjacent section view extents.");
             settings.AddPositiveDouble("VerticalGap", "03 Layout", "Vertical gap (m)", 10,
                 "Free space between successive rows.");
             settings.AddPositiveDouble("RoadGroupGap", "03 Layout", "Gap between road groups (m)", 25,
-                "Vertical space between ROAD-01, ROAD-02 and later groups.");
+                "Horizontal space between neighboring road groups.");
             settings.AddChoice("Base", "04 Position", "Top-left anchor", "Pick in drawing",
                 "Pick the upper-left starting point, or preserve the first cross-section position.",
                 new[] { "Pick in drawing", "First view existing position" });
@@ -434,6 +439,20 @@ namespace CETools.Civil3D
                 topLeft = new Point3d(first.Lower.X, first.Upper.Y, first.Lower.Z);
             }
             int columns = Math.Max(1, settings.Integer("Columns", 3));
+            if (settings.Text("Grouping") == "Group per road")
+            {
+                var keep = new HashSet<ObjectId>(views.Select(x => x.Id));
+                foreach (ViewInfo chosen in selected) keep.Remove(chosen.Id);
+                int movedRoad = ArrangeGeneratedByRoad(doc, keep, topLeft, columns,
+                    Math.Max(1, settings.Integer("RoadColumns", 2)),
+                    settings.Double("HorizontalGap", 10),
+                    settings.Double("VerticalGap", 10),
+                    settings.Double("RoadGroupGap", 25),
+                    settings.Text("RoadTitles") == "ON");
+                doc.Editor.Regen();
+                doc.Editor.WriteMessage("\nCE_CROSSSECTIONVIEWARRANGE: grouped/arranged {0} selected section views by road.", movedRoad);
+                return;
+            }
             if (settings.Text("Layout") == "Horizontal") columns = int.MaxValue;
             if (settings.Text("Layout") == "Vertical") columns = 1;
             double hGap = settings.Double("HorizontalGap", 10), vGap = settings.Double("VerticalGap", 10),
