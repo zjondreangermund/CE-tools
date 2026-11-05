@@ -148,7 +148,7 @@ namespace CETools.Civil3D
 
         internal static int ArrangeGeneratedByRoad(Document doc, HashSet<ObjectId> previous,
             Point3d start, int sectionsPerRow, int roadGroupsPerRow,
-            double hGap, double vGap, bool titles)
+            double hGap, double vGap, double roadGroupGap, bool titles)
         {
             List<ViewInfo> created = FindViews(doc).Where(x => !previous.Contains(x.Id)).ToList();
             if (created.Count == 0) return 0;
@@ -185,7 +185,7 @@ namespace CETools.Civil3D
                         index += row.Count;
                     }
                     maximumHeight = Math.Max(maximumHeight, groupRowTop - localY);
-                    x += maxWidth + hGap;
+                    x += maxWidth + roadGroupGap;
                 }
                 groupRowTop -= maximumHeight + vGap;
                 g += groupRow.Count;
