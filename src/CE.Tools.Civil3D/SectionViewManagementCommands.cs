@@ -349,6 +349,13 @@ namespace CETools.Civil3D
                 {
                     SectionViewBandItem sourceBand = sourceItems[index];
                     SectionViewBandItem destinationBand = destinationItems[index];
+                    // If a view has a different band layout, do not bind a
+                    // surface/elevation row to an unrelated type of data band.
+                    if (sourceBand.BandType != destinationBand.BandType)
+                    {
+                        unresolved += 2;
+                        continue;
+                    }
                     // Section data bands have two section source selectors. Other
                     // band kinds can throw on these properties, so leave them alone.
                     foreach (int slot in new[] { 1, 2 })
@@ -430,12 +437,12 @@ namespace CETools.Civil3D
             var views = FindViews(doc);
             if (views.Count < 2) { doc.Editor.WriteMessage("\nAt least two section views are required."); return; }
             var settings = new ProductionSettingsDialogModel("CE Tools - Match Cross Section Views",
-                "Copy section-view style and compatible band-set properties from one source view to all or multiple selected destination views.");
+                "Match section-view presentation, and repair each destination's Section1/Section2 band sources from its own sampled sections. Source-road section IDs are never copied.");
             AddScope(settings);
             settings.AddChoice("MatchStyle", "02 Properties", "Match view style", "ON",
                 "Copy the source SectionView.StyleId.", new[] { "ON", "OFF" });
             settings.AddChoice("MatchBands", "02 Properties", "Repair Section1/Section2 band data sources", "ON",
-                "For each destination sample line, resolve Section1 and Section2 to local NG and road corridor sections by corresponding source names. Never copy the reference view\'s section IDs.",
+                "For each destination sample line, resolve Section1 and Section2 to local NG and road corridor sections by corresponding source names. Never copy the reference view section IDs.",
                 new[] { "ON", "OFF" });
             settings.AddChoice("MatchElevation", "02 Properties", "Match vertical elevation range", "ON",
                 "Match source automatic/manual elevation mode and the actual minimum/maximum displayed elevations. Unlike styles alone, this can visibly change the destination section grid.",
