@@ -147,11 +147,15 @@ namespace CETools.Civil3D
         A("45. CE-Road Hatch Generation","CE_ROADHATCHSIDES","Add road surface hatching for drawing presentation.","45 Final Road Production"),
         A("46. CE-Selected Hatch Repair","CE_HATCHFIXOVERLAP","Repair overlapping hatches in the selected road drawing area.","46 Final Road Production"),
         A("47. CE-Global Hatch Repair","CE_HATCHFIXOVERLAPALL","Review and repair generated road hatch overlaps throughout the current drawing.","47 Final Road Production"),
-        A("48. CE-Corridor Region Activation","CE_CORRIDORREGIONSALLON","Activate all corridor baseline regions so they contribute to design and quantities.","48 Final Road Production"),
-        A("49. CE-Corridor Region Restoration","CE_CORRIDORREGIONSRESTORE","Restore previously saved corridor-region enabled states.","49 Final Road Production"),
-        A("50. CE-Road Sheet Generation","CE_ROADAUTOSHEETS","Generate and assemble final road drawing sheets using the selected sheet template.","50 Final Road Production"),
-        A("51. CE-Design Data Export","CE_DESIGNDATAEXPORT","Export road-only or complete design levels, alignment coordinates and profile data to Excel.","51 Final Road Production"),
-        A("52. CE-Construction BOQ","CE_ROADBOQCONSTRUCTION","Calculate road construction quantities including earthworks, surfaces, corridors and junction grading.","52 Final Road Production")
+        A("48. CE-Batch Cross Sections","CE_BATCHCROSSSECTIONS","Create cross sections for all or selected roads using chosen sample-line, section-view and band styles.","48 Final Road Production"),
+        A("49. CE-Cross Section View Match","CE_CROSSSECTIONVIEWMATCH","Match source cross-section view styles, bands and vertical/horizontal ranges to all or selected views.","49 Final Road Production"),
+        A("50. CE-Cross Section View Fit","CE_CROSSSECTIONVIEWFIT","Fit all or selected cross-section views vertically with configurable row and label clearances.","50 Final Road Production"),
+        A("51. CE-Cross Section View Arrange","CE_CROSSSECTIONVIEWARRANGE","Arrange cross-section views from top-left to right grouped by road.","51 Final Road Production"),
+        A("52. CE-Corridor Region Activation","CE_CORRIDORREGIONSALLON","Activate all corridor baseline regions so they contribute to design and quantities.","52 Final Road Production"),
+        A("53. CE-Corridor Region Restoration","CE_CORRIDORREGIONSRESTORE","Restore previously saved corridor-region enabled states.","53 Final Road Production"),
+        A("54. CE-Road Sheet Generation","CE_ROADAUTOSHEETS","Generate and assemble final road drawing sheets using the selected sheet template.","54 Final Road Production"),
+        A("55. CE-Design Data Export","CE_DESIGNDATAEXPORT","Export road-only or complete design levels, alignment coordinates and profile data to Excel.","55 Final Road Production"),
+        A("56. CE-Construction BOQ","CE_ROADBOQCONSTRUCTION","Calculate road construction quantities including earthworks, surfaces, corridors and junction grading.","56 Final Road Production")
 
 });
   }

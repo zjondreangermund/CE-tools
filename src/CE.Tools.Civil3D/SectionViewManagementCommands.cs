@@ -350,8 +350,14 @@ namespace CETools.Civil3D
             AddScope(settings);
             settings.AddChoice("MatchStyle", "02 Properties", "Match view style", "ON",
                 "Copy the source SectionView.StyleId.", new[] { "ON", "OFF" });
-            settings.AddChoice("MatchBands", "02 Properties", "Match band set where supported", "ON",
-                "Copy BandSetStyleId only if this Civil 3D version exposes a writable property.",
+            settings.AddChoice("MatchBands", "02 Properties", "Match band sets", "OFF",
+                "Copy the source section-view top and bottom band items where supported.",
+                new[] { "ON", "OFF" });
+            settings.AddChoice("MatchElevation", "02 Properties", "Match vertical elevation range", "ON",
+                "Match source automatic/manual elevation mode and the actual minimum/maximum displayed elevations. Unlike styles alone, this can visibly change the destination section grid.",
+                new[] { "ON", "OFF" });
+            settings.AddChoice("MatchOffset", "02 Properties", "Match horizontal offset range", "ON",
+                "Match the source offset range's automatic/manual setting and limits where supported.",
                 new[] { "ON", "OFF" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
             PromptEntityOptions opt = new PromptEntityOptions("\nSelect SOURCE cross-section view: ");
@@ -365,33 +371,100 @@ namespace CETools.Civil3D
             List<ViewInfo> targets = ChooseViews(doc, settings.Text("Scope"), views)
                 .Where(x => x.Id != sourcePick.ObjectId).ToList();
             if (targets.Count == 0) return;
-            int changed = 0, skipped = 0;
+            int changed = 0, alreadySame = 0, skipped = 0, styleUpdates = 0,
+                elevationUpdates = 0, offsetUpdates = 0, bandUpdates = 0;
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
                 SectionView source = tr.GetObject(sourcePick.ObjectId, OpenMode.ForRead, false) as SectionView;
                 if (source == null) return;
                 ObjectId style = source.StyleId;
-                object bandStyle = null;
-                try { PropertyInfo property = source.GetType().GetProperty("BandSetStyleId");
-                    if (property != null) bandStyle = property.GetValue(source, null); } catch { }
+                bool sourceAutoElevation = source.IsElevationRangeAutomatic;
+                double sourceMin = source.ElevationMin, sourceMax = source.ElevationMax;
                 foreach (ViewInfo item in targets)
                 {
                     try
                     {
                         SectionView dest = tr.GetObject(item.Id, OpenMode.ForWrite, false) as SectionView;
                         if (dest == null) { skipped++; continue; }
-                        bool applied = false;
-                        if (settings.Text("MatchStyle") == "ON") { dest.StyleId = style; applied = true; }
-                        if (settings.Text("MatchBands") == "ON")
-                            applied = CopyBands(source, dest) || applied;
-                        if (applied) changed++; else skipped++;
+                        bool changedThis = false;
+                        if (settings.Text("MatchStyle") == "ON" && dest.StyleId != style)
+                        {
+                            dest.StyleId = style;
+                            changedThis = true;
+                            styleUpdates++;
+                        }
+                        if (settings.Text("MatchElevation") == "ON")
+                        {
+                            bool differs = dest.IsElevationRangeAutomatic != sourceAutoElevation ||
+                                Math.Abs(dest.ElevationMin - sourceMin) > 0.001 ||
+                                Math.Abs(dest.ElevationMax - sourceMax) > 0.001;
+                            if (differs)
+                            {
+                                // In manual mode set the upper limit first, then lower.
+                                dest.IsElevationRangeAutomatic = sourceAutoElevation;
+                                if (!sourceAutoElevation && sourceMax >= sourceMin)
+                                {
+                                    dest.ElevationMax = sourceMax;
+                                    dest.ElevationMin = sourceMin;
+                                }
+                                changedThis = true;
+                                elevationUpdates++;
+                            }
+                        }
+                        if (settings.Text("MatchOffset") == "ON")
+                        {
+                            bool copied = CopySectionOffsetRange(source, dest);
+                            if (copied) { changedThis = true; offsetUpdates++; }
+                        }
+                        if (settings.Text("MatchBands") == "ON" && CopyBands(source, dest))
+                        {
+                            changedThis = true;
+                            bandUpdates++;
+                        }
+                        if (changedThis) changed++;
+                        else alreadySame++;
                     }
-                    catch { skipped++; }
+                    catch (System.Exception error)
+                    {
+                        skipped++;
+                        doc.Editor.WriteMessage("\\nCE_CROSSSECTIONVIEWMATCH skipped {0}: {1}", item.Name, error.Message);
+                    }
                 }
                 tr.Commit();
             }
             doc.Editor.Regen();
-            doc.Editor.WriteMessage("\nCE_CROSSSECTIONVIEWMATCH: updated {0}, unsupported/skipped {1}.", changed, skipped);
+            doc.Editor.WriteMessage(
+                "\\nCE_CROSSSECTIONVIEWMATCH: changed {0}, no differences/unsupported {1}, errors {2}. Styles {3}, vertical ranges {4}, horizontal ranges {5}, bands {6}.",
+                changed, alreadySame, skipped, styleUpdates, elevationUpdates, offsetUpdates, bandUpdates);
+        }
+
+        private static bool CopySectionOffsetRange(SectionView source, SectionView dest)
+        {
+            // Reflectively handle release-specific Civil 3D section view range
+            // properties. Unsupported properties are NOT counted as a change.
+            var automatic = source.GetType().GetProperty("IsOffsetRangeAutomatic");
+            if (automatic == null || !automatic.CanRead || automatic.PropertyType != typeof(bool))
+                return false;
+            bool isAutomatic = (bool)automatic.GetValue(source, null);
+            bool sourceMode = false, destinationMode = false;
+            try
+            {
+                sourceMode = isAutomatic;
+                destinationMode = (bool)automatic.GetValue(dest, null);
+            }
+            catch { return false; }
+            if (sourceMode && destinationMode) return false;
+            if (!TrySetProperty(dest, "IsOffsetRangeAutomatic", sourceMode)) return false;
+            if (!sourceMode)
+            {
+                foreach (string key in new[] { "OffsetLeft", "OffsetRight" })
+                {
+                    var property = source.GetType().GetProperty(key);
+                    if (property != null && property.CanRead)
+                        TrySetProperty(dest, key, property.GetValue(source, null));
+                }
+            }
+            return true;
         }
 
         [CommandMethod("CE_TOOLS", "CE_CROSSSECTIONVIEWARRANGE", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
@@ -541,7 +614,8 @@ namespace CETools.Civil3D
             double bottom = settings.Integer("BottomRows", 5) * rowHeight;
             double top = (settings.Integer("SectionToTopLabelRows", 4) +
                 settings.Double("TopLabelToFrameRows", 1.0)) * rowHeight;
-            int fitted = 0, unsupported = 0;
+            int fitted = 0, unsupported = 0, unchanged = 0;
+            double greatestChange = 0.0;
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
                 foreach (ViewInfo item in selected)
@@ -567,12 +641,30 @@ namespace CETools.Civil3D
                         }
                         if (withClearance)
                         {
+                            double expectedMin = dataMin - bottom;
+                            double expectedMax = dataMax + top;
                             // Autodesk requires manual mode before setting limits.
                             view.IsElevationRangeAutomatic = false;
                             // Expand top first, then bottom, avoiding a transient
                             // inverted min/max pair in Civil 3D.
-                            view.ElevationMax = dataMax + top;
-                            view.ElevationMin = dataMin - bottom;
+                            view.ElevationMax = expectedMax;
+                            view.ElevationMin = expectedMin;
+                            // Verify the actual Civil 3D property values instead
+                            // of reporting success without a visible change.
+                            double actualMin = view.ElevationMin;
+                            double actualMax = view.ElevationMax;
+                            double discrepancy = Math.Max(Math.Abs(actualMin - expectedMin),
+                                Math.Abs(actualMax - expectedMax));
+                            if (discrepancy > 0.01)
+                            {
+                                unsupported++;
+                                doc.Editor.WriteMessage("\\nCE_CROSSSECTIONVIEWFIT: {0} elevation range did not accept requested limits. Wanted {1:0.###}..{2:0.###}, got {3:0.###}..{4:0.###}.",
+                                    item.Name, expectedMin, expectedMax, actualMin, actualMax);
+                                continue;
+                            }
+                            greatestChange = Math.Max(greatestChange, expectedMax - expectedMin);
+                            if (Math.Abs(bottom) + Math.Abs(top) < 0.0001)
+                                unchanged++;
                         }
                         TrySetProperty(view, "IsOffsetRangeAutomatic", true);
                         fitted++;
@@ -588,8 +680,10 @@ namespace CETools.Civil3D
             }
             doc.Editor.Regen();
             doc.Editor.WriteMessage(
-                "\\nCE_CROSSSECTIONVIEWFIT: fitted {0} section views, skipped {1}. Mode: {2}. Row height {3:0.###} m, below {4:0.###} m, above {5:0.###} m.",
-                fitted, unsupported, settings.Text("Elevation"), rowHeight, bottom, top);
+                "\\nCE_CROSSSECTIONVIEWFIT: fitted {0} section views, skipped {1}; range-width maximum {2:0.###} m. Mode: {3}. Row height {4:0.###} m, below {5:0.###} m, above {6:0.###} m.",
+                fitted, unsupported, greatestChange, settings.Text("Elevation"), rowHeight, bottom, top);
+            if (rowHeight >= 20.0 || bottom >= 100.0 || top >= 100.0)
+                doc.Editor.WriteMessage("\\nWarning: very large cross-section elevation clearances may produce extremely tall views. Row height is in drawing elevation units (usually metres), not text height.");
         }
     }
 }
