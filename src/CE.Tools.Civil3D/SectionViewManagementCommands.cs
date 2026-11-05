@@ -54,6 +54,90 @@ namespace CETools.Civil3D
             return result;
         }
 
+        internal static HashSet<ObjectId> CaptureViewIds(Document doc)
+        {
+            return new HashSet<ObjectId>(FindViews(doc).Select(x => x.Id));
+        }
+
+        internal static int ArrangeGeneratedByRoad(Document doc, HashSet<ObjectId> previous,
+            Point3d start, int sectionsPerRow, int roadGroupsPerRow,
+            double hGap, double vGap, bool titles)
+        {
+            List<ViewInfo> created = FindViews(doc).Where(x => !previous.Contains(x.Id)).ToList();
+            if (created.Count == 0) return 0;
+            var groups = created.GroupBy(x => x.Road)
+                .OrderBy(x => RoadOrdinal(x.Key)).ThenBy(x => x.Key, StringComparer.OrdinalIgnoreCase)
+                .Select(x => new { Road = x.Key,
+                    Items = x.OrderBy(y => y.Name, StringComparer.OrdinalIgnoreCase).ToList() }).ToList();
+            var planned = new List<Tuple<ViewInfo, double, double>>();
+            var titlePositions = new List<Tuple<string, double, double>>();
+            double groupRowTop = start.Y;
+            int groupColumns = Math.Max(1, roadGroupsPerRow);
+            int sectionColumns = Math.Max(1, sectionsPerRow);
+            for (int g = 0; g < groups.Count;)
+            {
+                var groupRow = groups.Skip(g).Take(groupColumns).ToList();
+                double x = start.X, maximumHeight = 0;
+                foreach (var group in groupRow)
+                {
+                    int index = 0;
+                    double localY = groupRowTop - (titles ? 8.0 : 0.0);
+                    double maxWidth = 0;
+                    titlePositions.Add(Tuple.Create(group.Road, x, groupRowTop));
+                    while (index < group.Items.Count)
+                    {
+                        var row = group.Items.Skip(index).Take(sectionColumns).ToList();
+                        double rowX = x, maxSectionHeight = row.Max(v => v.Height);
+                        foreach (ViewInfo item in row)
+                        {
+                            planned.Add(Tuple.Create(item, rowX, localY - item.Height));
+                            rowX += item.Width + hGap;
+                        }
+                        maxWidth = Math.Max(maxWidth, rowX - x);
+                        localY -= maxSectionHeight + vGap;
+                        index += row.Count;
+                    }
+                    maximumHeight = Math.Max(maximumHeight, groupRowTop - localY);
+                    x += maxWidth + hGap;
+                }
+                groupRowTop -= maximumHeight + vGap;
+                g += groupRow.Count;
+            }
+            int moved = 0;
+            using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                foreach (var placement in planned)
+                {
+                    try
+                    {
+                        SectionView view = tr.GetObject(placement.Item1.Id, OpenMode.ForWrite, false) as SectionView;
+                        if (view != null && MoveTo(view,
+                            new Point3d(placement.Item2, placement.Item3, placement.Item1.Lower.Z))) moved++;
+                    }
+                    catch { }
+                }
+                if (titles)
+                {
+                    BlockTable table = (BlockTable)tr.GetObject(doc.Database.BlockTableId, OpenMode.ForRead);
+                    BlockTableRecord model = (BlockTableRecord)tr.GetObject(table[BlockTableRecord.ModelSpace], OpenMode.ForWrite);
+                    foreach (var title in titlePositions)
+                    {
+                        var text = new MText
+                        {
+                            Contents = title.Item1,
+                            TextHeight = 3.0,
+                            Location = new Point3d(title.Item2, title.Item3, 0),
+                            Attachment = AttachmentPoint.TopLeft
+                        };
+                        model.AppendEntity(text);
+                        tr.AddNewlyCreatedDBObject(text, true);
+                    }
+                }
+                tr.Commit();
+            }
+            return moved;
+        }
+
         private static string ResolveSampleLineName(Transaction tr, SectionView view)
         {
             foreach (string propertyName in new[] { "SampleLineId", "ParentEntityId", "SampleLineObjectId" })
