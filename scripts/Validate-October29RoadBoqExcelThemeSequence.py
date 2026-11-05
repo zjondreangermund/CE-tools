@@ -56,9 +56,9 @@ for key, value in tests.items():
     print("PASS:", key)
 
 actions = re.findall(r'A\("(\d+)\.[^"]+","(CE_[A-Z0-9_]+)".*?"(\d+) Final Road Production"\)', centres)
-if len(actions) != 52:
-    raise AssertionError("Expected 52 numbered Final Road Production commands, got %d" % len(actions))
-if [int(x[0]) for x in actions] != list(range(1, 53)):
+if len(actions) != 56:
+    raise AssertionError("Expected 56 numbered Final Road Production commands, got %d" % len(actions))
+if [int(x[0]) for x in actions] != list(range(1, 57)):
     raise AssertionError("Final Road Production numbering must be sequential")
 names = [x[1] for x in actions]
 for before, after in (
@@ -69,6 +69,10 @@ for before, after in (
 ):
     if names.index(after) != names.index(before) + 1:
         raise AssertionError(after + " must directly follow " + before)
+if names[names.index("CE_HATCHFIXOVERLAPALL")+1:names.index("CE_HATCHFIXOVERLAPALL")+5] != [
+    "CE_BATCHCROSSSECTIONS", "CE_CROSSSECTIONVIEWMATCH", "CE_CROSSSECTIONVIEWFIT",
+    "CE_CROSSSECTIONVIEWARRANGE"]:
+    raise AssertionError("Cross-section commands must directly follow Global Hatch Repair")
 if names[-3:] != ["CE_ROADAUTOSHEETS", "CE_DESIGNDATAEXPORT", "CE_ROADBOQCONSTRUCTION"]:
     raise AssertionError("Final steps must be sheets, design export, construction BOQ")
-print("PASS: all 52 Final Road Production steps, no suffix letters, and final output order")
+print("PASS: all 56 Final Road Production steps, cross-section command position, no suffix letters, and final output order")
