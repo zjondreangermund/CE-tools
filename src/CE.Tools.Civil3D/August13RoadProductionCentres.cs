@@ -151,6 +151,8 @@ namespace CETools.Civil3D
         A("49. CE-Cross Section View Match","CE_CROSSSECTIONVIEWMATCH","Match source cross-section view styles, bands and vertical/horizontal ranges to all or selected views.","49 Final Road Production"),
         A("50. CE-Cross Section View Fit","CE_CROSSSECTIONVIEWFIT","Fit all or selected cross-section views vertically with configurable row and label clearances.","50 Final Road Production"),
         A("51. CE-Cross Section View Arrange","CE_CROSSSECTIONVIEWARRANGE","Arrange cross-section views from top-left to right grouped by road.","51 Final Road Production"),
+        A("58. CE-Vehicle Tracking","CE_VEHICLETRACKING","Review vehicle swept paths, junction turns, wheel edges, clearances and sight-distance checks.","58 Final Road Production"),
+        A("57. CE-Road Signs","CE_ROADSIGNS","Place approved linked road signs by alignment, chainage and junction approach with setting-out markers.","57 Final Road Production"),
         A("52. CE-Corridor Region Activation","CE_CORRIDORREGIONSALLON","Activate all corridor baseline regions so they contribute to design and quantities.","52 Final Road Production"),
         A("53. CE-Corridor Region Restoration","CE_CORRIDORREGIONSRESTORE","Restore previously saved corridor-region enabled states.","53 Final Road Production"),
         A("54. CE-Road Sheet Generation","CE_ROADAUTOSHEETS","Generate and assemble final road drawing sheets using the selected sheet template.","54 Final Road Production"),
