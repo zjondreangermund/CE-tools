@@ -697,6 +697,7 @@ namespace CETools.Civil3D
                 AddRow(panel, "Sample-line group name prefix", _groupPrefix);
                 AddRow(panel, "Sample-line layer (created if missing)", _layer);
                 AddRow(panel, "Sample-line style", _sampleStyle, sampleStyles);
+                AddRow(panel, "Sample-line label style", _labelStyle, labelStyles);
                 AddRow(panel, "Sampling interval along alignment (m)", _interval);
                 AddRow(panel, "Left swath width (m)", _left);
                 AddRow(panel, "Right swath width (m)", _right);
@@ -820,6 +821,113 @@ namespace CETools.Civil3D
                 panel.Children.Add(list);
             }
 
+            private static readonly string DefaultsFile = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "CE-TOOLS", "BatchCrossSections.defaults");
+
+            private void SaveDefaults()
+            {
+                try
+                {
+                    var values = new Dictionary<string, string>
+                    {
+                        { "GroupPrefix", _groupPrefix.Text }, { "Layer", _layer.Text },
+                        { "Interval", _interval.Text }, { "Left", _left.Text },
+                        { "Right", _right.Text }, { "Start", _start.Text }, { "End", _end.Text },
+                        { "X", _x.Text }, { "Y", _y.Text },
+                        { "Rows", _rowSpacing.Text }, { "Columns", _columnSpacing.Text },
+                        { "GroupsPerRow", _groupsPerRow.Text }, { "SectionsPerRow", _sectionsPerRow.Text },
+                        { "SampleStyle", _sampleStyle.Text }, { "SampleLabelStyle", _labelStyle.Text },
+                        { "SectionStyle", _sectionStyle.Text }, { "BandSet", _bandSet.Text },
+                        { "FullRange", _fullRange.IsChecked == true ? "1" : "0" },
+                        { "IncludeStart", _includeStart.IsChecked == true ? "1" : "0" },
+                        { "IncludeEnd", _includeEnd.IsChecked == true ? "1" : "0" },
+                        { "SourcesAll", _sampleSources.IsChecked == true ? "1" : "0" },
+                        { "SectionViews", _createSectionViews.IsChecked == true ? "1" : "0" },
+                        { "RemoveExisting", _removeExisting.IsChecked == true ? "1" : "0" },
+                        { "GroupByRoad", _groupByRoad.IsChecked == true ? "1" : "0" },
+                        { "Titles", _addRoadTitles.IsChecked == true ? "1" : "0" },
+                        { "Alignments", string.Join(";", _alignments.SelectedItems.Cast<AlignmentChoice>()
+                            .Select(x => Uri.EscapeDataString(x.Name))) },
+                        { "Surfaces", string.Join(";", _surfaces.SelectedItems.Cast<SectionSourceChoice>()
+                            .Select(x => Uri.EscapeDataString(x.Name))) },
+                        { "Corridors", string.Join(";", _corridors.SelectedItems.Cast<SectionSourceChoice>()
+                            .Select(x => Uri.EscapeDataString(x.Name))) }
+                    };
+                    Directory.CreateDirectory(Path.GetDirectoryName(DefaultsFile));
+                    File.WriteAllLines(DefaultsFile,
+                        values.Select(x => x.Key + "=" + Uri.EscapeDataString(x.Value ?? "")));
+                }
+                catch { /* Defaults must never block section generation. */ }
+            }
+
+            private void LoadSavedDefaults()
+            {
+                try
+                {
+                    if (!File.Exists(DefaultsFile)) return;
+                    var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (string line in File.ReadAllLines(DefaultsFile))
+                    {
+                        int equals = line.IndexOf('=');
+                        if (equals <= 0) continue;
+                        values[line.Substring(0, equals)] = Uri.UnescapeDataString(line.Substring(equals + 1));
+                    }
+                    Action<string, TextBox> text = (key, box) =>
+                    {
+                        string value;
+                        if (values.TryGetValue(key, out value)) box.Text = value;
+                    };
+                    Action<string, CheckBox> toggle = (key, box) =>
+                    {
+                        string value;
+                        if (values.TryGetValue(key, out value)) box.IsChecked = value == "1";
+                    };
+                    Action<string, ComboBox> choice = (key, box) =>
+                    {
+                        string value;
+                        if (values.TryGetValue(key, out value))
+                        {
+                            for (int i = 0; i < box.Items.Count; i++)
+                                if (string.Equals(box.Items[i] as string, value,
+                                        StringComparison.OrdinalIgnoreCase))
+                                { box.SelectedIndex = i; break; }
+                        }
+                    };
+                    text("GroupPrefix", _groupPrefix); text("Layer", _layer);
+                    text("Interval", _interval); text("Left", _left); text("Right", _right);
+                    text("Start", _start); text("End", _end);
+                    text("X", _x); text("Y", _y);
+                    text("Rows", _rowSpacing); text("Columns", _columnSpacing);
+                    text("GroupsPerRow", _groupsPerRow); text("SectionsPerRow", _sectionsPerRow);
+                    choice("SampleStyle", _sampleStyle); choice("SampleLabelStyle", _labelStyle);
+                    choice("SectionStyle", _sectionStyle); choice("BandSet", _bandSet);
+                    toggle("FullRange", _fullRange); toggle("IncludeStart", _includeStart);
+                    toggle("IncludeEnd", _includeEnd); toggle("SourcesAll", _sampleSources);
+                    toggle("SectionViews", _createSectionViews); toggle("RemoveExisting", _removeExisting);
+                    toggle("GroupByRoad", _groupByRoad); toggle("Titles", _addRoadTitles);
+                    RestoreSelection(_alignments, values, "Alignments");
+                    RestoreSelection(_surfaces, values, "Surfaces");
+                    RestoreSelection(_corridors, values, "Corridors");
+                    _start.IsEnabled = _end.IsEnabled = _fullRange.IsChecked != true;
+                }
+                catch { }
+            }
+
+            private static void RestoreSelection(ListBox box, IDictionary<string, string> values, string key)
+            {
+                string saved;
+                if (!values.TryGetValue(key, out saved)) return;
+                var names = new HashSet<string>(saved.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(Uri.UnescapeDataString), StringComparer.OrdinalIgnoreCase);
+                box.UnselectAll();
+                foreach (object item in box.Items)
+                {
+                    string name = item == null ? null : item.ToString();
+                    if (name != null && names.Contains(name)) box.SelectedItems.Add(item);
+                }
+            }
+
             private static TextBox Field(string value) => new TextBox { Text = value, MinWidth = 80, Margin = new Thickness(3) };
             private static void AddHeader(Panel panel, string text) => panel.Children.Add(new TextBlock { Text = text, FontWeight = FontWeights.Bold, FontSize = 15, Margin = new Thickness(0, 14, 0, 5) });
             private static int FindIndex(ComboBox box, string desired)
@@ -837,6 +945,11 @@ namespace CETools.Civil3D
             private static void AddRow(Panel panel, string label, ComboBox box, List<string> choices)
             {
                 foreach (string name in choices) box.Items.Add(name);
+                if (choices.Count == 0)
+                {
+                    box.IsEditable = true;
+                    box.ToolTip = "No styles discovered in this drawing. Enter an existing Civil 3D style name, or check the drawing style collections.";
+                }
                 AddRow(panel,label,(Control)box);
             }
             private void OnAccept(object sender, RoutedEventArgs e)
@@ -865,10 +978,10 @@ namespace CETools.Civil3D
                     Corridors = _corridors.SelectedItems.Cast<SectionSourceChoice>().ToList(),
                     GroupNamePrefix = _groupPrefix.Text,
                     SampleLineLayer = _layer.Text,
-                    SampleLineStyle = _sampleStyle.SelectedItem as string,
-                    SampleLineLabelStyle = _labelStyle.SelectedItem as string,
-                    SectionViewStyle = _sectionStyle.SelectedItem as string,
-                    BandSetStyle = _bandSet.SelectedItem as string,
+                    SampleLineStyle = _sampleStyle.SelectedItem as string ?? _sampleStyle.Text,
+                    SampleLineLabelStyle = _labelStyle.SelectedItem as string ?? _labelStyle.Text,
+                    SectionViewStyle = _sectionStyle.SelectedItem as string ?? _sectionStyle.Text,
+                    BandSetStyle = _bandSet.SelectedItem as string ?? _bandSet.Text,
                     Interval = interval, LeftWidth = left, RightWidth = right,
                     StartStation = start, EndStation = end,
                     UseFullRange = _fullRange.IsChecked == true,
