@@ -17,6 +17,8 @@ namespace CETools.Civil3D
    {
     A("CE-Road Settings","CE_ROADSETTINGSCENTRE","Road-only project and Civil 3D settings.","01 Road Production"),
     A("CE-Road Layout Production","CE_ROADLAYOUTPRODUCTIONCENTRE","Road reserve geometry, junctions, annotation and setting-out.","01 Road Production"),
+    A("CE-Georeferenced JPEG Tiles","CE_GEOIMAGETILES","Create high-quality JPEG tiles from licensed georeferenced imagery and insert correctly scaled and oriented using JGW files.","01 Road Production"),
+    A("CE-Insert Georeferenced JPEGs","CE_GEOIMAGEINSERT","Attach existing georeferenced JPEG tiles to model space using their six-parameter world files.","01 Road Production"),
     A("Vehicle Tracking (Preliminary)","CE_VEHICLETRACKING","Review vehicle edge and wheel guides, offsets, junction-path intent and clearance/sight inputs.","01 Road Production"),
     A("CE-Road Signs - Linked Image Placement","CE_ROADSIGNS","Place externally linked sign images on multiple road alignments with start/end station rules and setting-out markers.","01 Road Production"),
     A("CE-Road Design Production","CE_ROADDESIGNPRODUCTIONCENTRE","Alignments, profiles, corridors, junction design, BOQ and drawings.","01 Road Production"),
@@ -45,6 +47,8 @@ namespace CETools.Civil3D
     A("CE-Multiple Horizontal Centreline Curves","CE_ROUTEHORIZONTALCURVES","Apply specified tangent curve radii to multiple road/route centreline polylines.","03 Geometry"),
     A("CE-Road Offsets","CE_ROADOFFSET","Create road offsets.","03 Geometry"),
     A("CE-Batch Polyline Offsets","CE_POLYLINEOFFSET","Offset all model-space or multiple selected 2D polylines left, right or both ways without changing originals.","03 Geometry"),
+    A("CE-Georeferenced JPEG Tiles","CE_GEOIMAGETILES","Split authorized georeferenced JPEGs into image tiles with accurately calculated JGW world files, then attach them.","03 Geometry"),
+    A("CE-Insert Georeferenced JPEGs","CE_GEOIMAGEINSERT","Insert one or more already georeferenced JPEGs or orthophoto tiles onto CE-AERIAL-IMAGERY.","03 Geometry"),
     A("CE-Scale Objects Individually","CE_SCALEEACH","Scale multiple selected drawing objects around their own bottom-centre or top-centre point.","03 Geometry"),
     A("CE-Batch Cross Sections","CE_BATCHCROSSSECTIONS","Create and group sections for multiple road alignments with selected sources, styles, band sets and grid placement.","06 Reports"),
     A("CE-Cross Section View Match","CE_CROSSSECTIONVIEWMATCH","Copy section display style and compatible band data from one source section view.","06 Reports"),
