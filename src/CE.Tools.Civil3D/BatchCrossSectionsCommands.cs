@@ -9,6 +9,7 @@ using System.Windows.Data;
 using System.Windows.Input;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
+using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.ApplicationServices;
@@ -57,7 +58,7 @@ namespace CETools.Civil3D
                     // GetPoint must run AFTER ShowModalWindow returns. Calling it
                     // from a hidden modal Window can lock out the AutoCAD editor.
                     PromptPointResult point = doc.Editor.GetPoint(
-                        "\\nPick TOP-LEFT base point for cross-section layout: ");
+                        "\nPick TOP-LEFT base point for cross-section layout: ");
                     if (point.Status != PromptStatus.OK) return;
                     chosenInsertion = point.Value.TransformBy(doc.Editor.CurrentUserCoordinateSystem);
                     continue;
