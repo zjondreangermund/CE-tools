@@ -236,11 +236,39 @@ namespace CETools.Civil3D
             var names = new List<string>();
             try
             {
+                if (collection == null) return names;
+                var rawItems = new List<object>();
                 var enumerable = collection as System.Collections.IEnumerable;
-                if (enumerable == null) return names;
+                if (enumerable != null)
+                    foreach (object value in enumerable) rawItems.Add(value);
+                if (rawItems.Count == 0)
+                {
+                    // Civil 3D StyleCollections are not always IEnumerable
+                    // in all supported Autodesk versions. Use Count + indexer.
+                    try
+                    {
+                        var countProperty = collection.GetType().GetProperty("Count");
+                        int count = countProperty == null ? 0 : Convert.ToInt32(countProperty.GetValue(collection, null));
+                        var itemProperty = collection.GetType().GetProperty("Item");
+                        var getAt = collection.GetType().GetMethods()
+                            .FirstOrDefault(m => m.Name == "GetAt" && m.GetParameters().Length == 1);
+                        for (int i = 0; i < count; i++)
+                        {
+                            try
+                            {
+                                object item = itemProperty != null && itemProperty.GetIndexParameters().Length == 1
+                                    ? itemProperty.GetValue(collection, new object[] { i })
+                                    : getAt == null ? null : getAt.Invoke(collection, new object[] { i });
+                                if (item != null) rawItems.Add(item);
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+                }
                 using (Transaction tr = db.TransactionManager.StartTransaction())
                 {
-                    foreach (object item in enumerable)
+                    foreach (object item in rawItems)
                     {
                         if (item == null) continue;
                         object candidate = item;
@@ -253,6 +281,18 @@ namespace CETools.Civil3D
                         }
                         var property = candidate.GetType().GetProperty("Name");
                         string value = property == null ? null : property.GetValue(candidate, null) as string;
+                        if (string.IsNullOrWhiteSpace(value))
+                        {
+                            try
+                            {
+                                var nested = candidate.GetType().GetProperty("Value");
+                                object inner = nested == null ? null : nested.GetValue(candidate, null);
+                                if (inner is ObjectId) inner = tr.GetObject((ObjectId)inner, OpenMode.ForRead, false);
+                                var innerName = inner == null ? null : inner.GetType().GetProperty("Name");
+                                value = innerName == null ? null : innerName.GetValue(inner, null) as string;
+                            }
+                            catch { }
+                        }
                         if (!string.IsNullOrWhiteSpace(value)) names.Add(value);
                     }
                     tr.Commit();
@@ -685,13 +725,23 @@ namespace CETools.Civil3D
                 panel.Children.Add(_createSectionViews);
                 panel.Children.Add(_removeExisting);
                 panel.Children.Add(new TextBlock { Text = "Leave removal unchecked to keep existing sample lines and cross sections. When checked, existing sample-line groups for the selected alignments are erased before new groups are created.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,2,0,4) });
-                panel.Children.Add(new TextBlock { Text = "Start point is the TOP-LEFT insertion point. Alignment groups are placed left-to-right, then top-to-bottom in the order selected above.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,2,0,4) });
+                panel.Children.Add(new TextBlock { Text = "Start point is the TOP-LEFT insertion point. Generated sections are grouped by road and arranged left-to-right across each row, with clear space based on the actual section view dimensions.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,2,0,4) });
                 var pickPoint = new Button { Content = "Pick insertion point in drawing...", Margin = new Thickness(3), HorizontalAlignment = HorizontalAlignment.Left };
                 pickPoint.Click += (sender, args) =>
                 {
                     Hide();
                     try
                     {
+                        // Release the modal window's input focus before entering
+                        // AutoCAD's drawing editor (otherwise GetPoint can hang).
+                        Dispatcher.Invoke(new Action(() => { }), System.Windows.Threading.DispatcherPriority.Background);
+                        try
+                        {
+                            object main = AcApplication.MainWindow;
+                            var focus = main == null ? null : main.GetType().GetMethod("Focus", Type.EmptyTypes);
+                            if (focus != null) focus.Invoke(main, null);
+                        }
+                        catch { }
                         var prompt = new Autodesk.AutoCAD.EditorInput.PromptPointOptions("\nSpecify top-left cross-section insertion point: ");
                         var picked = _document.Editor.GetPoint(prompt);
                         if (picked.Status == Autodesk.AutoCAD.EditorInput.PromptStatus.OK)
