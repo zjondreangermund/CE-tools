@@ -39,16 +39,32 @@ namespace CETools.Civil3D
             }
 
             CivilDocument civilDoc = CivilApplication.ActiveDocument;
-            var window = new BatchCrossSectionsWindow(
-                alignments,
-                ReadNames(doc.Database, civilDoc.Styles.SampleLineStyles),
-                ReadNames(doc.Database, GetStyleCollection(civilDoc.Styles, "SampleLineLabelStyles")),
-                ReadNames(doc.Database, civilDoc.Styles.SectionViewStyles),
-                ReadNames(doc.Database, civilDoc.Styles.SectionViewBandSetStyles),
-                ReadSourceChoices(doc.Database, civilDoc, false),
-                ReadSourceChoices(doc.Database, civilDoc, true), doc);
-            AcApplication.ShowModalWindow(window);
-            if (!window.Accepted) return;
+            BatchCrossSectionsWindow window;
+            Point3d? chosenInsertion = null;
+            for (;;)
+            {
+                window = new BatchCrossSectionsWindow(
+                    alignments,
+                    ReadNames(doc.Database, civilDoc.Styles.SampleLineStyles),
+                    ReadNames(doc.Database, GetStyleCollection(civilDoc.Styles, "SampleLineLabelStyles")),
+                    ReadNames(doc.Database, civilDoc.Styles.SectionViewStyles),
+                    ReadNames(doc.Database, civilDoc.Styles.SectionViewBandSetStyles),
+                    ReadSourceChoices(doc.Database, civilDoc, false),
+                    ReadSourceChoices(doc.Database, civilDoc, true), doc, chosenInsertion);
+                AcApplication.ShowModalWindow(window);
+                if (window.PickInsertionPointRequested)
+                {
+                    // GetPoint must run AFTER ShowModalWindow returns. Calling it
+                    // from a hidden modal Window can lock out the AutoCAD editor.
+                    PromptPointResult point = doc.Editor.GetPoint(
+                        "\\nPick TOP-LEFT base point for cross-section layout: ");
+                    if (point.Status != PromptStatus.OK) return;
+                    chosenInsertion = point.Value.TransformBy(doc.Editor.CurrentUserCoordinateSystem);
+                    continue;
+                }
+                if (!window.Accepted) return;
+                break;
+            }
 
             BatchCrossSectionSettings s = window.Settings;
             Point3d basePoint = new Point3d(s.InsertX, s.InsertY, 0.0);
@@ -715,9 +731,11 @@ namespace CETools.Civil3D
             private readonly CheckBox _createSectionViews = new CheckBox { Content = "Run cross sections (create section views)", IsChecked = true };
             private readonly CheckBox _removeExisting = new CheckBox { Content = "Remove existing sample-line groups / cross sections for selected alignments before creating new ones", IsChecked = false };
             public bool Accepted { get; private set; }
+            public bool PickInsertionPointRequested { get; private set; }
             public BatchCrossSectionSettings Settings { get; private set; }
 
-            public BatchCrossSectionsWindow(List<AlignmentChoice> alignments, List<string> sampleStyles, List<string> labelStyles, List<string> sectionStyles, List<string> bandSets, List<SectionSourceChoice> surfaces, List<SectionSourceChoice> corridors, Document document)
+            public BatchCrossSectionsWindow(List<AlignmentChoice> alignments, List<string> sampleStyles, List<string> labelStyles, List<string> sectionStyles, List<string> bandSets, List<SectionSourceChoice> surfaces, List<SectionSourceChoice> corridors, Document document,
+                Point3d? overrideInsertion)
             {
                 _document = document;
                 Title = "CE Tools - Batch Cross Sections";
@@ -780,28 +798,10 @@ namespace CETools.Civil3D
                 var pickPoint = new Button { Content = "Pick insertion point in drawing...", Margin = new Thickness(3), HorizontalAlignment = HorizontalAlignment.Left };
                 pickPoint.Click += (sender, args) =>
                 {
-                    Hide();
-                    try
-                    {
-                        // Release the modal window's input focus before entering
-                        // AutoCAD's drawing editor (otherwise GetPoint can hang).
-                        Dispatcher.Invoke(new Action(() => { }), System.Windows.Threading.DispatcherPriority.Background);
-                        try
-                        {
-                            object main = AcApplication.MainWindow;
-                            var focus = main == null ? null : main.GetType().GetMethod("Focus", Type.EmptyTypes);
-                            if (focus != null) focus.Invoke(main, null);
-                        }
-                        catch { }
-                        var prompt = new Autodesk.AutoCAD.EditorInput.PromptPointOptions("\nSpecify top-left cross-section insertion point: ");
-                        var picked = _document.Editor.GetPoint(prompt);
-                        if (picked.Status == Autodesk.AutoCAD.EditorInput.PromptStatus.OK)
-                        {
-                            _x.Text = picked.Value.X.ToString("0.###", CultureInfo.CurrentCulture);
-                            _y.Text = picked.Value.Y.ToString("0.###", CultureInfo.CurrentCulture);
-                        }
-                    }
-                    finally { Show(); Activate(); }
+                    SaveDefaults();
+                    PickInsertionPointRequested = true;
+                    Accepted = false;
+                    Close();
                 };
                 panel.Children.Add(pickPoint);
                 AddRow(panel, "Top-left start point X", _x); AddRow(panel, "Top-left start point Y", _y);
@@ -820,6 +820,11 @@ namespace CETools.Civil3D
                 _fullRange.Unchecked += (s,e) => { _start.IsEnabled = true; _end.IsEnabled = true; };
                 _start.IsEnabled = _end.IsEnabled = false;
                 LoadSavedDefaults();
+                if (overrideInsertion.HasValue)
+                {
+                    _x.Text = overrideInsertion.Value.X.ToString("0.###", CultureInfo.CurrentCulture);
+                    _y.Text = overrideInsertion.Value.Y.ToString("0.###", CultureInfo.CurrentCulture);
+                }
             }
 
             // The check marks mirror the actual ListBox selection. Ctrl/Shift on
