@@ -10,6 +10,7 @@ using Autodesk.AutoCAD.EditorInput;
 using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.DatabaseServices;
+using Autodesk.Civil.ApplicationServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.SectionViewManagementCommands))]
@@ -57,6 +58,87 @@ namespace CETools.Civil3D
         internal static HashSet<ObjectId> CaptureViewIds(Document doc)
         {
             return new HashSet<ObjectId>(FindViews(doc).Select(x => x.Id));
+        }
+
+        internal static int ApplyCreatedSectionViewStyles(Document doc,
+            HashSet<ObjectId> previous, CivilDocument civil, string sectionStyle, string bandSet)
+        {
+            ObjectId sectionStyleId = ResolveStyleId(doc.Database,
+                civil.Styles.SectionViewStyles, sectionStyle);
+            ObjectId bandStyleId = ResolveStyleId(doc.Database,
+                civil.Styles.SectionViewBandSetStyles, bandSet);
+            int updated = 0;
+            List<ViewInfo> created = FindViews(doc).Where(x => !previous.Contains(x.Id)).ToList();
+            using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ViewInfo item in created)
+                {
+                    try
+                    {
+                        SectionView view = tr.GetObject(item.Id, OpenMode.ForWrite, false) as SectionView;
+                        if (view == null) continue;
+                        bool applied = false;
+                        if (!sectionStyleId.IsNull)
+                        {
+                            view.StyleId = sectionStyleId;
+                            applied = true;
+                        }
+                        if (!bandStyleId.IsNull)
+                            applied = TrySetProperty(view, "BandSetStyleId", bandStyleId) || applied;
+                        if (applied) updated++;
+                    }
+                    catch { }
+                }
+                tr.Commit();
+            }
+            return updated;
+        }
+
+        private static ObjectId ResolveStyleId(Database database, object styleCollection, string desired)
+        {
+            if (styleCollection == null || string.IsNullOrWhiteSpace(desired)) return ObjectId.Null;
+            var entries = new List<object>();
+            var enumerable = styleCollection as System.Collections.IEnumerable;
+            if (enumerable != null) foreach (object item in enumerable) entries.Add(item);
+            if (entries.Count == 0)
+            {
+                try
+                {
+                    var countProperty = styleCollection.GetType().GetProperty("Count");
+                    var indexer = styleCollection.GetType().GetProperty("Item");
+                    int count = countProperty == null ? 0 : Convert.ToInt32(countProperty.GetValue(styleCollection, null));
+                    for (int i = 0; i < count; i++)
+                        if (indexer != null) entries.Add(indexer.GetValue(styleCollection, new object[] { i }));
+                }
+                catch { }
+            }
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+            {
+                foreach (object entry in entries)
+                {
+                    try
+                    {
+                        ObjectId id;
+                        if (entry is ObjectId) id = (ObjectId)entry;
+                        else
+                        {
+                            var property = entry == null ? null : entry.GetType().GetProperty("ObjectId");
+                            if (property == null) continue;
+                            object raw = property.GetValue(entry, null);
+                            if (!(raw is ObjectId)) continue;
+                            id = (ObjectId)raw;
+                        }
+                        DBObject style = tr.GetObject(id, OpenMode.ForRead, false);
+                        PropertyInfo nameProperty = style.GetType().GetProperty("Name");
+                        if (nameProperty != null &&
+                            string.Equals(nameProperty.GetValue(style, null) as string,
+                                desired, StringComparison.OrdinalIgnoreCase))
+                            return id;
+                    }
+                    catch { }
+                }
+            }
+            return ObjectId.Null;
         }
 
         internal static int ArrangeGeneratedByRoad(Document doc, HashSet<ObjectId> previous,
