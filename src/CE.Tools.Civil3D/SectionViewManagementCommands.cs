@@ -510,15 +510,37 @@ namespace CETools.Civil3D
             Document doc = AcApplication.DocumentManager.MdiActiveDocument;
             if (doc == null) return;
             List<ViewInfo> views = FindViews(doc);
-            if (views.Count == 0) return;
-            var settings = new ProductionSettingsDialogModel("CE Tools - Fit Cross Section Views",
-                "Apply automatic offsets/elevation range where the installed Civil 3D SectionView API supports it. Existing view geometry and labels are preserved.");
+            if (views.Count == 0)
+            {
+                doc.Editor.WriteMessage("\\nCE_CROSSSECTIONVIEWFIT: no Civil 3D section views found.");
+                return;
+            }
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Fit Cross Section Views and Label Clearance",
+                "Fit all or multiple selected cross section views. Use Civil 3D's automatic section elevation range as the data envelope, then reserve grid-row clearances around it.");
             AddScope(settings);
-            settings.AddChoice("Elevation", "02 Display", "Elevation range", "Automatic",
-                "Choose automatic elevation fit. This is the Civil 3D native automatic range.",
-                new[] { "Automatic" });
+            settings.AddChoice("Elevation", "01 Vertical fit", "Elevation range", "Fit with row clearances",
+                "Manual elevation limits are computed from the current automatic data envelope and the reserved rows. Choose Automatic to use Civil 3D's default range only.",
+                new[] { "Fit with row clearances", "Automatic" });
+            settings.AddPositiveDouble("RowHeight", "01 Vertical fit", "Cross-section-view row height", 1.0,
+                "Elevation represented by one horizontal section-view row (m).");
+            settings.AddPositiveInteger("BottomRows", "01 Vertical fit", "Rows below lowest section", 5,
+                "Clear rows between the lowest displayed section and bottom frame.");
+            settings.AddPositiveInteger("SectionToTopLabelRows", "01 Vertical fit",
+                "Rows from highest section to top labels", 4,
+                "Rows reserved between highest displayed section and its top labels.");
+            settings.AddPositiveDouble("TopLabelToFrameRows", "01 Vertical fit",
+                "Rows from top labels to top frame", 1.0,
+                "Additional clear rows above the top text before the section-view frame.");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
             List<ViewInfo> selected = ChooseViews(doc, settings.Text("Scope"), views);
+            if (selected.Count == 0) return;
+
+            bool withClearance = settings.Text("Elevation") == "Fit with row clearances";
+            double rowHeight = settings.Double("RowHeight", 1.0);
+            double bottom = settings.Integer("BottomRows", 5) * rowHeight;
+            double top = (settings.Integer("SectionToTopLabelRows", 4) +
+                settings.Double("TopLabelToFrameRows", 1.0)) * rowHeight;
             int fitted = 0, unsupported = 0;
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
@@ -528,19 +550,46 @@ namespace CETools.Civil3D
                     {
                         SectionView view = tr.GetObject(item.Id, OpenMode.ForWrite, false) as SectionView;
                         if (view == null) { unsupported++; continue; }
-                        bool updated = false;
-                        updated = TrySetProperty(view, "IsElevationRangeAutomatic", true) || updated;
-                        updated = TrySetProperty(view, "IsOffsetRangeAutomatic", true) || updated;
-                        updated = TrySetProperty(view, "IsStationRangeAutomatic", true) || updated;
-                        if (updated) fitted++; else unsupported++;
+
+                        // Start from a fresh automatic elevation envelope, so
+                        // re-running the fit does not compound earlier padding.
+                        view.IsElevationRangeAutomatic = true;
+                        // Force a read of the drawing's current sampled section
+                        // envelope before switching to explicit elevations.
+                        double dataMin = view.ElevationMin;
+                        double dataMax = view.ElevationMax;
+                        if (double.IsNaN(dataMin) || double.IsNaN(dataMax) ||
+                            double.IsInfinity(dataMin) || double.IsInfinity(dataMax) ||
+                            dataMax < dataMin)
+                        {
+                            unsupported++;
+                            continue;
+                        }
+                        if (withClearance)
+                        {
+                            // Autodesk requires manual mode before setting limits.
+                            view.IsElevationRangeAutomatic = false;
+                            // Expand top first, then bottom, avoiding a transient
+                            // inverted min/max pair in Civil 3D.
+                            view.ElevationMax = dataMax + top;
+                            view.ElevationMin = dataMin - bottom;
+                        }
+                        TrySetProperty(view, "IsOffsetRangeAutomatic", true);
+                        fitted++;
                     }
-                    catch { unsupported++; }
+                    catch (System.Exception error)
+                    {
+                        unsupported++;
+                        doc.Editor.WriteMessage("\\nCE_CROSSSECTIONVIEWFIT: skipped section '{0}': {1}",
+                            item.Name, error.Message);
+                    }
                 }
                 tr.Commit();
             }
             doc.Editor.Regen();
-            doc.Editor.WriteMessage("\nCE_CROSSSECTIONVIEWFIT: automatic fit enabled on {0} views; unsupported {1}.",
-                fitted, unsupported);
+            doc.Editor.WriteMessage(
+                "\\nCE_CROSSSECTIONVIEWFIT: fitted {0} section views, skipped {1}. Mode: {2}. Row height {3:0.###} m, below {4:0.###} m, above {5:0.###} m.",
+                fitted, unsupported, settings.Text("Elevation"), rowHeight, bottom, top);
         }
     }
 }
