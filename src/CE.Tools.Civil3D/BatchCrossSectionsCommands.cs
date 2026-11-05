@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -52,6 +53,7 @@ namespace CETools.Civil3D
             BatchCrossSectionSettings s = window.Settings;
             Point3d basePoint = new Point3d(s.InsertX, s.InsertY, 0.0);
             int groupsCreated = 0, linesCreated = 0, sectionGroupsCreated = 0;
+            HashSet<ObjectId> oldSectionViews = SectionViewManagementCommands.CaptureViewIds(doc);
             var failures = new List<string>();
 
             for (int alignmentIndex = 0; alignmentIndex < s.Alignments.Count; alignmentIndex++)
@@ -177,6 +179,17 @@ namespace CETools.Civil3D
                 }
             }
 
+            if (s.CreateSectionViews && s.GroupByRoad)
+            {
+                try
+                {
+                    int arranged = SectionViewManagementCommands.ArrangeGeneratedByRoad(
+                        doc, oldSectionViews, basePoint, s.SectionsPerRow, s.GroupsPerRow,
+                        s.ColumnSpacing, s.RowSpacing, s.AddRoadTitles);
+                    doc.Editor.WriteMessage("\nCE_BATCHCROSSSECTIONS: arranged {0} new section views in road groups.", arranged);
+                }
+                catch (System.Exception ex) { failures.Add("Road group arrangement: " + ex.Message); }
+            }
             doc.Editor.Regen();
             doc.Editor.WriteMessage(
                 "\nCE_BATCHCROSSSECTIONS complete. Alignments selected={0}; groups created={1}; sample lines created={2}; section-view groups created={3}; run cross sections={4}; issues={5}.",
@@ -575,6 +588,8 @@ namespace CETools.Civil3D
             public double Interval, LeftWidth, RightWidth, StartStation, EndStation, InsertX, InsertY, RowSpacing, ColumnSpacing;
             public int GroupsPerRow;
             public bool UseFullRange, IncludeStart, IncludeEnd, SampleAllAvailableSources, CreateSectionViews, RemoveExisting;
+            public bool GroupByRoad, AddRoadTitles;
+            public int SectionsPerRow;
         }
 
         private sealed class BatchCrossSectionsWindow : Window
@@ -593,6 +608,10 @@ namespace CETools.Civil3D
             private readonly TextBox _rowSpacing = Field("100");
             private readonly TextBox _columnSpacing = Field("200");
             private readonly TextBox _groupsPerRow = Field("3");
+            private readonly TextBox _sectionsPerRow = Field("3");
+            private readonly CheckBox _groupByRoad = new CheckBox { Content = "Group all new cross sections by ROAD alignment", IsChecked = true };
+            private readonly CheckBox _addRoadTitles = new CheckBox { Content = "Add ROAD-xx title above each group", IsChecked = true };
+            private int _sectionsCount = 3;
             private readonly ComboBox _sampleStyle = new ComboBox { MinWidth = 220 };
             private readonly ComboBox _labelStyle = new ComboBox { MinWidth = 220 };
             private readonly ComboBox _sectionStyle = new ComboBox { MinWidth = 220 };
@@ -685,9 +704,12 @@ namespace CETools.Civil3D
                 };
                 panel.Children.Add(pickPoint);
                 AddRow(panel, "Top-left start point X", _x); AddRow(panel, "Top-left start point Y", _y);
-                AddRow(panel, "Alignment groups per row", _groupsPerRow);
-                AddRow(panel, "Horizontal spacing between alignment groups", _columnSpacing);
-                AddRow(panel, "Vertical spacing between rows", _rowSpacing);
+                panel.Children.Add(_groupByRoad);
+                panel.Children.Add(_addRoadTitles);
+                AddRow(panel, "Road groups per row", _groupsPerRow);
+                AddRow(panel, "Cross sections per row within each road", _sectionsPerRow);
+                AddRow(panel, "Horizontal clearance between cross sections (m)", _columnSpacing);
+                AddRow(panel, "Vertical clearance between rows (m)", _rowSpacing);
 
                 _sampleStyle.SelectedIndex = FindIndex(_sampleStyle, "Road Sample Line");
                 _labelStyle.SelectedIndex = FindIndex(_labelStyle, "Section Name");
@@ -696,6 +718,7 @@ namespace CETools.Civil3D
                 _fullRange.Checked += (s,e) => { _start.IsEnabled = false; _end.IsEnabled = false; };
                 _fullRange.Unchecked += (s,e) => { _start.IsEnabled = true; _end.IsEnabled = true; };
                 _start.IsEnabled = _end.IsEnabled = false;
+                LoadSavedDefaults();
             }
 
             // The check marks mirror the actual ListBox selection. Ctrl/Shift on
@@ -775,6 +798,7 @@ namespace CETools.Civil3D
                     !TryReadPositive(_rowSpacing,out spacing) ||
                     !TryReadPositive(_columnSpacing,out columnSpacing) ||
                     !int.TryParse(_groupsPerRow.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out groupsPerRow) || groupsPerRow < 1 ||
+                    !int.TryParse(_sectionsPerRow.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out _sectionsCount) || _sectionsCount < 1 ||
                     !double.TryParse(_x.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out x) ||
                     !double.TryParse(_y.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out y))
                 { MessageBox.Show(this, "Interval, swath widths and horizontal/vertical spacing must be positive; groups per row must be a positive whole number; insertion coordinates must be numeric."); return; }
@@ -803,8 +827,11 @@ namespace CETools.Civil3D
                     CreateSectionViews = _createSectionViews.IsChecked == true,
                     RemoveExisting = _removeExisting.IsChecked == true,
                     InsertX = x, InsertY = y, RowSpacing = spacing,
-                    ColumnSpacing = columnSpacing, GroupsPerRow = groupsPerRow
+                    ColumnSpacing = columnSpacing, GroupsPerRow = groupsPerRow,
+                    SectionsPerRow = _sectionsCount,
+                    GroupByRoad = _groupByRoad.IsChecked == true, AddRoadTitles = _addRoadTitles.IsChecked == true
                 };
+                SaveDefaults();
                 Accepted = true; Close();
             }
         }
