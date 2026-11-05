@@ -89,7 +89,7 @@ namespace CETools.Civil3D
                         SampleLineGroup group = tr.GetObject(groupId, OpenMode.ForWrite, false) as SampleLineGroup;
                         if (group != null)
                         {
-                            TrySetStyleByName(group, "DefaultSamplineStyleId", civilDoc.Styles.SampleLineStyles, s.SampleLineStyle);
+                            TrySetStyleByName(doc.Database, group, "DefaultSamplineStyleId", civilDoc.Styles.SampleLineStyles, s.SampleLineStyle);
                             
                             if (!string.IsNullOrWhiteSpace(s.SampleLineLayer))
                                 TrySetLayer(group, doc.Database, s.SampleLineLayer);
@@ -123,7 +123,12 @@ namespace CETools.Civil3D
                                 if (sample != null)
                                 {
                                     if (!string.IsNullOrWhiteSpace(s.SampleLineStyle))
-                                        TrySetNamedStyle(sample, s.SampleLineStyle);
+                                        TrySetStyleByName(doc.Database, sample, "StyleId",
+                                            civilDoc.Styles.SampleLineStyles, s.SampleLineStyle);
+                                    if (!string.IsNullOrWhiteSpace(s.SampleLineLabelStyle))
+                                        TrySetStyleByName(doc.Database, sample, "LabelStyleId",
+                                            GetStyleCollection(civilDoc.Styles, "SampleLineLabelStyles"),
+                                            s.SampleLineLabelStyle);
                                     if (!string.IsNullOrWhiteSpace(s.SampleLineLayer))
                                         TrySetLayer(sample, doc.Database, s.SampleLineLayer);
                                 }
@@ -179,6 +184,16 @@ namespace CETools.Civil3D
                 }
             }
 
+            if (s.CreateSectionViews)
+            {
+                try
+                {
+                    int styles = SectionViewManagementCommands.ApplyCreatedSectionViewStyles(
+                        doc, oldSectionViews, civilDoc, s.SectionViewStyle, s.BandSetStyle);
+                    doc.Editor.WriteMessage("\nCE_BATCHCROSSSECTIONS: applied section-view styles to {0} new views.", styles);
+                }
+                catch (System.Exception ex) { failures.Add("Section-view style assignment: " + ex.Message); }
+            }
             if (s.CreateSectionViews && s.GroupByRoad)
             {
                 try
@@ -487,27 +502,62 @@ namespace CETools.Civil3D
             return safeRoadName + "-SL-" + station.ToString("0.###", CultureInfo.InvariantCulture);
         }
 
-        private static void TrySetStyleByName(object target, string propertyName, object collection, string name)
+        private static void TrySetStyleByName(Database database, object target, string propertyName,
+            object collection, string name)
         {
-            if (string.IsNullOrWhiteSpace(name)) return;
+            if (string.IsNullOrWhiteSpace(name) || collection == null || target == null) return;
             try
             {
-                var enumerable = collection as System.Collections.IEnumerable;
-                if (enumerable == null) return;
-                foreach (object style in enumerable)
+                using (Transaction tr = database.TransactionManager.StartTransaction())
                 {
-                    if (style == null) continue;
-                    var type = style.GetType();
-                    string styleName = type.GetProperty("Name")?.GetValue(style, null) as string;
-                    object id = type.GetProperty("ObjectId")?.GetValue(style, null);
-                    if (id is ObjectId && string.Equals(styleName, name, StringComparison.OrdinalIgnoreCase))
+                    foreach (ObjectId id in EnumerateStyleIds(collection))
                     {
-                        target.GetType().GetProperty(propertyName)?.SetValue(target, id, null);
-                        return;
+                        DBObject style = tr.GetObject(id, OpenMode.ForRead, false);
+                        var nameProperty = style.GetType().GetProperty("Name");
+                        string actual = nameProperty == null ? null : nameProperty.GetValue(style, null) as string;
+                        if (!string.Equals(name, actual, StringComparison.OrdinalIgnoreCase)) continue;
+                        var property = target.GetType().GetProperty(propertyName);
+                        if (property != null && property.CanWrite &&
+                            property.PropertyType.IsAssignableFrom(typeof(ObjectId)))
+                            property.SetValue(target, id, null);
+                        break;
                     }
                 }
             }
             catch { }
+        }
+
+        private static IEnumerable<ObjectId> EnumerateStyleIds(object collection)
+        {
+            var ids = new HashSet<ObjectId>();
+            if (collection == null) return ids;
+            var enumeration = collection as System.Collections.IEnumerable;
+            if (enumeration != null)
+                foreach (object entry in enumeration)
+                {
+                    if (entry is ObjectId) ids.Add((ObjectId)entry);
+                    else
+                    {
+                        ObjectId id = ReadObjectId(entry, "ObjectId", "Id", "Value");
+                        if (!id.IsNull) ids.Add(id);
+                    }
+                }
+            if (ids.Count == 0)
+            {
+                try
+                {
+                    var countProp = collection.GetType().GetProperty("Count");
+                    int count = countProp == null ? 0 : Convert.ToInt32(countProp.GetValue(collection, null));
+                    var indexer = collection.GetType().GetProperty("Item");
+                    for (int i = 0; i < count; i++)
+                    {
+                        object value = indexer == null ? null : indexer.GetValue(collection, new object[] { i });
+                        if (value is ObjectId) ids.Add((ObjectId)value);
+                    }
+                }
+                catch { }
+            }
+            return ids.Where(id => !id.IsNull && id.IsValid).ToList();
         }
 
         private static void TrySetNamedStyle(object target, string name)
