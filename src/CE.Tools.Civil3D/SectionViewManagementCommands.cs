@@ -441,7 +441,7 @@ namespace CETools.Civil3D
             AddScope(settings);
             settings.AddChoice("MatchStyle", "02 Properties", "Match view style", "ON",
                 "Copy the source SectionView.StyleId.", new[] { "ON", "OFF" });
-            settings.AddChoice("MatchBands", "02 Properties", "Repair Section1/Section2 band data sources", "ON",
+            settings.AddChoice("RepairBandSources", "02 Properties", "Repair Section1/Section2 band data sources", "ON",
                 "For each destination sample line, resolve Section1 and Section2 to local NG and road corridor sections by corresponding source names. Never copy the reference view section IDs.",
                 new[] { "ON", "OFF" });
             settings.AddChoice("MatchElevation", "02 Properties", "Match vertical elevation range", "ON",
@@ -507,7 +507,7 @@ namespace CETools.Civil3D
                             bool copied = CopySectionOffsetRange(source, dest);
                             if (copied) { changedThis = true; offsetUpdates++; }
                         }
-                        if (settings.Text("MatchBands") == "ON")
+                        if (settings.Text("RepairBandSources") == "ON")
                         {
                             int fixedSources, missingSources;
                             bool fixedBands = RepairSectionBandSources(
