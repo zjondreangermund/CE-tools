@@ -312,30 +312,121 @@ namespace CETools.Civil3D
             catch { return false; }
         }
 
-        private static bool CopyBands(SectionView source, SectionView destination)
+        // Civil 3D section band collections are tied to their owning SectionView.
+        // Never call destination.Bands.SetBottomBandItems(source.Bands.GetBottomBandItems()):
+        // the API rejects a collection from a different view and, more seriously,
+        // Section1/Section2 source IDs are unique to each sample line.
+        private static bool RepairSectionBandSources(SectionView source, SectionView destination,
+            Transaction tr, out int repaired, out int unresolved)
         {
-            // Copy current top and bottom band definitions between SectionViews.
-            // Autodesk exposes GetTop/BottomBandItems and SetTop/BottomBandItems.
-            try
+            repaired = 0;
+            unresolved = 0;
+            SampleLine targetSample = tr.GetObject(destination.SampleLineId, OpenMode.ForRead, false) as SampleLine;
+            if (targetSample == null) return false;
+            var available = new List<Section>();
+            foreach (ObjectId sectionId in targetSample.GetSectionIds())
             {
-                object sourceBands = source.Bands, destinationBands = destination.Bands;
-                if (sourceBands == null || destinationBands == null) return false;
-                bool copied = false;
-                foreach (string position in new[] { "Top", "Bottom" })
+                try
                 {
-                    MethodInfo read = sourceBands.GetType().GetMethod("Get" + position + "BandItems", Type.EmptyTypes);
-                    MethodInfo write = destinationBands.GetType().GetMethods()
-                        .FirstOrDefault(x => x.Name == "Set" + position + "BandItems" &&
-                            x.GetParameters().Length == 1);
-                    if (read == null || write == null) continue;
-                    object data = read.Invoke(sourceBands, null);
-                    if (data == null) continue;
-                    try { write.Invoke(destinationBands, new[] { data }); copied = true; }
-                    catch { }
+                    Section section = tr.GetObject(sectionId, OpenMode.ForRead, false) as Section;
+                    if (section != null && !section.IsErased && section.SampleLineId == destination.SampleLineId)
+                        available.Add(section);
                 }
-                return copied;
+                catch { }
             }
-            catch { return false; }
+            if (available.Count == 0) return false;
+            bool changed = false;
+            foreach (bool top in new[] { true, false })
+            {
+                SectionViewBandItemCollection sourceItems = top
+                    ? source.Bands.GetTopBandItems() : source.Bands.GetBottomBandItems();
+                SectionViewBandItemCollection destinationItems = top
+                    ? destination.Bands.GetTopBandItems() : destination.Bands.GetBottomBandItems();
+                if (sourceItems == null || destinationItems == null) continue;
+                int count = Math.Min(sourceItems.Count, destinationItems.Count);
+                bool collectionChanged = false;
+                for (int index = 0; index < count; index++)
+                {
+                    SectionViewBandItem sourceBand = sourceItems[index];
+                    SectionViewBandItem destinationBand = destinationItems[index];
+                    // If a view has a different band layout, do not bind a
+                    // surface/elevation row to an unrelated type of data band.
+                    if (sourceBand.BandType != destinationBand.BandType)
+                    {
+                        unresolved += 2;
+                        continue;
+                    }
+                    // Section data bands have two section source selectors. Other
+                    // band kinds can throw on these properties, so leave them alone.
+                    foreach (int slot in new[] { 1, 2 })
+                    {
+                        try
+                        {
+                            ObjectId sourceId = slot == 1 ? sourceBand.Section1Id : sourceBand.Section2Id;
+                            ObjectId currentId = slot == 1 ? destinationBand.Section1Id : destinationBand.Section2Id;
+                            if (sourceId.IsNull || !sourceId.IsValid) continue;
+                            Section reference = tr.GetObject(sourceId, OpenMode.ForRead, false) as Section;
+                            if (reference == null || reference.SampleLineId != source.SampleLineId)
+                            { unresolved++; continue; }
+                            Section match = FindMatchingLocalSection(reference, available, currentId);
+                            if (match == null)
+                            {
+                                unresolved++;
+                                continue; // Never substitute the source road's section.
+                            }
+                            if (currentId == match.ObjectId) continue;
+                            if (slot == 1) destinationBand.Section1Id = match.ObjectId;
+                            else destinationBand.Section2Id = match.ObjectId;
+                            repaired++;
+                            changed = true;
+                            collectionChanged = true;
+                        }
+                        catch { unresolved++; }
+                    }
+                }
+                // Commit only the destination's OWN band collection. Civil 3D
+                // explicitly disallows passing band collections across views.
+                if (collectionChanged)
+                {
+                    if (top) destination.Bands.SetTopBandItems(destinationItems);
+                    else destination.Bands.SetBottomBandItems(destinationItems);
+                }
+                if (sourceItems.Count != destinationItems.Count)
+                    unresolved += Math.Abs(sourceItems.Count - destinationItems.Count);
+            }
+            return changed;
+        }
+
+        private static Section FindMatchingLocalSection(Section reference,
+            IList<Section> candidates, ObjectId currentId)
+        {
+            string referenceKey = NormalizeSectionSourceName(reference.SourceName);
+            if (string.IsNullOrEmpty(referenceKey))
+                referenceKey = NormalizeSectionSourceName(reference.Name);
+            if (string.IsNullOrEmpty(referenceKey)) return null;
+
+            // The available sections belong to the destination sample line.
+            // Match the source role (e.g. NG or CORRIDOR TOP) while allowing
+            // ROAD-01/RD-01 to become ROAD-02/RD-02 on the next road.
+            var matches = candidates.Where(section =>
+            {
+                string name = NormalizeSectionSourceName(section.SourceName);
+                if (string.IsNullOrEmpty(name)) name = NormalizeSectionSourceName(section.Name);
+                return name == referenceKey;
+            }).ToList();
+
+            if (matches.Count == 1) return matches[0];
+            // If multiple sections have the same role, retain an existing
+            // matching local binding. Otherwise report ambiguity, don't guess.
+            return matches.FirstOrDefault(section => section.ObjectId == currentId);
+        }
+
+        private static string NormalizeSectionSourceName(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+            string normalized = Regex.Replace(name.Trim().ToUpperInvariant(),
+                @"(?:ROAD|RD)[-_ ]*0*[0-9]+", "ROAD-#", RegexOptions.IgnoreCase);
+            return Regex.Replace(normalized, @"\\s+", " ");
         }
 
         [CommandMethod("CE_TOOLS", "CE_CROSSSECTIONVIEWMATCH", CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
@@ -346,12 +437,12 @@ namespace CETools.Civil3D
             var views = FindViews(doc);
             if (views.Count < 2) { doc.Editor.WriteMessage("\nAt least two section views are required."); return; }
             var settings = new ProductionSettingsDialogModel("CE Tools - Match Cross Section Views",
-                "Copy section-view style and compatible band-set properties from one source view to all or multiple selected destination views.");
+                "Match section-view presentation, and repair each destination's Section1/Section2 band sources from its own sampled sections. Source-road section IDs are never copied.");
             AddScope(settings);
             settings.AddChoice("MatchStyle", "02 Properties", "Match view style", "ON",
                 "Copy the source SectionView.StyleId.", new[] { "ON", "OFF" });
-            settings.AddChoice("MatchBands", "02 Properties", "Match band sets", "OFF",
-                "Copy the source section-view top and bottom band items where supported.",
+            settings.AddChoice("RepairBandSources", "02 Properties", "Repair Section1/Section2 band data sources", "ON",
+                "For each destination sample line, resolve Section1 and Section2 to local NG and road corridor sections by corresponding source names. Never copy the reference view section IDs.",
                 new[] { "ON", "OFF" });
             settings.AddChoice("MatchElevation", "02 Properties", "Match vertical elevation range", "ON",
                 "Match source automatic/manual elevation mode and the actual minimum/maximum displayed elevations. Unlike styles alone, this can visibly change the destination section grid.",
@@ -372,7 +463,7 @@ namespace CETools.Civil3D
                 .Where(x => x.Id != sourcePick.ObjectId).ToList();
             if (targets.Count == 0) return;
             int changed = 0, alreadySame = 0, skipped = 0, styleUpdates = 0,
-                elevationUpdates = 0, offsetUpdates = 0, bandUpdates = 0;
+                elevationUpdates = 0, offsetUpdates = 0, bandUpdates = 0, unresolvedBandSources = 0;
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
                 SectionView source = tr.GetObject(sourcePick.ObjectId, OpenMode.ForRead, false) as SectionView;
@@ -416,10 +507,17 @@ namespace CETools.Civil3D
                             bool copied = CopySectionOffsetRange(source, dest);
                             if (copied) { changedThis = true; offsetUpdates++; }
                         }
-                        if (settings.Text("MatchBands") == "ON" && CopyBands(source, dest))
+                        if (settings.Text("RepairBandSources") == "ON")
                         {
-                            changedThis = true;
-                            bandUpdates++;
+                            int fixedSources, missingSources;
+                            bool fixedBands = RepairSectionBandSources(
+                                source, dest, tr, out fixedSources, out missingSources);
+                            unresolvedBandSources += missingSources;
+                            if (fixedBands) { changedThis = true; bandUpdates += fixedSources; }
+                            if (missingSources > 0)
+                                doc.Editor.WriteMessage(
+                                    "\\nCE_CROSSSECTIONVIEWMATCH: {0}: {1} band sources could not be matched uniquely to this sample line.",
+                                    item.Name, missingSources);
                         }
                         if (changedThis) changed++;
                         else alreadySame++;
@@ -434,8 +532,8 @@ namespace CETools.Civil3D
             }
             doc.Editor.Regen();
             doc.Editor.WriteMessage(
-                "\\nCE_CROSSSECTIONVIEWMATCH: changed {0}, no differences/unsupported {1}, errors {2}. Styles {3}, vertical ranges {4}, horizontal ranges {5}, bands {6}.",
-                changed, alreadySame, skipped, styleUpdates, elevationUpdates, offsetUpdates, bandUpdates);
+                "\\nCE_CROSSSECTIONVIEWMATCH: changed {0}, no differences/unsupported {1}, errors {2}. Styles {3}, vertical ranges {4}, horizontal ranges {5}, corrected Section1/Section2 references {6}, unresolved references {7}.",
+                changed, alreadySame, skipped, styleUpdates, elevationUpdates, offsetUpdates, bandUpdates, unresolvedBandSources);
         }
 
         private static bool CopySectionOffsetRange(SectionView source, SectionView dest)
