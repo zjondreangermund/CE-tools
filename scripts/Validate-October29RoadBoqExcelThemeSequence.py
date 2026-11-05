@@ -56,9 +56,9 @@ for key, value in tests.items():
     print("PASS:", key)
 
 actions = re.findall(r'A\("(\d+)\.[^"]+","(CE_[A-Z0-9_]+)".*?"(\d+) Final Road Production"\)', centres)
-if len(actions) != 56:
-    raise AssertionError("Expected 56 numbered Final Road Production commands, got %d" % len(actions))
-if [int(x[0]) for x in actions] != list(range(1, 57)):
+if len(actions) != 58:
+    raise AssertionError("Expected 58 numbered Final Road Production commands, got %d" % len(actions))
+if [int(x[0]) for x in actions] != list(range(1, 59)):
     raise AssertionError("Final Road Production numbering must be sequential")
 names = [x[1] for x in actions]
 for before, after in (
@@ -73,6 +73,9 @@ if names[names.index("CE_HATCHFIXOVERLAPALL")+1:names.index("CE_HATCHFIXOVERLAPA
     "CE_BATCHCROSSSECTIONS", "CE_CROSSSECTIONVIEWMATCH", "CE_CROSSSECTIONVIEWFIT",
     "CE_CROSSSECTIONVIEWARRANGE"]:
     raise AssertionError("Cross-section commands must directly follow Global Hatch Repair")
+if names[names.index("CE_CROSSSECTIONVIEWARRANGE")+1:names.index("CE_CROSSSECTIONVIEWARRANGE")+3] != [
+    "CE_VEHICLETRACKING", "CE_ROADSIGNS"]:
+    raise AssertionError("Vehicle Tracking and Road Signs must directly follow Cross Section View Arrange")
 if names[-3:] != ["CE_ROADAUTOSHEETS", "CE_DESIGNDATAEXPORT", "CE_ROADBOQCONSTRUCTION"]:
     raise AssertionError("Final steps must be sheets, design export, construction BOQ")
-print("PASS: all 56 Final Road Production steps, cross-section command position, no suffix letters, and final output order")
+print("PASS: all 58 Final Road Production steps, cross-section command position, no suffix letters, and final output order")
