@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Windows;
 using System.Windows.Controls;
@@ -38,20 +39,37 @@ namespace CETools.Civil3D
             }
 
             CivilDocument civilDoc = CivilApplication.ActiveDocument;
-            var window = new BatchCrossSectionsWindow(
-                alignments,
-                ReadNames(doc.Database, civilDoc.Styles.SampleLineStyles),
-                ReadNames(doc.Database, GetStyleCollection(civilDoc.Styles, "SampleLineLabelStyles")),
-                ReadNames(doc.Database, civilDoc.Styles.SectionViewStyles),
-                ReadNames(doc.Database, civilDoc.Styles.SectionViewBandSetStyles),
-                ReadSourceChoices(doc.Database, civilDoc, false),
-                ReadSourceChoices(doc.Database, civilDoc, true), doc);
-            AcApplication.ShowModalWindow(window);
-            if (!window.Accepted) return;
+            BatchCrossSectionsWindow window;
+            Point3d? chosenInsertion = null;
+            for (;;)
+            {
+                window = new BatchCrossSectionsWindow(
+                    alignments,
+                    ReadNames(doc.Database, civilDoc.Styles.SampleLineStyles),
+                    ReadNames(doc.Database, GetStyleCollection(civilDoc.Styles, "SampleLineLabelStyles")),
+                    ReadNames(doc.Database, civilDoc.Styles.SectionViewStyles),
+                    ReadNames(doc.Database, civilDoc.Styles.SectionViewBandSetStyles),
+                    ReadSourceChoices(doc.Database, civilDoc, false),
+                    ReadSourceChoices(doc.Database, civilDoc, true), doc, chosenInsertion);
+                AcApplication.ShowModalWindow(window);
+                if (window.PickInsertionPointRequested)
+                {
+                    // GetPoint must run AFTER ShowModalWindow returns. Calling it
+                    // from a hidden modal Window can lock out the AutoCAD editor.
+                    PromptPointResult point = doc.Editor.GetPoint(
+                        "\\nPick TOP-LEFT base point for cross-section layout: ");
+                    if (point.Status != PromptStatus.OK) return;
+                    chosenInsertion = point.Value.TransformBy(doc.Editor.CurrentUserCoordinateSystem);
+                    continue;
+                }
+                if (!window.Accepted) return;
+                break;
+            }
 
             BatchCrossSectionSettings s = window.Settings;
             Point3d basePoint = new Point3d(s.InsertX, s.InsertY, 0.0);
             int groupsCreated = 0, linesCreated = 0, sectionGroupsCreated = 0;
+            HashSet<ObjectId> oldSectionViews = SectionViewManagementCommands.CaptureViewIds(doc);
             var failures = new List<string>();
 
             for (int alignmentIndex = 0; alignmentIndex < s.Alignments.Count; alignmentIndex++)
@@ -87,7 +105,7 @@ namespace CETools.Civil3D
                         SampleLineGroup group = tr.GetObject(groupId, OpenMode.ForWrite, false) as SampleLineGroup;
                         if (group != null)
                         {
-                            TrySetStyleByName(group, "DefaultSamplineStyleId", civilDoc.Styles.SampleLineStyles, s.SampleLineStyle);
+                            TrySetStyleByName(doc.Database, group, "DefaultSamplineStyleId", civilDoc.Styles.SampleLineStyles, s.SampleLineStyle);
                             
                             if (!string.IsNullOrWhiteSpace(s.SampleLineLayer))
                                 TrySetLayer(group, doc.Database, s.SampleLineLayer);
@@ -121,7 +139,12 @@ namespace CETools.Civil3D
                                 if (sample != null)
                                 {
                                     if (!string.IsNullOrWhiteSpace(s.SampleLineStyle))
-                                        TrySetNamedStyle(sample, s.SampleLineStyle);
+                                        TrySetStyleByName(doc.Database, sample, "StyleId",
+                                            civilDoc.Styles.SampleLineStyles, s.SampleLineStyle);
+                                    if (!string.IsNullOrWhiteSpace(s.SampleLineLabelStyle))
+                                        TrySetStyleByName(doc.Database, sample, "LabelStyleId",
+                                            GetStyleCollection(civilDoc.Styles, "SampleLineLabelStyles"),
+                                            s.SampleLineLabelStyle);
                                     if (!string.IsNullOrWhiteSpace(s.SampleLineLayer))
                                         TrySetLayer(sample, doc.Database, s.SampleLineLayer);
                                 }
@@ -177,6 +200,27 @@ namespace CETools.Civil3D
                 }
             }
 
+            if (s.CreateSectionViews)
+            {
+                try
+                {
+                    int styles = SectionViewManagementCommands.ApplyCreatedSectionViewStyles(
+                        doc, oldSectionViews, civilDoc, s.SectionViewStyle, s.BandSetStyle);
+                    doc.Editor.WriteMessage("\nCE_BATCHCROSSSECTIONS: applied section-view styles to {0} new views.", styles);
+                }
+                catch (System.Exception ex) { failures.Add("Section-view style assignment: " + ex.Message); }
+            }
+            if (s.CreateSectionViews && s.GroupByRoad)
+            {
+                try
+                {
+                    int arranged = SectionViewManagementCommands.ArrangeGeneratedByRoad(
+                        doc, oldSectionViews, basePoint, s.SectionsPerRow, s.GroupsPerRow,
+                        s.SectionGap, s.RowSpacing, s.ColumnSpacing, s.AddRoadTitles);
+                    doc.Editor.WriteMessage("\nCE_BATCHCROSSSECTIONS: arranged {0} new section views in road groups.", arranged);
+                }
+                catch (System.Exception ex) { failures.Add("Road group arrangement: " + ex.Message); }
+            }
             doc.Editor.Regen();
             doc.Editor.WriteMessage(
                 "\nCE_BATCHCROSSSECTIONS complete. Alignments selected={0}; groups created={1}; sample lines created={2}; section-view groups created={3}; run cross sections={4}; issues={5}.",
@@ -223,11 +267,39 @@ namespace CETools.Civil3D
             var names = new List<string>();
             try
             {
+                if (collection == null) return names;
+                var rawItems = new List<object>();
                 var enumerable = collection as System.Collections.IEnumerable;
-                if (enumerable == null) return names;
+                if (enumerable != null)
+                    foreach (object value in enumerable) rawItems.Add(value);
+                if (rawItems.Count == 0)
+                {
+                    // Civil 3D StyleCollections are not always IEnumerable
+                    // in all supported Autodesk versions. Use Count + indexer.
+                    try
+                    {
+                        var countProperty = collection.GetType().GetProperty("Count");
+                        int count = countProperty == null ? 0 : Convert.ToInt32(countProperty.GetValue(collection, null));
+                        var itemProperty = collection.GetType().GetProperty("Item");
+                        var getAt = collection.GetType().GetMethods()
+                            .FirstOrDefault(m => m.Name == "GetAt" && m.GetParameters().Length == 1);
+                        for (int i = 0; i < count; i++)
+                        {
+                            try
+                            {
+                                object item = itemProperty != null && itemProperty.GetIndexParameters().Length == 1
+                                    ? itemProperty.GetValue(collection, new object[] { i })
+                                    : getAt == null ? null : getAt.Invoke(collection, new object[] { i });
+                                if (item != null) rawItems.Add(item);
+                            }
+                            catch { }
+                        }
+                    }
+                    catch { }
+                }
                 using (Transaction tr = db.TransactionManager.StartTransaction())
                 {
-                    foreach (object item in enumerable)
+                    foreach (object item in rawItems)
                     {
                         if (item == null) continue;
                         object candidate = item;
@@ -240,6 +312,18 @@ namespace CETools.Civil3D
                         }
                         var property = candidate.GetType().GetProperty("Name");
                         string value = property == null ? null : property.GetValue(candidate, null) as string;
+                        if (string.IsNullOrWhiteSpace(value))
+                        {
+                            try
+                            {
+                                var nested = candidate.GetType().GetProperty("Value");
+                                object inner = nested == null ? null : nested.GetValue(candidate, null);
+                                if (inner is ObjectId) inner = tr.GetObject((ObjectId)inner, OpenMode.ForRead, false);
+                                var innerName = inner == null ? null : inner.GetType().GetProperty("Name");
+                                value = innerName == null ? null : innerName.GetValue(inner, null) as string;
+                            }
+                            catch { }
+                        }
                         if (!string.IsNullOrWhiteSpace(value)) names.Add(value);
                     }
                     tr.Commit();
@@ -434,27 +518,62 @@ namespace CETools.Civil3D
             return safeRoadName + "-SL-" + station.ToString("0.###", CultureInfo.InvariantCulture);
         }
 
-        private static void TrySetStyleByName(object target, string propertyName, object collection, string name)
+        private static void TrySetStyleByName(Database database, object target, string propertyName,
+            object collection, string name)
         {
-            if (string.IsNullOrWhiteSpace(name)) return;
+            if (string.IsNullOrWhiteSpace(name) || collection == null || target == null) return;
             try
             {
-                var enumerable = collection as System.Collections.IEnumerable;
-                if (enumerable == null) return;
-                foreach (object style in enumerable)
+                using (Transaction tr = database.TransactionManager.StartTransaction())
                 {
-                    if (style == null) continue;
-                    var type = style.GetType();
-                    string styleName = type.GetProperty("Name")?.GetValue(style, null) as string;
-                    object id = type.GetProperty("ObjectId")?.GetValue(style, null);
-                    if (id is ObjectId && string.Equals(styleName, name, StringComparison.OrdinalIgnoreCase))
+                    foreach (ObjectId id in EnumerateStyleIds(collection))
                     {
-                        target.GetType().GetProperty(propertyName)?.SetValue(target, id, null);
-                        return;
+                        DBObject style = tr.GetObject(id, OpenMode.ForRead, false);
+                        var nameProperty = style.GetType().GetProperty("Name");
+                        string actual = nameProperty == null ? null : nameProperty.GetValue(style, null) as string;
+                        if (!string.Equals(name, actual, StringComparison.OrdinalIgnoreCase)) continue;
+                        var property = target.GetType().GetProperty(propertyName);
+                        if (property != null && property.CanWrite &&
+                            property.PropertyType.IsAssignableFrom(typeof(ObjectId)))
+                            property.SetValue(target, id, null);
+                        break;
                     }
                 }
             }
             catch { }
+        }
+
+        private static IEnumerable<ObjectId> EnumerateStyleIds(object collection)
+        {
+            var ids = new HashSet<ObjectId>();
+            if (collection == null) return ids;
+            var enumeration = collection as System.Collections.IEnumerable;
+            if (enumeration != null)
+                foreach (object entry in enumeration)
+                {
+                    if (entry is ObjectId) ids.Add((ObjectId)entry);
+                    else
+                    {
+                        ObjectId id = ReadObjectId(entry, "ObjectId", "Id", "Value");
+                        if (!id.IsNull) ids.Add(id);
+                    }
+                }
+            if (ids.Count == 0)
+            {
+                try
+                {
+                    var countProp = collection.GetType().GetProperty("Count");
+                    int count = countProp == null ? 0 : Convert.ToInt32(countProp.GetValue(collection, null));
+                    var indexer = collection.GetType().GetProperty("Item");
+                    for (int i = 0; i < count; i++)
+                    {
+                        object value = indexer == null ? null : indexer.GetValue(collection, new object[] { i });
+                        if (value is ObjectId) ids.Add((ObjectId)value);
+                    }
+                }
+                catch { }
+            }
+            return ids.Where(id => !id.IsNull && id.IsValid).ToList();
         }
 
         private static void TrySetNamedStyle(object target, string name)
@@ -572,9 +691,11 @@ namespace CETools.Civil3D
             public List<AlignmentChoice> Alignments;
             public List<SectionSourceChoice> Surfaces, Corridors;
             public string GroupNamePrefix, SampleLineLayer, SampleLineStyle, SampleLineLabelStyle, SectionViewStyle, BandSetStyle;
-            public double Interval, LeftWidth, RightWidth, StartStation, EndStation, InsertX, InsertY, RowSpacing, ColumnSpacing;
+            public double Interval, LeftWidth, RightWidth, StartStation, EndStation, InsertX, InsertY, RowSpacing, ColumnSpacing, SectionGap;
             public int GroupsPerRow;
             public bool UseFullRange, IncludeStart, IncludeEnd, SampleAllAvailableSources, CreateSectionViews, RemoveExisting;
+            public bool GroupByRoad, AddRoadTitles;
+            public int SectionsPerRow;
         }
 
         private sealed class BatchCrossSectionsWindow : Window
@@ -592,7 +713,12 @@ namespace CETools.Civil3D
             private readonly Document _document;
             private readonly TextBox _rowSpacing = Field("100");
             private readonly TextBox _columnSpacing = Field("200");
+            private readonly TextBox _sectionGap = Field("10");
             private readonly TextBox _groupsPerRow = Field("3");
+            private readonly TextBox _sectionsPerRow = Field("3");
+            private readonly CheckBox _groupByRoad = new CheckBox { Content = "Group all new cross sections by ROAD alignment", IsChecked = true };
+            private readonly CheckBox _addRoadTitles = new CheckBox { Content = "Add ROAD-xx title above each group", IsChecked = true };
+            private int _sectionsCount = 3;
             private readonly ComboBox _sampleStyle = new ComboBox { MinWidth = 220 };
             private readonly ComboBox _labelStyle = new ComboBox { MinWidth = 220 };
             private readonly ComboBox _sectionStyle = new ComboBox { MinWidth = 220 };
@@ -606,9 +732,11 @@ namespace CETools.Civil3D
             private readonly CheckBox _createSectionViews = new CheckBox { Content = "Run cross sections (create section views)", IsChecked = true };
             private readonly CheckBox _removeExisting = new CheckBox { Content = "Remove existing sample-line groups / cross sections for selected alignments before creating new ones", IsChecked = false };
             public bool Accepted { get; private set; }
+            public bool PickInsertionPointRequested { get; private set; }
             public BatchCrossSectionSettings Settings { get; private set; }
 
-            public BatchCrossSectionsWindow(List<AlignmentChoice> alignments, List<string> sampleStyles, List<string> labelStyles, List<string> sectionStyles, List<string> bandSets, List<SectionSourceChoice> surfaces, List<SectionSourceChoice> corridors, Document document)
+            public BatchCrossSectionsWindow(List<AlignmentChoice> alignments, List<string> sampleStyles, List<string> labelStyles, List<string> sectionStyles, List<string> bandSets, List<SectionSourceChoice> surfaces, List<SectionSourceChoice> corridors, Document document,
+                Point3d? overrideInsertion)
             {
                 _document = document;
                 Title = "CE Tools - Batch Cross Sections";
@@ -638,6 +766,7 @@ namespace CETools.Civil3D
                 AddRow(panel, "Sample-line group name prefix", _groupPrefix);
                 AddRow(panel, "Sample-line layer (created if missing)", _layer);
                 AddRow(panel, "Sample-line style", _sampleStyle, sampleStyles);
+                AddRow(panel, "Sample-line label style", _labelStyle, labelStyles);
                 AddRow(panel, "Sampling interval along alignment (m)", _interval);
                 AddRow(panel, "Left swath width (m)", _left);
                 AddRow(panel, "Right swath width (m)", _right);
@@ -666,28 +795,24 @@ namespace CETools.Civil3D
                 panel.Children.Add(_createSectionViews);
                 panel.Children.Add(_removeExisting);
                 panel.Children.Add(new TextBlock { Text = "Leave removal unchecked to keep existing sample lines and cross sections. When checked, existing sample-line groups for the selected alignments are erased before new groups are created.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,2,0,4) });
-                panel.Children.Add(new TextBlock { Text = "Start point is the TOP-LEFT insertion point. Alignment groups are placed left-to-right, then top-to-bottom in the order selected above.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,2,0,4) });
+                panel.Children.Add(new TextBlock { Text = "Start point is the TOP-LEFT insertion point. Generated sections are grouped by road and arranged left-to-right across each row, with clear space based on the actual section view dimensions.", TextWrapping = TextWrapping.Wrap, Margin = new Thickness(0,2,0,4) });
                 var pickPoint = new Button { Content = "Pick insertion point in drawing...", Margin = new Thickness(3), HorizontalAlignment = HorizontalAlignment.Left };
                 pickPoint.Click += (sender, args) =>
                 {
-                    Hide();
-                    try
-                    {
-                        var prompt = new Autodesk.AutoCAD.EditorInput.PromptPointOptions("\nSpecify top-left cross-section insertion point: ");
-                        var picked = _document.Editor.GetPoint(prompt);
-                        if (picked.Status == Autodesk.AutoCAD.EditorInput.PromptStatus.OK)
-                        {
-                            _x.Text = picked.Value.X.ToString("0.###", CultureInfo.CurrentCulture);
-                            _y.Text = picked.Value.Y.ToString("0.###", CultureInfo.CurrentCulture);
-                        }
-                    }
-                    finally { Show(); Activate(); }
+                    SaveDefaults();
+                    PickInsertionPointRequested = true;
+                    Accepted = false;
+                    Close();
                 };
                 panel.Children.Add(pickPoint);
                 AddRow(panel, "Top-left start point X", _x); AddRow(panel, "Top-left start point Y", _y);
-                AddRow(panel, "Alignment groups per row", _groupsPerRow);
-                AddRow(panel, "Horizontal spacing between alignment groups", _columnSpacing);
-                AddRow(panel, "Vertical spacing between rows", _rowSpacing);
+                panel.Children.Add(_groupByRoad);
+                panel.Children.Add(_addRoadTitles);
+                AddRow(panel, "Road groups per row", _groupsPerRow);
+                AddRow(panel, "Cross sections per row within each road", _sectionsPerRow);
+                AddRow(panel, "Horizontal spacing between road groups (m)", _columnSpacing);
+                AddRow(panel, "Horizontal gap between cross sections (m)", _sectionGap);
+                AddRow(panel, "Vertical clearance between rows (m)", _rowSpacing);
 
                 _sampleStyle.SelectedIndex = FindIndex(_sampleStyle, "Road Sample Line");
                 _labelStyle.SelectedIndex = FindIndex(_labelStyle, "Section Name");
@@ -696,6 +821,12 @@ namespace CETools.Civil3D
                 _fullRange.Checked += (s,e) => { _start.IsEnabled = false; _end.IsEnabled = false; };
                 _fullRange.Unchecked += (s,e) => { _start.IsEnabled = true; _end.IsEnabled = true; };
                 _start.IsEnabled = _end.IsEnabled = false;
+                LoadSavedDefaults();
+                if (overrideInsertion.HasValue)
+                {
+                    _x.Text = overrideInsertion.Value.X.ToString("0.###", CultureInfo.CurrentCulture);
+                    _y.Text = overrideInsertion.Value.Y.ToString("0.###", CultureInfo.CurrentCulture);
+                }
             }
 
             // The check marks mirror the actual ListBox selection. Ctrl/Shift on
@@ -747,6 +878,115 @@ namespace CETools.Civil3D
                 panel.Children.Add(list);
             }
 
+            private static readonly string DefaultsFile = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
+                "CE-TOOLS", "BatchCrossSections.defaults");
+
+            private void SaveDefaults()
+            {
+                try
+                {
+                    var values = new Dictionary<string, string>
+                    {
+                        { "GroupPrefix", _groupPrefix.Text }, { "Layer", _layer.Text },
+                        { "Interval", _interval.Text }, { "Left", _left.Text },
+                        { "Right", _right.Text }, { "Start", _start.Text }, { "End", _end.Text },
+                        { "X", _x.Text }, { "Y", _y.Text },
+                        { "Rows", _rowSpacing.Text }, { "Columns", _columnSpacing.Text },
+                        { "SectionGap", _sectionGap.Text },
+                        { "GroupsPerRow", _groupsPerRow.Text }, { "SectionsPerRow", _sectionsPerRow.Text },
+                        { "SampleStyle", _sampleStyle.Text }, { "SampleLabelStyle", _labelStyle.Text },
+                        { "SectionStyle", _sectionStyle.Text }, { "BandSet", _bandSet.Text },
+                        { "FullRange", _fullRange.IsChecked == true ? "1" : "0" },
+                        { "IncludeStart", _includeStart.IsChecked == true ? "1" : "0" },
+                        { "IncludeEnd", _includeEnd.IsChecked == true ? "1" : "0" },
+                        { "SourcesAll", _sampleSources.IsChecked == true ? "1" : "0" },
+                        { "SectionViews", _createSectionViews.IsChecked == true ? "1" : "0" },
+                        { "RemoveExisting", _removeExisting.IsChecked == true ? "1" : "0" },
+                        { "GroupByRoad", _groupByRoad.IsChecked == true ? "1" : "0" },
+                        { "Titles", _addRoadTitles.IsChecked == true ? "1" : "0" },
+                        { "Alignments", string.Join(";", _alignments.SelectedItems.Cast<AlignmentChoice>()
+                            .Select(x => Uri.EscapeDataString(x.Name))) },
+                        { "Surfaces", string.Join(";", _surfaces.SelectedItems.Cast<SectionSourceChoice>()
+                            .Select(x => Uri.EscapeDataString(x.Name))) },
+                        { "Corridors", string.Join(";", _corridors.SelectedItems.Cast<SectionSourceChoice>()
+                            .Select(x => Uri.EscapeDataString(x.Name))) }
+                    };
+                    Directory.CreateDirectory(Path.GetDirectoryName(DefaultsFile));
+                    File.WriteAllLines(DefaultsFile,
+                        values.Select(x => x.Key + "=" + Uri.EscapeDataString(x.Value ?? "")));
+                }
+                catch { /* Defaults must never block section generation. */ }
+            }
+
+            private void LoadSavedDefaults()
+            {
+                try
+                {
+                    if (!File.Exists(DefaultsFile)) return;
+                    var values = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+                    foreach (string line in File.ReadAllLines(DefaultsFile))
+                    {
+                        int equals = line.IndexOf('=');
+                        if (equals <= 0) continue;
+                        values[line.Substring(0, equals)] = Uri.UnescapeDataString(line.Substring(equals + 1));
+                    }
+                    Action<string, TextBox> text = (key, box) =>
+                    {
+                        string value;
+                        if (values.TryGetValue(key, out value)) box.Text = value;
+                    };
+                    Action<string, CheckBox> toggle = (key, box) =>
+                    {
+                        string value;
+                        if (values.TryGetValue(key, out value)) box.IsChecked = value == "1";
+                    };
+                    Action<string, ComboBox> choice = (key, box) =>
+                    {
+                        string value;
+                        if (values.TryGetValue(key, out value))
+                        {
+                            for (int i = 0; i < box.Items.Count; i++)
+                                if (string.Equals(box.Items[i] as string, value,
+                                        StringComparison.OrdinalIgnoreCase))
+                                { box.SelectedIndex = i; break; }
+                        }
+                    };
+                    text("GroupPrefix", _groupPrefix); text("Layer", _layer);
+                    text("Interval", _interval); text("Left", _left); text("Right", _right);
+                    text("Start", _start); text("End", _end);
+                    text("X", _x); text("Y", _y);
+                    text("Rows", _rowSpacing); text("Columns", _columnSpacing);
+                    text("SectionGap", _sectionGap);
+                    text("GroupsPerRow", _groupsPerRow); text("SectionsPerRow", _sectionsPerRow);
+                    choice("SampleStyle", _sampleStyle); choice("SampleLabelStyle", _labelStyle);
+                    choice("SectionStyle", _sectionStyle); choice("BandSet", _bandSet);
+                    toggle("FullRange", _fullRange); toggle("IncludeStart", _includeStart);
+                    toggle("IncludeEnd", _includeEnd); toggle("SourcesAll", _sampleSources);
+                    toggle("SectionViews", _createSectionViews); toggle("RemoveExisting", _removeExisting);
+                    toggle("GroupByRoad", _groupByRoad); toggle("Titles", _addRoadTitles);
+                    RestoreSelection(_alignments, values, "Alignments");
+                    RestoreSelection(_surfaces, values, "Surfaces");
+                    RestoreSelection(_corridors, values, "Corridors");
+                    _start.IsEnabled = _end.IsEnabled = _fullRange.IsChecked != true;
+                }
+                catch { }
+            }
+
+            private static void RestoreSelection(ListBox box, IDictionary<string, string> values, string key)
+            {
+                string saved;
+                if (!values.TryGetValue(key, out saved)) return;
+                var names = new HashSet<string>(saved.Split(new[] { ';' }, StringSplitOptions.RemoveEmptyEntries)
+                    .Select(Uri.UnescapeDataString), StringComparer.OrdinalIgnoreCase);
+                box.UnselectAll();
+                foreach (object item in box.Items)
+                {
+                    string name = item == null ? null : item.ToString();
+                    if (name != null && names.Contains(name)) box.SelectedItems.Add(item);
+                }
+            }
+
             private static TextBox Field(string value) => new TextBox { Text = value, MinWidth = 80, Margin = new Thickness(3) };
             private static void AddHeader(Panel panel, string text) => panel.Children.Add(new TextBlock { Text = text, FontWeight = FontWeights.Bold, FontSize = 15, Margin = new Thickness(0, 14, 0, 5) });
             private static int FindIndex(ComboBox box, string desired)
@@ -764,17 +1004,24 @@ namespace CETools.Civil3D
             private static void AddRow(Panel panel, string label, ComboBox box, List<string> choices)
             {
                 foreach (string name in choices) box.Items.Add(name);
+                if (choices.Count == 0)
+                {
+                    box.IsEditable = true;
+                    box.ToolTip = "No styles discovered in this drawing. Enter an existing Civil 3D style name, or check the drawing style collections.";
+                }
                 AddRow(panel,label,(Control)box);
             }
             private void OnAccept(object sender, RoutedEventArgs e)
             {
-                double interval, left, right, start, end, x, y, spacing, columnSpacing;
+                double interval, left, right, start, end, x, y, spacing, columnSpacing, sectionGap;
                 int groupsPerRow;
                 if (_alignments.SelectedItems.Count == 0) { MessageBox.Show(this, "Select at least one alignment."); return; }
                 if (!TryReadPositive(_interval,out interval) || !TryReadPositive(_left,out left) || !TryReadPositive(_right,out right) ||
                     !TryReadPositive(_rowSpacing,out spacing) ||
                     !TryReadPositive(_columnSpacing,out columnSpacing) ||
+                    !TryReadPositive(_sectionGap,out sectionGap) ||
                     !int.TryParse(_groupsPerRow.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out groupsPerRow) || groupsPerRow < 1 ||
+                    !int.TryParse(_sectionsPerRow.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out _sectionsCount) || _sectionsCount < 1 ||
                     !double.TryParse(_x.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out x) ||
                     !double.TryParse(_y.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out y))
                 { MessageBox.Show(this, "Interval, swath widths and horizontal/vertical spacing must be positive; groups per row must be a positive whole number; insertion coordinates must be numeric."); return; }
@@ -791,10 +1038,10 @@ namespace CETools.Civil3D
                     Corridors = _corridors.SelectedItems.Cast<SectionSourceChoice>().ToList(),
                     GroupNamePrefix = _groupPrefix.Text,
                     SampleLineLayer = _layer.Text,
-                    SampleLineStyle = _sampleStyle.SelectedItem as string,
-                    SampleLineLabelStyle = _labelStyle.SelectedItem as string,
-                    SectionViewStyle = _sectionStyle.SelectedItem as string,
-                    BandSetStyle = _bandSet.SelectedItem as string,
+                    SampleLineStyle = _sampleStyle.SelectedItem as string ?? _sampleStyle.Text,
+                    SampleLineLabelStyle = _labelStyle.SelectedItem as string ?? _labelStyle.Text,
+                    SectionViewStyle = _sectionStyle.SelectedItem as string ?? _sectionStyle.Text,
+                    BandSetStyle = _bandSet.SelectedItem as string ?? _bandSet.Text,
                     Interval = interval, LeftWidth = left, RightWidth = right,
                     StartStation = start, EndStation = end,
                     UseFullRange = _fullRange.IsChecked == true,
@@ -803,8 +1050,11 @@ namespace CETools.Civil3D
                     CreateSectionViews = _createSectionViews.IsChecked == true,
                     RemoveExisting = _removeExisting.IsChecked == true,
                     InsertX = x, InsertY = y, RowSpacing = spacing,
-                    ColumnSpacing = columnSpacing, GroupsPerRow = groupsPerRow
+                    ColumnSpacing = columnSpacing, SectionGap = sectionGap, GroupsPerRow = groupsPerRow,
+                    SectionsPerRow = _sectionsCount,
+                    GroupByRoad = _groupByRoad.IsChecked == true, AddRoadTitles = _addRoadTitles.IsChecked == true
                 };
+                SaveDefaults();
                 Accepted = true; Close();
             }
         }
