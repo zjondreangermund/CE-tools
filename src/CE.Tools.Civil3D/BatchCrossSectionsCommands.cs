@@ -701,7 +701,7 @@ namespace CETools.Civil3D
 
         private sealed class BatchCrossSectionsWindow : Window
         {
-            private readonly ListBox _alignments = new ListBox { SelectionMode = SelectionMode.Extended, MinHeight = 130, MaxHeight = 220 };
+            private readonly ListBox _alignments = new ListBox { SelectionMode = System.Windows.Controls.SelectionMode.Extended, MinHeight = 130, MaxHeight = 220 };
             private readonly TextBox _groupPrefix = Field("SL Collection");
             private readonly TextBox _interval = Field("10");
             private readonly TextBox _left = Field("10");
@@ -728,8 +728,8 @@ namespace CETools.Civil3D
             private readonly CheckBox _includeStart = new CheckBox { Content = "Include range start", IsChecked = true };
             private readonly CheckBox _includeEnd = new CheckBox { Content = "Include range end", IsChecked = true };
             private readonly CheckBox _sampleSources = new CheckBox { Content = "Enable all available section sources", IsChecked = true };
-            private readonly ListBox _surfaces = new ListBox { SelectionMode = SelectionMode.Extended, MinHeight = 100, MaxHeight = 205 };
-            private readonly ListBox _corridors = new ListBox { SelectionMode = SelectionMode.Extended, MinHeight = 100, MaxHeight = 205 };
+            private readonly ListBox _surfaces = new ListBox { SelectionMode = System.Windows.Controls.SelectionMode.Extended, MinHeight = 100, MaxHeight = 205 };
+            private readonly ListBox _corridors = new ListBox { SelectionMode = System.Windows.Controls.SelectionMode.Extended, MinHeight = 100, MaxHeight = 205 };
             private readonly CheckBox _createSectionViews = new CheckBox { Content = "Run cross sections (create section views)", IsChecked = true };
             private readonly CheckBox _removeExisting = new CheckBox { Content = "Remove existing sample-line groups / cross sections for selected alignments before creating new ones", IsChecked = false };
             public bool Accepted { get; private set; }
@@ -834,7 +834,7 @@ namespace CETools.Civil3D
             // rows remains the native WPF extended-selection behavior.
             private static void ConfigureCheckableList(ListBox list)
             {
-                list.SelectionMode = SelectionMode.Extended;
+                list.SelectionMode = System.Windows.Controls.SelectionMode.Extended;
                 list.HorizontalContentAlignment = HorizontalAlignment.Stretch;
                 var factory = new FrameworkElementFactory(typeof(CheckBox));
                 factory.SetBinding(CheckBox.ContentProperty, new Binding("Name"));
