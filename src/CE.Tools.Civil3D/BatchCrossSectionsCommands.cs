@@ -216,7 +216,7 @@ namespace CETools.Civil3D
                 {
                     int arranged = SectionViewManagementCommands.ArrangeGeneratedByRoad(
                         doc, oldSectionViews, basePoint, s.SectionsPerRow, s.GroupsPerRow,
-                        s.ColumnSpacing, s.RowSpacing, s.AddRoadTitles);
+                        s.SectionGap, s.RowSpacing, s.ColumnSpacing, s.AddRoadTitles);
                     doc.Editor.WriteMessage("\nCE_BATCHCROSSSECTIONS: arranged {0} new section views in road groups.", arranged);
                 }
                 catch (System.Exception ex) { failures.Add("Road group arrangement: " + ex.Message); }
@@ -691,7 +691,7 @@ namespace CETools.Civil3D
             public List<AlignmentChoice> Alignments;
             public List<SectionSourceChoice> Surfaces, Corridors;
             public string GroupNamePrefix, SampleLineLayer, SampleLineStyle, SampleLineLabelStyle, SectionViewStyle, BandSetStyle;
-            public double Interval, LeftWidth, RightWidth, StartStation, EndStation, InsertX, InsertY, RowSpacing, ColumnSpacing;
+            public double Interval, LeftWidth, RightWidth, StartStation, EndStation, InsertX, InsertY, RowSpacing, ColumnSpacing, SectionGap;
             public int GroupsPerRow;
             public bool UseFullRange, IncludeStart, IncludeEnd, SampleAllAvailableSources, CreateSectionViews, RemoveExisting;
             public bool GroupByRoad, AddRoadTitles;
@@ -713,6 +713,7 @@ namespace CETools.Civil3D
             private readonly Document _document;
             private readonly TextBox _rowSpacing = Field("100");
             private readonly TextBox _columnSpacing = Field("200");
+            private readonly TextBox _sectionGap = Field("10");
             private readonly TextBox _groupsPerRow = Field("3");
             private readonly TextBox _sectionsPerRow = Field("3");
             private readonly CheckBox _groupByRoad = new CheckBox { Content = "Group all new cross sections by ROAD alignment", IsChecked = true };
@@ -809,7 +810,8 @@ namespace CETools.Civil3D
                 panel.Children.Add(_addRoadTitles);
                 AddRow(panel, "Road groups per row", _groupsPerRow);
                 AddRow(panel, "Cross sections per row within each road", _sectionsPerRow);
-                AddRow(panel, "Horizontal clearance between cross sections (m)", _columnSpacing);
+                AddRow(panel, "Horizontal spacing between road groups (m)", _columnSpacing);
+                AddRow(panel, "Horizontal gap between cross sections (m)", _sectionGap);
                 AddRow(panel, "Vertical clearance between rows (m)", _rowSpacing);
 
                 _sampleStyle.SelectedIndex = FindIndex(_sampleStyle, "Road Sample Line");
@@ -891,6 +893,7 @@ namespace CETools.Civil3D
                         { "Right", _right.Text }, { "Start", _start.Text }, { "End", _end.Text },
                         { "X", _x.Text }, { "Y", _y.Text },
                         { "Rows", _rowSpacing.Text }, { "Columns", _columnSpacing.Text },
+                        { "SectionGap", _sectionGap.Text },
                         { "GroupsPerRow", _groupsPerRow.Text }, { "SectionsPerRow", _sectionsPerRow.Text },
                         { "SampleStyle", _sampleStyle.Text }, { "SampleLabelStyle", _labelStyle.Text },
                         { "SectionStyle", _sectionStyle.Text }, { "BandSet", _bandSet.Text },
@@ -954,6 +957,7 @@ namespace CETools.Civil3D
                     text("Start", _start); text("End", _end);
                     text("X", _x); text("Y", _y);
                     text("Rows", _rowSpacing); text("Columns", _columnSpacing);
+                    text("SectionGap", _sectionGap);
                     text("GroupsPerRow", _groupsPerRow); text("SectionsPerRow", _sectionsPerRow);
                     choice("SampleStyle", _sampleStyle); choice("SampleLabelStyle", _labelStyle);
                     choice("SectionStyle", _sectionStyle); choice("BandSet", _bandSet);
@@ -1009,12 +1013,13 @@ namespace CETools.Civil3D
             }
             private void OnAccept(object sender, RoutedEventArgs e)
             {
-                double interval, left, right, start, end, x, y, spacing, columnSpacing;
+                double interval, left, right, start, end, x, y, spacing, columnSpacing, sectionGap;
                 int groupsPerRow;
                 if (_alignments.SelectedItems.Count == 0) { MessageBox.Show(this, "Select at least one alignment."); return; }
                 if (!TryReadPositive(_interval,out interval) || !TryReadPositive(_left,out left) || !TryReadPositive(_right,out right) ||
                     !TryReadPositive(_rowSpacing,out spacing) ||
                     !TryReadPositive(_columnSpacing,out columnSpacing) ||
+                    !TryReadPositive(_sectionGap,out sectionGap) ||
                     !int.TryParse(_groupsPerRow.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out groupsPerRow) || groupsPerRow < 1 ||
                     !int.TryParse(_sectionsPerRow.Text, NumberStyles.Integer, CultureInfo.CurrentCulture, out _sectionsCount) || _sectionsCount < 1 ||
                     !double.TryParse(_x.Text, NumberStyles.Float, CultureInfo.CurrentCulture, out x) ||
@@ -1045,7 +1050,7 @@ namespace CETools.Civil3D
                     CreateSectionViews = _createSectionViews.IsChecked == true,
                     RemoveExisting = _removeExisting.IsChecked == true,
                     InsertX = x, InsertY = y, RowSpacing = spacing,
-                    ColumnSpacing = columnSpacing, GroupsPerRow = groupsPerRow,
+                    ColumnSpacing = columnSpacing, SectionGap = sectionGap, GroupsPerRow = groupsPerRow,
                     SectionsPerRow = _sectionsCount,
                     GroupByRoad = _groupByRoad.IsChecked == true, AddRoadTitles = _addRoadTitles.IsChecked == true
                 };
