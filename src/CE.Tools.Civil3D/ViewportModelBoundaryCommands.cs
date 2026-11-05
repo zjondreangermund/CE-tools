@@ -29,6 +29,22 @@ namespace CETools.Civil3D
             Editor editor = document.Editor;
             Database database = document.Database;
 
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Model Space Viewport Boundaries",
+                "Create the model-space footprint of one current paper-space viewport, every paper-space tab, or selected layout tabs. All viewport boundaries are drawn on CE-VP-BOUNDARY.");
+            settings.AddChoice("Scope", "01 Layouts", "Viewport boundary scope", "All paper-space tabs",
+                "Choose one viewport on the active layout, all paper-space layout tabs, or selected layout tabs (multiple viewports per tab are included).",
+                new[] { "Current selected viewport", "All paper-space tabs", "Selected paper-space tabs" });
+            settings.AddChoice("Zoom", "02 Model space", "Zoom in model space", "Zoom to all new boundaries",
+                "Zoom to all created boundaries, or retain the current model-space view.",
+                new[] { "Zoom to all new boundaries", "Keep current model view" });
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+            if (settings.Text("Scope") != "Current selected viewport")
+            {
+                CreateLayoutViewportBoundaries(document, settings);
+                return;
+            }
+
             if (database.TileMode)
             {
                 editor.WriteMessage("\nCE_VIEWPORTBOUNDARY: switch to a layout and select the paper-space viewport you want to plot in model space.");
@@ -125,6 +141,203 @@ namespace CETools.Civil3D
             }
 
             editor.WriteMessage("\nCE_VIEWPORTBOUNDARY: viewport boundary created on layer '{0}' and model space zoomed to it.", BoundaryLayerName);
+        }
+
+        private sealed class LayoutTabInfo
+        {
+            internal ObjectId LayoutId;
+            internal ObjectId BlockId;
+            internal string Name;
+            internal int Order;
+        }
+
+        private static List<LayoutTabInfo> GetPaperLayouts(Database database)
+        {
+            var layouts = new List<LayoutTabInfo>();
+            using (Transaction transaction = database.TransactionManager.StartTransaction())
+            {
+                DBDictionary dictionary = transaction.GetObject(database.LayoutDictionaryId, OpenMode.ForRead) as DBDictionary;
+                if (dictionary == null) return layouts;
+                foreach (DBDictionaryEntry entry in dictionary)
+                {
+                    Layout layout = transaction.GetObject(entry.Value, OpenMode.ForRead, false) as Layout;
+                    if (layout == null || layout.ModelType) continue;
+                    layouts.Add(new LayoutTabInfo {
+                        LayoutId = entry.Value, BlockId = layout.BlockTableRecordId,
+                        Name = layout.LayoutName, Order = layout.TabOrder });
+                }
+            }
+            return layouts.OrderBy(item => item.Order).ThenBy(item => item.Name, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        private sealed class LayoutTabSelectionDialog : System.Windows.Window
+        {
+            private readonly Dictionary<string, System.Windows.Controls.CheckBox> checkboxes =
+                new Dictionary<string, System.Windows.Controls.CheckBox>(StringComparer.OrdinalIgnoreCase);
+            internal HashSet<string> Selected { get; private set; }
+            internal LayoutTabSelectionDialog(IEnumerable<LayoutTabInfo> layouts)
+            {
+                Title = "CE Tools - Select Paper Space Layout Tabs";
+                Width = 520; Height = 570; MinWidth = 420; MinHeight = 360;
+                WindowStartupLocation = System.Windows.WindowStartupLocation.CenterScreen;
+                Background = new System.Windows.Media.SolidColorBrush(
+                    System.Windows.Media.Color.FromRgb(15, 19, 27));
+                Foreground = System.Windows.Media.Brushes.White;
+                var root = new System.Windows.Controls.DockPanel { Margin = new System.Windows.Thickness(16) };
+                Content = root;
+                var footer = new System.Windows.Controls.StackPanel {
+                    Orientation = System.Windows.Controls.Orientation.Horizontal,
+                    HorizontalAlignment = System.Windows.HorizontalAlignment.Right,
+                    Margin = new System.Windows.Thickness(0, 12, 0, 0)
+                };
+                System.Windows.Controls.DockPanel.SetDock(footer, System.Windows.Controls.Dock.Bottom);
+                root.Children.Add(footer);
+                var tickAll = new System.Windows.Controls.Button {
+                    Content = "Tick all", Padding = new System.Windows.Thickness(12, 5, 12, 5),
+                    Margin = new System.Windows.Thickness(0, 0, 8, 0) };
+                var clear = new System.Windows.Controls.Button {
+                    Content = "Clear", Padding = new System.Windows.Thickness(12, 5, 12, 5),
+                    Margin = new System.Windows.Thickness(0, 0, 8, 0) };
+                var confirm = new System.Windows.Controls.Button {
+                    Content = "Create selected boundaries", Padding = new System.Windows.Thickness(12, 5, 12, 5),
+                    Margin = new System.Windows.Thickness(0, 0, 8, 0), IsDefault = true };
+                var cancel = new System.Windows.Controls.Button {
+                    Content = "Cancel", Padding = new System.Windows.Thickness(12, 5, 12, 5), IsCancel = true };
+                footer.Children.Add(tickAll); footer.Children.Add(clear);
+                footer.Children.Add(confirm); footer.Children.Add(cancel);
+                var title = new System.Windows.Controls.TextBlock {
+                    Text = "Choose the paper-space tabs to project into model space",
+                    Foreground = System.Windows.Media.Brushes.White,
+                    FontWeight = System.Windows.FontWeights.SemiBold, FontSize = 17,
+                    Margin = new System.Windows.Thickness(0, 0, 0, 12) };
+                System.Windows.Controls.DockPanel.SetDock(title, System.Windows.Controls.Dock.Top);
+                root.Children.Add(title);
+                var scroll = new System.Windows.Controls.ScrollViewer {
+                    VerticalScrollBarVisibility = System.Windows.Controls.ScrollBarVisibility.Auto };
+                var entries = new System.Windows.Controls.StackPanel();
+                scroll.Content = entries;
+                root.Children.Add(scroll);
+                foreach (LayoutTabInfo layout in layouts)
+                {
+                    var checkbox = new System.Windows.Controls.CheckBox {
+                        Content = layout.Name, IsChecked = true,
+                        Foreground = System.Windows.Media.Brushes.White,
+                        Margin = new System.Windows.Thickness(4, 7, 4, 7),
+                        FontSize = 14 };
+                    checkboxes[layout.Name] = checkbox;
+                    entries.Children.Add(checkbox);
+                }
+                tickAll.Click += (sender, args) => {
+                    foreach (var check in checkboxes.Values) check.IsChecked = true; };
+                clear.Click += (sender, args) => {
+                    foreach (var check in checkboxes.Values) check.IsChecked = false; };
+                confirm.Click += (sender, args) => {
+                    Selected = new HashSet<string>(checkboxes
+                        .Where(item => item.Value.IsChecked == true)
+                        .Select(item => item.Key), StringComparer.OrdinalIgnoreCase);
+                    if (Selected.Count == 0)
+                    {
+                        System.Windows.MessageBox.Show("Select at least one paper-space tab.",
+                            "CE Tools - No layout selected");
+                        return;
+                    }
+                    DialogResult = true;
+                    Close();
+                };
+                cancel.Click += (sender, args) => { DialogResult = false; Close(); };
+            }
+        }
+
+        private static void CreateLayoutViewportBoundaries(Document document, ProductionSettingsDialogModel settings)
+        {
+            Database database = document.Database;
+            Editor editor = document.Editor;
+            List<LayoutTabInfo> layouts = GetPaperLayouts(database);
+            if (layouts.Count == 0)
+            {
+                editor.WriteMessage("\\nCE_VIEWPORTBOUNDARY: no paper-space layout tabs found.");
+                return;
+            }
+            if (settings.Text("Scope") == "Selected paper-space tabs")
+            {
+                var window = new LayoutTabSelectionDialog(layouts);
+                Autodesk.AutoCAD.ApplicationServices.Core.Application.ShowModalWindow(window);
+                if (window.DialogResult != true || window.Selected == null) return;
+                layouts = layouts.Where(layout => window.Selected.Contains(layout.Name)).ToList();
+            }
+            var allPoints = new List<Point3d>();
+            var ids = new List<ObjectId>();
+            int ignored = 0, invalid = 0;
+            try
+            {
+                using (DocumentLock documentLock = document.LockDocument())
+                using (Transaction transaction = database.TransactionManager.StartTransaction())
+                {
+                    ObjectId layerId = EnsureLayer(database, transaction);
+                    BlockTableRecord modelSpace = transaction.GetObject(
+                        SymbolUtilityServices.GetBlockModelSpaceId(database),
+                        OpenMode.ForWrite, false) as BlockTableRecord;
+                    if (modelSpace == null) return;
+                    foreach (LayoutTabInfo layout in layouts)
+                    {
+                        BlockTableRecord paperSpace = transaction.GetObject(
+                            layout.BlockId, OpenMode.ForRead, false) as BlockTableRecord;
+                        if (paperSpace == null) { invalid++; continue; }
+                        foreach (ObjectId id in paperSpace)
+                        {
+                            Viewport viewport = transaction.GetObject(id, OpenMode.ForRead, false) as Viewport;
+                            if (viewport == null) continue;
+                            // Number=1 is the overall paper-space viewport, not a model view.
+                            if (viewport.Number == 1 || viewport.PerspectiveOn)
+                            { ignored++; continue; }
+                            try
+                            {
+                                List<Point2d> paper = ReadPaperBoundary(viewport, transaction);
+                                if (paper.Count < 3) { invalid++; continue; }
+                                List<Point3d> model = paper.Select(point => PaperPointToModel(point, viewport)).ToList();
+                                RemoveConsecutiveDuplicates(model);
+                                if (model.Count < 3 || model.Any(p => double.IsNaN(p.X) || double.IsNaN(p.Y)))
+                                { invalid++; continue; }
+                                Entity boundary = CreateBoundaryEntity(model);
+                                boundary.SetDatabaseDefaults(database);
+                                boundary.LayerId = layerId;
+                                modelSpace.AppendEntity(boundary);
+                                transaction.AddNewlyCreatedDBObject(boundary, true);
+                                WriteViewportLink(boundary, viewport.Handle.ToString(), transaction);
+                                ids.Add(boundary.ObjectId);
+                                allPoints.AddRange(model);
+                            }
+                            catch { invalid++; }
+                        }
+                    }
+                    transaction.Commit();
+                }
+            }
+            catch (System.Exception error)
+            {
+                editor.WriteMessage("\\nCE_VIEWPORTBOUNDARY failed; no new boundaries committed: {0}", error.Message);
+                return;
+            }
+            if (ids.Count == 0)
+            {
+                editor.WriteMessage("\\nCE_VIEWPORTBOUNDARY: no usable non-perspective model viewports found in {0} layout tabs.", layouts.Count);
+                return;
+            }
+            try
+            {
+                AcApplication.SetSystemVariable("TILEMODE", 1);
+                editor.Regen();
+                if (settings.Text("Zoom") == "Zoom to all new boundaries")
+                    ZoomToPoints(editor, allPoints);
+            }
+            catch (System.Exception error)
+            {
+                editor.WriteMessage("\\nBoundaries were created, but model-space switch/zoom could not complete: {0}", error.Message);
+            }
+            try { editor.SetImpliedSelection(ids.ToArray()); } catch { }
+            editor.WriteMessage(
+                "\\nCE_VIEWPORTBOUNDARY: created {0} model-space boundaries from {1} paper-space tabs on layer '{2}'. Skipped {3} overall/perspective and {4} invalid viewports.",
+                ids.Count, layouts.Count, BoundaryLayerName, ignored, invalid);
         }
 
         private static List<Point2d> ReadPaperBoundary(Viewport viewport, Transaction transaction)
