@@ -56,8 +56,8 @@ for title, passed in checks.items():
     print("PASS:", title)
 
 actions = re.findall(r'A\("(\d+)\.[^"]+","(CE_[A-Z0-9_]+)".*?"(\d+) Final Road Production"\)', seq)
-if len(actions) != 56: raise AssertionError("Expected 56 final Road sequence steps; got " + str(len(actions)))
-if [int(x[0]) for x in actions] != list(range(1, 57)):
+if len(actions) != 58: raise AssertionError("Expected 58 final Road sequence steps; got " + str(len(actions)))
+if [int(x[0]) for x in actions] != list(range(1, 59)):
     raise AssertionError("Final Road sequence numbering must be contiguous")
 ordered = [x[1] for x in actions]
 for before, after in (("CE_ALIGNLABELSETMULTI", "CE_ROADNAMES"),
