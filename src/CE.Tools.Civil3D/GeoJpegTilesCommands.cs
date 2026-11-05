@@ -173,6 +173,10 @@ namespace CETools.Civil3D
                 world.C = ul.X + 0.5 * (world.A + world.B);
                 world.F = ul.Y + 0.5 * (world.D + world.E);
                 world.Validate();
+                if (Math.Abs(world.A * world.B + world.D * world.E) /
+                    (Math.Sqrt(world.A * world.A + world.D * world.D) *
+                     Math.Sqrt(world.B * world.B + world.E * world.E)) > 0.000001)
+                    throw new InvalidDataException("The selected image corners are not perpendicular in the DWG. An affine image shear cannot be represented by a regular AutoCAD raster. Rectify it in GIS before using it.");
                 world.Write(worldPath);
                 doc.Editor.WriteMessage(
                     "\nCE_GEOIMAGECALIBRATE: JGW saved at {0}. Verify remaining control points and source licensing. Calibration alone does not make non-orthorectified imagery survey accurate.",
@@ -354,6 +358,13 @@ namespace CETools.Civil3D
                     Vector3d v = world.Vertical(height);
                     if (u.Length < 0.000001 || v.Length < 0.000001)
                         throw new InvalidDataException("Invalid world-file pixel dimensions for " + Path.GetFileName(file));
+                    // AutoCAD's raster orientation represents scaled/rotated
+                    // rectangular axes. A sheared affine grid needs a raster
+                    // reprojection/warp in GIS before it can be drawn faithfully.
+                    if (Math.Abs(u.DotProduct(v)) / (u.Length * v.Length) > 0.000001)
+                        throw new InvalidDataException("Image has a sheared JGW transform: " +
+                            Path.GetFileName(file) + ". Reproject/rectify it in GIS to an orthogonal pixel grid first.");
+
                     string name = "CE-ORTHO-" + Guid.NewGuid().ToString("N");
                     var definition = new RasterImageDef { SourceFileName = file };
                     definition.Load();
