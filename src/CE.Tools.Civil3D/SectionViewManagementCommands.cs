@@ -12,6 +12,7 @@ using Autodesk.AutoCAD.Runtime;
 using Autodesk.Civil.DatabaseServices;
 using Autodesk.Civil.ApplicationServices;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+using Section = Autodesk.Civil.DatabaseServices.Section;
 
 [assembly: CommandClass(typeof(CETools.Civil3D.SectionViewManagementCommands))]
 namespace CETools.Civil3D
