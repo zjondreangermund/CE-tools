@@ -355,8 +355,11 @@ namespace CETools.Civil3D
                 new[] { "ON", "OFF" });
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
             PromptEntityOptions opt = new PromptEntityOptions("\nSelect SOURCE cross-section view: ");
-            opt.AddAllowedClass(typeof(SectionView), true);
+            // AutoCAD requires SetRejectMessage to precede AddAllowedClass.
+            // Reversing these calls throws InvalidOperationException before
+            // the SOURCE view can be selected (SetRejectMessage first).
             opt.SetRejectMessage("\nSelect a Civil 3D section view.");
+            opt.AddAllowedClass(typeof(SectionView), true);
             PromptEntityResult sourcePick = doc.Editor.GetEntity(opt);
             if (sourcePick.Status != PromptStatus.OK) return;
             List<ViewInfo> targets = ChooseViews(doc, settings.Text("Scope"), views)
