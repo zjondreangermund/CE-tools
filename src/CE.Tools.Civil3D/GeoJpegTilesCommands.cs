@@ -328,7 +328,7 @@ namespace CETools.Civil3D
             return outputs;
         }
 
-        private static void InsertAll(Document document, IList<string> images, bool zoom)
+        internal static void InsertAll(Document document, IList<string> images, bool zoom)
         {
             if (images.Count > MaximumTiles)
                 throw new InvalidOperationException("Maximum " + MaximumTiles + " tiles per insertion. Divide large sets into batches.");
