@@ -80,7 +80,7 @@ namespace CETools.Civil3D
                     throw new InvalidOperationException("Enter a WMS aerial imagery layer from the provider's GetCapabilities listing.");
                 if (epsg.Length == 0 || !epsg.All(char.IsDigit)
                     || !int.TryParse(epsg, NumberStyles.None, CultureInfo.InvariantCulture, out int code)
-                    || code < 2000)
+                    || code < 2000 || (code >= 4000 && code < 5000))
                     throw new InvalidOperationException("Enter the drawing's verified projected EPSG code (digits only, e.g. from your Civil 3D drawing coordinate system).");
                 if (doc.Database.TileMode == false)
                     throw new InvalidOperationException("Switch to Model space before selecting the aerial image area.");
@@ -103,6 +103,8 @@ namespace CETools.Civil3D
                     throw new InvalidOperationException("Selected image area must have nonzero width and height.");
                 double resolution = double.Parse(settings.Text("Resolution"), CultureInfo.InvariantCulture);
                 int tilePixels = int.Parse(settings.Text("TilePixels"), CultureInfo.InvariantCulture);
+                if (width / resolution > 130000000.0 || height / resolution > 130000000.0)
+                    throw new InvalidOperationException("The requested image is too large. Select a smaller area or coarser resolution.");
                 int fullWidth = (int)Math.Ceiling(width / resolution);
                 int fullHeight = (int)Math.Ceiling(height / resolution);
                 if (fullWidth < 1 || fullHeight < 1 ||
@@ -205,6 +207,8 @@ namespace CETools.Civil3D
             request.Accept = "image/jpeg";
             request.UserAgent = "CE Tools Civil3D Aerial WMS/1.0";
             request.AllowAutoRedirect = false; // do not redirect credentials
+            try
+            {
             using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
             {
                 if (response.StatusCode != HttpStatusCode.OK)
@@ -237,6 +241,14 @@ namespace CETools.Civil3D
                     }
                     return data;
                 }
+            }
+            }
+            catch (WebException ex)
+            {
+                // Do not surface the full request URL; WMS service URLs can
+                // contain access tokens and private API credentials.
+                throw new IOException("WMS request failed (" + ex.Status +
+                    "). Verify the service, layer, EPSG and provider access rights.");
             }
         }
     }
