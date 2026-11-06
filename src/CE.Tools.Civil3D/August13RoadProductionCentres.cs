@@ -17,6 +17,7 @@ namespace CETools.Civil3D
    {
     A("CE-Road Settings","CE_ROADSETTINGSCENTRE","Road-only project and Civil 3D settings.","01 Road Production"),
     A("CE-Road Layout Production","CE_ROADLAYOUTPRODUCTIONCENTRE","Road reserve geometry, junctions, annotation and setting-out.","01 Road Production"),
+    A("CE-Aerial Imagery from Selected Area","CE_AERIALAREA","Pick an area in Civil 3D, request permitted WMS aerial photos, generate JPEG/JGW tiles and insert them at drawing coordinates.","01 Road Production"),
     A("CE-Georeferenced JPEG Tiles","CE_GEOIMAGETILES","Create high-quality JPEG tiles from licensed georeferenced imagery and insert correctly scaled and oriented using JGW files.","01 Road Production"),
     A("CE-Insert Georeferenced JPEGs","CE_GEOIMAGEINSERT","Attach existing georeferenced JPEG tiles to model space using their six-parameter world files.","01 Road Production"),
     A("CE-Calibrate JPEG from Control Points","CE_GEOIMAGECALIBRATE","Georeference a locally saved authorized JPG using three accurately surveyed drawing corner positions.","01 Road Production"),
@@ -48,6 +49,7 @@ namespace CETools.Civil3D
     A("CE-Multiple Horizontal Centreline Curves","CE_ROUTEHORIZONTALCURVES","Apply specified tangent curve radii to multiple road/route centreline polylines.","03 Geometry"),
     A("CE-Road Offsets","CE_ROADOFFSET","Create road offsets.","03 Geometry"),
     A("CE-Batch Polyline Offsets","CE_POLYLINEOFFSET","Offset all model-space or multiple selected 2D polylines left, right or both ways without changing originals.","03 Geometry"),
+    A("CE-Aerial Imagery from Selected Area","CE_AERIALAREA","Pick a model-space rectangle and retrieve licensed WMS aerial imagery, precisely georeferenced and automatically attached.","03 Geometry"),
     A("CE-Georeferenced JPEG Tiles","CE_GEOIMAGETILES","Split authorized georeferenced JPEGs into image tiles with accurately calculated JGW world files, then attach them.","03 Geometry"),
     A("CE-Insert Georeferenced JPEGs","CE_GEOIMAGEINSERT","Insert one or more already georeferenced JPEGs or orthophoto tiles onto CE-AERIAL-IMAGERY.","03 Geometry"),
     A("CE-Calibrate JPEG from Control Points","CE_GEOIMAGECALIBRATE","Create a six-coefficient JGW using three image corner coordinates picked from the drawing.","03 Geometry"),
