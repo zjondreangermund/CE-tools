@@ -797,7 +797,8 @@ namespace CETools.Civil3D
             catch { return false; }
         }
 
-        private static bool EnsurePipeReferenceAlignment(            Database database,
+        private static bool EnsurePipeReferenceAlignment(
+            Database database,
             ObjectId pipeId,
             ObjectId alignmentId)
         {
