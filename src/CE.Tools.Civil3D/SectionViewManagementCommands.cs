@@ -47,8 +47,14 @@ namespace CETools.Civil3D
                     catch { continue; }
                     string name = view.Name ?? string.Empty;
                     string road = RoadName(name);
-                    string sampleName = ResolveSampleLineName(tr, view);
-                    if (!string.IsNullOrEmpty(sampleName)) road = RoadName(sampleName);
+                    string alignmentRoad = ResolveSectionViewRoad(tr, view);
+                    if (!string.IsNullOrEmpty(RoadNumber(alignmentRoad))) road = alignmentRoad;
+                    else
+                    {
+                        string sampleName = ResolveSampleLineName(tr, view);
+                        if (!string.IsNullOrEmpty(RoadNumber(sampleName)))
+                            road = RoadName(sampleName);
+                    }
                     result.Add(new ViewInfo { Id = id, Name = name, Road = road,
                         Lower = bounds.MinPoint, Upper = bounds.MaxPoint });
                 }
@@ -224,6 +230,48 @@ namespace CETools.Civil3D
                 tr.Commit();
             }
             return moved;
+        }
+
+        private static string ResolveSectionViewRoad(Transaction tr, SectionView view)
+        {
+            // A section view is usually named only by station. Its sample
+            // line belongs to a SampleLineGroup whose parent is a ROAD
+            // alignment. Always prefer this provenance over matching the
+            // station text or guessing a nearby road's name.
+            try
+            {
+                SampleLine sample = tr.GetObject(view.SampleLineId,
+                    OpenMode.ForRead, false) as SampleLine;
+                if (sample == null) return string.Empty;
+                ObjectId groupId = ObjectId.Null;
+                foreach (string key in new[] { "GroupId", "SampleLineGroupId" })
+                {
+                    PropertyInfo property = sample.GetType().GetProperty(key);
+                    if (property == null) continue;
+                    object value = property.GetValue(sample, null);
+                    if (value is ObjectId) groupId = (ObjectId)value;
+                    if (!groupId.IsNull) break;
+                }
+                if (groupId.IsNull) return string.Empty;
+                DBObject group = tr.GetObject(groupId, OpenMode.ForRead, false);
+                foreach (string key in new[] { "ParentAlignmentId", "AlignmentId", "ParentEntityId" })
+                {
+                    PropertyInfo property = group.GetType().GetProperty(key);
+                    if (property == null) continue;
+                    object value = property.GetValue(group, null);
+                    if (!(value is ObjectId)) continue;
+                    ObjectId alignmentId = (ObjectId)value;
+                    if (alignmentId.IsNull) continue;
+                    DBObject alignment = tr.GetObject(alignmentId, OpenMode.ForRead, false);
+                    PropertyInfo name = alignment.GetType().GetProperty("Name");
+                    string road = name == null ? string.Empty :
+                        name.GetValue(alignment, null) as string;
+                    if (!string.IsNullOrEmpty(RoadNumber(road)))
+                        return RoadName(road);
+                }
+            }
+            catch { }
+            return string.Empty;
         }
 
         private static string ResolveSampleLineName(Transaction tr, SectionView view)
