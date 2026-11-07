@@ -797,7 +797,8 @@ namespace CETools.Civil3D
         {
             string raw = string.Join(" ", new[] { partFamily, partSize, DescribeLayer(entity.Layer) }
                 .Where(x => !string.IsNullOrWhiteSpace(x)).Distinct());
-            raw = System.Text.RegularExpressions.Regex.Replace(raw,                @"\b(Duroflo|SABS\s*966\s*Part\s*1|C3d|Civil\s*3D|Pipe|Structure(?:\s*/\s*fitting)?)\b",
+            raw = System.Text.RegularExpressions.Regex.Replace(raw,
+                @"\b(Duroflo|SABS\s*966\s*Part\s*1|C3d|Civil\s*3D|Pipe|Structure(?:\s*/\s*fitting)?)\b",
                 "", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
             raw = System.Text.RegularExpressions.Regex.Replace(raw, @"[<>]", " ");
             raw = System.Text.RegularExpressions.Regex.Replace(raw, @"\s+", " ").Trim(' ', '-', '|');
