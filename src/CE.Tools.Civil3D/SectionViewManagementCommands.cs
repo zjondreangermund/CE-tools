@@ -47,8 +47,14 @@ namespace CETools.Civil3D
                     catch { continue; }
                     string name = view.Name ?? string.Empty;
                     string road = RoadName(name);
-                    string sampleName = ResolveSampleLineName(tr, view);
-                    if (!string.IsNullOrEmpty(sampleName)) road = RoadName(sampleName);
+                    string alignmentRoad = ResolveSectionViewRoad(tr, view);
+                    if (!string.IsNullOrEmpty(RoadNumber(alignmentRoad))) road = alignmentRoad;
+                    else
+                    {
+                        string sampleName = ResolveSampleLineName(tr, view);
+                        if (!string.IsNullOrEmpty(RoadNumber(sampleName)))
+                            road = RoadName(sampleName);
+                    }
                     result.Add(new ViewInfo { Id = id, Name = name, Road = road,
                         Lower = bounds.MinPoint, Upper = bounds.MaxPoint });
                 }
@@ -226,6 +232,48 @@ namespace CETools.Civil3D
             return moved;
         }
 
+        private static string ResolveSectionViewRoad(Transaction tr, SectionView view)
+        {
+            // A section view is usually named only by station. Its sample
+            // line belongs to a SampleLineGroup whose parent is a ROAD
+            // alignment. Always prefer this provenance over matching the
+            // station text or guessing a nearby road's name.
+            try
+            {
+                SampleLine sample = tr.GetObject(view.SampleLineId,
+                    OpenMode.ForRead, false) as SampleLine;
+                if (sample == null) return string.Empty;
+                ObjectId groupId = ObjectId.Null;
+                foreach (string key in new[] { "GroupId", "SampleLineGroupId" })
+                {
+                    PropertyInfo property = sample.GetType().GetProperty(key);
+                    if (property == null) continue;
+                    object value = property.GetValue(sample, null);
+                    if (value is ObjectId) groupId = (ObjectId)value;
+                    if (!groupId.IsNull) break;
+                }
+                if (groupId.IsNull) return string.Empty;
+                DBObject group = tr.GetObject(groupId, OpenMode.ForRead, false);
+                foreach (string key in new[] { "ParentAlignmentId", "AlignmentId", "ParentEntityId" })
+                {
+                    PropertyInfo property = group.GetType().GetProperty(key);
+                    if (property == null) continue;
+                    object value = property.GetValue(group, null);
+                    if (!(value is ObjectId)) continue;
+                    ObjectId alignmentId = (ObjectId)value;
+                    if (alignmentId.IsNull) continue;
+                    DBObject alignment = tr.GetObject(alignmentId, OpenMode.ForRead, false);
+                    PropertyInfo name = alignment.GetType().GetProperty("Name");
+                    string road = name == null ? string.Empty :
+                        name.GetValue(alignment, null) as string;
+                    if (!string.IsNullOrEmpty(RoadNumber(road)))
+                        return RoadName(road);
+                }
+            }
+            catch { }
+            return string.Empty;
+        }
+
         private static string ResolveSampleLineName(Transaction tr, SectionView view)
         {
             foreach (string propertyName in new[] { "SampleLineId", "ParentEntityId", "SampleLineObjectId" })
@@ -318,7 +366,7 @@ namespace CETools.Civil3D
         // SampleLine.  Only use the source band to describe the desired role.
         private static bool RepairSectionBandSources(SectionView source, SectionView destination,
             Transaction tr, out int repaired, out int unresolved, out int stylesUpdated,
-            IList<string> diagnostics, bool auditOnly)
+            IList<string> diagnostics, bool auditOnly, string roadName)
         {
             repaired = 0;
             unresolved = 0;
@@ -409,7 +457,7 @@ namespace CETools.Civil3D
                         // Do not require the source band's Section to belong to
                         // the source view's own sample line. Old drawings sometimes
                         // have a valid style template bound to another sample line.
-                        List<Section> matches = FindMatchingLocalSections(reference, available);
+                        List<Section> matches = FindMatchingLocalSections(reference, available, roadName);
                         Section match = matches.Count == 1 ? matches[0] :
                             matches.FirstOrDefault(sec => sec.ObjectId == currentSectionId);
                         if (match == null)
@@ -419,7 +467,7 @@ namespace CETools.Civil3D
                                 " expects '" + reference.SourceName + "' [" + reference.SourceType +
                                 "] but destination sample line '" + targetSample.Name +
                                 "' has " + (matches.Count == 0 ? "no matching" : "multiple ambiguous") +
-                                " source(s). Available: " + string.Join(", ",
+                                " source(s) on road '" + roadName + "'. Available: " + string.Join(", ",
                                     available.Select(sec => sec.SourceName).Distinct().Take(12)));
                             continue;
                         }
@@ -483,28 +531,92 @@ namespace CETools.Civil3D
         }
 
         private static List<Section> FindMatchingLocalSections(Section reference,
-            IList<Section> candidates)
+            IList<Section> candidates, string destinationRoad)
         {
-            string expected = NormalizeSectionSourceName(reference.SourceName);
-            if (string.IsNullOrWhiteSpace(expected))
-                expected = NormalizeSectionSourceName(reference.Name);
+            string source = reference.SourceName ?? string.Empty;
+            if (string.IsNullOrWhiteSpace(source)) source = reference.Name ?? string.Empty;
+            string expected = NormalizeSectionSourceName(source);
             if (string.IsNullOrWhiteSpace(expected)) return new List<Section>();
-            // Compare source type as well: a junction grading surface with
-            // a similar name must not replace an NG or corridor section.
+
+            string role = SectionRole(source);
+            if (role == "ROAD-DESIGN")
+            {
+                string destinationNumber = RoadNumber(destinationRoad);
+                if (string.IsNullOrEmpty(destinationNumber)) return new List<Section>();
+                candidates = candidates.Where(c => SectionRole(c.SourceName) == "ROAD-DESIGN" &&
+                    RoadNumber(c.SourceName) == destinationNumber).ToList();
+                if (candidates.Count == 0) return new List<Section>();
+            }
+            // Preserve exact data-source identity whenever the drawing samples
+            // that SAME underlying surface/corridor on the target sample line.
+            // The source view's sampled Section object ID is never transferred.
+            if (!reference.SourceId.IsNull)
+            {
+                List<Section> bySourceId = candidates.Where(c =>
+                    c.SourceType == reference.SourceType &&
+                    c.SourceId == reference.SourceId).ToList();
+                if (bySourceId.Count == 1) return bySourceId;
+            }
             List<Section> exact = candidates.Where(c =>
                 c.SourceType == reference.SourceType &&
                 NormalizeSectionSourceName(c.SourceName) == expected).ToList();
-            if (exact.Count > 0) return exact;
-            // Same surface reference can have a different display label but
-            // the same underlying sampled surface ID, on the same drawing.
-            if (!reference.SourceId.IsNull)
+            if (exact.Count == 1) return exact;
+
+            // Civil 3D commonly labels the *same role* EG/NGL/NG differently
+            // between drawings and surface sampling groups. Restrict it to
+            // one unambiguous existing-ground candidate, never a junction.
+            if (role == "NG")
             {
-                var bySourceId = candidates.Where(c =>
+                List<Section> ground = candidates.Where(c =>
                     c.SourceType == reference.SourceType &&
-                    c.SourceId == reference.SourceId).ToList();
-                if (bySourceId.Count > 0) return bySourceId;
+                    SectionRole(c.SourceName) == "NG").ToList();
+                return ground.Count == 1 ? ground : new List<Section>();
             }
+
+            // The reference may be ROAD-01-CORRIDOR TOP-RD-01 while the
+            // destination is ROAD-02-CORRIDOR TOP-RD-02. Find the target road's
+            // corridor, never a nearby unrelated corridor or junction surface.
+            if (role == "ROAD-DESIGN")
+            {
+                string roadNumber = RoadNumber(destinationRoad);
+                if (string.IsNullOrEmpty(roadNumber))
+                    return new List<Section>();
+                List<Section> designs = candidates.Where(c =>
+                    c.SourceType == reference.SourceType &&
+                    SectionRole(c.SourceName) == "ROAD-DESIGN" &&
+                    RoadNumber(c.SourceName) == roadNumber).ToList();
+                return designs.Count == 1 ? designs : new List<Section>();
+            }
+            // No generic fallback: if no uniquely appropriate section source
+            // exists on the destination sample line, leave it unchanged.
             return new List<Section>(); // No unsafe default to junction grade.
+        }
+
+        private static string RoadNumber(string name)
+        {
+            if (string.IsNullOrWhiteSpace(name)) return string.Empty;
+            Match match = Regex.Match(name, @"(?:ROAD|RD)[-_ ]*0*(\d+)",
+                RegexOptions.IgnoreCase);
+            if (!match.Success) return string.Empty;
+            int number;
+            return int.TryParse(match.Groups[1].Value, out number) ?
+                number.ToString(CultureInfo.InvariantCulture) : string.Empty;
+        }
+
+        private static string SectionRole(string name)
+        {
+            string upper = (name ?? string.Empty).Trim().ToUpperInvariant();
+            if (upper.Length == 0) return string.Empty;
+            if (upper.Contains("JUNCTION") || upper.Contains("INTERSECTION") ||
+                upper.Contains("INFILL")) return "OTHER";
+            string words = Regex.Replace(upper, @"[^A-Z0-9]+", " ");
+            if (Regex.IsMatch(words, @"\b(NG|NGL|EG|EXISTING GROUND|NATURAL GROUND)\b"))
+                return "NG";
+            if (upper.Contains("CORRIDOR") &&
+                (upper.Contains("TOP") || upper.Contains("FINAL") ||
+                upper.Contains("DESIGN") || upper.Contains("FG")))
+                return "ROAD-DESIGN";
+            return "OTHER";
         }
 
         private static string NormalizeSectionSourceName(string name)
@@ -604,7 +716,7 @@ namespace CETools.Civil3D
                             var diagnostics = new List<string>();
                             bool fixedBands = RepairSectionBandSources(
                                 source, dest, tr, out fixedSources, out missingSources,
-                                out copiedStyles, diagnostics, auditOnly);
+                                out copiedStyles, diagnostics, auditOnly, item.Road);
                             unresolvedBandSources += missingSources;
                             bandUpdates += fixedSources;
                             bandStyleUpdates += copiedStyles;

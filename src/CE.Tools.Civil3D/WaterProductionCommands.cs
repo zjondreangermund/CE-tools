@@ -418,6 +418,17 @@ namespace CETools.Civil3D
                 return;
 
             Editor editor = document.Editor;
+            Database database = document.Database;
+            List<AlignmentRecord> records;
+            using (Transaction alignmentRead = database.TransactionManager.StartTransaction())
+                records = ReadAlignmentRecords(civilDocument, alignmentRead);
+            if (records.Count == 0)
+            {
+                editor.WriteMessage(
+                    "\nCE_WATERPROFILE found no tagged CE water alignments. Run CE_WATERALIGN first.");
+                return;
+            }
+
             List<SurfaceChoice> surfaceChoices = WorkflowRepairCommands.ReadSurfaceChoices(document);
             if (surfaceChoices.Count == 0)
             {
@@ -426,75 +437,146 @@ namespace CETools.Civil3D
             }
             var surfaceWindow = new SurfaceSelectionWindow(
                 surfaceChoices,
-                "Select the existing-ground surface for the water profiles. Double-clicking a row also selects it.");
+                "Select the existing-ground surface for the Water profiles. Double-clicking a row also selects it.");
             AcApplication.ShowModalWindow(surfaceWindow);
             SurfaceChoice selectedSurface = surfaceWindow.SelectedSurface;
-            if (selectedSurface == null) return;
+            if (selectedSurface == null)
+                return;
+
+            WaterSettings settings = WaterSettings.Read(database);
+            var layout = new ProductionSettingsDialogModel(
+                "CE Tools - Water Long Section Layout",
+                "Control how Water branch long sections are placed. Vertical top-down keeps Branch 1 at the upper-left insertion point and places every following branch below it.");
+            layout.AddChoice(
+                "Arrangement", "01 Layout", "Profile-view arrangement",
+                string.IsNullOrWhiteSpace(settings.ProfileLayoutMode)
+                    ? "Vertical - Branch 1 at top"
+                    : settings.ProfileLayoutMode,
+                "Vertical is the production default. Grid and horizontal arrangements remain available for compact drawings.",
+                new[] { "Vertical - Branch 1 at top", "Grid", "Horizontal - left to right" });
+            layout.AddPositiveDouble(
+                "HorizontalSpacing", "01 Layout", "Horizontal spacing",
+                Math.Max(1.0, settings.ProfileHorizontalSpacing),
+                "Drawing-unit spacing between profile-view insertion points in adjacent columns.");
+            layout.AddPositiveDouble(
+                "VerticalSpacing", "01 Layout", "Vertical spacing",
+                Math.Max(1.0, settings.ProfileVerticalSpacing),
+                "Drawing-unit spacing between profile-view insertion points from top to bottom.");
+            layout.AddPositiveInteger(
+                "Columns", "01 Layout", "Grid columns",
+                string.Equals(settings.ProfileLayoutMode, "Grid", StringComparison.OrdinalIgnoreCase)
+                    ? Math.Max(1, settings.ProfileColumns)
+                    : 1,
+                "Used only when arrangement is Grid. Vertical top-down always uses one column.");
+            layout.AddChoice(
+                "Remember", "02 Defaults", "Remember Water long-section layout", "Yes",
+                "Save these spacing/layout settings for the next CE_WATERPROFILE run.",
+                new[] { "Yes", "No" });
+            if (!DisciplineWorkflowDialogs.EditSettings(layout))
+                return;
+
+            settings.ProfileLayoutMode = layout.Text("Arrangement");
+            settings.ProfileHorizontalSpacing = Math.Max(
+                1.0, layout.Double("HorizontalSpacing", settings.ProfileHorizontalSpacing));
+            settings.ProfileVerticalSpacing = Math.Max(
+                1.0, layout.Double("VerticalSpacing", settings.ProfileVerticalSpacing));
+            settings.ProfileColumns = Math.Max(
+                1, layout.Integer("Columns", settings.ProfileColumns));
+            if (string.Equals(layout.Text("Remember"), "Yes", StringComparison.OrdinalIgnoreCase))
+                settings.Write(database);
 
             PromptPointResult insertionResult = editor.GetPoint(
-                "\nSelect the upper-left insertion point for the water profile views: ");
+                "\nSpecify the upper-left insertion point for Branch 1 Water profile view: ");
             if (insertionResult.Status != PromptStatus.OK)
                 return;
 
-            WaterSettings settings = WaterSettings.Read(document.Database);
-            List<AlignmentRecord> records;
-            using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-                records = ReadAlignmentRecords(civilDocument, transaction);
-
-            if (records.Count == 0)
-            {
-                editor.WriteMessage(
-                    "\nCE_WATERPROFILE: no CE water alignments were found. Run CE_WATERALIGN first.");
-                return;
-            }
-
             editor.WriteMessage(
-                "\nCE_WATERPROFILE preview: alignments={0}; surface={1}.",
+                "\nCE_WATERPROFILE preview. Branch alignments: {0}; arrangement: {1}; horizontal spacing: {2:0.###}; vertical spacing: {3:0.###}; surface: {4}.",
                 records.Count,
-                selectedSurface.ObjectId.Handle);
-            if (!Confirm(editor, "Create or refresh the existing-ground profiles and profile views"))
+                settings.ProfileLayoutMode,
+                settings.ProfileHorizontalSpacing,
+                settings.ProfileVerticalSpacing,
+                selectedSurface.Name);
+            if (!Confirm(editor, "Create or refresh the Water profiles and profile views"))
                 return;
 
-            try
-            {
-                int profiles = 0;
-                int views = 0;
-                using (Transaction transaction = document.Database.TransactionManager.StartTransaction())
-                {
-                    EnsureRegApp(document.Database, transaction);
-                    ObjectId profileLayerId = GetOrCreateLayer(
-                        document.Database,
-                        transaction,
-                        settings.ProfileLayer,
-                        ProfileLayerDefault);
-                    ObjectId profileStyleId = ResolveStyleId(
-                        civilDocument.Styles.ProfileStyles,
-                        settings.ProfileStyle,
-                        "profile style",
-                        transaction);
-                    ObjectId profileLabelSetId = ResolveStyleId(
-                        civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles,
-                        settings.ProfileLabelSetStyle,
-                        "profile label-set style",
-                        transaction);
-                    ObjectId profileViewStyleId = ResolveStyleId(
-                        civilDocument.Styles.ProfileViewStyles,
-                        settings.ProfileViewStyle,
-                        "profile-view style",
-                        transaction);
-                    ObjectId profileViewBandSetId = ResolveStyleId(
-                        civilDocument.Styles.ProfileViewBandSetStyles,
-                        settings.ProfileViewBandSetStyle,
-                        "profile-view band-set style",
-                        transaction);
+            int profiles = 0;
+            int views = 0;
+            int gravityPartsAdded = 0;
+            int bandRowsUpdated = 0;
+            int skipped = 0;
+            var reportRows = new List<IList<string>>();
 
-                    for (int index = 0; index < records.Count; index++)
+            for (int index = 0; index < records.Count; index++)
+            {
+                AlignmentRecord record = records[index];
+                int row;
+                int column;
+                if (string.Equals(
+                        settings.ProfileLayoutMode,
+                        "Horizontal - left to right",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    row = 0;
+                    column = index;
+                }
+                else if (string.Equals(
+                        settings.ProfileLayoutMode,
+                        "Grid",
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    row = index / Math.Max(1, settings.ProfileColumns);
+                    column = index % Math.Max(1, settings.ProfileColumns);
+                }
+                else
+                {
+                    row = index;
+                    column = 0;
+                }
+
+                Point3d branchPoint = new Point3d(
+                    insertionResult.Value.X + column * settings.ProfileHorizontalSpacing,
+                    insertionResult.Value.Y - row * settings.ProfileVerticalSpacing,
+                    insertionResult.Value.Z);
+
+                int branchProfiles = 0;
+                int branchViews = 0;
+                int branchParts = 0;
+                int branchBandRows = 0;
+                string status = "Created";
+                try
+                {
+                    ObjectId profileViewId = ObjectId.Null;
+                    using (Transaction transaction = database.TransactionManager.StartTransaction())
                     {
-                        AlignmentRecord record = records[index];
-                        RemoveProfileObjects(
-                            document.Database,
-                            record.SourceHandle,
+                        EnsureRegApp(database, transaction);
+                        ObjectId profileLayerId = GetOrCreateLayer(
+                            database,
+                            transaction,
+                            settings.ProfileLayer,
+                            ProfileLayerDefault);
+                        ObjectId profileStyleId = ResolveStyleId(
+                            civilDocument.Styles.ProfileStyles,
+                            settings.ProfileStyle,
+                            "profile style",
                             transaction);
+                        ObjectId profileLabelSetId = ResolveStyleId(
+                            civilDocument.Styles.LabelSetStyles.ProfileLabelSetStyles,
+                            settings.ProfileLabelSetStyle,
+                            "profile label-set style",
+                            transaction);
+                        ObjectId profileViewStyleId = ResolveStyleId(
+                            civilDocument.Styles.ProfileViewStyles,
+                            settings.ProfileViewStyle,
+                            "profile-view style",
+                            transaction);
+                        ObjectId profileViewBandSetId = ResolveStyleId(
+                            civilDocument.Styles.ProfileViewBandSetStyles,
+                            settings.ProfileViewBandSetStyle,
+                            "profile-view band-set style",
+                            transaction);
+
+                        RemoveProfileObjects(database, record.SourceHandle, transaction);
 
                         string profileName = UniqueName(
                             record.RouteName + " - EG",
@@ -517,27 +599,20 @@ namespace CETools.Civil3D
                             record.RouteName,
                             record.SourceHandle,
                             selectedSurface.ObjectId.Handle.ToString());
-                        profiles++;
 
-                        int column = index % settings.ProfileColumns;
-                        int row = index / settings.ProfileColumns;
-                        Point3d viewPoint = insertionResult.Value + new Vector3d(
-                            column * settings.ProfileHorizontalSpacing,
-                            -row * settings.ProfileVerticalSpacing,
-                            0.0);
                         string viewName = UniqueName(
                             record.RouteName + " - PROFILE VIEW",
                             ReadCivilNames(
                                 GetAlignmentProfileIds(civilDocument, transaction, true),
                                 transaction));
-                        ObjectId viewId = InvokeCreateProfileView(
+                        profileViewId = InvokeCreateProfileView(
                             viewName,
                             record.AlignmentId,
-                            viewPoint,
+                            branchPoint,
                             profileViewBandSetId,
                             profileViewStyleId);
                         DBObject view = transaction.GetObject(
-                            viewId,
+                            profileViewId,
                             OpenMode.ForWrite,
                             false);
                         view.XData = BuildTag(
@@ -545,15 +620,17 @@ namespace CETools.Civil3D
                             record.RouteName,
                             record.SourceHandle,
                             selectedSurface.ObjectId.Handle.ToString());
-                        TryAddPressurePartsToProfileView(record, viewId, transaction);
+
+                        // Keep the existing pressure-network projection path.
+                        // Ordinary gravity Water pipes/structures are added after
+                        // this branch transaction by exact tagged source matching.
+                        TryAddPressurePartsToProfileView(record, profileViewId, transaction);
+
                         ObjectId bandNetworkId = ObjectId.Null;
                         if (!string.IsNullOrWhiteSpace(record.SourceHandle))
                         {
                             ObjectId routeSourceId;
-                            if (TryGetObjectId(
-                                    document.Database,
-                                    record.SourceHandle,
-                                    out routeSourceId))
+                            if (TryGetObjectId(database, record.SourceHandle, out routeSourceId))
                             {
                                 DBObject routeSource = transaction.GetObject(
                                     routeSourceId,
@@ -565,28 +642,87 @@ namespace CETools.Civil3D
                                     bandNetworkId = (ObjectId)networkIdValue;
                             }
                         }
+
                         ProfileViewBandDataBinder.Bind(
                             view,
                             profileId,
                             ObjectId.Null,
                             bandNetworkId);
-                        RepairWaterBandProfiles(view, profileId);
-                        views++;
+                        branchBandRows = RepairWaterBandProfiles(view, profileId);
+                        transaction.Commit();
                     }
-                    transaction.Commit();
+
+                    branchProfiles = 1;
+                    branchViews = 1;
+                    profiles += branchProfiles;
+                    views += branchViews;
+
+                    // Match only this branch's newly-created profile view.
+                    // A shared structure can be added to another branch view
+                    // only when one of its connected pipes belongs to that route.
+                    branchParts = WaterGravityProfilePartsCommands.DrawWaterPartsInProfileViews(
+                        document,
+                        new[] { profileViewId });
+                    gravityPartsAdded += branchParts;
+                    bandRowsUpdated += branchBandRows;
+
+                    if (branchParts == 0)
+                        status = "Created; no matching gravity parts were added";
+                    else if (branchBandRows > 0)
+                        status = "Created; gravity parts and band rows linked";
+                    else
+                        status = "Created; gravity parts linked";
+                }
+                catch (System.Exception exception)
+                {
+                    skipped++;
+                    status = "Skipped: " + exception.Message;
+                    editor.WriteMessage(
+                        "\nCE_WATERPROFILE skipped {0}: {1}",
+                        record.RouteName,
+                        exception.Message);
                 }
 
-                editor.WriteMessage(
-                    "\nCE_WATERPROFILE complete. Profiles: {0}; profile views: {1}.",
-                    profiles,
-                    views);
+                reportRows.Add(new List<string>
+                {
+                    record.RouteName,
+                    branchProfiles.ToString(CultureInfo.InvariantCulture),
+                    branchViews.ToString(CultureInfo.InvariantCulture),
+                    branchParts.ToString(CultureInfo.InvariantCulture),
+                    branchBandRows.ToString(CultureInfo.InvariantCulture),
+                    (string.IsNullOrWhiteSpace(settings.ProfileViewStyle) ? "(default)" : settings.ProfileViewStyle),
+                    (string.IsNullOrWhiteSpace(settings.ProfileViewBandSetStyle) ? "(default)" : settings.ProfileViewBandSetStyle),
+                    status
+                });
             }
-            catch (System.Exception exception)
+
+            try
             {
-                editor.WriteMessage(
-                    "\nCE_WATERPROFILE cancelled. The installed Civil 3D profile API could not complete the operation: " +
-                    exception.Message);
+                database.TransactionManager.QueueForGraphicsFlush();
+                editor.Regen();
+                AcApplication.UpdateScreen();
             }
+            catch { }
+
+            editor.WriteMessage(
+                "\nCE_WATERPROFILE complete. Surface profiles: {0}; profile views: {1}; gravity network parts added: {2}; band rows updated: {3}; skipped branches: {4}.",
+                profiles,
+                views,
+                gravityPartsAdded,
+                bandRowsUpdated,
+                skipped);
+
+            GridReportPresenter.ShowReportAndOfferTable(
+                document,
+                "CE Tools - Water Profiles / Long Sections",
+                "Each Water branch is committed independently. Existing-ground profiles, profile views, matching gravity-network pipes/structures and profile band references are processed branch by branch. Failed branches remain isolated and are listed for review.",
+                new[]
+                {
+                    "Branch", "Profiles", "Views", "Gravity Parts", "Band Rows",
+                    "Profile View Style", "Band Set", "Status"
+                },
+                reportRows,
+                "CE WATER PROFILE / LONG-SECTION REGISTER");
         }
 
         // The band-set may arrive with invalid source-template profile references.
@@ -2063,9 +2199,10 @@ namespace CETools.Civil3D
             public double IsolatingValveSpacing = 500.0;
             public double HydrantSpacing = 120.0;
             public double AssetRadius = 1.5;
-            public int ProfileColumns = 2;
-            public double ProfileHorizontalSpacing = 250.0;
-            public double ProfileVerticalSpacing = 120.0;
+            public string ProfileLayoutMode = "Vertical - Branch 1 at top";
+            public int ProfileColumns = 1;
+            public double ProfileHorizontalSpacing = 450.0;
+            public double ProfileVerticalSpacing = 500.0;
 
             public static WaterSettings Read(Database database)
             {
@@ -2113,6 +2250,8 @@ namespace CETools.Civil3D
                         double.TryParse(values[14], NumberStyles.Float, CultureInfo.InvariantCulture, out settings.ProfileHorizontalSpacing);
                         if (values.Length > 15)
                             double.TryParse(values[15], NumberStyles.Float, CultureInfo.InvariantCulture, out settings.ProfileVerticalSpacing);
+                        if (values.Length > 16 && !string.IsNullOrWhiteSpace(values[16]))
+                            settings.ProfileLayoutMode = values[16];
                     }
                 }
                 settings.Normalize();
@@ -2165,7 +2304,8 @@ namespace CETools.Civil3D
                         AssetRadius.ToString("R", CultureInfo.InvariantCulture),
                         ProfileColumns.ToString(CultureInfo.InvariantCulture),
                         ProfileHorizontalSpacing.ToString("R", CultureInfo.InvariantCulture),
-                        ProfileVerticalSpacing.ToString("R", CultureInfo.InvariantCulture)
+                        ProfileVerticalSpacing.ToString("R", CultureInfo.InvariantCulture),
+                        ProfileLayoutMode ?? "Vertical - Branch 1 at top"
                     };
                     record.Data = new ResultBuffer(values
                         .Select(value => new TypedValue((int)DxfCode.Text, value))
@@ -2183,9 +2323,11 @@ namespace CETools.Civil3D
                 if (IsolatingValveSpacing <= 0.0) IsolatingValveSpacing = 500.0;
                 if (HydrantSpacing <= 0.0) HydrantSpacing = 120.0;
                 if (AssetRadius <= 0.0) AssetRadius = 1.5;
-                if (ProfileColumns < 1) ProfileColumns = 2;
-                if (ProfileHorizontalSpacing <= 0.0) ProfileHorizontalSpacing = 250.0;
-                if (ProfileVerticalSpacing <= 0.0) ProfileVerticalSpacing = 120.0;
+                if (ProfileColumns < 1) ProfileColumns = 1;
+                if (ProfileHorizontalSpacing <= 0.0) ProfileHorizontalSpacing = 450.0;
+                if (ProfileVerticalSpacing <= 0.0) ProfileVerticalSpacing = 500.0;
+                if (string.IsNullOrWhiteSpace(ProfileLayoutMode))
+                    ProfileLayoutMode = "Vertical - Branch 1 at top";
             }
         }
     }
