@@ -797,7 +797,8 @@ namespace CETools.Civil3D
                             record.RouteName + ": " + ex.Message);
                     }
                 }
-                transaction.Commit();            }
+                transaction.Commit();
+            }
             document.Editor.Regen();
             System.Windows.Forms.MessageBox.Show(
                 "Water profile views updated: " + viewsFixed +
@@ -1596,7 +1597,8 @@ namespace CETools.Civil3D
                 if (TryReadTag(item, out type, out route, out source, out extra) &&
                     source == sourceHandle && accepted.Contains(type))
                 {
-                    item.UpgradeOpen();                    item.Erase();
+                    item.UpgradeOpen();
+                    item.Erase();
                 }
             }
         }
