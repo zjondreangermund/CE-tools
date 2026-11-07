@@ -490,6 +490,15 @@ namespace CETools.Civil3D
             string expected = NormalizeSectionSourceName(source);
             if (string.IsNullOrWhiteSpace(expected)) return new List<Section>();
 
+            string role = SectionRole(source);
+            if (role == "ROAD-DESIGN")
+            {
+                string destinationNumber = RoadNumber(destinationRoad);
+                if (string.IsNullOrEmpty(destinationNumber)) return new List<Section>();
+                candidates = candidates.Where(c => SectionRole(c.SourceName) == "ROAD-DESIGN" &&
+                    RoadNumber(c.SourceName) == destinationNumber).ToList();
+                if (candidates.Count == 0) return new List<Section>();
+            }
             // Preserve exact data-source identity whenever the drawing samples
             // that SAME underlying surface/corridor on the target sample line.
             // The source view's sampled Section object ID is never transferred.
@@ -508,7 +517,6 @@ namespace CETools.Civil3D
             // Civil 3D commonly labels the *same role* EG/NGL/NG differently
             // between drawings and surface sampling groups. Restrict it to
             // one unambiguous existing-ground candidate, never a junction.
-            string role = SectionRole(source);
             if (role == "NG")
             {
                 List<Section> ground = candidates.Where(c =>
