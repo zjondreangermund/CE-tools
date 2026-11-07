@@ -16,6 +16,13 @@ required = [
     "Repair Section1/Section2 band data sources",
     "targetBand.BandStyleId = sourceBand.BandStyleId",
     "bool auditOnly",
+    "SectionRole(source)",
+    'SectionRole(c.SourceName) == "NG"',
+    'SectionRole(c.SourceName) == "ROAD-DESIGN"',
+    "RoadNumber(c.SourceName) == roadNumber",
+    "RoadNumber(c.SourceName) == destinationNumber",
+    "item.Road",
+    "SampleLineId != destination.SampleLineId",
     'new[] { "Report and repair", "Audit only (no changes)" }',
     'destination.Bands.SetBottomBandItems(actual)',
 ]
