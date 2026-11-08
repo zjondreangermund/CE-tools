@@ -256,12 +256,12 @@ namespace CETools.Civil3D
                 "Export complete design data, road-only reports, or separately numbered sewer branches.");
             model.AddChoice("Scope", "01 Reports", "Report scope", "All",
                 "Roads: alignments, construction and junctions. Sewer branches: separate pipe and structure sheets.",
-                new[] { "All", "Roads", "Sewer branches" });
+                new[] { "All", "Roads", "Sewer branches", "Water" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
             ExportAllDesignElements(document, model.Text("Scope"));
         }
 
-        private static void ExportAllDesignElements(Document document, string scope = "All")
+        internal static void ExportAllDesignElements(Document document, string scope = "All")
         {
             Editor editor = document.Editor;
             PromptSelectionResult selection = scope == "All" ?
@@ -378,7 +378,8 @@ namespace CETools.Civil3D
             var save = new SaveFileDialog();
             {
                 string initialPath = GetDefaultExportPath(scope == "Roads" ? "CE-Road-Design-Data.xlsx" :
-                    scope == "Sewer branches" ? "CE-Sewer-Branch-Data.xlsx" : "CE-Design-Elements-Setting-Out.xlsx");
+                    scope == "Sewer branches" ? "CE-Sewer-Branch-Data.xlsx" :
+                    scope == "Water" ? "CE-Water-Design-Data.xlsx" : "CE-Design-Elements-Setting-Out.xlsx");
                 save.Filter = "Excel Workbook (*.xlsx)|*.xlsx";
                 save.Title = "Export All CE Tools Design Elements";
                 save.DefaultExt = ".xlsx";
@@ -396,7 +397,7 @@ namespace CETools.Civil3D
                 SetConstructionLevelHeaders(sheets, leftOffset, centreOffset, rightOffset);
                 // Never enumerate unrelated Civil 3D networks/profiles during a
                 // discipline-scoped export: this also avoids unnecessary native API reads.
-                if (scope == "All")
+                if (scope == "All" || scope == "Water")
                     PopulateWaterStructureAndPipeReports(document, sheets);
                 if (scope == "All" || scope == "Sewer branches")
                     PopulateSewerStructureAndPipeReports(document, sheets);
@@ -437,9 +438,11 @@ namespace CETools.Civil3D
                         sheet.Name == "Road Signs Setting-Out").ToList();
                 else if (scope == "Sewer branches")
                     sheets = SplitSewerReportsIntoBranches(sheets);
+                else if (scope == "Water")
+                    sheets = sheets.Where(sheet =>
+                        sheet.Name == "Water Structure Data" || sheet.Name == "Water Pipe Data").ToList();
                 SimpleXlsxWriter.Write(path, sheets);
                 SaveLastExportPath(path);
-                TryOpenExportedWorkbook(path);
                 editor.WriteMessage("\\nCE_DESIGNDATAEXPORT complete. Design points exported={0}; file={1}", exported, path);
             }
             catch (System.Exception exception)
@@ -1997,7 +2000,6 @@ namespace CETools.Civil3D
                     path += ".xlsx";
                 SimpleXlsxWriter.Write(path, "Setting Out", cells);
                 SaveLastExportPath(path);
-                TryOpenExportedWorkbook(path);
                 editor.WriteMessage(
                     "\nCE_SETTINGOUTEXPORT complete. Rows={0}; missing sources={1}; file={2}",
                     rows,
