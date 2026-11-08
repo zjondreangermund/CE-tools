@@ -281,6 +281,14 @@ namespace CETools.Civil3D
                                 BuildSewerSummaryFromExportCells(cells))
                         });
                 }
+                else if (string.Equals(title, "Water BOQ", StringComparison.OrdinalIgnoreCase))
+                {
+                    SimpleXlsxWriter.Write(path, new List<XlsxSheet>
+                    {
+                        new XlsxSheet("Water BOQ", cells),
+                        new XlsxSheet("Summary", BuildSummaryFromExportCells(cells, "Water"))
+                    });
+                }
                 else
                 {
                     SimpleXlsxWriter.Write(path, title, cells);
@@ -1591,6 +1599,52 @@ namespace CETools.Civil3D
                 unitsPerMetre.ToString("0.######", CultureInfo.InvariantCulture),
                 string.Empty, string.Empty, string.Empty,
                 string.Empty, string.Empty, string.Empty, string.Empty, string.Empty
+            });
+            return rows;
+        }
+
+        private static List<IList<string>> BuildSummaryFromExportCells(
+            IList<IList<string>> cells, string discipline)
+        {
+            var rows = new List<IList<string>>
+            {
+                new List<string> { "CE TOOLS " + discipline.ToUpperInvariant() + " BOQ SUMMARY", "", "", "", "" },
+                new List<string> { "SECTION / TYPE / SIZE", "UNIT", "QUANTITY", "SOURCE COUNT", "AMOUNT" }
+            };
+            var items = new List<Tuple<string, string, double, int, double, bool>>();
+            foreach (var row in (cells ?? new List<IList<string>>()).Skip(2))
+            {
+                if (row == null || row.Count < 10) continue;
+                double quantity;
+                if (!TryParseNumber(row[5], out quantity)) continue;
+                int count;
+                if (!int.TryParse(row[8], NumberStyles.Integer, CultureInfo.InvariantCulture, out count))
+                    count = 0;
+                double rate, amount;
+                bool hasRate = TryParseNumber(row[6], out rate) && rate > 0.0;
+                bool hasAmount = TryParseNumber(row[7], out amount);
+                items.Add(Tuple.Create((row[2] ?? "") + " | " + (row[9] ?? ""),
+                    row[4] ?? "", quantity, count,
+                    hasAmount ? amount : hasRate ? quantity * rate : 0.0,
+                    hasAmount || hasRate));
+            }
+            foreach (var group in items
+                .GroupBy(row => new { Section = row.Item1, Unit = row.Item2 })
+                .OrderBy(group => NaturalSortKey(group.Key.Section), StringComparer.OrdinalIgnoreCase))
+            {
+                rows.Add(new List<string>
+                {
+                    group.Key.Section, group.Key.Unit,
+                    group.Sum(row => row.Item3).ToString("0.###", CultureInfo.InvariantCulture),
+                    group.Sum(row => row.Item4).ToString(CultureInfo.InvariantCulture),
+                    group.Any(row => row.Item6) ? group.Sum(row => row.Item5).ToString("0.##", CultureInfo.InvariantCulture) : ""
+                });
+            }
+            rows.Add(new List<string>
+            {
+                "GRAND TOTAL", "Mixed units", "",
+                items.Sum(row => row.Item4).ToString(CultureInfo.InvariantCulture),
+                items.Any(row => row.Item6) ? items.Sum(row => row.Item5).ToString("0.##", CultureInfo.InvariantCulture) : ""
             });
             return rows;
         }
