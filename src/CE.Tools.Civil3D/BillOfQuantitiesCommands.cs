@@ -695,6 +695,40 @@ namespace CETools.Civil3D
                 return false;
             }
 
+            // Native gravity-network parts must be classified by actual part type.
+            // A Structure can inherit a layer containing "PIPE", and default
+            // length-first classification previously counted it as a pipe.
+            if ((discipline == BoqDiscipline.Water || discipline == BoqDiscipline.Sewer) &&
+                (databaseObject is Autodesk.Civil.DatabaseServices.Pipe ||
+                 databaseObject is Autodesk.Civil.DatabaseServices.Structure))
+            {
+                bool isPipe = databaseObject is Autodesk.Civil.DatabaseServices.Pipe;
+                string name = GetObjectName(databaseObject, transaction);
+                string size = ReadSize(databaseObject, unitsPerMetre);
+                string partType = ReadPartType(databaseObject);
+                string layerName = entity.Layer ?? string.Empty;
+                string sectionName = discipline + (isPipe ? " pipes" : " structures");
+                double nativeQuantity = 1.0;
+                if (isPipe)
+                {
+                    double rawLength;
+                    if (!TryGetLength(databaseObject, transaction, out rawLength) ||
+                        !IsFinitePositive(rawLength))
+                    {
+                        reason = "Native pipe has no valid length.";
+                        return false;
+                    }
+                    nativeQuantity = rawLength / unitsPerMetre;
+                }
+                string summary = layerName + " | " +
+                    (string.IsNullOrWhiteSpace(partType) ? "Unspecified type" : partType) +
+                    " | " + (string.IsNullOrWhiteSpace(size) ? "Unspecified size" : size);
+                observation = new QuantityObservation(discipline, sectionName,
+                    (isPipe ? "Pipe" : "Structure") + " (" + name + ")",
+                    isPipe ? "m" : "No.", nativeQuantity, summary);
+                return true;
+            }
+
             string typeName = databaseObject.GetType().Name;
             string objectName = GetObjectName(databaseObject, transaction);
             string layer = string.IsNullOrWhiteSpace(entity.Layer) ? "0" : entity.Layer;
@@ -1128,6 +1162,23 @@ namespace CETools.Civil3D
             return false;
         }
 
+        private static string ReadPartType(DBObject part)
+        {
+            foreach (string name in new[] { "PartSizeName", "PartFamilyName", "Description", "PartType" })
+            {
+                try
+                {
+                    PropertyInfo property = part.GetType().GetProperty(name,
+                        BindingFlags.Instance | BindingFlags.Public);
+                    if (property == null) continue;
+                    string value = Convert.ToString(property.GetValue(part, null), CultureInfo.InvariantCulture);
+                    if (!string.IsNullOrWhiteSpace(value)) return value.Trim();
+                }
+                catch { }
+            }
+            return part.GetType().Name;
+        }
+
         private static string ReadSize(DBObject databaseObject, double unitsPerMetre)
         {
             double raw;
@@ -1553,14 +1604,17 @@ namespace CETools.Civil3D
                 new List<string> { "SECTION", "UNIT", "QUANTITY", "SOURCE COUNT", "AMOUNT" }
             };
             foreach (var group in (lines ?? new List<BoqLine>())
-                .GroupBy(line => new { Section = line.Section ?? string.Empty, Unit = line.Unit ?? string.Empty })
+                .GroupBy(line => new { Section = line.Section ?? string.Empty,
+                    Unit = line.Unit ?? string.Empty,
+                    TypeAndSize = line.SourceSummary ?? string.Empty })
                 .OrderBy(group => group.Key.Section, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(group => NaturalSortKey(group.Key.TypeAndSize), StringComparer.OrdinalIgnoreCase)
                 .ThenBy(group => group.Key.Unit, StringComparer.OrdinalIgnoreCase))
             {
                 double amount = group.Sum(line => line.Rate > 0 ? line.Rate * line.Quantity : 0);
                 rows.Add(new List<string>
                 {
-                    group.Key.Section, group.Key.Unit,
+                    group.Key.Section + " | " + group.Key.TypeAndSize, group.Key.Unit,
                     group.Sum(line => line.Quantity).ToString("0.###", CultureInfo.InvariantCulture),
                     group.Sum(line => line.SourceCount).ToString(CultureInfo.InvariantCulture),
                     group.Any(line => line.Rate > 0) ? amount.ToString("0.##", CultureInfo.InvariantCulture) : ""
