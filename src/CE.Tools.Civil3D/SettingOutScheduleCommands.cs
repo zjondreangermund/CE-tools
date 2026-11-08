@@ -228,7 +228,7 @@ namespace CETools.Civil3D
         public void ExportRoadData() { Document d = ActiveDocument(); if (d != null) ExportAllDesignElements(d, "Roads"); }
 
         [CommandMethod("CE_TOOLS", "CE_SEWERDESIGNDATAEXPORT", CommandFlags.Modal)]
-        public void ExportSewerData() { Document d = ActiveDocument(); if (d != null) ExportAllDesignElements(d, "Sewer branches"); }
+        public void ExportSewerData() { ExportSettingOutSchedule(); }
 
         [CommandMethod("CE_TOOLS", "CE_SETTINGOUTEXPORT", CommandFlags.Modal)]
         public void ExportSettingOutSchedule()
