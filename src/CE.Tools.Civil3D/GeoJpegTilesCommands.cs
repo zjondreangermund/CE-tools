@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Imaging;
+using Image = System.Drawing.Image;
 using System.Globalization;
 using System.IO;
 using System.Linq;
