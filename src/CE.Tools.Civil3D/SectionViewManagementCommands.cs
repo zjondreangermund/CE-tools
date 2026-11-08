@@ -191,6 +191,8 @@ namespace CETools.Civil3D
             {
                 SectionView reference = sourceId.IsNull ? null :
                     tr.GetObject(sourceId, OpenMode.ForRead, false) as SectionView;
+                ObjectId savedReferenceBands = reference == null ? ObjectId.Null :
+                    SaveSourceBandSetStyle(reference, doc.Editor);
                 foreach (ObjectId viewId in selected)
                 {
                     try
@@ -199,7 +201,7 @@ namespace CETools.Civil3D
                         if (view == null || view.IsReferenceObject) { failed++; continue; }
                         if (fromSource)
                         {
-                            int rows = CopySectionBandLayout(reference, view);
+                            int rows = ImportSourceBandLayout(reference, view, savedReferenceBands);
                             if (rows == 0) { failed++; continue; }
                             int fixedSources, missingSources, styles;
                             var diagnostic = new List<string>();
@@ -614,6 +616,65 @@ namespace CETools.Civil3D
         // Never transfer a band collection, or its sampled Section IDs, from
         // one SectionView into another: those IDs belong to an individual
         // SampleLine.  Only use the source band to describe the desired role.
+        // Uses the Civil 3D native band-set round trip from the user's
+        // working 2023 implementation. Reflection supports differences in
+        // 2023/2024 managed API exposure without an extra command registration.
+        private static ObjectId SaveSourceBandSetStyle(SectionView source, Editor editor)
+        {
+            if (source == null) return ObjectId.Null;
+            try
+            {
+                source.UpgradeOpen();
+                string name = "CE_TOOLS_XSMATCH_" + Guid.NewGuid().ToString("N").Substring(0, 12);
+                object bands = source.Bands;
+                MethodInfo save = bands.GetType().GetMethod("SaveAsBandSetStyle",
+                    BindingFlags.Public | BindingFlags.Instance, null,
+                    new[] { typeof(string) }, null);
+                if (save == null)
+                {
+                    editor.WriteMessage("\\nCE_CROSSSECTIONVIEWMATCH: native SaveAsBandSetStyle not available on this Civil 3D build; using collection fallback.");
+                    return ObjectId.Null;
+                }
+                object value = save.Invoke(bands, new object[] { name });
+                return value is ObjectId ? (ObjectId)value : ObjectId.Null;
+            }
+            catch (System.Exception ex)
+            {
+                editor.WriteMessage("\\nCE_CROSSSECTIONVIEWMATCH: native band-set snapshot failed: {0}. Using collection fallback.",
+                    ex.InnerException == null ? ex.Message : ex.InnerException.Message);
+                return ObjectId.Null;
+            }
+        }
+
+        private static int ImportSourceBandLayout(
+            SectionView source, SectionView destination, ObjectId bandStyleId)
+        {
+            int expected = 0;
+            using (SectionViewBandItemCollection top = source.Bands.GetTopBandItems())
+            using (SectionViewBandItemCollection bottom = source.Bands.GetBottomBandItems())
+                expected = (top == null ? 0 : top.Count) + (bottom == null ? 0 : bottom.Count);
+            if (expected == 0) return 0;
+            if (!bandStyleId.IsNull)
+            {
+                try
+                {
+                    destination.Bands.ImportBandSetStyle(bandStyleId);
+                    int actual;
+                    using (SectionViewBandItemCollection top = destination.Bands.GetTopBandItems())
+                    using (SectionViewBandItemCollection bottom = destination.Bands.GetBottomBandItems())
+                        actual = (top == null ? 0 : top.Count) + (bottom == null ? 0 : bottom.Count);
+                    if (actual == expected)
+                        return actual;
+                }
+                catch (System.Exception)
+                {
+                    // Older/native APIs can reject a saved band set on import;
+                    // use the pre-existing per-row copy as a fallback.
+                }
+            }
+            return CopySectionBandLayout(source, destination);
+        }
+
         // Build bands in a collection belonging to the destination SectionView.
         // SetBottomBandItems explicitly rejects a collection copied from another
         // SectionView.  Copy styles/settings only; local Section IDs are repaired
@@ -974,6 +1035,8 @@ namespace CETools.Civil3D
                 ObjectId style = source.StyleId;
                 bool sourceAutoElevation = source.IsElevationRangeAutomatic;
                 double sourceMin = source.ElevationMin, sourceMax = source.ElevationMax;
+                ObjectId savedBandSet = (!auditOnly && settings.Text("CopyBandLayout") == "ON")
+                    ? SaveSourceBandSetStyle(source, doc.Editor) : ObjectId.Null;
                 foreach (ViewInfo item in targets)
                 {
                     try
@@ -1012,7 +1075,7 @@ namespace CETools.Civil3D
                         }
                         if (!auditOnly && settings.Text("CopyBandLayout") == "ON")
                         {
-                            int rebuiltRows = CopySectionBandLayout(source, dest);
+                            int rebuiltRows = ImportSourceBandLayout(source, dest, savedBandSet);
                             if (rebuiltRows > 0)
                             {
                                 changedThis = true;
