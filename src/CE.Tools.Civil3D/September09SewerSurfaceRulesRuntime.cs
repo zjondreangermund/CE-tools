@@ -397,6 +397,28 @@ namespace CETools.Civil3D
                 return;
             }
 
+            LinkSelectedPartsToSurface(document, civilDocument, partIds, "Sewer");
+        }
+
+        // Reuse the existing surface/rules settings for an explicitly scoped
+        // collection of water network parts. This prevents the Water command
+        // from inadvertently selecting every Sewer part in the drawing.
+        internal static void LinkSelectedPartsToSurface(
+            Document document, CivilDocument civilDocument,
+            IEnumerable<ObjectId> selectedPartIds, string discipline)
+        {
+            if (document == null || civilDocument == null || selectedPartIds == null) return;
+            Editor editor = document.Editor;
+            Database database = document.Database;
+            List<ObjectId> partIds = selectedPartIds
+                .Where(id => !id.IsNull && id.IsValid && !id.IsErased)
+                .Distinct().ToList();
+            if (partIds.Count == 0)
+            {
+                editor.WriteMessage("\\nNo eligible " + discipline +
+                    " gravity-network parts were selected for surface linking.");
+                return;
+            }
             List<NamedId> surfaces = ReadSurfaces(database, civilDocument);
             if (surfaces.Count == 0)
             {
