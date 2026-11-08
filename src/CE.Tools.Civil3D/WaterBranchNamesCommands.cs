@@ -156,8 +156,14 @@ namespace CETools.Civil3D
                         catch { skipped++; continue; }
                         double angle = ReadTangentAngle(alignment, station);
                         bool below = options.Text("Side") == "Below" || (options.Text("Side") == "Alternating" && labelIndex % 2 == 1);
-                        double offset = PaperAnnotationScale.ModelTextHeight(document.Database,
-                            options.Double(below ? "BelowOffset" : "AboveOffset", below ? 5.5 : 10)) * (below ? -1 : 1);
+                        // Offsets are physical paper distances, NOT annotation text heights.
+                        // ModelTextHeight normalizes to 1.8..5 mm and used to
+                        // silently clamp offsets above 5 mm. Scale a known 2 mm
+                        // length instead, preserving the selected 0..50 mm value.
+                        double paperOffset = options.Double(
+                            below ? "BelowOffset" : "AboveOffset", below ? 5.5 : 10.0);
+                        double offset = (PaperAnnotationScale.ModelTextHeight(document.Database, 2.0) / 2.0)
+                            * paperOffset * (below ? -1.0 : 1.0);
                         var anchor = new Point3d(x, y, 0);
                         if (pipeAnchors.Count > 0) anchor = pipeAnchors.OrderBy(a => Math.Abs(a.Key - station)).First().Value;
                         var location = new Point3d(anchor.X - Math.Sin(angle) * offset, anchor.Y + Math.Cos(angle) * offset, anchor.Z);
