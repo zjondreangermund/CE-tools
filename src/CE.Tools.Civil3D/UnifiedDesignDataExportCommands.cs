@@ -25,7 +25,6 @@ namespace CETools.Civil3D
     /// </summary>
     public sealed class UnifiedDesignDataExportCommands
     {
-        [CommandMethod("CE_TOOLS", "CE_DESIGNDATAEXPORT", CommandFlags.Modal | CommandFlags.Redraw)]
         public void ExportDesignData()
         {
             var options = new ProductionSettingsDialogModel(
@@ -38,7 +37,6 @@ namespace CETools.Civil3D
             Export(options.Text("Discipline"));
         }
 
-        [CommandMethod("CE_TOOLS", "CE_SEWERDESIGNDATAEXPORT", CommandFlags.Modal | CommandFlags.Redraw)]
         public void ExportSewerDesignData() { Export("Sewer"); }
 
         internal static void Export(string discipline)
