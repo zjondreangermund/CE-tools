@@ -239,7 +239,9 @@ namespace CETools.Civil3D
                 SectionRole(section.Name) == "NG");
             Section design = sections.FirstOrDefault(section =>
                 SectionRole(section.SourceName) == "ROAD-DESIGN" ||
-                SectionRole(section.Name) == "ROAD-DESIGN");
+                SectionRole(section.Name) == "ROAD-DESIGN" ||
+                IsDesignedSection(section.SourceName) ||
+                IsDesignedSection(section.Name));
             if (ground == null && design == null) return;
             foreach (bool top in new[] { true, false })
             {
@@ -262,9 +264,13 @@ namespace CETools.Civil3D
                     }
                     catch { }
                     string upper = styleName.ToUpperInvariant();
-                    bool finalLevels = upper.Contains("FINAL") || upper.Contains("DESIGN");
-                    bool difference = upper.Contains("DIFFERENCE") || upper.Contains("CUT") || upper.Contains("FILL");
-                    Section primary = finalLevels && !difference ? design ?? ground : ground ?? design;
+                    bool finalLevels = upper.Contains("FINAL") || upper.Contains("DESIGN") ||
+                        upper.Contains("FG") || upper.Contains("SURFACE1 TOP");
+                    bool difference = upper.Contains("DIFFERENCE") || upper.Contains("CUT") ||
+                        upper.Contains("FILL");
+                    // Differential level = design (Section1) minus ground
+                    // (Section2), never the reverse.
+                    Section primary = finalLevels || difference ? design ?? ground : ground ?? design;
                     if (primary == null) continue;
                     try
                     {
@@ -275,7 +281,7 @@ namespace CETools.Civil3D
                         }
                         if (difference && design != null && ground != null && band.Section2Id.IsNull)
                         {
-                            band.Section2Id = design.ObjectId;
+                            band.Section2Id = ground.ObjectId;
                             changed = true;
                         }
                     }
@@ -287,6 +293,14 @@ namespace CETools.Civil3D
                     else view.Bands.SetBottomBandItems(bands);
                 }
             }
+        }
+
+        private static bool IsDesignedSection(string name)
+        {
+            string upper = (name ?? string.Empty).ToUpperInvariant();
+            return upper.Contains("SURFACE1 TOP") || upper.Contains("FINAL ROAD") ||
+                   upper.Contains("CORRIDOR TOP") || upper.Contains("DESIGN SURFACE") ||
+                   upper.Contains("FG ") || upper.StartsWith("FG-");
         }
 
         private static ObjectId ResolveStyleId(Database database, object styleCollection, string desired)
