@@ -1267,7 +1267,7 @@ namespace CETools.Civil3D
 
         private static string NaturalSortKey(string value)
         {
-            return Regex.Replace(value ?? string.Empty, @"\\d+", match =>
+            return Regex.Replace(value ?? string.Empty, @"\d+", match =>
             {
                 long number;
                 return long.TryParse(match.Value, NumberStyles.Integer,
