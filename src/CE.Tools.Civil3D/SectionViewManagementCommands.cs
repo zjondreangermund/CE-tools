@@ -581,6 +581,53 @@ namespace CETools.Civil3D
         // Never transfer a band collection, or its sampled Section IDs, from
         // one SectionView into another: those IDs belong to an individual
         // SampleLine.  Only use the source band to describe the desired role.
+        // Build bands in a collection belonging to the destination SectionView.
+        // SetBottomBandItems explicitly rejects a collection copied from another
+        // SectionView.  Copy styles/settings only; local Section IDs are repaired
+        // afterward against the target SampleLine.
+        private static int CopySectionBandLayout(SectionView source, SectionView destination)
+        {
+            int added = 0;
+            foreach (bool top in new[] { true, false })
+            {
+                using (SectionViewBandItemCollection template = top
+                    ? source.Bands.GetTopBandItems() : source.Bands.GetBottomBandItems())
+                using (SectionViewBandItemCollection own = top
+                    ? destination.Bands.GetTopBandItems() : destination.Bands.GetBottomBandItems())
+                {
+                    if (template == null || own == null) continue;
+                    // Do not erase existing rows if the reference has none.
+                    if (template.Count == 0) continue;
+                    var sourceStyles = new List<ObjectId>();
+                    var gaps = new List<double>();
+                    var labels = new List<bool>();
+                    for (int i = 0; i < template.Count; i++)
+                    {
+                        SectionViewBandItem band = template[i];
+                        if (band.BandStyleId.IsNull)
+                            throw new InvalidOperationException("Source has an invalid band style.");
+                        sourceStyles.Add(band.BandStyleId);
+                        gaps.Add(band.Gap);
+                        labels.Add(band.ShowLabels);
+                    }
+                    own.RemoveAll();
+                    for (int i = 0; i < sourceStyles.Count; i++)
+                    {
+                        own.Add(sourceStyles[i]);
+                        SectionViewBandItem target = own[own.Count - 1];
+                        target.Gap = gaps[i];
+                        target.ShowLabels = labels[i];
+                        added++;
+                    }
+                    if (top) destination.Bands.SetTopBandItems(own);
+                    else destination.Bands.SetBottomBandItems(own);
+                }
+            }
+            destination.Bands.MatchIncrementToGridIntervals =
+                source.Bands.MatchIncrementToGridIntervals;
+            return added;
+        }
+
         private static bool RepairSectionBandSources(SectionView source, SectionView destination,
             Transaction tr, out int repaired, out int unresolved, out int stylesUpdated,
             IList<string> diagnostics, bool auditOnly, string roadName)
@@ -856,6 +903,9 @@ namespace CETools.Civil3D
             AddScope(settings);
             settings.AddChoice("MatchStyle", "02 Properties", "Match view style", "ON",
                 "Copy the source SectionView.StyleId.", new[] { "ON", "OFF" });
+            settings.AddChoice("CopyBandLayout", "02 Properties", "Copy all bands from source view", "ON",
+                "Rebuild top and bottom band rows using the source view's actual band styles, order and labels, then bind local data on each target sample line. Does not require a saved band-set style.",
+                new[] { "ON", "OFF" });
             settings.AddChoice("RepairBandSources", "02 Properties", "Repair Section1/Section2 band data sources", "ON",
                 "For each destination sample line, resolve Section1 and Section2 to local NG and road corridor sections by corresponding source names. Never copy the reference view section IDs.",
                 new[] { "ON", "OFF" });
@@ -926,6 +976,15 @@ namespace CETools.Civil3D
                         {
                             bool copied = CopySectionOffsetRange(source, dest);
                             if (copied) { changedThis = true; offsetUpdates++; }
+                        }
+                        if (!auditOnly && settings.Text("CopyBandLayout") == "ON")
+                        {
+                            int rebuiltRows = CopySectionBandLayout(source, dest);
+                            if (rebuiltRows > 0)
+                            {
+                                changedThis = true;
+                                bandStyleUpdates += rebuiltRows;
+                            }
                         }
                         if (settings.Text("RepairBandSources") == "ON")
                         {
