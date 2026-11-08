@@ -2253,6 +2253,8 @@ namespace CETools.Civil3D
                         StringComparison.OrdinalIgnoreCase)
                         ? 0
                         : 1)
+                .ThenBy(row => WaterBranchNumber(row.Name))
+                .ThenBy(row => WaterSequenceNumber(row.Name))
                 .ThenBy(row =>
                     row.Name ??
                     string.Empty,
