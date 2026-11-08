@@ -131,13 +131,13 @@ namespace CETools.Civil3D
                 "Profile-view row height",
                 1.0,
                 "Elevation represented by one horizontal profile-view row. Use the drawing's normal grid-row interval.");
-            settings.AddPositiveInteger(
+            settings.AddPositiveDouble(
                 "BottomRows",
                 "01 Vertical fit",
                 "Rows below lowest profile",
                 1,
                 "Clear rows between the lowest displayed profile and the bottom frame.");
-            settings.AddPositiveInteger(
+            settings.AddPositiveDouble(
                 "ProfileToTopLabelRows",
                 "01 Vertical fit",
                 "Rows from highest profile to top labels",
