@@ -254,7 +254,8 @@ namespace CETools.Civil3D
             CommandFlags.Modal | CommandFlags.Redraw)]
         public void ExportWaterDesignData()
         {
-            UnifiedDesignDataExportCommands.Export("Water");
+            Document doc = AcApplication.DocumentManager.MdiActiveDocument;
+            if (doc != null) SettingOutScheduleCommands.ExportAllDesignElements(doc, "Water");
         }
     }
 }
