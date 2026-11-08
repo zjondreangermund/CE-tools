@@ -38,7 +38,10 @@ namespace CETools.Civil3D
                         as CivilAlignment;
                     if (alignment == null || alignment.IsReferenceObject ||
                         !(alignment.Name.StartsWith("W-", StringComparison.OrdinalIgnoreCase) ||
-                          alignment.Name.IndexOf("Water", StringComparison.OrdinalIgnoreCase) >= 0))
+                          alignment.Name.IndexOf("Water", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          (alignment.Name.StartsWith("BRANCH-", StringComparison.OrdinalIgnoreCase) &&
+                           (alignment.Description ?? string.Empty).IndexOf("water", StringComparison.OrdinalIgnoreCase) >= 0) ||
+                          (alignment.Description ?? string.Empty).IndexOf("CE water alignment", StringComparison.OrdinalIgnoreCase) >= 0))
                         continue;
                     waterViews.AddRange(alignment.GetProfileViewIds().Cast<ObjectId>());
                 }
