@@ -161,12 +161,12 @@ namespace CETools.Civil3D
             double rowHeight = Math.Max(
                 0.001,
                 settings.Double("RowHeight", 1.0));
-            int bottomRows = Math.Max(
-                1,
-                settings.Integer("BottomRows", 1));
-            int profileToTopRows = Math.Max(
-                1,
-                settings.Integer("ProfileToTopLabelRows", 1));
+            double bottomRows = Math.Max(
+                0.0,
+                settings.Double("BottomRows", 1.0));
+            double profileToTopRows = Math.Max(
+                0.0,
+                settings.Double("ProfileToTopLabelRows", 1.0));
             double topLabelToFrameRows = Math.Max(
                 0.0,
                 settings.Double("TopLabelToFrameRows", 1.0));
@@ -616,8 +616,8 @@ namespace CETools.Civil3D
             Document document,
             IList<ProfileViewItem> views,
             double rowHeight,
-            int bottomRows,
-            int profileToTopRows,
+            double bottomRows,
+            double profileToTopRows,
             double topLabelToFrameRows)
         {
             if (document == null || views == null || views.Count == 0)
