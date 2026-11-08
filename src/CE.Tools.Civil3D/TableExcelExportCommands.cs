@@ -6,6 +6,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -259,6 +260,8 @@ namespace CETools.Civil3D
                         values.Add(cells);
                     }
 
+                    SortPartRowsNaturally(values);
+
                     string title =
                         values.Count > 0 &&
                         values[0].Count > 0
@@ -278,6 +281,54 @@ namespace CETools.Civil3D
             }
 
             return result;
+        }
+
+        // Sort only identifiable PIPE/STRUCTURE number columns. Preserve
+        // regular road chainage, quantity and non-pipe tables as authored.
+        private static void SortPartRowsNaturally(List<IList<string>> values)
+        {
+            if (values == null || values.Count < 3) return;
+            int headerRow = -1, partColumn = -1;
+            for (int row = 0; row < Math.Min(3, values.Count); row++)
+            {
+                IList<string> cells = values[row];
+                for (int column = 0; column < cells.Count; column++)
+                {
+                    string heading = (cells[column] ?? "").Trim().ToUpperInvariant();
+                    if (heading == "PIPE" || heading == "PIPE NUMBER" ||
+                        heading == "PIPE NO." || heading == "STRUCTURE" ||
+                        heading == "STRUCTURE NUMBER" || heading == "STRUCTURE NO.")
+                    {
+                        headerRow = row;
+                        partColumn = column;
+                        break;
+                    }
+                }
+                if (partColumn >= 0) break;
+            }
+            if (headerRow < 0) return;
+            int dataStart = headerRow + 1;
+            List<IList<string>> rows = values.Skip(dataStart).ToList();
+            if (rows.Any(row => row.Count <= partColumn ||
+                    string.IsNullOrWhiteSpace(row[partColumn]) ||
+                    !Regex.IsMatch(row[partColumn], @"\d+")))
+                return; // Totals or mixed rows: keep table order intact.
+            rows = rows.OrderBy(row => NaturalKey(row[partColumn]),
+                StringComparer.OrdinalIgnoreCase).ToList();
+            for (int i = 0; i < rows.Count; i++)
+                values[dataStart + i] = rows[i];
+        }
+
+        private static string NaturalKey(string value)
+        {
+            return Regex.Replace(value ?? "", @"\d+", match =>
+            {
+                long numeric;
+                return long.TryParse(match.Value, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out numeric)
+                    ? numeric.ToString("D12", CultureInfo.InvariantCulture)
+                    : match.Value;
+            });
         }
 
         private static string NormalizeCellText(
