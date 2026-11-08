@@ -2352,6 +2352,22 @@ namespace CETools.Civil3D
                             ".xml",
                         BuildWorksheet(sheets[index].Rows));
             }
+
+            // Launch after the ZIP archive and file stream have been disposed.
+            // Excel's normal file association handles .xlsx. A launch failure
+            // does not invalidate a successfully written workbook.
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = path,
+                    UseShellExecute = true
+                });
+            }
+            catch (System.Exception)
+            {
+                // Saved files remain available for manual opening.
+            }
         }
 
         private static string BuildWorksheet(IList<IList<string>> rows)
