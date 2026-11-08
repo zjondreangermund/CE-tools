@@ -1258,7 +1258,23 @@ namespace CETools.Civil3D
                 line.SourceCount++;
             }
 
-            return map.Values.ToList();
+            return map.Values
+                .OrderBy(line => line.Section, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(line => NaturalSortKey(line.Description), StringComparer.OrdinalIgnoreCase)
+                .ThenBy(line => NaturalSortKey(line.SourceSummary), StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        private static string NaturalSortKey(string value)
+        {
+            return Regex.Replace(value ?? string.Empty, @"\\d+", match =>
+            {
+                long number;
+                return long.TryParse(match.Value, NumberStyles.Integer,
+                    CultureInfo.InvariantCulture, out number)
+                    ? number.ToString("D12", CultureInfo.InvariantCulture)
+                    : match.Value;
+            });
         }
 
         private static Dictionary<string, double> ReadRateMap(Table table)
