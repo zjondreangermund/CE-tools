@@ -397,6 +397,28 @@ namespace CETools.Civil3D
                 return;
             }
 
+            LinkSelectedPartsToSurface(document, civilDocument, partIds, "Sewer");
+        }
+
+        // Reuse the existing surface/rules settings for an explicitly scoped
+        // collection of water network parts. This prevents the Water command
+        // from inadvertently selecting every Sewer part in the drawing.
+        internal static void LinkSelectedPartsToSurface(
+            Document document, CivilDocument civilDocument,
+            IEnumerable<ObjectId> selectedPartIds, string discipline)
+        {
+            if (document == null || civilDocument == null || selectedPartIds == null) return;
+            Editor editor = document.Editor;
+            Database database = document.Database;
+            List<ObjectId> partIds = selectedPartIds
+                .Where(id => !id.IsNull && id.IsValid && !id.IsErased)
+                .Distinct().ToList();
+            if (partIds.Count == 0)
+            {
+                editor.WriteMessage("\\nNo eligible " + discipline +
+                    " gravity-network parts were selected for surface linking.");
+                return;
+            }
             List<NamedId> surfaces = ReadSurfaces(database, civilDocument);
             if (surfaces.Count == 0)
             {
@@ -413,7 +435,7 @@ namespace CETools.Civil3D
             const string civilMode = "Use Civil 3D rule sets";
 
             var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Link Sewer Parts to Surface",
+                "CE Tools - Link " + discipline + " Parts to Surface",
                 "Links selected gravity-network parts to one Civil 3D surface. Gravity mode continues each outgoing pipe from the lowest incoming pipe invert at its manhole, then falls at the specified slope even when natural ground rises. Natural-ground mode is a separate option for selected pipes that must remain at a specified cover depth.");
             settings.AddChoice("Surface", "01 Surface", "Reference surface", surfaces[0].Name,
                 "Surface assigned to RefSurfaceId on every selected pipe and structure.",
