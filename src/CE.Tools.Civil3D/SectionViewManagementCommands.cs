@@ -86,26 +86,46 @@ namespace CETools.Civil3D
             try
             {
                 var enumerable = collection as System.Collections.IEnumerable;
+                var entries = new List<object>();
                 if (enumerable != null)
+                    foreach (object value in enumerable) entries.Add(value);
+                if (entries.Count == 0)
                 {
-                    using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+                    var countProperty = collection.GetType().GetProperty("Count");
+                    var indexer = collection.GetType().GetProperty("Item");
+                    var getAt = collection.GetType().GetMethods().FirstOrDefault(
+                        method => method.Name == "GetAt" && method.GetParameters().Length == 1);
+                    int count = countProperty == null ? 0 :
+                        Convert.ToInt32(countProperty.GetValue(collection, null), CultureInfo.InvariantCulture);
+                    for (int index = 0; index < count; index++)
                     {
-                        foreach (object value in enumerable)
+                        try
                         {
-                            try
-                            {
-                                ObjectId id = value is ObjectId ? (ObjectId)value :
-                                    (ObjectId)value.GetType().GetProperty("ObjectId").GetValue(value, null);
-                                DBObject style = tr.GetObject(id, OpenMode.ForRead, false);
-                                PropertyInfo name = style.GetType().GetProperty("Name");
-                                if (name != null)
-                                {
-                                    string candidate = name.GetValue(style, null) as string;
-                                    if (!string.IsNullOrWhiteSpace(candidate)) names.Add(candidate);
-                                }
-                            }
-                            catch { }
+                            object entry = indexer != null && indexer.GetIndexParameters().Length == 1
+                                ? indexer.GetValue(collection, new object[] { index })
+                                : getAt == null ? null : getAt.Invoke(collection, new object[] { index });
+                            if (entry != null) entries.Add(entry);
                         }
+                        catch { }
+                    }
+                }
+                using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+                {
+                    foreach (object value in entries)
+                    {
+                        try
+                        {
+                            ObjectId id = value is ObjectId ? (ObjectId)value :
+                                (ObjectId)value.GetType().GetProperty("ObjectId").GetValue(value, null);
+                            DBObject style = tr.GetObject(id, OpenMode.ForRead, false);
+                            PropertyInfo name = style.GetType().GetProperty("Name");
+                            if (name != null)
+                            {
+                                string candidate = name.GetValue(style, null) as string;
+                                if (!string.IsNullOrWhiteSpace(candidate)) names.Add(candidate);
+                            }
+                        }
+                        catch { }
                     }
                 }
             }
