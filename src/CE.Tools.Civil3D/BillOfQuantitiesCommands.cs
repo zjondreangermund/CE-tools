@@ -307,11 +307,7 @@ namespace CETools.Civil3D
         public void ExportStormwater() { ExportDiscipline(ActiveDocument(), BoqDiscipline.Stormwater); }
 
         [CommandMethod("CE_TOOLS", "CE_BOQSEWER", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
-        public void ExportSewer()
-        {
-            SewerExcavationCommentCommands.ExportBoq(
-                ActiveDocument());
-        }
+        public void ExportSewer() { ExportDiscipline(ActiveDocument(), BoqDiscipline.Sewer); }
 
         [CommandMethod("CE_TOOLS", "CE_BOQWATER", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
         public void ExportWater() { ExportDiscipline(ActiveDocument(), BoqDiscipline.Water); }
