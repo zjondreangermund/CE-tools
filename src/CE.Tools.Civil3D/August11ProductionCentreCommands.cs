@@ -207,6 +207,7 @@ namespace CETools.Civil3D
             August11DisciplineStylePresetManager.ActivateForProduction(Active() == null ? null : Active().Database, "Water");
             RunCentre("WATER PRODUCTION", "Roads/Existing Ground → pressure route/network → mains/branches → profiles/pressure-part labels/assets → setting-out/BOQ → drawings/report.", new[]
             {
+                Action("FINAL WATER PRODUCTION", "CE_FINALWATERPRODUCTION", "Open the approved 31-step numbered Water production workflow; run commands individually to review the drawing between stages.", "00 FINAL PRODUCTION"),
                 Action("SETTINGS - Water Settings", "CE_WATERSETTINGS", "Choose pressure-network parts, pressure-pipe/fitting/appurtenance styles, alignment/profile/profile-view/band styles and labels.", "01 SETTINGS"),
                 Action("Project Styles - Water", "CE_WATERSTYLES", "Civil 3D pressure-network and annotation styles used only by Water production.", "01 SETTINGS"),
                 Action("PREPARE - Utility Route from Road Reserve", "CE_UTILITYFROMROADRESERVE", "Create preliminary water-main route geometry from road-reserve/source geometry.", "02 PREPARE"),
