@@ -95,6 +95,7 @@ namespace CETools.Civil3D
                             // SectionView band sets are imported into the Bands
                             // collection, not assigned as a graph property.
                             view.Bands.ImportBandSetStyle(bandStyleId);
+                            BindNewSectionViewBands(view, tr);
                             applied = true;
                         }
                         if (applied) updated++;
@@ -104,6 +105,73 @@ namespace CETools.Civil3D
                 tr.Commit();
             }
             return updated;
+        }
+
+        // Newly imported section-view bands have no local Section1/Section2 data
+        // sources until they are bound to the target view's OWN sample line.
+        // Never reuse sampled Section ObjectIds from another road or station.
+        private static void BindNewSectionViewBands(SectionView view, Transaction tr)
+        {
+            if (view == null || view.SampleLineId.IsNull) return;
+            var sample = tr.GetObject(view.SampleLineId, OpenMode.ForRead, false) as SampleLine;
+            if (sample == null) return;
+            var sections = sample.GetSectionIds().Cast<ObjectId>()
+                .Select(id => tr.GetObject(id, OpenMode.ForRead, false) as Section)
+                .Where(section => section != null && section.SampleLineId == view.SampleLineId)
+                .ToList();
+            Section ground = sections.FirstOrDefault(section =>
+                SectionRole(section.SourceName) == "NG" ||
+                SectionRole(section.Name) == "NG");
+            Section design = sections.FirstOrDefault(section =>
+                SectionRole(section.SourceName) == "ROAD-DESIGN" ||
+                SectionRole(section.Name) == "ROAD-DESIGN");
+            if (ground == null && design == null) return;
+            foreach (bool top in new[] { true, false })
+            {
+                SectionViewBandItemCollection bands = top
+                    ? view.Bands.GetTopBandItems() : view.Bands.GetBottomBandItems();
+                if (bands == null || bands.Count == 0) continue;
+                bool changed = false;
+                for (int i = 0; i < bands.Count; i++)
+                {
+                    SectionViewBandItem band = bands[i];
+                    string styleName = string.Empty;
+                    try
+                    {
+                        if (!band.BandStyleId.IsNull)
+                        {
+                            DBObject style = tr.GetObject(band.BandStyleId, OpenMode.ForRead, false);
+                            PropertyInfo name = style.GetType().GetProperty("Name");
+                            styleName = name == null ? string.Empty : name.GetValue(style, null) as string ?? string.Empty;
+                        }
+                    }
+                    catch { }
+                    string upper = styleName.ToUpperInvariant();
+                    bool finalLevels = upper.Contains("FINAL") || upper.Contains("DESIGN");
+                    bool difference = upper.Contains("DIFFERENCE") || upper.Contains("CUT") || upper.Contains("FILL");
+                    Section primary = finalLevels && !difference ? design ?? ground : ground ?? design;
+                    if (primary == null) continue;
+                    try
+                    {
+                        if (band.Section1Id.IsNull)
+                        {
+                            band.Section1Id = primary.ObjectId;
+                            changed = true;
+                        }
+                        if (difference && design != null && ground != null && band.Section2Id.IsNull)
+                        {
+                            band.Section2Id = design.ObjectId;
+                            changed = true;
+                        }
+                    }
+                    catch { } // Some band types do not expose section sources.
+                }
+                if (changed)
+                {
+                    if (top) view.Bands.SetTopBandItems(bands);
+                    else view.Bands.SetBottomBandItems(bands);
+                }
+            }
         }
 
         private static ObjectId ResolveStyleId(Database database, object styleCollection, string desired)
