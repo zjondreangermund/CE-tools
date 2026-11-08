@@ -435,7 +435,7 @@ namespace CETools.Civil3D
             const string civilMode = "Use Civil 3D rule sets";
 
             var settings = new ProductionSettingsDialogModel(
-                "CE Tools - Link Sewer Parts to Surface",
+                "CE Tools - Link " + discipline + " Parts to Surface",
                 "Links selected gravity-network parts to one Civil 3D surface. Gravity mode continues each outgoing pipe from the lowest incoming pipe invert at its manhole, then falls at the specified slope even when natural ground rises. Natural-ground mode is a separate option for selected pipes that must remain at a specified cover depth.");
             settings.AddChoice("Surface", "01 Surface", "Reference surface", surfaces[0].Name,
                 "Surface assigned to RefSurfaceId on every selected pipe and structure.",
