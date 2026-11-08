@@ -41,7 +41,7 @@ else:
 
 for marker in [
     '"CE_BOQSEWER"',
-    'SewerExcavationCommentCommands.ExportBoq(',
+    'ExportDiscipline(ActiveDocument(), BoqDiscipline.Sewer)',
 ]:
     if marker not in boq_owner:
         errors.append("Missing CE_BOQSEWER owner routing marker: " + marker)
