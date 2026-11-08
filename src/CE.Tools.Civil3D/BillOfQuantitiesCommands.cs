@@ -347,21 +347,22 @@ namespace CETools.Civil3D
 
             try
             {
-                if (discipline == BoqDiscipline.Sewer)
+                if (discipline == BoqDiscipline.Sewer ||
+                    discipline == BoqDiscipline.Water)
                 {
                     SimpleXlsxWriter.Write(
                         path,
                         new List<XlsxSheet>
                         {
                             new XlsxSheet(
-                                "Sewer BOQ",
+                                discipline + " BOQ",
                                 BuildExportCells(
                                     discipline,
                                     unitsPerMetre,
                                     lines)),
                             new XlsxSheet(
                                 "Summary",
-                                BuildSewerSummaryCells(lines))
+                                BuildDisciplineSummaryCells(discipline, lines))
                         });
                 }
                 else
@@ -1523,6 +1524,38 @@ namespace CETools.Civil3D
                 unitsPerMetre.ToString("0.######", CultureInfo.InvariantCulture),
                 string.Empty, string.Empty, string.Empty,
                 string.Empty, string.Empty, string.Empty, string.Empty, string.Empty
+            });
+            return rows;
+        }
+
+        private static List<IList<string>> BuildDisciplineSummaryCells(
+            BoqDiscipline discipline, IList<BoqLine> lines)
+        {
+            var rows = new List<IList<string>>
+            {
+                new List<string> { "CE TOOLS " + discipline.ToString().ToUpperInvariant() + " BOQ SUMMARY", "", "", "", "" },
+                new List<string> { "SECTION", "UNIT", "QUANTITY", "SOURCE COUNT", "AMOUNT" }
+            };
+            foreach (var group in (lines ?? new List<BoqLine>())
+                .GroupBy(line => new { Section = line.Section ?? string.Empty, Unit = line.Unit ?? string.Empty })
+                .OrderBy(group => group.Key.Section, StringComparer.OrdinalIgnoreCase)
+                .ThenBy(group => group.Key.Unit, StringComparer.OrdinalIgnoreCase))
+            {
+                double amount = group.Sum(line => line.Rate > 0 ? line.Rate * line.Quantity : 0);
+                rows.Add(new List<string>
+                {
+                    group.Key.Section, group.Key.Unit,
+                    group.Sum(line => line.Quantity).ToString("0.###", CultureInfo.InvariantCulture),
+                    group.Sum(line => line.SourceCount).ToString(CultureInfo.InvariantCulture),
+                    group.Any(line => line.Rate > 0) ? amount.ToString("0.##", CultureInfo.InvariantCulture) : ""
+                });
+            }
+            rows.Add(new List<string>
+            {
+                "GRAND TOTAL", "Mixed units", "",
+                (lines ?? new List<BoqLine>()).Sum(line => line.SourceCount).ToString(CultureInfo.InvariantCulture),
+                (lines ?? new List<BoqLine>()).Any(line => line.Rate > 0) ?
+                    lines.Sum(line => line.Rate > 0 ? line.Rate * line.Quantity : 0).ToString("0.##", CultureInfo.InvariantCulture) : ""
             });
             return rows;
         }
