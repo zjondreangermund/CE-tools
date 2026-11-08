@@ -712,7 +712,7 @@ namespace CETools.Civil3D
             {
                 bool isPipe = databaseObject is Autodesk.Civil.DatabaseServices.Pipe;
                 string name = GetObjectName(databaseObject, transaction);
-                string size = ReadSize(databaseObject, unitsPerMetre);
+                string nativePartSize = ReadSize(databaseObject, unitsPerMetre);
                 string partType = ReadPartType(databaseObject);
                 string layerName = entity.Layer ?? string.Empty;
                 string sectionName = discipline + (isPipe ? " pipes" : " structures");
@@ -730,7 +730,7 @@ namespace CETools.Civil3D
                 }
                 string summary = layerName + " | " +
                     (string.IsNullOrWhiteSpace(partType) ? "Unspecified type" : partType) +
-                    " | " + (string.IsNullOrWhiteSpace(size) ? "Unspecified size" : size);
+                    " | " + (string.IsNullOrWhiteSpace(nativePartSize) ? "Unspecified size" : nativePartSize);
                 observation = new QuantityObservation(discipline, sectionName,
                     (isPipe ? "Pipe" : "Structure") + " (" + name + ")",
                     isPipe ? "m" : "No.", nativeQuantity, summary);
