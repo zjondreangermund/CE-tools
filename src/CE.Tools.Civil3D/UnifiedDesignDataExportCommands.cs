@@ -130,14 +130,6 @@ namespace CETools.Civil3D
                     });
                     doc.Editor.WriteMessage("\nCE_DESIGNDATAEXPORT: {0} pipes, {1} structures exported: {2}",
                         pipes.Count, structures.Count, save.FileName);
-                    try
-                    {
-                        Process.Start(new ProcessStartInfo { FileName = save.FileName, UseShellExecute = true });
-                    }
-                    catch (System.Exception e)
-                    {
-                        doc.Editor.WriteMessage("\nExcel workbook saved but could not open automatically: " + e.Message);
-                    }
                 }
                 catch (System.Exception e)
                 {
