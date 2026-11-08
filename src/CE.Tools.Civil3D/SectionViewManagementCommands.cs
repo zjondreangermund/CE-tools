@@ -67,6 +67,121 @@ namespace CETools.Civil3D
             return new HashSet<ObjectId>(FindViews(doc).Select(x => x.Id));
         }
 
+        [CommandMethod("CE_TOOLS", "CE_CROSSSECTIONBANDSETS",
+            CommandFlags.Modal | CommandFlags.Redraw | CommandFlags.UsePickSet)]
+        public void ApplyBandSetToSectionViews()
+        {
+            Document doc = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (doc == null || civil == null) return;
+
+            var available = FindViews(doc);
+            if (available.Count == 0)
+            {
+                doc.Editor.WriteMessage("\nCE_CROSSSECTIONBANDSETS: no Civil 3D section views found.");
+                return;
+            }
+            var names = new List<string>();
+            object collection = civil.Styles.SectionViewBandSetStyles;
+            try
+            {
+                var enumerable = collection as System.Collections.IEnumerable;
+                if (enumerable != null)
+                {
+                    using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+                    {
+                        foreach (object value in enumerable)
+                        {
+                            try
+                            {
+                                ObjectId id = value is ObjectId ? (ObjectId)value :
+                                    (ObjectId)value.GetType().GetProperty("ObjectId").GetValue(value, null);
+                                DBObject style = tr.GetObject(id, OpenMode.ForRead, false);
+                                PropertyInfo name = style.GetType().GetProperty("Name");
+                                if (name != null)
+                                {
+                                    string candidate = name.GetValue(style, null) as string;
+                                    if (!string.IsNullOrWhiteSpace(candidate)) names.Add(candidate);
+                                }
+                            }
+                            catch { }
+                        }
+                    }
+                }
+            }
+            catch { }
+            names = names.Distinct(StringComparer.OrdinalIgnoreCase)
+                .OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
+            if (names.Count == 0)
+            {
+                doc.Editor.WriteMessage("\nCE_CROSSSECTIONBANDSETS: no named section-view band sets found.");
+                return;
+            }
+
+            var settings = new ProductionSettingsDialogModel(
+                "CE Tools - Cross Section Band Sets",
+                "Apply a chosen native Civil 3D band set to all or multiple selected road cross-section views. Each section receives its own sampled Section1/Section2 data sources; data from other roads is never copied.");
+            settings.AddChoice("Scope", "01 Selection", "Cross-section views", "All section views",
+                "Choose all views or multiple views selected from the drawing.",
+                new[] { "All section views", "Multiple selected section views" });
+            settings.AddChoice("BandSet", "02 Bands", "Section-view band set", names[0],
+                "Select an existing native Civil 3D section-view band-set style.", names);
+            if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+            ObjectId bandId = ResolveStyleId(doc.Database, collection, settings.Text("BandSet"));
+            if (bandId.IsNull)
+            {
+                doc.Editor.WriteMessage("\nCE_CROSSSECTIONBANDSETS: selected band-set style was not resolved.");
+                return;
+            }
+
+            var selected = new HashSet<ObjectId>(available.Select(view => view.Id));
+            if (settings.Text("Scope") == "Multiple selected section views")
+            {
+                PromptSelectionResult pick = doc.Editor.GetSelection(new PromptSelectionOptions
+                {
+                    MessageForAdding = "\nSelect road cross-section views to receive the band set: ",
+                    AllowDuplicates = false
+                });
+                if (pick.Status != PromptStatus.OK || pick.Value == null) return;
+                selected.IntersectWith(pick.Value.GetObjectIds());
+                if (selected.Count == 0)
+                {
+                    doc.Editor.WriteMessage("\nCE_CROSSSECTIONBANDSETS: no valid section views selected.");
+                    return;
+                }
+            }
+
+            int applied = 0, failed = 0;
+            using (doc.LockDocument())
+            using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId viewId in selected)
+                {
+                    try
+                    {
+                        SectionView view = tr.GetObject(viewId, OpenMode.ForWrite, false) as SectionView;
+                        if (view == null || view.IsReferenceObject) { failed++; continue; }
+                        view.Bands.ImportBandSetStyle(bandId);
+                        BindNewSectionViewBands(view, tr);
+                        applied++;
+                    }
+                    catch (System.Exception ex)
+                    {
+                        failed++;
+                        doc.Editor.WriteMessage(
+                            "\nCE_CROSSSECTIONBANDSETS failed on view {0}: {1}", viewId.Handle, ex.Message);
+                    }
+                }
+                tr.Commit();
+            }
+            doc.Editor.Regen();
+            System.Windows.Forms.MessageBox.Show(
+                "Section views updated: " + applied +
+                "\nSkipped / failed: " + failed +
+                "\n\nReview native Section1/Section2 sources on representative sections before issuing drawings.",
+                "CE Tools - Cross Section Band Sets");
+        }
+
         internal static int ApplyCreatedSectionViewStyles(Document doc,
             HashSet<ObjectId> previous, CivilDocument civil, string sectionStyle, string bandSet)
         {
