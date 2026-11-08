@@ -1172,7 +1172,7 @@ namespace CETools.Civil3D
 
         private static string ReadPartType(DBObject part)
         {
-            foreach (string name in new[] { "PartSizeName", "PartFamilyName", "Description", "PartType" })
+            foreach (string name in new[] { "PartFamilyName", "PartType", "Description", "PartSizeName" })
             {
                 try
                 {
@@ -1197,7 +1197,17 @@ namespace CETools.Civil3D
                 "InnerDiameterOrWidth",
                 "Diameter",
                 "OutsideDiameter"))
-                return string.Empty;
+            {
+                try
+                {
+                    PropertyInfo sizeProperty = databaseObject.GetType().GetProperty(
+                        "PartSizeName", BindingFlags.Public | BindingFlags.Instance);
+                    string namedSize = sizeProperty == null ? string.Empty :
+                        Convert.ToString(sizeProperty.GetValue(databaseObject, null), CultureInfo.InvariantCulture);
+                    return string.IsNullOrWhiteSpace(namedSize) ? string.Empty : namedSize.Trim();
+                }
+                catch { return string.Empty; }
+            }
 
             double metres = raw / unitsPerMetre;
             if (!IsFinitePositive(metres)) return string.Empty;
