@@ -132,11 +132,11 @@ namespace CETools.Civil3D
             catch { }
             names = names.Distinct(StringComparer.OrdinalIgnoreCase)
                 .OrderBy(name => name, StringComparer.OrdinalIgnoreCase).ToList();
-            if (names.Count == 0)
-            {
-                doc.Editor.WriteMessage("\nCE_CROSSSECTIONBANDSETS: no named section-view band sets found.");
-                return;
-            }
+            // Civil 3D drawings can contain manually edited SectionView bands
+            // without any named SectionViewBandSetStyle. A reference view is
+            // therefore always offered, even if the style collection is empty.
+            const string copyFromView = "<Copy bands from existing section view>";
+            names.Insert(0, copyFromView);
 
             var settings = new ProductionSettingsDialogModel(
                 "CE Tools - Cross Section Band Sets",
@@ -145,16 +145,30 @@ namespace CETools.Civil3D
                 "Choose all views or multiple views selected from the drawing.",
                 new[] { "All section views", "Multiple selected section views" });
             settings.AddChoice("BandSet", "02 Bands", "Section-view band set", names[0],
-                "Select an existing native Civil 3D section-view band-set style.", names);
+                "Copy manually configured bands from a source view, or choose an existing Civil 3D band-set style.", names);
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
-            ObjectId bandId = ResolveStyleId(doc.Database, collection, settings.Text("BandSet"));
-            if (bandId.IsNull)
+            bool fromSource = settings.Text("BandSet") == copyFromView;
+            ObjectId bandId = fromSource ? ObjectId.Null :
+                ResolveStyleId(doc.Database, collection, settings.Text("BandSet"));
+            if (!fromSource && bandId.IsNull)
             {
                 doc.Editor.WriteMessage("\nCE_CROSSSECTIONBANDSETS: selected band-set style was not resolved.");
                 return;
             }
+            ObjectId sourceId = ObjectId.Null;
+            if (fromSource)
+            {
+                var sourcePrompt = new PromptEntityOptions(
+                    "\nSelect the correctly edited SOURCE section view: ");
+                sourcePrompt.SetRejectMessage("\nSelect a Civil 3D section view.");
+                sourcePrompt.AddAllowedClass(typeof(SectionView), true);
+                PromptEntityResult source = doc.Editor.GetEntity(sourcePrompt);
+                if (source.Status != PromptStatus.OK) return;
+                sourceId = source.ObjectId;
+            }
 
             var selected = new HashSet<ObjectId>(available.Select(view => view.Id));
+            if (!sourceId.IsNull) selected.Remove(sourceId);
             if (settings.Text("Scope") == "Multiple selected section views")
             {
                 PromptSelectionResult pick = doc.Editor.GetSelection(new PromptSelectionOptions
@@ -175,14 +189,33 @@ namespace CETools.Civil3D
             using (doc.LockDocument())
             using (Transaction tr = doc.Database.TransactionManager.StartTransaction())
             {
+                SectionView reference = sourceId.IsNull ? null :
+                    tr.GetObject(sourceId, OpenMode.ForRead, false) as SectionView;
                 foreach (ObjectId viewId in selected)
                 {
                     try
                     {
                         SectionView view = tr.GetObject(viewId, OpenMode.ForWrite, false) as SectionView;
                         if (view == null || view.IsReferenceObject) { failed++; continue; }
-                        view.Bands.ImportBandSetStyle(bandId);
-                        BindNewSectionViewBands(view, tr);
+                        if (fromSource)
+                        {
+                            int rows = CopySectionBandLayout(reference, view);
+                            if (rows == 0) { failed++; continue; }
+                            int fixedSources, missingSources, styles;
+                            var diagnostic = new List<string>();
+                            RepairSectionBandSources(reference, view, tr,
+                                out fixedSources, out missingSources, out styles,
+                                diagnostic, false, RoadName(view.Name));
+                            if (missingSources > 0)
+                                doc.Editor.WriteMessage(
+                                    "\nCE_CROSSSECTIONBANDSETS {0}: {1} unresolved section sources.",
+                                    view.Name, missingSources);
+                        }
+                        else
+                        {
+                            view.Bands.ImportBandSetStyle(bandId);
+                            BindNewSectionViewBands(view, tr);
+                        }
                         applied++;
                     }
                     catch (System.Exception ex)
