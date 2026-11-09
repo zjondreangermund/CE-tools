@@ -39,6 +39,13 @@ namespace CETools.Civil3D
                     Title = "CE Tools"
                 };
 
+                // The old on-screen "Linked CE output may be stale" notice
+                // is opt-in. Keep its explicit refresh/status/toggle controls
+                // here, available without a persistent floating window.
+                AddCommandItem(extension, "Refresh Linked CE Outputs", "CE_REFRESHALL");
+                AddCommandItem(extension, "Linked Output Refresh Status", "CE_REFRESHSTATUS");
+                AddCommandItem(extension, "Out-of-Date Notice On / Off", "CE_AUTOREFRESH");
+
                 var refreshItem = new MenuItem("CE Dynamic Refresh All");
                 refreshItem.Click += OnDynamicRefreshClick;
                 extension.MenuItems.Add(refreshItem);
