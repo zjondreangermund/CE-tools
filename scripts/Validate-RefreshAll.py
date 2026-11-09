@@ -58,13 +58,14 @@ for marker in (
     '"Refresh Linked CE Outputs", "CE_REFRESHALL"',
     '"Linked Output Refresh Status", "CE_REFRESHSTATUS"',
     '"Out-of-Date Notice On / Off", "CE_AUTOREFRESH"',
+    '"Ignore / Dismiss Linked Reminder", "CE_REFRESHDISMISS"',
 ):
     if marker not in menu:
         errors.append("CE Tools right-click manual refresh control missing: " + marker)
 
 for marker in (
     'if (dictionary == null || !dictionary.Contains(RecordName)) return false',
-    'if (string.Equals(text, "NoticeOnV2", StringComparison.OrdinalIgnoreCase)) return true',
+    'if (string.Equals(text, "NoticeOnV3", StringComparison.OrdinalIgnoreCase)) return true',
 ):
     if marker not in refresh:
         errors.append("Out-of-date popup is not opt-in for existing drawings: " + marker)
