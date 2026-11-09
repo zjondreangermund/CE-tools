@@ -859,11 +859,11 @@ namespace CETools.Civil3D
             nominal = false;
             string partSize = ReadDesignText(pipe, "PartSizeName", "SizeName");
             Match match = Regex.Match(partSize ?? string.Empty,
-                @"(?<!\\d)(?<diam>\\d+(?:[.,]\\d+)?)\\s*(?:mm|millimet(?:er|re)s?|DN)\\b",
+                @"(?<!\d)(?<diam>\d+(?:[.,]\d+)?)\s*(?:mm|millimet(?:er|re)s?|DN)\b",
                 RegexOptions.IgnoreCase);
             if (!match.Success)
                 match = Regex.Match(partSize ?? string.Empty,
-                    @"\\bDN\\s*(?<diam>\\d+(?:[.,]\\d+)?)\\b",
+                    @"\bDN\s*(?<diam>\d+(?:[.,]\d+)?)\b",
                     RegexOptions.IgnoreCase);
             if (match.Success)
             {
