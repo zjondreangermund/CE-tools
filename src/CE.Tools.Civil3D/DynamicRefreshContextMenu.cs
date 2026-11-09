@@ -43,6 +43,7 @@ namespace CETools.Civil3D
                 // is opt-in. Keep its explicit refresh/status/toggle controls
                 // here, available without a persistent floating window.
                 AddCommandItem(extension, "Refresh Linked CE Outputs", "CE_REFRESHALL");
+                AddCommandItem(extension, "Ignore / Dismiss Linked Reminder", "CE_REFRESHDISMISS");
                 AddCommandItem(extension, "Linked Output Refresh Status", "CE_REFRESHSTATUS");
                 AddCommandItem(extension, "Out-of-Date Notice On / Off", "CE_AUTOREFRESH");
 
