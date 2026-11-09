@@ -9,11 +9,13 @@ SOURCE_DIR = ROOT / "src" / "CE.Tools.Civil3D"
 REFRESH = SOURCE_DIR / "RefreshAllCommands.cs"
 PLUGIN = SOURCE_DIR / "PluginEntry.cs"
 WINDOW = SOURCE_DIR / "FloatingToolsWindow.cs"
+CONTEXT_MENU = SOURCE_DIR / "DynamicRefreshContextMenu.cs"
 
 required_files = {
     "refresh coordinator": REFRESH,
     "ribbon": PLUGIN,
     "workflow window": WINDOW,
+    "context menu": CONTEXT_MENU,
     "coordinate tables": SOURCE_DIR / "SurveyCoordinateWorkflowCommands.cs",
     "setting-out schedules": SOURCE_DIR / "SettingOutScheduleCommands.cs",
     "parking labels": SOURCE_DIR / "ParkingNumberLinkCommands.cs",
@@ -35,14 +37,37 @@ texts = {name: path.read_text(encoding="utf-8") for name, path in required_files
 refresh = texts["refresh coordinator"]
 plugin = texts["ribbon"]
 window = texts["workflow window"]
+menu = texts["context menu"]
 
 for command in ("CE_REFRESHALL", "CE_REFRESHSTATUS", "CE_AUTOREFRESH"):
     if f'"{command}"' not in refresh:
         errors.append(f"Shared refresh command is not declared: {command}")
-    if f'"{command} "' not in plugin:
+    if command == "CE_AUTOREFRESH":
+        # User asked to remove stale-notice control from main ribbon, move it to
+        # the CE Tools right-click menu and make notifications opt-in.
+        if f'"{command}"' not in menu:
+            errors.append("Notice toggle is missing from right-click CE Tools menu")
+        if f'"{command} "' in plugin:
+            errors.append("Out-of-date notice toggle is still on the main ribbon")
+    elif f'"{command} "' not in plugin:
         errors.append(f"Shared refresh ribbon entry is missing: {command}")
     if f'"{command}")' not in window:
         errors.append(f"General workflow step is missing: {command}")
+
+for marker in (
+    '"Refresh Linked CE Outputs", "CE_REFRESHALL"',
+    '"Linked Output Refresh Status", "CE_REFRESHSTATUS"',
+    '"Out-of-Date Notice On / Off", "CE_AUTOREFRESH"',
+):
+    if marker not in menu:
+        errors.append("CE Tools right-click manual refresh control missing: " + marker)
+
+for marker in (
+    'if (dictionary == null || !dictionary.Contains(RecordName)) return false',
+    'if (string.Equals(text, "NoticeOnV2", StringComparison.OrdinalIgnoreCase)) return true',
+):
+    if marker not in refresh:
+        errors.append("Out-of-date popup is not opt-in for existing drawings: " + marker)
 
 refresh_markers = (
     "SurveyCoordinateWorkflowCommands.RefreshAll(document)",
