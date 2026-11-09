@@ -45,7 +45,13 @@ namespace CETools.Civil3D
 
             // The welcome screen has its own branded card layout but reads the
             // exact same persisted theme. Do not flatten those custom cards.
-            if (window is CeWelcomeWindow) return;
+            if (window is CeWelcomeWindow)
+            {
+                // Keep the branded welcome layout, but make its check marks
+                // use the same high-contrast theme-dependent brush.
+                ApplyCheckBoxStyle(window, CurrentPalette());
+                return;
+            }
 
             ThemePalette palette = CurrentPalette();
             try
@@ -221,7 +227,7 @@ namespace CETools.Civil3D
         {
             SetStyle(window, typeof(TextBlock), new Setter(TextBlock.ForegroundProperty, palette.Foreground));
             SetStyle(window, typeof(Label), new Setter(Control.ForegroundProperty, palette.Foreground));
-            SetStyle(window, typeof(CheckBox), new Setter(Control.ForegroundProperty, palette.Foreground));
+            ApplyCheckBoxStyle(window, palette);
             SetStyle(window, typeof(RadioButton), new Setter(Control.ForegroundProperty, palette.Foreground));
             SetStyle(window, typeof(GroupBox), new Setter(Control.ForegroundProperty, palette.Foreground));
             SetStyle(window, typeof(Expander), new Setter(Control.ForegroundProperty, palette.Foreground));
@@ -271,6 +277,103 @@ namespace CETools.Civil3D
                 new Setter(Control.BackgroundProperty, palette.Card),
                 new Setter(Control.ForegroundProperty, palette.Foreground),
                 new Setter(Control.BorderBrushProperty, palette.Border));
+        }
+
+        // CheckBox.Foreground only colours its caption; WPF's default
+        // theme renders the tick itself using a separate system brush.
+        // Provide one CE-owned template so dark backgrounds get a WHITE tick
+        // and light backgrounds get a BLACK tick on every CE WPF window.
+        private static void ApplyCheckBoxStyle(Window window, ThemePalette palette)
+        {
+            try
+            {
+                var row = new FrameworkElementFactory(typeof(StackPanel));
+                row.SetValue(StackPanel.OrientationProperty, Orientation.Horizontal);
+                row.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+                var square = new FrameworkElementFactory(typeof(Border));
+                square.SetValue(FrameworkElement.WidthProperty, 18.0);
+                square.SetValue(FrameworkElement.HeightProperty, 18.0);
+                square.SetValue(Border.CornerRadiusProperty, new CornerRadius(2));
+                square.SetValue(Border.BorderThicknessProperty, new Thickness(1.25));
+                square.SetValue(Border.BorderBrushProperty, palette.Border);
+                square.SetValue(Border.BackgroundProperty, palette.Input);
+                square.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+
+                var mark = new FrameworkElementFactory(typeof(System.Windows.Shapes.Path));
+                mark.Name = "CECheckMark";
+                mark.SetValue(System.Windows.Shapes.Path.DataProperty,
+                    Geometry.Parse("M 2,7 L 5.5,10.5 L 13,2.5"));
+                mark.SetValue(System.Windows.Shapes.Path.StrokeProperty,
+                    palette.IsDark ? Brushes.White : Brushes.Black);
+                mark.SetValue(System.Windows.Shapes.Path.StrokeThicknessProperty, 2.2);
+                mark.SetValue(System.Windows.Shapes.Path.StrokeStartLineCapProperty, PenLineCap.Round);
+                mark.SetValue(System.Windows.Shapes.Path.StrokeEndLineCapProperty, PenLineCap.Round);
+                mark.SetValue(FrameworkElement.WidthProperty, 15.0);
+                mark.SetValue(FrameworkElement.HeightProperty, 15.0);
+                mark.SetValue(UIElement.VisibilityProperty, Visibility.Collapsed);
+                
+                var dash = new FrameworkElementFactory(typeof(System.Windows.Shapes.Path));
+                dash.Name = "CEIndeterminateMark";
+                dash.SetValue(System.Windows.Shapes.Path.DataProperty,
+                    Geometry.Parse("M 3,8 L 12,8"));
+                dash.SetValue(System.Windows.Shapes.Path.StrokeProperty,
+                    palette.IsDark ? Brushes.White : Brushes.Black);
+                dash.SetValue(System.Windows.Shapes.Path.StrokeThicknessProperty, 2.2);
+                dash.SetValue(FrameworkElement.WidthProperty, 15.0);
+                dash.SetValue(FrameworkElement.HeightProperty, 15.0);
+                dash.SetValue(UIElement.VisibilityProperty, Visibility.Collapsed);
+                // A Grid allows indeterminate and checked glyphs to overlap.
+                var glyphs = new FrameworkElementFactory(typeof(Grid));
+                glyphs.AppendChild(mark);
+                glyphs.AppendChild(dash);
+                square.AppendChild(glyphs);
+                row.AppendChild(square);
+
+                var caption = new FrameworkElementFactory(typeof(ContentPresenter));
+                caption.SetValue(ContentPresenter.ContentSourceProperty, "Content");
+                caption.SetValue(FrameworkElement.MarginProperty, new Thickness(7, 0, 0, 0));
+                caption.SetValue(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center);
+                row.AppendChild(caption);
+
+                var template = new ControlTemplate(typeof(CheckBox));
+                template.VisualTree = row;
+
+                var checkedTrigger = new Trigger
+                {
+                    Property = ToggleButton.IsCheckedProperty,
+                    Value = true
+                };
+                checkedTrigger.Setters.Add(
+                    new Setter(UIElement.VisibilityProperty, Visibility.Visible, "CECheckMark"));
+                template.Triggers.Add(checkedTrigger);
+                var indeterminateTrigger = new Trigger
+                {
+                    Property = ToggleButton.IsCheckedProperty,
+                    Value = null
+                };
+                indeterminateTrigger.Setters.Add(
+                    new Setter(UIElement.VisibilityProperty, Visibility.Visible, "CEIndeterminateMark"));
+                template.Triggers.Add(indeterminateTrigger);
+                var disabledTrigger = new Trigger
+                {
+                    Property = UIElement.IsEnabledProperty,
+                    Value = false
+                };
+                disabledTrigger.Setters.Add(
+                    new Setter(UIElement.OpacityProperty, 0.5));
+                template.Triggers.Add(disabledTrigger);
+
+                var style = new Style(typeof(CheckBox));
+                style.Setters.Add(new Setter(Control.ForegroundProperty, palette.Foreground));
+                style.Setters.Add(new Setter(Control.TemplateProperty, template));
+                style.Setters.Add(new Setter(FrameworkElement.VerticalAlignmentProperty, VerticalAlignment.Center));
+                window.Resources[typeof(CheckBox)] = style;
+            }
+            catch
+            {
+                // A theme failure must never interrupt an engineering command.
+            }
         }
 
         private static void SetComboBoxItemStyle(Window window, ThemePalette palette)
