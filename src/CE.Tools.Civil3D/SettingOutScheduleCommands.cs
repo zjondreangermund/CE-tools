@@ -601,7 +601,7 @@ namespace CETools.Civil3D
                     if (row == null) continue;
                     int first = -1, second = -1;
                     if (name == "Road Junction Setting-Out" || name == "Road Signs Setting-Out") { first = 1; second = 2; }
-                    else if (name == "Water Structure Data") { first = 2; second = 3; }
+                    else if (name == "Water Structure Data") { first = 3; second = 4; }
                     else if (name == "Sewer Structure Data") { first = 1; second = 2; }
                     else if (name == "Construction Levels") { first = 2; second = 3; }
                     else if (name == "Selected Elements") { first = 4; second = 5; }
@@ -719,6 +719,7 @@ namespace CETools.Civil3D
                     if (!IsWaterNetworkName(networkName)) continue;
 
                     var invertsByStructure = new Dictionary<ObjectId, List<double>>();
+                    var connectedPipes = new Dictionary<ObjectId, List<WaterPipeConnection>>();
                     foreach (ObjectId pipeId in network.GetPipeIds())
                     {
                         CivilPipe pipe = transaction.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe;
@@ -732,6 +733,8 @@ namespace CETools.Civil3D
                         double endInvert = GetPipeInvertElevation(pipe, false, end, radius);
                         AddDesignInvert(invertsByStructure, pipe.StartStructureId, startInvert);
                         AddDesignInvert(invertsByStructure, pipe.EndStructureId, endInvert);
+                        AddWaterPipeConnection(connectedPipes, pipe.StartStructureId, pipe, true);
+                        AddWaterPipeConnection(connectedPipes, pipe.EndStructureId, pipe, false);
 
                         double length = Math.Sqrt(
                             Math.Pow(end.X - start.X, 2.0) +
@@ -781,6 +784,9 @@ namespace CETools.Civil3D
                         if (string.IsNullOrWhiteSpace(nodeName)) nodeName = structure.Handle.ToString();
                         string nodeType = ReadDesignText(structure, "PartFamilyName", "Description", "PartSizeName");
                         if (string.IsNullOrWhiteSpace(nodeType)) nodeType = "Structure";
+                        List<WaterPipeConnection> branches;
+                        connectedPipes.TryGetValue(structureId, out branches);
+                        string bendOrFitting = ClassifyWaterBendOrFitting(branches);
 
                         double surfaceElevation = TryFindSurfaceElevation(groundSurface, position.X, position.Y);
                         double rim = ReadDesignDouble(structure, "RimElevation", "RimElevationOverride", "TopElevation");
@@ -791,6 +797,7 @@ namespace CETools.Civil3D
                         {
                             nodeName,
                             nodeType,
+                            bendOrFitting,
                             position.Y.ToString("0.000", CultureInfo.InvariantCulture),
                             position.X.ToString("0.000", CultureInfo.InvariantCulture),
                             FormatMaybe(surfaceElevation, "0.000"),
@@ -805,6 +812,156 @@ namespace CETools.Civil3D
 
             sheets[1] = ReplaceReportRows(sheets[1], structureRows);
             sheets[2] = ReplaceReportRows(sheets[2], pipeRows);
+        }
+
+        // Read plan geometry only.  Cross-section grade/slope must not change
+        // the reported plan fitting angle.  Each source is a connected native
+        // Civil 3D pipe, NOT a nearby entity guessed from node coordinates.
+        private sealed class WaterPipeConnection
+        {
+            internal double East;
+            internal double North;
+            internal double DiameterMm;
+            internal bool Nominal;
+        }
+
+        private static void AddWaterPipeConnection(
+            IDictionary<ObjectId, List<WaterPipeConnection>> map,
+            ObjectId structureId, CivilPipe pipe, bool atStart)
+        {
+            if (map == null || pipe == null || structureId.IsNull || !structureId.IsValid)
+                return;
+            try
+            {
+                Point3d near = atStart ? pipe.StartPoint : pipe.EndPoint;
+                Point3d far = atStart ? pipe.EndPoint : pipe.StartPoint;
+                double dx = far.X - near.X, dy = far.Y - near.Y;
+                double magnitude = Math.Sqrt(dx * dx + dy * dy);
+                if (magnitude < 0.001) return;
+                bool nominal;
+                double millimetres = ReadWaterPipeDiameterMm(pipe, out nominal);
+                List<WaterPipeConnection> list;
+                if (!map.TryGetValue(structureId, out list))
+                    map[structureId] = list = new List<WaterPipeConnection>();
+                list.Add(new WaterPipeConnection
+                {
+                    East = dx / magnitude,
+                    North = dy / magnitude,
+                    DiameterMm = millimetres,
+                    Nominal = nominal
+                });
+            }
+            catch { /* Report can still export structures without fitting data. */ }
+        }
+
+        private static double ReadWaterPipeDiameterMm(CivilPipe pipe, out bool nominal)
+        {
+            nominal = false;
+            string partSize = ReadDesignText(pipe, "PartSizeName", "SizeName");
+            Match match = Regex.Match(partSize ?? string.Empty,
+                @"(?<!\\d)(?<diam>\\d+(?:[.,]\\d+)?)\\s*(?:mm|millimet(?:er|re)s?|DN)\\b",
+                RegexOptions.IgnoreCase);
+            if (!match.Success)
+                match = Regex.Match(partSize ?? string.Empty,
+                    @"\\bDN\\s*(?<diam>\\d+(?:[.,]\\d+)?)\\b",
+                    RegexOptions.IgnoreCase);
+            if (match.Success)
+            {
+                double parsed;
+                if (double.TryParse(match.Groups["diam"].Value.Replace(",", "."),
+                    NumberStyles.Float, CultureInfo.InvariantCulture, out parsed) && parsed > 0)
+                {
+                    nominal = true;
+                    return parsed;
+                }
+            }
+            double diameter = ReadDesignDouble(pipe, "NominalDiameter");
+            if (double.IsNaN(diameter) || diameter <= 0)
+                diameter = ReadDesignDouble(pipe,
+                    "InnerDiameterOrWidth", "InnerDiameter", "Diameter");
+            else
+                nominal = true;
+            // CE water design reports use metre-based network coordinates.
+            // If the stored pipe size is already in millimetres retain it.
+            if (double.IsNaN(diameter) || double.IsInfinity(diameter) || diameter <= 0) return double.NaN;
+            return diameter < 3.0 ? diameter * 1000.0 : diameter;
+        }
+
+        private static string WaterDiameterText(WaterPipeConnection pipe)
+        {
+            if (pipe == null || double.IsNaN(pipe.DiameterMm) ||
+                double.IsInfinity(pipe.DiameterMm) || pipe.DiameterMm <= 0) return "size unknown";
+            return (pipe.Nominal ? "DN" : "") +
+                pipe.DiameterMm.ToString("0.#", CultureInfo.InvariantCulture) +
+                (pipe.Nominal ? "" : " mm ID");
+        }
+
+        private static bool DifferentWaterSizes(IList<WaterPipeConnection> pipes)
+        {
+            var sized = (pipes ?? new List<WaterPipeConnection>())
+                .Where(pipe => pipe.DiameterMm > 0 && !double.IsNaN(pipe.DiameterMm)).ToList();
+            if (sized.Count < 2) return false;
+            double minimum = sized.Min(pipe => pipe.DiameterMm);
+            double maximum = sized.Max(pipe => pipe.DiameterMm);
+            return maximum - minimum > Math.Max(2.0, maximum * 0.025);
+        }
+
+        private static double WaterPlanDeflection(WaterPipeConnection a, WaterPipeConnection b)
+        {
+            double dot = a.East * b.East + a.North * b.North;
+            dot = Math.Max(-1.0, Math.Min(1.0, dot));
+            return 180.0 - Math.Acos(dot) * 180.0 / Math.PI;
+        }
+
+        private static string ClassifyWaterBendOrFitting(IList<WaterPipeConnection> connections)
+        {
+            if (connections == null || connections.Count < 2) return string.Empty;
+            if (connections.Count == 2)
+            {
+                double deflection = WaterPlanDeflection(connections[0], connections[1]);
+                bool reducing = DifferentWaterSizes(connections);
+                if (deflection < 3.0)
+                    return reducing ? "Reducer (" +
+                        WaterDiameterText(connections[0]) + " × " +
+                        WaterDiameterText(connections[1]) + ")" : string.Empty;
+                double[] angles = { 11.25, 22.5, 45.0, 90.0 };
+                double closest = angles.OrderBy(angle => Math.Abs(deflection - angle)).First();
+                // Unexpected geometry is flagged for design review instead of
+                // silently claiming that a 140° reversal is a standard 90° bend.
+                string angleText = deflection > 110.0
+                    ? deflection.ToString("0.#", CultureInfo.InvariantCulture) + "° (verify)"
+                    : closest.ToString("0.##", CultureInfo.InvariantCulture) + "°";
+                return (reducing ? "Reducing Bend " : "Bend ") + angleText +
+                    (reducing ? " (" + WaterDiameterText(connections[0]) + " × " +
+                        WaterDiameterText(connections[1]) + ")" : "");
+            }
+            if (connections.Count == 3)
+            {
+                // Choose the two legs most nearly opposite as the tee run.
+                int first = 0, second = 1;
+                double smallest = double.MaxValue;
+                for (int i = 0; i < 3; i++)
+                    for (int j = i + 1; j < 3; j++)
+                    {
+                        double angle = WaterPlanDeflection(connections[i], connections[j]);
+                        if (angle < smallest)
+                        {
+                            smallest = angle; first = i; second = j;
+                        }
+                    }
+                int branch = 3 - first - second;
+                bool reducing = DifferentWaterSizes(connections);
+                string sizes = WaterDiameterText(connections[first]) + " / " +
+                    WaterDiameterText(connections[second]) + " × " +
+                    WaterDiameterText(connections[branch]);
+                if (smallest > 35.0)
+                    return "3-way junction (verify fitting)" +
+                        (reducing ? " (" + sizes + ")" : "");
+                return (reducing ? "Reducing T-Fitting" : "T-Fitting") +
+                    (reducing ? " (" + sizes + ")" : "");
+            }
+            return connections.Count.ToString(CultureInfo.InvariantCulture) +
+                "-way junction (verify fitting)";
         }
 
         private static CivilSurface FindExportSurface(Document document, Transaction transaction, string selectedName, bool finished)
@@ -1748,7 +1905,7 @@ namespace CETools.Civil3D
             return new List<XlsxSheet>
             {
                 ReportSheet("Road Junction Setting-Out", "ROAD JUNCTIONS - SETTING-OUT CO-ORDINATES", new[] { "POINT", "Y", "X", "EXISTING GROUND LEVEL (m)", "FINAL LEVEL (m)", "HEIGHT DIFFERENCE (m)" }),
-                ReportSheet("Water Structure Data", "WATER - STRUCTURE DATA", new[] { "Node Name", "Type", "Y Coordinate", "X Coordinate", "Surface Elevation (m)", "Rim Elevation (m)", "Invert Elevation (m)", "Depth Below Surface (m)" }),
+                ReportSheet("Water Structure Data", "WATER - STRUCTURE DATA", new[] { "Node Name", "Type", "Bend / Fitting Type", "Y Coordinate", "X Coordinate", "Surface Elevation (m)", "Rim Elevation (m)", "Invert Elevation (m)", "Depth Below Surface (m)" }),
                 ReportSheet("Water Pipe Data", "WATER - PIPE DATA", new[] { "Pipe Name", "Pipe Description", "Pipe Size", "Length (m)", "Slope (%)", "Start Invert Elevation (m)", "End Invert Elevation (m)", "Branch Name" }),
                 ReportSheet("Sewer Structure Data", "SEWER - STRUCTURE DATA", new[] { "Node Name", "X Coordinate", "Y Coordinate", "Surface Elevation (m)", "Rim Elevation (m)", "Invert Elevation (m)", "Depth (m)", "Node Type" }),
                 ReportSheet("Sewer Pipe Data", "SEWER - PIPE DATA", new[] { "Pipe Name", "Pipe Description", "Pipe Size", "Length (m)", "Slope (%)", "Start Invert Elevation (m)", "End Invert Elevation (m)", "Branch Name" }),
