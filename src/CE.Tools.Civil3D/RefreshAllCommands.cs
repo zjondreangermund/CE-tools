@@ -305,12 +305,13 @@ namespace CETools.Civil3D
                         database.NamedObjectsDictionaryId,
                         OpenMode.ForRead,
                         false) as DBDictionary;
-                    if (dictionary == null || !dictionary.Contains(RecordName)) return true;
+                    // New and unconfigured drawings stay silent. Staleness is still tracked.
+                    if (dictionary == null || !dictionary.Contains(RecordName)) return false;
                     Xrecord record = transaction.GetObject(
                         dictionary.GetAt(RecordName),
                         OpenMode.ForRead,
                         false) as Xrecord;
-                    if (record == null || record.Data == null) return true;
+                    if (record == null || record.Data == null) return false;
                     foreach (TypedValue value in record.Data)
                     {
                         string text = value.Value as string;
@@ -323,7 +324,7 @@ namespace CETools.Civil3D
             {
                 return false;
             }
-            return true;
+            return false; // Notices are opt-in; explicit CE_REFRESHALL is always available.
         }
 
         public static void SetEnabled(Database database, bool enabled)
