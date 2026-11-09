@@ -145,6 +145,7 @@ namespace CETools.Civil3D
                 {
                     A("CE-Platform Settings", "CE_PLATFORMSETTINGSPRODUCTIONCENTRE", "Platform styles and shared production settings.", "01 Platform Production"),
                     A("CE-Platform Layout Production", "CE_PLATFORMLAYOUTPRODUCTIONCENTRE", "Source boundaries, feature lines and linked offsets.", "01 Platform Production"),
+                    A("CE-FINAL PLATFORM PRODUCTION", "CE_FINALPLATFORMPRODUCTION", "Approved 45-step platform production order with a separate heading above each command.", "01 Platform Production"),
                     A("CE-Platform Design Production", "CE_PLATFORMDESIGNPRODUCTIONCENTRE", "Levels, grading, setting-out, quantities and drawings.", "01 Platform Production")
                 });
         }
