@@ -68,13 +68,13 @@ for marker in [
         errors.append("Supplementary command marker missing: " + marker)
 
 for marker in [
-    '"Stormwater Supplementary"',
-    '"CE_STORMWATERFIELDSUPPLEMENTARY"',
-    '"Water Supplementary"',
-    '"CE_WATERFIELDSUPPLEMENTARY"',
+    '"CE-Stormwater Production"',
+    '"CE_SWPRODUCTIONCENTRE"',
+    '"CE-Water Production"',
+    '"CE_WATERPRODUCTIONCENTRE"',
 ]:
     if marker not in menu:
-        errors.append("Right-click supplementary marker missing: " + marker)
+        errors.append("Right-click production marker missing: " + marker)
 
 for marker in [
     '"Recent - CE_STORMWATERFIELDSUPPLEMENTARY"',

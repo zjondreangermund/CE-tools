@@ -47,11 +47,11 @@ for marker in [
         errors.append("Missing CE_BOQSEWER owner routing marker: " + marker)
 
 for marker in [
-    '"CE_PROD_QUANTITY"',
-    '"Quantity Production"',
+    '"CE_PRODUCTION_QUANTITY_TAB"',
+    '"CE-QUANTITY PRODUCTION"',
     '"CE_BOQCENTER "',
-    '"CE_PROD_REPORT"',
-    '"Report Production"',
+    '"CE_PRODUCTION_REPORT_TAB"',
+    '"CE-REPORT PRODUCTION"',
     '"CE_REPORTCENTER "',
 ]:
     if marker not in ribbon:

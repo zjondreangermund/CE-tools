@@ -95,8 +95,8 @@ require("overallmostused" in floating and "MostUsedOverall" in usage, "overall m
 for command in ["CE_BOOKTOOLS", "CE_DRAWINGBOOK", "CE_CLIENTBOOK"]:
     require(command in floating or command in final, command + " is not exposed through workflows")
 require('"CE_BOOKTOOLS"' in floating, "book hub not included in every workflow")
-require('"CE-" + definition.Text' in floating, "workflow card CE- prefix missing")
-require('"CE-" + title.ToUpperInvariant()' in ribbon, "ribbon panel CE- prefix missing")
+require('CeCommandDisplayNames.Normalize(definition.Text)' in floating, "workflow card CE- prefix missing")
+require('CeCommandDisplayNames.Normalize(title).ToUpperInvariant()' in ribbon, "ribbon panel CE- prefix missing")
 
 # Cost-estimate approved-template handoff.
 for command in ["CE_COSTTEMPLATESELECT", "CE_COSTTEMPLATEINFO"]:

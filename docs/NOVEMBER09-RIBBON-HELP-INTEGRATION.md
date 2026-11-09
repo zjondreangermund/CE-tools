@@ -14,3 +14,5 @@ Attachment reconciliation:
 Validation: command registry, all 635 production/menu targets, workflow window, preservation gate, discipline dialogs, 2024 viewport guards and the new ribbon/help integration check pass. The older Validate-CECommandWiring.py audit reports the exact same failures on the base commit and updated sources. These pre-existing broader/staging findings are not resolved by this UI change.
 
 Civil 3D runtime and Windows compilation are not available in the editing environment. Build/install the updated source on Windows and verify CE TOOLS, CE-PRODUCTION, Help/F1, a workspace switch and the right-click refresh/dismiss actions in Civil 3D. This source update is not an installed DLL.
+
+CI follow-up: updated four older UI source-shape tests to verify the replacement production launchers and shared display-name helper. All 85 Python gates in the core workflow pass locally. The Site Grid staging job stops in the historical Platform Production flyout injector; the failing Site Design menu body is byte-for-byte unchanged from the base commit. The source package workflow passes.
