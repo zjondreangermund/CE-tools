@@ -42,6 +42,7 @@ namespace CETools.Civil3D
                 "Linked platform source lines, levels, stepped offsets, surface control, setting-out, quantities and drawings.",
                 new List<DisciplineWorkflowAction>
                 {
+                    new DisciplineWorkflowAction("FINAL PLATFORM PRODUCTION - 45 Steps", "CE_FINALPLATFORMPRODUCTION", "Open the complete, individually numbered platform production sequence.", "00 Final Platform"),
                     new DisciplineWorkflowAction("Create feature lines from multiple polylines", "CE_FLCREATE", "Use the existing multi-source popup workflow and optionally assign a selected Civil 3D surface.", "01 Source"),
                     new DisciplineWorkflowAction("Apply platform slope / flatten", "CE_PLATFORMSLOPE", "Constant high-to-low plane, specified fixed slope from the highest point, or flatten to the highest elevation.", "02 Levels"),
                     new DisciplineWorkflowAction("Create stepped offsets - multiple platforms", "CE_PLATFORMSTEPOFFSETS", "Create outward linked CE_FLREL stepped offsets for multiple platform feature lines.", "03 Steps"),
