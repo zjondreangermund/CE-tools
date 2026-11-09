@@ -144,7 +144,7 @@ namespace CETools.Civil3D
                 : string.Equals(result.StringResult, "On", StringComparison.OrdinalIgnoreCase);
             LinkedTableAutoRefreshManager.SetEnabled(document.Database, enabled);
             document.Editor.WriteMessage(
-                "\nLinked-output out-of-date notifications are {0}. CE Tools will not automatically refresh linked BOQs, sewer excavation schedules, annotations or other linked outputs. Use the notification Refresh button or CE_REFRESHALL when you want to update them.",
+                "\nLinked-output out-of-date notifications are {0}. CE Tools will not automatically refresh linked BOQs, sewer excavation schedules, annotations or other linked outputs. Use CE Tools right-click > Refresh Linked CE Outputs or CE_REFRESHALL to update them.",
                 enabled ? "ON" : "OFF");
         }
 
@@ -316,7 +316,9 @@ namespace CETools.Civil3D
                     {
                         string text = value.Value as string;
                         if (string.Equals(text, "Off", StringComparison.OrdinalIgnoreCase)) return false;
-                        if (string.Equals(text, "On", StringComparison.OrdinalIgnoreCase)) return true;
+                        // Legacy "On" values are intentionally not carried forward: the popup
+                        // is hidden until a user explicitly opts into it again.
+                        if (string.Equals(text, "NoticeOnV2", StringComparison.OrdinalIgnoreCase)) return true;
                     }
                 }
             }
@@ -354,7 +356,7 @@ namespace CETools.Civil3D
                 if (record != null)
                 {
                     record.Data = new ResultBuffer(
-                        new TypedValue((int)DxfCode.Text, enabled ? "On" : "Off"));
+                        new TypedValue((int)DxfCode.Text, enabled ? "NoticeOnV2" : "Off"));
                 }
                 transaction.Commit();
             }
