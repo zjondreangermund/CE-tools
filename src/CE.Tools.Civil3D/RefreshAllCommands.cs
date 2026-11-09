@@ -148,6 +148,18 @@ namespace CETools.Civil3D
                 enabled ? "ON" : "OFF");
         }
 
+        [CommandMethod("CE_TOOLS", "CE_REFRESHDISMISS", CommandFlags.Modal)]
+        public void DismissLinkedOutputNotice()
+        {
+            Document document = ActiveDocument();
+            if (document == null) return;
+            // Exact original Ignore button behaviour: clear the pending
+            // notification without refreshing or changing drawing entities.
+            LinkedTableAutoRefreshManager.ClearPending(document);
+            document.Editor.WriteMessage(
+                "\nCE Tools: linked-output reminder dismissed. No drawing data was changed or refreshed.");
+        }
+
         [CommandMethod(
             "CE_TOOLS",
             "CE_REFRESHSTATUS",
@@ -318,7 +330,7 @@ namespace CETools.Civil3D
                         if (string.Equals(text, "Off", StringComparison.OrdinalIgnoreCase)) return false;
                         // Legacy "On" values are intentionally not carried forward: the popup
                         // is hidden until a user explicitly opts into it again.
-                        if (string.Equals(text, "NoticeOnV2", StringComparison.OrdinalIgnoreCase)) return true;
+                        if (string.Equals(text, "NoticeOnV3", StringComparison.OrdinalIgnoreCase)) return true;
                     }
                 }
             }
@@ -356,7 +368,7 @@ namespace CETools.Civil3D
                 if (record != null)
                 {
                     record.Data = new ResultBuffer(
-                        new TypedValue((int)DxfCode.Text, enabled ? "NoticeOnV2" : "Off"));
+                        new TypedValue((int)DxfCode.Text, enabled ? "NoticeOnV3" : "Off"));
                 }
                 transaction.Commit();
             }
