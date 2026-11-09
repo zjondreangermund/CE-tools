@@ -124,7 +124,7 @@ namespace CETools.Civil3D
             setup.AddChoice("Connections", "03 Creation", "Shared vertices / junctions", "Connect through structures",
                 "Reuse one structure at coincident source vertices so branches and consecutive pipe segments are connected.",
                 new[] { "Connect through structures", "Create parts without connections" });
-            setup.AddPositiveDouble("MaxSpacing", "03 Creation", "Maximum structure spacing", 60.0,
+            setup.AddPositiveDouble("MaxSpacing", "03 Creation", "Maximum structure spacing", 80.0,
                 "Long source segments are divided evenly so every pipe run is within this maximum spacing.");
             setup.AddChoice("SourceObjects", "04 Sources", "Source objects after creation", "Keep source objects",
                 "Keep design strings for later editing/refresh, or erase them after successful network creation.",
@@ -179,7 +179,7 @@ namespace CETools.Civil3D
             if (pipeChoice == null || structureChoice == null) return;
 
             List<SourcePath> paths = ReadSourcePaths(database, sourceIds);
-            double maxSpacing = Math.Max(0.001, setup.Double("MaxSpacing", 60.0));
+            double maxSpacing = Math.Max(0.001, setup.Double("MaxSpacing", 80.0));
             foreach (SourcePath path in paths)
                 path.Points = Densify(path.Points, maxSpacing);
             if (paths.Count == 0 || paths.Sum(path => Math.Max(0, path.Points.Count - 1)) == 0)
