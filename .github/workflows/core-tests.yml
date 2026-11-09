@@ -168,6 +168,8 @@ jobs:
 
       - name: Validate workflow command centre
         run: python3 scripts/Validate-WorkflowWindow.py
+      - name: Validate uploaded ribbon and Help integration
+        run: python3 scripts/Validate-November09RibbonHelpIntegration.py
 
       - name: Validate user comment coverage
         run: python3 scripts/Validate-UserCommentCoverage.py

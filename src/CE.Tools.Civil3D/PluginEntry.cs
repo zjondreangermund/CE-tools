@@ -52,6 +52,7 @@ namespace CETools.Civil3D
         {
             AcApplication.Idle -= OnApplicationIdle;
             DynamicRefreshContextMenu.Detach();
+            ProductionWorkflowRibbonBuilder.Detach();
             UniversalDynamicRefreshManager.Terminate();
             August24RoadElevationDynamicManager.Terminate();
             October03PlotPdfManager.Terminate();
@@ -90,7 +91,7 @@ namespace CETools.Civil3D
                 if (currentRibbon == null) return;
                 bool hasMainTab = currentRibbon.Tabs.Any(tab => tab.Id == "CE_TOOLS_RIBBON_TAB");
                 bool hasProductionTab = currentRibbon.Tabs.Any(tab =>
-                    tab.Id == "CE_TOOLS_PRODUCTION_WORKFLOW_TAB");
+                    tab.Id == ProductionWorkflowRibbonBuilder.HorizontalProductionTabId);
                 // Check both stable tab IDs, not captions, so a workspace reset
                 // can restore either missing ribbon without rebuilding continuously.
                 if (_ribbonCreated && hasMainTab && hasProductionTab) return;
@@ -201,6 +202,33 @@ namespace CETools.Civil3D
 
         private static void BuildPanels(RibbonTab tab)
         {
+            // Keep the main CE Tools ribbon intentionally compact. Production tabs
+            // expose only their FINAL workflow entry point; all individual/specialist
+            // commands are accessed through the CE Engineering Centre palette.
+            AddPanel(tab, "CE_TOOLS_HOME_PANEL", "CE-HOME",
+                Row(Menu("CE_TOOLS_HOME_MENU", "CE-Tools Home",
+                    "Open the CE Tools welcome and navigation window.",
+                    Cmd("CE-Tools Home", "CE_WELCOME ", "Open CE Tools Home."))));
+
+            AddPanel(tab, "CE_TOOLS_ENGINEERING_PANEL", "CE-ENGINEERING CENTRE",
+                Row(Menu("CE_TOOLS_ENGINEERING_MENU", "CE-Engineering Centre",
+                    "Browse all CE Tools commands and specialist workflows.",
+                    Cmd("CE-Engineering Centre", "CE_ENGINEERINGINTELLIGENCECENTRE ", "Open the full CE Tools command library."))));
+
+            AddPanel(tab, "CE_TOOLS_HELP_PANEL", "CE-HELP",
+                Row(Menu("CE_TOOLS_HELP_MENU", "CE-Tools Help",
+                    "Search CE Tools command help and instructions.",
+                    Cmd("CE-Tools Help Centre", "CE_HELP ", "Open the CE Tools Help Centre."))));
+
+            AddPanel(tab, "CE_TOOLS_SETTINGS_PANEL", "CE-SETTINGS",
+                Row(Menu("CE_TOOLS_SETTINGS_MENU", "CE-Tools Settings",
+                    "Configure CE Tools appearance and user preferences.",
+                    Cmd("CE-Tools Appearance", "CE_CETHEME ", "Choose the CE Tools dark or light appearance."))));
+        }
+
+        internal static RibbonTab CreateCommandCatalogueTab()
+        {
+            var tab = new RibbonTab();
             AddProjectPanel(tab);
             AddSurveyPanel(tab);
             AddDrawingsPanel(tab);
@@ -214,6 +242,7 @@ namespace CETools.Civil3D
             AddAnalysisPanel(tab);
             AddAdvancedPanel(tab);
             AddProductionPanel(tab);
+            return tab;
         }
 
         private static void AddAssemblyPanel(RibbonTab tab)
@@ -997,9 +1026,7 @@ namespace CETools.Civil3D
             var source = new RibbonPanelSource
             {
                 Id = panelId,
-                Title = title.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
-                    ? title.ToUpperInvariant()
-                    : "CE-" + title.ToUpperInvariant()
+                Title = CeCommandDisplayNames.Normalize(title).ToUpperInvariant()
             };
             foreach (RibbonItem[] row in rows)
             {
@@ -1018,9 +1045,7 @@ namespace CETools.Civil3D
             var menu = new RibbonMenuButton
             {
                 Id = id,
-                Text = text.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
-                    ? text
-                    : "CE-" + text,
+                Text = CeCommandDisplayNames.Normalize(text),
                 ShowText = true,
                 ShowImage = true,
                 Size = RibbonItemSize.Large,
@@ -1047,13 +1072,8 @@ namespace CETools.Civil3D
 
         private static string NormalizeDisplayText(string text)
         {
-            string value = (text ?? string.Empty).Trim();
-            foreach (string prefix in new[] { "CE Tools ", "CE " })
-            {
-                if (value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase))
-                    return value.Substring(prefix.Length).TrimStart();
-            }
-            return value;
+            string value = CeCommandDisplayNames.Normalize(text);
+            return string.IsNullOrWhiteSpace(value) ? "CE-Command" : value;
         }
 
         private static RibbonMenuItem CreateCommandButton(
@@ -1066,9 +1086,7 @@ namespace CETools.Civil3D
                 Id = (menuId ?? "CE_TOOLS_MENU") + "_COMMAND_" +
                     commandIndex.ToString(System.Globalization.CultureInfo.InvariantCulture) +
                     "_" + definition.Command.Trim().Replace(' ', '_'),
-                Text = definition.Text.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
-                    ? definition.Text
-                    : "CE-" + definition.Text,
+                Text = CeCommandDisplayNames.Normalize(definition.Text),
                 ShowText = true,
                 ShowImage = true,
                 Image = RibbonVisuals.CommandSmall(definition.Command),

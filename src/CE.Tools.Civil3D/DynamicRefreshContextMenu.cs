@@ -63,34 +63,21 @@ namespace CETools.Civil3D
                     extension,
                     "Field Completion",
                     "CE_FIELDCOMPLETION");
-                AddCommandItem(
-                    extension,
-                    "Sewer Supplementary",
-                    "CE_SEWERFIELDSUPPLEMENTARY");
-                AddCommandItem(
-                    extension,
-                    "Stormwater Supplementary",
-                    "CE_STORMWATERFIELDSUPPLEMENTARY");
-                AddCommandItem(
-                    extension,
-                    "Water Supplementary",
-                    "CE_WATERFIELDSUPPLEMENTARY");
-                AddCommandItem(
-                    extension,
-                    "Road Supplementary",
-                    "CE_ROADFIELDSUPPLEMENTARY");
-                AddCommandItem(
-                    extension,
-                    "CAD Supplementary",
-                    "CE_CADSUPPLEMENTARY");
-                AddCommandItem(
-                    extension,
-                    "Platform Supplementary",
-                    "CE_PLATFORMFIELDSUPPLEMENTARY");
-                AddCommandItem(
-                    extension,
-                    "Survey Supplementary",
-                    "CE_SURVEYFIELDSUPPLEMENTARY");
+                // Discipline production launchers live under the existing
+                // AutoCAD right-click "CE Tools" submenu. Replace the old
+                // supplementary shortcuts with the approved production entry points.
+                AddCommandItem(extension, "CE-Project Production", "CE_PROJECTPRODUCTIONCENTRE");
+                AddCommandItem(extension, "CE-Survey Production", "CE_SURVEYPRODUCTIONCENTRE");
+                AddCommandItem(extension, "CE-Platform Production", "CE_PLATFORMPRODUCTIONCENTRE");
+                AddCommandItem(extension, "CE-Road Production", "CE_ROADPRODUCTIONCENTRE");
+                AddCommandItem(extension, "CE-Stormwater Production", "CE_SWPRODUCTIONCENTRE");
+                AddCommandItem(extension, "CE-Sewer Production", "CE_SEWERPRODUCTIONCENTRE");
+                AddCommandItem(extension, "CE-Water Production", "CE_WATERPRODUCTIONCENTRE");
+                AddCommandItem(extension, "CE-Bulk Water Production", "CE_BULKWATERPRODUCTIONCENTRE");
+                AddCommandItem(extension, "CE-Parking Production", "CE_PARKINGPRODUCTIONCENTRE");
+                AddCommandItem(extension, "CE-Flood Production", "CE_FLOODPRODUCTIONCENTRE");
+                AddCommandItem(extension, "CE-Quantity Production", "CE_BOQCENTER");
+                AddCommandItem(extension, "CE-Report Production", "CE_REPORTCENTER");
 
                 ContextMenuApplication.AddDefaultContextMenuExtension(extension);
                 _menuExtension = extension;

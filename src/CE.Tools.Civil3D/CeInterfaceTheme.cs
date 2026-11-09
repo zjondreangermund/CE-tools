@@ -477,7 +477,16 @@ namespace CETools.Civil3D
                     control.Foreground = palette.Foreground;
                     control.BorderBrush = palette.Border;
                 }
-                else if (control is Label || control is CheckBox || control is RadioButton || control is GroupBox || control is Expander)
+                else if (control is CheckBox)
+                {
+                    control.Foreground = palette.Foreground;
+                    var style = control.TryFindResource(typeof(CheckBox)) as Style;
+                    if (style != null)
+                        foreach (Setter setter in style.Setters)
+                            if (setter.Property == Control.TemplateProperty)
+                                control.Template = setter.Value as ControlTemplate;
+                }
+                else if (control is Label || control is RadioButton || control is GroupBox || control is Expander)
                 {
                     control.Foreground = palette.Foreground;
                 }

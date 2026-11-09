@@ -102,6 +102,12 @@ namespace CETools.Civil3D
                 AcApplication.DocumentManager.MdiActiveDocument?.SendStringToExecute("CE_MOSTUSEDOVERALL ", true, false, true);
                 return;
             }
+            if (key.Key == Key.F1 && modifiers == ModifierKeys.None)
+            {
+                key.Handled = true;
+                CeHelpCentreWindow.Show();
+                return;
+            }
             if (key.Key != Key.F || (modifiers & ModifierKeys.Control) != ModifierKeys.Control) return;
             key.Handled = true;
             ShowWindow();
@@ -109,10 +115,15 @@ namespace CETools.Civil3D
 
         private static void OnApplicationPreviewKeyDown(object sender, KeyEventArgs args)
         {
+            if (args.Key == Key.F1 && Keyboard.Modifiers == ModifierKeys.None)
+            {
+                args.Handled = true;
+                CeHelpCentreWindow.Show();
+                return;
+            }
             if (args.Key != Key.F ||
                 (Keyboard.Modifiers & ModifierKeys.Control) != ModifierKeys.Control)
                 return;
-
             args.Handled = true;
             ShowWindow();
         }
@@ -164,11 +175,13 @@ namespace CETools.Civil3D
         {
             var result = new List<FloatingToolDefinition>();
             RibbonControl ribbon = ComponentManager.Ribbon;
-            RibbonTab tab = ribbon == null
-                ? null
-                : ribbon.Tabs.FirstOrDefault(
-                    item => item != null && item.Id == "CE_TOOLS_RIBBON_TAB");
-            if (tab != null)
+            var tabs = new List<RibbonTab>();
+            if (ribbon != null)
+                tabs.AddRange(ribbon.Tabs.Where(item => item != null &&
+                    (item.Id == "CE_TOOLS_RIBBON_TAB" ||
+                     item.Id == ProductionWorkflowRibbonBuilder.HorizontalProductionTabId)));
+            tabs.Add(RibbonBuilder.CreateCommandCatalogueTab());
+            foreach (RibbonTab tab in tabs)
             {
                 foreach (RibbonPanel panel in tab.Panels)
                 {
@@ -178,6 +191,12 @@ namespace CETools.Civil3D
                     string panelName = CleanRibbonText(panel.Source.Title);
                     foreach (RibbonItem item in panel.Source.Items)
                     {
+                        RibbonButton direct = item as RibbonButton;
+                        if (direct != null && direct.CommandParameter is string &&
+                            !string.IsNullOrWhiteSpace((string)direct.CommandParameter))
+                            result.Add(new FloatingToolDefinition(panelName, panelName,
+                                CleanRibbonText(direct.Text), (string)direct.CommandParameter,
+                                direct.ToolTip == null ? string.Empty : direct.ToolTip.ToString()));
                         RibbonMenuButton menu = item as RibbonMenuButton;
                         if (menu == null)
                             continue;
@@ -275,8 +294,9 @@ namespace CETools.Civil3D
 
                         yield return new FloatingToolDefinition(
                             "Command Catalogue",
-                            FriendlyName(type.Name.Replace("Commands", string.Empty)),
-                            FriendlyName(method.Name),
+                            CeCommandDisplayNames.Normalize(
+                                FriendlyName(type.Name.Replace("Commands", string.Empty))),
+                            CeCommandDisplayNames.Normalize(FriendlyName(method.Name)),
                             command.Trim() + " ",
                             "Run " + command.Trim() + ". Declared by " +
                             type.Name + "." + method.Name + ".");
@@ -328,7 +348,7 @@ namespace CETools.Civil3D
         {
             return string.IsNullOrWhiteSpace(text)
                 ? string.Empty
-                : text.Replace("\n", " ").Trim();
+                : CeCommandDisplayNames.Normalize(text);
         }
     }
 
@@ -831,9 +851,7 @@ namespace CETools.Civil3D
             var labels = new StackPanel();
             labels.Children.Add(new TextBlock
             {
-                Text = definition.Text.StartsWith("CE-", StringComparison.OrdinalIgnoreCase)
-                    ? definition.Text
-                    : "CE-" + definition.Text,
+                Text = CeCommandDisplayNames.Normalize(definition.Text),
                 FontWeight = FontWeights.SemiBold,
                 TextWrapping = TextWrapping.Wrap
             });

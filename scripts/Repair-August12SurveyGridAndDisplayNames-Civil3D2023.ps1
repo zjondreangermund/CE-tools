@@ -49,7 +49,9 @@ $production = Required 'August11ProductionCentreCommands.cs'
 $text = ReadText $production
 $old = '                Text = text,'
 $new = '                Text = CeCommandDisplayNames.Prefix(text),'
-$text = ReplaceOnce $text $old $new 'CE- prefixes on Production ribbon buttons'
+if (-not $text.Contains('WrapProductionRibbonLabel(definition.ButtonText)')) {
+    $text = ReplaceOnce $text $old $new 'CE- prefixes on Production ribbon buttons'
+}
 
 $gridAnchor = '                Action("Grid Setting-Out", "CE_GRIDSETTINGOUT", "Generate linked grid/perimeter setting-out points.", "05 COMPLETE"),'
 $gridInsert = @'
@@ -133,7 +135,8 @@ if (-not $dialogsText.Contains('CeCommandDisplayNames.Prefix(action.Title)')) {
 if (-not $floatingText.Contains('CeCommandDisplayNames.Prefix(step.Title)')) {
     throw 'Workflow Centre step commands are not CE-prefixed.'
 }
-if (-not $productionText.Contains('CeCommandDisplayNames.Prefix(text)') -or
+if ((-not $productionText.Contains('CeCommandDisplayNames.Prefix(text)') -and
+     -not $productionText.Contains('WrapProductionRibbonLabel(definition.ButtonText)')) -or
     -not $productionText.Contains('"CE_SITEGRID"')) {
     throw 'Production ribbon/Survey Production integration is incomplete.'
 }

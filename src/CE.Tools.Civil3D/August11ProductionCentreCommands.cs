@@ -136,7 +136,7 @@ namespace CETools.Civil3D
                 Action("Drawings / Sections", "CE_PLATFORMDRAWINGS", "Create platform layouts and section source lines.", "06 DELIVER"),
                 Action("Merge road / grading outputs", "CE_ROADSURFACEMERGE", "Create CE Top All, CE Bottom All or CE Final Surface without changing numbered source surfaces.", "05 COMPLETE"),
                 Action("Merge all junction surfaces", "CE_JUNCTIONSURFACEMERGE", "Combine the CE junction grading and infill surfaces into CE Junctions All.", "05 COMPLETE"),
-                Action("FINAL PLATFORM PRODUCTION - 45 Steps", "CE_FINALPLATFORMPRODUCTION", "Open the approved 45-stage platform design, grading, setting-out and viewport sequence; run and review each stage individually.", "00 COMPLETE WORKFLOW"),
+                Action("FINAL PLATFORM PRODUCTION", "CE_FINALPLATFORMPRODUCTION", "45-step approved Final Platform Production sequence.", "00 COMPLETE WORKFLOW"),
                 Action("▶ RUN COMPLETE PLATFORM PRODUCTION", "CE_PLATFORMWORKFLOW", "Open one ordered, non-duplicated platform workflow from boundaries through drawings.", "00 COMPLETE WORKFLOW")
             });
         }
@@ -447,55 +447,358 @@ namespace CETools.Civil3D
     }
 
     /// <summary>
-    /// Dedicated production ribbon. Direct panel Items are used so the ribbon remains
-    /// compatible with Civil 3D 2023 where RibbonRow is unavailable.
+    /// Creates one dedicated CE-PRODUCTION ribbon tab containing all discipline
+    /// launchers as horizontal panels. AutoCAD overflows separate native RibbonTabs
+    /// when the tab strip is too narrow; a single tab keeps the production launchers
+    /// together and avoids hiding disciplines in the tab overflow menu.
     /// </summary>
     internal static class ProductionWorkflowRibbonBuilder
     {
-        private const string TabId = "CE_TOOLS_PRODUCTION_WORKFLOW_TAB";
+        private sealed class ProductionTabDefinition
+        {
+            public string Id;
+            public string Title;
+            public string ButtonText;
+            public string Description;
+            public string Command;
+        }
+
+        // The established production order is retained from left to right.
+        private static readonly ProductionTabDefinition[] Definitions =
+        {
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_PROJECT_TAB", Title = "CE-PROJECT PRODUCTION", ButtonText = "CE-PROJECT WORKFLOW", Description = "Open the complete Project Production workflow. Individual specialist commands remain in the CE Tools Engineering Centre.", Command = "CE_PROJECTWORKFLOW " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_SURVEY_TAB", Title = "CE-SURVEY PRODUCTION", ButtonText = "CE-SURVEY WORKFLOW", Description = "Open the complete Survey Production workflow. Individual specialist commands remain in the CE Tools Engineering Centre.", Command = "CE_SURVEYWORKFLOW " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_PLATFORM_TAB", Title = "CE-PLATFORM PRODUCTION", ButtonText = "CE-FINAL PLATFORM PRODUCTION", Description = "Open the approved Final Platform Production sequence.", Command = "CE_FINALPLATFORMPRODUCTION " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_ROAD_TAB", Title = "CE-ROAD PRODUCTION", ButtonText = "CE-FINAL ROAD PRODUCTION", Description = "Open the approved Final Road Production sequence.", Command = "CE_FINALROADPRODUCTION " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_STORMWATER_TAB", Title = "CE-STORMWATER PRODUCTION", ButtonText = "CE-STORMWATER WORKFLOW", Description = "Open the complete Stormwater Production workflow. Individual specialist commands remain in the CE Tools Engineering Centre.", Command = "CE_STORMWATERWORKFLOW " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_SEWER_TAB", Title = "CE-SEWER PRODUCTION", ButtonText = "CE-FINAL SEWER PRODUCTION", Description = "Open the approved Final Sewer Production sequence.", Command = "CE_FINALSEWERPRODUCTION " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_WATER_TAB", Title = "CE-WATER PRODUCTION", ButtonText = "CE-FINAL WATER PRODUCTION", Description = "Open the approved Final Water Production sequence.", Command = "CE_FINALWATERPRODUCTION " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_BULKWATER_TAB", Title = "CE-BULK WATER PRODUCTION", ButtonText = "CE-BULK WATER WORKFLOW", Description = "Open the complete Bulk Water Production workflow. Individual specialist commands remain in the CE Tools Engineering Centre.", Command = "CE_BULKWATERWORKFLOW " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_PARKING_TAB", Title = "CE-PARKING PRODUCTION", ButtonText = "CE-PARKING WORKFLOW", Description = "Open the complete Parking Production workflow. Individual specialist commands remain in the CE Tools Engineering Centre.", Command = "CE_PARKINGWORKFLOW " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_FLOOD_TAB", Title = "CE-FLOOD PRODUCTION", ButtonText = "CE-FLOOD WORKFLOW", Description = "Open the complete Flood Production workflow. Individual specialist commands remain in the CE Tools Engineering Centre.", Command = "CE_FLOODWORKFLOW " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_QUANTITY_TAB", Title = "CE-QUANTITY PRODUCTION", ButtonText = "CE-QUANTITY CENTRE", Description = "Open the Quantity Production Centre.", Command = "CE_BOQCENTER " },
+            new ProductionTabDefinition { Id = "CE_PRODUCTION_REPORT_TAB", Title = "CE-REPORT PRODUCTION", ButtonText = "CE-REPORT CENTRE", Description = "Open the Report Production Centre.", Command = "CE_REPORTCENTER " }
+        };
+
+        internal const string HorizontalProductionTabId = "CE_PRODUCTION_HORIZONTAL_TAB";
+        private static readonly List<RibbonPanel> ProductionPanels = new List<RibbonPanel>();
+        private static readonly List<RibbonButton> ProductionButtons = new List<RibbonButton>();
+        private static RibbonControl ObservedRibbon;
+        private static FrameworkElement ObservedRibbonElement;
+        private static bool RibbonLayoutHandlersAttached;
+        private static bool LayoutUpdateQueued;
 
         internal static bool EnsureCreated()
         {
             RibbonControl ribbon = ComponentManager.Ribbon;
             if (ribbon == null) return false;
-            RibbonTab tab = ribbon.Tabs.FirstOrDefault(item => item.Id == TabId);
+
+            // Remove the earlier separate discipline tabs. AutoCAD was placing most
+            // of them in its tab overflow menu on narrower displays.
+            foreach (ProductionTabDefinition definition in Definitions)
+            {
+                RibbonTab oldTab = ribbon.Tabs.FirstOrDefault(item => item.Id == definition.Id);
+                if (oldTab != null) ribbon.Tabs.Remove(oldTab);
+            }
+
+            RibbonTab legacy = ribbon.Tabs.FirstOrDefault(item =>
+                item.Id == "CE_TOOLS_PRODUCTION_WORKFLOW_TAB");
+            if (legacy != null) ribbon.Tabs.Remove(legacy);
+
+            RibbonTab tab = ribbon.Tabs.FirstOrDefault(item => item.Id == HorizontalProductionTabId);
             if (tab == null)
             {
-                tab = new RibbonTab { Id = TabId, Title = "CE PRODUCTION" };
+                tab = new RibbonTab
+                {
+                    Id = HorizontalProductionTabId,
+                    Title = "CE-PRODUCTION"
+                };
                 ribbon.Tabs.Add(tab);
             }
-            else tab.Title = "CE PRODUCTION";
+            else
+            {
+                tab.Title = "CE-PRODUCTION";
+            }
+
+            // Rebuild in the exact approved left-to-right order.
             tab.Panels.Clear();
-            AddPanel(tab, "CE_PROD_HOME", "START", "CE Tools Home", "CE_WELCOME ");
-            AddPanel(tab, "CE_PROD_PROJECT", "PROJECT", "Project Production", "CE_PROJECTPRODUCTIONCENTRE ");
-            AddPanel(tab, "CE_PROD_SURVEY", "SURVEY", "Survey Production", "CE_SURVEYPRODUCTIONCENTRE ");
-            AddPanel(tab, "CE_PROD_PLATFORM", "PLATFORM", "Platform Production", "CE_PLATFORMPRODUCTIONCENTRE ");
-            AddPanel(tab, "CE_PROD_ROAD", "ROAD", "Road Production", "CE_ROADPRODUCTIONCENTRE ");
-            AddPanel(tab, "CE_PROD_SW", "STORMWATER", "Stormwater Production", "CE_SWPRODUCTIONCENTRE ");
-            AddPanel(tab, "CE_PROD_SEWER", "SEWER", "Sewer Production", "CE_SEWERPRODUCTIONCENTRE ");
-            AddPanel(tab, "CE_PROD_WATER", "WATER", "Water Production", "CE_WATERPRODUCTIONCENTRE ");
-            AddPanel(tab, "CE_PROD_BW", "BULK WATER", "Bulk Water Production", "CE_BULKWATERPRODUCTIONCENTRE ");
-            AddPanel(tab, "CE_PROD_PARK", "PARKING", "Parking Production", "CE_PARKINGPRODUCTIONCENTRE ");
-            AddPanel(tab, "CE_PROD_FLOOD", "FLOOD", "Flood Production", "CE_FLOODPRODUCTIONCENTRE ");
-            AddPanel(tab, "CE_PROD_QUANTITY", "QUANTITY", "Quantity Production", "CE_BOQCENTER ");
-            AddPanel(tab, "CE_PROD_REPORT", "REPORT", "Report Production", "CE_REPORTCENTER ");
+            ProductionPanels.Clear();
+            ProductionButtons.Clear();
+
+            FrameworkElement ribbonElement = ribbon as FrameworkElement;
+            if (!ReferenceEquals(ObservedRibbonElement, ribbonElement)) Detach();
+            ObservedRibbon = ribbon;
+            ObservedRibbonElement = ribbonElement;
+            if (ribbonElement != null && !RibbonLayoutHandlersAttached)
+            {
+                // Listen to size changes and tab clicks/keyboard navigation. The
+                // layout updater itself checks the active tab, so no other ribbon
+                // tab is resized or otherwise modified.
+                ribbonElement.SizeChanged += OnRibbonSizeChanged;
+                ribbonElement.PreviewMouseLeftButtonUp += OnRibbonTabInput;
+                ribbonElement.PreviewKeyUp += OnRibbonTabKeyInput;
+                RibbonLayoutHandlersAttached = true;
+            }
+
+            foreach (ProductionTabDefinition definition in Definitions)
+            {
+                var source = new RibbonPanelSource
+                {
+                    Id = definition.Id + "_PANEL",
+                    Title = definition.Title
+                };
+
+                var button = new RibbonButton
+                {
+                    Id = definition.Id + "_BUTTON",
+                    Text = WrapProductionRibbonLabel(definition.ButtonText),
+                    ShowText = true,
+                    ShowImage = true,
+                    Orientation = Orientation.Vertical,
+                    Image = RibbonVisuals.Small("CE_TOOLS_HOME_MENU"),
+                    LargeImage = RibbonVisuals.Large("CE_TOOLS_HOME_MENU"),
+                    Size = RibbonItemSize.Large,
+                    ToolTip = definition.Description,
+                    CommandParameter = definition.Command,
+                    CommandHandler = new ProductionRibbonCommandHandler()
+                };
+
+                source.Items.Add(button);
+                var panel = new RibbonPanel { Source = source };
+                tab.Panels.Add(panel);
+                ProductionPanels.Add(panel);
+                ProductionButtons.Add(button);
+            }
+
+            QueueProductionRibbonLayout();
             return true;
         }
 
-        private static void AddPanel(RibbonTab tab, string id, string title, string text, string command)
+        internal static void Detach()
         {
-            var source = new RibbonPanelSource { Id = id, Title = title };
-            var button = new RibbonButton
+            if (ObservedRibbonElement != null && RibbonLayoutHandlersAttached)
             {
-                Id = id + "_BUTTON",
-                Text = text,
-                ShowText = true,
-                Size = RibbonItemSize.Large,
-                CommandParameter = command,
-                CommandHandler = new ProductionRibbonCommandHandler()
-            };
-            source.Items.Add(button);
-            tab.Panels.Add(new RibbonPanel { Source = source });
+                ObservedRibbonElement.SizeChanged -= OnRibbonSizeChanged;
+                ObservedRibbonElement.PreviewMouseLeftButtonUp -= OnRibbonTabInput;
+                ObservedRibbonElement.PreviewKeyUp -= OnRibbonTabKeyInput;
+            }
+            RibbonLayoutHandlersAttached = false;
+            ObservedRibbonElement = null;
+            ObservedRibbon = null;
+        }
+
+        private static void OnRibbonSizeChanged(object sender, SizeChangedEventArgs args)
+        {
+            QueueProductionRibbonLayout();
+        }
+
+        private static void OnRibbonTabInput(object sender, MouseButtonEventArgs args)
+        {
+            QueueProductionRibbonLayout();
+        }
+
+        private static void OnRibbonTabKeyInput(object sender, KeyEventArgs args)
+        {
+            QueueProductionRibbonLayout();
+        }
+
+        private static void QueueProductionRibbonLayout()
+        {
+            FrameworkElement ribbonElement = ObservedRibbonElement;
+            if (ribbonElement == null || LayoutUpdateQueued) return;
+            LayoutUpdateQueued = true;
+            ribbonElement.Dispatcher.BeginInvoke(new Action(delegate
+            {
+                LayoutUpdateQueued = false;
+                ApplyEqualProductionWidths();
+            }), System.Windows.Threading.DispatcherPriority.Loaded);
+        }
+
+        /// <summary>
+        /// Expands only the CE-PRODUCTION tab. The available width is divided
+        /// equally across its twelve panel hosts. We size the generated WPF
+        /// panel containers as well as the Autodesk model objects because the
+        /// latter are not FrameworkElements in every AutoCAD 2023 build.
+        /// </summary>
+        private static void ApplyEqualProductionWidths()
+        {
+            if (ProductionPanels.Count == 0 || ObservedRibbon == null ||
+                ObservedRibbonElement == null || !IsProductionTabActive(ObservedRibbon))
+                return;
+
+            double availableWidth = ObservedRibbonElement.ActualWidth;
+            if (double.IsNaN(availableWidth) || double.IsInfinity(availableWidth) || availableWidth <= 0.0)
+                return;
+
+            // Use the ribbon's live client width. A small allowance is retained
+            // for the tab's own margins and separators; each panel gets the same
+            // width and the final panel absorbs any fractional remainder.
+            double usableWidth = Math.Max(0.0, availableWidth - 12.0);
+            double panelWidth = usableWidth / ProductionPanels.Count;
+            if (panelWidth < 60.0) return; // Do not force overflow on narrow windows.
+
+            for (int i = 0; i < ProductionPanels.Count; i++)
+            {
+                double width = i == ProductionPanels.Count - 1
+                    ? usableWidth - (panelWidth * (ProductionPanels.Count - 1))
+                    : panelWidth;
+                RibbonPanel panel = ProductionPanels[i];
+                RibbonButton button = i < ProductionButtons.Count ? ProductionButtons[i] : null;
+
+                SetRibbonObjectWidth(panel, width);
+                SetRibbonObjectWidth(button, width - 2.0);
+                ApplyWidthToPanelVisuals(ObservedRibbonElement, panel, width);
+            }
+        }
+
+        private static bool IsProductionTabActive(RibbonControl ribbon)
+        {
+            if (ribbon == null) return false;
+
+            // Autodesk.Windows versions expose the selected tab under different
+            // property names. Resolve it at runtime to keep this source compatible
+            // with the Civil 3D 2023 ribbon assembly.
+            string[] ribbonProperties = { "ActiveTab", "SelectedTab", "SelectedItem" };
+            foreach (string propertyName in ribbonProperties)
+            {
+                object selected = GetPropertyValue(ribbon, propertyName);
+                if (selected != null)
+                    return IsProductionTabObject(selected);
+            }
+
+            foreach (RibbonTab tab in ribbon.Tabs)
+            {
+                object selected = GetPropertyValue(tab, "IsSelected") ?? GetPropertyValue(tab, "IsActive");
+                if (selected is bool && (bool)selected)
+                    return IsProductionTabObject(tab);
+            }
+            return false;
+        }
+
+        private static bool IsProductionTabObject(object value)
+        {
+            if (value == null) return false;
+            object id = GetPropertyValue(value, "Id");
+            return string.Equals(Convert.ToString(id), HorizontalProductionTabId, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static object GetPropertyValue(object instance, string name)
+        {
+            if (instance == null) return null;
+            try
+            {
+                var property = instance.GetType().GetProperty(name);
+                return property == null || !property.CanRead ? null : property.GetValue(instance, null);
+            }
+            catch { return null; }
+        }
+
+        private static void SetRibbonObjectWidth(object item, double width)
+        {
+            if (item == null || width <= 0.0) return;
+            SetWidthProperty(item, "Width", width);
+            SetWidthProperty(item, "MinWidth", width);
+            SetWidthProperty(item, "MaxWidth", width);
+
+            FrameworkElement element = item as FrameworkElement;
+            if (element != null)
+                element.HorizontalAlignment = HorizontalAlignment.Stretch;
+        }
+
+        private static void SetWidthProperty(object item, string propertyName, double width)
+        {
+            try
+            {
+                var property = item.GetType().GetProperty(propertyName);
+                if (property != null && property.CanWrite && property.PropertyType == typeof(double))
+                    property.SetValue(item, width, null);
+            }
+            catch { }
+        }
+
+        private static void ApplyWidthToPanelVisuals(DependencyObject root, RibbonPanel panel, double width)
+        {
+            if (root == null || panel == null) return;
+            RibbonPanelSource source = panel.Source;
+            ApplyWidthToMatchingVisual(root, panel, source, width);
+
+            int count;
+            try { count = VisualTreeHelper.GetChildrenCount(root); }
+            catch { return; }
+            for (int i = 0; i < count; i++)
+            {
+                DependencyObject child;
+                try { child = VisualTreeHelper.GetChild(root, i); }
+                catch { continue; }
+                ApplyWidthToPanelVisuals(child, panel, width);
+            }
+        }
+
+        private static void ApplyWidthToMatchingVisual(DependencyObject candidate, RibbonPanel panel, RibbonPanelSource source, double width)
+        {
+            FrameworkElement element = candidate as FrameworkElement;
+            if (element == null) return;
+
+            bool matches = ReferenceEquals(candidate, panel) ||
+                           ReferenceEquals(element.DataContext, panel) ||
+                           (source != null && ReferenceEquals(element.DataContext, source));
+
+            // Some Autodesk ribbon templates wrap the model object in a generated
+            // presenter. Match its exposed Source/Panel property by object identity.
+            if (!matches)
+            {
+                object visualPanel = GetPropertyValue(element, "Panel");
+                object visualSource = GetPropertyValue(element, "Source");
+                object visualModel = GetPropertyValue(element, "RibbonPanel");
+                matches = ReferenceEquals(visualPanel, panel) ||
+                          ReferenceEquals(visualModel, panel) ||
+                          (source != null && ReferenceEquals(visualSource, source));
+            }
+
+            if (matches)
+            {
+                element.Width = width;
+                element.MinWidth = width;
+                element.MaxWidth = width;
+                element.HorizontalAlignment = HorizontalAlignment.Stretch;
+            }
+        }
+
+        private static string WrapProductionRibbonLabel(string text)
+        {
+            string value = (text ?? string.Empty).Trim();
+            if (value.Length == 0) return value;
+
+            const int maxLineLength = 11;
+            var output = new List<string>();
+            foreach (string originalWord in value.Split(new[] { ' ' }, StringSplitOptions.RemoveEmptyEntries))
+            {
+                string word = originalWord;
+                if (word.Length > maxLineLength && word.IndexOf('-') >= 0)
+                {
+                    int hyphen = word.IndexOf('-');
+                    string prefix = word.Substring(0, hyphen + 1);
+                    string suffix = word.Substring(hyphen + 1);
+                    if (prefix.Length <= maxLineLength && suffix.Length <= maxLineLength)
+                    {
+                        output.Add(prefix);
+                        output.Add(suffix);
+                        continue;
+                    }
+                }
+
+                if (word.Length > maxLineLength)
+                {
+                    for (int offset = 0; offset < word.Length; offset += maxLineLength)
+                        output.Add(word.Substring(offset, Math.Min(maxLineLength, word.Length - offset)));
+                }
+                else
+                {
+                    output.Add(word);
+                }
+            }
+
+            return string.Join(Environment.NewLine, output);
         }
     }
 
