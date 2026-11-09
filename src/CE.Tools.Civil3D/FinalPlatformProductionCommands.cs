@@ -74,16 +74,5 @@ namespace CETools.Civil3D
                 actions);
         }
 
-        [CommandMethod("CE_TOOLS", "CE_VIEWPORTLOCKALL", CommandFlags.Modal | CommandFlags.Redraw)]
-        public void LockViewports()
-        {
-            October03ViewportPlotProfileCommands.SetViewportLock(true);
-        }
-
-        [CommandMethod("CE_TOOLS", "CE_VIEWPORTUNLOCKALL", CommandFlags.Modal | CommandFlags.Redraw)]
-        public void UnlockViewports()
-        {
-            October03ViewportPlotProfileCommands.SetViewportLock(false);
-        }
     }
 }
