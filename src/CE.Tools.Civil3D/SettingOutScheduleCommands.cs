@@ -786,7 +786,8 @@ namespace CETools.Civil3D
                         if (string.IsNullOrWhiteSpace(nodeType)) nodeType = "Structure";
                         List<WaterPipeConnection> branches;
                         connectedPipes.TryGetValue(structureId, out branches);
-                        string bendOrFitting = ClassifyWaterBendOrFitting(branches);
+                        string bendOrFitting = IsDedicatedWaterEquipment(nodeType)
+                            ? string.Empty : ClassifyWaterBendOrFitting(branches);
 
                         double surfaceElevation = TryFindSurfaceElevation(groundSurface, position.X, position.Y);
                         double rim = ReadDesignDouble(structure, "RimElevation", "RimElevationOverride", "TopElevation");
@@ -911,6 +912,17 @@ namespace CETools.Civil3D
             double dot = a.East * b.East + a.North * b.North;
             dot = Math.Max(-1.0, Math.Min(1.0, dot));
             return 180.0 - Math.Acos(dot) * 180.0 / Math.PI;
+        }
+
+        private static bool IsDedicatedWaterEquipment(string type)
+        {
+            // Do not invent a bend/tee on a node that is actually a valve,
+            // hydrant or other discrete water-network device.
+            string value = (type ?? string.Empty).ToUpperInvariant();
+            return value.Contains("VALVE") || value.Contains("HYDRANT") ||
+                value.Contains("METER") || value.Contains("PUMP") ||
+                value.Contains("CHAMBER") || value.Contains("AIR RELEASE") ||
+                value.Contains("WASHOUT");
         }
 
         private static string ClassifyWaterBendOrFitting(IList<WaterPipeConnection> connections)
@@ -1905,7 +1917,7 @@ namespace CETools.Civil3D
             return new List<XlsxSheet>
             {
                 ReportSheet("Road Junction Setting-Out", "ROAD JUNCTIONS - SETTING-OUT CO-ORDINATES", new[] { "POINT", "Y", "X", "EXISTING GROUND LEVEL (m)", "FINAL LEVEL (m)", "HEIGHT DIFFERENCE (m)" }),
-                ReportSheet("Water Structure Data", "WATER - STRUCTURE DATA", new[] { "Node Name", "Type", "Bend / Fitting Type", "Y Coordinate", "X Coordinate", "Surface Elevation (m)", "Rim Elevation (m)", "Invert Elevation (m)", "Depth Below Surface (m)" }),
+                ReportSheet("Water Structure Data", "WATER - STRUCTURE DATA", new[] { "Node Name", "Type", "Bend Type", "Y Coordinate", "X Coordinate", "Surface Elevation (m)", "Rim Elevation (m)", "Invert Elevation (m)", "Depth Below Surface (m)" }),
                 ReportSheet("Water Pipe Data", "WATER - PIPE DATA", new[] { "Pipe Name", "Pipe Description", "Pipe Size", "Length (m)", "Slope (%)", "Start Invert Elevation (m)", "End Invert Elevation (m)", "Branch Name" }),
                 ReportSheet("Sewer Structure Data", "SEWER - STRUCTURE DATA", new[] { "Node Name", "X Coordinate", "Y Coordinate", "Surface Elevation (m)", "Rim Elevation (m)", "Invert Elevation (m)", "Depth (m)", "Node Type" }),
                 ReportSheet("Sewer Pipe Data", "SEWER - PIPE DATA", new[] { "Pipe Name", "Pipe Description", "Pipe Size", "Length (m)", "Slope (%)", "Start Invert Elevation (m)", "End Invert Elevation (m)", "Branch Name" }),
