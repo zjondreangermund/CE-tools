@@ -32,5 +32,12 @@ namespace CETools.Civil3D
         {
             new September04FieldGeometryCompletionCommands().GridDifferenceCommand();
         }
+
+        [CommandMethod("CE_TOOLS", "CE_CREATEORTHOGONALNETWORK", CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void CreateOrthogonalNetwork()
+        {
+            OrthogonalPolylineNetworkCommands.Create(
+                Autodesk.AutoCAD.ApplicationServices.Application.DocumentManager.MdiActiveDocument);
+        }
     }
 }
