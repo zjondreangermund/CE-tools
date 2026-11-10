@@ -285,11 +285,14 @@ namespace CETools.Civil3D
             Document document = Active();
             if (document == null) return;
             List<string> surfaceChoices = SurfaceChoices(document);
+            string defaultSurface = surfaceChoices.FirstOrDefault(value =>
+                !string.Equals(value, August20SurfaceChoice.None, StringComparison.OrdinalIgnoreCase))
+                ?? August20SurfaceChoice.None;
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Geometry-First Road Reserve Sewer",
-                "Create editable sewer polylines inside road reserves from facing outer erf boundaries. No Civil 3D Pipe Network is touched during layout calculation.");
-            model.AddChoice("Surface", "01 Analysis", "Surface for flow direction", surfaceChoices[0],
-                "Optional surface used only to orient finished planning routes from higher to lower endpoint.", surfaceChoices);
+                "Create editable sewer polylines inside road reserves from facing outer erf boundaries. Each paired reserve is classified from the selected surface: higher-side route = magenta; lower-side route = green. No Civil 3D Pipe Network is touched during layout calculation.");
+            model.AddChoice("Surface", "01 Analysis", "Target surface for high/low classification and flow direction", defaultSurface,
+                "Required to compare average elevations along opposing road-reserve boundaries. Higher-side sewer route is coloured magenta; lower-side route is coloured green. The same surface also orients routes downhill.", surfaceChoices);
             model.AddPositiveDouble("Offset", "02 Road Reserve", "Offset from erf boundary toward road centre", 1.5,
                 "Create a sewer route on each side of an accepted road reserve, offset toward the road centre.");
             model.AddPositiveDouble("MinWidth", "02 Road Reserve", "Minimum road reserve width", 6.0, "Minimum facing-boundary separation.");
@@ -297,7 +300,7 @@ namespace CETools.Civil3D
             model.AddPositiveDouble("MinOverlap", "02 Road Reserve", "Minimum overlap (%)", 50.0, "Minimum overlap as percentage of the shorter facing edge.");
             model.AddPositiveDouble("MinEdge", "02 Road Reserve", "Minimum usable outer edge length", 4.0, "Ignore shorter outer erf edges.");
             model.AddChoice("Coverage", "02 Road Reserve", "Boundary coverage", "Paired + unmatched exposed edges",
-                "Paired edges use the two opposing road boundaries; unmatched exposed erf edges are offset outward from their parcels, including angled edges. Review unmatched results before network creation.",
+                "Paired edges use the two opposing road boundaries; unmatched exposed erf edges are offset using the actual closed erf polygon, not a parcel centre. Candidate offsets are checked to ensure they remain outside all selected erven; unsafe or ambiguous offsets are skipped and reported.",
                 new[] { "Paired + unmatched exposed edges", "Paired facing edges only", "All exposed edges separately" });
             model.AddChoice("Spacing", "03 Manholes", "Maximum manhole spacing", "60 m",
                 "Route vertices and manhole circles are created at this maximum interval.", new[] { "60 m", "80 m", "Custom" });
@@ -308,6 +311,12 @@ namespace CETools.Civil3D
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
             ObjectId surfaceId = August20SurfaceChoice.ResolveSurfaceId(document, model.Text("Surface"));
+            if (surfaceId.IsNull)
+            {
+                document.Editor.WriteMessage(
+                    "\\nCE_SEWERLAYOUTROADRESERVE: select a valid Civil 3D target surface to classify high-side routes magenta and low-side routes green.");
+                return;
+            }
             PromptSelectionResult selection = SelectClosedPolylines(document.Editor,
                 "\nSelect closed cadastral erf polylines around the road reserves: ");
             if (selection.Status != PromptStatus.OK || selection.Value == null || selection.Value.Count == 0) return;
@@ -322,6 +331,10 @@ namespace CETools.Civil3D
             int pairCount = 0;
             int routeCount = 0;
             int manholeCount = 0;
+            int highSideMagentaCount = 0;
+            int lowSideGreenCount = 0;
+            int unclassifiedCount = 0;
+            int skippedUnsafeOffsetCount = 0;
 
             try
             {
@@ -331,10 +344,12 @@ namespace CETools.Civil3D
                     List<ParcelLite> parcels = ReadParcels(selection.Value.GetObjectIds(), transaction);
                     List<EdgeLite> exterior = ExteriorEdges(BuildEdges(parcels, minEdge, true));
                     string coverage = model.Text("Coverage");
-                    List<EdgePair> pairs = coverage == "All exposed edges separately"
-                        ? new List<EdgePair>()
-                        : PairRoadReserveEdges(exterior.Where(edge => edge.Horizontal || edge.Vertical).ToList(),
-                            parcels, minWidth, maxWidth, minOverlap);
+                    // Always identify opposing reserve edges for elevation classification.
+                    // Coverage controls which route geometries are emitted, not whether
+                    // high/low side analysis is performed.
+                    List<EdgePair> pairs = PairRoadReserveEdges(
+                        exterior.Where(edge => edge.Horizontal || edge.Vertical).ToList(),
+                        parcels, minWidth, maxWidth, minOverlap);
                     var pairedIds = new HashSet<int>(pairs.SelectMany(pair => new[] { pair.First.Id, pair.Second.Id }));
                     List<EdgeLite> uncovered = coverage == "Paired facing edges only"
                         ? new List<EdgeLite>()
@@ -345,6 +360,12 @@ namespace CETools.Civil3D
                         return;
                     }
                     CivilSurface surface = OpenSurface(transaction, surfaceId);
+                    if (surface == null)
+                    {
+                        document.Editor.WriteMessage(
+                            "\\nCE_SEWERLAYOUTROADRESERVE: the selected target surface could not be opened. No layout geometry was changed.");
+                        return;
+                    }
                     BlockTableRecord space = OpenModelSpace(document.Database, transaction, OpenMode.ForWrite);
                     if (space == null) return;
                     if (string.Equals(model.Text("Replace"), "Replace existing", StringComparison.OrdinalIgnoreCase))
@@ -359,12 +380,38 @@ namespace CETools.Civil3D
                         Line2 first;
                         Line2 second;
                         if (!BuildRoadReserveOffsetLines(pair, offset, out first, out second)) continue;
-                        foreach (Line2 routeLineValue in new[] { first, second })
+                        double firstBoundaryElevation = 0.0;
+                        double secondBoundaryElevation = 0.0;
+                        bool hasSideComparison =
+                            TryAverageEdgeElevation(surface, pair.First, out firstBoundaryElevation) &&
+                            TryAverageEdgeElevation(surface, pair.Second, out secondBoundaryElevation) &&
+                            firstBoundaryElevation != secondBoundaryElevation;
+
+                        for (int routeIndex = 0; routeIndex < 2; routeIndex++)
                         {
-                            Line2 routeLine = routeLineValue;
+                            Line2 routeLine = routeIndex == 0 ? first : second;
                             if (routeLine.Length <= Tol) continue;
                             OrientDownhill(ref routeLine, surface);
                             Polyline route = CreateSpacedPolyline(document.Database, routeLine, spacing, routeLayer);
+
+                            if (hasSideComparison)
+                            {
+                                bool isHighSide = routeIndex == 0
+                                    ? firstBoundaryElevation > secondBoundaryElevation
+                                    : secondBoundaryElevation > firstBoundaryElevation;
+                                route.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(
+                                    Autodesk.AutoCAD.Colors.ColorMethod.ByAci,
+                                    (short)(isHighSide ? 6 : 3));
+                                if (isHighSide) highSideMagentaCount++;
+                                else lowSideGreenCount++;
+                            }
+                            else
+                            {
+                                // Do not guess when the surface does not cover both edges
+                                // or the average elevations are effectively equal.
+                                unclassifiedCount++;
+                            }
+
                             space.AppendEntity(route);
                             transaction.AddNewlyCreatedDBObject(route, true);
                             WriteLayoutRecord(route, transaction, "ROADRESERVE", spacing, diameter, model.Text("Surface"));
@@ -381,10 +428,34 @@ namespace CETools.Civil3D
                     foreach (EdgeLite edge in uncovered)
                     {
                         Line2 exposed;
-                        if (!OffsetUnpairedRoadEdge(edge, offset, out exposed) || exposed.Length <= Tol)
+                        if (!OffsetUnpairedRoadEdge(edge, parcels, offset, out exposed) || exposed.Length <= Tol)
+                        {
+                            skippedUnsafeOffsetCount++;
                             continue;
+                        }
                         OrientDownhill(ref exposed, surface);
                         Polyline route = CreateSpacedPolyline(document.Database, exposed, spacing, routeLayer);
+                        // Classify unmatched and angled exposed edges by locating
+                        // their geometrically opposing boundary. Route geometry itself
+                        // remains unchanged.
+                        EdgeLite opposingEdge;
+                        double edgeAverage;
+                        double opposingAverage;
+                        if (TryFindOpposingEdgeElevation(
+                            edge, exterior, minWidth, maxWidth, minOverlap,
+                            surface, out opposingEdge, out edgeAverage, out opposingAverage))
+                        {
+                            bool isHighSide = edgeAverage > opposingAverage;
+                            route.Color = Autodesk.AutoCAD.Colors.Color.FromColorIndex(
+                                Autodesk.AutoCAD.Colors.ColorMethod.ByAci,
+                                (short)(isHighSide ? 6 : 3));
+                            if (isHighSide) highSideMagentaCount++;
+                            else lowSideGreenCount++;
+                        }
+                        else
+                        {
+                            unclassifiedCount++;
+                        }
                         space.AppendEntity(route);
                         transaction.AddNewlyCreatedDBObject(route, true);
                         WriteLayoutRecord(route, transaction, "ROADRESERVE", spacing, diameter, model.Text("Surface"));
@@ -411,7 +482,7 @@ namespace CETools.Civil3D
             }
             document.Editor.SetImpliedSelection(new ObjectId[0]);
             document.Editor.Regen();
-            document.Editor.WriteMessage("\nCE geometry-first Road Reserve sewer complete. Reserve pairs={0}; routes={1}; planning manholes={2}. Review/edit the polylines before CE_SEWERBUILDNETWORK.", pairCount, routeCount, manholeCount);
+            document.Editor.WriteMessage("\\nCE geometry-first Road Reserve sewer complete. Reserve pairs={0}; routes={1}; planning manholes={2}; HIGH-SIDE MAGENTA={3}; LOW-SIDE GREEN={4}; UNCLASSIFIED (no valid opposing comparison)={5}; SKIPPED OFFSETS (would enter a selected erf or side was ambiguous)={6}. Review/edit the polylines before CE_SEWERBUILDNETWORK.", pairCount, routeCount, manholeCount, highSideMagentaCount, lowSideGreenCount, unclassifiedCount, skippedUnsafeOffsetCount);
         }
 
         private static void RunRoadCenterline(bool legacyEntry)
@@ -785,26 +856,206 @@ namespace CETools.Civil3D
             return parcelX1 * otherX1 < 0.0 && parcelX2 * otherX2 < 0.0;
         }
 
-        // Works for horizontal, vertical and angled exposed boundaries. The
-        // normal points AWAY from the parcel centroid, toward the likely reserve.
-        // These are planning strings and must be checked against the true road reserve.
-        private static bool OffsetUnpairedRoadEdge(EdgeLite edge, double offset, out Line2 route)
+        // Finds a geometrically opposing edge for an exposed edge, including
+        // angled/skew boundaries that are not used by the axis-aligned route pairer.
+        private static bool TryFindOpposingEdgeElevation(
+            EdgeLite source,
+            List<EdgeLite> candidates,
+            double minWidth,
+            double maxWidth,
+            double minOverlapPercent,
+            CivilSurface surface,
+            out EdgeLite opposing,
+            out double sourceAverage,
+            out double opposingAverage)
+        {
+            opposing = null;
+            sourceAverage = 0.0;
+            opposingAverage = 0.0;
+            if (source == null || candidates == null || surface == null) return false;
+
+            double dx = source.B.X - source.A.X;
+            double dy = source.B.Y - source.A.Y;
+            double sourceLength = Math.Sqrt(dx * dx + dy * dy);
+            if (sourceLength <= Tol) return false;
+
+            double ux = dx / sourceLength;
+            double uy = dy / sourceLength;
+            double nx = -uy;
+            double ny = ux;
+            Point2d sourceMid = Mid(source.A, source.B);
+            double bestGap = double.MaxValue;
+            double bestSourceAverage = 0.0;
+            double bestOpposingAverage = 0.0;
+
+            foreach (EdgeLite candidate in candidates)
+            {
+                if (candidate == null || candidate.Id == source.Id ||
+                    candidate.ParcelIndex == source.ParcelIndex)
+                    continue;
+
+                double cdx = candidate.B.X - candidate.A.X;
+                double cdy = candidate.B.Y - candidate.A.Y;
+                double candidateLength = Math.Sqrt(cdx * cdx + cdy * cdy);
+                if (candidateLength <= Tol) continue;
+
+                double cux = cdx / candidateLength;
+                double cuy = cdy / candidateLength;
+                double parallel = Math.Abs(ux * cux + uy * cuy);
+                // Allow up to approximately five degrees of direction difference.
+                if (parallel < 0.996194698) continue;
+
+                Point2d candidateMid = Mid(candidate.A, candidate.B);
+                double deltaX = candidateMid.X - sourceMid.X;
+                double deltaY = candidateMid.Y - sourceMid.Y;
+                double signedGap = deltaX * nx + deltaY * ny;
+                double gap = Math.Abs(signedGap);
+                if (gap < minWidth - Tol || gap > maxWidth + Tol) continue;
+
+                double sourceParcelSide =
+                    (source.ParcelCenter.X - sourceMid.X) * nx +
+                    (source.ParcelCenter.Y - sourceMid.Y) * ny;
+                double candidateParcelSide =
+                    (candidate.ParcelCenter.X - sourceMid.X) * nx +
+                    (candidate.ParcelCenter.Y - sourceMid.Y) * ny;
+                if (sourceParcelSide * signedGap >= 0.0 ||
+                    candidateParcelSide * signedGap <= 0.0)
+                    continue;
+
+                double c1 = (candidate.A.X - source.A.X) * ux +
+                            (candidate.A.Y - source.A.Y) * uy;
+                double c2 = (candidate.B.X - source.A.X) * ux +
+                            (candidate.B.Y - source.A.Y) * uy;
+                double overlapLo = Math.Max(0.0, Math.Min(c1, c2));
+                double overlapHi = Math.Min(sourceLength, Math.Max(c1, c2));
+                double overlap = overlapHi - overlapLo;
+                double required = Math.Min(sourceLength, candidateLength) *
+                    Math.Max(1.0, Math.Min(100.0, minOverlapPercent)) / 100.0;
+                if (overlap <= Tol || overlap + Tol < required || gap >= bestGap) continue;
+
+                double avgSource;
+                double avgCandidate;
+                if (!TryAverageEdgeElevation(surface, source, out avgSource) ||
+                    !TryAverageEdgeElevation(surface, candidate, out avgCandidate))
+                    continue;
+                if (Math.Abs(avgSource - avgCandidate) <= 1e-9) continue;
+
+                bestGap = gap;
+                opposing = candidate;
+                bestSourceAverage = avgSource;
+                bestOpposingAverage = avgCandidate;
+            }
+
+            if (opposing == null) return false;
+            sourceAverage = bestSourceAverage;
+            opposingAverage = bestOpposingAverage;
+            return true;
+        }
+
+        // Determine the exterior side from the actual closed erf polygon.
+        // A bounding-box centre is not a reliable interior point for concave/L-shaped
+        // erven and can direct the offset into the parcel. Probe both normals against
+        // the polygon itself, then reject a route if it enters any selected erf.
+        private static bool OffsetUnpairedRoadEdge(
+            EdgeLite edge,
+            List<ParcelLite> parcels,
+            double offset,
+            out Line2 route)
         {
             route = new Line2();
+            if (edge == null || parcels == null || offset <= Tol) return false;
+
+            ParcelLite parcel = parcels.FirstOrDefault(item => item.Index == edge.ParcelIndex);
+            if (parcel == null || parcel.Points == null || parcel.Points.Count < 3) return false;
+
             double dx = edge.B.X - edge.A.X;
             double dy = edge.B.Y - edge.A.Y;
             double length = Math.Sqrt(dx * dx + dy * dy);
             if (length <= Tol) return false;
-            double nx = -dy / length, ny = dx / length;
-            Point2d centre = Mid(edge.A, edge.B);
-            double towardParcel = (edge.ParcelCenter.X - centre.X) * nx +
-                                  (edge.ParcelCenter.Y - centre.Y) * ny;
-            if (Math.Abs(towardParcel) <= Tol) return false; // ambiguous side; don't guess
-            double side = towardParcel > 0.0 ? -1.0 : 1.0;
-            route = new Line2(
+
+            double nx = -dy / length;
+            double ny = dx / length;
+
+            // Use a small local probe, not the parcel's bounding-box centre.
+            double probe = Math.Max(Tol * 10.0,
+                Math.Min(Math.Max(offset * 0.05, Tol * 10.0), length * 0.02));
+            int plusInside = 0;
+            int minusInside = 0;
+            const int probeCount = 9;
+
+            for (int i = 0; i < probeCount; i++)
+            {
+                double t = 0.1 + 0.8 * i / (probeCount - 1.0);
+                Point2d boundaryPoint = new Point2d(
+                    edge.A.X + dx * t,
+                    edge.A.Y + dy * t);
+                Point2d plusPoint = new Point2d(
+                    boundaryPoint.X + nx * probe,
+                    boundaryPoint.Y + ny * probe);
+                Point2d minusPoint = new Point2d(
+                    boundaryPoint.X - nx * probe,
+                    boundaryPoint.Y - ny * probe);
+
+                if (PointInsidePolygon(plusPoint, parcel.Points)) plusInside++;
+                if (PointInsidePolygon(minusPoint, parcel.Points)) minusInside++;
+            }
+
+            // One normal must consistently point into the parcel and the other
+            // consistently point outside. If not, do not create a potentially
+            // incorrect route.
+            double side;
+            if (plusInside >= 7 && minusInside <= 2)
+                side = -1.0;
+            else if (minusInside >= 7 && plusInside <= 2)
+                side = 1.0;
+            else
+                return false;
+
+            Line2 candidate = new Line2(
                 new Point2d(edge.A.X + nx * offset * side, edge.A.Y + ny * offset * side),
                 new Point2d(edge.B.X + nx * offset * side, edge.B.Y + ny * offset * side));
+
+            if (candidate.Length <= Tol) return false;
+
+            // Verify the offset line remains outside every selected erf. This catches
+            // offsets that are too large or would cross into an adjacent parcel.
+            const int validationIntervals = 10;
+            for (int i = 1; i < validationIntervals; i++)
+            {
+                double t = (double)i / validationIntervals;
+                Point2d testPoint = new Point2d(
+                    candidate.A.X + (candidate.B.X - candidate.A.X) * t,
+                    candidate.A.Y + (candidate.B.Y - candidate.A.Y) * t);
+                foreach (ParcelLite selectedParcel in parcels)
+                {
+                    if (selectedParcel != null && PointInsidePolygon(testPoint, selectedParcel.Points))
+                        return false;
+                }
+            }
+
+            route = candidate;
             return true;
+        }
+
+        private static bool PointInsidePolygon(Point2d point, IList<Point2d> polygon)
+        {
+            if (polygon == null || polygon.Count < 3) return false;
+            bool inside = false;
+            int previous = polygon.Count - 1;
+            for (int current = 0; current < polygon.Count; current++)
+            {
+                Point2d a = polygon[current];
+                Point2d b = polygon[previous];
+                bool crosses = ((a.Y > point.Y) != (b.Y > point.Y));
+                if (crosses)
+                {
+                    double xAtY = (b.X - a.X) * (point.Y - a.Y) /
+                                  (b.Y - a.Y) + a.X;
+                    if (point.X < xAtY) inside = !inside;
+                }
+                previous = current;
+            }
+            return inside;
         }
 
         private static bool BuildRoadReserveOffsetLines(EdgePair pair, double requestedOffset, out Line2 first, out Line2 second)
@@ -883,6 +1134,36 @@ namespace CETools.Civil3D
                 elevation = double.NaN;
                 return false;
             }
+        }
+
+        private static bool TryAverageEdgeElevation(
+            CivilSurface surface, EdgeLite edge, out double averageElevation)
+        {
+            averageElevation = 0.0;
+            if (surface == null || edge == null) return false;
+
+            // Sample at several points along the original cadastral boundary.
+            // Averaging reduces sensitivity to a single triangle or surface spike.
+            const int sampleIntervals = 20;
+            double sum = 0.0;
+            int validSamples = 0;
+            for (int i = 0; i <= sampleIntervals; i++)
+            {
+                double t = (double)i / sampleIntervals;
+                Point2d sample = new Point2d(
+                    edge.A.X + (edge.B.X - edge.A.X) * t,
+                    edge.A.Y + (edge.B.Y - edge.A.Y) * t);
+                double elevation;
+                if (!TryElevation(surface, sample, out elevation)) continue;
+                sum += elevation;
+                validSamples++;
+            }
+
+            // Require at least half the samples to be on the surface.
+            if (validSamples < 11) return false;
+            averageElevation = sum / validSamples;
+            return !double.IsNaN(averageElevation) &&
+                   !double.IsInfinity(averageElevation);
         }
 
         private static void OrientDownhill(ref Line2 line, CivilSurface surface)
