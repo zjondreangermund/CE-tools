@@ -8,4 +8,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\CE.Tools.Core\CE.Tools.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <Compile Include="../../src/CE.Tools.Civil3D/SewerStructureIntervalPlanner.cs" Link="SewerStructureIntervalPlanner.cs" />
+  </ItemGroup>
 </Project>

@@ -299,6 +299,9 @@ jobs:
       - name: Parse Civil 3D C# syntax
         run: dotnet run --project tests/CE.Tools.CSharpSyntax.Tests/CE.Tools.CSharpSyntax.Tests.csproj -c Release -- .
 
+      - name: Compile sewer interval command against Autodesk API references
+        run: dotnet build tests/CE.Tools.SewerIntervals.ApiCompile.Tests/CE.Tools.SewerIntervals.ApiCompile.Tests.csproj -c Release
+
       - name: Test name annotation scale orientation contract
         run: dotnet run --project tests/CE.Tools.NameScale.Tests/CE.Tools.NameScale.Tests.csproj -c Release
 

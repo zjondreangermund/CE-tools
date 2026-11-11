@@ -29,6 +29,7 @@ namespace CETools.Core.Tests
                 SystemCurveIncreasesWithFlow();
                 PumpDutyPointFindsIntersection();
                 PumpReviewChecksNpshMargin();
+                _tests += SewerStructureIntervalTests.Run();
                 _tests += SewerGravityGradeTests.Run();
                 _tests += RoadAnnotationTests.Run();
                 _tests += ProfileViewportTests.Run();

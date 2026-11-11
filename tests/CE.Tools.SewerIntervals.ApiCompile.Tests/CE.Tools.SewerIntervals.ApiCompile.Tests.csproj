@@ -1,0 +1,5 @@
+<Project Sdk="Microsoft.NET.Sdk">
+<PropertyGroup><TargetFramework>net48</TargetFramework><LangVersion>latest</LangVersion></PropertyGroup>
+<ItemGroup><PackageReference Include="AutoCAD.NET" Version="24.3.0" /><PackageReference Include="Civil3D.NET" Version="13.6.1781" /><PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" /></ItemGroup>
+<ItemGroup><Compile Include="../../src/CE.Tools.Civil3D/SewerStructureInterval*.cs" /></ItemGroup>
+</Project>

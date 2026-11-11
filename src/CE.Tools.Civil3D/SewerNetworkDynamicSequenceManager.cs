@@ -941,8 +941,11 @@ namespace CETools.Civil3D
             _initialised = false;
         }
 
+        internal static void DiscardPendingForIntervalUpdate() { _pending = false; }
+
         public static void Queue()
         {
+            if (SewerStructureIntervalUpdateCommands.Editing) return;
             _pending = true;
             _lastChangeUtc = DateTime.UtcNow;
             UniversalDynamicRefreshManager.Queue();

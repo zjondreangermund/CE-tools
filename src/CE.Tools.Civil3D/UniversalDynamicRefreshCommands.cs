@@ -96,6 +96,7 @@ namespace CETools.Civil3D
 
         internal static void Queue()
         {
+            if (SewerStructureIntervalUpdateCommands.Editing) return;
             if (_busy || _undoRedoActive ||
                 DateTime.UtcNow < _suppressQueueUntilUtc) return;
             _pending = true;

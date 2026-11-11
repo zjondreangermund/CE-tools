@@ -53,7 +53,8 @@ namespace CETools.Civil3D
                 new DisciplineWorkflowAction("35. CE-Sewer Viewport Regeneration", "CE_VIEWPORTREGENALL", "Regenerate sewer layout viewports after model and sheet updates.", "35 Sewer Sequence"),
                 new DisciplineWorkflowAction("36. CE-Sewer Sheet Generation", "CE_SEWERSHEETS", "Generate sewer long-section and plan/profile drawing sheets.", "36 Sewer Sequence"),
                 new DisciplineWorkflowAction("37. CE-Sewer Design Data Export", "CE_SEWERDESIGNDATAEXPORT", "Export sewer pipe and manhole design data by numbered branch to Excel.", "37 Sewer Sequence"),
-                new DisciplineWorkflowAction("38. CE-Sewer Construction BOQ", "CE_BOQSEWER", "Calculate sewer earthworks, excavation, pipe and structure construction quantities.", "38 Sewer Sequence")
+                new DisciplineWorkflowAction("38. CE-Sewer Construction BOQ", "CE_BOQSEWER", "Calculate sewer earthworks, excavation, pipe and structure construction quantities.", "38 Sewer Sequence"),
+                new DisciplineWorkflowAction("CE-Update Existing Sewer Structure Intervals", "CE_SEWERSTRUCTUREINTERVALUPDATE", "Redistribute existing structures by minimum branch-alignment spacing with fixed vertices, junctions and design transitions.", "Existing Network Maintenance")
             };
             DisciplineWorkflowDialogs.SelectAndRun(doc, "FINAL SEWER PRODUCTION",
                 "Approved sewer production sequence; choose steps individually for drawing review.", actions);
