@@ -197,7 +197,7 @@ namespace CETools.Civil3D
                 Action("Setting-Out", "CE_VERTEXSETTINGOUT", "Linked setting-out for design geometry.", "05 COMPLETE"),
                 Action("BOQ", "CE_BOQSEWER", "Create linked sewer quantities.", "05 COMPLETE"),
                 Action("DELIVER - Sewer Report", "CE_REPORTSEWER", "Generate sewer design report/drawing handoff.", "06 DELIVER"),
-                Action("FINAL SEWER PRODUCTION", "CE_FINALSEWERPRODUCTION", "34-step approved Final Sewer Production sequence.", "00 COMPLETE WORKFLOW"),
+                Action("FINAL SEWER PRODUCTION", "CE_FINALSEWERPRODUCTION", "38-step approved Final Sewer Production sequence.", "00 COMPLETE WORKFLOW"),
                 Action("▶ RUN COMPLETE SEWER PRODUCTION", "CE_SEWERWORKFLOW", "Open one ordered, non-duplicated sewer workflow from route/parts through delivery.", "00 COMPLETE WORKFLOW")
             });
         }
