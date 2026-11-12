@@ -47,6 +47,8 @@ namespace CETools.Civil3D
                 AddCommandItem(extension, "Linked Output Refresh Status", "CE_REFRESHSTATUS");
                 AddCommandItem(extension, "Out-of-Date Notice On / Off", "CE_AUTOREFRESH");
 
+                AddHoverItems(extension);
+
                 var refreshItem = new MenuItem("CE Dynamic Refresh All");
                 refreshItem.Click += OnDynamicRefreshClick;
                 extension.MenuItems.Add(refreshItem);
@@ -99,6 +101,7 @@ namespace CETools.Civil3D
                         tableExtension,
                         "Export This Table to Excel",
                         "CE_TABLEEXPORTEXCEL");
+                    AddHoverItems(tableExtension);
                     ContextMenuApplication.AddObjectContextMenuExtension(
                         tableClass,
                         tableExtension);
@@ -176,6 +179,13 @@ namespace CETools.Civil3D
                 QueueCommand(command);
             };
             extension.MenuItems.Add(item);
+        }
+
+        private static void AddHoverItems(ContextMenuExtension extension)
+        {
+            AddCommandItem(extension, "CE-AutoCAD Object Hover", "CE_AUTOCADOBJECTHOVER");
+            AddCommandItem(extension, "CE-Network Model Hover", "CE_NETWORKMODELHOVER");
+            AddCommandItem(extension, "CE-Road Model Hover", "CE_ROADMODELHOVER");
         }
 
         private static void QueueCommand(string command)
