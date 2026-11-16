@@ -62,6 +62,7 @@ namespace CETools.Civil3D
             }
 
             SewerProductionSettings saved = SewerProductionSettings.Read(document.Database);
+            SewerProductionCommands.ApplySewerProfileStylePreset(document.Database, saved);
             string defaultBand = MatchOrFirst(bandSets, saved.ProfileViewBandSetStyle);
             const string keepStyle = "<Keep current profile-view style>";
             var model = new ProductionSettingsDialogModel(

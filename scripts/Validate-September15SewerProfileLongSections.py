@@ -18,7 +18,7 @@ required_sewer = [
     'SewerLongSectionBandService.Apply(',
     'BandSetStyleId = bandId',
     'ProfileViewStyleId = viewStyleId',
-    'one or more band links were skipped safely',
+    'check CE_SEWPROFILE band import errors in command line',
     'Civil 3D 2023 may accept the band-set ObjectId during',
     'SewerLongSectionBandService.Apply(',
     'Do not run a second global band refresh here.',
@@ -28,6 +28,13 @@ required_sewer = [
     '"CE Tools - Sewer Profiles / Long Sections"',
     '"CE SEWER PROFILE / LONG-SECTION REGISTER"',
     '"Created; review network-part descriptions"',
+    'ApplySewerProfileStylePreset(database, settings);',
+    'ValidateSewerLongSectionStyles(database, civilDocument, settings);',
+    'ProjectStyleCenterCommands.ReadDisciplineChoices(database, "Sewer")',
+    'selected.Values.TryGetValue("Profile View Style", out style)',
+    'selected.Values.TryGetValue("Profile View Band Set Style", out style)',
+    'CE_SEWPROFILE band import failed for',
+
 ]
 for token in required_sewer:
     if token not in sewer:
@@ -43,6 +50,7 @@ required_band_service = [
     'ResolveNetworkByAlignment(',
     'ResolveGroundProfile(',
     'Select multiple sewer profile views to receive the long-section band set:',
+    'SewerProductionCommands.ApplySewerProfileStylePreset(document.Database, saved);',
 ]
 for token in required_band_service:
     if token not in sewer_bands:
