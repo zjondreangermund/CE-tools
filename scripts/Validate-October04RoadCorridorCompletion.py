@@ -12,6 +12,8 @@ files = {
     "boq": SRC / "August13RoadConstructionBoqCommands.cs",
     "field": SRC / "September24FieldCompletionCommands.cs",
     "workflow": SRC / "DisciplineWorkflowDialogs.cs",
+    "road_profiles": SRC / "RoadProductionCommentCommands.cs",
+    "vertical_curves": SRC / "August11RoadVerticalCurveCommands.cs",
 }
 
 texts = {}
@@ -55,6 +57,25 @@ required_corridor = [
 for marker in required_corridor:
     if marker not in corridor:
         errors.append("Missing road-corridor marker: " + marker)
+
+for key, required in {
+    "corridor": [
+        "RoadProfileSelectionScope.Read(document.Database)",
+        "selectedRoads != null && !selectedRoads.Contains(alignmentId)",
+    ],
+    "road_profiles": [
+        "RoadProfileSelectionScope.Save(document.Database,",
+        '"ROAD_PROFILE_SCOPE"',
+        'selected ? "Selected" : "All"',
+    ],
+    "vertical_curves": [
+        '"Last CE_ROADPROFILES selection"',
+        "RoadProfileSelectionScope.Read(document.Database)",
+    ],
+}.items():
+    for token in required:
+        if token not in texts[key]:
+            errors.append("Missing selected-road scope guard in " + key + ": " + token)
 
 required_boq = [
     'FindBottomCorridorSurface(',
