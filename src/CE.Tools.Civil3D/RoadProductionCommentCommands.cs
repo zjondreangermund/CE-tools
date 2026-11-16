@@ -345,6 +345,13 @@ namespace CETools.Civil3D
                 preview,
                 "CE TOOLS ROAD PROFILE PREVIEW");
             if (!Confirm(document.Editor, "Create these road EG profiles and profile views")) return;
+            // Pass exactly the same road scope to the remaining commands in
+            // CE_ROADPROFILEFULL; the command runner invokes them separately.
+            RoadProfileSelectionScope.Save(document.Database,
+                alignments.Select(road => road.AlignmentId),
+                string.Equals(scope.StringResult, "Selected",
+                    StringComparison.OrdinalIgnoreCase));
+
 
             int profiles = 0;
             int views = 0;
@@ -1342,4 +1349,92 @@ namespace CETools.Civil3D
             public string ProfileLayer { get; set; }
         }
     }
+    /// <summary>
+    /// Drawing-local road scope shared by the three sequential profile commands.
+    /// This avoids relying on the pickfirst selection (consumed by the first
+    /// command) or on process-wide/static ObjectIds from another drawing.
+    /// </summary>
+    internal static class RoadProfileSelectionScope
+    {
+        private const string Root = "CE_TOOLS";
+        private const string Record = "ROAD_PROFILE_SCOPE";
+
+        internal static void Save(Database database,
+            IEnumerable<ObjectId> alignmentIds, bool selected)
+        {
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+            {
+                DBDictionary nod = (DBDictionary)tr.GetObject(
+                    database.NamedObjectsDictionaryId, OpenMode.ForWrite);
+                DBDictionary root;
+                if (nod.Contains(Root))
+                    root = (DBDictionary)tr.GetObject(nod.GetAt(Root), OpenMode.ForWrite);
+                else
+                {
+                    root = new DBDictionary();
+                    nod.SetAt(Root, root);
+                    tr.AddNewlyCreatedDBObject(root, true);
+                }
+                Xrecord record;
+                if (root.Contains(Record))
+                    record = (Xrecord)tr.GetObject(root.GetAt(Record), OpenMode.ForWrite);
+                else
+                {
+                    record = new Xrecord();
+                    root.SetAt(Record, record);
+                    tr.AddNewlyCreatedDBObject(record, true);
+                }
+                var values = new List<TypedValue>
+                {
+                    new TypedValue((int)DxfCode.Text,
+                        selected ? "Selected" : "All")
+                };
+                if (selected)
+                    foreach (ObjectId id in alignmentIds.Distinct())
+                        if (!id.IsNull && !id.IsErased)
+                            values.Add(new TypedValue((int)DxfCode.Text,
+                                id.Handle.ToString()));
+                record.Data = new ResultBuffer(values.ToArray());
+                tr.Commit();
+            }
+        }
+
+        // null = All. An empty set is NOT treated as All.
+        internal static HashSet<ObjectId> Read(Database database)
+        {
+            using (Transaction tr = database.TransactionManager.StartTransaction())
+            {
+                DBDictionary nod = tr.GetObject(database.NamedObjectsDictionaryId,
+                    OpenMode.ForRead) as DBDictionary;
+                if (nod == null || !nod.Contains(Root)) return null;
+                DBDictionary root = tr.GetObject(nod.GetAt(Root),
+                    OpenMode.ForRead) as DBDictionary;
+                if (root == null || !root.Contains(Record)) return null;
+                Xrecord record = tr.GetObject(root.GetAt(Record),
+                    OpenMode.ForRead) as Xrecord;
+                if (record == null || record.Data == null) return null;
+                TypedValue[] values = record.Data.AsArray();
+                if (values.Length == 0 ||
+                    !string.Equals(values[0].Value as string, "Selected",
+                        StringComparison.OrdinalIgnoreCase))
+                    return null;
+                var selected = new HashSet<ObjectId>();
+                foreach (TypedValue value in values.Skip(1))
+                {
+                    long handle;
+                    if (!long.TryParse(value.Value as string,
+                        NumberStyles.HexNumber, CultureInfo.InvariantCulture,
+                        out handle)) continue;
+                    try
+                    {
+                        ObjectId id = database.GetObjectId(false, new Handle(handle), 0);
+                        if (!id.IsNull && !id.IsErased) selected.Add(id);
+                    }
+                    catch { }
+                }
+                return selected;
+            }
+        }
+    }
+
 }
