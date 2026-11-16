@@ -254,6 +254,36 @@ namespace CETools.Civil3D
                 document.Editor.WriteMessage("\nCE_ROADPROFILES: no CE road alignments were found. Run CE_ROADALIGN first.");
                 return;
             }
+            // Allow a complete run or an explicit selection of multiple CE roads.
+            var scopeOptions = new PromptKeywordOptions(
+                "\nCreate road profiles for [All/Selected] alignments <All>: ");
+            scopeOptions.AllowNone = true;
+            scopeOptions.Keywords.Add("All");
+            scopeOptions.Keywords.Add("Selected");
+            PromptResult scope = document.Editor.GetKeywords(scopeOptions);
+            if (scope.Status == PromptStatus.Cancel ||
+                scope.Status == PromptStatus.Error) return;
+            if (string.Equals(scope.StringResult, "Selected",
+                StringComparison.OrdinalIgnoreCase))
+            {
+                PromptSelectionResult selection = document.Editor.GetSelection(
+                    new PromptSelectionOptions
+                    {
+                        MessageForAdding = "\nSelect multiple CE road alignments: ",
+                        AllowDuplicates = false
+                    });
+                if (selection.Status != PromptStatus.OK ||
+                    selection.Value == null) return;
+                var selectedIds = new HashSet<ObjectId>(selection.Value.GetObjectIds());
+                alignments = alignments.Where(road =>
+                    selectedIds.Contains(road.AlignmentId)).ToList();
+                if (alignments.Count == 0)
+                {
+                    document.Editor.WriteMessage(
+                        "\nCE_ROADPROFILES: no valid CE road alignments selected.");
+                    return;
+                }
+            }
             List<CivilObjectChoice> surfaces = ReadSurfaces(document, civilDocument);
             if (surfaces.Count == 0)
             {
@@ -262,7 +292,7 @@ namespace CETools.Civil3D
             }
             var picker = new CivilObjectPickerWindow(
                 "CE Tools - Road Existing-Ground Surface",
-                "Select the surface used to create EG profiles for every CE road alignment.",
+                "Select the surface used to create EG profiles for the chosen CE road alignments.",
                 surfaces);
             AcApplication.ShowModalWindow(picker);
             if (!picker.Accepted || picker.SelectedChoice == null) return;
@@ -310,7 +340,7 @@ namespace CETools.Civil3D
             GridReportPresenter.ShowReportAndOfferTable(
                 document,
                 "CE Tools - Road Profile Preview",
-                "An EG profile and profile view will be created for every CE road alignment.",
+                "An EG profile and profile view will be created for each chosen CE road alignment.",
                 new List<string> { "Road", "Surface", "Profile Style", "View Style", "Band Set" },
                 preview,
                 "CE TOOLS ROAD PROFILE PREVIEW");
