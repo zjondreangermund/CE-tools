@@ -133,7 +133,7 @@ namespace CETools.Civil3D
                 "Create lightweight polylines, native arcs, or normal Civil 3D feature lines.",
                 new[] { "Polylines", "Arcs", "Feature Lines" });
             model.AddChoice("ClosureFeatureLine", "04 Output", "T-junction limit line", "Feature Line edge-centre-edge",
-                "Creates one separate line between the two side-road edge tangency points with a protected centre vertex. It does NOT close either bellmouth return into a loop.",
+                "Creates a perpendicular side-road limit beyond both tangencies, with short straight edge connectors and a protected centre vertex. It does NOT close either bellmouth return into a loop.",
                 new[] { "Feature Line edge-centre-edge", "Polyline edge-centre-edge", "None" });
             model.AddPositiveDouble("TLimitPairDistance", "04 Output", "Existing-bellmouth pairing distance", 20.0,
                 "Used to identify compatible existing bellmouth returns; it is not the connector length.");
@@ -739,6 +739,9 @@ namespace CETools.Civil3D
             if (!TryDirection(first, point, out firstDirection) || !TryDirection(second, point, out secondDirection))
                 return false;
 
+            if (Math.Abs(firstDirection.GetNormal().CrossProduct(secondDirection.GetNormal()).Z) < 1e-6)
+                return false;
+
             bool firstAtEnd = NearEndpoint(first, point, endpointTolerance);
             bool secondAtEnd = NearEndpoint(second, point, endpointTolerance);
             Curve main = firstAtEnd && !secondAtEnd ? second : first;
@@ -814,12 +817,24 @@ namespace CETools.Civil3D
 
         private static ReturnDefinition BuildReturn(Point3d intersection, Vector3d main, Vector3d side, int mainSign, int sideSign, double mainHalf, double sideHalf, double radius)
         {
-            // Legacy straight-line seed. Curved roads must be solved from actual offsets.
-            Point3d centre = intersection +
-                main * (mainSign * (sideHalf + radius)) +
-                side * (sideSign * (mainHalf + radius));
-            Vector3d firstRadius = -main * (mainSign * radius);
-            Vector3d secondRadius = -side * (sideSign * radius);
+            // Intersect the two radius-offset road edges. Widths are measured
+            // NORMAL to each road, never along the other (skew) road direction.
+            main = Plan(main).GetNormal();
+            side = Plan(side).GetNormal();
+            double handedness = Math.Sign(main.CrossProduct(side).Z);
+            if (handedness == 0.0)
+                throw new InvalidOperationException("Parallel roads have no junction return.");
+            Vector3d mainNormal = new Vector3d(-main.Y, main.X, 0.0) * (sideSign * handedness);
+            Vector3d sideNormal = new Vector3d(-side.Y, side.X, 0.0) * (-mainSign * handedness);
+            double determinant = mainNormal.X * sideNormal.Y - mainNormal.Y * sideNormal.X;
+            double mainDistance = mainHalf + radius;
+            double sideDistance = sideHalf + radius;
+            Point3d centre = intersection + new Vector3d(
+                (mainDistance * sideNormal.Y - mainNormal.Y * sideDistance) / determinant,
+                (mainNormal.X * sideDistance - mainDistance * sideNormal.X) / determinant, 0.0);
+            // Start belongs to the SIDE road; End belongs to the MAIN road.
+            Vector3d firstRadius = -sideNormal * radius;
+            Vector3d secondRadius = -mainNormal * radius;
             Point3d start = centre + firstRadius;
             Point3d end = centre + secondRadius;
             Vector3d middleDirection = firstRadius.GetNormal() + secondRadius.GetNormal();
@@ -1100,6 +1115,25 @@ namespace CETools.Civil3D
             catch { return ObjectId.Null; }
         }
 
+        // Extend both edge tangencies OUTWARD to the furthest station on this
+        // arm. The cross-road limit is perpendicular to the arm and short straight
+        // connectors preserve the circular returns instead of distorting them.
+        private static void AddPerpendicularLimit(
+            IList<Tuple<Point3d, Point3d, string>> pairs,
+            Point3d first, Point3d second, Vector3d outward, string role)
+        {
+            outward = Plan(outward).GetNormal();
+            double delta = (second - first).DotProduct(outward);
+            Point3d firstLimit = first + outward * Math.Max(0.0, delta);
+            Point3d secondLimit = second + outward * Math.Max(0.0, -delta);
+            if (first.DistanceTo(firstLimit) > Tol)
+                pairs.Add(Tuple.Create(first, firstLimit, role + "-EDGE"));
+            if (second.DistanceTo(secondLimit) > Tol)
+                pairs.Add(Tuple.Create(second, secondLimit, role + "-EDGE"));
+            if (firstLimit.DistanceTo(secondLimit) > Tol)
+                pairs.Add(Tuple.Create(firstLimit, secondLimit, role));
+        }
+
         private static int CreateClosureGeometry(
             Database database,
             Transaction transaction,
@@ -1124,21 +1158,21 @@ namespace CETools.Civil3D
                 foreach (int mainSign in new[] { -1, 1 })
                 {
                     List<ReturnDefinition> group = definitions.Where(item => item.MainSign == mainSign).OrderBy(item => item.SideSign).ToList();
-                    if (group.Count == 2) pairs.Add(Tuple.Create(group[0].End, group[1].End, "X-LIMIT"));
+                    if (group.Count == 2) AddPerpendicularLimit(pairs, group[0].End, group[1].End, candidate.Main * mainSign, "X-LIMIT");
                 }
                 foreach (int sideSign in new[] { -1, 1 })
                 {
                     List<ReturnDefinition> group = definitions.Where(item => item.SideSign == sideSign).OrderBy(item => item.MainSign).ToList();
-                    if (group.Count == 2) pairs.Add(Tuple.Create(group[0].Start, group[1].Start, "X-LIMIT"));
+                    if (group.Count == 2) AddPerpendicularLimit(pairs, group[0].Start, group[1].Start, candidate.Side * sideSign, "X-LIMIT");
                 }
             }
             else if (createTLimit)
             {
-                // A T-junction needs TWO separate straight limit lines.
+                // Keep the main-road front/back lines and a perpendicular side-road cap.
                 // FRONT = preserve the established main-road-side tangencies (End-to-End).
                 // BACK = translate the front line by the specified adjacent-road width
-                // toward the side-road mouth. The stored Start points are used only to
-                // determine direction, because their spacing can be inconsistent.
+                // away from the side road, normal to the main road. Side-road tangencies
+                // receive straight edge extensions to a common perpendicular limit.
                 // Never close the curved bellmouth returns.
                 List<ReturnDefinition> group = definitions
                     .OrderBy(item => item.MainSign)
@@ -1155,27 +1189,11 @@ namespace CETools.Civil3D
                             frontEnd,
                             "T-LIMIT-FRONT"));
 
-                        // Add the short cross-road connector directly between the
-                        // two stored bellmouth Start endpoints. Do not derive this
-                        // connector from a midpoint or offset vector: the user needs
-                        // the line to terminate exactly on both bellmouth endpoints.
-                        Point3d crossRoadStart = group[0].Start;
-                        Point3d crossRoadEnd = group[1].Start;
-                        if (PlanDistance(crossRoadStart, crossRoadEnd) > Tol)
-                            pairs.Add(Tuple.Create(
-                                crossRoadStart,
-                                crossRoadEnd,
-                                "T-LIMIT-CROSSROAD"));
+                        AddPerpendicularLimit(pairs, group[0].Start, group[1].Start,
+                            candidate.Side, "T-LIMIT-CROSSROAD");
 
-                        Point3d startMid = new Point3d(
-                            (group[0].Start.X + group[1].Start.X) * 0.5,
-                            (group[0].Start.Y + group[1].Start.Y) * 0.5,
-                            (group[0].Start.Z + group[1].Start.Z) * 0.5);
-                        Point3d frontMid = new Point3d(
-                            (frontStart.X + frontEnd.X) * 0.5,
-                            (frontStart.Y + frontEnd.Y) * 0.5,
-                            (frontStart.Z + frontEnd.Z) * 0.5);
-                        Vector3d away = Plan(frontMid - startMid);
+                        Vector3d away = new Vector3d(-candidate.Main.Y, candidate.Main.X, 0.0);
+                        if (away.DotProduct(candidate.Side) > 0.0) away = -away;
                         if (away.Length > Tol && adjacentRoadWidth > Tol)
                         {
                             Vector3d offset = away.GetNormal() * adjacentRoadWidth;
