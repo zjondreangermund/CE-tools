@@ -202,11 +202,32 @@ namespace CETools.Civil3D
                 FieldCompletionBatchUi.ReadCorridorChoices(
                     document,
                     civilDocument);
-            if (corridorChoices.Count > 0)
+            if (corridorChoices.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_ROADCORRIDORCOMPLETE: no existing Civil 3D corridors found.");
+                return;
+            }
+
+            // Explicitly choose whether to operate on every corridor or on a
+            // multi-selection. Null CorridorIds means every corridor in the
+            // existing completion engine; a nonempty list means only those IDs.
+            var scopeOptions = new PromptKeywordOptions(
+                "\nComplete which corridors? [All/Selected] <Selected>: ");
+            scopeOptions.AllowNone = true;
+            scopeOptions.Keywords.Add("All");
+            scopeOptions.Keywords.Add("Selected");
+            PromptResult scopeResult = document.Editor.GetKeywords(scopeOptions);
+            if (scopeResult.Status == PromptStatus.Cancel ||
+                scopeResult.Status == PromptStatus.Error)
+                return;
+            bool completeAll =
+                string.Equals(scopeResult.StringResult, "All",
+                    StringComparison.OrdinalIgnoreCase);
+            if (!completeAll)
             {
                 selectedCorridors = FieldCompletionBatchUi.PickMultiple(
-                    "CE Tools - Corridor Selection",
-                    "Select the corridors to complete. The previous successful selection is checked by default.",
+                    "CE Tools - Select Multiple Corridors",
+                    "Select one or more corridors to complete. The previous successful selection is checked by default.",
                     corridorChoices,
                     rememberedCorridorIds);
                 if (selectedCorridors == null ||
