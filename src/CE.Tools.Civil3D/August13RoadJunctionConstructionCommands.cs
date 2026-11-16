@@ -107,6 +107,10 @@ namespace CETools.Civil3D
                 "Junction station cluster gap",
                 40.0,
                 "Projected stations separated by more than this distance are treated as different junctions.");
+            model.AddChoice("RegionCleanup", "02 Corridors",
+                "Junction region handling", "Remove internal junction regions",
+                "Remove corridor assembly regions contained within junction limits so that skew junctions do not retain cross sections. Source alignments and assemblies are preserved.",
+                new[] { "Remove internal junction regions", "Mark junction regions inactive" });
             model.AddDouble(
                 "Margin",
                 "03 Station projection",
@@ -126,6 +130,8 @@ namespace CETools.Civil3D
             double maxOffset = Math.Max(model.Double("MaxOffset", 30.0), 0.01);
             double clusterGap = Math.Max(model.Double("Cluster", 40.0), 0.01);
             double margin = Math.Max(model.Double("Margin", 0.10), 0.0);
+            bool removeInternalRegions = string.Equals(model.Text("RegionCleanup"),
+                "Remove internal junction regions", StringComparison.OrdinalIgnoreCase);
 
             List<Point3d> junctionLimits = ReadJunctionLimitPoints(
                 document,
@@ -199,9 +205,9 @@ namespace CETools.Civil3D
                                 corridorSplits += SplitAtStation(baseline, interval.Start);
                                 corridorSplits += SplitAtStation(baseline, interval.End);
                             }
-                            corridorExcluded += ApplyJunctionExclusions(
-                                baseline,
-                                intervals);
+                            corridorExcluded += removeInternalRegions
+                                ? RemoveInternalJunctionRegions(baseline, intervals)
+                                : ApplyJunctionExclusions(baseline, intervals);
                             corridorBaselines++;
                         }
 
@@ -229,19 +235,19 @@ namespace CETools.Civil3D
                 GridReportPresenter.ShowReportAndOfferTable(
                     document,
                     "CE Tools - Road Junction Corridor Completion",
-                    "Bellmouth/feature-line limits were projected to each road baseline. Regions were split at those limits and only the junction regions were excluded from normal through-road corridor processing.",
+                    "Bellmouth limits were projected to road baselines, and internal assembly regions were removed or marked inactive as selected.",
                     new List<string>
                     {
                         "Corridor",
                         "Baselines",
                         "Region Splits",
-                        "Excluded Junction Regions",
+                        "Cleaned Junction Regions",
                         "Status"
                     },
                     report,
                     "CE ROAD JUNCTION CORRIDOR REGISTER");
                 document.Editor.WriteMessage(
-                    "\nCE_ROADJUNCTIONCONSTRUCTION complete. Corridors={0}; baselines={1}; splits={2}; excluded junction regions={3}.",
+                    "\nCE_ROADJUNCTIONCONSTRUCTION complete. Corridors={0}; baselines={1}; splits={2}; cleaned junction regions={3}.",
                     corridorsChanged,
                     baselinesChanged,
                     splitCount,
@@ -534,6 +540,57 @@ namespace CETools.Civil3D
                 }
             }
             return 0;
+        }
+
+        // Remove inside-junction corridor regions in descending index order.
+        // Splitting alone keeps extra assembly sections at skew intersections.
+        private static int RemoveInternalJunctionRegions(
+            Baseline baseline, IList<StationInterval> intervals)
+        {
+            if (baseline == null || intervals == null ||
+                baseline.BaselineRegions.Count <= 1) return 0;
+            var indices = new List<int>();
+            for (int index = 0; index < baseline.BaselineRegions.Count; index++)
+            {
+                BaselineRegion region = baseline.BaselineRegions[index];
+                if (region == null) continue;
+                double middle = (region.StartStation + region.EndStation) * 0.5;
+                if (intervals.Any(item => middle >= item.Start - 0.005 &&
+                                          middle <= item.End + 0.005))
+                    indices.Add(index);
+            }
+            // Guard against deleting every assembly region on a corridor.
+            if (indices.Count >= baseline.BaselineRegions.Count) return 0;
+            int removed = 0;
+            for (int n = indices.Count - 1; n >= 0; n--)
+            {
+                try
+                {
+                    object regions = baseline.BaselineRegions;
+                    var removeAt = regions.GetType().GetMethod(
+                        "RemoveAt", new[] { typeof(int) });
+                    if (removeAt != null)
+                    {
+                        removeAt.Invoke(regions, new object[] { indices[n] });
+                        removed++;
+                        continue;
+                    }
+                    // Some Civil 3D releases expose collection.Remove(region)
+                    // rather than RemoveAt(index).
+                    var removeRegion = regions.GetType().GetMethods()
+                        .FirstOrDefault(method => method.Name == "Remove" &&
+                            method.GetParameters().Length == 1 &&
+                            method.GetParameters()[0].ParameterType
+                                .IsAssignableFrom(typeof(BaselineRegion)));
+                    if (removeRegion == null) continue;
+                    BaselineRegion region = baseline.BaselineRegions[indices[n]];
+                    removeRegion.Invoke(regions, new object[] { region });
+                    removed++;
+                }
+                catch { }
+            }
+            if (removed > 0) baseline.NeedsProcessing = true;
+            return removed;
         }
 
         private static int ApplyJunctionExclusions(

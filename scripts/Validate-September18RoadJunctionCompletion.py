@@ -78,8 +78,10 @@ if 'X-LIMIT' not in junction:
     errors.append("cross-junction closure generation is missing")
 
 road = (ROOT / "src/CE.Tools.Civil3D/September18RoadJunctionCompletionCommands.cs").read_text(encoding="utf-8")
-if 'Cross-junction corridors are not trimmed' not in road:
-    errors.append("T-junction corridor trimming must explicitly preserve cross junctions")
+if 'DisableShortEndRegions(' not in road or 'terminal.NeedsProcessing = false' not in road:
+    errors.append("Short terminal regions must be switched off without deletion")
+if 'Matched T-junction ends only' not in road:
+    errors.append("T-junction-only cleanup scope must remain available")
 if 'outletElevation <= upstreamElevation' not in road:
     errors.append("pipe slope command must leave already-correct outlet slopes unchanged")
 
