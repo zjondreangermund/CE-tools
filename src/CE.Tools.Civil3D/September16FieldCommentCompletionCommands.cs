@@ -632,32 +632,38 @@ namespace CETools.Civil3D
                 segmentCount,
                 50000);
 
-            var polyline = new Polyline(
-                segmentCount + 1);
+            // Preserve plan curvature with polyline bulges instead of the
+            // previous zero-bulge chord sequence. Mid-station samples
+            // reconstruct local circular arcs; straight tangents have bulge 0.
+            var polyline = new Polyline(segmentCount + 1);
             int added = 0;
-            for (int index = 0;
-                 index <= segmentCount;
-                 index++)
+            double previousX = 0.0, previousY = 0.0;
+            bool hasPrevious = false;
+            for (int index = 0; index <= segmentCount; index++)
             {
-                double station =
-                    start +
-                    (end - start) *
-                    index / segmentCount;
-                double x = 0.0;
-                double y = 0.0;
+                double station = start + (end - start) * index / segmentCount;
+                double x = 0.0, y = 0.0;
                 try
                 {
-                    alignment.PointLocation(
-                        station,
-                        0.0,
-                        ref x,
-                        ref y);
+                    alignment.PointLocation(station, 0.0, ref x, ref y);
+                    if (hasPrevious)
+                    {
+                        double mx = 0.0, my = 0.0;
+                        double before = start +
+                            (end - start) * (index - 1) / segmentCount;
+                        alignment.PointLocation(
+                            (before + station) * 0.5, 0.0, ref mx, ref my);
+                        double bulge = BulgeThroughMidpoint(
+                            new Point3d(previousX, previousY, 0),
+                            new Point3d(mx, my, 0),
+                            new Point3d(x, y, 0));
+                        polyline.SetBulgeAt(added - 1, bulge);
+                    }
                     polyline.AddVertexAt(
-                        added++,
-                        new Point2d(x, y),
-                        0.0,
-                        0.0,
-                        0.0);
+                        added++, new Point2d(x, y), 0.0, 0.0, 0.0);
+                    previousX = x;
+                    previousY = y;
+                    hasPrevious = true;
                 }
                 catch { }
             }
@@ -668,6 +674,21 @@ namespace CETools.Civil3D
                 return null;
             }
             return polyline;
+        }
+
+        private static double BulgeThroughMidpoint(
+            Point3d first, Point3d middle, Point3d last)
+        {
+            Vector3d firstHalf = Plan(middle - first);
+            Vector3d secondHalf = Plan(last - middle);
+            if (firstHalf.Length < Tol || secondHalf.Length < Tol)
+                return 0.0;
+            double turn = Math.Atan2(
+                firstHalf.CrossProduct(secondHalf).Z,
+                firstHalf.DotProduct(secondHalf));
+            if (Math.Abs(turn) < 1e-8 || Math.Abs(turn) > Math.PI / 2.0)
+                return 0.0;
+            return Math.Tan(turn / 2.0);
         }
 
         private static int EraseExistingBatchJunctionOutputs(
@@ -806,13 +827,29 @@ namespace CETools.Civil3D
         {
             foreach (int mainSign in new[] { -1, 1 })
                 foreach (int sideSign in new[] { -1, 1 })
-                    yield return BuildReturn(candidate.Point, candidate.Main, candidate.Side, mainSign, sideSign, mainHalf, sideHalf, radius);
+                {
+                    ReturnDefinition curved;
+                    if (TryBuildTangentReturn(candidate, mainSign, sideSign,
+                        mainHalf, sideHalf, radius, out curved))
+                        yield return curved;
+                    else
+                        yield return BuildReturn(candidate.Point, candidate.Main,
+                            candidate.Side, mainSign, sideSign, mainHalf, sideHalf, radius);
+                }
         }
 
         private static IEnumerable<ReturnDefinition> TReturns(JunctionCandidate candidate, double mainHalf, double sideHalf, double radius)
         {
             foreach (int mainSign in new[] { -1, 1 })
-                yield return BuildReturn(candidate.Point, candidate.Main, candidate.Side, mainSign, 1, mainHalf, sideHalf, radius);
+            {
+                ReturnDefinition curved;
+                if (TryBuildTangentReturn(candidate, mainSign, 1,
+                    mainHalf, sideHalf, radius, out curved))
+                    yield return curved;
+                else
+                    yield return BuildReturn(candidate.Point, candidate.Main,
+                        candidate.Side, mainSign, 1, mainHalf, sideHalf, radius);
+            }
         }
 
         private static ReturnDefinition BuildReturn(Point3d intersection, Vector3d main, Vector3d side, int mainSign, int sideSign, double mainHalf, double sideHalf, double radius)
@@ -1223,6 +1260,8 @@ namespace CETools.Civil3D
                     pair.Item3 == "T-LIMIT-BACK" ? oppositeLayerId : layerId,
                     pair.Item1, pair.Item2,
                     pair.Item3, candidate.Point, featureLines, siteId, weedDistance, weedAngle,
+                    pair.Item3 == "T-LIMIT-FRONT" || pair.Item3 == "T-LIMIT-BACK"
+                        ? candidate.MainCurve : null,
                     topSurfaces, ref surfaceVertices, ref unresolvedVertices);
                 if (!id.IsNull) created++;
             }
@@ -1634,6 +1673,7 @@ namespace CETools.Civil3D
             ObjectId siteId,
             double weedDistance,
             double weedAngle,
+            Curve followRoadCurve,
             IList<Autodesk.Civil.DatabaseServices.Surface> topSurfaces,
             ref int surfaceVertices,
             ref int unresolvedVertices)
@@ -1644,8 +1684,36 @@ namespace CETools.Civil3D
                 polyline.SetDatabaseDefaults(database);
                 polyline.LayerId = layerId;
                 polyline.Color = Color.FromColorIndex(ColorMethod.ByAci, 6);
-                polyline.AddVertexAt(0, new Point2d(start.X, start.Y), 0.0, 0.0, 0.0);
-                polyline.AddVertexAt(1, new Point2d((start.X + end.X) * 0.5, (start.Y + end.Y) * 0.5), 0.0, 0.0, 0.0);
+                Point3d middle = new Point3d(
+                    (start.X + end.X) * 0.5, (start.Y + end.Y) * 0.5,
+                    (start.Z + end.Z) * 0.5);
+                if (followRoadCurve != null)
+                {
+                    // The main road may be curved: project each return tangent
+                    // to the true centreline and follow its mid-station rather
+                    // than joining the two return ends with a straight chord.
+                    try
+                    {
+                        Point3d sourceStart =
+                            followRoadCurve.GetClosestPointTo(start, false);
+                        Point3d sourceEnd =
+                            followRoadCurve.GetClosestPointTo(end, false);
+                        double from = followRoadCurve.GetDistAtPoint(sourceStart);
+                        double to = followRoadCurve.GetDistAtPoint(sourceEnd);
+                        Point3d sourceMiddle = followRoadCurve.GetPointAtDist(
+                            (from + to) * 0.5);
+                        Vector3d averageOffset =
+                            ((start - sourceStart) + (end - sourceEnd)) * 0.5;
+                        middle = sourceMiddle + averageOffset;
+                    }
+                    catch { }
+                }
+                double halfBulge = BulgeThroughMidpoint(start, middle, end);
+                // The three control vertices remain available for crown /
+                // surface elevation assignment; each half carries curvature.
+                double quarterBulge = Math.Tan(Math.Atan(halfBulge) * 0.5);
+                polyline.AddVertexAt(0, new Point2d(start.X, start.Y), quarterBulge, 0.0, 0.0);
+                polyline.AddVertexAt(1, new Point2d(middle.X, middle.Y), quarterBulge, 0.0, 0.0);
                 polyline.AddVertexAt(2, new Point2d(end.X, end.Y), 0.0, 0.0, 0.0);
                 ObjectId sourceId = space.AppendEntity(polyline);
                 transaction.AddNewlyCreatedDBObject(polyline, true);
