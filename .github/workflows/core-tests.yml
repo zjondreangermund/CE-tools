@@ -293,6 +293,9 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Test horizontal curve Free conversion and rollback
+        run: dotnet run --project tests/CE.Tools.AlignmentFreeCurve.Tests/CE.Tools.AlignmentFreeCurve.Tests.csproj -c Release
+
       - name: Test Civil API colour and band persistence contracts
         run: dotnet run --project tests/CE.Tools.Civil3D.ApiContract.Tests/CE.Tools.Civil3D.ApiContract.Tests.csproj -c Release
 

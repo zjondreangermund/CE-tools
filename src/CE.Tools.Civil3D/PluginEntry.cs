@@ -490,6 +490,7 @@ namespace CETools.Civil3D
                         Cmd("Reverse Multiple Alignments + Profiles", "CE_ROADALIGNREVERSEMULTI ", "Reverse selected road alignments and refresh their profiles, profile views and corridors."),
                         Cmd("Batch T/Cross Bellmouths", "CE_ROADJUNCTIONBATCH ", "Create all T/cross bellmouth returns, magenta closure/assembly-limit lines and optional feature-line output."),
                         Cmd("T-Junction Assembly Limits", "CE_ROADTJUNCTIONASSEMBLYLIMITS ", "Trim only T-junction side-road terminal corridor regions at the generated magenta limits."),
+                        Cmd("Horizontal Curves to Free", "CE_ALIGNCURVESFREE ", "Convert eligible line-curve-line geometry to both-side tangent Free curves on all or selected alignments."),
                         Cmd("Sync Corridor Names to Alignments", "CE_CORRIDORNAMESYNC ", "Rename selected or all corridors to their unique baseline alignment name."),
                         Cmd("Road TOP/BOTTOM Surface Names", "CE_ROADSURFACENAMES ", "Normalize corridor surfaces to TOP-RD-01/BOTTOM-RD-01 naming."),
                         Cmd("TOP/BOTTOM Surfaces in Profile Views", "CE_ROADTOPBOTTOMPROFILE ", "Add road TOP/BOTTOM surfaces to selected profile views at crossing coverage."),
