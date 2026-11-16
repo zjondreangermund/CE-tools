@@ -39,13 +39,22 @@ namespace CETools.Civil3D
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Final Road Vertical Curves",
                 "Add free symmetric parabolic vertical curves to eligible internal PVIs on CE final-design road profiles. Existing end tangents remain; PVIs that already carry a vertical curve are skipped safely.");
-            model.AddChoice("Scope", "01 Profiles", "Final road profiles", "All CE final profiles", "Process every CE road -FG/final profile or only profiles belonging to selected road alignments.", new[] { "All CE final profiles", "Selected road alignments" });
+            model.AddChoice("Scope", "01 Profiles", "Final road profiles", "Last CE_ROADPROFILES selection", "Use the same roads as CE_ROADPROFILEFULL, every CE road or a new manual selection.", new[] { "Last CE_ROADPROFILES selection", "All CE final profiles", "Selected road alignments" });
             model.AddPositiveDouble("Length", "02 Vertical Curves", "Preferred vertical curve length", 30.0, "Preferred parabolic curve length. CE Tools shortens it automatically where adjacent PVI spacing is insufficient.");
             model.AddPositiveDouble("Minimum", "02 Vertical Curves", "Minimum curve length", 6.0, "Do not add a curve if the available tangent geometry cannot support at least this length.");
             model.AddPositiveDouble("Fit", "02 Vertical Curves", "Maximum share of adjacent tangent spacing (%)", 80.0, "Limits curve length to this percentage of the smaller adjacent PVI spacing.");
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
-            HashSet<ObjectId> selectedAlignments = null;
+            HashSet<ObjectId> selectedAlignments =
+                string.Equals(model.Text("Scope"), "Last CE_ROADPROFILES selection",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? RoadProfileSelectionScope.Read(document.Database)
+                    : null;
+            if (selectedAlignments != null && selectedAlignments.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_ROADVERTICALCURVES: selected road scope is empty.");
+                return;
+            }
             if (string.Equals(model.Text("Scope"), "Selected road alignments", StringComparison.OrdinalIgnoreCase))
             {
                 PromptSelectionResult selection = document.Editor.GetSelection(new PromptSelectionOptions

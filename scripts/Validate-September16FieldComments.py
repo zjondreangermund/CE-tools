@@ -25,6 +25,13 @@ checks = {
         "IntersectWith(",
         "CrossReturns(",
         "TReturns(",
+        "TryBuildTangentReturn(candidate, mainSign, sideSign,",
+        "TryBuildTangentReturn(candidate, mainSign, 1,",
+        "BulgeThroughMidpoint(",
+        "polyline.SetBulgeAt(added - 1, bulge);",
+        'pair.Item3 == "T-LIMIT-FRONT" || pair.Item3 == "T-LIMIT-BACK"',
+        "followRoadCurve.GetPointAtDist(",
+
         "CE_ROADJUNCTIONCONSTRUCTION",
         '"Bellmouth geometry"',
         'new[] { "Polylines", "Arcs" }',

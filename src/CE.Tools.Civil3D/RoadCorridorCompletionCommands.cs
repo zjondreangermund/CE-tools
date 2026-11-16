@@ -51,6 +51,16 @@ namespace CETools.Civil3D
             if (civilDocument == null) return;
             ProjectStyleSelection project = ProjectStyleCenterCommands.ReadSelection(document.Database);
             RoadProductionSettings road = RoadProductionSettings.Read(document.Database);
+            // CE_ROADPROFILEFULL must honour the scope selected in its
+            // preceding CE_ROADPROFILES step, not generate FG on every road.
+            HashSet<ObjectId> selectedRoads =
+                RoadProfileSelectionScope.Read(document.Database);
+            if (selectedRoads != null && selectedRoads.Count == 0)
+            {
+                document.Editor.WriteMessage("\nCE_ROADDESIGNPROFILE: selected road scope is empty.");
+                return;
+            }
+
 
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - Final Road Design Profiles",
@@ -103,6 +113,7 @@ namespace CETools.Civil3D
 
                     foreach (ObjectId alignmentId in civilDocument.GetAlignmentIds())
                     {
+                        if (selectedRoads != null && !selectedRoads.Contains(alignmentId)) continue;
                         CivilAlignment alignment = transaction.GetObject(alignmentId, OpenMode.ForRead, false) as CivilAlignment;
                         if (alignment == null || !IsCeRoadAlignment(alignment)) continue;
                         CivilProfile ngl = FindNglProfile(alignment, transaction);

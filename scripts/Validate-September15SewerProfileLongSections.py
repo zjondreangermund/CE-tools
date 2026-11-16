@@ -51,6 +51,11 @@ required_band_service = [
     'ResolveGroundProfile(',
     'Select multiple sewer profile views to receive the long-section band set:',
     'SewerProductionCommands.ApplySewerProfileStylePreset(document.Database, saved);',
+    "nativeImportFailure = exception;",
+    "if (!imported)",
+    "Direct style-template materialization returned zero rows.",
+    "fallback error:",
+
 ]
 for token in required_band_service:
     if token not in sewer_bands:
