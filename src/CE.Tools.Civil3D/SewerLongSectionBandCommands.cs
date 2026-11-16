@@ -230,34 +230,82 @@ namespace CETools.Civil3D
             if (database == null || viewId.IsNull || bandSetStyleId.IsNull)
                 throw new ArgumentException("A profile view and sewer band-set style are required.");
 
-            int materializedRows;
-            // Import one view per transaction. Civil 3D 2023 may report a style
-            // assignment without creating the native top/bottom rows until the
-            // profile view has committed.
-            using (Transaction import = database.TransactionManager.StartTransaction())
+            int materializedRows = 0;
+            System.Exception nativeImportFailure = null;
+            bool imported = false;
+            // Civil 3D 2023 may reject native ImportBandSetStyle even when the
+            // same template can be materialized by editing writable top and
+            // bottom band collections. A failed native transaction must be
+            // discarded before retrying in an independent transaction.
+            try
             {
-                CivilProfileView view = import.GetObject(
-                    viewId, OpenMode.ForWrite, false) as CivilProfileView;
-                if (view == null || view.IsReferenceObject)
-                    throw new InvalidOperationException("The selected object is not an editable profile view.");
+                using (Transaction import = database.TransactionManager.StartTransaction())
+                {
+                    CivilProfileView view = import.GetObject(
+                        viewId, OpenMode.ForWrite, false) as CivilProfileView;
+                    if (view == null || view.IsReferenceObject)
+                        throw new InvalidOperationException(
+                            "The selected object is not an editable profile view.");
+                    if (!viewStyleId.IsNull)
+                        SetObjectId(view, viewStyleId, "StyleId");
+                    ProfileViewBandSetStyle style = import.GetObject(
+                        bandSetStyleId, OpenMode.ForRead, false) as ProfileViewBandSetStyle;
+                    if (style == null)
+                        throw new InvalidOperationException(
+                            "The selected sewer band-set style is unavailable.");
 
-                if (!viewStyleId.IsNull)
-                    SetObjectId(view, viewStyleId, "StyleId");
-
-                ProfileViewBandSetStyle style = import.GetObject(
-                    bandSetStyleId, OpenMode.ForRead, false) as ProfileViewBandSetStyle;
-                if (style == null)
-                    throw new InvalidOperationException("The selected sewer band-set style is unavailable.");
-
-                view.Bands.ImportBandSetStyle(bandSetStyleId);
-                materializedRows = September14AlignmentBandStyleCommands.EnsureImportedBandRows(
-                    view, style);
-                if (materializedRows == 0)
+                    view.Bands.ImportBandSetStyle(bandSetStyleId);
+                    materializedRows = September14AlignmentBandStyleCommands.EnsureImportedBandRows(
+                        view, style);
+                    if (materializedRows == 0)
+                        throw new InvalidOperationException(
+                            "The selected band set created no native rows.");
+                    try { view.RecordGraphicsModified(true); } catch { }
+                    import.Commit();
+                    imported = true;
+                }
+            }
+            catch (System.Exception exception)
+            {
+                nativeImportFailure = exception;
+            }
+            if (!imported)
+            {
+                // Rebuild rows directly from the selected style, rather than
+                // reporting zero rows for every branch after native import fails.
+                try
+                {
+                    using (Transaction fallback = database.TransactionManager.StartTransaction())
+                    {
+                        CivilProfileView view = fallback.GetObject(
+                            viewId, OpenMode.ForWrite, false) as CivilProfileView;
+                        if (view == null || view.IsReferenceObject)
+                            throw new InvalidOperationException(
+                                "The sewer profile view is not editable.");
+                        if (!viewStyleId.IsNull)
+                            SetObjectId(view, viewStyleId, "StyleId");
+                        ProfileViewBandSetStyle style = fallback.GetObject(
+                            bandSetStyleId, OpenMode.ForRead, false) as ProfileViewBandSetStyle;
+                        if (style == null)
+                            throw new InvalidOperationException(
+                                "The selected sewer band-set style is unavailable.");
+                        materializedRows =
+                            September14AlignmentBandStyleCommands.EnsureImportedBandRows(view, style);
+                        if (materializedRows == 0)
+                            throw new InvalidOperationException(
+                                "Direct style-template materialization returned zero rows.");
+                        try { view.RecordGraphicsModified(true); } catch { }
+                        fallback.Commit();
+                    }
+                }
+                catch (System.Exception fallbackError)
+                {
                     throw new InvalidOperationException(
-                        "Civil 3D did not materialise any native rows from the selected sewer band set.");
-
-                try { view.RecordGraphicsModified(true); } catch { }
-                import.Commit();
+                        "Band-set '" + bandSetStyleId.Handle +
+                        "' failed native import and direct template application. Native error: " +
+                        (nativeImportFailure == null ? "unknown" : nativeImportFailure.Message) +
+                        "; fallback error: " + fallbackError.Message, fallbackError);
+                }
             }
 
             int linked;
