@@ -638,13 +638,19 @@ namespace CETools.Civil3D
 
             var model = new ProductionSettingsDialogModel(
                 "CE Tools - T-Junction Assembly Limits",
-                "Use the magenta CE T-junction closure lines as assembly/region limits. The side-road corridor is split at the limit and the short terminal region between the junction endpoint and the road edge is removed. Cross-junction corridors are not trimmed.");
+                "Use T-junction limit lines to split side-road regions. Switch off short regions at corridor starts and ends without deleting their region definitions.");
             model.AddPositiveDouble("MaxOffset", "01 Matching", "Maximum alignment offset to T-limit", 1.0,
                 "Only a baseline whose alignment passes this close to the centre of a T-limit line is treated as the intersecting side road.");
             model.AddPositiveDouble("MaxTerminalLength", "02 Cleanup", "Maximum short terminal region", 30.0,
                 "Safety limit. A terminal region longer than this is not removed automatically.");
+            model.AddChoice("TerminalScope", "02 Cleanup", "Short region cleanup",
+                "Both start and end of selected corridors",
+                "Switch off every short terminal region at either end, including skew junctions; alternatively use only matched T-limit ends.",
+                new[] { "Both start and end of selected corridors", "Matched T-junction ends only" });
             if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
 
+            bool allShortEnds = string.Equals(model.Text("TerminalScope"),
+                "Both start and end of selected corridors", StringComparison.OrdinalIgnoreCase);
             double maxOffset = model.Double("MaxOffset", 1.0);
             double maxTerminalLength = model.Double("MaxTerminalLength", 30.0);
             int split = 0;
@@ -703,16 +709,16 @@ namespace CETools.Civil3D
                                 continue;
                             }
 
-                            if (TryRemoveRegion(baseline.BaselineRegions, terminal, removeIndex))
+                            if (terminal.NeedsProcessing)
                             {
+                                terminal.NeedsProcessing = false;
                                 localRemoved++;
                                 baseline.NeedsProcessing = true;
                             }
-                            else
-                            {
-                                localSkipped++;
-                            }
                         }
+                        if (allShortEnds)
+                            localRemoved += DisableShortEndRegions(
+                                baseline, maxTerminalLength);
                     }
 
                     if (localSplit > 0 || localRemoved > 0)
@@ -731,7 +737,7 @@ namespace CETools.Civil3D
                         localSplit.ToString(CultureInfo.InvariantCulture),
                         localRemoved.ToString(CultureInfo.InvariantCulture),
                         localSkipped.ToString(CultureInfo.InvariantCulture),
-                        localRemoved > 0 ? "T-junction side-road limits applied" : "No eligible T terminal region removed"
+                        localRemoved > 0 ? "Short terminal regions switched off" : "No eligible short terminal regions"
                     });
                 }
                 transaction.Commit();
@@ -741,10 +747,46 @@ namespace CETools.Civil3D
             GridReportPresenter.ShowReportAndOfferTable(
                 document,
                 "CE Tools - T-Junction Assembly Limits",
-                string.Format(CultureInfo.CurrentCulture, "Region splits={0}; short terminal regions removed={1}; skipped={2}.", split, removed, skipped),
-                new[] { "CORRIDOR", "SPLITS", "SHORT REGIONS REMOVED", "SKIPPED", "STATUS" },
+                string.Format(CultureInfo.CurrentCulture, "Region splits={0}; short terminal regions switched off={1}; skipped={2}.", split, removed, skipped),
+                new[] { "CORRIDOR", "SPLITS", "SHORT REGIONS OFF", "SKIPPED", "STATUS" },
                 rows,
                 "CE T JUNCTION ASSEMBLY LIMIT REGISTER");
+        }
+
+                // Turn off contiguous short sections from both ends, retaining the
+        // corridor/assembly definitions for later edits and restoration.
+        private static int DisableShortEndRegions(Baseline baseline, double maximumLength)
+        {
+            if (baseline == null || baseline.BaselineRegions.Count <= 1)
+                return 0;
+            int changed = 0;
+            int count = baseline.BaselineRegions.Count;
+            for (int side = 0; side < 2; side++)
+            {
+                for (int step = 0; step < count; step++)
+                {
+                    int index = side == 0 ? step : count - step - 1;
+                    BaselineRegion region = baseline.BaselineRegions[index];
+                    if (region == null || region.EndStation - region.StartStation >
+                        maximumLength + StationTolerance) break;
+                    if (!region.NeedsProcessing) continue;
+                    bool anotherActive = false;
+                    for (int other = 0; other < count; other++)
+                    {
+                        if (other != index &&
+                            baseline.BaselineRegions[other].NeedsProcessing)
+                        {
+                            anotherActive = true;
+                            break;
+                        }
+                    }
+                    if (!anotherActive) break;
+                    region.NeedsProcessing = false;
+                    baseline.NeedsProcessing = true;
+                    changed++;
+                }
+            }
+            return changed;
         }
 
         [CommandMethod("CE_TOOLS", "CE_JUNCTIONENDPOINTSTOTOPSURFACES", CommandFlags.Modal | CommandFlags.Redraw)]
