@@ -569,8 +569,22 @@ namespace CETools.Civil3D
                     object regions = baseline.BaselineRegions;
                     var removeAt = regions.GetType().GetMethod(
                         "RemoveAt", new[] { typeof(int) });
-                    if (removeAt == null) continue;
-                    removeAt.Invoke(regions, new object[] { indices[n] });
+                    if (removeAt != null)
+                    {
+                        removeAt.Invoke(regions, new object[] { indices[n] });
+                        removed++;
+                        continue;
+                    }
+                    // Some Civil 3D releases expose collection.Remove(region)
+                    // rather than RemoveAt(index).
+                    var removeRegion = regions.GetType().GetMethods()
+                        .FirstOrDefault(method => method.Name == "Remove" &&
+                            method.GetParameters().Length == 1 &&
+                            method.GetParameters()[0].ParameterType
+                                .IsAssignableFrom(typeof(BaselineRegion)));
+                    if (removeRegion == null) continue;
+                    BaselineRegion region = baseline.BaselineRegions[indices[n]];
+                    removeRegion.Invoke(regions, new object[] { region });
                     removed++;
                 }
                 catch { }
