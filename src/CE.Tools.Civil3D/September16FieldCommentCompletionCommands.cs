@@ -1489,6 +1489,10 @@ namespace CETools.Civil3D
                             siteId,
                             weedDistance,
                             weedAngle,
+                            // This legacy feature-line pairing has no owning
+                            // alignment curve; retain its original straight
+                            // connector behavior rather than fabricating one.
+                            null,
                             topSurfaces,
                             ref surfaceVertices,
                             ref unresolvedVertices);
