@@ -1250,7 +1250,7 @@ namespace CETools.Civil3D
             }
         }
 
-        private static void ApplySewerProfileStylePreset(
+        internal static void ApplySewerProfileStylePreset(
             Database database, SewerProductionSettings settings)
         {
             ProjectStyleSelection selected =
