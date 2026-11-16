@@ -511,6 +511,20 @@ namespace CETools.Civil3D
             if (selectedSurface == null)
                 return;
             SewerProductionSettings settings = SewerProductionSettings.Read(database);
+            // CE_PROJECTSTYLES stores one independent preset per discipline.
+            // Long sections must follow the Sewer style selection, not stale
+            // CE_SEWSETTINGS values saved before the style centre was edited.
+            ApplySewerProfileStylePreset(database, settings);
+            try
+            {
+                ValidateSewerLongSectionStyles(database, civilDocument, settings);
+            }
+            catch (InvalidOperationException styleError)
+            {
+                editor.WriteMessage("\nCE_SEWPROFILE: " + styleError.Message);
+                return;
+            }
+
 
             var layout = new ProductionSettingsDialogModel(
                 "CE Tools - Sewer Long Section Layout",
@@ -1236,6 +1250,65 @@ namespace CETools.Civil3D
             }
         }
 
+        private static void ApplySewerProfileStylePreset(
+            Database database, SewerProductionSettings settings)
+        {
+            ProjectStyleSelection selected =
+                ProjectStyleCenterCommands.ReadDisciplineChoices(database, "Sewer");
+            if (selected == null || !selected.Exists) return;
+
+            string style;
+            if (selected.Values.TryGetValue("Profile View Style", out style) &&
+                !string.IsNullOrWhiteSpace(style) &&
+                !string.Equals(style, CivilStyleCatalogV2.DrawingDefault,
+                    StringComparison.OrdinalIgnoreCase))
+                settings.ProfileViewStyle = style.Trim();
+
+            if (selected.Values.TryGetValue("Profile View Band Set Style", out style) &&
+                !string.IsNullOrWhiteSpace(style) &&
+                !string.Equals(style, CivilStyleCatalogV2.DrawingDefault,
+                    StringComparison.OrdinalIgnoreCase))
+                settings.ProfileViewBandSetStyle = style.Trim();
+
+            // Honour the Sewer-only profile and label styles as well.
+            if (selected.Values.TryGetValue("Profile Style", out style) &&
+                !string.IsNullOrWhiteSpace(style) &&
+                !string.Equals(style, CivilStyleCatalogV2.DrawingDefault,
+                    StringComparison.OrdinalIgnoreCase))
+                settings.ProfileStyle = style.Trim();
+            if (selected.Values.TryGetValue("Profile Label Set Style", out style) &&
+                !string.IsNullOrWhiteSpace(style) &&
+                !string.Equals(style, CivilStyleCatalogV2.DrawingDefault,
+                    StringComparison.OrdinalIgnoreCase))
+                settings.ProfileLabelSetStyle = style.Trim();
+        }
+
+        private static void ValidateSewerLongSectionStyles(
+            Database database, CivilDocument civil, SewerProductionSettings settings)
+        {
+            ValidateInstalledSewerStyle(database, civil,
+                "Profile View Style", settings.ProfileViewStyle);
+            ValidateInstalledSewerStyle(database, civil,
+                "Profile View Band Set Style", settings.ProfileViewBandSetStyle);
+        }
+
+        private static void ValidateInstalledSewerStyle(
+            Database database, CivilDocument civil, string category, string requested)
+        {
+            if (string.IsNullOrWhiteSpace(requested) ||
+                string.Equals(requested, CivilStyleCatalogV2.DrawingDefault,
+                    StringComparison.OrdinalIgnoreCase))
+                return;
+            IList<string> available = CivilStyleCatalogV2.ReadNames(
+                database, civil, category);
+            if (!available.Any(name => string.Equals(name, requested.Trim(),
+                    StringComparison.OrdinalIgnoreCase)))
+                throw new InvalidOperationException(
+                    "Sewer " + category + " '" + requested +
+                    "' is not installed in this drawing. Import the style, or " +
+                    "change the Sewer preset in CE_PROJECTSTYLES.");
+        }
+
         private static void CreateProfileObjects(
             Database database,
             CivilDocument civilDocument,
@@ -1414,9 +1487,12 @@ namespace CETools.Civil3D
                         result.LabelsEnabled < result.LabelsFound)
                         bandBindingWarnings++;
                 }
-                catch
+                catch (System.Exception exception)
                 {
                     bandBindingWarnings++;
+                    AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                        "\nCE_SEWPROFILE band import failed for " +
+                        binding.BranchName + ": " + exception.Message);
                 }
             }
         }
