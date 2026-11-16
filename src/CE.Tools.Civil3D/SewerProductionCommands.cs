@@ -654,7 +654,7 @@ namespace CETools.Civil3D
                         Display(settings.ProfileViewStyle),
                         Display(settings.ProfileViewBandSetStyle),
                         branchBandWarnings > 0
-                            ? "Created; one or more band links were skipped safely"
+                            ? "Created; check CE_SEWPROFILE band import errors in command line"
                             : branchParts > 0
                                 ? "Created and linked"
                                 : "Created; review network-part descriptions"
@@ -698,8 +698,8 @@ namespace CETools.Civil3D
                 views,
                 parts + bandRefresh.NetworkPartsAdded,
                 bandItems + bandRefresh.BandItemsLinked,
-                bandBindingWarnings,
-                skipped);
+                skipped,
+                bandBindingWarnings);
             GridReportPresenter.ShowReportAndOfferTable(
                 document,
                 "CE Tools - Sewer Profiles / Long Sections",
