@@ -582,6 +582,7 @@ namespace CETools.Civil3D
             int views = 0;
             int parts = 0;
             int bandItems = 0;
+            int bandRows = 0;
             int bandBindingWarnings = 0;
             int skipped = 0;
             var reportRows = new List<IList<string>>();
@@ -623,6 +624,7 @@ namespace CETools.Civil3D
                     int branchViews;
                     int branchParts;
                     int branchBandItems;
+                    int branchBandRows;
                     int branchBandWarnings;
                     CreateProfileObjects(
                         database,
@@ -638,11 +640,13 @@ namespace CETools.Civil3D
                         out branchViews,
                         out branchParts,
                         out branchBandItems,
+                        out branchBandRows,
                         out branchBandWarnings);
                     profiles += branchProfiles;
                     views += branchViews;
                     parts += branchParts;
                     bandItems += branchBandItems;
+                    bandRows += branchBandRows;
                     bandBindingWarnings += branchBandWarnings;
                     reportRows.Add(new List<string>
                     {
@@ -650,11 +654,14 @@ namespace CETools.Civil3D
                         branchProfiles.ToString(CultureInfo.InvariantCulture),
                         branchViews.ToString(CultureInfo.InvariantCulture),
                         branchParts.ToString(CultureInfo.InvariantCulture),
+                        branchBandRows.ToString(CultureInfo.InvariantCulture),
                         branchBandItems.ToString(CultureInfo.InvariantCulture),
                         Display(settings.ProfileViewStyle),
                         Display(settings.ProfileViewBandSetStyle),
                         branchBandWarnings > 0
-                            ? "Created; check CE_SEWPROFILE band import errors in command line"
+                            ? (branchBandRows == 0
+                                ? "Band import failed; see command line"
+                                : "Band rows exist; check source/label links")
                             : branchParts > 0
                                 ? "Created and linked"
                                 : "Created; review network-part descriptions"
@@ -666,7 +673,7 @@ namespace CETools.Civil3D
                     reportRows.Add(new List<string>
                     {
                         record.BranchName,
-                        "0", "0", "0", "0",
+                        "0", "0", "0", "0", "0",
                         Display(settings.ProfileViewStyle),
                         Display(settings.ProfileViewBandSetStyle),
                         "Skipped: " + exception.Message
@@ -693,10 +700,11 @@ namespace CETools.Civil3D
             catch { }
 
             editor.WriteMessage(
-                "\nCE_SEWPROFILE complete. Surface profiles: {0}; profile views: {1}; network parts added: {2}; band items linked: {3}; skipped branches: {4}; band binding warnings: {5}.",
+                "\nCE_SEWPROFILE complete. Surface profiles: {0}; profile views: {1}; network parts added: {2}; native band rows: {3}; linked band sources: {4}; skipped branches: {5}; band binding warnings: {6}.",
                 profiles,
                 views,
                 parts + bandRefresh.NetworkPartsAdded,
+                bandRows,
                 bandItems + bandRefresh.BandItemsLinked,
                 skipped,
                 bandBindingWarnings);
@@ -706,7 +714,7 @@ namespace CETools.Civil3D
                 "Each branch is committed independently. Network parts and band data are linked after the profile view exists; failed branches remain isolated and are listed for review.",
                 new[]
                 {
-                    "Branch", "Profiles", "Views", "Parts", "Band Items",
+                    "Branch", "Profiles", "Views", "Parts", "Band Rows", "Linked Sources",
                     "Profile View Style", "Band Set", "Status"
                 },
                 reportRows,
@@ -1323,12 +1331,14 @@ namespace CETools.Civil3D
             out int viewsCreated,
             out int partsAdded,
             out int bandItemsLinked,
+            out int bandRowsCreated,
             out int bandBindingWarnings)
         {
             profilesCreated = 0;
             viewsCreated = 0;
             partsAdded = 0;
             bandItemsLinked = 0;
+            bandRowsCreated = 0;
             bandBindingWarnings = 0;
             var bindings = new List<SewerProfileBinding>();
             using (Transaction transaction = database.TransactionManager.StartTransaction())
@@ -1482,6 +1492,7 @@ namespace CETools.Civil3D
                         binding.ProfileId,
                         binding.NetworkId);
                     bandItemsLinked += result.LinkedSources;
+                    bandRowsCreated += result.BandRows;
                     if (result.BandRows == 0 ||
                         result.LabelsFound == 0 ||
                         result.LabelsEnabled < result.LabelsFound)
