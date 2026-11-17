@@ -27,6 +27,8 @@ checks = {
         "TReturns(",
         "TryBuildTangentReturn(candidate, mainSign, sideSign,",
         "TryBuildTangentReturn(candidate, mainSign, 1,",
+        "Centre = crossing, Start = q, Mid = middle, End = p,",
+        "// p is on MAIN kerb, q is on SIDE kerb.",
         "HasPlanCurvatureNear(",
         "BuildReturn(candidate.Point, main, side,",
         "BulgeThroughMidpoint(",
@@ -98,6 +100,15 @@ for marker in (
     if marker not in junction:
         print(f"FAIL generated-output-only junction cleanup missing: {marker}")
         failed = True
+
+# Curved fillets must retain the same endpoint convention as straight
+# fillets: Start on side road and End on main road. Reversing the two
+# causes T-limit front links to cross the junction instead of following
+# the main-road kerb.
+junction_source = (root / "src/CE.Tools.Civil3D/September16FieldCommentCompletionCommands.cs").read_text(encoding="utf-8")
+if "Centre = crossing, Start = p, Mid = middle, End = q," in junction_source:
+    print("FAIL curved return tangent points are reversed")
+    failed = True
 
 if failed:
     sys.exit(1)
