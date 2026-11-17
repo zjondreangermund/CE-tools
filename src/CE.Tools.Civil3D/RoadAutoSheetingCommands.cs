@@ -97,8 +97,8 @@ namespace CETools.Civil3D
             settings.AddChoice(
                 "SheetContent", "02 Sheets", "Viewport sheet content",
                 sewerMode ? "Profile views only" : "Plan and profile views",
-                "Select profile views only to create long-section sheets without plan viewports, north arrows, or plan titles.",
-                new[] { "Plan and profile views", "Profile views only" });
+                "Plan-only creates plan viewports without requiring road profiles. Profile-only creates long sections without plan viewports, north arrows or plan titles.",
+                new[] { "Plan and profile views", "Plan views only", "Profile views only" });
             settings.AddPositiveInteger(
                 "SegmentsPerSheet", "02 Sheets", "Viewports / sets per sheet", 2,
                 "For profile-only mode this is the maximum number of profile viewports on each sheet. Other mode counts plan/profile sets.");
@@ -248,6 +248,8 @@ namespace CETools.Civil3D
             if (string.IsNullOrWhiteSpace(viewportLayerName)) viewportLayerName = "CE-VIEWPORT";
             bool profileOnly = string.Equals(settings.Text("SheetContent"),
                 "Profile views only", StringComparison.OrdinalIgnoreCase);
+            bool planOnly = string.Equals(settings.Text("SheetContent"),
+                "Plan views only", StringComparison.OrdinalIgnoreCase);
             double margin = settings.Double("OuterMargin", 15.0);
             double rightReserve = settings.Double("RightReserve", 20.0);
             double bottomReserve = settings.Double("BottomReserve", 20.0);
@@ -346,7 +348,7 @@ namespace CETools.Civil3D
                         profileViews = profileViews
                             .Where(profileViewId => selectedProfileViewIds.Contains(profileViewId))
                             .ToList();
-                    if (profileViews.Count == 0)
+                    if (!planOnly && profileViews.Count == 0)
                     {
                         document.Editor.WriteMessage(
                             sewerMode
@@ -369,8 +371,9 @@ namespace CETools.Civil3D
 
             if (roads.Count == 0)
             {
-                document.Editor.WriteMessage(
-                    "\nCE_ROADAUTOSHEETS: none of the selected roads has a linked profile view.");
+                document.Editor.WriteMessage(planOnly
+                    ? "\nCE_ROADAUTOSHEETS: no valid road alignments were selected."
+                    : "\nCE_ROADAUTOSHEETS: none of the selected roads has a linked profile view.");
                 return;
             }
 
@@ -394,10 +397,12 @@ namespace CETools.Civil3D
                 double usableHeight = paperHeight - 2.0 * margin - bottomReserve;
                 double pairHeight = profileOnly
                     ? 5.0 + profileViewportHeight
-                    : 5.0 + planViewportHeight + planProfileGap + profileViewportHeight;
+                    : planOnly
+                        ? 5.0 + planViewportHeight
+                        : 5.0 + planViewportHeight + planProfileGap + profileViewportHeight;
                 if (!allowViewportOverflow &&
                     (((!profileOnly && planViewportWidth > usableWidth + 0.01) ||
-                      profileViewportWidth > usableWidth + 0.01) ||
+                      (!planOnly && profileViewportWidth > usableWidth + 0.01)) ||
                      pairHeight > usableHeight + 0.01))
                 {
                     document.Editor.WriteMessage(
@@ -423,7 +428,7 @@ namespace CETools.Civil3D
                 if (!allowViewportOverflow && !profileOnly && planFixedScale > Tol)
                     maxLength = Math.Min(maxLength,
                         planViewportWidth / planFixedScale - planStartTolerance - planEndTolerance);
-                if (!allowViewportOverflow && profileFixedScale > Tol)
+                if (!allowViewportOverflow && !planOnly && profileFixedScale > Tol)
                     maxLength = Math.Min(maxLength,
                         profileViewportWidth / profileFixedScale - profileLeftTolerance - profileRightTolerance);
                 if (!allowViewportOverflow && maxLength <= Tol)
@@ -612,7 +617,7 @@ namespace CETools.Civil3D
                             sheetStage = "CLEAR OLD VIEWPORTS";
                             ClearGeneratedPaperObjects(paper, tr);
 
-                            if (matchModelSpaceVerticalOrder)
+                            if (!planOnly && matchModelSpaceVerticalOrder)
                             {
                                 // Keep each source profile view's relative model-space vertical
                                 // position when assigning multiple jobs to the sheet's top-down slots.
@@ -647,7 +652,8 @@ namespace CETools.Civil3D
                                 profileViewportWidth,
                                 profileViewportHeight,
                                 profileOnly,
-                                allowViewportOverflow);
+                                allowViewportOverflow,
+                                planOnly);
 
                             for (int index = 0; index < sheetJobs.Count; index++)
                             {
@@ -747,6 +753,8 @@ namespace CETools.Civil3D
 
                                 }
 
+                                if (!planOnly)
+                                {
                                 ObjectId profileViewId = !job.ProfileViewId.IsNull
                                     ? job.ProfileViewId
                                     : FindBestProfileView(
@@ -793,6 +801,7 @@ namespace CETools.Civil3D
                                         profileViewports++;
                                     else
                                         warnings++;
+                                }
                                 }
 
 
@@ -1578,7 +1587,8 @@ namespace CETools.Civil3D
             double requestedProfileWidth,
             double requestedProfileHeight,
             bool profileOnly,
-            bool allowViewportOverflow)
+            bool allowViewportOverflow,
+            bool planOnly)
         {
             double left = Math.Max(0.0, margin);
             double right = Math.Max(left + 50.0, paperWidth - margin - Math.Max(0.0, rightReserve));
@@ -1601,9 +1611,12 @@ namespace CETools.Civil3D
                 planHeight = requestedPlanHeight;
                 profileHeight = requestedProfileHeight;
                 if (!allowViewportOverflow &&
-                    ((!profileOnly && planWidth > availableWidth + 0.01) || profileWidth > availableWidth + 0.01))
+                    ((!profileOnly && planWidth > availableWidth + 0.01) ||
+                     (!planOnly && profileWidth > availableWidth + 0.01)))
                     throw new InvalidOperationException("Specified plan/profile viewport length is wider than the available sheet area. Set Allow viewport dimensions outside sheet to Yes to retain the requested dimensions.");
-                pairHeight = profileOnly ? 5.0 + profileHeight : 5.0 + planHeight + planProfileGap + profileHeight;
+                pairHeight = profileOnly ? 5.0 + profileHeight :
+                    planOnly ? 5.0 + planHeight :
+                    5.0 + planHeight + planProfileGap + profileHeight;
                 // Fixed viewport dimensions take priority over fitting inside the sheet.
                 // Keep all requested slots even when the lower slots extend beyond paper.
             }
@@ -1614,9 +1627,10 @@ namespace CETools.Civil3D
                 pairHeight = (availableHeight - safePairGap * Math.Max(0, count - 1)) / Math.Max(1, count);
                 if (pairHeight <= 30.0)
                     throw new InvalidOperationException("Paper margins/reserves leave too little height for the requested number of plan/profile sets.");
-                double usable = Math.Max(20.0, pairHeight - (profileOnly ? 0.0 : planProfileGap) - 5.0);
-                planHeight = profileOnly ? 0.0 : usable * 0.58;
-                profileHeight = profileOnly ? usable : usable - planHeight;
+                double usable = Math.Max(20.0, pairHeight -
+                    ((profileOnly || planOnly) ? 0.0 : planProfileGap) - 5.0);
+                planHeight = profileOnly ? 0.0 : planOnly ? usable : usable * 0.58;
+                profileHeight = planOnly ? 0.0 : profileOnly ? usable : usable - planHeight;
             }
 
             var result = new List<PaperPair>();
