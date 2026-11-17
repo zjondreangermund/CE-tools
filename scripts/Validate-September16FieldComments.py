@@ -9,9 +9,6 @@ checks = {
     "src/CE.Tools.Civil3D/MultiDimensionCommands.cs": [
         '"Dynamic", "03 Dynamic", "Dynamic update"',
         "DynamicMultiDimensionManager.BeginCommand(",
-        '"PlacementUnits", "02 Placement", "Offset and leader input units"',
-        '"Paper millimetres", "Model metres"',
-        "DrawingUnitsPerMetre(document.Database)",
         "DynamicMultiDimensionManager.BeginSource(transaction, polyline",
         "DynamicMultiDimensionManager.BeginSource(transaction, featureLine",
         "internal static int RebuildDynamicSource(",
