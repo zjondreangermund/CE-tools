@@ -442,6 +442,12 @@ namespace CETools.Civil3D
                         CreateLabel(document.Database, transaction, space, bellmouthLayerId, definition.Mid, label, textHeight, arcId, candidate.Point);
                         created++;
                     }
+                    if (definitions.Count < (candidate.IsCross ? 4 : 2))
+                        document.Editor.WriteMessage(
+                            "\nCE_ROADJUNCTIONBATCH: {0} at {1:0.###},{2:0.###} has only {3} valid tangent returns. " +
+                            "Curved-road fallbacks were suppressed rather than drawing incorrect straight geometry.",
+                            candidate.IsCross ? "Cross junction" : "T junction",
+                            candidate.Point.X, candidate.Point.Y, definitions.Count);
                     int closureCount = CreateClosureGeometry(
                         document.Database,
                         transaction,
@@ -832,7 +838,8 @@ namespace CETools.Civil3D
                     if (TryBuildTangentReturn(candidate, mainSign, sideSign,
                         mainHalf, sideHalf, radius, out curved))
                         yield return curved;
-                    else
+                    else if (!HasPlanCurvatureNear(candidate.MainCurve, candidate.Point) &&
+                             !HasPlanCurvatureNear(candidate.SideCurve, candidate.Point))
                         yield return BuildReturn(candidate.Point, candidate.Main,
                             candidate.Side, mainSign, sideSign, mainHalf, sideHalf, radius);
                 }
@@ -846,9 +853,12 @@ namespace CETools.Civil3D
                 if (TryBuildTangentReturn(candidate, mainSign, 1,
                     mainHalf, sideHalf, radius, out curved))
                     yield return curved;
-                else
+                else if (!HasPlanCurvatureNear(candidate.MainCurve, candidate.Point) &&
+                         !HasPlanCurvatureNear(candidate.SideCurve, candidate.Point))
                     yield return BuildReturn(candidate.Point, candidate.Main,
                         candidate.Side, mainSign, 1, mainHalf, sideHalf, radius);
+                // For curved roads, do not quietly create tangent/chord
+                // geometry that differs from the actual road-edge offsets.
             }
         }
 
@@ -883,6 +893,25 @@ namespace CETools.Civil3D
             };
         }
 
+        private static bool HasPlanCurvatureNear(Curve curve, Point3d junction)
+        {
+            Polyline road = curve as Polyline;
+            if (road == null) return false;
+            try
+            {
+                Point3d closest = road.GetClosestPointTo(junction, false);
+                double parameter = road.GetParameterAtPoint(closest);
+                int index = Math.Max(0, Math.Min(road.NumberOfVertices - 2,
+                    (int)Math.Floor(parameter)));
+                for (int i = Math.Max(0, index - 2);
+                     i <= Math.Min(road.NumberOfVertices - 2, index + 2); i++)
+                    if (Math.Abs(road.GetBulgeAt(i)) > 0.00000001)
+                        return true;
+            }
+            catch { }
+            return false;
+        }
+
         // The fillet centre lies at the intersection of (half width + R) offsets
         // of the TWO actual road centre curves. This remains valid on circular
         // bends and skew junctions; the original axis-tangent construction does not.
@@ -899,9 +928,11 @@ namespace CETools.Civil3D
             Vector3d side = candidate.Side;
             if (Math.Abs(main.CrossProduct(side).Z) < 0.10) return false;
 
-            Point3d seed = candidate.Point +
-                main * (mainSign * (sideHalf + radius)) +
-                side * (sideSign * (mainHalf + radius));
+            // The seed must be based on normal-offset kerb intersections.
+            // Moving along the two tangents by the road widths gives a wrong
+            // centre on skew/curved junctions and can select the wrong fillet.
+            Point3d seed = BuildReturn(candidate.Point, main, side,
+                mainSign, sideSign, mainHalf, sideHalf, radius).Centre;
             DBObjectCollection mainCentreOffsets = null;
             DBObjectCollection sideCentreOffsets = null;
             DBObjectCollection mainKerbOffsets = null;
