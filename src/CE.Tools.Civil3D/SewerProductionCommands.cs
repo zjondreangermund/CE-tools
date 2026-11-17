@@ -548,12 +548,43 @@ namespace CETools.Civil3D
                 "Columns", "01 Layout", "Grid columns",
                 Math.Max(1, settings.ProfileColumns),
                 "Used only when arrangement is Grid. Vertical top-down always uses one column.");
+            IList<string> viewStyles = CivilStyleCatalogV2.ReadNames(
+                database, civilDocument, "Profile View Style");
+            IList<string> bandStyles = CivilStyleCatalogV2.ReadNames(
+                database, civilDocument, "Profile View Band Set Style");
+            string preferredViewStyle = viewStyles.FirstOrDefault(
+                item => string.Equals(item, "CEPM", StringComparison.OrdinalIgnoreCase))
+                ?? settings.ProfileViewStyle;
+            string preferredBandSet = bandStyles.FirstOrDefault(
+                item => string.Equals(item, "Zed Pipe Data", StringComparison.OrdinalIgnoreCase))
+                ?? settings.ProfileViewBandSetStyle;
+            layout.AddChoice(
+                "ProfileViewStyle", "02 Civil 3D Styles", "Profile view style",
+                preferredViewStyle,
+                "Use the selected Civil 3D profile view style for EVERY branch in this run.",
+                viewStyles);
+            layout.AddChoice(
+                "ProfileBandSetStyle", "02 Civil 3D Styles", "Profile view band set",
+                preferredBandSet,
+                "Import this exact band set and verify native rows before reporting success.",
+                bandStyles);
             layout.AddChoice(
                 "Remember", "02 Defaults", "Remember sewer long-section layout", "Yes",
                 "Save these spacing/layout settings for the next CE_SEWPROFILE run.",
                 new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(layout)) return;
 
+            settings.ProfileViewStyle = layout.Text("ProfileViewStyle");
+            settings.ProfileViewBandSetStyle = layout.Text("ProfileBandSetStyle");
+            try
+            {
+                ValidateSewerLongSectionStyles(database, civilDocument, settings);
+            }
+            catch (InvalidOperationException styleError)
+            {
+                editor.WriteMessage("\nCE_SEWPROFILE: " + styleError.Message);
+                return;
+            }
             settings.ProfileLayoutMode = layout.Text("Arrangement");
             settings.ProfileHorizontalSpacing = Math.Max(
                 1.0, layout.Double("HorizontalSpacing", settings.ProfileHorizontalSpacing));
@@ -1425,7 +1456,7 @@ namespace CETools.Civil3D
                     // be valid. Resolve the network from current-drawing pipe
                     // branch identity and geometry before adding parts/bands.
                     ObjectId networkId = ResolveBranchNetwork(
-                        civilDocument, transaction, record);
+                        database, civilDocument, transaction, record);
                     bindings.Add(new SewerProfileBinding
                     {
                         BranchName = record.BranchName,
@@ -1534,11 +1565,11 @@ namespace CETools.Civil3D
         // Rebind by the current DWG's network, never assume a source-DWG
         // handle still identifies a Civil 3D gravity network after paste.
         private static ObjectId ResolveBranchNetwork(
-            CivilDocument civil, Transaction transaction, SewerAlignmentRecord branch)
+            Database database, CivilDocument civil, Transaction transaction, SewerAlignmentRecord branch)
         {
             if (civil == null || branch == null) return ObjectId.Null;
             ObjectId storedId;
-            if (TryGetObjectId(transaction.Database, branch.NetworkHandle, out storedId))
+            if (TryGetObjectId(database, branch.NetworkHandle, out storedId))
             {
                 try
                 {
