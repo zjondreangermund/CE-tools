@@ -31,6 +31,12 @@ checks = {
         "polyline.SetBulgeAt(added - 1, bulge);",
         'pair.Item3 == "T-LIMIT-FRONT" || pair.Item3 == "T-LIMIT-BACK"',
         "followRoadCurve.GetPointAtDist(",
+        "FindMatchingMainRoadCurve(",
+        "RoadCurveNormal(",
+        "midpoints.Add(middleAxis +",
+        "polyline.AddVertexAt(i,",
+        "alignment.StationOffset(first.X, first.Y,",
+
         "// This legacy feature-line pairing has no owning",
 
         "CE_ROADJUNCTIONCONSTRUCTION",
