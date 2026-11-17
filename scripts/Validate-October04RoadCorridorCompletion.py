@@ -14,6 +14,8 @@ files = {
     "workflow": SRC / "DisciplineWorkflowDialogs.cs",
     "road_profiles": SRC / "RoadProductionCommentCommands.cs",
     "vertical_curves": SRC / "August11RoadVerticalCurveCommands.cs",
+    "sheets": SRC / "RoadAutoSheetingCommands.cs",
+    "alignment_utilities": SRC / "AlignmentCommands.cs",
 }
 
 texts = {}
@@ -67,6 +69,19 @@ for key, required in {
         "RoadProfileSelectionScope.Save(document.Database,",
         '"ROAD_PROFILE_SCOPE"',
         'selected ? "Selected" : "All"',
+    ],
+    "sheets": [
+        '"Plan views only"',
+        "if (!planOnly && profileViews.Count == 0)",
+        "if (!planOnly)",
+        "bool planOnly)",
+        "planOnly ? 5.0 + planHeight",
+    ],
+    "alignment_utilities": [
+        '"CE_ALIGNIMPLIEDPI"',
+        '"By individual curves and curve group"',
+        '"Do not display implied points of intersection"',
+        "API unsupported={1}",
     ],
     "vertical_curves": [
         '"Last CE_ROADPROFILES selection"',
