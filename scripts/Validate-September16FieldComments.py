@@ -37,7 +37,7 @@ checks = {
         "polyline.AddVertexAt(i,",
         "alignment.StationOffset(first.X, first.Y,",
 
-        "// This legacy feature-line pairing has no owning",
+        "using (Curve matchedRoadCurve = FindMatchingMainRoadCurve(",
 
         "CE_ROADJUNCTIONCONSTRUCTION",
         '"Bellmouth geometry"',
