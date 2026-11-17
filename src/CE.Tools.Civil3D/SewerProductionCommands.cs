@@ -1509,8 +1509,17 @@ namespace CETools.Civil3D
                     bandBindingWarnings++;
                     continue;
                 }
-                partsAdded += AddBranchPartsSafely(
+                int addedForBranch = AddBranchPartsSafely(
                     database, binding.NetworkId, binding.BranchName, binding.ProfileViewId);
+                partsAdded += addedForBranch;
+                if (addedForBranch == 0)
+                {
+                    bandBindingWarnings++;
+                    AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                        "\nCE_SEWPROFILE " + binding.BranchName +
+                        ": network found but no Civil 3D pipe/structure parts could be " +
+                        "added to the profile view. Check current-drawing part references.");
+                }
             }
 
             SewerManholeConnectionDisplay.EnableForViews(database, bindings.Select(binding => binding.ProfileViewId));
@@ -1719,11 +1728,20 @@ namespace CETools.Civil3D
                             write.Commit();
                             count++;
                         }
+                        else if (count == 0)
+                            AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                                "\nCE_SEWPROFILE " + branchName +
+                                ": AddToProfileView rejected part " + partId.Handle + ".");
                     }
                 }
-                catch
+                catch (System.Exception exception)
                 {
-                    // Keep the remainder of the branch isolated from one bad part.
+                    // Keep the remainder of the branch isolated from one bad
+                    // part, but never hide the root cause of an empty profile.
+                    if (count == 0)
+                        AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                            "\nCE_SEWPROFILE " + branchName +
+                            ": unable to add part " + partId.Handle + ": " + exception.Message);
                 }
             }
             return count;
