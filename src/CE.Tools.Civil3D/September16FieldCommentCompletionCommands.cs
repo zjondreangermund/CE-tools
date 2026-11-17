@@ -1455,6 +1455,12 @@ namespace CETools.Civil3D
                     else
                         skipped++;
 
+                    // Match the source main road, so T-limits generated from
+                    // existing feature-line returns also follow its curved edge.
+                    // Never simply close the return endpoints with a chord.
+                    using (Curve matchedRoadCurve = FindMatchingMainRoadCurve(
+                        document, transaction, frontStart, frontEnd))
+                    {
                     foreach (var endpointPair in endpointPairs)
                     {
                         double endpointDistance = PlanDistance(endpointPair.Item1, endpointPair.Item2);
@@ -1489,15 +1495,13 @@ namespace CETools.Civil3D
                             siteId,
                             weedDistance,
                             weedAngle,
-                            // This legacy feature-line pairing has no owning
-                            // alignment curve; retain its original straight
-                            // connector behavior rather than fabricating one.
-                            null,
+                            matchedRoadCurve,
                             topSurfaces,
                             ref surfaceVertices,
                             ref unresolvedVertices);
                         if (id.IsNull) skipped++;
                         else created++;
+                    }
                     }
                 }
 
@@ -1662,6 +1666,71 @@ namespace CETools.Civil3D
             double dx = first.X - second.X;
             double dy = first.Y - second.Y;
             return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        private static Curve FindMatchingMainRoadCurve(
+            Document document, Transaction transaction,
+            Point3d first, Point3d last)
+        {
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (civil == null || document == null) return null;
+            CivilAlignment best = null;
+            double bestScore = double.MaxValue;
+            Vector3d across = Plan(last - first);
+            if (across.Length <= Tol) return null;
+            across = across.GetNormal();
+
+            foreach (ObjectId alignmentId in civil.GetAlignmentIds())
+            {
+                CivilAlignment alignment = null;
+                try
+                {
+                    alignment = transaction.GetObject(alignmentId,
+                        OpenMode.ForRead, false) as CivilAlignment;
+                }
+                catch { }
+                if (alignment == null || !IsRoadAlignmentName(alignment.Name)) continue;
+                try
+                {
+                    double fromStation = 0.0, fromOffset = 0.0;
+                    double toStation = 0.0, toOffset = 0.0;
+                    alignment.StationOffset(first.X, first.Y,
+                        ref fromStation, ref fromOffset);
+                    alignment.StationOffset(last.X, last.Y,
+                        ref toStation, ref toOffset);
+                    if (Math.Abs(fromStation - toStation) < 0.5 ||
+                        Math.Abs(fromOffset) > 40.0 || Math.Abs(toOffset) > 40.0)
+                        continue;
+                    double midStation = (fromStation + toStation) * 0.5;
+                    double firstStation = Math.Max(alignment.StartingStation, midStation - 0.5);
+                    double lastStation = Math.Min(alignment.EndingStation, midStation + 0.5);
+                    if (lastStation <= firstStation + Tol) continue;
+                    double ax = 0, ay = 0, bx = 0, by = 0;
+                    alignment.PointLocation(firstStation, 0, ref ax, ref ay);
+                    alignment.PointLocation(lastStation, 0, ref bx, ref by);
+                    Vector3d tangent = new Vector3d(bx - ax, by - ay, 0);
+                    if (tangent.Length <= Tol ||
+                        Math.Abs(tangent.GetNormal().DotProduct(across)) < 0.70)
+                        continue;
+                    double score = Math.Abs(fromOffset - toOffset) * 2.0 +
+                        Math.Abs(fromOffset + toOffset) * 0.1;
+                    if (score < bestScore)
+                    {
+                        bestScore = score;
+                        best = alignment;
+                    }
+                }
+                catch { }
+            }
+            if (best == null) return null;
+            return BuildAlignmentPlanCurve(best, 0.5);
+        }
+
+        private static bool IsRoadAlignmentName(string name)
+        {
+            string value = (name ?? string.Empty).Trim();
+            return value.StartsWith("RD-", StringComparison.OrdinalIgnoreCase) ||
+                   value.StartsWith("ROAD", StringComparison.OrdinalIgnoreCase);
         }
 
         private static Vector3d RoadCurveNormal(Curve road, Point3d onCurve)
