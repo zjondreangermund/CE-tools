@@ -983,9 +983,15 @@ namespace CETools.Civil3D
                             double score = crossing.DistanceTo(seed) + 100.0 * radiusError;
                             if (score >= bestScore) continue;
                             bestScore = score;
+                            // p is on MAIN kerb, q is on SIDE kerb.
+                            // ReturnDefinition.Start must be the side-road
+                            // tangent and End must be the main-road tangent,
+                            // exactly as BuildReturn defines them. Reversing
+                            // these connects the T-limit front to the side road
+                            // and produces the long magenta crossing/overshoot.
                             definition = new ReturnDefinition
                             {
-                                Centre = crossing, Start = p, Mid = middle, End = q,
+                                Centre = crossing, Start = q, Mid = middle, End = p,
                                 MainSign = mainSign, SideSign = sideSign
                             };
                         }
