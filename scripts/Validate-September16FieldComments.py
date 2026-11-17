@@ -27,6 +27,8 @@ checks = {
         "TReturns(",
         "TryBuildTangentReturn(candidate, mainSign, sideSign,",
         "TryBuildTangentReturn(candidate, mainSign, 1,",
+        "HasPlanCurvatureNear(",
+        "BuildReturn(candidate.Point, main, side,",
         "BulgeThroughMidpoint(",
         "polyline.SetBulgeAt(added - 1, bulge);",
         'pair.Item3 == "T-LIMIT-FRONT" || pair.Item3 == "T-LIMIT-BACK"',

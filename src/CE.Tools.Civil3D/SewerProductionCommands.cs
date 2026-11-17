@@ -548,12 +548,43 @@ namespace CETools.Civil3D
                 "Columns", "01 Layout", "Grid columns",
                 Math.Max(1, settings.ProfileColumns),
                 "Used only when arrangement is Grid. Vertical top-down always uses one column.");
+            IList<string> viewStyles = CivilStyleCatalogV2.ReadNames(
+                database, civilDocument, "Profile View Style");
+            IList<string> bandStyles = CivilStyleCatalogV2.ReadNames(
+                database, civilDocument, "Profile View Band Set Style");
+            string preferredViewStyle = viewStyles.FirstOrDefault(
+                item => string.Equals(item, "CEPM", StringComparison.OrdinalIgnoreCase))
+                ?? settings.ProfileViewStyle;
+            string preferredBandSet = bandStyles.FirstOrDefault(
+                item => string.Equals(item, "Zed Pipe Data", StringComparison.OrdinalIgnoreCase))
+                ?? settings.ProfileViewBandSetStyle;
+            layout.AddChoice(
+                "ProfileViewStyle", "02 Civil 3D Styles", "Profile view style",
+                preferredViewStyle,
+                "Use the selected Civil 3D profile view style for EVERY branch in this run.",
+                viewStyles);
+            layout.AddChoice(
+                "ProfileBandSetStyle", "02 Civil 3D Styles", "Profile view band set",
+                preferredBandSet,
+                "Import this exact band set and verify native rows before reporting success.",
+                bandStyles);
             layout.AddChoice(
                 "Remember", "02 Defaults", "Remember sewer long-section layout", "Yes",
                 "Save these spacing/layout settings for the next CE_SEWPROFILE run.",
                 new[] { "Yes", "No" });
             if (!DisciplineWorkflowDialogs.EditSettings(layout)) return;
 
+            settings.ProfileViewStyle = layout.Text("ProfileViewStyle");
+            settings.ProfileViewBandSetStyle = layout.Text("ProfileBandSetStyle");
+            try
+            {
+                ValidateSewerLongSectionStyles(database, civilDocument, settings);
+            }
+            catch (InvalidOperationException styleError)
+            {
+                editor.WriteMessage("\nCE_SEWPROFILE: " + styleError.Message);
+                return;
+            }
             settings.ProfileLayoutMode = layout.Text("Arrangement");
             settings.ProfileHorizontalSpacing = Math.Max(
                 1.0, layout.Double("HorizontalSpacing", settings.ProfileHorizontalSpacing));
@@ -1420,8 +1451,12 @@ namespace CETools.Civil3D
                     WriteProfileTag(view, record.BranchKey, "ProfileView");
                     viewsCreated++;
 
-                    ObjectId networkId = ObjectId.Null;
-                    TryGetObjectId(database, record.NetworkHandle, out networkId);
+                    // An alignment copied to a new DWG retains its XData
+                    // branch key but the source network handle may no longer
+                    // be valid. Resolve the network from current-drawing pipe
+                    // branch identity and geometry before adding parts/bands.
+                    ObjectId networkId = ResolveBranchNetwork(
+                        database, civilDocument, transaction, record);
                     bindings.Add(new SewerProfileBinding
                     {
                         BranchName = record.BranchName,
@@ -1465,12 +1500,26 @@ namespace CETools.Civil3D
 
             foreach (SewerProfileBinding binding in bindings)
             {
-                if (!binding.NetworkId.IsNull)
-                    partsAdded += AddBranchPartsSafely(
-                        database,
-                        binding.NetworkId,
-                        binding.BranchName,
-                        binding.ProfileViewId);
+                if (binding.NetworkId.IsNull)
+                {
+                    AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                        "\nCE_SEWPROFILE " + binding.BranchName +
+                        ": no current-drawing gravity network containing this branch was found; " +
+                        "network parts and Pipe Network band sources cannot be linked.");
+                    bandBindingWarnings++;
+                    continue;
+                }
+                int addedForBranch = AddBranchPartsSafely(
+                    database, binding.NetworkId, binding.BranchName, binding.ProfileViewId);
+                partsAdded += addedForBranch;
+                if (addedForBranch == 0)
+                {
+                    bandBindingWarnings++;
+                    AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                        "\nCE_SEWPROFILE " + binding.BranchName +
+                        ": network found but no Civil 3D pipe/structure parts could be " +
+                        "added to the profile view. Check current-drawing part references.");
+                }
             }
 
             SewerManholeConnectionDisplay.EnableForViews(database, bindings.Select(binding => binding.ProfileViewId));
@@ -1493,6 +1542,10 @@ namespace CETools.Civil3D
                         binding.NetworkId);
                     bandItemsLinked += result.LinkedSources;
                     bandRowsCreated += result.BandRows;
+                    if (binding.NetworkId.IsNull)
+                        throw new InvalidOperationException(
+                            "No current-drawing pipe network matches " + binding.BranchName +
+                            "; cannot bind Pipe Network band source.");
                     if (result.BandRows == 0 ||
                         result.LabelsFound == 0 ||
                         result.LabelsEnabled < result.LabelsFound)
@@ -1518,6 +1571,107 @@ namespace CETools.Civil3D
             internal ObjectId ProfileViewStyleId { get; set; }
         }
 
+        // Rebind by the current DWG's network, never assume a source-DWG
+        // handle still identifies a Civil 3D gravity network after paste.
+        private static ObjectId ResolveBranchNetwork(
+            Database database, CivilDocument civil, Transaction transaction, SewerAlignmentRecord branch)
+        {
+            if (civil == null || branch == null) return ObjectId.Null;
+            ObjectId storedId;
+            if (TryGetObjectId(database, branch.NetworkHandle, out storedId))
+            {
+                try
+                {
+                    CivilNetwork tagged = transaction.GetObject(storedId,
+                        OpenMode.ForRead, false) as CivilNetwork;
+                    if (tagged != null && NetworkHasBranch(tagged, transaction,
+                        branch.BranchName, branch.AlignmentId))
+                        return storedId;
+                }
+                catch { }
+            }
+
+            ObjectId best = ObjectId.Null;
+            int topScore = 0;
+            foreach (ObjectId candidateId in civil.GetPipeNetworkIds())
+            {
+                CivilNetwork network = null;
+                try
+                {
+                    network = transaction.GetObject(candidateId,
+                        OpenMode.ForRead, false) as CivilNetwork;
+                }
+                catch { }
+                if (network == null) continue;
+                int score = 0;
+                foreach (ObjectId pipeId in network.GetPipeIds())
+                {
+                    CivilPipe pipe = null;
+                    try { pipe = transaction.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe; }
+                    catch { }
+                    if (pipe == null || !MatchesBranchPipe(pipe, branch.BranchName)) continue;
+                    score += 10;
+                    if (!branch.AlignmentId.IsNull)
+                    {
+                        try
+                        {
+                            CivilAlignment alignment = transaction.GetObject(
+                                branch.AlignmentId, OpenMode.ForRead, false) as CivilAlignment;
+                            if (alignment != null && OnSewerAlignment(alignment, pipe.StartPoint) &&
+                                OnSewerAlignment(alignment, pipe.EndPoint))
+                                score += 10;
+                        }
+                        catch { }
+                    }
+                }
+                if (score > topScore)
+                {
+                    topScore = score;
+                    best = candidateId;
+                }
+            }
+            return topScore > 0 ? best : ObjectId.Null;
+        }
+
+        private static bool OnSewerAlignment(CivilAlignment alignment, Point3d point)
+        {
+            try
+            {
+                double station = 0.0, offset = 0.0;
+                alignment.StationOffset(point.X, point.Y, ref station, ref offset);
+                return station >= alignment.StartingStation - 0.5 &&
+                       station <= alignment.EndingStation + 0.5 &&
+                       Math.Abs(offset) <= 2.0;
+            }
+            catch { return false; }
+        }
+
+        private static bool MatchesBranchPipe(CivilPipe pipe, string branchName)
+        {
+            if (pipe == null || string.IsNullOrWhiteSpace(branchName)) return false;
+            if (string.Equals(pipe.Description, branchName, StringComparison.OrdinalIgnoreCase))
+                return true;
+            int number = BranchNumber(branchName);
+            if (number <= 0) return false;
+            string pipePrefix = "P" + number.ToString(CultureInfo.InvariantCulture) + ".";
+            return (pipe.Name ?? string.Empty).StartsWith(
+                pipePrefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool NetworkHasBranch(CivilNetwork network, Transaction tr,
+            string branchName, ObjectId alignmentId)
+        {
+            if (network == null) return false;
+            foreach (ObjectId pipeId in network.GetPipeIds())
+            {
+                CivilPipe pipe = null;
+                try { pipe = tr.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe; }
+                catch { }
+                if (MatchesBranchPipe(pipe, branchName)) return true;
+            }
+            return false;
+        }
+
         private static int AddBranchPartsSafely(
             Database database,
             ObjectId networkId,
@@ -1536,8 +1690,7 @@ namespace CETools.Civil3D
                 foreach (ObjectId pipeId in network.GetPipeIds())
                 {
                     CivilPipe pipe = read.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe;
-                    if (pipe == null ||
-                        !string.Equals(pipe.Description, branchName, StringComparison.OrdinalIgnoreCase))
+                    if (!MatchesBranchPipe(pipe, branchName))
                         continue;
                     partIds.Add(pipeId);
                     if (!pipe.StartStructureId.IsNull)
@@ -1575,11 +1728,20 @@ namespace CETools.Civil3D
                             write.Commit();
                             count++;
                         }
+                        else if (count == 0)
+                            AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                                "\nCE_SEWPROFILE " + branchName +
+                                ": AddToProfileView rejected part " + partId.Handle + ".");
                     }
                 }
-                catch
+                catch (System.Exception exception)
                 {
-                    // Keep the remainder of the branch isolated from one bad part.
+                    // Keep the remainder of the branch isolated from one bad
+                    // part, but never hide the root cause of an empty profile.
+                    if (count == 0)
+                        AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                            "\nCE_SEWPROFILE " + branchName +
+                            ": unable to add part " + partId.Handle + ": " + exception.Message);
                 }
             }
             return count;

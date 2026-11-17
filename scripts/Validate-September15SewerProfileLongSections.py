@@ -36,6 +36,10 @@ required_sewer = [
     'selected.Values.TryGetValue("Profile View Style", out style)',
     'selected.Values.TryGetValue("Profile View Band Set Style", out style)',
     'CE_SEWPROFILE band import failed for',
+    'ResolveBranchNetwork(',
+    'MatchesBranchPipe(',
+    'No current-drawing pipe network matches',
+    '"ProfileBandSetStyle", "02 Civil 3D Styles"',
 
 ]
 for token in required_sewer:
