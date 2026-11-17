@@ -58,16 +58,11 @@ namespace CETools.Civil3D
                 "DimStyle", "01 Dimension", "Dimension style", currentStyle,
                 "Select a drawing dimension style. CE Tools creates/updates an annotative copy so the source style and existing dimensions remain unchanged.",
                 dimensionStyles);
-            settings.AddChoice(
-                "PlacementUnits", "02 Placement", "Offset and leader input units",
-                "Paper millimetres",
-                "Paper millimetres follow annotation scale. Model metres specify actual offsets in metres in the drawing, converted to persisted paper units for dynamic updates.",
-                new[] { "Paper millimetres", "Model metres" });
             settings.AddPositiveDouble(
-                "Offset", "02 Placement", "Dimension offset (selected units)", 8.0,
+                "Offset", "02 Placement", "Dimension offset (paper mm)", 8.0,
                 "Automatic offset from the source geometry, converted using the current annotation scale.");
             settings.AddPositiveDouble(
-                "ArcLeader", "02 Placement", "Radius leader extension (selected units)", 6.0,
+                "ArcLeader", "02 Placement", "Radius leader extension (paper mm)", 6.0,
                 "Leader extension beyond a polyline arc for radius dimensions.");
             settings.AddChoice(
                 "Dynamic", "03 Dynamic", "Dynamic update", "Enabled",
@@ -91,24 +86,12 @@ namespace CETools.Civil3D
 
             string mode = settings.Text("Type");
             string requestedStyle = settings.Text("DimStyle");
-            bool modelMetres = string.Equals(settings.Text("PlacementUnits"),
-                "Model metres", StringComparison.OrdinalIgnoreCase);
-            double offsetPaper = settings.Double("Offset", 8.0);
-            double leaderPaper = settings.Double("ArcLeader", 6.0);
-            if (modelMetres)
-            {
-                double drawingUnitsPerMetre = DrawingUnitsPerMetre(document.Database);
-                double modelForPaperMillimetre = PaperAnnotationScale.ModelDistance(
-                    document.Database, 1.0);
-                offsetPaper = settings.Double("Offset", 8.0) *
-                    drawingUnitsPerMetre / modelForPaperMillimetre;
-                leaderPaper = settings.Double("ArcLeader", 6.0) *
-                    drawingUnitsPerMetre / modelForPaperMillimetre;
-            }
             double offset = PaperAnnotationScale.ModelDistance(
-                document.Database, offsetPaper);
+                document.Database,
+                settings.Double("Offset", 8.0));
             double leader = PaperAnnotationScale.ModelDistance(
-                document.Database, leaderPaper);
+                document.Database,
+                settings.Double("ArcLeader", 6.0));
 
             int sources = 0;
             int dimensions = 0;
@@ -121,8 +104,8 @@ namespace CETools.Civil3D
                 document,
                 !string.Equals(settings.Text("Dynamic"), "Disabled", StringComparison.OrdinalIgnoreCase),
                 mode,
-                offsetPaper,
-                leaderPaper);
+                settings.Double("Offset", 8.0),
+                settings.Double("ArcLeader", 6.0));
 
             try
             {
@@ -213,19 +196,6 @@ namespace CETools.Civil3D
                 skippedGeometry,
                 failed,
                 outputStyleName);
-        }
-
-
-        private static double DrawingUnitsPerMetre(Database database)
-        {
-            // AutoCAD INSUNITS values: 4 mm, 5 cm, 6 m, 7 km.
-            // Explicitly handle metre-based models for true metre offsets.
-            // Unitless Civil 3D projects are conventionally in metres here.
-            int unit = database == null ? 0 : (int)database.Insunits;
-            if (unit == 4) return 1000.0;
-            if (unit == 5) return 100.0;
-            if (unit == 7) return 0.001;
-            return 1.0;
         }
 
         internal static int RebuildDynamicSource(
