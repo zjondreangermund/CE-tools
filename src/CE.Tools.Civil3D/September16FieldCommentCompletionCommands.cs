@@ -1664,6 +1664,15 @@ namespace CETools.Civil3D
             return Math.Sqrt(dx * dx + dy * dy);
         }
 
+        private static Vector3d RoadCurveNormal(Curve road, Point3d onCurve)
+        {
+            Vector3d tangent = Plan(road.GetFirstDerivative(onCurve));
+            if (tangent.Length <= Tol)
+                throw new InvalidOperationException("Curved road tangent is undefined.");
+            tangent = tangent.GetNormal();
+            return new Vector3d(-tangent.Y, tangent.X, 0.0);
+        }
+
         private static ObjectId CreateClosureEntity(
             Database database,
             Transaction transaction,
@@ -1688,37 +1697,87 @@ namespace CETools.Civil3D
                 polyline.SetDatabaseDefaults(database);
                 polyline.LayerId = layerId;
                 polyline.Color = Color.FromColorIndex(ColorMethod.ByAci, 6);
-                Point3d middle = new Point3d(
-                    (start.X + end.X) * 0.5, (start.Y + end.Y) * 0.5,
-                    (start.Z + end.Z) * 0.5);
+                // Trace the road edge by sampling the actual curved centreline
+                // at evenly spaced distances, using the signed offset at BOTH
+                // endpoints. A constant XY translation of one centre point does
+                // not follow a bending alignment and leaves an apparent chord.
+                bool curved = false;
                 if (followRoadCurve != null)
                 {
-                    // The main road may be curved: project each return tangent
-                    // to the true centreline and follow its mid-station rather
-                    // than joining the two return ends with a straight chord.
                     try
                     {
-                        Point3d sourceStart =
-                            followRoadCurve.GetClosestPointTo(start, false);
-                        Point3d sourceEnd =
-                            followRoadCurve.GetClosestPointTo(end, false);
-                        double from = followRoadCurve.GetDistAtPoint(sourceStart);
-                        double to = followRoadCurve.GetDistAtPoint(sourceEnd);
-                        Point3d sourceMiddle = followRoadCurve.GetPointAtDist(
-                            (from + to) * 0.5);
-                        Vector3d averageOffset =
-                            ((start - sourceStart) + (end - sourceEnd)) * 0.5;
-                        middle = sourceMiddle + averageOffset;
+                        Point3d nearestStart = followRoadCurve.GetClosestPointTo(start, false);
+                        Point3d nearestEnd = followRoadCurve.GetClosestPointTo(end, false);
+                        double startDistance = followRoadCurve.GetDistAtPoint(nearestStart);
+                        double endDistance = followRoadCurve.GetDistAtPoint(nearestEnd);
+                        double travelled = Math.Abs(endDistance - startDistance);
+                        if (travelled > 0.1)
+                        {
+                            int segments = Math.Max(8, Math.Min(48,
+                                (int)Math.Ceiling(travelled / 2.0)));
+                            Vector3d firstNormal = RoadCurveNormal(followRoadCurve, nearestStart);
+                            Vector3d lastNormal = RoadCurveNormal(followRoadCurve, nearestEnd);
+                            double startOffset = (start - nearestStart).DotProduct(firstNormal);
+                            double endOffset = (end - nearestEnd).DotProduct(lastNormal);
+                            if (Math.Abs(startOffset - endOffset) < Math.Max(2.0,
+                                    0.75 * Math.Max(Math.Abs(startOffset), Math.Abs(endOffset))))
+                            {
+                                var points = new List<Point3d>();
+                                var midpoints = new List<Point3d>();
+                                for (int i = 0; i <= segments; i++)
+                                {
+                                    double fraction = (double)i / segments;
+                                    double offset = startOffset + (endOffset - startOffset) * fraction;
+                                    Point3d axis = followRoadCurve.GetPointAtDist(
+                                        startDistance + (endDistance - startDistance) * fraction);
+                                    points.Add(axis + RoadCurveNormal(followRoadCurve, axis) * offset);
+                                    if (i < segments)
+                                    {
+                                        double middleFraction = (i + 0.5) / segments;
+                                        double middleOffset = startOffset +
+                                            (endOffset - startOffset) * middleFraction;
+                                        Point3d middleAxis = followRoadCurve.GetPointAtDist(
+                                            startDistance + (endDistance - startDistance) * middleFraction);
+                                        midpoints.Add(middleAxis +
+                                            RoadCurveNormal(followRoadCurve, middleAxis) * middleOffset);
+                                    }
+                                }
+                                // Existing bellmouth tangency points must stay exact.
+                                points[0] = start;
+                                points[segments] = end;
+                                for (int i = 0; i <= segments; i++)
+                                {
+                                    double bulge = i < segments
+                                        ? BulgeThroughMidpoint(points[i], midpoints[i], points[i + 1])
+                                        : 0.0;
+                                    polyline.AddVertexAt(i,
+                                        new Point2d(points[i].X, points[i].Y), bulge, 0.0, 0.0);
+                                }
+                                curved = true;
+                            }
+                        }
                     }
-                    catch { }
+                    catch
+                    {
+                        // Do not leave partially built native geometry in the
+                        // database on a failed offset projection.
+                        while (polyline.NumberOfVertices > 0)
+                            polyline.RemoveVertexAt(polyline.NumberOfVertices - 1);
+                    }
                 }
-                double halfBulge = BulgeThroughMidpoint(start, middle, end);
-                // The three control vertices remain available for crown /
-                // surface elevation assignment; each half carries curvature.
-                double quarterBulge = Math.Tan(Math.Atan(halfBulge) * 0.5);
-                polyline.AddVertexAt(0, new Point2d(start.X, start.Y), quarterBulge, 0.0, 0.0);
-                polyline.AddVertexAt(1, new Point2d(middle.X, middle.Y), quarterBulge, 0.0, 0.0);
-                polyline.AddVertexAt(2, new Point2d(end.X, end.Y), 0.0, 0.0, 0.0);
+                if (!curved)
+                {
+                    Point3d middle = new Point3d(
+                        (start.X + end.X) * 0.5,
+                        (start.Y + end.Y) * 0.5,
+                        (start.Z + end.Z) * 0.5);
+                    polyline.AddVertexAt(0,
+                        new Point2d(start.X, start.Y), 0.0, 0.0, 0.0);
+                    polyline.AddVertexAt(1,
+                        new Point2d(middle.X, middle.Y), 0.0, 0.0, 0.0);
+                    polyline.AddVertexAt(2,
+                        new Point2d(end.X, end.Y), 0.0, 0.0, 0.0);
+                }
                 ObjectId sourceId = space.AppendEntity(polyline);
                 transaction.AddNewlyCreatedDBObject(polyline, true);
 
