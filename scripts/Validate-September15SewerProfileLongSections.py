@@ -38,7 +38,7 @@ required_sewer = [
     'CE_SEWPROFILE band import failed for',
     'ResolveBranchNetwork(',
     'MatchesBranchPipe(',
-    'No current-drawing pipe network matches',
+    'band rows created but pipe-network band data source unavailable.',
     '"ProfileBandSetStyle", "02 Civil 3D Styles"',
 
 ]
