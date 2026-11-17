@@ -1491,6 +1491,23 @@ namespace CETools.Civil3D
                 transaction.Commit();
             }
 
+            // Force the Civil 3D graphics/database view to initialise after
+            // the creating transaction commits. Newly-created profile views
+            // can reject both native band import and direct band-row mutation
+            // with "Operation is not valid due to the current state of the
+            // object" until their native display cache is initialised.
+            try
+            {
+                database.TransactionManager.QueueForGraphicsFlush();
+                AcApplication.DocumentManager.MdiActiveDocument?.Editor.Regen();
+                AcApplication.UpdateScreen();
+            }
+            catch (System.Exception exception)
+            {
+                AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                    "\nCE_SEWPROFILE post-creation view refresh: " + exception.Message);
+            }
+
             // Civil 3D materialises profile-view band collections and native
             // network-part display links only after the creating transaction has
             // committed. Keep AddToProfileView and band edits in separate
@@ -1543,9 +1560,12 @@ namespace CETools.Civil3D
                     bandItemsLinked += result.LinkedSources;
                     bandRowsCreated += result.BandRows;
                     if (binding.NetworkId.IsNull)
-                        throw new InvalidOperationException(
-                            "No current-drawing pipe network matches " + binding.BranchName +
-                            "; cannot bind Pipe Network band source.");
+                    {
+                        bandBindingWarnings++;
+                        AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                            "\nCE_SEWPROFILE " + binding.BranchName +
+                            ": band rows created but pipe-network band data source unavailable.");
+                    }
                     if (result.BandRows == 0 ||
                         result.LabelsFound == 0 ||
                         result.LabelsEnabled < result.LabelsFound)

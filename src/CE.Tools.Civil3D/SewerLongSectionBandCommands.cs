@@ -233,6 +233,7 @@ namespace CETools.Civil3D
             int materializedRows = 0;
             System.Exception nativeImportFailure = null;
             bool imported = false;
+            string stage = "open view and style";
             // Civil 3D 2023 may reject native ImportBandSetStyle even when the
             // same template can be materialized by editing writable top and
             // bottom band collections. A failed native transaction must be
@@ -254,20 +255,24 @@ namespace CETools.Civil3D
                         throw new InvalidOperationException(
                             "The selected sewer band-set style is unavailable.");
 
+                    stage = "native ImportBandSetStyle";
                     view.Bands.ImportBandSetStyle(bandSetStyleId);
+                    stage = "reconcile template band rows";
                     materializedRows = September14AlignmentBandStyleCommands.EnsureImportedBandRows(
                         view, style);
                     if (materializedRows == 0)
                         throw new InvalidOperationException(
                             "The selected band set created no native rows.");
                     try { view.RecordGraphicsModified(true); } catch { }
+                    stage = "commit native band rows";
                     import.Commit();
                     imported = true;
                 }
             }
             catch (System.Exception exception)
             {
-                nativeImportFailure = exception;
+                nativeImportFailure = new InvalidOperationException(
+                    "At " + stage + ": " + exception.Message, exception);
             }
             if (!imported)
             {
@@ -289,12 +294,14 @@ namespace CETools.Civil3D
                         if (style == null)
                             throw new InvalidOperationException(
                                 "The selected sewer band-set style is unavailable.");
+                        stage = "direct template row materialization";
                         materializedRows =
                             September14AlignmentBandStyleCommands.EnsureImportedBandRows(view, style);
                         if (materializedRows == 0)
                             throw new InvalidOperationException(
                                 "Direct style-template materialization returned zero rows.");
                         try { view.RecordGraphicsModified(true); } catch { }
+                        stage = "commit fallback band rows";
                         fallback.Commit();
                     }
                 }
@@ -304,6 +311,7 @@ namespace CETools.Civil3D
                         "Band-set '" + bandSetStyleId.Handle +
                         "' failed native import and direct template application. Native error: " +
                         (nativeImportFailure == null ? "unknown" : nativeImportFailure.Message) +
+                        "; fallback stage: " + stage +
                         "; fallback error: " + fallbackError.Message, fallbackError);
                 }
             }

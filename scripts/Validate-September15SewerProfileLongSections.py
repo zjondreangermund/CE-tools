@@ -38,7 +38,7 @@ required_sewer = [
     'CE_SEWPROFILE band import failed for',
     'ResolveBranchNetwork(',
     'MatchesBranchPipe(',
-    'No current-drawing pipe network matches',
+    'band rows created but pipe-network band data source unavailable.',
     '"ProfileBandSetStyle", "02 Civil 3D Styles"',
 
 ]
@@ -57,7 +57,8 @@ required_band_service = [
     'ResolveGroundProfile(',
     'Select multiple sewer profile views to receive the long-section band set:',
     'SewerProductionCommands.ApplySewerProfileStylePreset(document.Database, saved);',
-    "nativeImportFailure = exception;",
+    "nativeImportFailure = new InvalidOperationException(",
+    "fallback stage: ",
     "if (!imported)",
     "Direct style-template materialization returned zero rows.",
     "fallback error:",
