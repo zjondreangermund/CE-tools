@@ -1420,8 +1420,12 @@ namespace CETools.Civil3D
                     WriteProfileTag(view, record.BranchKey, "ProfileView");
                     viewsCreated++;
 
-                    ObjectId networkId = ObjectId.Null;
-                    TryGetObjectId(database, record.NetworkHandle, out networkId);
+                    // An alignment copied to a new DWG retains its XData
+                    // branch key but the source network handle may no longer
+                    // be valid. Resolve the network from current-drawing pipe
+                    // branch identity and geometry before adding parts/bands.
+                    ObjectId networkId = ResolveBranchNetwork(
+                        civilDocument, transaction, record);
                     bindings.Add(new SewerProfileBinding
                     {
                         BranchName = record.BranchName,
@@ -1465,12 +1469,17 @@ namespace CETools.Civil3D
 
             foreach (SewerProfileBinding binding in bindings)
             {
-                if (!binding.NetworkId.IsNull)
-                    partsAdded += AddBranchPartsSafely(
-                        database,
-                        binding.NetworkId,
-                        binding.BranchName,
-                        binding.ProfileViewId);
+                if (binding.NetworkId.IsNull)
+                {
+                    AcApplication.DocumentManager.MdiActiveDocument?.Editor.WriteMessage(
+                        "\nCE_SEWPROFILE " + binding.BranchName +
+                        ": no current-drawing gravity network containing this branch was found; " +
+                        "network parts and Pipe Network band sources cannot be linked.");
+                    bandBindingWarnings++;
+                    continue;
+                }
+                partsAdded += AddBranchPartsSafely(
+                    database, binding.NetworkId, binding.BranchName, binding.ProfileViewId);
             }
 
             SewerManholeConnectionDisplay.EnableForViews(database, bindings.Select(binding => binding.ProfileViewId));
@@ -1493,6 +1502,10 @@ namespace CETools.Civil3D
                         binding.NetworkId);
                     bandItemsLinked += result.LinkedSources;
                     bandRowsCreated += result.BandRows;
+                    if (binding.NetworkId.IsNull)
+                        throw new InvalidOperationException(
+                            "No current-drawing pipe network matches " + binding.BranchName +
+                            "; cannot bind Pipe Network band source.");
                     if (result.BandRows == 0 ||
                         result.LabelsFound == 0 ||
                         result.LabelsEnabled < result.LabelsFound)
@@ -1518,6 +1531,107 @@ namespace CETools.Civil3D
             internal ObjectId ProfileViewStyleId { get; set; }
         }
 
+        // Rebind by the current DWG's network, never assume a source-DWG
+        // handle still identifies a Civil 3D gravity network after paste.
+        private static ObjectId ResolveBranchNetwork(
+            CivilDocument civil, Transaction transaction, SewerAlignmentRecord branch)
+        {
+            if (civil == null || branch == null) return ObjectId.Null;
+            ObjectId storedId;
+            if (TryGetObjectId(transaction.Database, branch.NetworkHandle, out storedId))
+            {
+                try
+                {
+                    CivilNetwork tagged = transaction.GetObject(storedId,
+                        OpenMode.ForRead, false) as CivilNetwork;
+                    if (tagged != null && NetworkHasBranch(tagged, transaction,
+                        branch.BranchName, branch.AlignmentId))
+                        return storedId;
+                }
+                catch { }
+            }
+
+            ObjectId best = ObjectId.Null;
+            int topScore = 0;
+            foreach (ObjectId candidateId in civil.GetPipeNetworkIds())
+            {
+                CivilNetwork network = null;
+                try
+                {
+                    network = transaction.GetObject(candidateId,
+                        OpenMode.ForRead, false) as CivilNetwork;
+                }
+                catch { }
+                if (network == null) continue;
+                int score = 0;
+                foreach (ObjectId pipeId in network.GetPipeIds())
+                {
+                    CivilPipe pipe = null;
+                    try { pipe = transaction.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe; }
+                    catch { }
+                    if (pipe == null || !MatchesBranchPipe(pipe, branch.BranchName)) continue;
+                    score += 10;
+                    if (!branch.AlignmentId.IsNull)
+                    {
+                        try
+                        {
+                            CivilAlignment alignment = transaction.GetObject(
+                                branch.AlignmentId, OpenMode.ForRead, false) as CivilAlignment;
+                            if (alignment != null && OnSewerAlignment(alignment, pipe.StartPoint) &&
+                                OnSewerAlignment(alignment, pipe.EndPoint))
+                                score += 10;
+                        }
+                        catch { }
+                    }
+                }
+                if (score > topScore)
+                {
+                    topScore = score;
+                    best = candidateId;
+                }
+            }
+            return topScore > 0 ? best : ObjectId.Null;
+        }
+
+        private static bool OnSewerAlignment(CivilAlignment alignment, Point3d point)
+        {
+            try
+            {
+                double station = 0.0, offset = 0.0;
+                alignment.StationOffset(point.X, point.Y, ref station, ref offset);
+                return station >= alignment.StartingStation - 0.5 &&
+                       station <= alignment.EndingStation + 0.5 &&
+                       Math.Abs(offset) <= 2.0;
+            }
+            catch { return false; }
+        }
+
+        private static bool MatchesBranchPipe(CivilPipe pipe, string branchName)
+        {
+            if (pipe == null || string.IsNullOrWhiteSpace(branchName)) return false;
+            if (string.Equals(pipe.Description, branchName, StringComparison.OrdinalIgnoreCase))
+                return true;
+            int number = BranchNumber(branchName);
+            if (number <= 0) return false;
+            string pipePrefix = "P" + number.ToString(CultureInfo.InvariantCulture) + ".";
+            return (pipe.Name ?? string.Empty).StartsWith(
+                pipePrefix, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static bool NetworkHasBranch(CivilNetwork network, Transaction tr,
+            string branchName, ObjectId alignmentId)
+        {
+            if (network == null) return false;
+            foreach (ObjectId pipeId in network.GetPipeIds())
+            {
+                CivilPipe pipe = null;
+                try { pipe = tr.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe; }
+                catch { }
+                if (MatchesBranchPipe(pipe, branchName)) return true;
+            }
+            return false;
+        }
+
         private static int AddBranchPartsSafely(
             Database database,
             ObjectId networkId,
@@ -1536,8 +1650,7 @@ namespace CETools.Civil3D
                 foreach (ObjectId pipeId in network.GetPipeIds())
                 {
                     CivilPipe pipe = read.GetObject(pipeId, OpenMode.ForRead, false) as CivilPipe;
-                    if (pipe == null ||
-                        !string.Equals(pipe.Description, branchName, StringComparison.OrdinalIgnoreCase))
+                    if (!MatchesBranchPipe(pipe, branchName))
                         continue;
                     partIds.Add(pipeId);
                     if (!pipe.StartStructureId.IsNull)
