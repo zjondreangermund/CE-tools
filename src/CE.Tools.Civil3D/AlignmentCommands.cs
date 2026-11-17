@@ -1,6 +1,8 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
+using Autodesk.Civil.ApplicationServices;
 using Autodesk.AutoCAD.ApplicationServices;
 using Autodesk.AutoCAD.DatabaseServices;
 using Autodesk.AutoCAD.EditorInput;
@@ -40,10 +42,130 @@ namespace CETools.Civil3D
                 new List<DisciplineWorkflowAction>
                 {
                     new DisciplineWorkflowAction("Sort alignments / zero chainage", "CE_ALIGNMENTSORT", "Popup to sort all or selected road alignments; preview and optionally reset eligible starting stations to zero.", "01 Review"),
+                    new DisciplineWorkflowAction("Implied PI display (all / selected)", "CE_ALIGNIMPLIEDPI", "Choose implied PI display on all or multiple selected road alignments; report Civil 3D API support.", "01 Review"),
                     new DisciplineWorkflowAction("Alignment report", "CE_ALREPORT", "Report geometry, station range, styles and profile counts.", "01 Review"),
                     new DisciplineWorkflowAction("Station and offset", "CE_ALSTOFF", "Query equation-aware station, offset and side at a picked point.", "01 Review"),
                     new DisciplineWorkflowAction("Station/offset label", "CE_ALLABEL", "Place an alignment station-and-offset MLeader.", "02 Annotation")
                 });
+        }
+
+        [CommandMethod("CE_TOOLS", "CE_ALIGNIMPLIEDPI",
+            CommandFlags.Modal | CommandFlags.UsePickSet | CommandFlags.Redraw)]
+        public void SetImpliedPointOfIntersectionDisplay()
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            CivilDocument civil = CivilApplication.ActiveDocument;
+            if (document == null || civil == null) return;
+            var model = new ProductionSettingsDialogModel(
+                "CE Tools - Alignment Implied Point of Intersection Display",
+                "Choose the alignment implied PI display method and apply it to all " +
+                "or multiple selected road alignments. Unsupported existing-alignment " +
+                "API versions are reported, not silently treated as successful.");
+            model.AddChoice("Scope", "01 Alignments", "Alignment scope",
+                "Multiple selected road alignments",
+                "Apply to every RD-/ROAD alignment or select multiple road alignments.",
+                new[] { "All road alignments", "Multiple selected road alignments" });
+            model.AddChoice("Display", "02 Point of Intersection", "Implied PI display",
+                "By individual curves and curve group",
+                "Same three choices as Civil 3D Alignment Properties > Point of Intersection.",
+                new[]
+                {
+                    "By change in alignment direction",
+                    "By individual curves and curve group",
+                    "Do not display implied points of intersection"
+                });
+            if (!DisciplineWorkflowDialogs.EditSettings(model)) return;
+            bool all = string.Equals(model.Text("Scope"), "All road alignments",
+                StringComparison.OrdinalIgnoreCase);
+            var ids = new List<ObjectId>();
+            if (all)
+                ids.AddRange(civil.GetAlignmentIds());
+            else
+            {
+                PromptSelectionResult selection = document.Editor.GetSelection(
+                    new PromptSelectionOptions
+                    {
+                        MessageForAdding = "\nSelect multiple RD-/ROAD alignments: ",
+                        AllowDuplicates = false,
+                        RejectObjectsFromNonCurrentSpace = true
+                    });
+                if (selection.Status != PromptStatus.OK || selection.Value == null)
+                    return;
+                ids.AddRange(selection.Value.GetObjectIds());
+            }
+
+            string enumName = string.Equals(model.Text("Display"),
+                "By change in alignment direction", StringComparison.OrdinalIgnoreCase)
+                ? "ByChangeInDirection"
+                : string.Equals(model.Text("Display"),
+                    "Do not display implied points of intersection",
+                    StringComparison.OrdinalIgnoreCase)
+                    ? "DoNotDisplayImpliedPI" : "ByIndividualCurves";
+            int applied = 0, unsupported = 0, skipped = 0;
+            using (Transaction tr = document.Database.TransactionManager.StartTransaction())
+            {
+                foreach (ObjectId id in ids)
+                {
+                    CivilAlignment alignment = null;
+                    try
+                    {
+                        alignment = tr.GetObject(id, OpenMode.ForRead, false)
+                            as CivilAlignment;
+                    }
+                    catch { }
+                    if (alignment == null ||
+                        !(alignment.Name.StartsWith("ROAD", StringComparison.OrdinalIgnoreCase) ||
+                          alignment.Name.StartsWith("RD-", StringComparison.OrdinalIgnoreCase)))
+                    {
+                        skipped++;
+                        continue;
+                    }
+                    if (alignment.IsReferenceObject)
+                    {
+                        skipped++;
+                        continue;
+                    }
+                    try
+                    {
+                        alignment.UpgradeOpen();
+                        bool supported = false;
+                        foreach (string name in new[]
+                        {
+                            "ImpliedPointOfIntersectionDisplay",
+                            "ImpliedPointOfIntersectionDisplayType",
+                            "ImpliedPIDisplayType"
+                        })
+                        {
+                            PropertyInfo property = alignment.GetType().GetProperty(
+                                name, BindingFlags.Public | BindingFlags.Instance);
+                            if (property == null || !property.CanWrite ||
+                                !property.PropertyType.IsEnum) continue;
+                            object option = Enum.Parse(property.PropertyType,
+                                enumName, true);
+                            property.SetValue(alignment, option, null);
+                            supported = true;
+                            break;
+                        }
+                        if (supported) applied++;
+                        else unsupported++;
+                    }
+                    catch (System.Exception exception)
+                    {
+                        unsupported++;
+                        document.Editor.WriteMessage(
+                            "\n{0}: implied PI display could not be applied: {1}",
+                            alignment.Name, exception.Message);
+                    }
+                }
+                tr.Commit();
+            }
+            document.Editor.Regen();
+            document.Editor.WriteMessage(
+                "\nCE_ALIGNIMPLIEDPI: applied={0}; API unsupported={1}; skipped={2}. " +
+                "The public Civil 3D API does not expose this setting for some " +
+                "existing alignments. Unsupported items must be changed in " +
+                "Alignment Properties > Point of Intersection.",
+                applied, unsupported, skipped);
         }
 
         [CommandMethod(
