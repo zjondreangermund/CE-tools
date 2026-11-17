@@ -79,7 +79,12 @@ namespace CETools.Civil3D
                 StringComparison.OrdinalIgnoreCase);
             var ids = new List<ObjectId>();
             if (all)
-                ids.AddRange(civil.GetAlignmentIds());
+            {
+                // Civil 3D 2024 returns ObjectIdCollection, which is not
+                // IEnumerable<ObjectId> for List<T>.AddRange.
+                foreach (ObjectId alignmentId in civil.GetAlignmentIds())
+                    ids.Add(alignmentId);
+            }
             else
             {
                 PromptSelectionResult selection = document.Editor.GetSelection(
