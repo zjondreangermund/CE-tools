@@ -97,7 +97,7 @@ namespace CETools.Civil3D
             settings.AddChoice(
                 "SheetContent", "02 Sheets", "Viewport sheet content",
                 sewerMode ? "Profile views only" : "Plan and profile views",
-                "Select profile views only to create long-section sheets without plan viewports, north arrows, or plan titles.",
+                "Plan-only creates plan viewports without requiring road profiles. Profile-only creates long sections without plan viewports, north arrows or plan titles.",
                 new[] { "Plan and profile views", "Plan views only", "Profile views only" });
             settings.AddPositiveInteger(
                 "SegmentsPerSheet", "02 Sheets", "Viewports / sets per sheet", 2,
@@ -1587,7 +1587,8 @@ namespace CETools.Civil3D
             double requestedProfileWidth,
             double requestedProfileHeight,
             bool profileOnly,
-            bool allowViewportOverflow)
+            bool allowViewportOverflow,
+            bool planOnly)
         {
             double left = Math.Max(0.0, margin);
             double right = Math.Max(left + 50.0, paperWidth - margin - Math.Max(0.0, rightReserve));
@@ -1610,9 +1611,12 @@ namespace CETools.Civil3D
                 planHeight = requestedPlanHeight;
                 profileHeight = requestedProfileHeight;
                 if (!allowViewportOverflow &&
-                    ((!profileOnly && planWidth > availableWidth + 0.01) || profileWidth > availableWidth + 0.01))
+                    ((!profileOnly && planWidth > availableWidth + 0.01) ||
+                     (!planOnly && profileWidth > availableWidth + 0.01)))
                     throw new InvalidOperationException("Specified plan/profile viewport length is wider than the available sheet area. Set Allow viewport dimensions outside sheet to Yes to retain the requested dimensions.");
-                pairHeight = profileOnly ? 5.0 + profileHeight : 5.0 + planHeight + planProfileGap + profileHeight;
+                pairHeight = profileOnly ? 5.0 + profileHeight :
+                    planOnly ? 5.0 + planHeight :
+                    5.0 + planHeight + planProfileGap + profileHeight;
                 // Fixed viewport dimensions take priority over fitting inside the sheet.
                 // Keep all requested slots even when the lower slots extend beyond paper.
             }
@@ -1623,9 +1627,10 @@ namespace CETools.Civil3D
                 pairHeight = (availableHeight - safePairGap * Math.Max(0, count - 1)) / Math.Max(1, count);
                 if (pairHeight <= 30.0)
                     throw new InvalidOperationException("Paper margins/reserves leave too little height for the requested number of plan/profile sets.");
-                double usable = Math.Max(20.0, pairHeight - (profileOnly ? 0.0 : planProfileGap) - 5.0);
-                planHeight = profileOnly ? 0.0 : usable * 0.58;
-                profileHeight = profileOnly ? usable : usable - planHeight;
+                double usable = Math.Max(20.0, pairHeight -
+                    ((profileOnly || planOnly) ? 0.0 : planProfileGap) - 5.0);
+                planHeight = profileOnly ? 0.0 : planOnly ? usable : usable * 0.58;
+                profileHeight = planOnly ? 0.0 : profileOnly ? usable : usable - planHeight;
             }
 
             var result = new List<PaperPair>();
