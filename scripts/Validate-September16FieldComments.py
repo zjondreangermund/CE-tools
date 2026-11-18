@@ -34,8 +34,8 @@ checks = {
         "SignedRoadOffset(sideCurve, candidate.Point, seed - candidate.Point, sideHalf + radius)",
         '.Where(item => item.SideSign == sideSign)',
         '.Where(item => item.MainSign == mainSign)',
-        '"X-LIMIT-MAIN"',
-        '"X-LIMIT-SIDE"',
+        'CrossLimitTag + "-MAIN"',
+        'CrossLimitTag + "-SIDE"',
 
         "// p is on MAIN kerb, q is on SIDE kerb.",
         "HasPlanCurvatureNear(",
