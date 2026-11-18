@@ -32,6 +32,7 @@ namespace CETools.Civil3D
         private const string OppositeLimitLayer = "CE-ROAD-JUNCTION-OPPOSITE";
         // Stable root tag for front/back T-junction limits (including V208).
         private const string TLimitTag = "T-LIMIT";
+        private const string CrossLimitTag = "X-LIMIT";
         private const string AppName = "CE_ROAD_JUNCTION";
         private const double Tol = 1e-6;
         private static int _featureLineColourIndex = 256;
@@ -1273,7 +1274,7 @@ namespace CETools.Civil3D
                         .OrderBy(item => item.MainSign).ToList();
                     if (group.Count == 2)
                         pairs.Add(Tuple.Create(group[0].End, group[1].End,
-                            "X-LIMIT-MAIN"));
+                            CrossLimitTag + "-MAIN"));
                 }
                 foreach (int mainSign in new[] { -1, 1 })
                 {
@@ -1282,7 +1283,7 @@ namespace CETools.Civil3D
                         .OrderBy(item => item.SideSign).ToList();
                     if (group.Count == 2)
                         pairs.Add(Tuple.Create(group[0].Start, group[1].Start,
-                            "X-LIMIT-SIDE"));
+                            CrossLimitTag + "-SIDE"));
                 }
             }
             else if (createTLimit)
@@ -1343,9 +1344,9 @@ namespace CETools.Civil3D
                     pair.Item1, pair.Item2,
                     pair.Item3, candidate.Point, featureLines, siteId, weedDistance, weedAngle,
                     pair.Item3 == "T-LIMIT-FRONT" || pair.Item3 == "T-LIMIT-BACK" ||
-                    pair.Item3 == "X-LIMIT-MAIN"
+                    pair.Item3 == CrossLimitTag + "-MAIN"
                         ? candidate.MainCurve
-                        : pair.Item3 == "X-LIMIT-SIDE"
+                        : pair.Item3 == CrossLimitTag + "-SIDE"
                             ? candidate.SideCurve : null,
                     topSurfaces, ref surfaceVertices, ref unresolvedVertices);
                 if (!id.IsNull) created++;
