@@ -119,6 +119,10 @@ namespace CETools.Civil3D
                 "Distance from the main-road centreline to its kerb/edge.");
             model.AddPositiveDouble("SideHalfWidth", "01 Geometry", "Side/cross-road half-width", 3.7,
                 "Distance from the side/cross-road centreline to its kerb/edge.");
+            model.AddDouble("MainEdgeCorrection", "01 Geometry", "Main-road kerb fine adjustment (m)", 0.0,
+                "Signed adjustment to the main-road half-width when the generated edge is slightly inside/outside the real road edge; +0.30 m moves it 300 mm outward.");
+            model.AddDouble("SideEdgeCorrection", "01 Geometry", "Side-road kerb fine adjustment (m)", 0.0,
+                "Signed adjustment to side/cross-road half-width; +0.30 m moves the kerb 300 mm outward. Leave at zero when exact half-width is entered.");
             model.AddPositiveDouble("EndpointTolerance", "02 Detection", "T-junction endpoint tolerance", 1.0,
                 "An intersection this close to either end of one road is classified as a T-junction; otherwise it is a cross-junction.");
             model.AddPositiveDouble("ClusterTolerance", "02 Detection", "Duplicate intersection tolerance", 0.10,
@@ -211,6 +215,14 @@ namespace CETools.Civil3D
             double radius = model.Double("Radius", 10.0);
             double mainHalfWidth = model.Double("MainHalfWidth", 3.7);
             double sideHalfWidth = model.Double("SideHalfWidth", 3.7);
+            mainHalfWidth += model.Double("MainEdgeCorrection", 0.0);
+            sideHalfWidth += model.Double("SideEdgeCorrection", 0.0);
+            if (mainHalfWidth <= 0.1 || sideHalfWidth <= 0.1)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_ROADJUNCTIONBATCH: corrected kerb half-widths must each exceed 0.1 m.");
+                return;
+            }
             double endpointTolerance = model.Double("EndpointTolerance", 1.0);
             double clusterTolerance = model.Double("ClusterTolerance", 0.10);
             double textHeight = model.Double("TextHeight", 2.5);
@@ -483,6 +495,9 @@ namespace CETools.Civil3D
             document.Editor.WriteMessage(
                 "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction edge-centre-edge limits={2}; cross-junction limit lines={3}; failed curve pairs={4}; erased previous outputs={5}; bellmouth layer={6}; limit layer={7}. Bellmouth returns remain open. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
                 junctions, created, tClosures, crossLimitLines, failedPairs, erasedExisting, bellmouthLayerName, limitLayerName);
+            document.Editor.WriteMessage(
+                "\nCE_ROADJUNCTIONBATCH kerb offsets: main={0:0.###} m; side={1:0.###} m. Use the signed fine adjustment for the measured 0.30 m discrepancy.",
+                mainHalfWidth, sideHalfWidth);
             document.Editor.WriteMessage("\nCross-road connectors include midpoint vertices; feature-line points adjusted from TOP surfaces={0}; unresolved elevations={1}. TOP surfaces were not changed.",
                 surfaceVertices, unresolvedVertices);
         }
