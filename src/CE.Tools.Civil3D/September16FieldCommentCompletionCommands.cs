@@ -32,6 +32,7 @@ namespace CETools.Civil3D
         private const string OppositeLimitLayer = "CE-ROAD-JUNCTION-OPPOSITE";
         // Stable root tag for front/back T-junction limits (including V208).
         private const string TLimitTag = "T-LIMIT";
+        private const string CrossLimitTag = "X-LIMIT";
         private const string AppName = "CE_ROAD_JUNCTION";
         private const double Tol = 1e-6;
         private static int _featureLineColourIndex = 256;
@@ -119,6 +120,10 @@ namespace CETools.Civil3D
                 "Distance from the main-road centreline to its kerb/edge.");
             model.AddPositiveDouble("SideHalfWidth", "01 Geometry", "Side/cross-road half-width", 3.7,
                 "Distance from the side/cross-road centreline to its kerb/edge.");
+            model.AddDouble("MainEdgeCorrection", "01 Geometry", "Main-road kerb fine adjustment (m)", 0.0,
+                "Signed adjustment to the main-road half-width when the generated edge is slightly inside/outside the real road edge; +0.30 m moves it 300 mm outward.");
+            model.AddDouble("SideEdgeCorrection", "01 Geometry", "Side-road kerb fine adjustment (m)", 0.0,
+                "Signed adjustment to side/cross-road half-width; +0.30 m moves the kerb 300 mm outward. Leave at zero when exact half-width is entered.");
             model.AddPositiveDouble("EndpointTolerance", "02 Detection", "T-junction endpoint tolerance", 1.0,
                 "An intersection this close to either end of one road is classified as a T-junction; otherwise it is a cross-junction.");
             model.AddPositiveDouble("ClusterTolerance", "02 Detection", "Duplicate intersection tolerance", 0.10,
@@ -211,6 +216,14 @@ namespace CETools.Civil3D
             double radius = model.Double("Radius", 10.0);
             double mainHalfWidth = model.Double("MainHalfWidth", 3.7);
             double sideHalfWidth = model.Double("SideHalfWidth", 3.7);
+            mainHalfWidth += model.Double("MainEdgeCorrection", 0.0);
+            sideHalfWidth += model.Double("SideEdgeCorrection", 0.0);
+            if (mainHalfWidth <= 0.1 || sideHalfWidth <= 0.1)
+            {
+                document.Editor.WriteMessage(
+                    "\nCE_ROADJUNCTIONBATCH: corrected kerb half-widths must each exceed 0.1 m.");
+                return;
+            }
             double endpointTolerance = model.Double("EndpointTolerance", 1.0);
             double clusterTolerance = model.Double("ClusterTolerance", 0.10);
             double textHeight = model.Double("TextHeight", 2.5);
@@ -483,6 +496,9 @@ namespace CETools.Civil3D
             document.Editor.WriteMessage(
                 "\nCE_ROADJUNCTIONBATCH complete. Junctions={0}; bellmouth returns={1}; T-junction edge-centre-edge limits={2}; cross-junction limit lines={3}; failed curve pairs={4}; erased previous outputs={5}; bellmouth layer={6}; limit layer={7}. Bellmouth returns remain open. Run CE_ROADTJUNCTIONASSEMBLYLIMITS for T-junction side-road trimming, or CE_ROADJUNCTIONCONSTRUCTION for the existing general splitter.",
                 junctions, created, tClosures, crossLimitLines, failedPairs, erasedExisting, bellmouthLayerName, limitLayerName);
+            document.Editor.WriteMessage(
+                "\nCE_ROADJUNCTIONBATCH kerb offsets: main={0:0.###} m; side={1:0.###} m. Use the signed fine adjustment for the measured 0.30 m discrepancy.",
+                mainHalfWidth, sideHalfWidth);
             document.Editor.WriteMessage("\nCross-road connectors include midpoint vertices; feature-line points adjusted from TOP surfaces={0}; unresolved elevations={1}. TOP surfaces were not changed.",
                 surfaceVertices, unresolvedVertices);
         }
@@ -931,8 +947,13 @@ namespace CETools.Civil3D
             // The seed must be based on normal-offset kerb intersections.
             // Moving along the two tangents by the road widths gives a wrong
             // centre on skew/curved junctions and can select the wrong fillet.
-            Point3d seed = BuildReturn(candidate.Point, main, side,
-                mainSign, sideSign, mainHalf, sideHalf, radius).Centre;
+            ReturnDefinition localReturn = BuildReturn(candidate.Point, main, side,
+                mainSign, sideSign, mainHalf, sideHalf, radius);
+            Point3d seed = localReturn.Centre;
+            // A skew junction's offset quadrant is defined by the actual
+            // normal-offset intersection (seed), NOT by other road tangent
+            // directions. The former selected the opposite offset branch at
+            // cross-junctions, yielding crossing or long looping returns.
             DBObjectCollection mainCentreOffsets = null;
             DBObjectCollection sideCentreOffsets = null;
             DBObjectCollection mainKerbOffsets = null;
@@ -940,13 +961,13 @@ namespace CETools.Civil3D
             try
             {
                 mainCentreOffsets = mainCurve.GetOffsetCurves(
-                    SignedRoadOffset(mainCurve, candidate.Point, side * sideSign, mainHalf + radius));
+                    SignedRoadOffset(mainCurve, candidate.Point, seed - candidate.Point, mainHalf + radius));
                 sideCentreOffsets = sideCurve.GetOffsetCurves(
-                    SignedRoadOffset(sideCurve, candidate.Point, main * mainSign, sideHalf + radius));
+                    SignedRoadOffset(sideCurve, candidate.Point, seed - candidate.Point, sideHalf + radius));
                 mainKerbOffsets = mainCurve.GetOffsetCurves(
-                    SignedRoadOffset(mainCurve, candidate.Point, side * sideSign, mainHalf));
+                    SignedRoadOffset(mainCurve, candidate.Point, seed - candidate.Point, mainHalf));
                 sideKerbOffsets = sideCurve.GetOffsetCurves(
-                    SignedRoadOffset(sideCurve, candidate.Point, main * mainSign, sideHalf));
+                    SignedRoadOffset(sideCurve, candidate.Point, seed - candidate.Point, sideHalf));
 
                 // More than one offset element can be returned for complex polylines.
                 // Evaluate all intersections, taking the geometrically closest
@@ -960,7 +981,11 @@ namespace CETools.Civil3D
                     catch { continue; }
                     foreach (Point3d crossing in crossings)
                     {
-                        if (crossing.DistanceTo(seed) > 2.5 * (mainHalf + sideHalf + radius)) continue;
+                        // Reject a distant intersection from another quadrant.
+                        // The previous tolerance was large enough to accept an
+                        // entirely different road-edge intersection.
+                        if (crossing.DistanceTo(seed) >
+                            Math.Max(2.0, radius * 1.25 + Math.Max(mainHalf, sideHalf))) continue;
                         foreach (Curve mk in mainKerbOffsets.OfType<Curve>())
                         foreach (Curve sk in sideKerbOffsets.OfType<Curve>())
                         {
@@ -971,6 +996,14 @@ namespace CETools.Civil3D
                                 q = sk.GetClosestPointTo(crossing, false);
                             }
                             catch { continue; }
+                            // Each tangent must stay on the same local road
+                            // arm as the correctly constructed straight/skew
+                            // seed, not flip to the opposite quadrant.
+                            if ((p - candidate.Point).DotProduct(
+                                    localReturn.End - candidate.Point) < -Tol ||
+                                (q - candidate.Point).DotProduct(
+                                    localReturn.Start - candidate.Point) < -Tol)
+                                continue;
                             double radiusError = Math.Abs(p.DistanceTo(crossing) - radius) +
                                                  Math.Abs(q.DistanceTo(crossing) - radius);
                             if (radiusError > Math.Max(0.05, radius * 0.015)) continue;
@@ -1229,15 +1262,28 @@ namespace CETools.Civil3D
             var pairs = new List<Tuple<Point3d, Point3d, string>>();
             if (candidate.IsCross)
             {
-                foreach (int mainSign in new[] { -1, 1 })
-                {
-                    List<ReturnDefinition> group = definitions.Where(item => item.MainSign == mainSign).OrderBy(item => item.SideSign).ToList();
-                    if (group.Count == 2) AddPerpendicularLimit(pairs, group[0].End, group[1].End, candidate.Main * mainSign, "X-LIMIT");
-                }
+                // End is on the MAIN-road kerb, whose side is controlled by
+                // SideSign (see BuildReturn.mainNormal). Start is on the
+                // SIDE-road kerb, whose side is controlled by MainSign.
+                // The old implementation grouped by the opposite signs and
+                // crossed unrelated corners at four-way junctions.
                 foreach (int sideSign in new[] { -1, 1 })
                 {
-                    List<ReturnDefinition> group = definitions.Where(item => item.SideSign == sideSign).OrderBy(item => item.MainSign).ToList();
-                    if (group.Count == 2) AddPerpendicularLimit(pairs, group[0].Start, group[1].Start, candidate.Side * sideSign, "X-LIMIT");
+                    List<ReturnDefinition> group = definitions
+                        .Where(item => item.SideSign == sideSign)
+                        .OrderBy(item => item.MainSign).ToList();
+                    if (group.Count == 2)
+                        pairs.Add(Tuple.Create(group[0].End, group[1].End,
+                            CrossLimitTag + "-MAIN"));
+                }
+                foreach (int mainSign in new[] { -1, 1 })
+                {
+                    List<ReturnDefinition> group = definitions
+                        .Where(item => item.MainSign == mainSign)
+                        .OrderBy(item => item.SideSign).ToList();
+                    if (group.Count == 2)
+                        pairs.Add(Tuple.Create(group[0].Start, group[1].Start,
+                            CrossLimitTag + "-SIDE"));
                 }
             }
             else if (createTLimit)
@@ -1297,8 +1343,11 @@ namespace CETools.Civil3D
                     pair.Item3 == "T-LIMIT-BACK" ? oppositeLayerId : layerId,
                     pair.Item1, pair.Item2,
                     pair.Item3, candidate.Point, featureLines, siteId, weedDistance, weedAngle,
-                    pair.Item3 == "T-LIMIT-FRONT" || pair.Item3 == "T-LIMIT-BACK"
-                        ? candidate.MainCurve : null,
+                    pair.Item3 == "T-LIMIT-FRONT" || pair.Item3 == "T-LIMIT-BACK" ||
+                    pair.Item3 == CrossLimitTag + "-MAIN"
+                        ? candidate.MainCurve
+                        : pair.Item3 == CrossLimitTag + "-SIDE"
+                            ? candidate.SideCurve : null,
                     topSurfaces, ref surfaceVertices, ref unresolvedVertices);
                 if (!id.IsNull) created++;
             }

@@ -28,6 +28,15 @@ checks = {
         "TryBuildTangentReturn(candidate, mainSign, sideSign,",
         "TryBuildTangentReturn(candidate, mainSign, 1,",
         "Centre = crossing, Start = q, Mid = middle, End = p,",
+        '"MainEdgeCorrection", "01 Geometry"',
+        '"SideEdgeCorrection", "01 Geometry"',
+        "SignedRoadOffset(mainCurve, candidate.Point, seed - candidate.Point, mainHalf + radius)",
+        "SignedRoadOffset(sideCurve, candidate.Point, seed - candidate.Point, sideHalf + radius)",
+        '.Where(item => item.SideSign == sideSign)',
+        '.Where(item => item.MainSign == mainSign)',
+        'CrossLimitTag + "-MAIN"',
+        'CrossLimitTag + "-SIDE"',
+
         "// p is on MAIN kerb, q is on SIDE kerb.",
         "HasPlanCurvatureNear(",
         "BuildReturn(candidate.Point, main, side,",
@@ -99,6 +108,20 @@ for marker in (
 ):
     if marker not in junction:
         print(f"FAIL generated-output-only junction cleanup missing: {marker}")
+        failed = True
+
+# Cross-junction closure pairing must be by the side controlling each
+# physical edge. The inverse pairing creates crossing, overlapping segments.
+cross_block = junction.split("if (candidate.IsCross)", 1)[-1]
+closure_start = junction.find("private static int CreateClosureGeometry(")
+if closure_start < 0:
+    print("FAIL cross-junction closure service missing")
+    failed = True
+else:
+    closure = junction[closure_start:junction.find("private static void AddTJunctionLimitFeatureLines(", closure_start)]
+    if ('Where(item => item.MainSign == mainSign).OrderBy(item => item.SideSign)' in closure
+            or 'Where(item => item.SideSign == sideSign).OrderBy(item => item.MainSign)' in closure):
+        print("FAIL outdated cross-junction kerb grouping persists")
         failed = True
 
 # Curved fillets must retain the same endpoint convention as straight
