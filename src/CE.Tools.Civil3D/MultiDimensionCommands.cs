@@ -58,11 +58,16 @@ namespace CETools.Civil3D
                 "DimStyle", "01 Dimension", "Dimension style", currentStyle,
                 "Select a drawing dimension style. CE Tools creates/updates an annotative copy so the source style and existing dimensions remain unchanged.",
                 dimensionStyles);
+            settings.AddChoice(
+                "PlacementUnits", "02 Placement", "Placement distance units",
+                "Millimetres",
+                "Choose metres or millimetres for dimension offset and radius leader extension. Values are model distances, not paper annotation millimetres.",
+                new[] { "Millimetres", "Metres" });
             settings.AddPositiveDouble(
-                "Offset", "02 Placement", "Dimension offset (paper mm)", 8.0,
+                "Offset", "02 Placement", "Dimension offset (selected units)", 8.0,
                 "Automatic offset from the source geometry, converted using the current annotation scale.");
             settings.AddPositiveDouble(
-                "ArcLeader", "02 Placement", "Radius leader extension (paper mm)", 6.0,
+                "ArcLeader", "02 Placement", "Radius leader extension (selected units)", 6.0,
                 "Leader extension beyond a polyline arc for radius dimensions.");
             settings.AddChoice(
                 "Dynamic", "03 Dynamic", "Dynamic update", "Enabled",
@@ -99,13 +104,42 @@ namespace CETools.Civil3D
             int skippedGeometry = 0;
             int failed = 0;
             string outputStyleName = string.Empty;
+            // Keep the legacy ArcLeader-to-sources anchor above untouched:
+            // staged Civil 3D 2023/2024 finalizers depend on that exact block.
+            // Dynamic manager persists PAPER-mm equivalents, so an annotation
+            // scale change retains correct real-world dimensions.
+            double modelUnitsPerMetre = 1.0;
+            switch ((int)document.Database.Insunits)
+            {
+                case 4: modelUnitsPerMetre = 1000.0; break; // mm
+                case 5: modelUnitsPerMetre = 100.0; break;  // cm
+                case 7: modelUnitsPerMetre = 0.001; break;  // km
+                // Unitless drawings follow the CE-Tools Civil 3D convention: m.
+                default: modelUnitsPerMetre = 1.0; break;
+            }
+            double placementFactor = string.Equals(
+                settings.Text("PlacementUnits"), "Metres",
+                StringComparison.OrdinalIgnoreCase)
+                ? modelUnitsPerMetre : modelUnitsPerMetre / 1000.0;
+            double onePaperMillimetre = PaperAnnotationScale.ModelDistance(
+                document.Database, 1.0);
+            if (onePaperMillimetre <= GeometryTolerance)
+                throw new InvalidOperationException(
+                    "The current annotation scale does not support placement unit conversion.");
+            double offsetPaperMm = settings.Double("Offset", 8.0) *
+                placementFactor / onePaperMillimetre;
+            double leaderPaperMm = settings.Double("ArcLeader", 6.0) *
+                placementFactor / onePaperMillimetre;
+            offset = PaperAnnotationScale.ModelDistance(document.Database, offsetPaperMm);
+            leader = PaperAnnotationScale.ModelDistance(document.Database, leaderPaperMm);
+
 
             DynamicMultiDimensionManager.BeginCommand(
                 document,
                 !string.Equals(settings.Text("Dynamic"), "Disabled", StringComparison.OrdinalIgnoreCase),
                 mode,
-                settings.Double("Offset", 8.0),
-                settings.Double("ArcLeader", 6.0));
+                offsetPaperMm,
+                leaderPaperMm);
 
             try
             {
