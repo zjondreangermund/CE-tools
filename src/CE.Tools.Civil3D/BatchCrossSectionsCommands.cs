@@ -104,8 +104,8 @@ namespace CETools.Civil3D
                 AcApplication.ShowModalWindow(window);
                 if (window.PickInsertionPointRequested)
                 {
-                    // GetPoint must run AFTER ShowModalWindow returns. Calling it
-                    // from a hidden modal Window can lock out the AutoCAD editor.
+                    // Legacy path for releases other than 2024. The 2024 button
+                    // uses a scoped EditorUserInteraction on the live modal window.
                     PromptPointResult point = doc.Editor.GetPoint(
                         "\nPick TOP-LEFT base point for cross-section layout: ");
                     if (point.Status != PromptStatus.OK) return;
@@ -843,10 +843,32 @@ namespace CETools.Civil3D
                 var pickPoint = new Button { Content = "Pick insertion point in drawing...", Margin = new Thickness(3), HorizontalAlignment = HorizontalAlignment.Left };
                 pickPoint.Click += (sender, args) =>
                 {
+#if CE_CIVIL3D_2024
+                    // Keep the WPF owner alive while AutoCAD owns point acquisition.
+                    // Do not manually Hide/Close the modal window in this path.
+                    try
+                    {
+                        Point3d point;
+                        IntPtr owner = new System.Windows.Interop.WindowInteropHelper(this).Handle;
+                        if (BatchCrossSectionPointPicker.TryPick(_document.Editor, owner, TraceStartup, out point))
+                        {
+                            _x.Text = point.X.ToString("G17", CultureInfo.CurrentCulture);
+                            _y.Text = point.Y.ToString("G17", CultureInfo.CurrentCulture);
+                            SaveDefaults();
+                        }
+                    }
+                    catch (System.Exception ex)
+                    {
+                        TraceStartup("Point pick failed: " + ex);
+                        MessageBox.Show(this, "Point selection failed: " + ex.Message
+                            + "\nYou can enter the top-left X and Y coordinates instead.");
+                    }
+#else
                     SaveDefaults();
                     PickInsertionPointRequested = true;
                     Accepted = false;
                     Close();
+#endif
                 };
                 panel.Children.Add(pickPoint);
                 AddRow(panel, "Top-left start point X", _x); AddRow(panel, "Top-left start point Y", _y);

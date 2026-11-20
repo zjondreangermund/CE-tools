@@ -293,6 +293,9 @@ jobs:
         with:
           dotnet-version: 8.0.x
 
+      - name: Test batch cross-section modal point handoff
+        run: dotnet run --project tests/CE.Tools.BatchPointPicker.Tests/CE.Tools.BatchPointPicker.Tests.csproj -c Release
+
       - name: Test horizontal curve Free conversion and rollback
         run: dotnet run --project tests/CE.Tools.AlignmentFreeCurve.Tests/CE.Tools.AlignmentFreeCurve.Tests.csproj -c Release
 
