@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net48</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <DefineConstants>$(DefineConstants);CE_CIVIL3D_2024</DefineConstants>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="AutoCAD.NET" Version="24.3.0" />
+    <PackageReference Include="Civil3D.NET" Version="13.6.1781" />
+    <PackageReference Include="Microsoft.NETFramework.ReferenceAssemblies" Version="1.0.3" />
+    <Reference Include="PresentationFramework" />
+    <Reference Include="PresentationCore" />
+    <Reference Include="WindowsBase" />
+    <Reference Include="System.Xaml" />
+    <Reference Include="System.Windows.Forms" />
+    <Compile Include="../../src/CE.Tools.Civil3D/AutoCADTypeAliases.cs" />
+    <Compile Include="../../src/CE.Tools.Civil3D/BatchCrossSectionPointPicker.cs" />
+    <Compile Include="../../src/CE.Tools.Civil3D/BatchCrossSectionsCommands.cs" />
+  </ItemGroup>
+</Project>
