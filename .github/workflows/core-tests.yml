@@ -296,6 +296,9 @@ jobs:
       - name: Test batch cross-section modal point handoff
         run: dotnet run --project tests/CE.Tools.BatchPointPicker.Tests/CE.Tools.BatchPointPicker.Tests.csproj -c Release
 
+      - name: Compile batch cross sections against Civil 3D 2024 references
+        run: dotnet build tests/CE.Tools.BatchPointPicker.ApiCompile.Tests/CE.Tools.BatchPointPicker.ApiCompile.Tests.csproj -c Release
+
       - name: Test horizontal curve Free conversion and rollback
         run: dotnet run --project tests/CE.Tools.AlignmentFreeCurve.Tests/CE.Tools.AlignmentFreeCurve.Tests.csproj -c Release
 
