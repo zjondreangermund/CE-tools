@@ -32,6 +32,47 @@ namespace CETools.Civil3D
             Document doc = AcApplication.DocumentManager.MdiActiveDocument;
             if (doc == null) return;
 
+            TraceStartup("BEGIN " + doc.Name);
+            try
+            {
+                CreateBatchCrossSectionsCore(doc);
+                TraceStartup("END");
+            }
+            catch (System.Exception ex)
+            {
+                // Managed errors can be reported; native access violations cannot be
+                // made safe by catch. Avoid unrelated native objects during discovery.
+                TraceStartup("FAILED " + ex);
+                doc.Editor.WriteMessage("\nCE_BATCHCROSSSECTIONS stopped: " + ex.Message);
+                doc.Editor.WriteMessage("\nDiagnostic log: " + StartupLogPath);
+            }
+        }
+
+        private static readonly string StartupLogPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "CE-TOOLS", "Logs", "BatchCrossSections.log");
+
+        private static void TraceStartup(string stage)
+        {
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(StartupLogPath));
+                // Close each write before calling Civil 3D so a fatal termination
+                // leaves the last attempted stage/object available for diagnosis.
+                File.AppendAllText(StartupLogPath, DateTime.UtcNow.ToString("o", CultureInfo.InvariantCulture)
+                    + " " + stage + Environment.NewLine);
+            }
+            catch { /* Logging must never prevent the command from running. */ }
+        }
+
+        private static bool CanReadId(Database db, ObjectId id)
+        {
+            return !id.IsNull && id.IsValid && !id.IsErased && id.Database == db;
+        }
+
+        private static void CreateBatchCrossSectionsCore(Document doc)
+        {
+            TraceStartup("Read alignments");
             List<AlignmentChoice> alignments = ReadAlignments(doc.Database);
             if (alignments.Count == 0)
             {
@@ -40,18 +81,26 @@ namespace CETools.Civil3D
             }
 
             CivilDocument civilDoc = CivilApplication.ActiveDocument;
+            TraceStartup("Read sample-line styles");
+            var sampleStyles = ReadNames(doc.Database, civilDoc.Styles.SampleLineStyles);
+            TraceStartup("Read sample-line label styles");
+            var labelStyles = ReadNames(doc.Database, GetStyleCollection(civilDoc.Styles, "SampleLineLabelStyles"));
+            TraceStartup("Read section-view styles");
+            var sectionStyles = ReadNames(doc.Database, civilDoc.Styles.SectionViewStyles);
+            TraceStartup("Read section-view band sets");
+            var bandSets = ReadNames(doc.Database, civilDoc.Styles.SectionViewBandSetStyles);
+            TraceStartup("Read surfaces");
+            var surfaces = ReadSourceChoices(doc.Database, civilDoc, false);
+            TraceStartup("Read corridors");
+            var corridors = ReadSourceChoices(doc.Database, civilDoc, true);
             BatchCrossSectionsWindow window;
             Point3d? chosenInsertion = null;
             for (;;)
             {
+                TraceStartup("Open configuration window");
                 window = new BatchCrossSectionsWindow(
-                    alignments,
-                    ReadNames(doc.Database, civilDoc.Styles.SampleLineStyles),
-                    ReadNames(doc.Database, GetStyleCollection(civilDoc.Styles, "SampleLineLabelStyles")),
-                    ReadNames(doc.Database, civilDoc.Styles.SectionViewStyles),
-                    ReadNames(doc.Database, civilDoc.Styles.SectionViewBandSetStyles),
-                    ReadSourceChoices(doc.Database, civilDoc, false),
-                    ReadSourceChoices(doc.Database, civilDoc, true), doc, chosenInsertion);
+                    alignments, sampleStyles, labelStyles, sectionStyles, bandSets,
+                    surfaces, corridors, doc, chosenInsertion);
                 AcApplication.ShowModalWindow(window);
                 if (window.PickInsertionPointRequested)
                 {
@@ -70,12 +119,15 @@ namespace CETools.Civil3D
             BatchCrossSectionSettings s = window.Settings;
             Point3d basePoint = new Point3d(s.InsertX, s.InsertY, 0.0);
             int groupsCreated = 0, linesCreated = 0, sectionGroupsCreated = 0;
-            HashSet<ObjectId> oldSectionViews = SectionViewManagementCommands.CaptureViewIds(doc);
+            TraceStartup("Capture existing section views");
+            HashSet<ObjectId> oldSectionViews = s.CreateSectionViews
+                ? SectionViewManagementCommands.CaptureViewIds(doc) : new HashSet<ObjectId>();
             var failures = new List<string>();
 
             for (int alignmentIndex = 0; alignmentIndex < s.Alignments.Count; alignmentIndex++)
             {
                 AlignmentChoice choice = s.Alignments[alignmentIndex];
+                TraceStartup("Generate alignment " + choice.Id.Handle + " " + choice.Name);
                 try
                 {
                     ObjectId groupId;
@@ -222,6 +274,7 @@ namespace CETools.Civil3D
                 }
                 catch (System.Exception ex) { failures.Add("Road group arrangement: " + ex.Message); }
             }
+            TraceStartup("Regenerate drawing");
             doc.Editor.Regen();
             doc.Editor.WriteMessage(
                 "\nCE_BATCHCROSSSECTIONS complete. Alignments selected={0}; groups created={1}; sample lines created={2}; section-view groups created={3}; run cross sections={4}; issues={5}.",
@@ -240,8 +293,14 @@ namespace CETools.Civil3D
                 CivilDocument civilDoc = CivilApplication.ActiveDocument;
                 foreach (ObjectId id in civilDoc.GetAlignmentIds())
                 {
-                    Alignment alignment = tr.GetObject(id, OpenMode.ForRead, false) as Alignment;
-                    if (alignment != null) result.Add(new AlignmentChoice(id, alignment.Name));
+                    if (!CanReadId(db, id)) continue;
+                    TraceStartup("Read alignment " + id.Handle);
+                    try
+                    {
+                        Alignment alignment = tr.GetObject(id, OpenMode.ForRead, false) as Alignment;
+                        if (alignment != null) result.Add(new AlignmentChoice(id, alignment.Name));
+                    }
+                    catch (System.Exception ex) { TraceStartup("Skipped alignment " + id.Handle + ": " + ex.Message); }
                 }
                 tr.Commit();
             }
@@ -307,7 +366,8 @@ namespace CETools.Civil3D
                         if (item is ObjectId)
                         {
                             ObjectId id = (ObjectId)item;
-                            if (id.IsNull || !id.IsValid) continue;
+                            if (!CanReadId(db, id)) continue;
+                            TraceStartup("Read style " + id.Handle);
                             try { candidate = tr.GetObject(id, OpenMode.ForRead, false); }
                             catch { continue; }
                         }
@@ -338,62 +398,45 @@ namespace CETools.Civil3D
         {
             var result = new List<SectionSourceChoice>();
             var candidateIds = new HashSet<ObjectId>();
-            // Civil surfaces and corridors are generally stored in Civil 3D dictionaries/collections,
-            // not as entities in ModelSpace. Discover the public ID collections exposed by this API.
-            try
+            // Do not reflect over every CivilDocument member or open all of
+            // ModelSpace. Existing sections/proxies are unrelated to this popup
+            // and opening them can enter failing native Civil 3D code.
+            if (corridors)
             {
-                foreach (var member in civilDoc.GetType().GetMembers(System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.Public))
-                {
-                    string memberName = member.Name ?? string.Empty;
-                    bool relevant = corridors
-                        ? memberName.IndexOf("Corridor", StringComparison.OrdinalIgnoreCase) >= 0
-                        : memberName.IndexOf("Surface", StringComparison.OrdinalIgnoreCase) >= 0;
-                    if (!relevant || !(memberName.IndexOf("Id", StringComparison.OrdinalIgnoreCase) >= 0 || memberName.IndexOf("Collection", StringComparison.OrdinalIgnoreCase) >= 0)) continue;
-                    object value = null;
-                    try
-                    {
-                        var property = member as System.Reflection.PropertyInfo;
-                        if (property != null && property.GetIndexParameters().Length == 0) value = property.GetValue(civilDoc, null);
-                        var method = member as System.Reflection.MethodInfo;
-                        if (method != null && method.GetParameters().Length == 0) value = method.Invoke(civilDoc, null);
-                    }
-                    catch { }
-                    var enumerable = value as System.Collections.IEnumerable;
-                    if (enumerable == null) continue;
-                    foreach (object entry in enumerable)
-                    {
-                        if (entry is ObjectId && !((ObjectId)entry).IsNull) candidateIds.Add((ObjectId)entry);
-                        else
-                        {
-                            ObjectId nested = ReadObjectId(entry, "ObjectId", "Id", "SurfaceId", "CorridorId");
-                            if (!nested.IsNull) candidateIds.Add(nested);
-                        }
-                    }
-                }
+                foreach (ObjectId id in civilDoc.CorridorCollection) candidateIds.Add(id);
             }
-            catch { }
+            else
+            {
+                foreach (ObjectId id in civilDoc.GetSurfaceIds()) candidateIds.Add(id);
+            }
             using (Transaction tr = db.TransactionManager.StartTransaction())
             {
-                BlockTable bt = (BlockTable)tr.GetObject(db.BlockTableId, OpenMode.ForRead);
-                BlockTableRecord model = (BlockTableRecord)tr.GetObject(bt[BlockTableRecord.ModelSpace], OpenMode.ForRead);
-                foreach (ObjectId id in model) candidateIds.Add(id);
                 foreach (ObjectId id in candidateIds)
                 {
+                    if (!CanReadId(db, id)) continue;
+                    TraceStartup("Read " + (corridors ? "corridor " : "surface ") + id.Handle);
                     try
                     {
                         DBObject obj = tr.GetObject(id, OpenMode.ForRead, false);
-                        if (obj == null) continue;
+                        string name;
+                        if (corridors)
+                        {
+                            Corridor corridor = obj as Corridor;
+                            if (corridor == null) continue;
+                            name = corridor.Name;
+                        }
+                        else
+                        {
+                            Autodesk.Civil.DatabaseServices.Surface surface =
+                                obj as Autodesk.Civil.DatabaseServices.Surface;
+                            if (surface == null) continue;
+                            name = surface.Name;
+                        }
                         string typeName = obj.GetType().Name;
-                        bool isCorridor = typeName.IndexOf("Corridor", StringComparison.OrdinalIgnoreCase) >= 0;
-                        bool isSurface = typeName.IndexOf("Surface", StringComparison.OrdinalIgnoreCase) >= 0
-                            && typeName.IndexOf("Corridor", StringComparison.OrdinalIgnoreCase) < 0;
-                        if ((corridors && !isCorridor) || (!corridors && !isSurface)) continue;
-                        var nameProp = obj.GetType().GetProperty("Name");
-                        string name = nameProp == null ? null : nameProp.GetValue(obj, null) as string;
-                        if (string.IsNullOrWhiteSpace(name)) name = typeName + " - " + id.Handle.ToString();
+                        if (string.IsNullOrWhiteSpace(name)) name = typeName + " - " + id.Handle;
                         result.Add(new SectionSourceChoice(id, name, typeName));
                     }
-                    catch { }
+                    catch (System.Exception ex) { TraceStartup("Skipped source " + id.Handle + ": " + ex.Message); }
                 }
                 tr.Commit();
             }
