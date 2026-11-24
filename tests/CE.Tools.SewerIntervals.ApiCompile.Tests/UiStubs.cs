@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using Autodesk.AutoCAD.ApplicationServices;
+using Autodesk.AutoCAD.DatabaseServices;
 namespace CETools.Civil3D {
 internal static class SewerNetworkDynamicSequenceManager { internal static void DiscardPendingForIntervalUpdate() {} }
 internal class ProductionSettingsDialogModel {
@@ -11,5 +13,12 @@ internal double Double(string s,double d) => d;
 internal static class DisciplineWorkflowDialogs {
 internal static bool EditSettings(ProductionSettingsDialogModel s)=>false;
 internal static bool Confirm(string a,string b)=>false;
+}
+// UI-only substitutes for the headless Autodesk API compilation fixture.
+internal static class CivilObjectSelectionDialog {
+internal static List<ObjectId> Select(Document document, string title, IEnumerable<ObjectId> ids, bool multiple) => new List<ObjectId>();
+}
+internal static class CeMessageDialog {
+internal static bool Show(string title, string message, bool confirm = false) => false;
 }
 }
