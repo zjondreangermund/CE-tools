@@ -21,6 +21,7 @@ namespace CETools.Civil3D
         {
             if (_initialized) return;
             _initialized = true;
+            CeWinFormsTheme.Initialize();
             try
             {
                 EventManager.RegisterClassHandler(
@@ -71,6 +72,7 @@ namespace CETools.Civil3D
         internal static void RefreshOpenWindows()
         {
             Initialize();
+            CeWinFormsTheme.Refresh();
             try
             {
                 System.Windows.Application application = System.Windows.Application.Current;
@@ -91,8 +93,8 @@ namespace CETools.Civil3D
         internal static Brush MutedBrush()
         {
             return string.Equals(CeThemeStore.Read(), "Light", StringComparison.OrdinalIgnoreCase)
-                ? Brushes.DimGray
-                : new SolidColorBrush(Color.FromRgb(184, 194, 207));
+                ? Brushes.Black
+                : Brushes.White;
         }
 
         private static ThemePalette CurrentPalette()
@@ -441,8 +443,7 @@ namespace CETools.Civil3D
             TextBlock text = value as TextBlock;
             if (text != null)
             {
-                text.Foreground = IsMuted(text.Foreground) ? palette.Muted :
-                    IsAccent(text.Foreground) ? palette.Accent : palette.Foreground;
+                text.Foreground = palette.Foreground;
             }
 
             Control control = value as Control;
@@ -558,7 +559,7 @@ namespace CETools.Civil3D
                     Card = new SolidColorBrush(Color.FromRgb(28, 35, 49)),
                     Input = new SolidColorBrush(Color.FromRgb(20, 27, 38)),
                     Foreground = Brushes.White,
-                    Muted = new SolidColorBrush(Color.FromRgb(184, 194, 207)),
+                    Muted = Brushes.White,
                     Border = new SolidColorBrush(Color.FromRgb(67, 82, 103)),
                     Accent = new SolidColorBrush(Color.FromRgb(74, 168, 255))
                 };
@@ -573,7 +574,7 @@ namespace CETools.Civil3D
                     Card = Brushes.White,
                     Input = Brushes.White,
                     Foreground = Brushes.Black,
-                    Muted = Brushes.DimGray,
+                    Muted = Brushes.Black,
                     Border = new SolidColorBrush(Color.FromRgb(184, 192, 201)),
                     Accent = new SolidColorBrush(Color.FromRgb(20, 122, 220))
                 };
