@@ -12,6 +12,7 @@ using Autodesk.Civil.ApplicationServices;
 using Autodesk.Civil.DatabaseServices;
 using CETools.Core;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
+using AcSheetEntity = Autodesk.AutoCAD.DatabaseServices.Entity;
 using CivilAlignment = Autodesk.Civil.DatabaseServices.Alignment;
 using CivilProfileView = Autodesk.Civil.DatabaseServices.ProfileView;
 
@@ -49,6 +50,7 @@ namespace CETools.Civil3D
             CivilDocument civil = CivilApplication.ActiveDocument;
             if (document == null || civil == null) return;
 
+            SheetDiagnostic("START " + (sewerMode ? "SEWER" : "ROAD"));
             List<string> layouts = ReadPaperLayouts(document.Database);
             if (layouts.Count == 0)
             {
@@ -231,7 +233,9 @@ namespace CETools.Civil3D
                 "Lock every generated plan/profile viewport after fitting.",
                 new[] { "Yes", "No" });
 
+            SheetDiagnostic("OPEN SETTINGS");
             if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
+            SheetDiagnostic("SETTINGS ACCEPTED");
 
             string sheetSize = settings.Text("SheetSize");
             double segmentLength = string.Equals(
@@ -582,6 +586,7 @@ namespace CETools.Civil3D
                     }
 
                     string sheetStage = "ACTIVATE LAYOUT";
+                    SheetDiagnostic(sheetStage);
                     try
                     {
                         using (DocumentLock documentLock = document.LockDocument())
@@ -594,9 +599,11 @@ namespace CETools.Civil3D
                             // layout to be current and paper space to be active. Activate
                             // each generated layout once, then avoid UpdateScreen() inside
                             // the sheet loop to reduce unnecessary redraw/regeneration work.
+                            SheetDiagnostic("ACTIVATE LAYOUT " + layoutName);
                             manager.CurrentLayout = layoutName;
                             document.Editor.SwitchToPaperSpace();
                             sheetStage = "OPEN PAPER SPACE";
+                            SheetDiagnostic(sheetStage);
                             using (Transaction tr = document.Database.TransactionManager.StartTransaction())
                             {
                             Layout layout = FindLayout(
@@ -607,6 +614,7 @@ namespace CETools.Civil3D
                                 throw new InvalidOperationException("Generated layout could not be reopened.");
 
                             sheetStage = "OPEN PAPER BLOCK";
+                            SheetDiagnostic(sheetStage);
                             BlockTableRecord paper = tr.GetObject(
                                 layout.BlockTableRecordId,
                                 OpenMode.ForWrite,
@@ -615,6 +623,7 @@ namespace CETools.Civil3D
                                 throw new InvalidOperationException("Paper-space block could not be opened.");
 
                             sheetStage = "CLEAR OLD VIEWPORTS";
+                            SheetDiagnostic(sheetStage);
                             ClearGeneratedPaperObjects(paper, tr);
 
                             if (!planOnly && matchModelSpaceVerticalOrder)
@@ -637,6 +646,7 @@ namespace CETools.Civil3D
                             ObjectId viewportLayerId = EnsureViewportLayer(
                                 document.Database, tr, viewportLayerName);
                             sheetStage = "BUILD PAPER SLOTS";
+                            SheetDiagnostic(sheetStage);
                             List<PaperPair> pairs = BuildPaperPairs(
                                 paperWidth,
                                 paperHeight,
@@ -662,6 +672,7 @@ namespace CETools.Civil3D
                                 RoadSheetSegment segment = job.Segment;
                                 PaperPair pair = pairs[index];
                                 sheetStage = "OPEN ROAD ALIGNMENT " + road.Name;
+                                SheetDiagnostic(sheetStage);
                                 CivilAlignment alignment = tr.GetObject(
                                     road.AlignmentId, OpenMode.ForRead, false) as CivilAlignment;
                                 if (alignment == null)
@@ -699,6 +710,7 @@ namespace CETools.Civil3D
                                     sheetStage = "CREATE PLAN VIEWPORT " +
                                         RoadSheetingPlanner.StationText(planRange.StartStation) + "-" +
                                         RoadSheetingPlanner.StationText(planRange.EndStation);
+                                    SheetDiagnostic(sheetStage);
                                     Viewport plan = CreateViewport(
                                         paper,
                                         tr,
@@ -709,6 +721,7 @@ namespace CETools.Civil3D
                                     sheetStage = "FIT PLAN VIEWPORT " +
                                         RoadSheetingPlanner.StationText(planRange.StartStation) + "-" +
                                         RoadSheetingPlanner.StationText(planRange.EndStation);
+                                    SheetDiagnostic(sheetStage);
                                     if (FitPlanViewport(
                                             alignment,
                                             plan,
@@ -775,6 +788,7 @@ namespace CETools.Civil3D
                                     sheetStage = "CREATE PROFILE VIEWPORT " +
                                         RoadSheetingPlanner.StationText(segment.StartStation) + "-" +
                                         RoadSheetingPlanner.StationText(segment.EndStation);
+                                    SheetDiagnostic(sheetStage);
                                     Viewport profile = CreateViewport(
                                         paper,
                                         tr,
@@ -785,6 +799,7 @@ namespace CETools.Civil3D
                                     sheetStage = "FIT PROFILE VIEWPORT " +
                                         RoadSheetingPlanner.StationText(segment.StartStation) + "-" +
                                         RoadSheetingPlanner.StationText(segment.EndStation);
+                                    SheetDiagnostic(sheetStage);
                                     if (profileView != null &&
                                         FitProfileViewport(
                                             profileView,
@@ -808,6 +823,7 @@ namespace CETools.Civil3D
                             }
 
                             sheetStage = "COMMIT SHEET";
+                            SheetDiagnostic(sheetStage);
                             tr.Commit();
                             }
                         }
@@ -867,6 +883,18 @@ namespace CETools.Civil3D
                 perSheet);
         }
 
+        private static void SheetDiagnostic(string stage)
+        {
+            try
+            {
+                string folder = System.IO.Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "CE-TOOLS", "Logs");
+                System.IO.Directory.CreateDirectory(folder);
+                System.IO.File.AppendAllText(System.IO.Path.Combine(folder, "RoadSheets.log"),
+                    DateTime.UtcNow.ToString("O") + " " + stage + Environment.NewLine);
+            }
+            catch { }
+        }
+
         private static HashSet<ObjectId> ResolveSelectedProfileViews(
             Document document,
             out List<ObjectId> alignmentIds)
@@ -877,20 +905,20 @@ namespace CETools.Civil3D
             try { document.Editor.SetImpliedSelection(new ObjectId[0]); }
             catch { }
 
-            PromptSelectionResult selection = document.Editor.GetSelection(
-                new PromptSelectionOptions
+            var candidates = new List<ObjectId>();
+            using (var read = document.Database.TransactionManager.StartTransaction())
+                foreach (ObjectId alignmentId in CivilApplication.ActiveDocument.GetAlignmentIds())
                 {
-                    MessageForAdding = "\nSelect multiple sewer profile views: ",
-                    MessageForRemoval = "\nRemove profile views: ",
-                    AllowDuplicates = false,
-                    RejectObjectsFromNonCurrentSpace = true
-                });
-            if (selection.Status != PromptStatus.OK || selection.Value == null)
-                return selectedViews;
+                    var alignment = read.GetObject(alignmentId, OpenMode.ForRead) as CivilAlignment;
+                    if (alignment != null && IsSewerAlignment(alignment.Name))
+                        candidates.AddRange(ReadProfileViews(document.Database, read, alignmentId));
+                }
+            var selection = CivilObjectSelectionDialog.Select(document, "Sewer profile views", candidates, true);
+            if (selection.Count == 0) return selectedViews;
 
             using (Transaction tr = document.Database.TransactionManager.StartTransaction())
             {
-                foreach (ObjectId id in selection.Value.GetObjectIds())
+                foreach (ObjectId id in selection)
                 {
                     CivilProfileView view = null;
                     try { view = tr.GetObject(id, OpenMode.ForRead, false) as CivilProfileView; }
@@ -924,25 +952,13 @@ namespace CETools.Civil3D
             {
                 try { document.Editor.SetImpliedSelection(new ObjectId[0]); }
                 catch { }
-                PromptSelectionResult selection = document.Editor.GetSelection(
-                    new PromptSelectionOptions
-                    {
-                        MessageForAdding = sewerMode
-                            ? "\nSelect multiple sewer branch alignments: "
-                            : "\nSelect multiple road alignments: ",
-                        MessageForRemoval = sewerMode
-                            ? "\nRemove sewer alignments: "
-                            : "\nRemove road alignments: ",
-                        AllowDuplicates = false,
-                        RejectObjectsFromNonCurrentSpace = true
-                    });
-                if (selection.Status != PromptStatus.OK ||
-                    selection.Value == null)
-                    return result;
+                var selection = CivilObjectSelectionDialog.Select(document,
+                    sewerMode ? "Sewer alignments" : "Road alignments", civil.GetAlignmentIds().Cast<ObjectId>(), true);
+                if (selection.Count == 0) return result;
 
                 using (Transaction tr = document.Database.TransactionManager.StartTransaction())
                 {
-                    foreach (ObjectId id in selection.Value.GetObjectIds())
+                    foreach (ObjectId id in selection)
                     {
                         CivilAlignment alignment = null;
                         try { alignment = tr.GetObject(id, OpenMode.ForRead, false) as CivilAlignment; }
@@ -1007,25 +1023,18 @@ namespace CETools.Civil3D
             return best;
         }
 
-        private static List<ObjectId> ReadProfileViews(
-            Database database,
-            Transaction tr,
-            ObjectId alignmentId)
+        private static List<ObjectId> ReadProfileViews(Database database, Transaction tr, ObjectId alignmentId)
         {
             var result = new List<ObjectId>();
-            BlockTableRecord model = tr.GetObject(
-                SymbolUtilityServices.GetBlockModelSpaceId(database),
-                OpenMode.ForRead,
-                false) as BlockTableRecord;
-            if (model == null) return result;
-
-            foreach (ObjectId id in model)
+            if (alignmentId.IsNull || !alignmentId.IsValid || alignmentId.IsErased || alignmentId.Database != database) return result;
+            var alignment = tr.GetObject(alignmentId, OpenMode.ForRead) as CivilAlignment;
+            if (alignment == null) return result;
+            // Do not open unrelated model-space entities/proxies while discovering profiles.
+            foreach (ObjectId id in alignment.GetProfileViewIds())
             {
-                CivilProfileView view = null;
-                try { view = tr.GetObject(id, OpenMode.ForRead, false) as CivilProfileView; }
-                catch { }
-                if (view != null && view.AlignmentId == alignmentId)
-                    result.Add(id);
+                if (id.IsNull || !id.IsValid || id.IsErased || id.Database != database) continue;
+                var view = tr.GetObject(id, OpenMode.ForRead) as CivilProfileView;
+                if (view != null && view.AlignmentId == alignmentId) result.Add(id);
             }
             return result;
         }
@@ -1503,13 +1512,13 @@ namespace CETools.Civil3D
             try
             {
                 viewport.Locked = false;
-                viewport.On = true;
                 viewport.ViewDirection = Vector3d.ZAxis;
                 viewport.ViewTarget = target;
                 viewport.ViewCenter = Point2d.Origin;
                 viewport.TwistAngle = twist;
                 viewport.ViewHeight = viewport.Height / scale;
                 viewport.CustomScale = scale;
+                viewport.On = true;
                 viewport.Locked = lockAfter;
                 viewport.RecordGraphicsModified(true);
                 return true;
@@ -1567,7 +1576,7 @@ namespace CETools.Civil3D
             viewport.Height = height;
             paper.AppendEntity(viewport);
             tr.AddNewlyCreatedDBObject(viewport, true);
-            viewport.On = true;
+            // Enable only after its camera and scale have been configured.
             viewport.GridOn = false;
             return viewport;
         }
@@ -1695,8 +1704,8 @@ namespace CETools.Civil3D
         {
             foreach (ObjectId id in paper.Cast<ObjectId>().ToList())
             {
-                Entity entity = null;
-                try { entity = tr.GetObject(id, OpenMode.ForWrite, false) as Entity; }
+                AcSheetEntity entity = null;
+                try { entity = tr.GetObject(id, OpenMode.ForWrite, false) as AcSheetEntity; }
                 catch { }
                 if (entity == null) continue;
 

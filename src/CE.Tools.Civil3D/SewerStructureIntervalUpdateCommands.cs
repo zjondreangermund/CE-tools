@@ -19,7 +19,7 @@ using PartSize = Autodesk.Civil.DatabaseServices.Styles.PartSize;
 [assembly: CommandClass(typeof(CETools.Civil3D.SewerStructureIntervalUpdateCommands))]
 namespace CETools.Civil3D
 {
-    /// <summary>Redistributes structures by physical branch-alignment distance without redesigning grades.</summary>
+    /// <summary>Adds structures to existing pipes without removing or moving existing structures.</summary>
     public sealed class SewerStructureIntervalUpdateCommands
     {
         private const double Tolerance = 0.001;
@@ -41,14 +41,16 @@ namespace CETools.Civil3D
                         if (!network.IsReferenceObject) choices.Add(network.Name + " [" + id.Handle + "]", id);
                     }
                 if (choices.Count == 0) throw new InvalidOperationException("No editable gravity networks found.");
+                var selected = CivilObjectSelectionDialog.Select(doc, "Sewer network", choices.Values, false);
+                if (selected.Count == 0) return;
                 var settings = new ProductionSettingsDialogModel("CE Tools - Sewer Structure Intervals",
-                    "Redistribute along existing branch alignments. Ends, vertices, junctions and design changes stay fixed. " +
-                    "Minimum spacing uses drawing units. Existing elevations and grades are not redesigned. Curved or offset pipe routes require separate review.");
-                settings.AddChoice("Network", "Network", "Existing sewer network", choices.Keys.First(), "Choose a gravity sewer network.", choices.Keys);
-                settings.AddPositiveDouble("Interval", "Spacing", "Minimum interval (drawing units)", 60,
-                    "242.88 / 60 gives four equal intervals of 60.72. Fixed points closer than the minimum remain in place.");
+                    "Add structures along existing pipes. Every existing structure stays fixed. " +
+                    "Maximum spacing uses drawing units. Existing elevations and grades are not redesigned. Curved or offset pipe routes require separate review.");
+
+                settings.AddPositiveDouble("Interval", "Spacing", "Maximum interval (drawing units)", 60,
+                    "Each existing pipe is divided into equal lengths no greater than this value. Shorter pipes remain unchanged.");
                 if (!DisciplineWorkflowDialogs.EditSettings(settings)) return;
-                ObjectId networkId = choices[settings.Text("Network")];
+                ObjectId networkId = selected[0];
                 double minimum = settings.Double("Interval", 60);
                 List<Span> spans;
                 Dictionary<ObjectId, StructureState> structures;
@@ -57,12 +59,12 @@ namespace CETools.Civil3D
                 var changed = spans.Where(s => s.Changed).ToList();
                 string preview = string.Join("\n", spans.Select(s => s.Description).Take(70));
                 if (spans.Count > 70) preview += "\n... " + (spans.Count - 70) + " further spans.";
-                preview += "\n\n" + changed.Count + " spans to update; " + spans.Count(s => s.Length < minimum) +
-                    " fixed-point spans shorter than the minimum.\nExisting profile views, alignment geometry and station equations stay in place. " +
+                preview += "\n\n" + changed.Count + " pipes to subdivide; " + spans.Count(s => s.Length < minimum) +
+                    " existing pipes shorter than the maximum.\nExisting profile views, alignment geometry and station equations stay in place. " +
                     "New parts inherit their source display styles and profile/section membership. Rules are not applied.";
-                if (changed.Count == 0) { AcApplication.ShowAlertDialog("No spacing changes required.\n\n" + preview); return; }
+                if (changed.Count == 0) { CeMessageDialog.Show("Sewer intervals", "No spacing changes required.\n\n" + preview); return; }
                 if (!DisciplineWorkflowDialogs.Confirm("Sewer interval preview", preview + "\n\nApply this update?")) return;
-                int added = 0, removed = 0;
+                int added = 0;
                 Editing = true;
                 SewerNetworkDynamicSequenceManager.DiscardPendingForIntervalUpdate();
                 try
@@ -70,10 +72,10 @@ namespace CETools.Civil3D
                     using (var tr = doc.Database.TransactionManager.StartTransaction())
                     {
                         var network = (CivilNetwork)tr.GetObject(networkId, OpenMode.ForWrite);
-                        foreach (var span in changed) Apply(tr, network, span, ref added, ref removed);
+                        foreach (var span in changed) Apply(tr, network, span, ref added);
                         // Existing alignment identity and geometry must not be regenerated: profiles depend on them.
                         // Station references refresh from each part's RefAlignmentId and new XY position.
-                        foreach (var state in structures.Values.Where(s => !s.Id.IsErased)) state.Verify(tr);
+                        foreach (var state in structures.Values) state.Verify(tr);
                         VerifyNetwork(tr, network, spans);
                         Renumber(tr, network);
                         tr.Commit();
@@ -81,12 +83,12 @@ namespace CETools.Civil3D
                 }
                 finally { SewerNetworkDynamicSequenceManager.DiscardPendingForIntervalUpdate(); Editing = false; }
                 doc.Editor.Regen();
-                AcApplication.ShowAlertDialog("Sewer intervals updated.\nNew structures: " + added + "\nRemoved intermediate structures: " + removed +
+                CeMessageDialog.Show("Sewer intervals", "Sewer intervals updated.\nNew structures: " + added + "\nExisting structures retained: " + structures.Count +
                     "\nPipe/structure numbering and native labels updated. Existing branch alignments and profile views retained.");
             }
             catch (System.Exception ex)
             {
-                AcApplication.ShowAlertDialog("Sewer interval update stopped: " + ex.Message +
+                CeMessageDialog.Show("Sewer intervals", "Sewer interval update stopped: " + ex.Message +
                     "\nAny uncommitted network edits were rolled back.");
             }
         }
@@ -132,17 +134,10 @@ namespace CETools.Civil3D
                 {
                     if (current != null && edge.Low < current.End - Tolerance)
                         throw new InvalidOperationException("Overlapping pipe runs on alignment " + alignment.Name + ". Assign distinct branch alignments first.");
-                    bool join = current != null && Math.Abs(edge.Low - current.End) < Tolerance &&
-                        current.Edges.Last().HighId == edge.LowId &&
-                        !vertices.Any(v => Math.Abs(v - edge.Low) < Tolerance) &&
-                        structures[edge.LowId].Connections == 2 &&
-                        current.Edges.Last().Compatible(edge) &&
-                        Removable(tr, structures[edge.LowId], current.Edges.Last(), edge, structures);
-                    if (!join)
-                    {
-                        current = new Span { Alignment = group.Key, Branch = alignment.Name };
-                        result.Add(current);
-                    }
+                    // Each existing pipe is an independent span: never merge across an
+                    // existing manhole, even when neighbouring grades/styles match.
+                    current = new Span { Alignment = group.Key, Branch = alignment.Name };
+                    result.Add(current);
                     current.Edges.Add(edge);
                 }
                 foreach (var span in result.Where(s => s.Alignment == group.Key))
@@ -151,13 +146,13 @@ namespace CETools.Civil3D
                     anchors.AddRange(vertices.Where(v => v > span.Start + Tolerance && v < span.End - Tolerance));
                     anchors.Add(span.End);
                     for (int i = 1; i < anchors.Count; i++)
-                        span.Stations.AddRange(SewerStructureIntervalPlanner.Stations(anchors[i - 1], anchors[i], minimum).Skip(i == 1 ? 0 : 1));
+                        span.Stations.AddRange(SewerStructureIntervalPlanner.InfillStations(anchors[i - 1], anchors[i], minimum).Skip(i == 1 ? 0 : 1));
                     if (span.Stations.Count > 10001) throw new InvalidOperationException("Too many new structures requested.");
                     var old = new[] { span.Start }.Concat(span.Edges.Select(e => e.High)).ToArray();
                     span.Changed = old.Length != span.Stations.Count || old.Where((v, i) => i < span.Stations.Count && Math.Abs(v - span.Stations[i]) > Tolerance).Any();
                     if (!span.Changed) continue;
                     foreach (var edge in span.Edges)
-                        if (edge.OverrideRules || edge.Special) throw new InvalidOperationException("Pipe " + edge.Name + " has rule overrides, spanning labels or custom object data. Preserve/review these before redistributing it.");
+                        if (edge.OverrideRules || edge.Special) throw new InvalidOperationException("Pipe " + edge.Name + " has rule overrides, spanning labels or custom object data. Preserve/review these before splitting it.");
                     span.Template = structures[span.Edges[0].LowId];
                     var template = (CivilStructure)tr.GetObject(span.Template.Id, OpenMode.ForRead);
                     if (template.OverrideRuleSet) throw new InvalidOperationException("Template structure has individual rule overrides.");
@@ -177,46 +172,13 @@ namespace CETools.Civil3D
             return result;
         }
 
-        private static bool Removable(Transaction tr, StructureState middle, Edge left, Edge right, Dictionary<ObjectId, StructureState> states)
-        {
-            var part = (CivilStructure)tr.GetObject(middle.Id, OpenMode.ForRead);
-            if (!part.ExtensionDictionary.IsNull || part.OverrideRuleSet || middle.HasSpecialLabels) return false;
-            var a = states[left.LowId]; var b = states[right.HighId];
-            double f = (left.High - left.Low) / (right.High - left.Low);
-            // Retain changes in the piecewise rim/sump elevation line as well as pipe grade changes.
-            return Math.Abs(middle.Rim - (a.Rim + (b.Rim - a.Rim) * f)) < 0.000001 &&
-                Math.Abs(middle.Sump - (a.Sump + (b.Sump - a.Sump) * f)) < 0.000001 &&
-                middle.Style == a.Style && middle.Rule == a.Rule && middle.Surface == a.Surface &&
-                new HashSet<ObjectId>(middle.LabelStyles).SetEquals(a.LabelStyles) && SameProfileLabels(middle.ProfileLabels, a.ProfileLabels);
-        }
-
-        private static void Apply(Transaction tr, CivilNetwork network, Span span, ref int added, ref int removed)
+        private static void Apply(Transaction tr, CivilNetwork network, Span span, ref int added)
         {
             var seed = span.Edges[0];
             var pipe = (CivilPipe)tr.GetObject(seed.Id, OpenMode.ForWrite);
             var endEdge = span.Edges.Last();
             Point3d low = seed.AtLow, high = endEdge.AtHigh;
             bool forward = seed.A < seed.B;
-            // Merge only compatible collinear, equal-grade spans. The seed ID and its labels survive.
-            if (span.Edges.Count > 1)
-            {
-                pipe.ConnectToStructure(forward ? ConnectorPositionType.End : ConnectorPositionType.Start, endEdge.HighId, true);
-                pipe.StartPoint = forward ? low : high;
-                pipe.EndPoint = forward ? high : low;
-                foreach (var edge in span.Edges.Skip(1))
-                {
-                    var redundant = (CivilPipe)tr.GetObject(edge.Id, OpenMode.ForWrite);
-                    redundant.Disconnect(ConnectorPositionType.Start);
-                    redundant.Disconnect(ConnectorPositionType.End);
-                    redundant.Erase();
-                }
-                foreach (var edge in span.Edges.Take(span.Edges.Count - 1))
-                {
-                    var redundant = (CivilStructure)tr.GetObject(edge.HighId, OpenMode.ForWrite);
-                    if (redundant.ConnectedPipesCount != 0) throw new InvalidOperationException("An intermediate structure still has connections; update cancelled.");
-                    redundant.Erase(); removed++;
-                }
-            }
             var live = new List<ObjectId> { seed.Id };
             var createdStates = new List<StructureState>();
             foreach (var node in span.NewNodes)
@@ -477,6 +439,7 @@ namespace CETools.Civil3D
             }
             internal void Verify(Transaction tr)
             {
+                if (Id.IsErased) throw new InvalidOperationException("An existing structure was removed; update cancelled.");
                 var s = (CivilStructure)tr.GetObject(Id, OpenMode.ForRead);
                 if (s.Position.DistanceTo(Position) > Tolerance || Math.Abs(ReadDouble(s, "RimElevation") - Rim) > Tolerance ||
                     Math.Abs(ReadDouble(s, "SumpElevation") - Sump) > Tolerance || (ObjectId)Read(s, "StyleId") != Style || s.RuleSetStyleId != Rule || s.RefSurfaceId != Surface)

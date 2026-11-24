@@ -119,12 +119,7 @@ namespace CETools.Civil3D
 
         public static bool Confirm(string title, string message)
         {
-            return System.Windows.MessageBox.Show(
-                message ?? string.Empty,
-                title ?? "CE Tools",
-                MessageBoxButton.YesNo,
-                MessageBoxImage.Question,
-                MessageBoxResult.No) == MessageBoxResult.Yes;
+            return CeMessageDialog.Show(title, message, true);
         }
     }
 

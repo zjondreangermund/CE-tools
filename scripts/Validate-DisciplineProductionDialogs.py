@@ -21,6 +21,10 @@ def read(name: str) -> str:
 
 dialogs = read("DisciplineWorkflowDialogs.cs")
 workflow_repair = read("WorkflowRepairCommands.cs")
+confirmation = read("CeMessageDialog.cs")
+for marker in ('confirm ? "Apply" : "OK"', 'Content = "Cancel"', "IsCancel = true", "window.DialogResult = true", "CeInterfaceTheme.Apply(window)", "AcApplication.ShowModalWindow(window) == true"):
+    if marker not in confirmation:
+        errors.append(f"Shared themed confirmation is missing: {marker}")
 disciplines = {
     "StormwaterProductionCommands.cs": (
         "CE Tools — Stormwater Workflow",
@@ -45,7 +49,7 @@ for marker in (
     "class ProductionStyleCatalog",
     "SelectWorkflow(",
     "EditSettings(",
-    "MessageBoxButton.YesNo",
+    "CeMessageDialog.Show(title, message, true)",
     "ProductionSettingsFieldKind.Choice",
     'new[] { "1.8", "2.0", "2.5", "3.5", "5.0" }',
 ):
