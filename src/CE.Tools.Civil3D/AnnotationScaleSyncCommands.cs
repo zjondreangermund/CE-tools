@@ -101,36 +101,6 @@ namespace CETools.Civil3D
             LastScaleByDatabase[document.Database] = ReadCurrentScaleName();
             return;
 
-            string currentScale = ReadCurrentScaleName();
-            string previousScale;
-            if (LastScaleByDatabase.TryGetValue(
-                    document.Database,
-                    out previousScale) &&
-                string.Equals(
-                    previousScale,
-                    currentScale,
-                    StringComparison.OrdinalIgnoreCase))
-                return;
-
-            _busy = true;
-            try
-            {
-                using (DocumentLock documentLock = document.LockDocument())
-                {
-                    ApplyCurrentScale(document);
-                }
-                LastScaleByDatabase[document.Database] = currentScale;
-                document.Editor.Regen();
-            }
-            catch
-            {
-                // Retry on the next idle cycle; scale changes can briefly occur
-                // while Civil 3D owns the document or is rebuilding labels.
-            }
-            finally
-            {
-                _busy = false;
-            }
         }
 
         internal static int ApplyCurrentScale(Document document)

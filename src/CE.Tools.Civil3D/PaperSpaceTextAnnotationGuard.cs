@@ -15,7 +15,7 @@ namespace CETools.Civil3D
     /// <summary>
     /// Protect title blocks in Civil 3D 2024. Never rewrite model-space geometry,
     /// nested block definitions, annotation scale lists, text values or heights.
-    /// A deferred once-per-document pass repairs existing paper-space text.
+    /// Repair is available only through the explicit CE_PAPERTEXTANNOOFF command.
     /// </summary>
     public sealed class PaperSpaceTextAnnotationCommands
     {
@@ -31,88 +31,16 @@ namespace CETools.Civil3D
 
     internal static class PaperSpaceTextAnnotationGuard
     {
-        private static readonly HashSet<Database> Repaired =
-            new HashSet<Database>();
-        private static bool _initialized;
-        private static bool _busy;
-        private static DateTime _lastAttempt = DateTime.MinValue;
-
-        internal static void Initialize()
-        {
-            if (_initialized) return;
-            _initialized = true;
-            DocumentCollection docs = AcApplication.DocumentManager;
-            docs.DocumentActivated += OnDocumentActivated;
-            docs.DocumentCreated += OnDocumentActivated;
-            docs.DocumentToBeDestroyed += OnDocumentDestroyed;
-            AcApplication.Idle += OnIdle;
-        }
-
-        internal static void Terminate()
-        {
-            if (!_initialized) return;
-            _initialized = false;
-            DocumentCollection docs = AcApplication.DocumentManager;
-            docs.DocumentActivated -= OnDocumentActivated;
-            docs.DocumentCreated -= OnDocumentActivated;
-            docs.DocumentToBeDestroyed -= OnDocumentDestroyed;
-            AcApplication.Idle -= OnIdle;
-            Repaired.Clear();
-        }
-
-        private static void OnDocumentActivated(
-            object sender, DocumentCollectionEventArgs e)
-        {
-            // Do not transact here: Civil 3D is still switching/opening documents.
-            // The next quiet Idle will process any unvisited active drawing.
-        }
-
-        private static void OnDocumentDestroyed(
-            object sender, DocumentCollectionEventArgs e)
-        {
-            if (e != null && e.Document != null)
-                Repaired.Remove(e.Document.Database);
-        }
-
-        private static void OnIdle(object sender, EventArgs e)
-        {
-            if (!_initialized || _busy ||
-                (DateTime.UtcNow - _lastAttempt).TotalMilliseconds < 750)
-                return;
-            Document document = AcApplication.DocumentManager.MdiActiveDocument;
-            if (document == null || Repaired.Contains(document.Database))
-                return;
-            _lastAttempt = DateTime.UtcNow;
-            try
-            {
-                string commands = Convert.ToString(
-                    AcApplication.GetSystemVariable("CMDNAMES"),
-                    CultureInfo.InvariantCulture);
-                if (!string.IsNullOrWhiteSpace(commands)) return;
-                _busy = true;
-                int changed = RepairCore(document, false);
-                Repaired.Add(document.Database);
-                if (changed > 0)
-                {
-                    document.Editor.WriteMessage(
-                        "\nCE Tools: switched {0} paper-space text/attribute/leader " +
-                        "object(s) to Annotative=No. Model space and text sizes unchanged. " +
-                        "Save the drawing to retain this correction.", changed);
-                }
-            }
-            catch (System.Exception)
-            {
-                // Document opening, read-only state, or a native regen can temporarily
-                // prevent a transaction. Retry on the next quiet Idle.
-            }
-            finally { _busy = false; }
-        }
+        // Manual command only. Opening/activating a drawing must not alter
+        // annotative flags, contexts, heights, styles or any saved appearance.
+        // Keep these hooks for compatibility with existing installer patches.
+        internal static void Initialize() { }
+        internal static void Terminate() { }
 
         internal static void Repair(Document document, bool report)
         {
             if (document == null) return;
             int changed = RepairCore(document, report);
-            Repaired.Add(document.Database);
             if (report)
                 document.Editor.WriteMessage(
                     "\nCE_PAPERTEXTANNOOFF finished: changed={0}; " +

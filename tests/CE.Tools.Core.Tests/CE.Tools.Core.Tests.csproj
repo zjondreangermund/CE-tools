@@ -11,4 +11,4 @@
   <ItemGroup>
     <Compile Include="../../src/CE.Tools.Civil3D/SewerStructureIntervalPlanner.cs" Link="SewerStructureIntervalPlanner.cs" />
   </ItemGroup>
-</Project>
+<ItemGroup><Compile Include="../../src/CE.Tools.Civil3D/DrawingOpenAppearancePolicy.cs" Link="DrawingOpenAppearancePolicy.cs" /></ItemGroup></Project>

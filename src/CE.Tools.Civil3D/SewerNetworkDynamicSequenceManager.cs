@@ -1009,6 +1009,7 @@ namespace CETools.Civil3D
                 _database.ObjectErased -= OnObjectErased;
             }
             _database = null;
+            _pending = false; // A refresh must never leak into a newly opened drawing.
         }
 
         private static void OnObjectErased(
@@ -1016,6 +1017,8 @@ namespace CETools.Civil3D
             ObjectErasedEventArgs eventArgs)
         {
             if (_busy || eventArgs == null || eventArgs.DBObject == null) return;
+            if (!DrawingOpenAppearancePolicy.IsUserEditCommand(Convert.ToString(
+                AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture))) return;
             if (eventArgs.DBObject is CivilPipe ||
                 eventArgs.DBObject is CivilStructure ||
                 eventArgs.DBObject is CivilNetwork)
@@ -1027,6 +1030,8 @@ namespace CETools.Civil3D
         private static void OnObjectChanged(object sender, ObjectEventArgs eventArgs)
         {
             if (_busy || eventArgs == null || eventArgs.DBObject == null) return;
+            if (!DrawingOpenAppearancePolicy.IsUserEditCommand(Convert.ToString(
+                AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture))) return;
             if (eventArgs.DBObject is CivilPipe ||
                 eventArgs.DBObject is CivilStructure ||
                 eventArgs.DBObject is CivilNetwork)
