@@ -59,6 +59,10 @@ namespace CETools.Civil3D
                 "Select a drawing dimension style. CE Tools creates/updates an annotative copy so the source style and existing dimensions remain unchanged.",
                 dimensionStyles);
             settings.AddChoice(
+                "MeasurementUnits", "01 Dimension", "Dimension measurement units", "Metres (m)",
+                "Units for new dimension values. Existing dimensions, text heights and drawing units are preserved.",
+                new[] { "Metres (m)", "Millimetres (mm)" });
+            settings.AddChoice(
                 "PlacementUnits", "02 Placement", "Placement distance units",
                 "Millimetres",
                 "Choose metres or millimetres for dimension offset and radius leader extension. Values are model distances, not paper annotation millimetres.",
@@ -155,6 +159,10 @@ namespace CETools.Civil3D
                         document.Editor.WriteMessage("\nCE_MULTIDIM stopped. The selected dimension style could not be prepared.");
                         return;
                     }
+
+                    var unitsStyle = (DimStyleTableRecord)transaction.GetObject(styleId, OpenMode.ForWrite);
+                    unitsStyle.Dimlfac = settings.Text("MeasurementUnits") == "Millimetres (mm)"
+                        ? 1000.0 / modelUnitsPerMetre : 1.0 / modelUnitsPerMetre;
 
                     BlockTableRecord space = transaction.GetObject(
                         document.Database.CurrentSpaceId,
@@ -629,7 +637,8 @@ namespace CETools.Civil3D
             string cloneName = safeBaseName.StartsWith("CE-ANN-", StringComparison.OrdinalIgnoreCase)
                 ? safeBaseName
                 : "CE-ANN-" + safeBaseName;
-            if (cloneName.Length > 250) cloneName = cloneName.Substring(0, 250);
+            if (cloneName.Length > 210) cloneName = cloneName.Substring(0, 210);
+            cloneName += "-" + Guid.NewGuid().ToString("N");
 
             DimStyleTableRecord target;
             ObjectId targetId;

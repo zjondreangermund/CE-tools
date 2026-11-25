@@ -34,6 +34,9 @@ jobs:
             throw 'Civil 3D 2023 repaired PluginEntry.cs does not use direct panel items.'
           }
 
+      - name: Compile sheet commands against Autodesk API references
+        run: dotnet build tests/CE.Tools.SheetDialogs.ApiCompile.Tests -v:minimal
+
       - name: Preserve saved drawing appearance on opening
         run: python3 scripts/Validate-DrawingOpenAppearance.py
 

@@ -46,6 +46,7 @@ namespace CETools.Civil3D
 
         private void CreateSheets(bool sewerMode)
         {
+            string commandPrefix = sewerMode ? "CE_SEWERSHEETS" : "CE_ROADAUTOSHEETS";
             Document document = AcApplication.DocumentManager.MdiActiveDocument;
             CivilDocument civil = CivilApplication.ActiveDocument;
             if (document == null || civil == null) return;
@@ -57,7 +58,7 @@ namespace CETools.Civil3D
                 document.Editor.WriteMessage(
                     sewerMode
                         ? "\nCE_SEWERSHEETS: create at least one paper-space layout for the sheet template."
-                        : "\nCE_ROADAUTOSHEETS: create at least one paper-space layout to use as the sheet template.");
+                        : "\n" + commandPrefix + ": create at least one paper-space layout to use as the sheet template.");
                 return;
             }
 
@@ -284,7 +285,7 @@ namespace CETools.Civil3D
                 : ObjectId.Null;
             if (addNorthArrow && northArrowBlockId.IsNull)
                 document.Editor.WriteMessage(
-                    "\nCE_ROADAUTOSHEETS: north arrows were requested but no north-arrow block was selected/resolved. Sheets will continue without north arrows.");
+                    "\n" + commandPrefix + ": north arrows were requested but no north-arrow block was selected/resolved. Sheets will continue without north arrows.");
             double planClearance = settings.Double("PlanClearance", 40.0);
             double planTopTolerance = settings.Double("PlanTopTolerance", 35.0);
             double planBottomTolerance = settings.Double("PlanBottomTolerance", 35.0);
@@ -330,7 +331,7 @@ namespace CETools.Civil3D
                 document.Editor.WriteMessage(
                     sewerMode
                         ? "\nCE_SEWERSHEETS: no sewer branch alignments were selected/found."
-                        : "\nCE_ROADAUTOSHEETS: no road alignments were selected/found.");
+                        : "\n" + commandPrefix + ": no road alignments were selected/found.");
                 return;
             }
 
@@ -376,8 +377,8 @@ namespace CETools.Civil3D
             if (roads.Count == 0)
             {
                 document.Editor.WriteMessage(planOnly
-                    ? "\nCE_ROADAUTOSHEETS: no valid road alignments were selected."
-                    : "\nCE_ROADAUTOSHEETS: none of the selected roads has a linked profile view.");
+                    ? "\n" + commandPrefix + ": no valid road alignments were selected."
+                    : "\n" + commandPrefix + ": none of the selected alignments has a linked profile view. Run CE_SEWPROFILE for sewer branches, or select existing profile views in the sheet dialog.");
                 return;
             }
 
@@ -410,7 +411,7 @@ namespace CETools.Civil3D
                      pairHeight > usableHeight + 0.01))
                 {
                     document.Editor.WriteMessage(
-                        "\nCE_ROADAUTOSHEETS: viewport dimensions do not fit {0}. " +
+                        "\n" + commandPrefix + ": viewport dimensions do not fit {0}. " +
                         "Available width={1:0.##} mm, height={2:0.##} mm; " +
                         "requested plan={3:0.##} x {4:0.##} mm, profile={5:0.##} x {6:0.##} mm. " +
                         "Reduce dimensions/reserves or choose a larger sheet.",
@@ -438,7 +439,7 @@ namespace CETools.Civil3D
                 if (!allowViewportOverflow && maxLength <= Tol)
                 {
                     document.Editor.WriteMessage(
-                        "\nCE_ROADAUTOSHEETS: viewport width/scale cannot fit even " +
+                        "\n" + commandPrefix + ": viewport width/scale cannot fit even " +
                         "the configured clearance. Increase width, reduce clearance, " +
                         "or use a smaller viewport scale.");
                     return;
@@ -450,7 +451,7 @@ namespace CETools.Civil3D
                     if (adjustedLength <= Tol)
                         adjustedLength = maxLength * 0.95;
                     document.Editor.WriteMessage(
-                        "\nCE_ROADAUTOSHEETS: a {0:0.##} m segment will not fit " +
+                        "\n" + commandPrefix + ": a {0:0.##} m segment will not fit " +
                         "the specified paper width and scale. Using {1:0.##} m " +
                         "segments to preserve the requested 1:N scale.",
                         segmentLength, adjustedLength);
@@ -563,7 +564,7 @@ namespace CETools.Civil3D
                         string previousName = layoutName;
                         layoutName = UniqueLayoutName(document.Database, layoutName);
                         document.Editor.WriteMessage(
-                            "\nCE_ROADAUTOSHEETS: existing sheet '{0}' is preserved. " +
+                            "\n" + commandPrefix + ": existing sheet '{0}' is preserved. " +
                             "Creating '{1}' to avoid unsafe live-viewport replacement.",
                             previousName, layoutName);
                     }
@@ -852,7 +853,7 @@ namespace CETools.Civil3D
             catch (System.Exception exception)
             {
                 document.Editor.WriteMessage(
-                    "\nCE_ROADAUTOSHEETS: could not restore original layout '{0}'. {1}",
+                    "\n" + commandPrefix + ": could not restore original layout '{0}'. {1}",
                     originalLayoutName,
                     exception.Message);
             }
@@ -869,7 +870,7 @@ namespace CETools.Civil3D
             }
 
             document.Editor.WriteMessage(
-                "\nCE_ROADAUTOSHEETS complete. Roads={0}; layouts created={1}; refreshed={2}; plan viewports={3}; curve-split plan viewports={4}; profile viewports={5}; missing profile ranges={6}; warnings={7}; sheet={8}; segment length={9:0.###} m; sets/sheet={10}.",
+                "\n" + commandPrefix + " complete. Roads={0}; layouts created={1}; refreshed={2}; plan viewports={3}; curve-split plan viewports={4}; profile viewports={5}; missing profile ranges={6}; warnings={7}; sheet={8}; segment length={9:0.###} m; sets/sheet={10}.",
                 roads.Count,
                 sheetsCreated,
                 sheetsRefreshed,
@@ -1516,8 +1517,11 @@ namespace CETools.Civil3D
                 viewport.ViewTarget = target;
                 viewport.ViewCenter = Point2d.Origin;
                 viewport.TwistAngle = twist;
-                viewport.ViewHeight = viewport.Height / scale;
-                viewport.CustomScale = scale;
+                double requestedViewHeight = viewport.Height / scale;
+                if (double.IsNaN(requestedViewHeight) || double.IsInfinity(requestedViewHeight) ||
+                    requestedViewHeight <= Tol || requestedViewHeight > 1.0e12) return false;
+                // ViewHeight sets the scale without a second native camera resize.
+                viewport.ViewHeight = requestedViewHeight;
                 viewport.On = true;
                 viewport.Locked = lockAfter;
                 viewport.RecordGraphicsModified(true);
@@ -1569,6 +1573,9 @@ namespace CETools.Civil3D
             double width,
             double height)
         {
+            if (double.IsNaN(width) || double.IsInfinity(width) || width <= Tol || width > 1.0e9 ||
+                double.IsNaN(height) || double.IsInfinity(height) || height <= Tol || height > 1.0e9)
+                throw new InvalidOperationException("Invalid viewport dimensions.");
             var viewport = new Viewport();
             viewport.SetDatabaseDefaults(paper.Database);
             viewport.CenterPoint = center;

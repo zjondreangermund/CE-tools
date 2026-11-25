@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Windows.Forms;
 using Wpf = System.Windows;
 using WpfControls = System.Windows.Controls;
@@ -17,7 +18,7 @@ using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
 namespace CETools.Civil3D
 {
-    /// <summary>Imports sheets and their model without opening an editor document.</summary>
+    /// <summary>Imports Paper Space layouts, floating viewports and optional Model Space content.</summary>
     public sealed class DrawingSheetImportCommands
     {
         [CommandMethod("CE_TOOLS", "CE_IMPORTSHEETS", CommandFlags.Modal)]
@@ -68,57 +69,56 @@ namespace CETools.Civil3D
                         WriteTransferSetting("ImportedLayouts", string.Join("|", selected.Select(x => x.Name)));
                         WriteTransferSetting("TransferMode", picker.SelectedTransferMode);
 
-                        if (string.Equals(picker.SelectedTransferMode, "MODEL", StringComparison.OrdinalIgnoreCase))
+                        ImportResult result;
+                        using (document.LockDocument())
                         {
-                            int copied;
-                            using (document.LockDocument())
-                                copied = CopyVisibleViewportModelContent(source, document.Database, selected);
-                            try { document.Editor.Regen(); } catch { }
-                            Show("Model Space viewport-content transfer completed.\\n\\nPaper Space tabs selected: " +
-                                selected.Count + "\\nEvery active viewport examined.\\nModel Space objects copied: " + copied +
-                                "\\nObjects retain their original Model Space coordinates. Paper Space objects and title blocks were not copied.");
-                        }
-                        else if (string.Equals(picker.SelectedTransferMode, "TITLE", StringComparison.OrdinalIgnoreCase))
-                        {
-                            List<Sheet> destinationSheets = ReadSheets(document.Database);
-                            var destinationByName = destinationSheets.ToDictionary(x => x.Name, StringComparer.OrdinalIgnoreCase);
-                            int copied = 0;
-                            var reports = new List<string>();
-                            using (document.LockDocument())
+                            if (string.Equals(picker.SelectedTransferMode, "MODEL", StringComparison.OrdinalIgnoreCase))
                             {
-                                foreach (Sheet sourceSheet in selected)
-                                {
-                                    Sheet destinationSheet;
-                                    if (!destinationByName.TryGetValue(sourceSheet.Name, out destinationSheet))
-                                    {
-                                        reports.Add(sourceSheet.Name + ": no destination layout with the same name; skipped.");
-                                        continue;
-                                    }
-                                    string imageReport;
-                                    int count = CopyTitleBlock(source, document.Database, sourceSheet,
-                                        new Vector3d(0, 0, 0), path, destinationSheet.Name, out imageReport);
-                                    copied += count;
-                                    reports.Add(sourceSheet.Name + ": " + count + " title-block objects copied.");
-                                }
+                                // Import source tabs and every source viewport, plus Model Space once.
+                                // Do not import title blocks or other non-viewport Paper Space objects.
+                                result = CopySheets(source, document.Database, selected,
+                                    includeModelSpace: true, includePaperSpaceEntities: false, includeViewports: true);
                             }
-                            try { document.Editor.Regen(); } catch { }
-                            Show("Title-block-only transfer completed. Objects copied: " + copied + ".\\n\\n" +
-                                string.Join("\\n", reports) +
-                                "\\n\\nOnly non-viewport Paper Space entities were copied, at their original Paper Space coordinates.");
+                            else if (string.Equals(picker.SelectedTransferMode, "TITLE", StringComparison.OrdinalIgnoreCase))
+                            {
+                                // Import source tabs directly even when their names do not exist in the
+                                // destination. Bring across all Paper Space objects and viewports, but
+                                // do not clone source Model Space content.
+                                result = CopySheets(source, document.Database, selected,
+                                    includeModelSpace: false, includePaperSpaceEntities: true, includeViewports: false);
+                            }
+                            else
+                            {
+                                // Complete transfer: layouts, all Paper Space entities, all viewports,
+                                // and Model Space at the source drawing's original coordinates.
+                                result = CopySheets(source, document.Database, selected,
+                                    includeModelSpace: true, includePaperSpaceEntities: true, includeViewports: true);
+                            }
                         }
-                        else
-                        {
-                            ImportResult result;
-                            using (document.LockDocument())
-                                result = CopySheets(source, document.Database, selected);
-                            try { document.Editor.Regen(); }
-                            catch { /* The import is already committed; report it as successful. */ }
-                            Show("Imported " + result.Names.Count + " layout(s), " + result.PaperCount +
-                                " paper-space objects (including " + result.ViewportCount + " viewports), and " +
-                                result.ModelCount + " model-space objects.\\n\\n" + string.Join("\\n", result.Names) +
-                                "\\n\\nThe model was copied once at its original coordinates. Existing model geometry may also appear in these views." +
-                                "\\nExternal references, images and data links still require their supporting files. Printer configurations and fonts must be installed locally.");
-                        }
+
+                        try { document.Editor.Regen(); } catch { }
+                        ZoomExtentsInImportedLayouts(document, result.ImportedLayoutNames);
+
+                        string modeDescription =
+                            string.Equals(picker.SelectedTransferMode, "MODEL", StringComparison.OrdinalIgnoreCase)
+                                ? "Model Space plus source viewport frames (no title blocks or other Paper Space objects)"
+                                : string.Equals(picker.SelectedTransferMode, "TITLE", StringComparison.OrdinalIgnoreCase)
+                                    ? "Source Paper Space tabs and title-block/Paper Space entities only (no source Model Space or viewports)"
+                                    : "Complete Paper Space and Model Space transfer";
+
+                        Show(modeDescription + " completed.\\n\\n" +
+                            "Layouts imported: " + result.ImportedLayoutNames.Count +
+                            "\\nPaper Space objects copied: " + result.PaperCount +
+                            "\\nSource floating viewports found: " + result.ViewportCount +
+                            "\\nFloating viewports created: " + result.ViewportCreatedCount +
+                            "\\nModel Space objects copied: " + result.ModelCount +
+                            "\\n\\n" + string.Join("\\n", result.Names) +
+                            (result.ViewportErrors.Count > 0
+                                ? "\\n\\nViewport creation issues:\\n" + string.Join("\\n", result.ViewportErrors)
+                                : string.Empty) +
+                            "\\n\\nFor complete/model-only transfers, source viewport positions, sizes, view centres, directions, scales, twist angles and lock states are retained. " +
+                            "Title-block-only transfer creates the source tabs directly and copies only their non-viewport Paper Space entities. " +
+                            "Destination layout names are made unique if a source tab name already exists.");
                     }
                 }
             }
@@ -193,66 +193,97 @@ namespace CETools.Civil3D
 
         private static int CopyVisibleViewportModelContent(Database source, Database destination, IList<Sheet> sheets)
         {
-            var selectedIds = new HashSet<ObjectId>();
-            using (Transaction tr = source.TransactionManager.StartTransaction())
+            if (sheets == null || sheets.Count == 0)
+                throw new InvalidOperationException("Select at least one source Paper Space tab.");
+
+            ObjectIdCollection modelEntityIds = new ObjectIdCollection();
+            int viewportCount = 0;
+            using (Transaction read = source.TransactionManager.StartTransaction())
             {
-                BlockTable blocks = (BlockTable)tr.GetObject(source.BlockTableId, OpenMode.ForRead);
-                ObjectId modelId = blocks[BlockTableRecord.ModelSpace];
-                BlockTableRecord model = (BlockTableRecord)tr.GetObject(modelId, OpenMode.ForRead);
-                var modelEntities = new List<Entity>();
-                foreach (ObjectId id in model)
+                BlockTable sourceBlocks = (BlockTable)read.GetObject(source.BlockTableId, OpenMode.ForRead);
+                ObjectId sourceModelId = sourceBlocks[BlockTableRecord.ModelSpace];
+                BlockTableRecord sourceModel = (BlockTableRecord)read.GetObject(sourceModelId, OpenMode.ForRead);
+
+                foreach (ObjectId id in sourceModel)
                 {
-                    Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
-                    if (entity != null && !entity.IsErased) modelEntities.Add(entity);
+                    if (id.IsNull || id.IsErased) continue;
+                    Entity entity = read.GetObject(id, OpenMode.ForRead, false) as Entity;
+                    if (entity != null && !entity.IsErased)
+                        modelEntityIds.Add(id);
                 }
 
+                // Validate that selected layouts really contain floating viewports.
+                // Do not use a calculated viewport polygon to filter Model Space entities:
+                // DCS/WCS transforms and clipping can incorrectly reject every entity.
                 foreach (Sheet sheet in sheets)
                 {
-                    Layout layout = tr.GetObject(sheet.Id, OpenMode.ForRead) as Layout;
+                    Layout layout = read.GetObject(sheet.Id, OpenMode.ForRead, false) as Layout;
                     if (layout == null) continue;
-                    BlockTableRecord paper = tr.GetObject(layout.BlockTableRecordId, OpenMode.ForRead) as BlockTableRecord;
+                    BlockTableRecord paper = read.GetObject(layout.BlockTableRecordId, OpenMode.ForRead, false) as BlockTableRecord;
                     if (paper == null) continue;
+
+                    bool skippedOverallViewport = false;
                     foreach (ObjectId paperId in paper)
                     {
-                        Autodesk.AutoCAD.DatabaseServices.Viewport viewport = tr.GetObject(paperId, OpenMode.ForRead, false) as Autodesk.AutoCAD.DatabaseServices.Viewport;
-                        if (viewport == null || viewport.Number <= 1 || !viewport.On || viewport.PerspectiveOn ||
-                            viewport.Width <= 0 || viewport.Height <= 0 || viewport.ViewHeight <= 0) continue;
-                        List<Point3d> polygon = GetViewportModelPolygon(viewport);
-                        if (polygon.Count < 3) continue;
-                        foreach (Entity entity in modelEntities)
-                        {
-                            try
-                            {
-                                Extents3d ext = entity.GeometricExtents;
-                                if (ExtentsIntersectsViewport(ext, polygon)) selectedIds.Add(entity.ObjectId);
-                            }
-                            catch { /* Non-extents entities cannot be spatially tested reliably. */ }
-                        }
+                        Autodesk.AutoCAD.DatabaseServices.Viewport viewport =
+                            read.GetObject(paperId, OpenMode.ForRead, false) as Autodesk.AutoCAD.DatabaseServices.Viewport;
+                        if (viewport == null) continue;
+
+                        // Match the import routine: skip only the first overall viewport (#1).
+                        // This also handles side-database files that report Number=1 for
+                        // additional viewport entities.
+                        bool isOverallViewport = viewport.Number == 1 && !skippedOverallViewport;
+                        if (viewport.Number == 1)
+                            skippedOverallViewport = true;
+
+                        if (!isOverallViewport)
+                            viewportCount++;
                     }
                 }
-                tr.Commit();
+                read.Commit();
             }
 
-            if (selectedIds.Count == 0) return 0;
-            var ids = new ObjectIdCollection();
-            foreach (ObjectId id in selectedIds) ids.Add(id);
+            if (viewportCount == 0)
+                throw new InvalidOperationException(
+                    "No active floating viewports were found on the selected source Paper Space tabs. " +
+                    "Choose layouts that contain viewports, or use Complete Paper Space transfer.");
+
+            if (modelEntityIds.Count == 0)
+                throw new InvalidOperationException("The source drawing's Model Space contains no entities to copy.");
+
             using (Transaction write = destination.TransactionManager.StartTransaction())
             {
                 BlockTable targetBlocks = (BlockTable)write.GetObject(destination.BlockTableId, OpenMode.ForRead);
                 ObjectId targetModel = targetBlocks[BlockTableRecord.ModelSpace];
+
                 using (var mapping = new IdMapping())
                 {
-                    source.WblockCloneObjects(ids, targetModel, mapping, DuplicateRecordCloning.MangleName, false);
-                    int count = 0;
-                    foreach (ObjectId id in ids)
+                    source.WblockCloneObjects(
+                        modelEntityIds,
+                        targetModel,
+                        mapping,
+                        DuplicateRecordCloning.MangleName,
+                        false);
+
+                    int copied = 0;
+                    var failures = new List<string>();
+                    foreach (ObjectId id in modelEntityIds)
                     {
                         IdPair pair = mapping[id];
                         if (!pair.IsCloned || pair.Value.IsNull || pair.Value.IsErased)
-                            throw new InvalidOperationException("A visible viewport object could not be copied: " + id.Handle);
-                        count++;
+                            failures.Add(id.Handle.ToString());
+                        else
+                            copied++;
                     }
+
+                    if (failures.Count > 0)
+                        throw new InvalidOperationException(
+                            "Only " + copied + " of " + modelEntityIds.Count +
+                            " Model Space entities were copied. Failed source handles: " +
+                            string.Join(", ", failures.Take(20)));
+
                     write.Commit();
-                    return count;
+                    return copied;
                 }
             }
         }
@@ -398,19 +429,24 @@ namespace CETools.Civil3D
                     source.CloseInput(true);
                     List<Sheet> sourceSheets = ReadSheets(source);
                     List<Sheet> destinationSheets = ReadSheets(document.Database);
-                    if (sourceSheets.Count == 0 || destinationSheets.Count == 0)
+                    if (sourceSheets.Count == 0)
                     {
-                        Show("The source or current drawing does not contain paper-space layouts.");
+                        Show("The source drawing does not contain any Paper Space layouts.");
+                        return;
+                    }
+                    if (destinationSheets.Count == 0)
+                    {
+                        Show("The destination drawing does not contain any Paper Space layouts.");
                         return;
                     }
 
                     var picker = new TitleBlockTransferWindow(path, sourceSheets, destinationSheets);
                     if (AcApplication.ShowModalWindow(picker) != true) return;
                     Sheet sourceSheet = picker.SelectedSourceSheet;
-                    List<string> targets = picker.SelectedDestinationLayouts;
+                    List<string> destinationLayouts = picker.SelectedDestinationLayouts ?? new List<string>();
                     WriteTransferSetting("TitleBlockSourceLayout", sourceSheet == null ? string.Empty : sourceSheet.Name);
-                    WriteTransferSetting("TitleBlockDestinationLayouts", string.Join("|", targets ?? new List<string>()));
-                    if (sourceSheet == null || targets.Count == 0) return;
+                    WriteTransferSetting("TitleBlockDestinationLayouts", string.Join("|", destinationLayouts));
+                    if (sourceSheet == null || destinationLayouts.Count == 0) return;
 
                     Point3d sourceBase = new Point3d(picker.SourceBaseX, picker.SourceBaseY, 0.0);
                     Point3d insertionPoint;
@@ -426,31 +462,27 @@ namespace CETools.Civil3D
                     WriteTransferSetting("TitleBlockInsertionZ", insertionPoint.Z.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
                     Vector3d displacement = insertionPoint - sourceBase;
 
-                    if (document.Database.TileMode)
-                    {
-                        Show("Activate a paper-space layout in the destination drawing first.");
-                        return;
-                    }
-
                     int totalCopied = 0;
                     var reports = new List<string>();
                     using (document.LockDocument())
                     {
-                        foreach (string layoutName in targets)
+                        foreach (string destinationLayoutName in destinationLayouts)
                         {
                             string imageReport;
                             int copied = CopyTitleBlock(source, document.Database, sourceSheet,
-                                displacement, path, layoutName, out imageReport);
+                                displacement, path, destinationLayoutName, out imageReport);
                             totalCopied += copied;
-                            reports.Add(layoutName + ": " + copied + " objects copied.");
+                            reports.Add(destinationLayoutName + ": " + copied + " title-block objects copied.");
                             if (!string.IsNullOrWhiteSpace(imageReport)) reports.Add(imageReport);
                         }
                     }
+
                     document.Editor.Regen();
-                    Show("Copied title block from '" + sourceSheet.Name + "' to " + targets.Count +
-                        " destination layout(s). Total objects copied: " + totalCopied + ".\n\n" +
-                        string.Join("\n", reports) +
-                        "\n\nSource base point: (" + sourceBase.X.ToString("0.###") + ", " +
+                    Show("Copied title block from source tab '" + sourceSheet.Name +
+                        "' into " + destinationLayouts.Count + " selected destination Paper Space tab(s)." +
+                        "\\nTotal objects copied: " + totalCopied + "." +
+                        "\\n\\n" + string.Join("\\n", reports) +
+                        "\\n\\nSource base point: (" + sourceBase.X.ToString("0.###") + ", " +
                         sourceBase.Y.ToString("0.###") + "). Destination insertion point was picked on screen.");
                 }
             }
@@ -552,6 +584,44 @@ namespace CETools.Civil3D
             }
         }
 
+        private static string CreateTitleBlockDestinationLayout(Database source, Database destination, Sheet sourceSheet)
+        {
+            using (Transaction read = source.TransactionManager.StartTransaction())
+            using (Transaction write = destination.TransactionManager.StartTransaction())
+            {
+                Layout original = (Layout)read.GetObject(sourceSheet.Id, OpenMode.ForRead);
+                DBDictionary layouts = (DBDictionary)write.GetObject(destination.LayoutDictionaryId, OpenMode.ForWrite);
+                var usedNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                int tabOrder = 0;
+                foreach (DBDictionaryEntry entry in layouts)
+                {
+                    Layout existing = write.GetObject(entry.Value, OpenMode.ForRead, false) as Layout;
+                    if (existing == null) continue;
+                    usedNames.Add(existing.LayoutName);
+                    tabOrder = Math.Max(tabOrder, existing.TabOrder);
+                }
+
+                string newName = UniqueName(sourceSheet.Name, usedNames);
+                BlockTable blocks = (BlockTable)write.GetObject(destination.BlockTableId, OpenMode.ForWrite);
+                int index = 0;
+                string paperName;
+                do { paperName = "*Paper_Space" + index++; } while (blocks.Has(paperName));
+                var paper = new BlockTableRecord { Name = paperName };
+                blocks.Add(paper);
+                write.AddNewlyCreatedDBObject(paper, true);
+
+                var imported = new Layout { LayoutName = newName };
+                imported.CopyFrom(original);
+                imported.LayoutName = newName;
+                imported.AddToLayoutDictionary(destination, paper.ObjectId);
+                write.AddNewlyCreatedDBObject(imported, true);
+                imported.TabOrder = tabOrder + 1;
+                CopyPageSetup(source, destination, read, write, original, imported);
+                write.Commit();
+                return newName;
+            }
+        }
+
         private static int CopyTitleBlock(Database source, Database destination, Sheet sheet,
             Vector3d displacement, string sourceDwgPath, string destinationLayoutName, out string imageReport)
         {
@@ -591,27 +661,26 @@ namespace CETools.Civil3D
                     {
                         using (var sourceLayers = new SheetCloneLayerScope(source, read))
                             source.WblockCloneObjects(ids, destinationPaper.ObjectId, mapping,
-                                DuplicateRecordCloning.MangleName, false);
-                        int count;
+                            DuplicateRecordCloning.MangleName, false);
                         using (var clonedLayers = new SheetCloneLayerScope(read, write, mapping))
                         {
                         Matrix3d shift = Matrix3d.Displacement(displacement);
-                        count = 0;
+                        int count = 0;
                         foreach (ObjectId id in ids)
                         {
                             IdPair pair = mapping[id];
                             if (!pair.IsCloned || pair.Value.IsNull || pair.Value.IsErased)
                                 throw new InvalidOperationException("Title-block entity could not be cloned: " + id.Handle);
-                            Entity clone = write.GetObject(pair.Value, OpenMode.ForWrite, false, true) as Entity;
+                            Entity clone = write.GetObject(pair.Value, OpenMode.ForWrite, false) as Entity;
                             if (clone == null) continue;
                             if (displacement.Length > 1e-9) clone.TransformBy(shift);
                             count++;
                         }
                         imageReport = RelinkRasterLogos(source, destination, read, write,
                             ids, mapping, sourceDwgPath);
-                        } // restore layer flags before committing
+                        }
                         write.Commit();
-                        return count;
+                        return ids.Count;
                     }
                 }
             }
@@ -687,7 +756,94 @@ namespace CETools.Civil3D
 
         private static void Show(string message, MessageBoxIcon icon = MessageBoxIcon.Information)
         {
-            CeMessageDialog.Show("Import Sheets", message);
+            try
+            {
+                var window = new Wpf.Window
+                {
+                    Title = "CE Tools - Import Sheets",
+                    Width = 560,
+                    SizeToContent = Wpf.SizeToContent.Height,
+                    MinHeight = 170,
+                    MaxHeight = 620,
+                    ResizeMode = Wpf.ResizeMode.NoResize,
+                    WindowStartupLocation = Wpf.WindowStartupLocation.CenterScreen,
+                    ShowInTaskbar = false
+                };
+                var root = new WpfControls.DockPanel { Margin = new Wpf.Thickness(18) };
+                window.Content = root;
+                var ok = new WpfControls.Button
+                {
+                    Content = "OK",
+                    Width = 92,
+                    Height = 30,
+                    Margin = new Wpf.Thickness(6, 14, 0, 0),
+                    IsDefault = true,
+                    IsCancel = true,
+                    HorizontalAlignment = Wpf.HorizontalAlignment.Right
+                };
+                ok.Click += (s, e) => window.Close();
+                WpfControls.DockPanel.SetDock(ok, WpfControls.Dock.Bottom);
+                root.Children.Add(ok);
+                var text = new WpfControls.TextBlock
+                {
+                    Text = message ?? string.Empty,
+                    TextWrapping = Wpf.TextWrapping.Wrap,
+                    Margin = new Wpf.Thickness(0, 4, 0, 8),
+                    MaxWidth = 510
+                };
+                root.Children.Add(new WpfControls.ScrollViewer
+                {
+                    VerticalScrollBarVisibility = WpfControls.ScrollBarVisibility.Auto,
+                    MaxHeight = 500,
+                    Content = text
+                });
+                window.Loaded += (s, e) => CeInterfaceTheme.Apply(window);
+                AcApplication.ShowModalWindow(window);
+            }
+            catch
+            {
+                MessageBox.Show(message, "CE Tools - Import Sheets", MessageBoxButtons.OK, icon);
+            }
+        }
+
+        private static void ShowThemedPickerMessage(Wpf.Window owner, string message, string title)
+        {
+            var window = new Wpf.Window
+            {
+                Title = title ?? "CE Tools",
+                Width = 480,
+                SizeToContent = Wpf.SizeToContent.Height,
+                MinHeight = 150,
+                MaxHeight = 520,
+                ResizeMode = Wpf.ResizeMode.NoResize,
+                WindowStartupLocation = Wpf.WindowStartupLocation.CenterOwner,
+                Owner = owner,
+                ShowInTaskbar = false
+            };
+            var root = new WpfControls.DockPanel { Margin = new Wpf.Thickness(18) };
+            window.Content = root;
+            var ok = new WpfControls.Button
+            {
+                Content = "OK",
+                Width = 86,
+                Height = 30,
+                Margin = new Wpf.Thickness(6, 14, 0, 0),
+                IsDefault = true,
+                IsCancel = true,
+                HorizontalAlignment = Wpf.HorizontalAlignment.Right
+            };
+            ok.Click += (s, e) => window.Close();
+            WpfControls.DockPanel.SetDock(ok, WpfControls.Dock.Bottom);
+            root.Children.Add(ok);
+            root.Children.Add(new WpfControls.TextBlock
+            {
+                Text = message ?? string.Empty,
+                TextWrapping = Wpf.TextWrapping.Wrap,
+                MaxWidth = 430,
+                Margin = new Wpf.Thickness(0, 4, 0, 8)
+            });
+            window.Loaded += (s, e) => CeInterfaceTheme.Apply(window);
+            window.ShowDialog();
         }
 
         private static List<Sheet> ReadSheets(Database source)
@@ -706,113 +862,730 @@ namespace CETools.Civil3D
             return sheets.OrderBy(s => s.Order).ThenBy(s => s.Name).ToList();
         }
 
-        private static ImportResult CopySheets(Database source, Database destination, IList<Sheet> sheets)
+        private static ImportResult CopySheets(Database source, Database destination, IList<Sheet> sheets,
+            bool includeModelSpace = true, bool includePaperSpaceEntities = true, bool includeViewports = true)
         {
             var result = new ImportResult();
+            var viewportJobs = new List<ViewportCloneJob>();
+
+            // First create and commit the layouts and their non-viewport contents.
+            // Floating viewports are created only after their destination layouts exist
+            // and can be made current in the active drawing.
             using (Transaction read = source.TransactionManager.StartTransaction())
-            using (Transaction write = destination.TransactionManager.StartTransaction())
             {
-                var layouts = (DBDictionary)write.GetObject(destination.LayoutDictionaryId, OpenMode.ForWrite);
-                var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                int tab = 0;
-                foreach (DBDictionaryEntry entry in layouts)
+                using (Transaction write = destination.TransactionManager.StartTransaction())
                 {
-                    var layout = (Layout)write.GetObject(entry.Value, OpenMode.ForRead);
-                    names.Add(layout.LayoutName);
-                    tab = Math.Max(tab, layout.TabOrder);
-                }
-                var sourceBlocks = (BlockTable)read.GetObject(source.BlockTableId, OpenMode.ForRead);
-                var targetBlocks = (BlockTable)write.GetObject(destination.BlockTableId, OpenMode.ForWrite);
-                var jobs = new List<CloneJob>();
-                ObjectIdCollection modelIds = EntityIds(read, sourceBlocks[BlockTableRecord.ModelSpace]);
-                // Exactly one model-space clone, shared by every imported viewport.
-                jobs.Add(new CloneJob { Ids = modelIds, Owner = targetBlocks[BlockTableRecord.ModelSpace] });
-                result.ModelCount = modelIds.Count;
-
-                foreach (Sheet sheet in sheets)
-                {
-                    var original = (Layout)read.GetObject(sheet.Id, OpenMode.ForRead);
-                    string name = UniqueName(sheet.Name, names);
-                    int paperIndex = 0;
-                    string paperName;
-                    do { paperName = "*Paper_Space" + paperIndex++; } while (targetBlocks.Has(paperName));
-                    var paper = new BlockTableRecord { Name = paperName };
-                    targetBlocks.Add(paper);
-                    write.AddNewlyCreatedDBObject(paper, true);
-                    var imported = new Layout { LayoutName = name };
-                    // Copy layout settings before registering it. Registering afterwards binds
-                    // the imported layout to the destination-owned Paper Space BTR, not the source BTR.
-                    imported.CopyFrom(original);
-                    imported.LayoutName = name;
-                    imported.AddToLayoutDictionary(destination, paper.ObjectId);
-                    write.AddNewlyCreatedDBObject(imported, true);
-                    imported.TabOrder = ++tab;
-                    CopyPageSetup(source, destination, read, write, original, imported);
-                    ObjectIdCollection paperIds = EntityIds(read, original.BlockTableRecordId);
-                    if (paperIds.Count == 0)
-                        throw new InvalidOperationException("Source layout '" + sheet.Name +
-                            "' contains no cloneable Paper Space entities. Check that the source DWG is saved and that the layout contains objects.");
-                    result.PaperCount += paperIds.Count;
-                    int layoutViewportCount = 0;
-                    foreach (ObjectId id in paperIds)
-                        if (read.GetObject(id, OpenMode.ForRead) is Autodesk.AutoCAD.DatabaseServices.Viewport) { result.ViewportCount++; layoutViewportCount++; }
-                    jobs.Add(new CloneJob { Ids = paperIds, Owner = paper.ObjectId });
-                    result.Names.Add(name + " [Paper Space objects: " + paperIds.Count +
-                        ", floating viewports: " + layoutViewportCount + "]");
-                }
-
-                // Clone each owner batch with its own IdMapping. Reusing one mapping across
-                // Model Space and several Paper Space owners can leave AutoCAD's clone context
-                // in an invalid state when multiple layouts are selected.
-                foreach (CloneJob job in jobs.Where(j => j.Ids.Count > 0))
-                {
-                    using (var mapping = new IdMapping())
+                    var layouts = (DBDictionary)write.GetObject(destination.LayoutDictionaryId, OpenMode.ForWrite);
+                    var names = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                    int tab = 0;
+                    foreach (DBDictionaryEntry entry in layouts)
                     {
-                        using (var sourceLayers = new SheetCloneLayerScope(source, read))
-                            source.WblockCloneObjects(job.Ids, job.Owner, mapping,
-                                DuplicateRecordCloning.MangleName, false);
-                        using (var clonedLayers = new SheetCloneLayerScope(read, write, mapping))
-                        {
-                        foreach (ObjectId id in job.Ids)
-                        {
-                            IdPair pair = mapping[id];
-                            if (!pair.IsCloned || pair.Value.IsNull || pair.Value.IsErased)
-                                throw new InvalidOperationException("A source object could not be copied: " + id.Handle);
-                            Autodesk.AutoCAD.DatabaseServices.Viewport sourceViewport = read.GetObject(id, OpenMode.ForRead) as Autodesk.AutoCAD.DatabaseServices.Viewport;
-                            if (sourceViewport == null || sourceViewport.Number == 1) continue;
-                            Autodesk.AutoCAD.DatabaseServices.Viewport clonedViewport = write.GetObject(pair.Value, OpenMode.ForWrite, false, true) as Autodesk.AutoCAD.DatabaseServices.Viewport;
-                            if (clonedViewport == null) continue;
-                            clonedViewport.ViewCenter = sourceViewport.ViewCenter;
-                            clonedViewport.ViewTarget = sourceViewport.ViewTarget;
-                            clonedViewport.ViewDirection = sourceViewport.ViewDirection;
-                            clonedViewport.ViewHeight = sourceViewport.ViewHeight;
-                            clonedViewport.TwistAngle = sourceViewport.TwistAngle;
-                            clonedViewport.CustomScale = sourceViewport.CustomScale;
-                            clonedViewport.PerspectiveOn = sourceViewport.PerspectiveOn;
-                            clonedViewport.Locked = sourceViewport.Locked;
-                            clonedViewport.On = sourceViewport.On;
-                        }
-                        } // restore cloned layer flags
+                        var layout = (Layout)write.GetObject(entry.Value, OpenMode.ForRead);
+                        names.Add(layout.LayoutName);
+                        tab = Math.Max(tab, layout.TabOrder);
                     }
+
+                    var sourceBlocks = (BlockTable)read.GetObject(source.BlockTableId, OpenMode.ForRead);
+                    var targetBlocks = (BlockTable)write.GetObject(destination.BlockTableId, OpenMode.ForWrite);
+
+                    // Import the source drawing's viewport annotation-scale definitions before
+                    // cloning annotative Model Space objects. This allows their existing scale
+                    // contexts to resolve in the destination instead of falling back to the
+                    // destination drawing's current CANNOSCALE.
+                    EnsureDestinationViewportAnnotationScales(source, destination, read, write, sheets);
+
+                    var jobs = new List<CloneJob>();
+                    ObjectIdCollection modelIds = includeModelSpace
+                        ? EntityIds(read, sourceBlocks[BlockTableRecord.ModelSpace])
+                        : new ObjectIdCollection();
+
+                    // Exactly one Model Space clone is shared by all imported viewports.
+                    if (modelIds.Count > 0)
+                        jobs.Add(new CloneJob { Ids = modelIds, Owner = targetBlocks[BlockTableRecord.ModelSpace] });
+                    result.ModelCount = modelIds.Count;
+
+                    foreach (Sheet sheet in sheets)
+                    {
+                        var original = (Layout)read.GetObject(sheet.Id, OpenMode.ForRead);
+                        string name = UniqueName(sheet.Name, names);
+                        int paperIndex = 0;
+                        string paperName;
+                        do { paperName = "*Paper_Space" + paperIndex++; } while (targetBlocks.Has(paperName));
+
+                        var paper = new BlockTableRecord { Name = paperName };
+                        targetBlocks.Add(paper);
+                        write.AddNewlyCreatedDBObject(paper, true);
+
+                        var imported = new Layout { LayoutName = name };
+                        imported.CopyFrom(original);
+                        imported.LayoutName = name;
+                        imported.AddToLayoutDictionary(destination, paper.ObjectId);
+                        write.AddNewlyCreatedDBObject(imported, true);
+                        imported.TabOrder = ++tab;
+                        CopyPageSetup(source, destination, read, write, original, imported);
+
+                        ObjectIdCollection allPaperIds = AllEntityIds(read, original.BlockTableRecordId);
+                        var paperIds = new ObjectIdCollection();
+                        var viewportIds = new ObjectIdCollection();
+
+                        bool skippedOverallViewport = false;
+                        foreach (ObjectId id in allPaperIds)
+                        {
+                            Autodesk.AutoCAD.DatabaseServices.Viewport sourceViewport =
+                                read.GetObject(id, OpenMode.ForRead, false) as Autodesk.AutoCAD.DatabaseServices.Viewport;
+
+                            if (sourceViewport != null)
+                            {
+                                // Normally AutoCAD assigns Number=1 to the overall Paper Space
+                                // viewport and Number>1 to floating viewports. In side-database
+                                // reads, however, some drawings expose Number=1 for more than one
+                                // viewport. Skip only the first Number=1 viewport in this layout;
+                                // retain subsequent viewport entities as floating viewport candidates.
+                                bool isOverallViewport = sourceViewport.Number == 1 && !skippedOverallViewport;
+                                if (sourceViewport.Number == 1)
+                                    skippedOverallViewport = true;
+
+                                // Some source drawings contain an additional floating viewport
+                                // whose boundary spans almost the entire sheet/title-block area.
+                                // It is not a drawing viewport and creates an unwanted large
+                                // selectable/activatable frame around the imported sheet. Skip
+                                // only these sheet-enclosing viewports; retain normal detail,
+                                // plan and section viewports at their original sizes.
+                                if (includeViewports && !isOverallViewport &&
+                                    !IsSheetEnclosingViewport(sourceViewport, original))
+                                    viewportIds.Add(id);
+                            }
+                            else if (includePaperSpaceEntities)
+                            {
+                                paperIds.Add(id);
+                            }
+                        }
+
+                        result.PaperCount += paperIds.Count + viewportIds.Count;
+                        result.ViewportCount += viewportIds.Count;
+
+                        if (paperIds.Count > 0)
+                            jobs.Add(new CloneJob { Ids = paperIds, Owner = paper.ObjectId });
+
+                        if (viewportIds.Count > 0)
+                        {
+                            viewportJobs.Add(new ViewportCloneJob
+                            {
+                                Ids = viewportIds,
+                                Owner = paper.ObjectId,
+                                LayoutName = name
+                            });
+                        }
+
+                        result.ImportedLayoutNames.Add(name);
+                        result.Names.Add(name + " [Paper Space objects copied: " +
+                            (paperIds.Count + viewportIds.Count) +
+                            ", source floating viewports: " + viewportIds.Count + "]");
+                    }
+
+                    List<LayerStateSnapshot> sourceLayerStates = CaptureAndUnlockLayers(source, read);
+                    List<LayerStateSnapshot> destinationLayerStates = CaptureAndUnlockLayers(destination, write);
+                    var originalDestinationLayerIds =
+                        new HashSet<ObjectId>(destinationLayerStates.Select(x => x.Id));
+                    var clonedLayerStates = new Dictionary<ObjectId, LayerStateSnapshot>();
+
+                    try
+                    {
+                        // Clone each owner batch with its own IdMapping. Reusing a mapping
+                        // across Model Space and multiple Paper Space owners can corrupt
+                        // AutoCAD's clone context on multi-layout transfers.
+                        foreach (CloneJob job in jobs.Where(j => j.Ids.Count > 0))
+                        {
+                            using (var mapping = new IdMapping())
+                            {
+                                source.WblockCloneObjects(job.Ids, job.Owner, mapping,
+                                    DuplicateRecordCloning.MangleName, false);
+
+                                foreach (ObjectId id in job.Ids)
+                                {
+                                    IdPair pair = mapping[id];
+                                    if (!pair.IsCloned || pair.Value.IsNull || pair.Value.IsErased)
+                                        throw new InvalidOperationException(
+                                            "A source object could not be copied: " + id.Handle);
+                                }
+
+                                foreach (LayerStateSnapshot sourceLayer in sourceLayerStates)
+                                {
+                                    try
+                                    {
+                                        IdPair layerPair = mapping[sourceLayer.Id];
+                                        if (layerPair.IsCloned && !layerPair.Value.IsNull &&
+                                            !originalDestinationLayerIds.Contains(layerPair.Value))
+                                        {
+                                            clonedLayerStates[layerPair.Value] = sourceLayer;
+                                        }
+                                    }
+                                    catch { /* This batch did not require that source layer. */ }
+                                }
+                            }
+                        }
+                    }
+                    finally
+                    {
+                        RestoreLayerStates(destination, write, destinationLayerStates);
+                        RestoreMappedLayerStates(destination, write, clonedLayerStates);
+                        RestoreLayerStates(source, read, sourceLayerStates);
+                    }
+
+                    // Commit the new layouts and cloned entities before activating layouts
+                    // and creating their floating viewports.
+                    write.Commit();
                 }
-                // Layouts, model, viewports and dependent definitions commit together or roll back together.
-                write.Commit();
+
+                if (includeViewports && viewportJobs.Count > 0)
+                    CreateImportedFloatingViewports(source, destination, read, viewportJobs, result);
             }
+
             return result;
         }
 
+        private static void CreateImportedFloatingViewports(Database source, Database destination,
+            Transaction sourceRead, IList<ViewportCloneJob> viewportJobs, ImportResult result)
+        {
+            Document document = AcApplication.DocumentManager.MdiActiveDocument;
+            if (document == null)
+                throw new InvalidOperationException("There is no active destination drawing.");
+
+            string originalLayout = null;
+            try { originalLayout = LayoutManager.Current.CurrentLayout; } catch { }
+
+            try
+            {
+                foreach (ViewportCloneJob viewportJob in viewportJobs)
+                {
+                    try
+                    {
+                        // A floating viewport must be created while its destination layout
+                        // is active in Paper Space. Each candidate is appended to that layout's
+                        // Paper Space BTR before it is enabled, allowing AutoCAD to register it.
+                        LayoutManager.Current.CurrentLayout = viewportJob.LayoutName;
+                        document.Editor.SwitchToPaperSpace();
+
+                        using (Transaction write = destination.TransactionManager.StartTransaction())
+                        {
+                            BlockTableRecord destinationPaper =
+                                (BlockTableRecord)write.GetObject(viewportJob.Owner, OpenMode.ForWrite);
+                            List<LayerStateSnapshot> destinationLayerStates =
+                                CaptureAndUnlockLayers(destination, write);
+
+                            try
+                            {
+                                foreach (ObjectId sourceViewportId in viewportJob.Ids)
+                                {
+                                    Autodesk.AutoCAD.DatabaseServices.Viewport sourceViewport =
+                                        sourceRead.GetObject(sourceViewportId, OpenMode.ForRead, false)
+                                            as Autodesk.AutoCAD.DatabaseServices.Viewport;
+                                    if (sourceViewport == null) continue;
+
+                                    var destinationViewport =
+                                        new Autodesk.AutoCAD.DatabaseServices.Viewport();
+                                    destinationViewport.SetDatabaseDefaults(destination);
+
+                                    // Append and register the new viewport BEFORE assigning its view
+                                    // state. Several Viewport properties (notably per-viewport UCS
+                                    // state) require a database-resident entity. Setting those
+                                    // properties while the viewport is still transient can throw
+                                    // eNotInDatabase, which previously prevented every layout from
+                                    // receiving its floating viewports.
+                                    destinationPaper.AppendEntity(destinationViewport);
+                                    write.AddNewlyCreatedDBObject(destinationViewport, true);
+                                    destinationViewport.On = false;
+
+                                    LayerTableRecord sourceLayer =
+                                        sourceRead.GetObject(sourceViewport.LayerId, OpenMode.ForRead, false)
+                                            as LayerTableRecord;
+                                    if (sourceLayer != null)
+                                    {
+                                        ObjectId destinationLayerId =
+                                            FindDestinationLayer(write, destination, sourceLayer.Name);
+                                        if (!destinationLayerId.IsNull)
+                                            destinationViewport.LayerId = destinationLayerId;
+                                    }
+
+                                    // Rebuild the floating viewport from source properties only after
+                                    // it has an owner and belongs to the destination database.
+                                    destinationViewport.CenterPoint = sourceViewport.CenterPoint;
+                                    destinationViewport.Width = sourceViewport.Width;
+                                    destinationViewport.Height = sourceViewport.Height;
+                                    destinationViewport.ViewCenter = sourceViewport.ViewCenter;
+                                    destinationViewport.ViewTarget = sourceViewport.ViewTarget;
+                                    destinationViewport.ViewDirection = sourceViewport.ViewDirection;
+                                    destinationViewport.ViewHeight = sourceViewport.ViewHeight;
+                                    destinationViewport.TwistAngle = sourceViewport.TwistAngle;
+
+                                    // Preserve the named standard scale first, then the exact
+                                    // numeric custom scale. CustomScale alone does not preserve
+                                    // the viewport's original drawing-scale selection.
+                                    CopyViewportProperty(sourceViewport, destinationViewport, "StandardScale");
+                                    destinationViewport.CustomScale = sourceViewport.CustomScale;
+
+                                    // Preserve the viewport's annotative scale context (for example
+                                    // 1:500 or 1:1000). The context must belong to the destination
+                                    // drawing; assigning the source database's context directly is
+                                    // not safe across databases. Import does not rewrite any cloned
+                                    // DBText/MText/Dimension height or paper-height value.
+                                    CopyViewportAnnotationScale(sourceViewport, destinationViewport, destination);
+
+                                    destinationViewport.PerspectiveOn = sourceViewport.PerspectiveOn;
+                                    destinationViewport.Locked = sourceViewport.Locked;
+                                    destinationViewport.GridOn = sourceViewport.GridOn;
+                                    destinationViewport.SnapOn = sourceViewport.SnapOn;
+                                    destinationViewport.SnapIncrement = sourceViewport.SnapIncrement;
+                                    destinationViewport.SnapAngle = sourceViewport.SnapAngle;
+                                    destinationViewport.UcsPerViewport = sourceViewport.UcsPerViewport;
+
+                                    // Imported floating viewports must be active in the destination
+                                    // layout. Side-database reads can report sourceViewport.On as false
+                                    // even when the source viewport is visibly active. Preserve the
+                                    // source view configuration, but explicitly turn every imported
+                                    // floating viewport ON so it can display and be activated by
+                                    // double-clicking in Paper Space.
+                                    destinationViewport.On = true;
+                                    result.ViewportCreatedCount++;
+                                }
+                            }
+                            finally
+                            {
+                                RestoreLayerStates(destination, write, destinationLayerStates);
+                            }
+
+                            write.Commit();
+                        }
+
+                        document.Editor.Regen();
+                    }
+                    catch (System.Exception viewportError)
+                    {
+                        result.ViewportErrors.Add(viewportJob.LayoutName + ": " +
+                            viewportError.GetBaseException().Message);
+                    }
+                }
+            }
+            finally
+            {
+                if (!string.IsNullOrWhiteSpace(originalLayout))
+                {
+                    try
+                    {
+                        LayoutManager.Current.CurrentLayout = originalLayout;
+                        document.Editor.SwitchToPaperSpace();
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        private static bool IsSheetEnclosingViewport(
+            Autodesk.AutoCAD.DatabaseServices.Viewport viewport, Layout layout)
+        {
+            if (viewport == null || layout == null) return false;
+
+            try
+            {
+                double viewportWidth = Math.Abs(viewport.Width);
+                double viewportHeight = Math.Abs(viewport.Height);
+                if (viewportWidth <= 0.0 || viewportHeight <= 0.0) return false;
+
+                // PlotPaperSize is exposed by PlotSettings on supported AutoCAD releases.
+                // Read it reflectively so the importer remains compatible with the
+                // Civil 3D 2024 target assemblies without depending on a version-specific
+                // compile-time return type.
+                object paperSize = ReadObjectProperty(layout, "PlotPaperSize");
+                double paperWidth = ReadCoordinate(paperSize, "X");
+                double paperHeight = ReadCoordinate(paperSize, "Y");
+                if (paperWidth <= 0.0 || paperHeight <= 0.0) return false;
+
+                // Compare both orientations because the layout may be portrait or landscape.
+                double directWidthRatio = viewportWidth / paperWidth;
+                double directHeightRatio = viewportHeight / paperHeight;
+                double swappedWidthRatio = viewportWidth / paperHeight;
+                double swappedHeightRatio = viewportHeight / paperWidth;
+
+                bool coversDirectSheet =
+                    directWidthRatio >= 0.88 && directHeightRatio >= 0.88;
+                bool coversRotatedSheet =
+                    swappedWidthRatio >= 0.88 && swappedHeightRatio >= 0.88;
+
+                return coversDirectSheet || coversRotatedSheet;
+            }
+            catch
+            {
+                // If paper dimensions cannot be read, do not discard a source viewport.
+                return false;
+            }
+        }
+
+        private static double ReadCoordinate(object value, string propertyName)
+        {
+            if (value == null) return 0.0;
+            try
+            {
+                PropertyInfo property = value.GetType().GetProperty(
+                    propertyName, BindingFlags.Public | BindingFlags.Instance);
+                object raw = property == null ? null : property.GetValue(value, null);
+                return raw == null ? 0.0 : Convert.ToDouble(
+                    raw, System.Globalization.CultureInfo.InvariantCulture);
+            }
+            catch { return 0.0; }
+        }
+
+        private static void EnsureDestinationViewportAnnotationScales(
+            Database source, Database destination, Transaction sourceTransaction,
+            Transaction destinationTransaction, IList<Sheet> sheets)
+        {
+            if (source == null || destination == null ||
+                sourceTransaction == null || destinationTransaction == null ||
+                sheets == null)
+                return;
+
+            // Preserve the source drawing's current annotation scale where the Database API
+            // exposes it. The per-viewport contexts below are also imported individually.
+            try
+            {
+                PropertyInfo currentScaleProperty = source.GetType().GetProperty(
+                    "Cannoscale", BindingFlags.Public | BindingFlags.Instance);
+                object currentScale = currentScaleProperty == null
+                    ? null : currentScaleProperty.GetValue(source, null);
+                EnsureDestinationAnnotationScaleContext(destination, currentScale);
+            }
+            catch { }
+
+            foreach (Sheet sheet in sheets)
+            {
+                try
+                {
+                    Layout sourceLayout = sourceTransaction.GetObject(
+                        sheet.Id, OpenMode.ForRead, false) as Layout;
+                    if (sourceLayout == null) continue;
+
+                    BlockTableRecord paper = sourceTransaction.GetObject(
+                        sourceLayout.BlockTableRecordId, OpenMode.ForRead, false)
+                        as BlockTableRecord;
+                    if (paper == null) continue;
+
+                    bool skippedOverallViewport = false;
+                    foreach (ObjectId id in paper)
+                    {
+                        try
+                        {
+                            Autodesk.AutoCAD.DatabaseServices.Viewport viewport =
+                                sourceTransaction.GetObject(id, OpenMode.ForRead, false)
+                                    as Autodesk.AutoCAD.DatabaseServices.Viewport;
+                            if (viewport == null) continue;
+
+                            bool isOverallViewport =
+                                viewport.Number == 1 && !skippedOverallViewport;
+                            if (viewport.Number == 1)
+                                skippedOverallViewport = true;
+                            if (isOverallViewport) continue;
+
+                            object context = ReadViewportAnnotationScale(viewport);
+                            EnsureDestinationAnnotationScaleContext(destination, context);
+                        }
+                        catch { }
+                    }
+                }
+                catch { }
+            }
+        }
+
+        private static object EnsureDestinationAnnotationScaleContext(
+            Database destination, object sourceContext)
+        {
+            if (destination == null || sourceContext == null) return null;
+
+            try
+            {
+                Type contextType = sourceContext.GetType();
+                string contextName = Convert.ToString(
+                    ReadObjectProperty(sourceContext, "Name"),
+                    System.Globalization.CultureInfo.InvariantCulture);
+                if (string.IsNullOrWhiteSpace(contextName)) return null;
+
+                object manager = ReadObjectProperty(destination, "ObjectContextManager");
+                if (manager == null) return null;
+
+                MethodInfo getCollectionMethod = manager.GetType().GetMethod(
+                    "GetContextCollection", new[] { typeof(string) });
+                if (getCollectionMethod == null) return null;
+
+                object collection = getCollectionMethod.Invoke(
+                    manager, new object[] { "ACDB_ANNOTATIONSCALES" });
+                if (collection == null) return null;
+
+                MethodInfo getContextMethod = collection.GetType().GetMethod(
+                    "GetContext", new[] { typeof(string) });
+                if (getContextMethod == null) return null;
+
+                object existing = getContextMethod.Invoke(
+                    collection, new object[] { contextName });
+                if (existing != null) return existing;
+
+                object destinationContext = Activator.CreateInstance(contextType);
+                if (destinationContext == null) return null;
+
+                // AnnotationScale definitions are portable by name and unit ratio.
+                // Copy only their definition properties; never copy source database IDs.
+                CopySimpleContextProperty(sourceContext, destinationContext, "Name");
+                CopySimpleContextProperty(sourceContext, destinationContext, "PaperUnits");
+                CopySimpleContextProperty(sourceContext, destinationContext, "DrawingUnits");
+
+                MethodInfo addContextMethod = collection.GetType()
+                    .GetMethods(BindingFlags.Public | BindingFlags.Instance)
+                    .FirstOrDefault(method =>
+                    {
+                        if (!string.Equals(method.Name, "AddContext", StringComparison.Ordinal))
+                            return false;
+                        ParameterInfo[] parameters = method.GetParameters();
+                        return parameters.Length == 1 &&
+                            parameters[0].ParameterType.IsAssignableFrom(contextType);
+                    });
+
+                if (addContextMethod == null) return null;
+                addContextMethod.Invoke(collection, new[] { destinationContext });
+
+                return getContextMethod.Invoke(collection, new object[] { contextName });
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
+        private static void CopySimpleContextProperty(
+            object source, object destination, string propertyName)
+        {
+            try
+            {
+                PropertyInfo sourceProperty = source.GetType().GetProperty(
+                    propertyName, BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo destinationProperty = destination.GetType().GetProperty(
+                    propertyName, BindingFlags.Public | BindingFlags.Instance);
+                if (sourceProperty == null || destinationProperty == null ||
+                    !destinationProperty.CanWrite)
+                    return;
+
+                object value = sourceProperty.GetValue(source, null);
+                if (value == null) return;
+
+                if (destinationProperty.PropertyType.IsEnum &&
+                    value.GetType() != destinationProperty.PropertyType)
+                {
+                    value = Enum.ToObject(destinationProperty.PropertyType, value);
+                }
+                else if (!destinationProperty.PropertyType.IsAssignableFrom(value.GetType()))
+                {
+                    value = Convert.ChangeType(
+                        value, destinationProperty.PropertyType,
+                        System.Globalization.CultureInfo.InvariantCulture);
+                }
+
+                destinationProperty.SetValue(destination, value, null);
+            }
+            catch { }
+        }
+
+        private static object ReadObjectProperty(object instance, string propertyName)
+        {
+            if (instance == null) return null;
+            try
+            {
+                PropertyInfo property = instance.GetType().GetProperty(
+                    propertyName, BindingFlags.Public | BindingFlags.Instance);
+                return property == null ? null : property.GetValue(instance, null);
+            }
+            catch { return null; }
+        }
+
+        private static object ReadViewportAnnotationScale(
+            Autodesk.AutoCAD.DatabaseServices.Viewport viewport)
+        {
+            return ReadObjectProperty(viewport, "AnnotationScale");
+        }
+
+        private static void CopyViewportProperty(
+            Autodesk.AutoCAD.DatabaseServices.Viewport source,
+            Autodesk.AutoCAD.DatabaseServices.Viewport destination,
+            string propertyName)
+        {
+            try
+            {
+                PropertyInfo sourceProperty = source.GetType().GetProperty(
+                    propertyName, BindingFlags.Public | BindingFlags.Instance);
+                PropertyInfo destinationProperty = destination.GetType().GetProperty(
+                    propertyName, BindingFlags.Public | BindingFlags.Instance);
+                if (sourceProperty == null || destinationProperty == null ||
+                    !destinationProperty.CanWrite)
+                    return;
+
+                object value = sourceProperty.GetValue(source, null);
+                if (value != null &&
+                    destinationProperty.PropertyType.IsAssignableFrom(value.GetType()))
+                    destinationProperty.SetValue(destination, value, null);
+            }
+            catch { }
+        }
+
+        private static void CopyViewportAnnotationScale(
+            Autodesk.AutoCAD.DatabaseServices.Viewport source,
+            Autodesk.AutoCAD.DatabaseServices.Viewport destination,
+            Database destinationDatabase)
+        {
+            object sourceContext = ReadViewportAnnotationScale(source);
+            if (sourceContext == null) return;
+
+            object destinationContext = EnsureDestinationAnnotationScaleContext(
+                destinationDatabase, sourceContext);
+            if (destinationContext == null)
+                throw new InvalidOperationException(
+                    "Could not import viewport annotation scale '" +
+                    Convert.ToString(ReadObjectProperty(sourceContext, "Name")) +
+                    "' into the destination drawing.");
+
+            PropertyInfo destinationProperty = destination.GetType().GetProperty(
+                "AnnotationScale", BindingFlags.Public | BindingFlags.Instance);
+            if (destinationProperty == null || !destinationProperty.CanWrite)
+                throw new InvalidOperationException(
+                    "The destination viewport does not expose a writable AnnotationScale property.");
+
+            destinationProperty.SetValue(destination, destinationContext, null);
+        }
+
+        private static ObjectId FindDestinationLayer(Transaction transaction, Database destination, string layerName)
+        {
+            if (string.IsNullOrWhiteSpace(layerName)) return ObjectId.Null;
+            LayerTable table = (LayerTable)transaction.GetObject(destination.LayerTableId, OpenMode.ForRead);
+            if (table.Has(layerName)) return table[layerName];
+
+            // If the source layer name collided and was mangled during cloning, choose the
+            // destination layer whose name begins with the original layer name.
+            foreach (ObjectId id in table)
+            {
+                LayerTableRecord record = transaction.GetObject(id, OpenMode.ForRead, false) as LayerTableRecord;
+                if (record != null &&
+                    record.Name.StartsWith(layerName + "$", StringComparison.OrdinalIgnoreCase))
+                    return id;
+            }
+            return ObjectId.Null;
+        }
+
+        private static void ZoomExtentsInImportedLayouts(Document document, IEnumerable<string> layoutNames)
+        {
+            if (document == null || layoutNames == null) return;
+
+            string originalLayout = null;
+            try { originalLayout = LayoutManager.Current.CurrentLayout; }
+            catch { }
+
+            try
+            {
+                foreach (string layoutName in layoutNames)
+                {
+                    if (string.IsNullOrWhiteSpace(layoutName)) continue;
+                    try
+                    {
+                        LayoutManager.Current.CurrentLayout = layoutName;
+                        // Ensure the command runs in Paper Space, not inside a floating viewport.
+                        document.Editor.Command("_.PSPACE");
+                        document.Editor.Command("_.ZOOM", "_E");
+                        document.Editor.Regen();
+                    }
+                    catch
+                    {
+                        // A single invalid/unavailable layout must not prevent the remaining
+                        // imported layouts from being zoomed to extents.
+                    }
+                }
+            }
+            finally
+            {
+                if (!string.IsNullOrWhiteSpace(originalLayout))
+                {
+                    try
+                    {
+                        LayoutManager.Current.CurrentLayout = originalLayout;
+                        document.Editor.Regen();
+                    }
+                    catch { }
+                }
+            }
+        }
+
+        private static List<LayerStateSnapshot> CaptureAndUnlockLayers(Database database, Transaction transaction)
+        {
+            var states = new List<LayerStateSnapshot>();
+            LayerTable layerTable = (LayerTable)transaction.GetObject(database.LayerTableId, OpenMode.ForRead);
+            foreach (ObjectId layerId in layerTable)
+            {
+                LayerTableRecord layer = transaction.GetObject(layerId, OpenMode.ForWrite, false) as LayerTableRecord;
+                if (layer == null || layer.IsDependent) continue;
+                bool wasLocked = layer.IsLocked;
+                bool wasFrozen = layer.IsFrozen;
+                if (!wasLocked && !wasFrozen) continue;
+                states.Add(new LayerStateSnapshot
+                {
+                    Id = layerId,
+                    Name = layer.Name,
+                    IsLocked = wasLocked,
+                    IsFrozen = wasFrozen
+                });
+                if (layer.IsLocked) layer.IsLocked = false;
+                if (layer.IsFrozen) layer.IsFrozen = false;
+            }
+            return states;
+        }
+
+        private static void RestoreLayerStates(Database database, Transaction transaction,
+            IEnumerable<LayerStateSnapshot> states)
+        {
+            foreach (LayerStateSnapshot state in states)
+            {
+                try
+                {
+                    LayerTableRecord layer = transaction.GetObject(state.Id, OpenMode.ForWrite, false) as LayerTableRecord;
+                    if (layer == null || layer.IsDependent) continue;
+                    layer.IsFrozen = state.IsFrozen;
+                    layer.IsLocked = state.IsLocked;
+                }
+                catch { /* Preserve best-effort restoration without masking the original clone error. */ }
+            }
+        }
+
+        private static void RestoreMappedLayerStates(Database database, Transaction transaction,
+            IDictionary<ObjectId, LayerStateSnapshot> states)
+        {
+            foreach (KeyValuePair<ObjectId, LayerStateSnapshot> pair in states)
+            {
+                try
+                {
+                    LayerTableRecord layer = transaction.GetObject(pair.Key, OpenMode.ForWrite, false) as LayerTableRecord;
+                    if (layer == null || layer.IsDependent) continue;
+                    layer.IsFrozen = pair.Value.IsFrozen;
+                    layer.IsLocked = pair.Value.IsLocked;
+                }
+                catch { /* A cloned dependent layer may not permit state changes. */ }
+            }
+        }
+
         private static ObjectIdCollection EntityIds(Transaction tr, ObjectId blockId)
+        {
+            return AllEntityIds(tr, blockId);
+        }
+
+        private static ObjectIdCollection AllEntityIds(Transaction tr, ObjectId blockId)
         {
             var result = new ObjectIdCollection();
             var block = (BlockTableRecord)tr.GetObject(blockId, OpenMode.ForRead);
             foreach (ObjectId id in block)
             {
-                if (id.IsErased) continue;
+                if (id.IsNull || id.IsErased) continue;
                 Entity entity = tr.GetObject(id, OpenMode.ForRead, false) as Entity;
-                if (entity == null) continue;
-                Autodesk.AutoCAD.DatabaseServices.Viewport viewport = entity as Autodesk.AutoCAD.DatabaseServices.Viewport;
-                // Number 1 is the special overall paper-space viewport, not a floating viewport to import.
-                if (viewport != null && viewport.Number <= 1) continue;
+                if (entity == null || entity.IsErased) continue;
                 result.Add(id);
             }
             return result;
@@ -866,10 +1639,27 @@ namespace CETools.Civil3D
             internal ObjectId Owner;
         }
 
+        private sealed class ViewportCloneJob
+        {
+            internal ObjectIdCollection Ids;
+            internal ObjectId Owner;
+            internal string LayoutName;
+        }
+
+        private sealed class LayerStateSnapshot
+        {
+            internal ObjectId Id;
+            internal string Name;
+            internal bool IsLocked;
+            internal bool IsFrozen;
+        }
+
         private sealed class ImportResult
         {
             internal readonly List<string> Names = new List<string>();
-            internal int ModelCount, PaperCount, ViewportCount;
+            internal readonly List<string> ImportedLayoutNames = new List<string>();
+            internal readonly List<string> ViewportErrors = new List<string>();
+            internal int ModelCount, PaperCount, ViewportCount, ViewportCreatedCount;
         }
 
         private sealed class TitleBlockTransferWindow : Wpf.Window
@@ -888,7 +1678,10 @@ namespace CETools.Civil3D
             internal TitleBlockTransferWindow(string path, IList<Sheet> sourceSheets, IList<Sheet> destinationSheets)
             {
                 Title = "CE Tools - Transfer Title Block";
-                Width = 650; Height = 650; MinWidth = 540; MinHeight = 500;
+                Width = 650;
+                Height = 700;
+                MinWidth = 540;
+                MinHeight = 540;
                 WindowStartupLocation = Wpf.WindowStartupLocation.CenterOwner;
                 ResizeMode = Wpf.ResizeMode.CanResize;
 
@@ -904,20 +1697,28 @@ namespace CETools.Civil3D
                 WpfControls.DockPanel.SetDock(buttons, WpfControls.Dock.Bottom);
                 root.Children.Add(buttons);
 
-                var cancel = new WpfControls.Button { Content = "Cancel", Width = 90, Margin = new Wpf.Thickness(5), IsCancel = true };
+                var cancel = new WpfControls.Button
+                {
+                    Content = "Cancel", Width = 90, Margin = new Wpf.Thickness(5), IsCancel = true
+                };
                 cancel.Click += (s, e) => { DialogResult = false; Close(); };
                 buttons.Children.Add(cancel);
 
-                var proceed = new WpfControls.Button { Content = "Continue", Width = 105, Margin = new Wpf.Thickness(5), IsDefault = true };
+                var proceed = new WpfControls.Button
+                {
+                    Content = "Continue", Width = 105, Margin = new Wpf.Thickness(5), IsDefault = true
+                };
                 proceed.Click += (s, e) =>
                 {
                     SelectedSourceSheet = _sourceLayout.SelectedItem as Sheet;
                     SelectedDestinationLayouts = _targets.Where(c => c.IsChecked == true)
-                        .Select(c => Convert.ToString(c.Tag)).ToList();
+                        .Select(c => Convert.ToString(c.Tag)).Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+
                     double x, y;
                     if (SelectedSourceSheet == null || SelectedDestinationLayouts.Count == 0)
                     {
-                        CeMessageDialog.Show(Title, "Select one source layout and at least one destination layout.", false, this);
+                        ShowThemedPickerMessage(this,
+                            "Select one source Paper Space tab and at least one destination Paper Space tab.", Title);
                         return;
                     }
                     if (!double.TryParse(_baseX.Text, System.Globalization.NumberStyles.Float,
@@ -925,10 +1726,13 @@ namespace CETools.Civil3D
                         !double.TryParse(_baseY.Text, System.Globalization.NumberStyles.Float,
                             System.Globalization.CultureInfo.InvariantCulture, out y))
                     {
-                        CeMessageDialog.Show(Title, "Enter valid source base-point X and Y coordinates using decimal points.", false, this);
+                        ShowThemedPickerMessage(this,
+                            "Enter valid source base-point X and Y coordinates using decimal points.", Title);
                         return;
                     }
-                    SourceBaseX = x; SourceBaseY = y;
+
+                    SourceBaseX = x;
+                    SourceBaseY = y;
                     WriteTransferSetting("TitleBlockSourceLayout", SelectedSourceSheet.Name);
                     WriteTransferSetting("TitleBlockDestinationLayouts", string.Join("|", SelectedDestinationLayouts));
                     WriteTransferSetting("TitleBlockBaseX", x.ToString("R", System.Globalization.CultureInfo.InvariantCulture));
@@ -940,23 +1744,35 @@ namespace CETools.Civil3D
 
                 var body = new WpfControls.StackPanel();
                 root.Children.Add(body);
+
                 body.Children.Add(new WpfControls.TextBlock
                 {
                     Text = "SOURCE DRAWING: " + System.IO.Path.GetFileName(path),
                     FontWeight = Wpf.FontWeights.Bold,
                     Margin = new Wpf.Thickness(0, 0, 0, 10)
                 });
-                body.Children.Add(new WpfControls.TextBlock { Text = "Source Paper Space tab (title block to copy)", Margin = new Wpf.Thickness(0, 2, 0, 5) });
-                _sourceLayout = new WpfControls.ComboBox { Height = 30, Margin = new Wpf.Thickness(0, 0, 0, 10) };
+                body.Children.Add(new WpfControls.TextBlock
+                {
+                    Text = "Source Paper Space tab (title block to copy)",
+                    Margin = new Wpf.Thickness(0, 2, 0, 5)
+                });
+
+                _sourceLayout = new WpfControls.ComboBox
+                {
+                    Height = 30,
+                    Margin = new Wpf.Thickness(0, 0, 0, 10)
+                };
                 foreach (Sheet sheet in sourceSheets) _sourceLayout.Items.Add(sheet);
                 string rememberedSourceLayout = ReadTransferSetting("TitleBlockSourceLayout");
-                if (_sourceLayout.Items.Count > 0)
+                int rememberedIndex = -1;
+                for (int i = 0; i < _sourceLayout.Items.Count; i++)
                 {
-                    int rememberedIndex = -1;
-                    for (int i = 0; i < _sourceLayout.Items.Count; i++)
-                        if (string.Equals(((_sourceLayout.Items[i] as Sheet)?.Name), rememberedSourceLayout, StringComparison.OrdinalIgnoreCase)) rememberedIndex = i;
-                    _sourceLayout.SelectedIndex = rememberedIndex >= 0 ? rememberedIndex : 0;
+                    Sheet item = _sourceLayout.Items[i] as Sheet;
+                    if (item != null && string.Equals(item.Name, rememberedSourceLayout,
+                        StringComparison.OrdinalIgnoreCase)) rememberedIndex = i;
                 }
+                _sourceLayout.SelectedIndex = rememberedIndex >= 0
+                    ? rememberedIndex : (_sourceLayout.Items.Count > 0 ? 0 : -1);
                 body.Children.Add(_sourceLayout);
 
                 body.Children.Add(new WpfControls.TextBlock
@@ -964,49 +1780,80 @@ namespace CETools.Civil3D
                     Text = "Source title-block base point (coordinates in source drawing)",
                     Margin = new Wpf.Thickness(0, 4, 0, 5)
                 });
-                var baseGrid = new WpfControls.Grid { Margin = new Wpf.Thickness(0, 0, 0, 10) };
-                baseGrid.ColumnDefinitions.Add(new WpfControls.ColumnDefinition());
-                baseGrid.ColumnDefinitions.Add(new WpfControls.ColumnDefinition());
-                baseGrid.ColumnDefinitions.Add(new WpfControls.ColumnDefinition());
-                var xLabel = new WpfControls.TextBlock { Text = "X", VerticalAlignment = Wpf.VerticalAlignment.Center };
-                var yLabel = new WpfControls.TextBlock { Text = "Y", VerticalAlignment = Wpf.VerticalAlignment.Center };
-                _baseX = new WpfControls.TextBox { Text = string.IsNullOrWhiteSpace(ReadTransferSetting("TitleBlockBaseX")) ? "0" : ReadTransferSetting("TitleBlockBaseX"), Height = 28, Margin = new Wpf.Thickness(4, 0, 12, 0) };
-                _baseY = new WpfControls.TextBox { Text = string.IsNullOrWhiteSpace(ReadTransferSetting("TitleBlockBaseY")) ? "0" : ReadTransferSetting("TitleBlockBaseY"), Height = 28, Margin = new Wpf.Thickness(4, 0, 0, 0) };
-                WpfControls.Grid.SetColumn(xLabel, 0); WpfControls.Grid.SetColumn(_baseX, 0);
-                WpfControls.Grid.SetColumn(yLabel, 1); WpfControls.Grid.SetColumn(_baseY, 1);
-                baseGrid.Children.Add(_baseX); baseGrid.Children.Add(_baseY);
+
                 var labels = new WpfControls.Grid();
                 labels.ColumnDefinitions.Add(new WpfControls.ColumnDefinition());
                 labels.ColumnDefinitions.Add(new WpfControls.ColumnDefinition());
-                WpfControls.Grid.SetColumn(xLabel, 0); WpfControls.Grid.SetColumn(yLabel, 1);
-                labels.Children.Add(xLabel); labels.Children.Add(yLabel);
+                var xLabel = new WpfControls.TextBlock { Text = "X" };
+                var yLabel = new WpfControls.TextBlock { Text = "Y" };
+                WpfControls.Grid.SetColumn(xLabel, 0);
+                WpfControls.Grid.SetColumn(yLabel, 1);
+                labels.Children.Add(xLabel);
+                labels.Children.Add(yLabel);
                 body.Children.Add(labels);
+
+                var baseGrid = new WpfControls.Grid { Margin = new Wpf.Thickness(0, 0, 0, 10) };
+                baseGrid.ColumnDefinitions.Add(new WpfControls.ColumnDefinition());
+                baseGrid.ColumnDefinitions.Add(new WpfControls.ColumnDefinition());
+                _baseX = new WpfControls.TextBox
+                {
+                    Text = string.IsNullOrWhiteSpace(ReadTransferSetting("TitleBlockBaseX")) ? "0" : ReadTransferSetting("TitleBlockBaseX"),
+                    Height = 28, Margin = new Wpf.Thickness(0, 0, 10, 0)
+                };
+                _baseY = new WpfControls.TextBox
+                {
+                    Text = string.IsNullOrWhiteSpace(ReadTransferSetting("TitleBlockBaseY")) ? "0" : ReadTransferSetting("TitleBlockBaseY"),
+                    Height = 28
+                };
+                WpfControls.Grid.SetColumn(_baseX, 0);
+                WpfControls.Grid.SetColumn(_baseY, 1);
+                baseGrid.Children.Add(_baseX);
+                baseGrid.Children.Add(_baseY);
                 body.Children.Add(baseGrid);
 
+                // Keep the section heading and destination-tab checklist. Only the two
+                // destination-method mode checkboxes are intentionally omitted.
                 body.Children.Add(new WpfControls.TextBlock
                 {
-                    Text = "Destination Paper Space tabs in the current drawing",
+                    Text = "DESTINATION METHOD",
+                    FontWeight = Wpf.FontWeights.Bold,
                     Margin = new Wpf.Thickness(0, 5, 0, 5)
                 });
-                var selectAll = new WpfControls.CheckBox { Content = "Select all destination tabs", FontWeight = Wpf.FontWeights.Bold, Margin = new Wpf.Thickness(0, 2, 0, 6) };
+                body.Children.Add(new WpfControls.TextBlock
+                {
+                    Text = "Select destination Paper Space tabs",
+                    Margin = new Wpf.Thickness(0, 2, 0, 5)
+                });
+
+                var rememberedTargets = new HashSet<string>(
+                    (ReadTransferSetting("TitleBlockDestinationLayouts") ?? string.Empty)
+                        .Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries),
+                    StringComparer.OrdinalIgnoreCase);
+
+                var selectAll = new WpfControls.CheckBox
+                {
+                    Content = "Select all destination tabs",
+                    FontWeight = Wpf.FontWeights.Bold,
+                    Margin = new Wpf.Thickness(0, 2, 0, 6)
+                };
                 selectAll.Checked += (s, e) => { if (!_updatingAll) SetTargets(true); };
                 selectAll.Unchecked += (s, e) => { if (!_updatingAll) SetTargets(false); };
                 body.Children.Add(selectAll);
 
-                var rememberedTargets = new HashSet<string>((ReadTransferSetting("TitleBlockDestinationLayouts") ?? string.Empty).Split(new[] { '|' }, StringSplitOptions.RemoveEmptyEntries), StringComparer.OrdinalIgnoreCase);
-                var list = new WpfControls.StackPanel();
-                foreach (Sheet sheet in destinationSheets)
+                var targetList = new WpfControls.StackPanel();
+                foreach (Sheet sheet in destinationSheets ?? new List<Sheet>())
                 {
                     var check = new WpfControls.CheckBox
                     {
-                        Content = sheet.Name, Tag = sheet.Name,
+                        Content = sheet.Name,
+                        Tag = sheet.Name,
                         IsChecked = rememberedTargets.Contains(sheet.Name),
                         Margin = new Wpf.Thickness(3, 4, 3, 4)
                     };
                     _targets.Add(check);
-                    check.Checked += (s, e) => UpdateAll(selectAll);
-                    check.Unchecked += (s, e) => UpdateAll(selectAll);
-                    list.Children.Add(check);
+                    check.Checked += (s, e) => UpdateSelectAll(selectAll);
+                    check.Unchecked += (s, e) => UpdateSelectAll(selectAll);
+                    targetList.Children.Add(check);
                 }
                 selectAll.IsChecked = _targets.Count > 0 && _targets.All(x => x.IsChecked == true);
                 body.Children.Add(new WpfControls.Border
@@ -1016,27 +1863,29 @@ namespace CETools.Civil3D
                     Child = new WpfControls.ScrollViewer
                     {
                         VerticalScrollBarVisibility = WpfControls.ScrollBarVisibility.Auto,
-                        Height = 190,
-                        Content = list
+                        Height = 155,
+                        Content = targetList
                     }
                 });
+
                 body.Children.Add(new WpfControls.TextBlock
                 {
-                    Text = "Continue, then pick the insertion point on screen. The same title block will be copied to every checked destination layout.",
+                    Text = "Continue, then pick the insertion point on screen. The selected title block will be copied to every checked destination Paper Space tab.",
                     TextWrapping = Wpf.TextWrapping.Wrap,
                     Margin = new Wpf.Thickness(0, 10, 0, 0)
                 });
+
                 Loaded += (s, e) => CeInterfaceTheme.Apply(this);
             }
 
             private void SetTargets(bool value)
             {
                 _updatingAll = true;
-                foreach (var item in _targets) item.IsChecked = value;
+                foreach (WpfControls.CheckBox item in _targets) item.IsChecked = value;
                 _updatingAll = false;
             }
 
-            private void UpdateAll(WpfControls.CheckBox selectAll)
+            private void UpdateSelectAll(WpfControls.CheckBox selectAll)
             {
                 if (_updatingAll) return;
                 _updatingAll = true;
@@ -1082,7 +1931,7 @@ namespace CETools.Civil3D
                     SelectedTransferMode = _selectedMode;
                     if (SelectedSheets.Count == 0)
                     {
-                        CeMessageDialog.Show(Title, "Select at least one Paper Space tab.", false, this);
+                        ShowThemedPickerMessage(this, "Select at least one Paper Space tab.", Title);
                         return;
                     }
                     DialogResult = true;
@@ -1116,14 +1965,14 @@ namespace CETools.Civil3D
                 };
                 var modelMode = new WpfControls.CheckBox
                 {
-                    Content = "Model Space content only (every viewport)",
+                    Content = "Model Space content only (copy source model once for selected viewports)",
                     Margin = new Wpf.Thickness(3, 4, 3, 4),
                     IsChecked = _selectedMode == "MODEL",
                     IsThreeState = false, IsEnabled = true, IsHitTestVisible = true, Focusable = true
                 };
                 var titleMode = new WpfControls.CheckBox
                 {
-                    Content = "Title blocks only (matching destination tab names)",
+                    Content = "Title blocks only (import source tabs; no matching names required)",
                     Margin = new Wpf.Thickness(3, 4, 3, 4),
                     IsChecked = _selectedMode == "TITLE",
                     IsThreeState = false, IsEnabled = true, IsHitTestVisible = true, Focusable = true
