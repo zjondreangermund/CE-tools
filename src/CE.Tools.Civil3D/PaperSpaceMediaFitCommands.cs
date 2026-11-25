@@ -8,7 +8,7 @@ using Autodesk.AutoCAD.Geometry;
 using Autodesk.AutoCAD.Runtime;
 using AcApplication = Autodesk.AutoCAD.ApplicationServices.Core.Application;
 
-[assembly: CommandClass(typeof(CETools.Civil3D.PaperSpaceViewportFitCommands))]
+[assembly: CommandClass(typeof(CETools.Civil3D.PaperSpaceMediaFitCommands))]
 
 namespace CETools.Civil3D
 {
