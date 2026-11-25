@@ -1,24 +1,23 @@
 param([string]$RepoRoot = (Split-Path -Parent $PSScriptRoot))
 $ErrorActionPreference = 'Stop'
 $source = Join-Path $RepoRoot 'src\CE.Tools.Civil3D'
-# Historical 2023 staging replaces the universal object-event methods. Reapply
-# only the passive-command gate after that chain; retain its source-only logic.
-$universalPath = Join-Path $source 'UniversalDynamicRefreshCommands.cs'
-$universal = [System.IO.File]::ReadAllText($universalPath)
-if ($universal -notmatch 'DrawingOpenAppearancePolicy.IsUserEditCommand') {
-    $pattern = '(private static void OnObject(?:Changed|Erased)\s*\([^)]*\)\s*\{)'
-    $matches = [regex]::Matches($universal, $pattern)
-    if ($matches.Count -ne 2) { throw 'Cannot safely locate both staged universal object-event handlers.' }
+# Historical staging replaces object-event handlers. Restore the passive gate
+# on each handler independently while retaining the staged source-only logic.
+foreach ($name in @('UniversalDynamicRefreshCommands.cs', 'SewerNetworkDynamicSequenceManager.cs', 'CommentPresentationCommands.cs')) {
+    $path = Join-Path $source $name
+    $text = [System.IO.File]::ReadAllText($path)
+    $pattern = '(private static void OnObject(?:Changed|Erased|Modified)\s*\([^)]*\)\s*\{)(?!\s*if\s*\(!DrawingOpenAppearancePolicy)'
     $gate = @'
 
-            if (!DrawingOpenAppearancePolicy.IsUserEditCommand(Convert.ToString(
-                AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture))) return;
+            if (!DrawingOpenAppearancePolicy.IsUserEditCommand(System.Convert.ToString(
+                Autodesk.AutoCAD.ApplicationServices.Core.Application.GetSystemVariable("CMDNAMES"),
+                System.Globalization.CultureInfo.InvariantCulture))) return;
 '@
-    $universal = [regex]::Replace($universal, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{
+    $text = [regex]::Replace($text, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{
         param($match)
         return $match.Value + $gate
     })
-    [System.IO.File]::WriteAllText($universalPath, $universal, (New-Object System.Text.UTF8Encoding($false)))
+    [System.IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))
 }
 $guard = Get-Content -LiteralPath (Join-Path $source 'PaperSpaceTextAnnotationGuard.cs') -Raw
 if ($guard -match '(Idle|DocumentCreated|DocumentActivated)\s*\+=') {
