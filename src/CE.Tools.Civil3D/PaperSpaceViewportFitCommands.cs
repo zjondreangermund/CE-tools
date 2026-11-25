@@ -23,7 +23,7 @@ namespace CETools.Civil3D
             internal int TabOrder;
         }
 
-        [CommandMethod("CE_TOOLS", "CE_PAPERFITVIEWPORTS", CommandFlags.Modal | CommandFlags.Redraw)]
+
         public void MovePaperSpaceContents()
         {
             Document doc = AcApplication.DocumentManager.MdiActiveDocument;
