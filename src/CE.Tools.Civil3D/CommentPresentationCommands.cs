@@ -952,11 +952,14 @@ namespace CETools.Civil3D
             if (_database != null)
                 _database.ObjectModified -= OnObjectModified;
             _database = null;
+            _pending = false; // A refresh must never leak into a newly opened drawing.
         }
 
         private static void OnObjectModified(object sender, ObjectEventArgs eventArgs)
         {
             if (_busy || eventArgs == null || eventArgs.DBObject == null) return;
+            if (!DrawingOpenAppearancePolicy.IsUserEditCommand(Convert.ToString(
+                AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture))) return;
             if (eventArgs.DBObject is Xrecord || eventArgs.DBObject is DBDictionary) return;
             _pending = true;
         }

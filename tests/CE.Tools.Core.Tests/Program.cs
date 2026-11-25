@@ -30,6 +30,7 @@ namespace CETools.Core.Tests
                 PumpDutyPointFindsIntersection();
                 PumpReviewChecksNpshMargin();
                 _tests += SewerStructureIntervalTests.Run();
+                _tests += DrawingOpenAppearanceTests.Run();
                 _tests += SewerGravityGradeTests.Run();
                 _tests += RoadAnnotationTests.Run();
                 _tests += ProfileViewportTests.Run();

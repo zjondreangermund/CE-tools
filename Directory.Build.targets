@@ -159,4 +159,10 @@
           Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(AutoCADVersion)' == '2023' and '$(OS)' == 'Windows_NT'">
     <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Repair-October04-RoadAnnotationSettingOut-Civil3D2023.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory)&quot;" />
   </Target>
+  <Target Name="CEVerifySavedDrawingAppearance"
+          AfterTargets="CEApplyOctober04RoadAnnotationSettingOut"
+          BeforeTargets="CoreCompile"
+          Condition="'$(MSBuildProjectName)' == 'CE.Tools.Civil3D' and '$(OS)' == 'Windows_NT'">
+    <Exec Command="powershell.exe -NoProfile -ExecutionPolicy Bypass -File &quot;$(MSBuildThisFileDirectory)scripts\Validate-DrawingOpenAppearance.ps1&quot; -RepoRoot &quot;$(MSBuildThisFileDirectory).&quot;" />
+  </Target>
 </Project>

@@ -17,4 +17,8 @@ assert "AttributeCollection" in guard
 assert "Annotative" in guard and '"False"' in guard
 for forbidden in ("TextHeight =", "Height =", "TextString =", "Text ="):
     assert forbidden not in guard, forbidden
-print("PASS: 2024 paper text is excluded from annotation sync; open-DWG repair is 2024 only.")
+assert "AcApplication.Idle +=" not in guard
+assert "DocumentActivated +=" not in guard
+assert "DocumentCreated +=" not in guard
+assert "internal static void Initialize() { }" in guard
+print("PASS: paper text repair is manual-only; opening a drawing never changes its annotative state.")

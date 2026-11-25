@@ -253,6 +253,7 @@ namespace CETools.Civil3D
             _document = null;
             _undoRedoActive = false;
             _ceCommandActive = false;
+            _pending = false; // Pending work belongs to the detached drawing only.
         }
 
         private static void OnCommandWillStart(object sender, CommandEventArgs e)
@@ -374,6 +375,8 @@ namespace CETools.Civil3D
             if (_busy || _ceCommandActive || _undoRedoActive ||
                 DateTime.UtcNow < _suppressQueueUntilUtc ||
                 e == null || e.DBObject == null) return;
+            if (!DrawingOpenAppearancePolicy.IsUserEditCommand(Convert.ToString(
+                AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture))) return;
             DBObject value = e.DBObject;
             if (IsAssemblyObject(value)) return;
             if (HasCeLink(value)) Queue();
@@ -384,6 +387,8 @@ namespace CETools.Civil3D
             if (_busy || _ceCommandActive || _undoRedoActive ||
                 DateTime.UtcNow < _suppressQueueUntilUtc ||
                 e == null || e.DBObject == null) return;
+            if (!DrawingOpenAppearancePolicy.IsUserEditCommand(Convert.ToString(
+                AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture))) return;
             if (!IsAssemblyObject(e.DBObject) && HasCeLink(e.DBObject)) Queue();
         }
 

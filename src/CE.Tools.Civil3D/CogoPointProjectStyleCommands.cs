@@ -778,7 +778,7 @@ namespace CETools.Civil3D
         private static Database _database;
         private static bool _initialised;
         private static bool _busy;
-        private static bool _pending = true;
+        private static bool _pending;
         private static DateTime _lastRunUtc = DateTime.MinValue;
 
         public static void Initialize()
@@ -841,7 +841,8 @@ namespace CETools.Civil3D
             if (_database == null) return;
             _database.ObjectModified += OnObjectChanged;
             _database.ObjectAppended += OnObjectChanged;
-            _pending = true;
+            // Observe the saved drawing; opening it is not a style-edit request.
+            _pending = false;
         }
 
         private static void DetachDatabase()
@@ -852,14 +853,15 @@ namespace CETools.Civil3D
                 _database.ObjectAppended -= OnObjectChanged;
             }
             _database = null;
+            _pending = false; // Never carry an old drawing's refresh into another drawing.
         }
 
         private static void OnObjectChanged(object sender, ObjectEventArgs eventArgs)
         {
             if (_busy || eventArgs == null || eventArgs.DBObject == null) return;
-            if (eventArgs.DBObject is CivilCogoPoint ||
-                eventArgs.DBObject is Xrecord ||
-                eventArgs.DBObject is DBDictionary)
+            if (eventArgs.DBObject is CivilCogoPoint &&
+                DrawingOpenAppearancePolicy.IsUserEditCommand(Convert.ToString(
+                    AcApplication.GetSystemVariable("CMDNAMES"), CultureInfo.InvariantCulture)))
             {
                 _pending = true;
             }
